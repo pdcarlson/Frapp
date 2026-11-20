@@ -175,7 +175,13 @@ export interface TaskListOptions {
  * (`TaskListFilter.unconfirmedOrCompletedSince`, #5746).
  */
 export type TaskRowListOptions = TaskListOptions &
-  Pick<TaskListFilter, 'unconfirmedOrCompletedSince'>;
+  Pick<TaskListFilter, 'unconfirmedOrCompletedSince'> & {
+    /**
+     * `true`: also count every matching row past `limit`, in the same request
+     * (`total`). Otherwise `total` is null unless the read is uncapped.
+     */
+    withTotal?: boolean;
+  };
 
 /** A copy's state with its display status, as a group row reads it (#5492). */
 export type TaskGroupCopyView = TaskGroupCopyState & {
@@ -837,15 +843,17 @@ export class TaskService {
     userId: string,
     isAdmin: boolean,
     options: TaskRowListOptions = {},
-  ): Promise<{ tasks: TaskView[]; total: number }> {
-    instantOrThrow('before', options.after?.created_at);
+  ): Promise<{ tasks: TaskView[]; total: number | null }> {
+    const { withTotal, ...query } = options;
+    instantOrThrow('before', query.after?.created_at);
     const { tasks, total } = await this.taskRepo.findByChapterCounted(
       chapterId,
       {
-        ...options,
+        ...query,
         // Last, so no option widens a member's read past their own tasks.
         ...(isAdmin ? {} : { assigneeId: userId }),
       },
+      { withTotal },
     );
     return { tasks: toDisplayStatusList(tasks), total };
   }
@@ -901,15 +909,12 @@ export class TaskService {
     now: Date = new Date(),
   ): Promise<AssignedTaskItem[]> {
     const [singles, groups] = await Promise.all([
-      // Counted, which ends the read without an empty page (#5746).
-      this.taskRepo
-        .findByChapterCounted(chapterId, {
-          createdBy,
-          groupless: true,
-          confirmed: false,
-          limit,
-        })
-        .then(({ tasks }) => tasks),
+      this.taskRepo.findByChapter(chapterId, {
+        createdBy,
+        groupless: true,
+        confirmed: false,
+        limit,
+      }),
       this.taskRepo.findUnfinishedGroupsByCreator(chapterId, createdBy, limit),
     ]);
     type Entry =

@@ -1032,6 +1032,7 @@ describe('ActivityService', () => {
         notAssigneeId: ME,
         order: 'longest_waiting',
         limit: 25,
+        withTotal: true,
       });
       expect(taskService.listRows).toHaveBeenCalledWith(CHAPTER, ME, true, {
         createdBy: ME,

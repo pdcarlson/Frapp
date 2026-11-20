@@ -838,12 +838,8 @@ describe('TaskService', () => {
       }));
     /** The repository's one-person read: newest first, at most `limit`. */
     const serveSingles = (rows: Task[]) =>
-      mockTaskRepo.findByChapterCounted.mockImplementation(
-        (_chapterId, query) =>
-          Promise.resolve({
-            tasks: rows.slice(0, query?.limit ?? rows.length),
-            total: rows.length,
-          }),
+      mockTaskRepo.findByChapter.mockImplementation((_chapterId, query) =>
+        Promise.resolve(rows.slice(0, query?.limit ?? rows.length)),
       );
     /**
      * The copies as the two reads give them: their states (the narrow read)
@@ -921,7 +917,7 @@ describe('TaskService', () => {
       );
       expect(group.kind === 'group' && group.copies).toHaveLength(30);
       // Both lists are narrowed and capped in SQL.
-      expect(mockTaskRepo.findByChapterCounted).toHaveBeenCalledWith('ch-1', {
+      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1', {
         createdBy: 'admin-1',
         groupless: true,
         confirmed: false,
@@ -2345,13 +2341,18 @@ describe('TaskService', () => {
         // A member's option can't widen the read past their own tasks.
         unconfirmedOrCompletedSince: '2026-11-08T00:00:00.000Z',
         limit: 25,
+        withTotal: true,
       });
 
-      expect(mockTaskRepo.findByChapterCounted).toHaveBeenCalledWith('ch-1', {
-        unconfirmedOrCompletedSince: '2026-11-08T00:00:00.000Z',
-        limit: 25,
-        assigneeId: 'user-1',
-      });
+      expect(mockTaskRepo.findByChapterCounted).toHaveBeenCalledWith(
+        'ch-1',
+        {
+          unconfirmedOrCompletedSince: '2026-11-08T00:00:00.000Z',
+          limit: 25,
+          assigneeId: 'user-1',
+        },
+        { withTotal: true },
+      );
       // None of what `list` adds to a task: no subtask, photo, series or
       // open-task read.
       expect(result).toEqual({ tasks: [asView(baseTask)], total: 7 });
@@ -2369,9 +2370,11 @@ describe('TaskService', () => {
 
       await service.listRows('ch-1', 'user-1', true, { createdBy: 'user-1' });
 
-      expect(mockTaskRepo.findByChapterCounted).toHaveBeenCalledWith('ch-1', {
-        createdBy: 'user-1',
-      });
+      expect(mockTaskRepo.findByChapterCounted).toHaveBeenCalledWith(
+        'ch-1',
+        { createdBy: 'user-1' },
+        { withTotal: undefined },
+      );
     });
 
     it("withGroupSummaries: every task's group from one read, null for one-person tasks", async () => {

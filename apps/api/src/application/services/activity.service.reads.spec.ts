@@ -105,6 +105,19 @@ const seed = () => ({
         points_awarded: true,
       },
     ],
+    // Mine, a copy of the same task, done before the week began and still
+    // waiting on an officer: in the own read (not confirmed), but neither
+    // open nor done this week. In the Archive, with its group.
+    [
+      '-copy-mine-done-early',
+      {
+        title: 'Everyone, done early',
+        group_id: GROUP,
+        created_by: ME,
+        status: 'COMPLETED',
+        completed_at: '2026-11-05T10:00:00.000Z',
+      },
+    ],
     // Someone else's, done, waiting on a confirm; made by me.
     [
       '-theirs-waiting',
@@ -240,6 +253,7 @@ function load(permissions: string[]) {
   };
   return {
     harness,
+    archive: () => service.getArchive(CHAPTER_A, ME, enabled, { now: NOW }),
     run: () => service.getActivity(CHAPTER_A, ME, enabled, { now: NOW }),
     get taskRequests() {
       return harness.ops.length;
@@ -255,10 +269,11 @@ function load(permissions: string[]) {
 
 describe('ActivityService reads per load (#5746)', () => {
   // Before #5746 the task section alone made 29 requests for this officer
-  // and 9 for this member (43 and 23 for the page): every list read its
+  // and 9 for this member (43 and 23 for the page, counting the other
+  // sections' 14): every list read its
   // subtasks, photos, series, groups and open tasks, and ended on an empty
   // page, and two counts went on their own.
-  it('an officer with tasks:manage: the task section in 11 requests', async () => {
+  it('an officer with tasks:manage: the task section in 13 requests', async () => {
     const page = load([
       SystemPermissions.MEMBERS_VIEW,
       SystemPermissions.TASKS_MANAGE,
@@ -267,29 +282,32 @@ describe('ActivityService reads per load (#5746)', () => {
       page.run(),
     );
 
-    // One request each for its own tasks, the confirmations with their
-    // count, and what it assigned; their groups once (3: the groups, and the
-    // copies' paged read, which still ends on an empty page); what it
-    // assigned as items (5: one-person tasks, groups, copies (2), and one
-    // copy whole).
-    expect(page.taskRequests).toBe(11);
-    expect(page.taskRequests + page.otherReads).toBe(25);
+    // One request each for its own tasks (uncapped, counted) and the
+    // confirmations with their count; what it assigned (2: capped, so not
+    // counted, and a short page reads on to an empty one); their groups once
+    // (3: the groups, and the copies' paged read, which still ends on an
+    // empty page); what it assigned as items (6: one-person tasks (2),
+    // groups, copies (2), and one copy whole).
+    expect(page.taskRequests).toBe(13);
+    expect(page.taskRequests + page.otherReads).toBe(27);
     // What the page shows is what it showed before.
     expect(
       view.needs_you.tasks.map((task) => [task.title, task.group?.total]),
     ).toEqual([
       ['Open task', undefined],
-      ['Everyone', 2],
+      ['Everyone', 3],
     ]);
     expect(view.needs_you.task_confirmations.map((task) => task.title)).toEqual(
       ['Theirs, waiting'],
     );
     expect(view.needs_you_count).toBe(3);
-    // Done this week, confirmed or not, and not last week's.
+    // Done this week, confirmed or not; not last week's, nor one done before
+    // the week that still waits on a confirm.
     expect(view.week.tasks).toEqual({ done: 2, total: 4 });
     expect(view.made_by_you.tasks.map((task) => task.title)).toEqual([
       'Theirs, waiting',
       'Everyone',
+      'Everyone, done early',
       'Everyone',
     ]);
     expect(view.made_by_you.task_items.map((item) => item.kind)).toEqual([
@@ -321,5 +339,25 @@ describe('ActivityService reads per load (#5746)', () => {
     expect(view.week.tasks).toEqual({ done: 2, total: 4 });
     expect(view.made_by_you.tasks).toEqual([]);
     expect(view.made_by_you.task_items).toEqual([]);
+  });
+
+  // Before #5746: 8 requests for this member's Archive tasks.
+  it('the Archive draws a finished task for everyone with its group, in 5 requests', async () => {
+    const page = load([SystemPermissions.MEMBERS_VIEW]);
+
+    const archive = await page.harness.expectTenantScoped(CHAPTER_A, () =>
+      page.archive(),
+    );
+
+    expect(
+      archive.tasks.map((task) => [task.title, task.group?.total ?? null]),
+    ).toEqual([
+      ['Done', null],
+      ['Done, waiting', null],
+      ['Everyone, done early', 3],
+      ['Old', null],
+    ]);
+    // Their finished tasks, then the kept ones' groups (3).
+    expect(page.taskRequests).toBe(5);
   });
 });

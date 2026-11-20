@@ -75,30 +75,40 @@ export class SupabaseTaskRepository implements ITaskRepository {
     chapterId: string,
     query: TaskListQuery = {},
   ): Promise<Task[]> {
-    const build = () => {
-      const q = this.filtered(
-        this.supabase.from('tasks').select('*'),
-        chapterId,
-        query,
-      );
-      if (query.order === 'longest_waiting') {
-        return q
-          .order('completed_at', { ascending: true, nullsFirst: false })
-          .order('created_at', { ascending: true })
-          .order('id', { ascending: true });
-      }
-      return q
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false });
-    };
-
     // Paged even under a `limit`: only an empty page proves the rows ran out
     // (`fetchAllPages`), so a hosted row cap below `limit` still returns a full
     // page, and a caller can read a short page as the last one.
-    return fetchAllPages((from, to) => build().range(from, to), {
-      pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
-      limit: query.limit,
-    });
+    return fetchAllPages(
+      (from, to) => this.listQuery(chapterId, query, false).range(from, to),
+      {
+        pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
+        limit: query.limit,
+      },
+    );
+  }
+
+  /**
+   * The chapter's tasks that match `query`, filtered and in its order, for
+   * {@link findByChapter} and {@link findByChapterCounted}; `count` asks
+   * PostgREST for the exact number of matching rows.
+   */
+  private listQuery(chapterId: string, query: TaskListQuery, count: boolean) {
+    const q = this.filtered(
+      this.supabase
+        .from('tasks')
+        .select('*', count ? { count: 'exact' } : undefined),
+      chapterId,
+      query,
+    );
+    if (query.order === 'longest_waiting') {
+      return q
+        .order('completed_at', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
+    }
+    return q
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
   }
 
   async findSince(
@@ -125,30 +135,19 @@ export class SupabaseTaskRepository implements ITaskRepository {
   async findByChapterCounted(
     chapterId: string,
     query: TaskListQuery = {},
-  ): Promise<{ tasks: Task[]; total: number }> {
+    { withTotal = false }: { withTotal?: boolean } = {},
+  ): Promise<{ tasks: Task[]; total: number | null }> {
+    // Counted when the caller wants the total, or the read is uncapped, which
+    // the count ends without an empty page; a capped read stops at its limit
+    // anyway, and counting it is a second pass for nothing
+    // (`fetchCountedPages`).
     const { rows, total } = await fetchCountedPages<Task>(
-      (from, to, withCount) => {
-        const q = this.filtered(
-          this.supabase
-            .from('tasks')
-            .select('*', withCount ? { count: 'exact' } : undefined),
-          chapterId,
-          query,
-        );
-        return (
-          query.order === 'longest_waiting'
-            ? q
-                .order('completed_at', { ascending: true, nullsFirst: false })
-                .order('created_at', { ascending: true })
-                .order('id', { ascending: true })
-            : q
-                .order('created_at', { ascending: false })
-                .order('id', { ascending: false })
-        ).range(from, to);
-      },
+      (from, to, withCount) =>
+        this.listQuery(chapterId, query, withCount).range(from, to),
       {
         pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
         limit: query.limit,
+        count: withTotal || query.limit === undefined,
       },
     );
     return { tasks: rows, total };

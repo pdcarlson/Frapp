@@ -240,6 +240,22 @@ describe('fetchCountedPages', () => {
     expect(calls).toHaveLength(2);
   });
 
+  it('without count, asks for none and ends on an empty page, as fetchAllPages does', async () => {
+    const { page, calls } = countedPager(5, [rows(5)]);
+
+    const result = await fetchCountedPages(page, {
+      pageSize: 25,
+      limit: 25,
+      count: false,
+    });
+
+    expect(result).toEqual({ rows: rows(5), total: null });
+    expect(calls).toEqual([
+      [0, 24, false],
+      [5, 24, false],
+    ]);
+  });
+
   it('throws a failed page rather than returning part of the rows', async () => {
     const page = () =>
       Promise.resolve({

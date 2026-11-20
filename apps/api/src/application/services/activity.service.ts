@@ -1832,6 +1832,7 @@ export class ActivityService {
             notAssigneeId: userId,
             order: 'longest_waiting',
             limit: LIST_LIMIT,
+            withTotal: true,
           })
         : none,
       // Only while the caller can still read tasks they don't hold: a creator
@@ -1848,26 +1849,13 @@ export class ActivityService {
         ? this.taskService.listAssignedItems(chapterId, userId, LIST_LIMIT, now)
         : Promise.resolve([]),
     ]);
-    // Every list's groups in one read.
-    const withGroups = await this.taskService.withGroupSummaries(chapterId, [
-      ...own.tasks,
-      ...waiting.tasks,
-      ...made.tasks,
-    ]);
-    const ownTasks = withGroups.slice(0, own.tasks.length);
-    const waitingTasks = withGroups.slice(
-      own.tasks.length,
-      own.tasks.length + waiting.tasks.length,
-    );
-    const madeTasks = withGroups.slice(own.tasks.length + waiting.tasks.length);
-    const doneThisWeek = ownTasks.filter(
+    const doneThisWeek = own.tasks.filter(
       (task) =>
         task.stored_status === TaskStatus.COMPLETED &&
         task.completed_at !== null &&
         since(task.completed_at, weekStart),
     ).length;
-
-    const mine = ownTasks
+    const open = own.tasks
       .filter(
         (task) =>
           task.confirmed_at === null &&
@@ -1876,9 +1864,22 @@ export class ActivityService {
       // By day, and within a day by time, a task with no time last: it is
       // due by the end of the day.
       .sort(byAscending((task) => `${task.due_date} ${task.due_at ?? '~'}`));
+
+    // The groups of every row drawn, in one read, then each list as it was.
+    const grouped = await this.taskService.withGroupSummaries(chapterId, [
+      ...open,
+      ...waiting.tasks,
+      ...made.tasks,
+    ]);
+    const mine = grouped.slice(0, open.length);
     // Already oldest first from the database.
-    const confirmations = waitingTasks;
-    const assigned = madeTasks.sort(byNewest);
+    const confirmations = grouped.slice(
+      open.length,
+      open.length + waiting.tasks.length,
+    );
+    const assigned = grouped
+      .slice(open.length + waiting.tasks.length)
+      .sort(byNewest);
 
     const singles = madeItems.flatMap((item) =>
       item.kind === 'task' ? [item.task] : [],
@@ -1893,7 +1894,8 @@ export class ActivityService {
     return {
       mine: mine.map(toRow),
       confirmations: confirmations.map(toRow),
-      confirmationsWaiting: waiting.total,
+      // Counted with the read whenever it ran (`withTotal`).
+      confirmationsWaiting: waiting.total ?? waiting.tasks.length,
       assigned: assigned.map(toRow),
       assignedItems: madeItems.map((item): ActivityTaskItem =>
         item.kind === 'task'

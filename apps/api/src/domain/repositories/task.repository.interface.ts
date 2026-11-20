@@ -82,14 +82,17 @@ export interface ITaskRepository {
   /** How many of the chapter's tasks match `query`, counted in SQL. */
   countByChapter(chapterId: string, query?: TaskListFilter): Promise<number>;
   /**
-   * {@link findByChapter} with how many rows match before `limit` (#5746),
-   * counted by the same request that reads the first page, so a capped list
-   * and its total cost one round trip, and an uncapped one no empty page.
+   * {@link findByChapter}, and with `withTotal` how many rows match before
+   * `limit` (#5746), counted by the request that reads the first page, so a
+   * capped list and its total cost one round trip. An uncapped read is
+   * counted too, which ends it without an empty page. `total` is null when
+   * the read was not counted.
    */
   findByChapterCounted(
     chapterId: string,
     query?: TaskListQuery,
-  ): Promise<{ tasks: Task[]; total: number }>;
+    options?: { withTotal?: boolean },
+  ): Promise<{ tasks: Task[]; total: number | null }>;
   /**
    * The chapter's tasks due on or after `dueFrom` (`YYYY-MM-DD`), or made at
    * or after `createdFrom`, every row of them: read in pages, so a chapter

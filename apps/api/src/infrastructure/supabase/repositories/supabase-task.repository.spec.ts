@@ -100,17 +100,34 @@ describe('SupabaseTaskRepository — tenant scope', () => {
 
   it('findByChapterCounted keeps the chapter predicate and counts only that chapter (#5746)', async () => {
     const { tasks, total } = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findByChapterCounted(CHAPTER_B, {
-        assigneeId: USER_SHARED,
-        unconfirmedOrCompletedSince: '2026-11-08T00:00:00.000Z',
-        limit: 10,
-      }),
+      repo.findByChapterCounted(
+        CHAPTER_B,
+        {
+          assigneeId: USER_SHARED,
+          unconfirmedOrCompletedSince: '2026-11-08T00:00:00.000Z',
+          limit: 10,
+        },
+        { withTotal: true },
+      ),
     );
 
     expect(tasks.map((t) => t.id)).toEqual([TASK_B]);
     expect(total).toBe(1);
     // A list shorter than its page is one request, with no empty page after.
     expect(harness.ops).toHaveLength(1);
+  });
+
+  it('findByChapterCounted counts an uncapped read, and not a capped one unless asked (#5746)', async () => {
+    const uncapped = await repo.findByChapterCounted(CHAPTER_B);
+    expect(uncapped.total).toBe(1);
+    expect(harness.ops).toHaveLength(1);
+
+    harness.reset();
+    // Capped and not asked: no count, so a short page reads on to an empty one.
+    const capped = await repo.findByChapterCounted(CHAPTER_B, { limit: 10 });
+    expect(capped.tasks.map((t) => t.id)).toEqual([TASK_B]);
+    expect(capped.total).toBeNull();
+    expect(harness.ops).toHaveLength(2);
   });
 
   describe('findByChapter filters narrow in SQL (#4037)', () => {
@@ -196,6 +213,58 @@ describe('SupabaseTaskRepository — tenant scope', () => {
         expect(tasks.map((t) => t.id)).toEqual(expected.map(id));
       },
     );
+
+    it.each([
+      // Not yet confirmed (1, 2, 3); 4 was confirmed and done before it.
+      ['after the confirmed one was done', '2026-01-02T00:00:00Z', [3, 2, 1]],
+      // Done at or after the instant, confirmed or not.
+      ['at the confirmed one', '2026-01-01T00:00:00Z', [4, 3, 2, 1]],
+    ] as const)(
+      'unconfirmedOrCompletedSince %s keeps only those (#5746)',
+      async (_name, since, expected) => {
+        const { tasks } = await harness.expectTenantScoped(CHAPTER_B, () =>
+          repo.findByChapterCounted(CHAPTER_B, {
+            unconfirmedOrCompletedSince: since,
+          }),
+        );
+
+        expect(tasks.map((t) => t.id)).toEqual(expected.map(id));
+        expect(harness.ops[0].orGroups).toEqual([
+          [
+            expect.objectContaining({
+              column: 'confirmed_at',
+              op: 'is',
+              value: null,
+            }),
+            expect.objectContaining({
+              column: 'completed_at',
+              op: 'gte',
+              value: since,
+            }),
+          ],
+        ]);
+      },
+    );
+
+    it('findByChapterCounted orders a waiting list longest-waiting first and counts it in the same request (#5746)', async () => {
+      const { tasks, total } = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.findByChapterCounted(
+          CHAPTER_B,
+          {
+            status: TaskStatus.COMPLETED,
+            confirmed: false,
+            order: 'longest_waiting',
+            limit: 1,
+          },
+          { withTotal: true },
+        ),
+      );
+
+      // Done first, waiting longest: 3, before 2, which the cap leaves out.
+      expect(tasks.map((t) => t.id)).toEqual([id(3)]);
+      expect(total).toBe(2);
+      expect(harness.ops).toHaveLength(1);
+    });
 
     it('orders a waiting list longest-waiting first, and counts it in SQL', async () => {
       const waiting = {
