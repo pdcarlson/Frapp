@@ -216,7 +216,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   /*
     One question at a time (#5219): the panel opens on the meeting that is on
     now, or the newest one without minutes, already picked, so a calendar
-    meeting is one press of Start minutes. With nothing on the calendar it
+    meeting is one press of Write minutes. With nothing on the calendar it
     opens straight on the meeting's name. The officer's own pick wins, and
     the panel's pick isn't kept as a draft: an untouched form keeps nothing.
   */
@@ -522,7 +522,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
           Cancel
         </Button>
         <Button type="submit" form={`${ids}-form`} disabled={start.isPending}>
-          Start minutes
+          Write minutes
         </Button>
       </PanelFooter>
     </>

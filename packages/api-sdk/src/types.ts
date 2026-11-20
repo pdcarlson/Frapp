@@ -6621,6 +6621,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings-no-minutes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The events this officer can see that are marked "No minutes", so the Meetings list stops asking for them */
+        get: operations["MeetingNoMinutesController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/no-minutes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Mark a meeting that ended as having no minutes. Marking it again changes nothing. 409 `meeting.not_over`, 409 `meeting.already_started` */
+        put: operations["MeetingNoMinutesController_mark_v1"];
+        post?: never;
+        /** Take a meeting’s "No minutes" mark off, so it asks for minutes again */
+        delete: operations["MeetingNoMinutesController_unmark_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/date-reminders": {
         parameters: {
             query?: never;
@@ -13042,6 +13077,10 @@ export interface components {
             requested: boolean;
             /** @description This ask sent a reminder. False when the daily guard held it back: whoever is writing them was already reminded within the day. */
             pinged: boolean;
+        };
+        MeetingNoMinutesListDto: {
+            /** @description Events this officer can see that an officer marked "No minutes", so the Meetings list stops asking for them. */
+            event_ids: string[];
         };
         MeetingDateReminderDto: {
             /** Format: uuid */
@@ -28127,6 +28166,90 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MinutesRequestSentDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNoMinutesController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNoMinutesListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNoMinutesController_mark_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNoMinutesController_unmark_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

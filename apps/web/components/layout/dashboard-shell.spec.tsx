@@ -326,6 +326,31 @@ describe("DashboardShell", () => {
     expect(screen.getByText("route content")).toBeInTheDocument();
   });
 
+  it("never lets main scroll its page's header away (overflow clip, not hidden)", () => {
+    // A `hidden` box is a scroll container: a jump or a focus deep in long
+    // minutes scrolled `main` and hid the page's title and X (2026-11-20).
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const main = screen.getByRole("main");
+    expect(main.className).toContain("overflow-clip");
+    expect(main.className).not.toContain("overflow-hidden");
+  });
+
+  it("clips the chat panel too, rather than letting it scroll", () => {
+    mockPathname.value = "/chat";
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const chat = document.getElementById("chat-panel");
+    expect(chat?.className).toContain("overflow-clip");
+    expect(chat?.className).not.toContain("overflow-hidden");
+  });
+
   it("titles the open route in the top bar, as its only h1", () => {
     // 2026-11-05: the title moved from each page's toolbar row into the top
     // bar, derived from the route so every path (loading, offline, error) has

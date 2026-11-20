@@ -19,6 +19,8 @@ const state = vi.hoisted(() => ({
   newMinutes: vi.fn(),
   events: [] as Record<string, unknown>[],
   taking: [] as Record<string, unknown>[],
+  noMinutes: [] as string[],
+  setNoMinutes: vi.fn(),
   start: vi.fn(),
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -43,6 +45,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isSuccess: true,
     refetch: vi.fn(),
   }),
+  useMeetingsNoMinutes: (options?: { enabled?: boolean }) =>
+    options?.enabled === false
+      ? { data: undefined, isSuccess: false }
+      : { data: state.noMinutes, isSuccess: true },
+  useSetMeetingNoMinutes: () => ({ mutateAsync: state.setNoMinutes }),
 }));
 vi.mock("@/lib/minutes/start-minutes", () => ({
   MinutesStartError: class MinutesStartError extends Error {
@@ -121,6 +128,14 @@ function render(): ReactTestRenderer {
   });
   return tree;
 }
+/** The row as drawn (the host element a finger or screen reader reaches). */
+const drawnRow = (tree: ReactTestRenderer, label: string) =>
+  tree.root.findAll(
+    (node) =>
+      typeof node.type === "string" &&
+      node.props.accessibilityLabel === label &&
+      Array.isArray(node.props.accessibilityActions),
+  )[0]!;
 const tabs = (tree: ReactTestRenderer) =>
   tree.root.findAll(
     (node) =>
@@ -133,6 +148,7 @@ beforeEach(() => {
   state.createAction = null;
   state.events = [];
   state.taking = [];
+  state.noMinutes = [];
 });
 
 describe("Minutes, tied to the calendar", () => {
@@ -165,7 +181,7 @@ describe("Minutes, tied to the calendar", () => {
     });
     const tree = render();
     const text = screenText(tree);
-    expect(text).toContain(MEETING_LIST_COPY.needsMinutes);
+    expect(text).toContain(MEETING_LIST_COPY.writeMinutes);
     expect(text).toContain("Exec Meeting");
     expect(text).not.toContain("Date party");
     // Posted minutes aren't asked again: their row is the only Chapter one.
@@ -199,7 +215,7 @@ describe("Minutes, tied to the calendar", () => {
     expect(text).toContain("Dues are due Friday.");
   });
 
-  it("ends on the next meeting, opening its event", () => {
+  it("shows the next meeting, opening its event", () => {
     const tree = render();
     expect(screenText(tree)).toContain(MEETING_LIST_COPY.nextUp);
     const next = tree.root.findAll(
@@ -216,7 +232,7 @@ describe("Minutes, tied to the calendar", () => {
 
   it("leaves out a meeting the viewer takes notes on", () => {
     state.taking = [{ meeting_id: "m-other", event_id: "e-needs" }];
-    expect(screenText(render())).not.toContain(MEETING_LIST_COPY.needsMinutes);
+    expect(screenText(render())).not.toContain(MEETING_LIST_COPY.writeMinutes);
   });
 
   it("drops a row someone else already started, saying so", async () => {
@@ -233,20 +249,84 @@ describe("Minutes, tied to the calendar", () => {
     await act(async () => needs.props.onPress());
     const text = screenText(tree);
     expect(text).toContain("Already started");
-    expect(text).not.toContain(MEETING_LIST_COPY.needsMinutes);
+    expect(text).not.toContain(MEETING_LIST_COPY.writeMinutes);
   });
 
   it("still says where posted minutes go when there are none yet", () => {
     state.rows = [];
+    state.events = [];
+    expect(screenText(render())).toContain(MEETING_LIST_COPY.none);
+  });
+
+  it("puts the next meeting on top, then the meeting with no minutes at its date above older minutes", () => {
+    state.rows = [
+      row({ event_id: "e-posted", event_start_time: hoursFromNow(-48) }),
+    ];
     const text = screenText(render());
-    expect(text).toContain(MEETING_LIST_COPY.needsMinutes);
-    expect(text).toContain(MEETING_LIST_COPY.none);
+    const at = (words: string) => text.indexOf(words);
+    expect(at("Officers Meeting")).toBeLessThan(at("Exec Meeting"));
+    expect(at("Exec Meeting")).toBeLessThan(at("Chapter Meeting"));
+  });
+
+  it("marks a meeting as having no minutes from its long-press", async () => {
+    state.setNoMinutes.mockResolvedValue(undefined);
+    const tree = render();
+    const needs = drawnRow(tree, "Exec Meeting");
+    const action = needs.props.accessibilityActions.find(
+      (entry: { label: string }) =>
+        entry.label === MEETING_LIST_COPY.markNoMinutes,
+    );
+    await act(async () =>
+      needs.props.onAccessibilityAction({
+        nativeEvent: { actionName: action.name },
+      }),
+    );
+    expect(state.setNoMinutes).toHaveBeenCalledWith({
+      eventId: "e-needs",
+      noMinutes: true,
+    });
+    expect(screenText(tree)).toContain(
+      MEETING_LIST_COPY.markedNoMinutes("Exec Meeting"),
+    );
+  });
+
+  it("shows a meeting marked so as settled, and takes the mark back from its menu", async () => {
+    state.noMinutes = ["e-needs"];
+    state.setNoMinutes.mockResolvedValue(undefined);
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain(MEETING_LIST_COPY.noMinutes);
+    expect(text).not.toContain(MEETING_LIST_COPY.writeMinutes);
+    // Drawn as a pressable row (a tap opens its menu), with named actions.
+    const settled = drawnRow(tree, "Exec Meeting");
+    const listRow = tree.root.findAll(
+      (node) =>
+        typeof node.type !== "string" && node.props.label === "Exec Meeting",
+    )[0]!;
+    expect(typeof listRow.props.onPress).toBe("function");
+    const labels = settled.props.accessibilityActions.map(
+      (entry: { label: string }) => entry.label,
+    );
+    expect(labels).toEqual([
+      MEETING_LIST_COPY.writeMinutes,
+      MEETING_LIST_COPY.undoNoMinutes,
+    ]);
+    const undo = settled.props.accessibilityActions[1];
+    await act(async () =>
+      settled.props.onAccessibilityAction({
+        nativeEvent: { actionName: undo.name },
+      }),
+    );
+    expect(state.setNoMinutes).toHaveBeenCalledWith({
+      eventId: "e-needs",
+      noMinutes: false,
+    });
   });
 
   it("asks nothing of a member who doesn't record minutes", () => {
     state.permissions = [];
     const text = screenText(render());
-    expect(text).not.toContain(MEETING_LIST_COPY.needsMinutes);
+    expect(text).not.toContain(MEETING_LIST_COPY.writeMinutes);
     expect(text).not.toContain(MEETING_LIST_COPY.nextUp);
   });
 });
@@ -259,7 +339,7 @@ describe("Minutes list", () => {
     ];
     const tree = render();
     const text = screenText(tree);
-    expect(text).toContain(MEETING_LIST_COPY.drafts);
+    expect(text).toContain("Draft");
     expect(text).toContain("This week");
     expect(text).toContain(MEETING_LIST_COPY.recorded);
     expect(text).toContain(MEETING_LIST_COPY.decisions(2));

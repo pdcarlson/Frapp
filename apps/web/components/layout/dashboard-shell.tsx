@@ -428,7 +428,8 @@ export function DashboardShell({
   }, [navCollapsed]);
 
   const chatPanelClassName = cn(
-    "flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+    // `clip`, as `<main>` is: never a scroll container that hides its header.
+    "flex min-h-0 min-w-0 flex-col overflow-clip bg-background",
     onChatRoute
       ? // Alone: the whole row. Closed, it still shows below the
         // side-by-side width, where `/chat` is the chat page.
@@ -599,11 +600,19 @@ export function DashboardShell({
           for, so the skip link, the confirm dialog's focus fallback
           (`confirm-dialog.tsx`) and the 375px floor suite, which measures
           inside `<main>`, all reach chat as well as the page.
+
+          `overflow-clip`, not `hidden`, for the shell's own reason (#4000,
+          above): a `hidden` box is still a scroll container, so a jump, a
+          focused control or an anchor deep in a long page (minutes) scrolled
+          `<main>` itself and slid the page's header, its title and X, up
+          under the top bar, with no wheel to bring it back (Paul,
+          2026-11-20: "no way for me to x out or to go back"). Only the page
+          and chat's own scrollers scroll.
         */}
         <main
           id="main-content"
           ref={splitRowRef}
-          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          className="flex min-h-0 min-w-0 flex-1 overflow-clip"
         >
           {/*
             The tool page. It scrolls independently of the nav, which is what
