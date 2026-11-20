@@ -1815,13 +1815,18 @@ describe("MinutesPage", () => {
       );
     });
 
-    it("offers Link an event on minutes whose event is gone", () => {
+    it("offers Link a meeting on minutes with no meeting, and holds Post until then (Paul, 2026-11-20)", () => {
       mocks.draft.current = null;
       loaded({ ...ownDraft(), event_id: null });
       render(<MinutesPage id="m-1" />);
       expect(
-        screen.getByRole("button", { name: "Link an event" }),
+        screen.getByRole("button", { name: "Link a meeting" }),
       ).toBeTruthy();
+      const post = screen.getByRole("button", {
+        name: "Link a meeting first",
+      }) as HTMLButtonElement;
+      expect(post.disabled).toBe(true);
+      expect(screen.queryByRole("button", { name: "Post" })).toBeNull();
     });
   });
 });

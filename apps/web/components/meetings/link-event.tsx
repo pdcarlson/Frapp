@@ -6,6 +6,7 @@ import { useEvents, useLinkMeetingEvent, useMeetings } from "@repo/hooks";
 import {
   DEFAULT_MEETING_NAME,
   MEETING_ENTRY_COPY,
+  MINUTES_WITHOUT_MEETING_NAME,
   MEETING_NOTE_TAKERS_COPY,
   meetingWhenLabel,
 } from "@repo/validation";
@@ -24,10 +25,12 @@ const RECENT_DAYS = 60;
 type EventRow = { id: string; name: string; start_time: string };
 
 /**
- * Minutes whose event was deleted (`spec/behavior/meetings.md` § Who can read
- * minutes, #4935): only editors read them until they are linked again. Pick
- * the meeting's event from the recent ones without minutes, or make the
- * quiet after-the-fact event, as starting minutes does.
+ * Minutes with no meeting (`spec/behavior/meetings.md` § Linking a meeting
+ * later): started with none, or whose event was deleted. Only their author
+ * and editors read them, and they can't be posted, until they are linked.
+ * Pick the meeting from the recent ones without minutes, or add it to the
+ * calendar as the quiet after-the-fact event. A state row with its action,
+ * never a paragraph (Paul, 2026-11-20: indicate, don't narrate).
  */
 export function LinkEventPanel({
   meetingId,
@@ -45,7 +48,9 @@ export function LinkEventPanel({
   const [open, setOpen] = useState(false);
   const [making, setMaking] = useState(false);
   const [meeting, setMeeting] = useState<OffCalendarMeeting>({
-    name: meetingName,
+    // Minutes started with no meeting go by a placeholder, which is no
+    // meeting's name: blank, so it is made as "Chapter meeting".
+    name: meetingName === MINUTES_WITHOUT_MEETING_NAME ? "" : meetingName,
     date: "",
     startTime: "",
     endTime: "",
@@ -87,14 +92,7 @@ export function LinkEventPanel({
   }
 
   function makeIt() {
-    const span = offCalendarSpan(
-      meeting,
-      asArray<EventRow>(eventsQuery.data),
-      new Date(),
-      // These minutes are written: their meeting is over, so today doesn't
-      // mean starting now.
-      { live: false },
-    );
+    const span = offCalendarSpan(meeting, asArray<EventRow>(eventsQuery.data));
     if ("problem" in span) {
       setProblem(span.problem);
       return;
@@ -115,25 +113,26 @@ export function LinkEventPanel({
   return (
     <section
       aria-labelledby={`${ids}-heading`}
-      className="space-y-3 rounded-lg border border-warning/30 bg-warning-tint p-4"
+      className="space-y-3 rounded-lg border border-border bg-card p-3"
     >
-      <p id={`${ids}-heading`} className="text-sm">
-        {MEETING_NOTE_TAKERS_COPY.noEvent}
-      </p>
-      {!open ? (
-        <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
-          {MEETING_NOTE_TAKERS_COPY.linkEvent}
-        </Button>
-      ) : (
+      <div className="flex items-center gap-3">
+        <p
+          id={`${ids}-heading`}
+          className="min-w-0 flex-1 text-sm font-semibold"
+        >
+          {MEETING_NOTE_TAKERS_COPY.noEvent}
+        </p>
+        {!open ? (
+          <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+            {MEETING_NOTE_TAKERS_COPY.linkEvent}
+          </Button>
+        ) : null}
+      </div>
+      {open ? (
         <div className="space-y-3">
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold">
-              {MEETING_NOTE_TAKERS_COPY.linkPick}
-            </h3>
-            <p className="text-caption text-muted-foreground">
-              {MEETING_NOTE_TAKERS_COPY.linkHint}
-            </p>
-          </div>
+          <h3 className="text-sm font-semibold">
+            {MEETING_NOTE_TAKERS_COPY.linkPick}
+          </h3>
           {recent.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               {MEETING_NOTE_TAKERS_COPY.linkNone}
@@ -184,7 +183,7 @@ export function LinkEventPanel({
             </p>
           ) : null}
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

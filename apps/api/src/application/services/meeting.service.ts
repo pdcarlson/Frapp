@@ -18,6 +18,9 @@ import {
   normalizeMeetingSections,
   eventSeriesKey,
   minutesGist,
+  isMeetingContentEmpty,
+  guessMeetingType,
+  MINUTES_WITHOUT_MEETING_NAME,
   readMeetingContent,
   type MeetingContent,
   type MeetingTabledItem,
@@ -33,7 +36,10 @@ import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repositor
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
-import type { Meeting } from '#domain/entities/meeting.entity';
+import {
+  LIVE_RECORDING_STALE_MS,
+  type Meeting,
+} from '#domain/entities/meeting.entity';
 import type { Event } from '#domain/entities/event.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { EventService } from './event.service';
@@ -54,6 +60,14 @@ export interface MeetingListFacts {
   recorded: boolean;
   /** The TL;DR's first line, for the list row to say what happened. */
   gist: string | null;
+  /**
+   * Whether anything is in the minutes yet: a written section, someone's
+   * notes, or a recording. A draft without is "Not started", not "Drafting"
+   * (Paul, 2026-11-20).
+   */
+  started: boolean;
+  /** Who is recording the meeting on their phone right now, else `null`. */
+  recording_by: string | null;
 }
 
 /**
@@ -64,6 +78,12 @@ export type PostedMinutesListener = (
   meeting: Meeting,
   change: { reason: 'posted' | 'edited'; actorId: string },
 ) => Promise<void>;
+
+/**
+ * What a feature does when minutes are linked to a meeting: the recording
+ * notice waits for an audience (`meetings.md` § Recording notice).
+ */
+export type MinutesLinkedListener = (meeting: Meeting) => Promise<void>;
 
 /** The most minutes the list reads; a chapter meets about weekly. */
 const MEETING_LIST_LIMIT = 500;
@@ -95,7 +115,11 @@ export type MeetingContentPatch = Partial<MeetingContent>;
 export interface StartMeetingInput {
   meeting_type: string;
   other_label?: string | null;
-  /** The meeting's event. Exactly one of this and `new_event`. */
+  /**
+   * The meeting's event. At most one of this and `new_event`; with neither,
+   * the minutes start with no meeting and are linked to one later (Paul,
+   * 2026-11-20), which they need before they can be posted.
+   */
   event_id?: string;
   /**
    * A meeting with no event gets one now, with the audience the officer
@@ -145,6 +169,7 @@ interface ViewerAccess {
 export class MeetingService {
   private readonly logger = new Logger(MeetingService.name);
   private readonly postedListeners: PostedMinutesListener[] = [];
+  private readonly linkedListeners: MinutesLinkedListener[] = [];
 
   constructor(
     @Inject(MEETING_REPOSITORY)
@@ -167,6 +192,14 @@ export class MeetingService {
    */
   onPostedMinutesSaved(listener: PostedMinutesListener): void {
     this.postedListeners.push(listener);
+  }
+
+  /**
+   * Runs `listener` once minutes are linked to a meeting (Link a meeting).
+   * Like a posted listener, a failure is reported and never fails the link.
+   */
+  onMinutesLinked(listener: MinutesLinkedListener): void {
+    this.linkedListeners.push(listener);
   }
 
   private async tellPostedListeners(
@@ -258,7 +291,15 @@ export class MeetingService {
     const drafts = rows.flatMap((row) =>
       row.status === 'draft' ? [row.id] : [],
     );
-    const recorded = await this.meetingRepo.findRecordedIds(chapterId, drafts);
+    const [recorded, withNotes, recorders] = await Promise.all([
+      this.meetingRepo.findRecordedIds(chapterId, drafts),
+      this.meetingRepo.findWithNotesIds(chapterId, drafts),
+      this.meetingRepo.findLiveRecorders(
+        chapterId,
+        drafts,
+        new Date(Date.now() - LIVE_RECORDING_STALE_MS).toISOString(),
+      ),
+    ]);
 
     const facts = new Map<string, MeetingListFacts>();
     for (const row of rows) {
@@ -274,6 +315,12 @@ export class MeetingService {
         action_item_count: content.action_items.length,
         recorded: row.transcript !== null || recorded.has(row.id),
         gist: minutesGist(content.tldr),
+        started:
+          row.status === 'posted' ||
+          !isMeetingContentEmpty(content) ||
+          recorded.has(row.id) ||
+          withNotes.has(row.id),
+        recording_by: recorders.get(row.id) ?? null,
       });
     }
     return facts;
@@ -511,10 +558,13 @@ export class MeetingService {
   ): Promise<MeetingView> {
     const meetingType = this.meetingTypeOf(input.meeting_type);
     const otherLabel = otherLabelFor(meetingType, input.other_label);
-    if (!input.event_id === !input.new_event) {
+    if (input.event_id && input.new_event) {
       throw new BadRequestException(
         'Send the meeting’s event_id, or new_event to make one, but not both.',
       );
+    }
+    if (!input.event_id && !input.new_event) {
+      return this.startUnlinked(chapterId, userId, meetingType, otherLabel);
     }
 
     let event: Event;
@@ -557,6 +607,42 @@ export class MeetingService {
       chapterId,
       created,
       event,
+      userId,
+      await this.access(chapterId, userId),
+    );
+  }
+
+  /**
+   * Minutes with no meeting yet (Paul, 2026-11-20: "record minutes for no
+   * meeting and then link them to a meeting afterwards"): a draft dated now,
+   * its author's alone, until Link a meeting gives it an event and with it
+   * an audience. It can't be posted before then (`post`).
+   */
+  private async startUnlinked(
+    chapterId: string,
+    userId: string,
+    meetingType: MeetingType,
+    otherLabel: string | null,
+  ): Promise<MeetingView> {
+    const created = await this.meetingRepo.create({
+      chapter_id: chapterId,
+      event_id: null,
+      event_name: MINUTES_WITHOUT_MEETING_NAME,
+      event_start_time: new Date().toISOString(),
+      meeting_type: meetingType,
+      other_label: otherLabel,
+      status: 'draft',
+      content: { ...EMPTY_MEETING_CONTENT },
+      created_by: userId,
+      updated_by: userId,
+    });
+    if (!created) {
+      throw new ConflictException('These minutes changed. Reload them.');
+    }
+    return this.view(
+      chapterId,
+      created,
+      null,
       userId,
       await this.access(chapterId, userId),
     );
@@ -631,6 +717,14 @@ export class MeetingService {
     const event = await this.liveEvent(chapterId, meeting);
     if (meeting.status === 'posted') {
       return this.view(chapterId, meeting, event, userId, access);
+    }
+    if (!event) {
+      // The event is what says who reads posted minutes (§ Who can read
+      // minutes): minutes with none are linked to a meeting first.
+      throw new ConflictException({
+        code: 'meeting.no_event',
+        message: 'Link these minutes to a meeting before posting them.',
+      });
     }
     const saved = await this.meetingRepo.update(
       chapterId,
@@ -725,8 +819,15 @@ export class MeetingService {
     eventVisible: (eventId: string) => boolean,
   ): boolean {
     if (access.canEditAny) return true;
-    // Minutes whose event is gone are for `meetings:edit` holders alone.
-    if (!meeting.event_id || !eventVisible(meeting.event_id)) return false;
+    // A draft with no meeting is its author's until it is linked to one:
+    // minutes started with no meeting (Paul, 2026-11-20), or a draft whose
+    // event was deleted.
+    if (!meeting.event_id) {
+      return meeting.status === 'draft' && meeting.created_by === viewerId;
+    }
+    // Posted minutes whose event is gone are for `meetings:edit` holders
+    // alone.
+    if (!eventVisible(meeting.event_id)) return false;
     // A draft is its author's until it is posted; the author still has to be
     // someone the event shows itself to.
     return meeting.status === 'posted' || meeting.created_by === viewerId;
@@ -828,8 +929,12 @@ export class MeetingService {
       canDelete: has(SystemPermissions.MEETINGS_DELETE),
     };
     const eventVisible = await this.eventShowsTo(chapterId, meeting, userId);
+    // The author of a draft with no meeting yet edits it too (§ Who can
+    // read minutes), as `readable` lets them read it.
+    const ownUnlinkedDraft = !meeting.event_id && meeting.status === 'draft';
     const canEdit =
-      access.canEditAny || (meeting.created_by === userId && eventVisible);
+      access.canEditAny ||
+      (meeting.created_by === userId && (eventVisible || ownUnlinkedDraft));
     return {
       meeting,
       canEdit,
@@ -885,11 +990,98 @@ export class MeetingService {
   }
 
   /**
-   * Links minutes that have no event to one (`meetings.md` § Minutes are
-   * always linked to an event, #4935): minutes whose event was deleted.
-   * Only a `meetings:edit` holder reads such minutes, so only they link
-   * them. The event must not have minutes of its own; `new_event` makes the
-   * same quiet event starting minutes does.
+   * The recording phone says it is recording these minutes (Paul,
+   * 2026-11-20: "Winston Hewitt is recording"): on start and every minute
+   * after. Whoever may upload the recording may say so (`editableBy`).
+   */
+  async markLiveRecording(
+    chapterId: string,
+    id: string,
+    userId: string,
+  ): Promise<void> {
+    const { meeting } = await this.editable(chapterId, id, userId);
+    if (meeting.status !== 'draft') return;
+    await this.meetingRepo.markLiveRecording(
+      chapterId,
+      id,
+      userId,
+      new Date().toISOString(),
+    );
+  }
+
+  /**
+   * The meetings being recorded right now whose events the viewer can see,
+   * for anyone the meeting invites (the event's Minutes row on web and
+   * phone): who, since when, and which event. A recording is announced to
+   * the room before it starts (§ Recording notice), so saying who is
+   * recording shows nothing of the draft itself, which stays its author's.
+   * Minutes with no meeting have no audience and are left out.
+   */
+  async liveRecordingsVisibleTo(
+    chapterId: string,
+    viewerId: string,
+  ): Promise<
+    {
+      meeting_id: string;
+      event_id: string;
+      user_id: string;
+      started_at: string;
+    }[]
+  > {
+    const live = await this.meetingRepo.findLiveRecordings(
+      chapterId,
+      new Date(Date.now() - LIVE_RECORDING_STALE_MS).toISOString(),
+    );
+    if (live.length === 0) return [];
+    const meetings = (
+      await this.meetingRepo.findByIds(
+        chapterId,
+        live.map((row) => row.meeting_id),
+      )
+    ).filter(
+      (row): row is Meeting =>
+        row !== null && row.status === 'draft' && row.event_id !== null,
+    );
+    const visible = new Set(
+      (
+        await this.visibleEvents(
+          chapterId,
+          viewerId,
+          meetings.map((row) => row.event_id!),
+        )
+      ).map((event) => event.id),
+    );
+    const eventOf = new Map(meetings.map((row) => [row.id, row.event_id!]));
+    return live.flatMap((row) => {
+      const eventId = eventOf.get(row.meeting_id);
+      return eventId && visible.has(eventId)
+        ? [
+            {
+              meeting_id: row.meeting_id,
+              event_id: eventId,
+              user_id: row.user_id,
+              started_at: row.started_at,
+            },
+          ]
+        : [];
+    });
+  }
+
+  /** The phone stopped recording, or never started: nobody is, by it. */
+  async clearLiveRecording(
+    chapterId: string,
+    id: string,
+    userId: string,
+  ): Promise<void> {
+    await this.meetingRepo.clearLiveRecording(chapterId, id, userId);
+  }
+
+  /**
+   * Links minutes that have no event to one (`meetings.md` § Linking a
+   * meeting later): minutes started with no meeting, or whose event was
+   * deleted. Whoever may edit them links them: the author of a draft, or a
+   * `meetings:edit` holder. The event must not have minutes of its own;
+   * `new_event` makes the same quiet event starting minutes does.
    */
   async linkEvent(
     chapterId: string,
@@ -923,6 +1115,11 @@ export class MeetingService {
         event_id: event.id,
         event_name: event.name,
         event_start_time: event.start_time,
+        // Minutes started with no meeting are filed as Other, unnamed: the
+        // meeting they join says what they are, as starting on it would.
+        ...(meeting.meeting_type === 'other' && !meeting.other_label
+          ? { meeting_type: guessMeetingType(event.name) }
+          : {}),
         updated_by: userId,
       });
     } catch (error) {
@@ -942,6 +1139,18 @@ export class MeetingService {
       // trying again doesn't leave a second one behind.
       if (input.new_event) await this.events.delete(event.id, chapterId);
       throw this.stale();
+    }
+    for (const listener of this.linkedListeners) {
+      try {
+        await listener(saved);
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'meeting-linked-listener',
+          message: `a linked-minutes listener failed for meeting ${saved.id}`,
+          error,
+        });
+      }
     }
     return this.view(chapterId, saved, event, userId, access);
   }

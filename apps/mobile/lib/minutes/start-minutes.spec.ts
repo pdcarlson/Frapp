@@ -68,7 +68,7 @@ describe("meetingChoices", () => {
     expect(choices.options.map((option) => option.title)).toEqual([
       "Chapter Meeting",
       "Chapter Meeting",
-      MEETING_START_COPY.newTitle,
+      MEETING_START_COPY.noneTitle,
     ]);
     expect(choices.options[0].detail).toBe(MEETING_START_COPY.onNow);
     // Older than two weeks is not listed.
@@ -81,9 +81,9 @@ describe("meetingChoices", () => {
     ).toBe(false);
   });
 
-  it("picks a new meeting when nothing is on now", () => {
+  it("picks No meeting when nothing is on now", () => {
     const choices = meetingChoices([lastWeek], [], ME, NOW);
-    expect(choices.picked).toEqual({ kind: "new" });
+    expect(choices.picked).toEqual({ kind: "none" });
   });
 
   it("reopens the member's own draft on the meeting on now", () => {
@@ -98,18 +98,41 @@ describe("meetingChoices", () => {
     expect(own.options[0].detail).toContain(MEETING_START_COPY.yours);
   });
 
-  it("names the meeting on now as taken when its minutes are someone else's, rather than start a second", () => {
+  it("lists the meeting on now with Open minutes when the member can read them, and picks No meeting", () => {
     for (const held of [
       minutes("tonight", "draft", "someone-else"),
       minutes("tonight", "posted", ME),
     ]) {
       const choices = meetingChoices([tonight], [held], ME, NOW);
-      expect(choices.picked).toBeNull();
+      expect(choices.picked).toEqual({ kind: "none" });
       expect(choices.taken?.id).toBe("tonight");
-      expect(choices.options.map((option) => option.title)).toEqual([
-        MEETING_START_COPY.newTitle,
+      expect(
+        choices.options.map((option) => [
+          option.title,
+          option.detail,
+          option.opens ?? null,
+          option.disabled ?? false,
+        ]),
+      ).toEqual([
+        ["Chapter Meeting", "On now · Open minutes", "m-tonight", false],
+        [MEETING_START_COPY.noneTitle, "Link one later", null, false],
       ]);
     }
+  });
+
+  it("shows a meeting whose minutes the member can't read as Has minutes, never to pick", () => {
+    const choices = meetingChoices(
+      [tonight],
+      [],
+      ME,
+      NOW,
+      new Set(["tonight"]),
+    );
+    expect(choices.options[0]).toMatchObject({
+      title: "Chapter Meeting",
+      detail: "On now · Has minutes",
+      disabled: true,
+    });
   });
 
   it("treats an event the server refused as taken, though its minutes can't be read", () => {
@@ -121,7 +144,7 @@ describe("meetingChoices", () => {
       new Set(["tonight"]),
     );
     expect(choices.taken?.id).toBe("tonight");
-    expect(choices.picked).toBeNull();
+    expect(choices.picked).toEqual({ kind: "none" });
   });
 
   it("never takes a creatorless draft for the member's own", () => {
@@ -139,9 +162,9 @@ describe("meetingChoices", () => {
       "2026-11-17T21:00:00",
     );
     const choices = meetingChoices([hearing], [], ME, NOW);
-    expect(choices.picked).toEqual({ kind: "new" });
+    expect(choices.picked).toEqual({ kind: "none" });
     expect(choices.options.map((option) => option.title)).toEqual([
-      MEETING_START_COPY.newTitle,
+      MEETING_START_COPY.noneTitle,
     ]);
   });
 });

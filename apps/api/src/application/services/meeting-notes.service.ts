@@ -578,7 +578,9 @@ export class MeetingNotesService {
       },
       takers,
       others_count: others.length,
-      can_add: canEdit,
+      // Note-takers are the meeting's invitees: minutes with no meeting
+      // have none to add until one is linked.
+      can_add: canEdit && !!meeting.event_id,
       joined: !!own || canEdit,
     };
   }

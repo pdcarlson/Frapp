@@ -53,22 +53,23 @@ export function MeetingTypeTile({
   );
 }
 
+/** What a row's tags are worked out from (`minutesRowTags`). */
+export type MinutesRowFacts = Parameters<typeof minutesRowTags>[0];
+
 /**
  * One row of the Minutes list, or of a series' list: the type's tile, the
  * title, the time on the right, and tags worked out from the minutes
- * themselves, never typed (#5291 is typed tags): Draft, Recorded, and how
- * many decisions and action items they hold.
+ * themselves, never typed (#5291 is typed tags): where a draft stands in one
+ * tag ("Not started", "Drafting", "Winston Hewitt is recording"), No meeting,
+ * Recorded, and how many decisions and action items they hold.
  */
 export function MinutesRow({
   title,
   type,
   otherLabel,
   time,
-  draft,
-  recorded,
-  decisions,
-  actionItems,
-  byline,
+  facts,
+  who,
   gist,
   showType = false,
   onPress,
@@ -77,12 +78,9 @@ export function MinutesRow({
   type: string;
   otherLabel: string | null;
   time: string;
-  draft: boolean;
-  recorded: boolean;
-  decisions: number;
-  actionItems: number;
-  /** Someone else's draft says whose. */
-  byline?: string | null;
+  facts: MinutesRowFacts;
+  /** Whom a draft's state names when it isn't the reader (`minutesStateWho`). */
+  who?: string | null;
   /** The TL;DR's first line: what happened, at a glance. */
   gist?: string | null;
   /** Say the type in words too (`showsTypeTag`). */
@@ -92,15 +90,7 @@ export function MinutesRow({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const typeLabel = meetingTypeLabel(type as MeetingType, otherLabel);
-  const shared = minutesRowTags(
-    {
-      status: draft ? "draft" : "posted",
-      recorded,
-      decision_count: decisions,
-      action_item_count: actionItems,
-    },
-    byline,
-  );
+  const shared = minutesRowTags(facts, who);
   const tags = [
     ...(showType ? [typeLabel] : []),
     ...shared.map((tag) => tag.label),
@@ -128,21 +118,14 @@ export function MinutesRow({
         {tags.length > 0 ? (
           <View style={styles.tags}>
             {showType ? <HairlineChip label={typeLabel} /> : null}
-            {shared.map((tag) =>
-              tag.key === "draft" || tag.key === "recorded" ? (
-                <StatusChip
-                  key={tag.key}
-                  label={tag.label}
-                  hue={
-                    tag.key === "draft"
-                      ? tokens.color.semantic.warning
-                      : tokens.color.semantic.destructive
-                  }
-                />
+            {shared.map((tag) => {
+              const hue = tagHue(tag.key, tokens);
+              return hue ? (
+                <StatusChip key={tag.key} label={tag.label} hue={hue} />
               ) : (
                 <HairlineChip key={tag.key} label={tag.label} />
-              ),
-            )}
+              );
+            })}
           </View>
         ) : null}
         {gist ? (
@@ -155,6 +138,26 @@ export function MinutesRow({
       <ForwardGlyph color={tokens.color.text.muted} size={16} />
     </PressableRow>
   );
+}
+
+/**
+ * A tag's colour, the same on both apps: recording now is red, as the
+ * recorder's own dot is; drafting is amber; a recording used is red too.
+ * Not started and No meeting are quiet hairline chips: nothing is happening.
+ */
+function tagHue(
+  key: ReturnType<typeof minutesRowTags>[number]["key"],
+  tokens: SignetTokens,
+): string | null {
+  switch (key) {
+    case "recording":
+    case "recorded":
+      return tokens.color.semantic.destructive;
+    case "drafting":
+      return tokens.color.semantic.warning;
+    default:
+      return null;
+  }
 }
 
 function createStyles(tokens: SignetTokens) {

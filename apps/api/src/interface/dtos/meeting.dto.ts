@@ -358,7 +358,8 @@ export class StartMeetingDto {
 
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'The meeting’s event. Send this or new_event.',
+    description:
+      'The meeting’s event. Send this, new_event, or neither: with neither the minutes start with no meeting, readable by their author alone, and are linked to one (POST /v1/meetings/{id}/event) before they can be posted.',
   })
   @IsOptional()
   @IsUUID()
@@ -512,6 +513,28 @@ export class MeetingListItemDto extends MeetingSummaryDto {
       "The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR.",
   })
   gist: string | null;
+  @ApiProperty({
+    description:
+      'Anything is in the minutes yet: a written section, someone’s notes, or a recording. Always true once posted.',
+  })
+  started: boolean;
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Who is recording the meeting on their phone right now (heard from in the last few minutes). Null when nobody is.',
+  })
+  recording_by: string | null;
+}
+
+/** A meeting being recorded right now (`GET /v1/meetings/live-recordings`). */
+export class MeetingLiveRecordingDto {
+  @ApiProperty({ format: 'uuid' }) meeting_id: string;
+  @ApiProperty({ format: 'uuid' }) event_id: string;
+  @ApiProperty({ format: 'uuid', description: 'Who is recording.' })
+  user_id: string;
+  @ApiProperty({ format: 'date-time' }) started_at: string;
 }
 
 /** A meeting's minutes, as `GET /v1/meetings/:id` and every write return them. */

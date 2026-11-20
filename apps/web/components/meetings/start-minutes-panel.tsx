@@ -2,22 +2,17 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { localIsoDate } from "@repo/formatting";
 import { codeOf } from "@repo/api-sdk";
-import {
-  useEvents,
-  useMeetings,
-  useMyPermissions,
-  useStartMeeting,
-} from "@repo/hooks";
+import { useEvents, useMeetings, useStartMeeting } from "@repo/hooks";
 import {
   MEETING_OTHER_LABEL_MAX_LENGTH,
   MEETING_TYPES,
   MEETING_TYPE_LABELS,
+  MEETING_ENTRY_COPY,
+  MINUTES_START_COPY,
   STANDARDS_MEETING_NOTE,
-  can,
   likelyMeeting,
-  DEFAULT_MEETING_NAME,
+  meetingIsOn,
   type MeetingType,
 } from "@repo/validation";
 import {
@@ -28,7 +23,6 @@ import {
   PanelHeader,
 } from "@/components/shared/panel";
 import { FieldError } from "@/components/shared/short-form";
-import { InlineNote } from "@/components/shared/inline-note";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,10 +35,7 @@ import {
 } from "@repo/hooks/kept-drafts";
 import {
   InlineChange,
-  OffCalendarMeetingFields,
   QuietLine,
-  offCalendarSpan,
-  type OffCalendarMeeting,
 } from "@/components/meetings/off-calendar-meeting";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -72,7 +63,7 @@ type EventRow = {
   end_time?: string | null;
   check_in_opens_minutes?: number | null;
 };
-type Source = { kind: "event"; id: string } | { kind: "new" };
+type Source = { kind: "event"; id: string } | { kind: "none" };
 
 /** The kept draft's name (`@repo/hooks/kept-drafts`, #4593). */
 export const MINUTES_DRAFT = "minutes-start";
@@ -84,36 +75,33 @@ type MinutesDraft = {
   /** The type the officer chose; null follows the guess from the name. */
   type: MeetingType | null;
   otherLabel: string;
-  name: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  audience: "everyone" | "roles";
-  roleIds: string[];
 };
 
 function freshMinutesDraft(): MinutesDraft {
-  return {
-    source: null,
-    type: null,
-    otherLabel: "",
-    name: "",
-    date: localIsoDate(new Date()),
-    startTime: "",
-    endTime: "",
-    audience: "everyone",
-    roleIds: [],
-  };
+  return { source: null, type: null, otherLabel: "" };
 }
 
 /**
- * Start minutes (`spec/behavior/meetings.md` § Writing minutes by hand): pick the
- * meeting from the calendar, the way Granola and Otter attach a note to the
- * calendar event it was taken in, or name one that never made it onto the
- * calendar. One question at a time (#5219): the likely meeting comes picked,
- * the type is guessed from its name and stated in one line, and a meeting off
- * the calendar asks only its name and day. It opens docked in
- * place of the Meetings page, chat staying beside it (2026-11-12, #4593).
+ * A kept draft from before No meeting (2026-11-20) may hold the retired
+ * "new" pick, which named a meeting off the calendar: it reads as no pick.
+ */
+function keptSource(source: unknown): Source | null {
+  if (!source || typeof source !== "object") return null;
+  const kind = (source as { kind?: unknown }).kind;
+  if (kind === "none") return { kind: "none" };
+  const id = (source as { id?: unknown }).id;
+  return kind === "event" && typeof id === "string" ? { kind, id } : null;
+}
+
+/**
+ * Start minutes (`spec/behavior/meetings.md` § Writing minutes by hand): one
+ * list of the calendar's meetings, the way Granola and Otter attach a note to
+ * the event it was taken in, and No meeting to write now and link one later
+ * (Paul, 2026-11-20). The likely meeting comes picked; with none likely, No
+ * meeting does. Each row says where it stands and nothing more: no narration
+ * (Paul, 2026-11-20). The type is guessed from the name and stated in one
+ * line. It opens docked in place of the Meetings page, chat staying beside it
+ * (2026-11-12, #4593).
  */
 export function StartMinutesPanel({
   open,
@@ -130,7 +118,7 @@ export function StartMinutesPanel({
       backLabel="Back to meetings"
     >
       <PanelContent aria-describedby={undefined}>
-        <PanelHeader>New minutes</PanelHeader>
+        <PanelHeader>{MINUTES_START_COPY.heading}</PanelHeader>
         {open ? <StartMinutesForm onDone={() => onOpenChange(false)} /> : null}
       </PanelContent>
     </Panel>
@@ -143,28 +131,20 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
   const eventsQuery = useEvents();
   const meetingsQuery = useMeetings();
-  const permissions = useMyPermissions().data?.permissions ?? [];
-  // Starting minutes is enough to make the quiet after-the-fact event
-  // (#4935): it requires nobody, earns no points and pushes nothing.
-  const canCreateEvents =
-    can("events:create", permissions) || can("meetings:record", permissions);
   const start = useStartMeeting();
 
   const [now] = useState(() => Date.now());
-  const allEvents = useMemo(
-    () => asArray<EventRow>(eventsQuery.data).filter((event) => !!event?.id),
-    [eventsQuery.data],
-  );
   const recent = useMemo<EventRow[]>(() => {
     const from = now - RECENT_DAYS * 86_400_000;
     const to = now + AHEAD_HOURS * 3_600_000;
-    return allEvents
+    return asArray<EventRow>(eventsQuery.data)
       .filter((event) => {
+        if (!event?.id) return false;
         const at = Date.parse(event.start_time ?? "");
         return at >= from && at <= to;
       })
       .sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time));
-  }, [allEvents, now]);
+  }, [eventsQuery.data, now]);
   /** Events whose minutes the viewer can already open. */
   const started = useMemo(() => {
     const byEvent = new Map<string, string>();
@@ -182,25 +162,19 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   const draftKey = useKeptDraftKeys().draft(MINUTES_DRAFT);
   const [kept] = useState(() => readKeptDraft<MinutesDraft>(draftKey));
   const initial = kept ?? freshMinutesDraft();
-  const [chosen, setChosen] = useState<Source | null>(initial.source);
-  const [typeChoice, setTypeChoice] = useState<MeetingType | null>(
-    initial.type,
+  const [chosen, setChosen] = useState<Source | null>(() =>
+    keptSource(initial.source),
   );
-  const [otherLabel, setOtherLabel] = useState(initial.otherLabel);
-  const [meeting, setMeeting] = useState<OffCalendarMeeting>({
-    name: initial.name,
-    date: initial.date,
-    startTime: initial.startTime,
-    endTime: initial.endTime,
-    audience: initial.audience,
-    roleIds: initial.roleIds,
-  });
+  const [typeChoice, setTypeChoice] = useState<MeetingType | null>(
+    initial.type ?? null,
+  );
+  const [otherLabel, setOtherLabel] = useState(initial.otherLabel ?? "");
   const [changingType, setChangingType] = useState(false);
   const [showOlder, setShowOlder] = useState(false);
   const draft = useKeptFormDraft<MinutesDraft>(
     MINUTES_DRAFT,
     true,
-    { source: chosen, type: typeChoice, otherLabel, ...meeting },
+    { source: chosen, type: typeChoice, otherLabel },
     { restoredAtMount: kept !== undefined },
   );
   // A start that lands after the officer left the page doesn't pull them to
@@ -216,12 +190,12 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   /*
     One question at a time (#5219): the panel opens on the meeting that is on
     now, or the newest one without minutes, already picked, so a calendar
-    meeting is one press of Write minutes. With nothing on the calendar it
-    opens straight on the meeting's name. The officer's own pick wins, and
-    the panel's pick isn't kept as a draft: an untouched form keeps nothing.
+    meeting is one press of Write minutes. With none likely it opens on No
+    meeting. The officer's own pick wins, and the panel's pick isn't kept as
+    a draft: an untouched form keeps nothing.
   */
   // Events the server said already have minutes this viewer can't see (an
-  // officer's unposted draft): the panel's pick moves past them.
+  // officer's unposted draft): shown as Has minutes, and never picked.
   const [taken, setTaken] = useState<string[]>([]);
   const autoSource = useMemo<Source | null>(() => {
     // Without the minutes list it can't tell which meetings have them.
@@ -232,8 +206,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
       new Set([...started.keys(), ...taken]),
       now,
     );
-    if (likely) return { kind: "event", id: likely.id };
-    return recent.length === 0 && canCreateEvents ? { kind: "new" } : null;
+    return likely ? { kind: "event", id: likely.id } : { kind: "none" };
   }, [
     eventsQuery.isPending,
     meetingsQuery.isPending,
@@ -242,38 +215,28 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     started,
     taken,
     now,
-    canCreateEvents,
   ]);
-  // Back to the list from the meeting's name: nothing picked, and the
-  // panel's own pick stays out of it.
-  const source =
-    chosen?.kind === "event" && !chosen.id ? null : (chosen ?? autoSource);
+  const source = chosen ?? autoSource;
   const sourceName =
     source?.kind === "event"
       ? (recent.find((event) => event.id === source.id)?.name ?? "")
-      : // Left blank, it is made as "Chapter meeting", and filed so.
-        meeting.name.trim() || DEFAULT_MEETING_NAME;
+      : "";
   const type = typeChoice ?? guessMeetingType(sourceName);
 
-  function fill(next: MinutesDraft) {
-    setChosen(next.source);
-    setTypeChoice(next.type);
-    setOtherLabel(next.otherLabel);
-    setMeeting({
-      name: next.name,
-      date: next.date,
-      startTime: next.startTime,
-      endTime: next.endTime,
-      audience: next.audience,
-      roleIds: next.roleIds,
-    });
-  }
   function discard() {
     draft.discard();
-    setProblems({});
-    fill(freshMinutesDraft());
+    setProblem(null);
+    setChosen(null);
+    setTypeChoice(null);
+    setOtherLabel("");
   }
-  const [problems, setProblems] = useState<Record<string, string>>({});
+  const [problem, setProblem] = useState<string | null>(null);
+
+  function pick(next: Source) {
+    setChosen(next);
+    setTypeChoice(null);
+    setProblem(null);
+  }
 
   function pickEvent(event: EventRow) {
     const existing = started.get(event.id);
@@ -284,32 +247,15 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
       router.push(meetingHref(existing));
       return;
     }
-    setChosen({ kind: "event", id: event.id });
-    setTypeChoice(null);
-    setProblems({});
-  }
-
-  type Span = { start_time: string; end_time: string };
-  function validate(): { found: Record<string, string>; span: Span | null } {
-    const found: Record<string, string> = {};
-    let span: Span | null = null;
-    if (!source) found.source = "Pick the meeting these minutes are for.";
-    if (source?.kind === "new") {
-      const result = offCalendarSpan(meeting, allEvents, new Date());
-      if ("problem" in result) found[result.field] = result.problem;
-      else span = result;
-      if (meeting.audience === "roles" && meeting.roleIds.length === 0) {
-        found.roles = "Pick at least one role, or choose Everyone.";
-      }
-    }
-    return { found, span };
+    pick({ kind: "event", id: event.id });
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const { found, span } = validate();
-    setProblems(found);
-    if (Object.keys(found).length > 0 || !source) return;
+    if (!source) {
+      setProblem("Pick a meeting, or No meeting.");
+      return;
+    }
     // Out of the store while it runs: coming back mid-start must not offer
     // the same minutes to start twice.
     draft.hold();
@@ -318,15 +264,8 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
         meeting_type: type,
         other_label:
           type === "other" && otherLabel.trim() ? otherLabel.trim() : null,
-        ...(source.kind === "event"
-          ? { event_id: source.id }
-          : {
-              new_event: {
-                name: meeting.name.trim() || DEFAULT_MEETING_NAME,
-                ...span!,
-                role_ids: meeting.audience === "roles" ? meeting.roleIds : [],
-              },
-            }),
+        // No meeting sends neither: the minutes start unlinked.
+        ...(source.kind === "event" ? { event_id: source.id } : {}),
       });
       draft.drop();
       if (!mounted.current) return;
@@ -344,14 +283,13 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
           if (chosen?.kind === "event") setChosen(null);
         }
         toast({
-          title: "These minutes are already started",
-          description:
-            "Someone else started minutes for this meeting. They show on Meetings once they are posted.",
+          title: MEETING_ENTRY_COPY.alreadyStartedTitle,
+          description: MEETING_ENTRY_COPY.alreadyStartedBody,
         });
         return;
       }
       toast({
-        title: "Couldn't start the minutes",
+        title: MEETING_ENTRY_COPY.startFailed,
         description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
@@ -375,97 +313,67 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
         (event, index) => index < FIRST_ROWS || event.id === pickedId,
       );
   const hidden = recent.length - shownEvents.length;
+  // The phone's On now: the meeting whose check-in window is open.
+  const onNowId = useMemo(
+    () => recent.find((event) => meetingIsOn(event, now))?.id ?? null,
+    [recent, now],
+  );
 
   return (
     <>
       <PanelBody as="form" id={`${ids}-form`} onSubmit={submit} noValidate>
         <div className="grid gap-6">
-          {source?.kind === "new" ? (
-            <section aria-label="The meeting" className="grid gap-4">
-              {recent.length > 0 ? (
-                <QuietLine
-                  onClick={() => {
-                    setChosen({ kind: "event", id: "" });
-                    setProblems({});
-                  }}
-                >
-                  Pick it from the calendar instead
-                </QuietLine>
-              ) : null}
-              <OffCalendarMeetingFields
-                value={meeting}
-                onChange={setMeeting}
-                problems={problems}
-                autoFocus={kept === undefined}
-              />
-            </section>
-          ) : (
-            <section aria-labelledby={`${ids}-which`} className="grid gap-2">
-              <h3 id={`${ids}-which`} className="text-sm font-semibold">
-                Which meeting?
-              </h3>
-              {eventsQuery.isPending ? (
-                <p className="text-sm text-muted-foreground">Loading events</p>
-              ) : recent.length === 0 ? (
-                <InlineNote>No events on the calendar lately.</InlineNote>
-              ) : (
-                <ul role="list" className="grid gap-0.5">
-                  {shownEvents.map((event) => {
-                    const held = pickedId === event.id;
-                    const existing = started.has(event.id);
-                    return (
-                      <li key={event.id}>
-                        <button
-                          type="button"
-                          aria-pressed={held}
-                          onClick={() => pickEvent(event)}
-                          className={cn(
-                            "flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-1.5 text-left transition-colors",
-                            held
-                              ? "bg-accent-subtle text-accent-text"
-                              : "hover:bg-card-hover",
-                            FOCUS_RING_OFFSET,
-                          )}
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-semibold">
-                              {event.name}
-                            </span>
-                            <span className="block text-caption text-muted-foreground">
-                              {meetingWhenLabel(event.start_time)}
-                            </span>
-                          </span>
-                          {existing ? (
-                            <span className="shrink-0 text-caption text-muted-foreground">
-                              Open minutes
-                            </span>
-                          ) : null}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+          <section aria-labelledby={`${ids}-which`} className="grid gap-2">
+            <h3 id={`${ids}-which`} className="text-sm font-semibold">
+              {MINUTES_START_COPY.pick}
+            </h3>
+            {eventsQuery.isPending ? (
+              <p className="text-sm text-muted-foreground">Loading</p>
+            ) : null}
+            <ul role="list" className="grid gap-0.5">
+              {shownEvents.map((event) => {
+                const isTaken = taken.includes(event.id);
+                const existing = started.has(event.id);
+                return (
+                  <li key={event.id}>
+                    <PickRow
+                      held={pickedId === event.id}
+                      disabled={isTaken}
+                      onClick={() => pickEvent(event)}
+                      title={event.name}
+                      detail={meetingWhenLabel(event.start_time)}
+                      trailing={
+                        existing
+                          ? MEETING_ENTRY_COPY.open
+                          : isTaken
+                            ? MINUTES_START_COPY.hasMinutes
+                            : onNowId === event.id
+                              ? MINUTES_START_COPY.onNow
+                              : null
+                      }
+                    />
+                  </li>
+                );
+              })}
               {hidden > 0 ? (
-                <QuietLine onClick={() => setShowOlder(true)}>
-                  Show older meetings
-                </QuietLine>
+                <li>
+                  <QuietLine onClick={() => setShowOlder(true)}>
+                    Show older
+                  </QuietLine>
+                </li>
               ) : null}
-              {canCreateEvents ? (
-                <QuietLine
-                  onClick={() => {
-                    setChosen({ kind: "new" });
-                    setProblems({});
-                  }}
-                >
-                  It isn&apos;t on the calendar
-                </QuietLine>
-              ) : null}
-              {problems.source ? (
-                <FieldError>{problems.source}</FieldError>
-              ) : null}
-            </section>
-          )}
+              <li>
+                <PickRow
+                  held={source?.kind === "none"}
+                  onClick={() => pick({ kind: "none" })}
+                  title={MINUTES_START_COPY.noMeeting}
+                  detail={MINUTES_START_COPY.noMeetingDetail}
+                  trailing={null}
+                />
+              </li>
+            </ul>
+            {problem ? <FieldError>{problem}</FieldError> : null}
+          </section>
 
           {source ? (
             <section aria-labelledby={`${ids}-type`} className="grid gap-2">
@@ -475,7 +383,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
                     Type
                   </h3>
                   <SegmentedChoice
-                    label="Meeting type"
+                    label="Type"
                     value={type}
                     onChange={setTypeChoice}
                     options={typeOptions}
@@ -483,9 +391,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
                   />
                   {type === "other" ? (
                     <div className="grid gap-1">
-                      <Label htmlFor={`${ids}-other`}>
-                        What kind of meeting (optional)
-                      </Label>
+                      <Label htmlFor={`${ids}-other`}>Name (optional)</Label>
                       <Input
                         id={`${ids}-other`}
                         value={otherLabel}
@@ -501,7 +407,7 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
                 </>
               ) : (
                 <p id={`${ids}-type`} className="text-sm text-muted-foreground">
-                  Filed as {typeName}.{" "}
+                  Type: {typeName}{" "}
                   <InlineChange onClick={() => setChangingType(true)} />
                 </p>
               )}
@@ -522,9 +428,54 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
           Cancel
         </Button>
         <Button type="submit" form={`${ids}-form`} disabled={start.isPending}>
-          Write minutes
+          {MEETING_ENTRY_COPY.write}
         </Button>
       </PanelFooter>
     </>
+  );
+}
+
+/** One row of the meeting list: its name, when, and where it stands. */
+function PickRow({
+  held,
+  disabled,
+  onClick,
+  title,
+  detail,
+  trailing,
+}: {
+  held: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  title: string;
+  detail: string;
+  trailing: string | null;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={held}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-1.5 text-left transition-colors disabled:cursor-default disabled:opacity-60",
+        held
+          ? "bg-accent-subtle text-accent-text"
+          : "enabled:hover:bg-card-hover",
+        FOCUS_RING_OFFSET,
+      )}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold">{title}</span>
+        <span className="block text-caption text-muted-foreground">
+          {detail}
+        </span>
+      </span>
+      {trailing ? (
+        <span className="shrink-0 text-caption text-muted-foreground">
+          {trailing}
+        </span>
+      ) : null}
+    </button>
   );
 }

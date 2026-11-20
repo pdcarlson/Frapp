@@ -21,6 +21,7 @@ import {
   isBetaOffModule,
   meetingTypeLabel,
   meetingWhenLabel,
+  minutesStateWho,
   minutesToWrite,
   startedEventIds,
   type CalendarMeeting,
@@ -272,12 +273,6 @@ function MinutesScreenBody() {
     router.push({ pathname: "/minutes-details", params: { id } });
 
   const row = (meeting: MinutesListRow) => {
-    const author =
-      meeting.status === "draft" &&
-      meeting.created_by &&
-      meeting.created_by !== viewerId
-        ? names.nameFor(meeting.created_by)
-        : null;
     return (
       <MinutesRow
         key={meeting.id}
@@ -285,11 +280,8 @@ function MinutesScreenBody() {
         type={meeting.meeting_type}
         otherLabel={meeting.other_label}
         time={minutesRowTime(meeting.event_start_time, now)}
-        draft={meeting.status === "draft"}
-        recorded={meeting.recorded}
-        decisions={meeting.decision_count}
-        actionItems={meeting.action_item_count}
-        byline={author ? MEETING_LIST_COPY.draftOf(author) : null}
+        facts={meeting}
+        who={minutesStateWho(meeting, viewerId, names.nameFor)}
         gist={meeting.gist}
         showType={showsTypeTag(meeting, type)}
         onPress={() => open(meeting.id)}
