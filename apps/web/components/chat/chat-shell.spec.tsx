@@ -2357,6 +2357,52 @@ describe("ChatShell when the open channel can't be read any more (#5765)", () =>
     );
     expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-general");
   });
+
+  it("picking another channel from the rail moves on from it", async () => {
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({ unavailable: channelId === "chan-general" }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("chat-channel-unavailable");
+
+    fireEvent.click(screen.getByTestId("pick-random"));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("chat-channel-unavailable")).toBeNull(),
+    );
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-random");
+  });
+
+  it("switching to the other list moves on from it", async () => {
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({ unavailable: channelId === "chan-general" }),
+    );
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("chat-channel-unavailable");
+
+    rerender(<ChatShell initialChannelId="chan-general" view="direct" />);
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("chat-channel-unavailable")).toBeNull(),
+    );
+  });
+
+  it("the same channel refused again says so again", async () => {
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({ unavailable: channelId === "chan-general" }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Browse channels" }),
+    );
+
+    // Opened again, still refused: the note is back, not a dead timeline.
+    await waitFor(() =>
+      expect(mockUseChatChannel).toHaveBeenCalledWith("chan-general"),
+    );
+    expect(await screen.findByTestId("chat-channel-unavailable")).toBeTruthy();
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith(null);
+  });
 });
 
 describe("ChatShell deep-link targets", () => {

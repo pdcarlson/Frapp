@@ -105,7 +105,7 @@ const mocks = vi.hoisted(() => {
     emitTyping: vi.fn(),
     noTypingUsers: Object.freeze([]) as readonly string[],
     getTypingUsers: vi.fn((): readonly string[] => []),
-    isUnavailable: vi.fn((_channelId: string) => false),
+    isUnavailable: vi.fn<(channelId: string) => boolean>(() => false),
     // `.from(...).select(...).in(...)` — the reaction-hydration chain in `queryFn`
     // (its `.order().range()` tail is passed through in the module mock below).
     // Deliberately NOT `null`: mocking the client away skips that branch entirely,
@@ -727,6 +727,31 @@ describe("status subscription", () => {
       mocks.statusListeners.forEach((cb) => cb("live"));
     });
     expect(result.current.unavailable).toBe(true);
+  });
+
+  it("never carries a refused channel's state to the next one, not even for a render (#5765)", async () => {
+    const renders: { id: string; unavailable: boolean }[] = [];
+    const view = renderHook(
+      ({ id }: { id: string }) => {
+        const result = useChatChannel(id);
+        renders.push({ id, unavailable: result.unavailable });
+        return result;
+      },
+      {
+        wrapper: createWrapper(createClient(), newQueryClient()),
+        initialProps: { id: CHANNEL },
+      },
+    );
+    mocks.isUnavailable.mockImplementation((id) => id === CHANNEL);
+    act(() => {
+      mocks.statusListeners.forEach((cb) => cb("live"));
+    });
+    expect(view.result.current.unavailable).toBe(true);
+
+    view.rerender({ id: "another-channel" });
+    const next = renders.filter((r) => r.id === "another-channel");
+    expect(next.length).toBeGreaterThan(0);
+    expect(next.every((r) => !r.unavailable)).toBe(true);
   });
 
   it("hands on the manager's own typing array, re-read on each status ping", async () => {

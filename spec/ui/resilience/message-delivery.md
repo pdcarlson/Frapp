@@ -217,6 +217,11 @@ Supabase Realtime (preferred)
                                   Fetch any messages missed during the gap
 ```
 
+A channel whose join Realtime keeps refusing because the member may not read it (deleted, or their
+access went) is not a disconnect: it is neither polled nor counted toward the switch, and the thread
+says the channel is no longer available instead
+([`realtime-connection.md` § A refused join is not a drop](realtime-connection.md#a-refused-join-is-not-a-drop), #5765).
+
 **A join means streaming** (#5022). Both the gap-recovery read below and the inbox's `joined` take a
 channel's join as the point from which every new row arrives live. Realtime can report a channel
 joined before the replication behind it is streaming, and a row written in between would reach no

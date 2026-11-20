@@ -77,7 +77,7 @@ const mocks = vi.hoisted(() => {
     clearAfterSend,
     noTypingUsers,
     getTypingUsers: vi.fn((): readonly string[] => noTypingUsers),
-    isUnavailable: vi.fn((_channelId: string) => false),
+    isUnavailable: vi.fn<(channelId: string) => boolean>(() => false),
     subscribeStatus: vi.fn((cb: (status: "live") => void) => {
       statusListeners.add(cb);
       return () => {
@@ -970,10 +970,14 @@ describe("useChatChannel — a channel Realtime refused (#5765)", () => {
   });
 
   it("reports it once the manager says so, and only for that channel", async () => {
+    // Every render's answer, so one stale render can't hide behind the last.
+    const renders: { id: string; unavailable: boolean }[] = [];
     const view = renderHook(
       ({ id }: { id: string }) => {
         client = useQueryClient();
-        return useChatChannel(id);
+        const result = useChatChannel(id);
+        renders.push({ id, unavailable: result.unavailable });
+        return result;
       },
       { wrapper, initialProps: { id: CHANNEL_ID } },
     );
@@ -985,7 +989,9 @@ describe("useChatChannel — a channel Realtime refused (#5765)", () => {
 
     // Never carried to the next channel, not even for a render.
     view.rerender({ id: "another-channel" });
-    expect(view.result.current.unavailable).toBe(false);
+    const next = renders.filter((r) => r.id === "another-channel");
+    expect(next.length).toBeGreaterThan(0);
+    expect(next.every((r) => !r.unavailable)).toBe(true);
   });
 });
 
@@ -1061,8 +1067,16 @@ describe("useChatChannel — the typing line (#1004)", () => {
   Chat sits beside those pages (#3779), so the stale page is in view.
 */
 describe("useChatChannel — a record written from chat refreshes its page (#3912)", () => {
-  const CREATED = { data: { card_posted: true }, error: undefined, response: { status: 201 } };
-  const REFUSED = { data: undefined, error: { message: "Forbidden" }, response: { status: 403 } };
+  const CREATED = {
+    data: { card_posted: true },
+    error: undefined,
+    response: { status: 201 },
+  };
+  const REFUSED = {
+    data: undefined,
+    error: { message: "Forbidden" },
+    response: { status: 403 },
+  };
 
   beforeEach(() => {
     window.localStorage.clear();
@@ -1082,7 +1096,9 @@ describe("useChatChannel — a record written from chat refreshes its page (#391
   it("refreshes the Tasks board after a task, and the Service page after a lost hours answer", async () => {
     const { result } = await mountChannel();
     const invalidate = vi.spyOn(client!, "invalidateQueries");
-    mocks.POST.mockResolvedValueOnce(CREATED).mockResolvedValueOnce(LOST_RESPONSE);
+    mocks.POST.mockResolvedValueOnce(CREATED).mockResolvedValueOnce(
+      LOST_RESPONSE,
+    );
 
     await act(async () => {
       await result.current.postTask(CHANNEL_ID, {

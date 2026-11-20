@@ -23,11 +23,12 @@
  *   - Aggregates per-channel subscribe status into `"live" | "polling" |
  *     "reconnecting" | "offline"` for the UI "Reconnecting…" pill, with
  *     exponential backoff (1→2→4→8→16→30s capped) on
- *     `CHANNEL_ERROR`/`TIMED_OUT`. A join refused because the member may not
- *     read the channel is not a drop: it stops being asked for and is reported
- *     `unavailable` (#5765, `markUnavailable`).
- *   - Degrades to a REST polling fallback when any subscribed channel has been
- *     non-live for longer than `POLL_DEGRADE_AFTER_MS`, re-running the same
+ *     `CHANNEL_ERROR`/`TIMED_OUT`. A join Realtime goes on refusing because
+ *     the member may not read the channel is not a drop: it stops being asked
+ *     for and is reported `unavailable` (#5765, `markUnavailable`).
+ *   - Degrades to a REST polling fallback when any subscribed channel (other
+ *     than an `unavailable` one) has been non-live for longer than
+ *     `POLL_DEGRADE_AFTER_MS`, re-running the same
  *     backfill every `POLL_INTERVAL_MS` until Realtime recovers
  *     (`spec/ui/resilience/message-delivery.md#receiving-messages-realtime`). Reconnect backoff keeps running
  *     underneath, so polling is a stopgap, never a replacement.
@@ -55,7 +56,7 @@
  * topic, not re-keying it, is the fix.
  */
 
-import type { QueryClient } from "@tanstack/react-query";
+import type { QueryCache, QueryClient } from "@tanstack/react-query";
 import type {
   RealtimeChannel,
   RealtimePostgresChangesPayload,
@@ -98,7 +99,11 @@ import {
   releaseTopic as releaseRealtimeTopic,
 } from "./topic-registry";
 import { dropNotices } from "./heavy-command-notices";
-import { isJoinDenied } from "./join-denied";
+import {
+  isJoinDenied,
+  onAccessTokenChange,
+  REFUSAL_CONFIRM_MS,
+} from "./join-denied";
 
 export type ConnectionStatus = "live" | "polling" | "reconnecting" | "offline";
 
@@ -198,11 +203,11 @@ interface ManagerContext {
  *   dropped, but a message that landed after the summaries were read and
  *   before this join reached no one (#4961). The client decides whether to
  *   read them again (`createChatActivityHandler` in `@repo/hooks`).
- * - `unavailable`: Realtime refused `channelId`'s join because the member may
- *   not read it (#5765): it was deleted, or their access went. The manager
- *   has stopped asking for it; the client reads the channel list again, so a
- *   deleted channel leaves the rail, and the open thread says it is gone
- *   (`isUnavailable`).
+ * - `unavailable`: Realtime went on refusing `channelId`'s join because the
+ *   member may not read it (#5765): it was deleted, or their access went. The
+ *   manager has stopped asking for it; the client reads the channel list
+ *   again, so a deleted channel leaves the rail, and the open thread says it
+ *   is gone (`isUnavailable`).
  */
 export type MessageActivity =
   | {
@@ -222,13 +227,12 @@ export type MessageActivity =
   | { type: "unavailable"; channelId: string };
 
 /**
- * How long after the session's token is refreshed (or a member signs in) the
- * manager asks again for the channels Realtime refused (#5765). supabase-js
- * hands the new token to Realtime from its own auth listener, and that hand-off
- * is asynchronous, so the rejoin waits for it rather than going out on the old
- * token.
+ * The query key `useChannels` (`@repo/hooks`, `CHANNEL_LIST_KEY`) caches the
+ * channel list under, restated because `@repo/hooks` does not depend on this
+ * package. The manager watches it so a channel Realtime refused is asked for
+ * again once the list shows it again (#5765).
  */
-export const UNAVAILABLE_RETRY_AFTER_AUTH_MS = 1_000;
+export const CHANNEL_LIST_QUERY_KEY = ["channels"] as const;
 
 /**
  * How often `resume()`'s probe looks at the socket's outstanding heartbeat. A
@@ -313,11 +317,13 @@ interface PerChannelState {
   refCount: number;
   channel: RealtimeChannel | null;
   /**
-   * `unavailable`: Realtime refused the join because the member may not read
-   * the channel (#5765). Nothing retries it on a timer, polls it or counts it
-   * as a drop; it is asked again only when the session's token changes or the
-   * viewer does (`retryUnavailable`, `configure`), or when the thread opens it
-   * afresh.
+   * `unavailable`: Realtime went on refusing the join because the member may
+   * not read the channel (#5765). Nothing retries it on a timer, polls it or
+   * counts it as a drop. It is asked again, staying `unavailable` while it
+   * waits, when the session's token becomes a different one, when the channel
+   * list shows it again after leaving it out, or when the viewer changes
+   * (`retryUnavailable`, `noteChannelList`, `configure`); and afresh when the
+   * thread is opened again.
    */
   status: "joining" | "live" | "reconnecting" | "unavailable";
   backoffStep: number;
@@ -347,6 +353,18 @@ interface PerChannelState {
    * install a channel. See `attachChannel`.
    */
   attachSeq: number;
+  /**
+   * When Realtime first refused this channel's join since it was last let
+   * through (#5765). A refusal counts only once one is still coming back
+   * `REFUSAL_CONFIRM_MS` after this, so a join refused for a moment (sent
+   * before the client had the member's token) isn't given up on.
+   */
+  firstRefusedAt: number | null;
+  /**
+   * Set when a channel list read while this channel was `unavailable` left it
+   * out, so the list showing it again is news worth one more join (#5765).
+   */
+  listedAbsent: boolean;
 }
 
 interface ThreadTypingState {
@@ -450,13 +468,15 @@ class ChatRealtimeManager {
   private inboxBackoffStep = 0;
   private inboxRetryTimer: ReturnType<typeof setTimeout> | null = null;
   /**
-   * The auth listener that asks again for refused channels when the token
-   * changes (#5765), and the client it listens on, so a rebind to the same
-   * client keeps it and one to another moves it.
+   * The listener that asks again for refused channels when the session's
+   * token changes (#5765), and the client it listens on, so a rebind to the
+   * same client keeps it and one to another moves it.
    */
   private authUnsub: (() => void) | null = null;
   private authClient: SupabaseClient | null = null;
-  private unavailableRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The channel-list watch (`noteChannelList`) and the cache it is on. */
+  private listUnsub: (() => void) | null = null;
+  private listCache: QueryCache | null = null;
   /** The second heartbeat of a `resume()` probe, pending. */
   private probeTimer: ReturnType<typeof setTimeout> | null = null;
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
@@ -493,6 +513,7 @@ class ChatRealtimeManager {
     this.ensureInboxChannel();
     this.ensureTypingTick();
     this.bindAuth(ctx.supabase);
+    this.watchChannelList(ctx.queryClient);
     const net = ctx.net ?? browserNetworkState;
     this.offline = net.isOffline();
     // Re-configure without destroy() must not stack subscriptions. The old
@@ -565,6 +586,7 @@ class ChatRealtimeManager {
     this.netUnsub?.();
     this.netUnsub = null;
     this.unbindAuth();
+    this.unwatchChannelList();
     for (const state of this.channels.values()) {
       if (state.retryTimer) clearTimeout(state.retryTimer);
       if (state.channel) void this.ctx?.supabase.removeChannel(state.channel);
@@ -616,6 +638,8 @@ class ChatRealtimeManager {
       typingLastEmit: 0,
       threadTyping: new Map(),
       attachSeq: 0,
+      firstRefusedAt: null,
+      listedAbsent: false,
     };
     this.channels.set(channelId, state);
     this.openChannel(state);
@@ -1178,6 +1202,8 @@ class ChatRealtimeManager {
       if (subscribeStatus === "SUBSCRIBED") {
         state.status = "live";
         state.backoffStep = 0;
+        state.firstRefusedAt = null;
+        state.listedAbsent = false;
         if (state.retryTimer) {
           clearTimeout(state.retryTimer);
           state.retryTimer = null;
@@ -1187,7 +1213,11 @@ class ChatRealtimeManager {
         // SUBSCRIBED and every subsequent SUBSCRIBED after reconnect.
         void this.runBackfill(state.channelId);
         this.emitStatus();
-      } else if (subscribeStatus === "CHANNEL_ERROR" && isJoinDenied(error)) {
+      } else if (
+        subscribeStatus === "CHANNEL_ERROR" &&
+        isJoinDenied(error) &&
+        this.refusalHolds(state)
+      ) {
         this.markUnavailable(state, topic);
       } else if (
         subscribeStatus === "CHANNEL_ERROR" ||
@@ -1202,7 +1232,24 @@ class ChatRealtimeManager {
   }
 
   /**
-   * Realtime refused this channel's join: the member may not read it (#5765).
+   * Whether a refused join counts as final (#5765): the channel is already
+   * `unavailable` (this was one more ask, refused again), or Realtime has gone
+   * on refusing it for `REFUSAL_CONFIRM_MS` since the first refusal. Until
+   * then a refusal is handled like any failed join, backoff and all, because
+   * one can pass: a join sent before the client had the member's token (a
+   * cold start refreshing a stored session) is checked as nobody and refused,
+   * and the next goes through.
+   */
+  private refusalHolds(state: PerChannelState): boolean {
+    if (state.status === "unavailable") return true;
+    const now = Date.now();
+    state.firstRefusedAt ??= now;
+    return now - state.firstRefusedAt >= REFUSAL_CONFIRM_MS;
+  }
+
+  /**
+   * Realtime keeps refusing this channel's join: the member may not read it
+   * (#5765).
    *
    * Asking again won't change the answer, so the channel leaves every retry
    * path. The refused instance is freed, not just forgotten: phoenix rejoins an
@@ -1212,10 +1259,12 @@ class ChatRealtimeManager {
    * newer attach can be in flight here: each starts by clearing
    * `state.channel`, and this runs only while it still holds the refused one.
    *
-   * The client is told (`unavailable`), so it reads the channel list again and
-   * the thread can say the channel is gone instead of "Reconnecting…".
+   * The client is told (`unavailable`) on the way in, not on a later ask that
+   * is refused again, so it reads the channel list again and the thread can
+   * say the channel is gone instead of "Reconnecting…".
    */
   private markUnavailable(state: PerChannelState, topic: string): void {
+    const already = state.status === "unavailable";
     if (state.retryTimer) {
       clearTimeout(state.retryTimer);
       state.retryTimer = null;
@@ -1226,13 +1275,14 @@ class ChatRealtimeManager {
     state.typingUsers.clear();
     state.threadTyping.clear();
     void this.releaseTopic(topic);
+    if (already) return;
     this.reportActivity({ type: "unavailable", channelId: state.channelId });
     this.emitStatus();
   }
 
   /**
-   * True once Realtime has refused `channelId` because the member may not read
-   * it, until a later join is let through (#5765). A thread shows
+   * True once Realtime has kept refusing `channelId` because the member may
+   * not read it, until a later join is let through (#5765). A thread shows
    * `CHANNEL_UNAVAILABLE_TITLE` (`./join-denied`) in place of its timeline.
    */
   isUnavailable(channelId: string): boolean {
@@ -1240,62 +1290,87 @@ class ChatRealtimeManager {
   }
 
   /**
-   * Asks again for every channel Realtime refused, once (#5765). A new token can
-   * carry access the old one didn't (a role given back, a chapter rejoined), and
-   * it is the only thing short of a new viewer or the thread being opened again
-   * that could change the answer. A channel still refused goes straight back to
-   * `unavailable`, after one join.
+   * Asks once more for the given refused channels, or all of them (#5765). The
+   * channel stays `unavailable` while it waits, so the thread doesn't flash
+   * its timeline and "Reconnecting…" before a refusal puts it back: a join let
+   * through makes it `live`, and one refused again leaves it where it was.
    */
-  private retryUnavailable(): void {
-    let any = false;
-    for (const state of this.channels.values()) {
-      if (state.status !== "unavailable") continue;
-      state.status = "joining";
-      this.reopenChannel(state);
-      any = true;
+  private retryUnavailable(states?: readonly PerChannelState[]): void {
+    for (const state of states ?? [...this.channels.values()]) {
+      if (state.status === "unavailable") this.reopenChannel(state);
     }
-    if (any) this.emitStatus();
   }
 
   /**
-   * Listens for the session's token changing, which is when a refused channel is
-   * worth asking for again (`retryUnavailable`). `INITIAL_SESSION`, which every
-   * new listener is handed at once, is not a change.
+   * Asks again for refused channels each time the session's token becomes a
+   * different one (`onAccessTokenChange`): a new token can carry access the
+   * old one didn't, or belong to another member.
    */
   private bindAuth(supabase: SupabaseClient): void {
     if (this.authClient === supabase && this.authUnsub) return;
     this.unbindAuth();
-    // Test doubles and a client without auth have nothing to listen to.
-    const auth = (supabase as Partial<SupabaseClient>).auth;
-    if (!auth?.onAuthStateChange) return;
-    try {
-      const { data } = auth.onAuthStateChange((event) => {
-        if (event !== "TOKEN_REFRESHED" && event !== "SIGNED_IN") return;
-        if (this.unavailableRetryTimer) {
-          clearTimeout(this.unavailableRetryTimer);
-        }
-        this.unavailableRetryTimer = setTimeout(() => {
-          this.unavailableRetryTimer = null;
-          this.retryUnavailable();
-        }, UNAVAILABLE_RETRY_AFTER_AUTH_MS);
-      });
-      this.authClient = supabase;
-      this.authUnsub = () => data.subscription.unsubscribe();
-    } catch {
-      // Without it a refused channel waits for the thread to be opened again.
-    }
+    this.authClient = supabase;
+    this.authUnsub = onAccessTokenChange(supabase, () =>
+      this.retryUnavailable(),
+    );
   }
 
   private unbindAuth(): void {
-    try {
-      this.authUnsub?.();
-    } catch {
-      // Already gone.
-    }
+    this.authUnsub?.();
     this.authUnsub = null;
     this.authClient = null;
-    if (this.unavailableRetryTimer) clearTimeout(this.unavailableRetryTimer);
-    this.unavailableRetryTimer = null;
+  }
+
+  /**
+   * Watches the channel list (`CHANNEL_LIST_QUERY_KEY`) for a refused channel
+   * coming back (`noteChannelList`). Read access to a channel is decided by
+   * the database when the join is checked, not by the token, so a role given
+   * back changes the answer without any token changing; the list, which the
+   * client reads again after a refusal and whenever roles or groups change,
+   * is where that shows.
+   */
+  private watchChannelList(queryClient: QueryClient): void {
+    const cache = queryClient.getQueryCache();
+    if (this.listCache === cache && this.listUnsub) return;
+    this.unwatchChannelList();
+    this.listCache = cache;
+    this.listUnsub = cache.subscribe((event) => {
+      if (event.type !== "updated" || event.action.type !== "success") return;
+      const key = event.query.queryKey;
+      if (key.length !== 1 || key[0] !== CHANNEL_LIST_QUERY_KEY[0]) return;
+      this.noteChannelList(event.query.state.data);
+    });
+  }
+
+  private unwatchChannelList(): void {
+    this.listUnsub?.();
+    this.listUnsub = null;
+    this.listCache = null;
+  }
+
+  /**
+   * A refused channel the list left out and now shows again is asked for once
+   * more. Only that change counts: a list that goes on showing a channel
+   * Realtime refuses (the two read access a little differently) asks nothing,
+   * so the two disagreeing can't start a loop.
+   */
+  private noteChannelList(data: unknown): void {
+    if (!Array.isArray(data)) return;
+    const listed = new Set<string>();
+    for (const row of data as unknown[]) {
+      const id = (row as { id?: unknown } | null)?.id;
+      if (typeof id === "string") listed.add(id);
+    }
+    const back: PerChannelState[] = [];
+    for (const state of this.channels.values()) {
+      if (state.status !== "unavailable") continue;
+      if (!listed.has(state.channelId)) state.listedAbsent = true;
+      else if (state.listedAbsent) {
+        state.listedAbsent = false;
+        back.push(state);
+      }
+    }
+    if (back.length > 0) this.retryUnavailable(back);
   }
 
   /**

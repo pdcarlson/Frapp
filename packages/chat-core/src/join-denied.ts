@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 /**
  * A Realtime join the server refused because the member may not read the
  * topic, told apart from a join that failed for a reason that passes (#5765).
@@ -36,6 +38,75 @@ export function isJoinDenied(error: unknown): boolean {
   // realtime-js keeps the server's reply as the error's `cause`.
   if (cause && cause !== error) return isJoinDenied(cause);
   return false;
+}
+
+/**
+ * How long a topic must go on being refused before the refusal counts (#5765).
+ *
+ * A join can be refused for a moment that passes: one sent before realtime-js
+ * has the member's token (a cold start whose stored token has to be refreshed
+ * first) is checked as nobody and refused, and its next attempt, a second
+ * later, goes through. So the first refusal is handled like any failed join,
+ * and only a refusal still coming back this long after it gives the topic up.
+ * Phoenix's rejoins (1, 2, 5 s) and the chat backoff (1, 2, 4 s) both get
+ * several attempts in, so a deleted channel stops after about 8 s.
+ */
+export const REFUSAL_CONFIRM_MS = 5_000;
+
+/**
+ * How long after the session's token changes a given-up topic is asked for
+ * again: supabase-js hands Realtime the new token from its own auth listener,
+ * asynchronously, so the rejoin waits for that rather than going out on the
+ * old one.
+ */
+export const RETRY_AFTER_TOKEN_MS = 1_000;
+
+/**
+ * Calls `onChange` (after {@link RETRY_AFTER_TOKEN_MS}) each time the session's
+ * access token becomes a different one: a refresh, or another member signing
+ * in. Read from the token, not the event: auth-js also announces `SIGNED_IN`
+ * for an unchanged session whenever a web tab comes back into view, and that
+ * is no reason to ask again. `INITIAL_SESSION`, which every new listener is
+ * handed at once, sets the token it compares against.
+ *
+ * Returns the unsubscribe, which also cancels a call still waiting. A client
+ * without auth (a test double) gets a no-op.
+ */
+export function onAccessTokenChange(
+  client: SupabaseClient,
+  onChange: () => void,
+): () => void {
+  const auth = (client as Partial<SupabaseClient>).auth;
+  if (!auth?.onAuthStateChange) return () => {};
+  let last: string | null | undefined;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let unsubscribe = () => {};
+  try {
+    const { data } = auth.onAuthStateChange((event, session) => {
+      const token = session?.access_token ?? null;
+      const changed =
+        event !== "INITIAL_SESSION" && token !== null && token !== last;
+      last = token;
+      if (!changed) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        onChange();
+      }, RETRY_AFTER_TOKEN_MS);
+    });
+    unsubscribe = () => data.subscription.unsubscribe();
+  } catch {
+    // Nothing to listen to: what was given up waits for the next open.
+  }
+  return () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    try {
+      unsubscribe();
+    } catch {
+      // Already gone.
+    }
+  };
 }
 
 /**
