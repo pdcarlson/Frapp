@@ -12838,7 +12838,46 @@
             "bearer": []
           }
         ],
-        "summary": "Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). Closes the suggestion; the next upcoming meetings with the same audience offer the item under Suggested. No meeting is picked.",
+        "summary": "Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). It goes onto the next upcoming meeting with the minutes’ audience and type when the caller may edit it; otherwise that meeting offers it under Suggested; with no such meeting yet, it waits for one to be created (30 days at most).",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/{id}/next-agenda/undo": {
+      "post": {
+        "operationId": "AiSuggestionController_undoSendToNextAgenda_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Undo Add to next meeting’s agenda: takes the item back off and puts the suggestion back as it was (#5790).",
         "tags": [
           "AI suggestions"
         ]
@@ -32618,38 +32657,63 @@
           }
         }
       },
-      "NextAgendaItemDto": {
+      "NextAgendaMeetingDto": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid"
           },
-          "meeting_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "The posted minutes it was sent from."
+          "name": {
+            "type": "string"
           },
-          "text": {
+          "start_time": {
             "type": "string",
-            "description": "The words, as the agenda will hold them."
+            "format": "date-time"
           }
         },
         "required": [
           "id",
-          "meeting_id",
-          "text"
+          "name",
+          "start_time"
         ]
       },
       "SendToNextAgendaResponseDto": {
         "type": "object",
         "properties": {
-          "item": {
-            "$ref": "#/components/schemas/NextAgendaItemDto"
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "placed",
+              "offered",
+              "waiting"
+            ],
+            "description": "`placed`: on `meeting`’s agenda. `offered`: under Suggested on `meeting` (the caller can’t edit it, or its agenda is full). `waiting`: no such meeting yet; it goes onto the next one created, for 30 days."
+          },
+          "meeting": {
+            "nullable": true,
+            "description": "Where it went; null while it waits.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NextAgendaMeetingDto"
+              }
+            ]
+          },
+          "source_name": {
+            "type": "string",
+            "description": "The name of the minutes’ own meeting, for “the next Chapter Meeting”."
+          },
+          "text": {
+            "type": "string",
+            "description": "The words, as the agenda holds them."
           }
         },
         "required": [
-          "item"
+          "outcome",
+          "meeting",
+          "source_name",
+          "text"
         ]
       },
       "AiSuggestionDecideItemDto": {

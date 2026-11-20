@@ -32,6 +32,7 @@ import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
 import { MeetingModule } from '../meeting/meeting.module';
 import { MeetingTaskSuggestionsService } from '../../application/services/meeting-task-suggestions.service';
+import { MinutesNextAgendaService } from '../../application/services/minutes-next-agenda.service';
 import { LastYearSuggestionsService } from '../../application/services/last-year-suggestions.service';
 import { LastYearSweepService } from '../../application/workers/last-year-sweep.service';
 import { AiRunsModule } from '../ai-runs/ai-runs.module';
@@ -80,6 +81,7 @@ import { SupabaseMeetingNextAgendaItemRepository } from '../../infrastructure/su
     RequestSuggestionSource,
     TaskSuggestionSource,
     MeetingTaskSuggestionsService,
+    MinutesNextAgendaService,
     LastYearSuggestionsService,
     LastYearSweepService,
     {

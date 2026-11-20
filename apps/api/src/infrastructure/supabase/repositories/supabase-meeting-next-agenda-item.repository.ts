@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   MeetingNextAgendaItem,
+  MeetingNextAgendaItemMove,
   NewMeetingNextAgendaItem,
 } from '#domain/entities/meeting-next-agenda-item.entity';
 import type { IMeetingNextAgendaItemRepository } from '#domain/repositories/meeting-next-agenda-item.repository.interface';
@@ -21,8 +22,8 @@ const IDS_PER_READ = 50;
 
 /**
  * `meeting_next_agenda_items` (#5790). RLS on and no policies: the API's
- * service role is the only reader, and every query here filters on
- * `chapter_id` because nothing else would.
+ * service role is the only reader, and every query here but the sweep
+ * filters on `chapter_id` because nothing else would.
  */
 @Injectable()
 export class SupabaseMeetingNextAgendaItemRepository implements IMeetingNextAgendaItemRepository {
@@ -74,7 +75,7 @@ export class SupabaseMeetingNextAgendaItemRepository implements IMeetingNextAgen
     return data;
   }
 
-  async listForMeetings(
+  async listOffered(
     chapterId: string,
     meetingIds: readonly string[],
   ): Promise<MeetingNextAgendaItem[]> {
@@ -85,6 +86,7 @@ export class SupabaseMeetingNextAgendaItemRepository implements IMeetingNextAgen
         .from('meeting_next_agenda_items')
         .select('*')
         .eq('chapter_id', chapterId)
+        .eq('state', 'offered')
         .in('meeting_id', unique.slice(i, i + IDS_PER_READ))
         .order('created_at', { ascending: true })
         .limit(200);
@@ -92,5 +94,53 @@ export class SupabaseMeetingNextAgendaItemRepository implements IMeetingNextAgen
       rows.push(...data);
     }
     return rows;
+  }
+
+  async listWaiting(
+    chapterId: string,
+    now: string,
+  ): Promise<MeetingNextAgendaItem[]> {
+    const { data, error } = await this.supabase
+      .from('meeting_next_agenda_items')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('state', 'waiting')
+      .gt('expires_at', now)
+      .order('created_at', { ascending: true })
+      .limit(200);
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async moveWaiting(
+    chapterId: string,
+    id: string,
+    move: MeetingNextAgendaItemMove,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('meeting_next_agenda_items')
+      .update({
+        state: move.state,
+        event_id: move.event_id,
+        agenda_item_id: move.state === 'placed' ? move.agenda_item_id : null,
+        expires_at: null,
+      })
+      .eq('chapter_id', chapterId)
+      .eq('id', id)
+      .eq('state', 'waiting')
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return data.length > 0;
+  }
+
+  async deleteExpired(now: string): Promise<number> {
+    const { data, error } = await this.supabase
+      .from('meeting_next_agenda_items')
+      .delete()
+      .eq('state', 'waiting')
+      .lte('expires_at', now)
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return data.length;
   }
 }

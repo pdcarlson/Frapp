@@ -20,6 +20,7 @@ import {
   useMemberDisplayNames,
   useCurrentChapter,
   useSendAiSuggestionToNextAgenda,
+  useUndoAiSuggestionNextAgenda,
   existingTaskLine,
   useSimilarTasks,
   type AiSuggestion,
@@ -39,6 +40,7 @@ import {
   lastYearEventLine,
   isModuleEnabled,
   lastYearTaskLine,
+  nextAgendaOutcomeLines,
 } from "@repo/validation";
 import {
   useAiReport,
@@ -214,6 +216,7 @@ function SuggestedTasks() {
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
   const toNextAgenda = useSendAiSuggestionToNextAgenda();
+  const undoNextAgenda = useUndoAiSuggestionNextAgenda();
   // The next meeting's Suggested list lives on events (#5790): offered only
   // once the chapter is read and has Events on.
   const chapterQuery = useCurrentChapter();
@@ -248,8 +251,12 @@ function SuggestedTasks() {
   }, [planFor]);
   // Said once an event was added from a suggestion, where the row was.
   const [added, setAdded] = useState(false);
-  // Said once a suggestion went to the next meeting's agenda (#5790).
-  const [sentOn, setSentOn] = useState(false);
+  // Said once a suggestion went to the next meeting's agenda (#5790): where
+  // it went, with Undo.
+  const [sentOn, setSentOn] = useState<{
+    id: string;
+    line: string;
+  } | null>(null);
   // The open task each suggestion reads like, from the tasks this officer
   // can see (#5562).
   const similar = useSimilarTasks(tasks);
@@ -335,11 +342,16 @@ function SuggestedTasks() {
   async function sendToNextAgenda(item: Waiting) {
     setGone(null);
     setAdded(false);
-    setSentOn(false);
+    setSentOn(null);
     setBusy({ id: item.id, doing: "dismiss" });
     try {
-      await toNextAgenda.mutateAsync(item.id);
-      setSentOn(true);
+      const lines = nextAgendaOutcomeLines(
+        await toNextAgenda.mutateAsync(item.id),
+      );
+      setSentOn({
+        id: item.id,
+        line: lines.body ? `${lines.title}. ${lines.body}` : `${lines.title}.`,
+      });
     } catch (error) {
       fail(item, error);
     } finally {
@@ -353,7 +365,7 @@ function SuggestedTasks() {
   ) {
     setGone(null);
     setAdded(false);
-    setSentOn(false);
+    setSentOn(null);
     setBusy({ id: item.id, doing: reason ? "already" : "dismiss" });
     try {
       await dismiss.mutateAsync({ id: item.id, reason });
@@ -513,8 +525,26 @@ function SuggestedTasks() {
         {gone ? <InlineNote tone="warning">{gone}</InlineNote> : null}
         {added ? <InlineNote>{LAST_YEAR_COPY.eventAdded}</InlineNote> : null}
         {sentOn ? (
-          <InlineNote>
-            {`${AI_SUGGESTION_COPY.toAgendaDone}. ${AI_SUGGESTION_COPY.toAgendaDoneBody}`}
+          <InlineNote
+            action={{
+              label: AI_SUGGESTION_COPY.undo,
+              onPress: () => {
+                const id = sentOn.id;
+                setSentOn(null);
+                undoNextAgenda
+                  .mutateAsync(id)
+                  .catch((error: unknown) =>
+                    setGone(
+                      `${AI_SUGGESTION_COPY.undoFailed}: ${
+                        aiSuggestionRefusalLine(codeOf(error)) ??
+                        AI_SUGGESTION_COPY.tryAgain
+                      }`,
+                    ),
+                  );
+              },
+            }}
+          >
+            {sentOn.line}
           </InlineNote>
         ) : null}
         {suggestionsQuery.isPending ? (

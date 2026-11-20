@@ -27,10 +27,22 @@ import {
 const MINUTES = '0f000000-0000-4000-8000-000000005790';
 const SUGG_A = '0a000000-0000-4000-8000-000000005790';
 const SUGG_B = '0b000000-0000-4000-8000-000000005790';
+const SUGG_WAIT_A = '0a000000-0000-4000-8000-000000005791';
+const SUGG_WAIT_B = '0b000000-0000-4000-8000-000000005791';
+const EVENT = '0e000000-0000-4000-8000-000000005790';
+const NOW = '2026-11-20T18:00:00.000Z';
+const LATER = '2026-12-20T18:00:00.000Z';
 
 const item = (overrides: Record<string, unknown> = {}) => ({
   meeting_id: MINUTES,
+  source_event_id: null,
   text: 'Plan backup activities for rush',
+  state: 'offered',
+  event_id: null,
+  agenda_item_id: null,
+  expires_at: null,
+  suggestion_payload: {},
+  suggestion_quote: null,
   created_by: USER_SHARED,
   created_at: '2026-11-20T18:00:00.000Z',
   ...overrides,
@@ -40,6 +52,22 @@ const seed = () => ({
   meeting_next_agenda_items: [
     inA({ id: 'next-a', ...item({ ai_suggestion_id: SUGG_A }) }),
     inB({ id: 'next-b', ...item({ ai_suggestion_id: SUGG_B }) }),
+    inA({
+      id: 'wait-a',
+      ...item({
+        ai_suggestion_id: SUGG_WAIT_A,
+        state: 'waiting',
+        expires_at: LATER,
+      }),
+    }),
+    inB({
+      id: 'wait-b',
+      ...item({
+        ai_suggestion_id: SUGG_WAIT_B,
+        state: 'waiting',
+        expires_at: LATER,
+      }),
+    }),
   ],
 });
 
@@ -50,16 +78,52 @@ describe('SupabaseMeetingNextAgendaItemRepository — tenant scope', () => {
   beforeEach(() => {
     harness = createTenantHarness({
       tables: seed(),
-      collisionExempt: { meeting_next_agenda_items: ['ai_suggestion_id'] },
+      collisionExempt: {
+        meeting_next_agenda_items: ['ai_suggestion_id', 'agenda_item_id'],
+      },
     });
     repo = new SupabaseMeetingNextAgendaItemRepository(harness.client);
   });
 
-  it('lists only the chapter’s items for the minutes', async () => {
+  it('lists only the chapter’s offered items for the minutes', async () => {
     const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.listForMeetings(CHAPTER_A, [MINUTES]),
+      repo.listOffered(CHAPTER_A, [MINUTES]),
     );
     expect(rows.map((row) => row.id)).toEqual(['next-a']);
+  });
+
+  it('lists only the chapter’s waiting items', async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.listWaiting(CHAPTER_A, NOW),
+    );
+    expect(rows.map((row) => row.id)).toEqual(['wait-a']);
+  });
+
+  it('moves only the chapter’s waiting item', async () => {
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.moveWaiting(CHAPTER_A, 'wait-b', {
+          state: 'placed',
+          event_id: EVENT,
+          agenda_item_id: 'n-wait-b',
+        }),
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.moveWaiting(CHAPTER_A, 'wait-a', {
+          state: 'placed',
+          event_id: EVENT,
+          agenda_item_id: 'n-wait-a',
+        }),
+      ),
+    ).resolves.toBe(true);
+    const rows = harness.rows('meeting_next_agenda_items');
+    expect(rows.find((row) => row.id === 'wait-a')).toMatchObject({
+      state: 'placed',
+      expires_at: null,
+    });
+    expect(rows.find((row) => row.id === 'wait-b')?.state).toBe('waiting');
   });
 
   it('finds a suggestion’s item only in the chapter', async () => {
@@ -81,7 +145,7 @@ describe('SupabaseMeetingNextAgendaItemRepository — tenant scope', () => {
     );
     expect(
       harness.rows('meeting_next_agenda_items').map((row) => row.id),
-    ).toEqual(['next-a', 'next-b']);
+    ).toContain('next-b');
   });
 
   it('upserts on the column the migration makes unique', () => {

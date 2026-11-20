@@ -262,9 +262,10 @@ export function useDismissAiSuggestion() {
 
 /**
  * Add to next meeting's agenda (#5790): a suggested task from minutes goes
- * to the next same-audience meetings' Suggested agenda items instead of
- * becoming a task. It leaves the lists like a dismissal, and the events'
- * Suggested lists are read again so the next meeting offers it.
+ * onto the next matching meeting's agenda instead of becoming a task (or
+ * under Suggested there, or waits for that meeting to be created; the answer
+ * says which). It leaves the lists like a dismissal, and the events' agendas
+ * and Suggested lists are read again.
  */
 export function useSendAiSuggestionToNextAgenda() {
   const client = useFrappClient();
@@ -278,10 +279,11 @@ export function useSendAiSuggestionToNextAgenda() {
         params: { path: { id } },
       });
       throwUnlessOk(result);
-      return bodyOf(result.data).item;
+      return bodyOf(result.data);
     },
-    onSuccess: (_item, id) => {
+    onSuccess: (_outcome, id) => {
       drop([id], false);
+      void queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
       void queryClient.invalidateQueries({
         queryKey: ["agenda-suggestions", chapterId],
       });
@@ -290,6 +292,35 @@ export function useSendAiSuggestionToNextAgenda() {
       void queryClient.invalidateQueries({
         queryKey: aiSuggestionKeys.all(chapterId),
       }),
+  });
+}
+
+/**
+ * Undo of Add to next meeting's agenda (#5790): the item comes back off the
+ * meeting and the suggestion is waiting again, so every list reads again.
+ */
+export function useUndoAiSuggestionNextAgenda() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["ai-suggestions", "next-agenda-undo"],
+    mutationFn: async (id: string) => {
+      const result = await client.POST(
+        "/v1/ai/suggestions/{id}/next-agenda/undo",
+        { params: { path: { id } } },
+      );
+      throwUnlessOk(result);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: aiSuggestionKeys.all(chapterId),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["agenda-suggestions", chapterId],
+      });
+    },
   });
 }
 

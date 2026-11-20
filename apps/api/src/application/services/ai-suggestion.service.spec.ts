@@ -214,6 +214,25 @@ class FakeRepo implements IAiSuggestionRepository {
     if (row?.status === 'accepting') Object.assign(row, BACK_TO_WAITING);
   });
 
+  reopen = jest.fn(
+    async (
+      chapterId: string,
+      id: string,
+      words: { payload: Record<string, unknown>; quote: string | null },
+      now: string,
+    ) => {
+      const row = this.find(chapterId, id);
+      if (!row || row.status !== 'dismissed' || row.expires_at <= now) {
+        return false;
+      }
+      Object.assign(row, BACK_TO_WAITING, {
+        payload: words.payload,
+        quote: words.quote,
+      });
+      return true;
+    },
+  );
+
   releaseStale = jest.fn(async (before: string) => {
     const stale = this.rows.filter(
       (r) => r.status === 'accepting' && (r.decided_at ?? '') < before,
@@ -1128,6 +1147,32 @@ describe('AiSuggestionService (#4309)', () => {
       });
       expect(options.unmake).toHaveBeenCalledTimes(1);
       expect(made).toHaveLength(0);
+    });
+
+    it('undoes: puts the suggestion back with its words, then takes back what was made', async () => {
+      const { service, repo } = build();
+      const { created } = await proposeTen(service);
+      const { made, options } = handling();
+      await service.handleElsewhere(CHAPTER, OFFICER, created[0].id, options);
+      await service.undoHandled(CHAPTER, OFFICER, created[0].id, {
+        findMade: options.findMade,
+        wordsOf: () => ({ payload: { title: 'Task 1' }, quote: 'Task 1' }),
+        unmake: options.unmake,
+      });
+      expect(repo.rows[0]).toMatchObject({
+        status: 'pending',
+        payload: { title: 'Task 1' },
+        quote: 'Task 1',
+        decided_by: null,
+      });
+      expect(made).toHaveLength(0);
+      // A second Undo finds it waiting and changes nothing.
+      await service.undoHandled(CHAPTER, OFFICER, created[0].id, {
+        findMade: options.findMade,
+        wordsOf: () => ({ payload: {}, quote: null }),
+        unmake: options.unmake,
+      });
+      expect(options.unmake).toHaveBeenCalledTimes(1);
     });
 
     it('refuses a kind it can’t handle, and a member who may not decide it', async () => {

@@ -311,7 +311,7 @@ export class AgendaSuggestionService {
     const { chapterId, event } = context;
     const minutes = context.earlier.map(sourceOf);
     const agenda = event.agenda ?? [];
-    const sentItems = await this.nextAgenda.listForMeetings(
+    const sentItems = await this.nextAgenda.listOffered(
       chapterId,
       context.earlier.map((row) => row.id),
     );

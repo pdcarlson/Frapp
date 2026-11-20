@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
 import { ReportedCron } from './reported-cron.decorator';
 import { AiSuggestionService } from '../services/ai-suggestion.service';
+import { MinutesNextAgendaService } from '../services/minutes-next-agenda.service';
 
 /**
  * Puts back accepts the API never finished, then expires AI suggestions
@@ -17,7 +18,10 @@ export class AiSuggestionExpiryService {
   private readonly logger = new Logger(AiSuggestionExpiryService.name);
   private running = false;
 
-  constructor(private readonly suggestions: AiSuggestionService) {}
+  constructor(
+    private readonly suggestions: AiSuggestionService,
+    private readonly nextAgenda: MinutesNextAgendaService,
+  ) {}
 
   @ReportedCron(CronExpression.EVERY_HOUR)
   async handleAiSuggestionExpirySweep(): Promise<void> {
@@ -32,6 +36,11 @@ export class AiSuggestionExpiryService {
       const expired = await this.suggestions.expireDue();
       if (expired > 0) {
         this.logger.log(`Expired ${expired} AI suggestions`);
+      }
+      // Items sent to a next meeting that was never created (#5790).
+      const dropped = await this.nextAgenda.deleteExpired();
+      if (dropped > 0) {
+        this.logger.log(`Deleted ${dropped} next-agenda items no meeting took`);
       }
     } finally {
       this.running = false;

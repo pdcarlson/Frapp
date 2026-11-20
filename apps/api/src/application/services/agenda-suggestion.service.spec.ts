@@ -229,7 +229,7 @@ function setup(options: {
     { findByChapter: jest.fn(async () => []) } as never,
     { findById: jest.fn(async () => null) } as never,
     {
-      listForMeetings: jest.fn(async (_c: string, ids: readonly string[]) =>
+      listOffered: jest.fn(async (_c: string, ids: readonly string[]) =>
         (options.sent ?? []).filter((item) => ids.includes(item.meeting_id)),
       ),
     } as never,

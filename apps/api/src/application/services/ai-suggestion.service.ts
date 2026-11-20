@@ -905,6 +905,42 @@ export class AiSuggestionService {
   }
 
   /**
+   * Undo of `handleElsewhere` (#5790): puts the suggestion back to waiting
+   * with the words `findMade` kept for it, then takes back what was made.
+   * Refused, with what happened, when there is nothing to undo or the
+   * suggestion can't be put back (it expired since).
+   */
+  async undoHandled<T>(
+    chapterId: string,
+    userId: string,
+    id: string,
+    handling: {
+      findMade: (row: AiSuggestion) => Promise<T | null>;
+      wordsOf: (made: T) => {
+        payload: Record<string, unknown>;
+        quote: string | null;
+      };
+      unmake: (made: T) => Promise<void>;
+    },
+  ): Promise<void> {
+    const { row } = await this.loadForDecision(chapterId, userId, id);
+    const made = await handling.findMade(row);
+    if (!made) {
+      // Undone already (a second tap): it is waiting again, as asked.
+      if (this.isWaiting(row)) return;
+      throw this.refusal(row);
+    }
+    const reopened = await this.repo.reopen(
+      chapterId,
+      id,
+      handling.wordsOf(made),
+      this.now().toISOString(),
+    );
+    if (!reopened) throw this.refusal(await this.reread(chapterId, id));
+    await handling.unmake(made);
+  }
+
+  /**
    * Several decisions in one request, in order, for the review screen's
    * Confirm. Each is decided on its own: one refused doesn't stop the rest,
    * and each outcome says what happened.

@@ -28,6 +28,7 @@ import {
   useMembers,
   useMyPermissions,
   useSendAiSuggestionToNextAgenda,
+  useUndoAiSuggestionNextAgenda,
   existingTaskLine,
   useSimilarTasks,
   type AiSuggestion,
@@ -51,6 +52,7 @@ import {
   aiSuggestionRefusalLine,
   can,
   lastYearTaskLine,
+  nextAgendaOutcomeLines,
 } from "@repo/validation";
 
 import { Button } from "@/components/ui/button";
@@ -67,6 +69,7 @@ import {
   meetingHref,
 } from "@/components/meetings/meeting-copy";
 import { useToast } from "@/lib/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { ReportAiDialog } from "@/components/ai/report-ai";
 import {
@@ -229,6 +232,7 @@ export function SuggestedTasks({
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
   const toNextAgenda = useSendAiSuggestionToNextAgenda();
+  const undoNextAgenda = useUndoAiSuggestionNextAgenda();
   const moduleGate = useChapterModuleGateState();
   // The next meeting's Suggested list lives on events (#5790).
   const eventsOn =
@@ -381,17 +385,49 @@ export function SuggestedTasks({
   }
 
   /**
-   * Add to next meeting's agenda (#5790): instead of a task, the action item
-   * is offered under Suggested on the next meetings with the same people.
-   * No meeting is picked; an officer adds it there.
+   * Add to next meeting's agenda (#5790; Shawn, 2026-11-20): the action item
+   * goes onto the next meeting with the same people, or under Suggested there
+   * when the officer can't edit it, or waits for that meeting to be created.
+   * The toast says which, with Undo and a link to the meeting.
    */
   async function sendToNextAgenda(item: WaitingSuggestion) {
     setBusyId(item.id);
     try {
-      await toNextAgenda.mutateAsync(item.id);
+      const outcome = await toNextAgenda.mutateAsync(item.id);
+      const lines = nextAgendaOutcomeLines(outcome);
       toast({
-        title: AI_SUGGESTION_COPY.toAgendaDone,
-        description: AI_SUGGESTION_COPY.toAgendaDoneBody,
+        title: lines.title,
+        description: outcome.meeting ? (
+          <span className="flex flex-col gap-1">
+            {lines.body ? <span>{lines.body}</span> : null}
+            <Link
+              href={`/events?event=${outcome.meeting.id}`}
+              className="w-fit underline underline-offset-2"
+            >
+              {AI_SUGGESTION_COPY.toAgendaOpen}
+            </Link>
+          </span>
+        ) : (
+          (lines.body ?? undefined)
+        ),
+        action: (
+          <ToastAction
+            altText={`${AI_SUGGESTION_COPY.undo}: ${item.task.title}`}
+            onClick={() =>
+              void undoNextAgenda.mutateAsync(item.id).then(
+                () => toast({ title: AI_SUGGESTION_COPY.undone }),
+                (error: unknown) =>
+                  toast({
+                    title: AI_SUGGESTION_COPY.undoFailed,
+                    description: suggestionRefusalLine(error),
+                    variant: "destructive",
+                  }),
+              )
+            }
+          >
+            {AI_SUGGESTION_COPY.undo}
+          </ToastAction>
+        ),
       });
     } catch (error) {
       toast({

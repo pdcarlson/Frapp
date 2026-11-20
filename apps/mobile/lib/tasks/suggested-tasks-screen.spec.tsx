@@ -31,6 +31,7 @@ const state = vi.hoisted(() => ({
   accept: vi.fn(),
   dismiss: vi.fn(),
   toNextAgenda: vi.fn(),
+  undoNextAgenda: vi.fn(),
   eventsOn: true,
   seed: undefined as unknown,
   canCreateEvents: true,
@@ -95,6 +96,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useDismissAiSuggestion: () => ({ mutateAsync: state.dismiss }),
     useSendAiSuggestionToNextAgenda: () => ({
       mutateAsync: state.toNextAgenda,
+    }),
+    useUndoAiSuggestionNextAgenda: () => ({
+      mutateAsync: state.undoNextAgenda,
     }),
     useCurrentChapter: () => ({
       data: { enabled_modules: state.eventsOn ? {} : { events: false } },
@@ -457,7 +461,17 @@ describe("Suggested tasks", () => {
   });
 
   it("sends one to the next meeting's agenda instead of a task, and says where it went (#5790)", async () => {
-    state.toNextAgenda.mockResolvedValue({ id: "n1" });
+    state.toNextAgenda.mockResolvedValue({
+      outcome: "placed",
+      meeting: {
+        id: "e2",
+        name: "Chapter Meeting",
+        start_time: "2026-11-23T01:00:00.000Z",
+      },
+      source_name: "Chapter Meeting",
+      text: "Book the hall",
+    });
+    state.undoNextAgenda.mockResolvedValue(undefined);
     const tree = render();
     await act(async () =>
       menuAction(tree, "Book the hall", "next-agenda")!.run(),
@@ -465,7 +479,18 @@ describe("Suggested tasks", () => {
     expect(state.toNextAgenda).toHaveBeenCalledWith("s1");
     expect(state.accept).not.toHaveBeenCalled();
     expect(state.dismiss).not.toHaveBeenCalled();
-    expect(screenText(tree)).toContain(AI_SUGGESTION_COPY.toAgendaDone);
+    expect(screenText(tree)).toContain("Added to Chapter Meeting, ");
+    // Undo, in the note, takes it back.
+    await act(async () => {
+      tree.root
+        .findAll(
+          (node) =>
+            node.props.accessibilityRole === "link" &&
+            node.props.accessibilityLabel === AI_SUGGESTION_COPY.undo,
+        )[0]!
+        .props.onPress();
+    });
+    expect(state.undoNextAgenda).toHaveBeenCalledWith("s1");
   });
 
   it("doesn't offer the next meeting's agenda with Events off (#5790)", () => {

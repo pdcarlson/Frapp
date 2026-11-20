@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   accept: vi.fn(),
   dismiss: vi.fn(),
   toNextAgenda: vi.fn(),
+  undoNextAgenda: vi.fn(),
   eventsOn: true,
   decide: vi.fn(),
   toast: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock("@repo/hooks", () => ({
   useAcceptAiSuggestion: () => ({ mutateAsync: mocks.accept }),
   useDismissAiSuggestion: () => ({ mutateAsync: mocks.dismiss }),
   useSendAiSuggestionToNextAgenda: () => ({ mutateAsync: mocks.toNextAgenda }),
+  useUndoAiSuggestionNextAgenda: () => ({ mutateAsync: mocks.undoNextAgenda }),
   useDecideAiSuggestions: () => ({
     mutateAsync: mocks.decide,
     isPending: false,
@@ -372,7 +374,16 @@ describe("SuggestedTasks (#4313)", () => {
 
   it("sends a suggestion to the next meeting's agenda instead of a task (#5790)", async () => {
     mocks.items.current = [suggestion("1")];
-    mocks.toNextAgenda.mockResolvedValue({ id: "n-1" });
+    mocks.toNextAgenda.mockResolvedValue({
+      outcome: "placed",
+      meeting: {
+        id: "e-next",
+        name: "Chapter Meeting",
+        start_time: "2026-11-23T01:00:00.000Z",
+      },
+      source_name: "Chapter Meeting",
+      text: "Task 1",
+    });
     render(
       <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
     );
@@ -383,7 +394,30 @@ describe("SuggestedTasks (#4313)", () => {
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: "Offered for the next meeting's agenda",
+          title: expect.stringMatching(/^Added to Chapter Meeting, /),
+          action: expect.anything(),
+        }),
+      ),
+    );
+  });
+
+  it("says when the item waits for the next meeting to be scheduled (#5790)", async () => {
+    mocks.items.current = [suggestion("1")];
+    mocks.toNextAgenda.mockResolvedValue({
+      outcome: "waiting",
+      meeting: null,
+      source_name: "Chapter Meeting",
+      text: "Task 1",
+    });
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    menuItem("Task 1", "Add to next meeting's agenda");
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title:
+            "Will be added to the next Chapter Meeting when it's scheduled",
         }),
       ),
     );

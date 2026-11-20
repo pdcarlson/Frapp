@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -21,7 +22,7 @@ import {
   AiSuggestionService,
   type AiSuggestionEdits,
 } from '../../application/services/ai-suggestion.service';
-import { MeetingTaskSuggestionsService } from '../../application/services/meeting-task-suggestions.service';
+import { MinutesNextAgendaService } from '../../application/services/minutes-next-agenda.service';
 import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -42,7 +43,6 @@ import {
   DecideAiSuggestionsDto,
   DismissAiSuggestionDto,
   ListAiSuggestionsQueryDto,
-  NextAgendaItemDto,
   SendToNextAgendaResponseDto,
   type EventSuggestionAcceptDto,
   type NewEventSuggestionAcceptDto,
@@ -84,7 +84,7 @@ function editsOf(dto: {
 export class AiSuggestionController {
   constructor(
     private readonly suggestions: AiSuggestionService,
-    private readonly minutesTasks: MeetingTaskSuggestionsService,
+    private readonly nextAgenda: MinutesNextAgendaService,
   ) {}
 
   @Get()
@@ -160,7 +160,7 @@ export class AiSuggestionController {
   @HttpCode(200)
   @ApiOperation({
     summary:
-      'Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). Closes the suggestion; the next upcoming meetings with the same audience offer the item under Suggested. No meeting is picked.',
+      'Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). It goes onto the next upcoming meeting with the minutes’ audience and type when the caller may edit it; otherwise that meeting offers it under Suggested; with no such meeting yet, it waits for one to be created (30 days at most).',
   })
   @ApiOkResponse({ type: SendToNextAgendaResponseDto })
   async sendToNextAgenda(
@@ -169,13 +169,24 @@ export class AiSuggestionController {
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<SendToNextAgendaResponseDto> {
-    const item = await this.minutesTasks.sendToNextAgenda(
-      chapterId,
-      userId,
-      id,
-      enabledModules,
+    return SendToNextAgendaResponseDto.from(
+      await this.nextAgenda.send(chapterId, userId, id, enabledModules),
     );
-    return { item: NextAgendaItemDto.from(item) };
+  }
+
+  @Post(':id/next-agenda/undo')
+  @HttpCode(204)
+  @ApiOperation({
+    summary:
+      'Undo Add to next meeting’s agenda: takes the item back off and puts the suggestion back as it was (#5790).',
+  })
+  @ApiNoContentResponse()
+  async undoSendToNextAgenda(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.nextAgenda.undo(chapterId, userId, id);
   }
 
   @Post('decide')

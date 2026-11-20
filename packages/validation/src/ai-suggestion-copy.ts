@@ -1,3 +1,5 @@
+import { meetingDayLabel } from "./meeting-copy";
+
 /**
  * The words around suggested tasks (#4313, `spec/behavior/meetings.md`
  * § Suggested tasks), shared by web and mobile.
@@ -41,9 +43,18 @@ export const AI_SUGGESTION_COPY = {
    * is picked: an officer adds it there (Paul, 2026-11-18).
    */
   toAgenda: "Add to next meeting's agenda",
-  toAgendaDone: "Offered for the next meeting's agenda",
-  toAgendaDoneBody:
-    "It shows under Suggested on the next meetings with the same people, for an officer to add.",
+  /** What happened, said in the toast (web) or above the list (phone). */
+  toAgendaPlaced: (meeting: string) => `Added to ${meeting}`,
+  toAgendaOffered: (meeting: string) => `Suggested on ${meeting}`,
+  toAgendaOfferedBody:
+    "You can't edit that meeting's agenda, so it's under Suggested there for an officer to add.",
+  toAgendaWaiting: (name: string) =>
+    `Will be added to the next ${name} when it's scheduled`,
+  toAgendaWaitingBody: "If none is scheduled in 30 days, it's dropped.",
+  toAgendaOpen: "Open",
+  undo: "Undo",
+  undone: "Put back in suggested tasks",
+  undoFailed: "Couldn't undo that",
   toAgendaFailed: "Couldn't send that to the next meeting's agenda",
   accepting: "Creating…",
   acceptAll: (count: number) => `Create all ${count}`,
@@ -91,4 +102,42 @@ export function aiSuggestionRefusalLine(
   code: string | null | undefined,
 ): string | null {
   return REFUSALS[code ?? ""] ?? null;
+}
+
+/** Where Add to next meeting's agenda put an item (#5790). */
+export const NEXT_AGENDA_OUTCOMES = ["placed", "offered", "waiting"] as const;
+export type NextAgendaOutcomeKind = (typeof NEXT_AGENDA_OUTCOMES)[number];
+
+/**
+ * What Add to next meeting's agenda says it did (#5790), the same on web and
+ * phone: "Added to Chapter Meeting, Sunday, November 22", "Suggested on …"
+ * when the officer can't edit that meeting, or "Will be added to the next
+ * Chapter Meeting when it's scheduled".
+ */
+export function nextAgendaOutcomeLines(
+  outcome: {
+    outcome: NextAgendaOutcomeKind;
+    meeting: { name: string; start_time: string } | null;
+    source_name: string;
+  },
+  now: Date = new Date(),
+): { title: string; body: string | null } {
+  const where = outcome.meeting
+    ? [outcome.meeting.name, meetingDayLabel(outcome.meeting.start_time, now)]
+        .filter(Boolean)
+        .join(", ")
+    : "";
+  if (outcome.outcome === "placed" && where) {
+    return { title: AI_SUGGESTION_COPY.toAgendaPlaced(where), body: null };
+  }
+  if (outcome.outcome === "offered" && where) {
+    return {
+      title: AI_SUGGESTION_COPY.toAgendaOffered(where),
+      body: AI_SUGGESTION_COPY.toAgendaOfferedBody,
+    };
+  }
+  return {
+    title: AI_SUGGESTION_COPY.toAgendaWaiting(outcome.source_name || "meeting"),
+    body: AI_SUGGESTION_COPY.toAgendaWaitingBody,
+  };
 }

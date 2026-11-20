@@ -1,1 +1,1 @@
-A suggested task from minutes can go on the next meeting's agenda instead, where an officer adds it from Suggested with one tap.
+A suggested task from minutes can go straight onto the next meeting's agenda instead, or wait for that meeting to be scheduled.

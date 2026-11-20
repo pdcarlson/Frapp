@@ -44,7 +44,6 @@ function build(switchOn = true) {
   };
   const suggestions = {
     reconcileSource: jest.fn(async () => ({ created: [], withdrawn: 0 })),
-    handleElsewhere: jest.fn(),
   };
   const consent = { chapterSwitchOn: jest.fn(async () => switchOn) };
   const tasks = { doneMarks: jest.fn(async () => new Map()) };
@@ -53,33 +52,14 @@ function build(switchOn = true) {
       async (_chapterId: string, _source: { id: string }) => [] as unknown[],
     ),
   };
-  const nextAgenda = {
-    insert: jest.fn(async (row: Record<string, unknown>) => ({
-      id: 'next-1',
-      created_at: '2026-11-20T00:00:00.000Z',
-      ...row,
-    })),
-    delete: jest.fn(async () => undefined),
-    findBySuggestion: jest.fn(async () => null),
-  };
   const service = new MeetingTaskSuggestionsService(
     meetings as never,
     suggestions as never,
     consent as never,
     tasks as never,
     repo as never,
-    nextAgenda as never,
   );
-  return {
-    service,
-    meetings,
-    suggestions,
-    consent,
-    listeners,
-    tasks,
-    repo,
-    nextAgenda,
-  };
+  return { service, meetings, suggestions, consent, listeners, tasks, repo };
 }
 
 describe('MeetingTaskSuggestionsService (#4313)', () => {
@@ -384,80 +364,5 @@ describe('seriesOpenActionItems: what a repeating meeting still owes (#5482)', (
     await expect(
       service.seriesOpenActionItems(CHAPTER, OFFICER, 'head'),
     ).resolves.toEqual([]);
-  });
-});
-
-describe('MeetingTaskSuggestionsService.sendToNextAgenda (#5790)', () => {
-  const suggestion = (over: Record<string, unknown> = {}) => ({
-    id: 'sugg-1',
-    kind: 'task',
-    source_type: 'meeting',
-    source_id: 'meeting-1',
-    payload: { title: 'Plan 2 to 3 backup activities' },
-    quote: null,
-    ...over,
-  });
-
-  /** Runs the service's handling against one suggestion, as the real one does. */
-  function run(row: ReturnType<typeof suggestion>) {
-    const built = build();
-    built.suggestions.handleElsewhere.mockImplementation(
-      async (
-        _c: string,
-        _u: string,
-        _id: string,
-        handling: {
-          accepts: (r: unknown) => boolean;
-          make: (r: unknown) => Promise<unknown>;
-        },
-      ) => {
-        if (!handling.accepts(row)) throw new Error('not handled here');
-        return handling.make(row);
-      },
-    );
-    return built;
-  }
-
-  it('keeps the action item’s words with its minutes, naming no meeting', async () => {
-    const { service, nextAgenda } = run(
-      suggestion({
-        quote:
-          'Plan 2 to 3 backup activities for each rush event in case it slows down.',
-      }),
-    );
-    const item = await service.sendToNextAgenda(
-      'chapter-1',
-      'officer-1',
-      'sugg-1',
-      null,
-    );
-    expect(nextAgenda.insert).toHaveBeenCalledWith({
-      chapter_id: 'chapter-1',
-      meeting_id: 'meeting-1',
-      text: 'Plan 2 to 3 backup activities for each rush event in case it slows down.',
-      ai_suggestion_id: 'sugg-1',
-      created_by: 'officer-1',
-    });
-    expect(item).toMatchObject({ meeting_id: 'meeting-1' });
-  });
-
-  it('only takes a suggested task from minutes', async () => {
-    const { service, nextAgenda } = run(
-      suggestion({ source_type: 'event', source_id: 'event-1' }),
-    );
-    await expect(
-      service.sendToNextAgenda('chapter-1', 'officer-1', 'sugg-1', null),
-    ).rejects.toThrow('not handled here');
-    expect(nextAgenda.insert).not.toHaveBeenCalled();
-  });
-
-  it('is refused with Events off, where there is no agenda to offer it on', async () => {
-    const { service, suggestions } = run(suggestion());
-    await expect(
-      service.sendToNextAgenda('chapter-1', 'officer-1', 'sugg-1', {
-        events: false,
-      }),
-    ).rejects.toMatchObject({ status: 403 });
-    expect(suggestions.handleElsewhere).not.toHaveBeenCalled();
   });
 });

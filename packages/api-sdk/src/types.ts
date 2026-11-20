@@ -3826,8 +3826,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). Closes the suggestion; the next upcoming meetings with the same audience offer the item under Suggested. No meeting is picked. */
+        /** Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). It goes onto the next upcoming meeting with the minutes’ audience and type when the caller may edit it; otherwise that meeting offers it under Suggested; with no such meeting yet, it waits for one to be created (30 days at most). */
         post: operations["AiSuggestionController_sendToNextAgenda_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/next-agenda/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Add to next meeting’s agenda: takes the item back off and puts the suggestion back as it was (#5790). */
+        post: operations["AiSuggestionController_undoSendToNextAgenda_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10356,19 +10373,25 @@ export interface components {
              */
             reason?: "already_doing";
         };
-        NextAgendaItemDto: {
+        NextAgendaMeetingDto: {
             /** Format: uuid */
             id: string;
-            /**
-             * Format: uuid
-             * @description The posted minutes it was sent from.
-             */
-            meeting_id: string;
-            /** @description The words, as the agenda will hold them. */
-            text: string;
+            name: string;
+            /** Format: date-time */
+            start_time: string;
         };
         SendToNextAgendaResponseDto: {
-            item: components["schemas"]["NextAgendaItemDto"];
+            /**
+             * @description `placed`: on `meeting`’s agenda. `offered`: under Suggested on `meeting` (the caller can’t edit it, or its agenda is full). `waiting`: no such meeting yet; it goes onto the next one created, for 30 days.
+             * @enum {string}
+             */
+            outcome: "placed" | "offered" | "waiting";
+            /** @description Where it went; null while it waits. */
+            meeting: components["schemas"]["NextAgendaMeetingDto"] | null;
+            /** @description The name of the minutes’ own meeting, for “the next Chapter Meeting”. */
+            source_name: string;
+            /** @description The words, as the agenda holds them. */
+            text: string;
         };
         AiSuggestionDecideItemDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
@@ -21841,6 +21864,34 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SendToNextAgendaResponseDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_undoSendToNextAgenda_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
