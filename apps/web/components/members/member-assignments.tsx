@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, Loader2, Plus, X } from "lucide-react";
 import {
   ASSIGN_COPY,
@@ -106,12 +106,33 @@ export function MemberAssignments({
   const setMembership = useSetGroupMembership();
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
-  // The row or chip saving now, so only it shows the pending state.
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  // Ticks and x's waiting to save, by `kind:id`, with the state each asked
+  // for. The list draws a row in that state at once (#5752), and only that
+  // row waits for its save; the rest stay open to more ticks.
+  const [pending, setPending] = useState<ReadonlyMap<string, boolean>>(
+    () => new Map(),
+  );
+  // Saves run one after another, each built on the role list the last one
+  // left, so two quick ticks give both roles rather than the second
+  // overwriting the first, as Linear's and GitHub's label menus allow.
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const latestRoleIds = useRef<readonly string[]>(heldRoleIds);
+  useEffect(() => {
+    latestRoleIds.current = heldRoleIds;
+  }, [heldRoleIds]);
+
+  function markPending(key: string, on: boolean | null) {
+    setPending((prev) => {
+      const next = new Map(prev);
+      if (on === null) next.delete(key);
+      else next.set(key, on);
+      return next;
+    });
+  }
 
   async function setRole(roleId: string, give: boolean) {
     if (!memberId) return;
-    const current = heldRoleIds;
+    const current = latestRoleIds.current;
     const requested = give
       ? [...new Set([...current, roleId])]
       : current.filter((id) => id !== roleId);
@@ -133,9 +154,9 @@ export function MemberAssignments({
       });
       if (!confirmed) return;
     }
-    setPendingKey(`role:${roleId}`);
     try {
       await updateRoles.mutateAsync({ id: memberId, role_ids: requested });
+      latestRoleIds.current = requested;
       setSaved({ from: roleIdsKey, ids: requested });
     } catch (error) {
       toast({
@@ -146,13 +167,10 @@ export function MemberAssignments({
         ),
         variant: "destructive",
       });
-    } finally {
-      setPendingKey(null);
     }
   }
 
   async function setGroup(groupId: string, add: boolean) {
-    setPendingKey(`group:${groupId}`);
     try {
       await setMembership.mutateAsync({ groupId, userId, in: add });
     } catch (error) {
@@ -164,13 +182,18 @@ export function MemberAssignments({
         ),
         variant: "destructive",
       });
-    } finally {
-      setPendingKey(null);
     }
   }
 
   function toggle(row: Pick<AssignmentRow, "kind" | "id">, on: boolean) {
-    return row.kind === "role" ? setRole(row.id, on) : setGroup(row.id, on);
+    const key = `${row.kind}:${row.id}`;
+    if (pending.has(key)) return;
+    markPending(key, on);
+    queue.current = queue.current
+      .then(() =>
+        row.kind === "role" ? setRole(row.id, on) : setGroup(row.id, on),
+      )
+      .finally(() => markPending(key, null));
   }
 
   const canAddAnything = canManageRoles || (canManageGroups && editable);
@@ -189,8 +212,8 @@ export function MemberAssignments({
               : "Loading roles"
         }
         compact={compact}
-        pendingKey={pendingKey}
-        onRemove={(chip) => void toggle(chip, false)}
+        pending={pending}
+        onRemove={(chip) => toggle(chip, false)}
         add={
           canAddAnything ? (
             <AddPicker
@@ -210,8 +233,8 @@ export function MemberAssignments({
                   query,
                 })
               }
-              pendingKey={pendingKey}
-              onToggle={(row, on) => void toggle(row, on)}
+              pending={pending}
+              onToggle={(row, on) => toggle(row, on)}
             />
           ) : null
         }
@@ -224,8 +247,8 @@ export function MemberAssignments({
           chips={groupChips}
           empty="No groups"
           compact={compact}
-          pendingKey={pendingKey}
-          onRemove={(chip) => void toggle(chip, false)}
+          pending={pending}
+          onRemove={(chip) => toggle(chip, false)}
           add={
             canAddAnything ? (
               <AddPicker
@@ -245,8 +268,8 @@ export function MemberAssignments({
                     query,
                   })
                 }
-                pendingKey={pendingKey}
-                onToggle={(row, on) => void toggle(row, on)}
+                pending={pending}
+                onToggle={(row, on) => toggle(row, on)}
               />
             ) : null
           }
@@ -262,7 +285,7 @@ function ChipRow({
   chips,
   empty,
   compact,
-  pendingKey,
+  pending,
   onRemove,
   add,
 }: {
@@ -270,7 +293,7 @@ function ChipRow({
   chips: AssignmentChip[];
   empty: string;
   compact: boolean;
-  pendingKey: string | null;
+  pending: ReadonlyMap<string, boolean>;
   onRemove: (chip: AssignmentChip) => void;
   add: React.ReactNode;
 }) {
@@ -286,14 +309,14 @@ function ChipRow({
       </h3>
       <ul className="flex flex-wrap items-center gap-1.5">
         {chips.map((chip) => {
-          const pending = pendingKey === `${chip.kind}:${chip.id}`;
+          const saving = pending.has(`${chip.kind}:${chip.id}`);
           return (
             <li
               key={chip.id}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full border border-border bg-card py-1 pl-2.5 text-caption text-foreground",
                 chip.removable ? "pr-1" : "pr-2.5",
-                pending && "opacity-60",
+                saving && "opacity-60",
               )}
             >
               <span
@@ -310,14 +333,18 @@ function ChipRow({
                 <button
                   type="button"
                   aria-label={`Remove ${chip.name}`}
-                  disabled={pendingKey !== null}
-                  onClick={() => onRemove(chip)}
+                  // Waits without `disabled`, which would drop focus to the
+                  // page (#5752); a press while it saves does nothing.
+                  aria-disabled={saving || undefined}
+                  onClick={() => {
+                    if (!saving) onRemove(chip);
+                  }}
                   className={cn(
                     "grid h-5 w-5 place-items-center rounded-full text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-none",
                     FOCUS_RING_OFFSET,
                   )}
                 >
-                  {pending ? (
+                  {saving ? (
                     <Loader2
                       className="h-3 w-3 animate-spin"
                       aria-hidden="true"
@@ -349,14 +376,14 @@ function AddPicker({
   displayName,
   focus,
   sections,
-  pendingKey,
+  pending,
   onToggle,
 }: {
   label: string;
   displayName: string;
   focus: "roles" | "groups";
   sections: (query: string) => ReturnType<typeof memberAssignmentSections>;
-  pendingKey: string | null;
+  pending: ReadonlyMap<string, boolean>;
   onToggle: (row: AssignmentRow, on: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -421,25 +448,27 @@ function AddPicker({
                   {section.title}
                 </p>
                 {section.rows.map((row) => {
-                  const pending = pendingKey === `${row.kind}:${row.id}`;
-                  // While a tick saves, the rows wait with `aria-disabled`,
-                  // not `disabled`: disabling the focused row drops focus to
-                  // the page, which the profile panel takes back, and that
-                  // focus outside closed the list after every pick (#5752).
-                  // The list stays open for the next tick, as Linear's and
-                  // GitHub's label menus do.
-                  const busy = pendingKey !== null;
+                  // A ticked row shows its new state at once and waits for
+                  // its save with `aria-disabled`, not `disabled`: disabling
+                  // the focused row dropped focus to the page, which the
+                  // profile panel took back, and that focus outside closed
+                  // the list after every pick (#5752). Other rows take more
+                  // ticks meanwhile; the saves queue.
+                  const key = `${row.kind}:${row.id}`;
+                  const busy = pending.has(key);
+                  const held = pending.get(key) ?? row.held;
                   return (
                     <button
                       key={row.id}
                       type="button"
                       role="menuitemcheckbox"
-                      aria-checked={row.held}
+                      aria-checked={held}
+                      aria-busy={busy || undefined}
                       disabled={row.disabledReason !== null}
                       aria-disabled={busy || undefined}
                       onClick={() => {
                         if (busy) return;
-                        onToggle(row, !row.held);
+                        onToggle(row, !held);
                       }}
                       className={cn(
                         "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm hover:bg-card-hover disabled:hover:bg-transparent aria-disabled:cursor-wait aria-disabled:hover:bg-transparent",
@@ -451,15 +480,15 @@ function AddPicker({
                         aria-hidden="true"
                         className={cn(
                           "grid h-4 w-4 shrink-0 place-items-center rounded border",
-                          row.held
+                          held
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-muted-foreground",
                           row.disabledReason !== null && "opacity-40",
                         )}
                       >
-                        {pending ? (
+                        {busy ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : row.held ? (
+                        ) : held ? (
                           <Check className="h-3 w-3" />
                         ) : null}
                       </span>
