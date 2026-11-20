@@ -15,10 +15,10 @@ export function liveRecordingMeetingId(state: RecorderState): string | null {
 
 /**
  * Tells the server who is recording (Paul, 2026-11-20: "Winston Hewitt is
- * recording"; `spec/behavior/meetings.md` § Recording in the app): once when
+ * recording"; `spec/behavior/meetings.md` § Where a draft stands): once when
  * the phone starts recording a meeting and every minute while it records,
- * and once more when it stops, so the Minutes list, the event's Minutes card
- * and Activity can say so. Each call is best effort: a missed beat only lets
+ * and once more when it stops, so the Minutes list and the event's Minutes
+ * row can say so. Each call is best effort: a missed beat only lets
  * the line lapse after three minutes, and a recording never waits on one.
  * Nothing about the recording goes with it, only which minutes.
  */
@@ -29,18 +29,20 @@ export function useLiveRecordingBeat(enabled: boolean): void {
   useEffect(() => {
     if (!meetingId) return;
     const path = { params: { path: { id: meetingId } } };
-    const beat = () => {
-      void client
-        .PUT("/v1/meetings/{id}/live-recording", path)
-        .catch(() => undefined);
+    // One request at a time, in order: a beat still in flight when the
+    // recording stops must not land after the DELETE and bring the line
+    // back for three minutes with nobody recording.
+    let queue: Promise<unknown> = Promise.resolve();
+    const send = (call: () => Promise<unknown>) => {
+      queue = queue.then(call).catch(() => undefined);
     };
+    const beat = () =>
+      send(() => client.PUT("/v1/meetings/{id}/live-recording", path));
     beat();
     const timer = setInterval(beat, LIVE_BEAT_MS);
     return () => {
       clearInterval(timer);
-      void client
-        .DELETE("/v1/meetings/{id}/live-recording", path)
-        .catch(() => undefined);
+      send(() => client.DELETE("/v1/meetings/{id}/live-recording", path));
     };
   }, [client, meetingId]);
 }

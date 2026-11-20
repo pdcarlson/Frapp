@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   permissions: { current: [] as string[] },
   taking: { current: { isPending: false, data: [] as unknown[] } },
   request: { current: { isLoading: false, data: null as unknown } },
+  live: { current: [] as unknown[] },
   ask: vi.fn(),
   start: vi.fn(),
   push: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("@repo/hooks", () => ({
   useMeetingNoteTaking: () => mocks.taking.current,
   useMinutesRequest: () => mocks.request.current,
   useRequestMinutes: () => ({ mutateAsync: mocks.ask, isPending: false }),
+  useLiveMeetingRecordings: () => ({ data: mocks.live.current }),
   useViewerUserId: () => "u-viewer",
   useMemberDisplayNames: () => ({
     nameFor: (id: string) => (id === "u-winston" ? "Winston Hewitt" : null),
@@ -54,6 +56,7 @@ beforeEach(() => {
   mocks.permissions.current = [];
   mocks.taking.current = { isPending: false, data: [] };
   mocks.request.current = { isLoading: false, data: null };
+  mocks.live.current = [];
   mocks.ask.mockReset();
   mocks.start.mockReset();
   mocks.push.mockReset();
@@ -155,6 +158,15 @@ describe("EventMinutes", () => {
     };
     render(<EventMinutes eventId="e-1" eventName="Recruitment Meetings" />);
     expect(screen.getByText("Winston Hewitt is recording")).toBeTruthy();
+  });
+
+  it("tells a member who is recording minutes they can't open yet (Paul, 2026-11-20)", () => {
+    mocks.live.current = [
+      { meeting_id: "m-1", event_id: "e-1", user_id: "u-winston" },
+    ];
+    render(<EventMinutes eventId="e-1" eventName="Chapter" />);
+    expect(screen.getByText("Winston Hewitt is recording")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("offers no Write minutes when the read failed", () => {

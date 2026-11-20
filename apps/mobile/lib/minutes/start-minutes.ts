@@ -37,8 +37,10 @@ export type MeetingOption = {
   choice: MeetingChoice;
   title: string;
   detail: string;
-  /** Shown but not picked: someone else's minutes already hold it. */
+  /** Shown but not picked: minutes this member can't read already hold it. */
   disabled?: boolean;
+  /** Minutes this member can open already hold it: a tap opens them. */
+  opens?: string;
 };
 
 /** How far back Change looks for the meeting, and how many it lists. */
@@ -53,6 +55,7 @@ export const MEETING_START_COPY = {
   pickHeading: MINUTES_START_COPY.pick,
   onNow: MINUTES_START_COPY.onNow,
   hasMinutes: MINUTES_START_COPY.hasMinutes,
+  openMinutes: MEETING_ENTRY_COPY.open,
   noneTitle: MINUTES_START_COPY.noMeeting,
   noneDetail: MINUTES_START_COPY.noMeetingDetail,
   readFailed:
@@ -114,19 +117,23 @@ export function meetingChoices(
   const at = now.getTime();
   const events = selectAllEventRows(eventsData);
   const ownDraftFor = ownDrafts(meetings, viewerId);
-  const taken = new Set(refused);
+  // Minutes this member can open but didn't write as a draft (posted, or
+  // another officer's draft a `meetings:edit` holder reads): Open minutes,
+  // as on the web. `refused` ones can't be read at all: Has minutes.
+  const readableFor = new Map<string, string>();
   for (const meeting of meetings) {
     if (meeting.event_id && !ownDraftFor.has(meeting.event_id)) {
-      taken.add(meeting.event_id);
+      readableFor.set(meeting.event_id, meeting.id);
     }
   }
+  const taken = new Set([...refused, ...readableFor.keys()]);
   const inRoom = meetingInTheRoom(events, at);
   const inRoomTaken = inRoom && taken.has(inRoom.id) ? inRoom : null;
   const free = inRoom && !inRoomTaken ? inRoom : null;
   const recent = events
     .filter((event) => {
       // A hearing has no minutes in Frapp (§ Standards meetings): never here.
-      if (taken.has(event.id) || looksLikeHearing(event.name)) return false;
+      if (refused.has(event.id) || looksLikeHearing(event.name)) return false;
       const start = Date.parse(event.start_time);
       if (Number.isNaN(start)) return false;
       return (
@@ -135,32 +142,35 @@ export function meetingChoices(
       );
     })
     .sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time));
-  const listed = free
-    ? [free, ...recent.filter((event) => event.id !== free.id)]
+  const first = inRoom && (free || inRoomTaken) ? inRoom : null;
+  const listed = first
+    ? [first, ...recent.filter((event) => event.id !== first.id)]
     : recent;
-  const options: MeetingOption[] = [];
-  if (inRoomTaken) {
-    options.push({
-      choice: { kind: "event", event: inRoomTaken },
-      title: inRoomTaken.name,
-      detail: `${MEETING_START_COPY.onNow} · ${MEETING_START_COPY.hasMinutes}`,
-      disabled: true,
+  const options: MeetingOption[] = listed
+    .slice(0, MAX_OPTIONS)
+    .map((event): MeetingOption => {
+      const opens = readableFor.get(event.id);
+      const blocked = refused.has(event.id);
+      return {
+        choice: { kind: "event", event },
+        title: event.name,
+        detail: [
+          event.id === inRoom?.id
+            ? MEETING_START_COPY.onNow
+            : meetingWhenLabel(event.start_time, now),
+          ownDraftFor.has(event.id) ? MEETING_START_COPY.yours : null,
+          opens
+            ? MEETING_START_COPY.openMinutes
+            : blocked
+              ? MEETING_START_COPY.hasMinutes
+              : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        ...(opens ? { opens } : {}),
+        ...(blocked ? { disabled: true } : {}),
+      };
     });
-  }
-  options.push(
-    ...listed.slice(0, MAX_OPTIONS).map((event): MeetingOption => ({
-      choice: { kind: "event", event },
-      title: event.name,
-      detail: [
-        event.id === free?.id
-          ? MEETING_START_COPY.onNow
-          : meetingWhenLabel(event.start_time, now),
-        ownDraftFor.has(event.id) ? MEETING_START_COPY.yours : null,
-      ]
-        .filter(Boolean)
-        .join(" · "),
-    })),
-  );
   options.push({
     choice: { kind: "none" },
     title: MEETING_START_COPY.noneTitle,

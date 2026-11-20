@@ -180,6 +180,21 @@ export function minutesStateWho(
 }
 
 /**
+ * The event row's line for a member who can't open the minutes while
+ * someone records them ("Winston Hewitt is recording"; Paul, 2026-11-20),
+ * from `GET /v1/meetings/live-recordings`, or null when nobody is.
+ */
+export function liveRecordingLine(
+  live: readonly { event_id: string; user_id: string }[] | null | undefined,
+  eventId: string,
+  nameFor: (userId: string) => string | null | undefined,
+): string | null {
+  const row = live?.find((entry) => entry.event_id === eventId);
+  if (!row) return null;
+  return minutesDraftStateLabel("recording", nameFor(row.user_id) ?? null);
+}
+
+/**
  * New minutes, the same on web and phone (Paul, 2026-11-20: the sheet "says
  * meeting like 13 times, and it's narrating instead of indicating"): one
  * list of meetings, each row saying where it stands, and No meeting to

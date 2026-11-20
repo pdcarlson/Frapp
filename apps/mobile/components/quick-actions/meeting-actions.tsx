@@ -288,6 +288,10 @@ export function useMeetingQuickActions({
       label={choice ? choiceLabel(choice, new Date(), inRoomId) : null}
       options={choices.options}
       onChange={setChanged}
+      onOpen={(id) => {
+        minutesRef.current?.dismiss();
+        router.push({ pathname: "/minutes-details", params: { id } });
+      }}
     />
   ) : null;
 

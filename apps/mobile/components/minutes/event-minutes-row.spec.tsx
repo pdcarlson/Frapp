@@ -36,6 +36,7 @@ const state = vi.hoisted(() => ({
     requested: boolean;
   },
   ask: vi.fn(),
+  live: [] as { meeting_id: string; event_id: string; user_id: string }[],
 }));
 vi.mock("@/lib/minutes/recorder/session", () => ({
   useMeetingRecorder: () => ({
@@ -65,6 +66,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useMinutesRequest: () => ({ data: state.request, isLoading: false }),
   useRequestMinutes: () => ({ mutateAsync: state.ask, isPending: false }),
+  useLiveMeetingRecordings: () => ({ data: state.live }),
 }));
 vi.mock("@/components/minutes/note-taker-sheet", () => ({
   NoteTakerSheet: () => null,
@@ -110,6 +112,7 @@ beforeEach(() => {
   state.recorderState = { phase: "idle", refusal: null };
   state.takingPending = false;
   state.request = null;
+  state.live = [];
 });
 
 describe("EventMinutesRow", () => {
@@ -175,6 +178,14 @@ describe("EventMinutesRow", () => {
   it("offers nothing to a member when there are no minutes", () => {
     state.permissions = [];
     expect(render().toJSON()).toBeNull();
+  });
+
+  it("tells a member who is recording minutes they can't open yet (Paul, 2026-11-20)", () => {
+    state.permissions = [];
+    state.live = [{ meeting_id: "m1", event_id: "e1", user_id: "u-winston" }];
+    const tree = render();
+    expect(screenText(tree)).toContain("Winston Hewitt is recording");
+    expect(rows(tree)).toHaveLength(0);
   });
 
   it("offers Write minutes without drafting too: the note is the Summary (#5288)", () => {

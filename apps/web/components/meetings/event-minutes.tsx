@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { codeOf } from "@repo/api-sdk";
 import {
   useMeetingNoteTaking,
+  useLiveMeetingRecordings,
   useMeetings,
   useMemberDisplayNames,
   useMinutesRequest,
@@ -20,6 +21,7 @@ import {
   can,
   minutesStateWho,
   eventMinutesLines,
+  liveRecordingLine,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { RequestMinutesButton } from "@/components/meetings/request-minutes-button";
@@ -77,6 +79,10 @@ export function EventMinutes({
     enabled: on && meetingsQuery.isSuccess && !meetingsQuery.data?.[0],
     eventId,
   });
+  // Who is recording, for a member the minutes don't show to yet.
+  const liveQuery = useLiveMeetingRecordings({
+    enabled: on && meetingsQuery.isSuccess && !meetingsQuery.data?.[0],
+  });
   const permissions = useMyPermissions().data?.permissions ?? [];
   const start = useStartMeeting();
 
@@ -91,11 +97,14 @@ export function EventMinutes({
   // read would only meet a 409.
   if (meetingsQuery.isError) return null;
   const minutes = meetingsQuery.data?.[0];
+  const live = minutes
+    ? null
+    : liveRecordingLine(liveQuery.data, eventId, names.nameFor);
   const taking = minutes ? undefined : takingQuery.data?.[0];
   if (taking) {
     return (
       <MinutesRowFrame
-        status={MEETING_NOTE_TAKERS_COPY.listItem(taking.author_name)}
+        status={live ?? MEETING_NOTE_TAKERS_COPY.listItem(taking.author_name)}
       >
         <Link
           href={`/meetings/${taking.meeting_id}/notes`}
@@ -108,6 +117,9 @@ export function EventMinutes({
       </MinutesRowFrame>
     );
   }
+  // Someone is recording minutes this member can't open yet: say who, and
+  // offer nothing, as the meeting is still on.
+  if (live && !takingQuery.isPending) return <MinutesRowFrame status={live} />;
   // Take notes wins: Request waits until the note-taking read has answered.
   const askable = minutes || takingQuery.isPending ? null : requestQuery.data;
   if (askable) {

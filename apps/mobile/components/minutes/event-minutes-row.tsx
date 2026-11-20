@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useRouter } from "expo-router";
 import {
+  useLiveMeetingRecordings,
   useMeetingNoteTaking,
   useMeetings,
   useMemberDisplayNames,
@@ -15,6 +16,7 @@ import {
   MEETING_NOTE_TAKERS_COPY,
   can,
   eventMinutesLines,
+  liveRecordingLine,
   minutesStateWho,
 } from "@repo/validation";
 import { InlineNote } from "@/components/inline-note";
@@ -73,6 +75,10 @@ export function EventMinutesRow({
     enabled: on && !!eventId && canDraft,
     eventId,
   });
+  // Who is recording, for a member the minutes don't show to yet.
+  const liveQuery = useLiveMeetingRecordings({
+    enabled: on && meetingsQuery.isSuccess && !meetingsQuery.data?.[0],
+  });
   // Only asked once the member is known to see no minutes of their own.
   const requestQuery = useMinutesRequest({
     enabled: on && meetingsQuery.isSuccess && !meetingsQuery.data?.[0],
@@ -94,6 +100,9 @@ export function EventMinutesRow({
   // read would only meet a 409.
   if (!on || !eventId || !meetingsQuery.isSuccess) return null;
   const minutes = meetingsQuery.data?.[0];
+  const live = minutes
+    ? null
+    : liveRecordingLine(liveQuery.data, eventId, names.nameFor);
   const taking = minutes ? undefined : takingQuery.data?.[0];
   if (taking) {
     return (
@@ -105,7 +114,9 @@ export function EventMinutesRow({
                 ? MEETING_NOTE_TAKERS_COPY.takingNotes
                 : MEETING_NOTE_TAKERS_COPY.takeNotes
             }
-            description={MEETING_NOTE_TAKERS_COPY.listItem(taking.author_name)}
+            description={
+              live ?? MEETING_NOTE_TAKERS_COPY.listItem(taking.author_name)
+            }
             onPress={() => notesSheet.current?.present()}
           />
         </ListSection>
@@ -116,6 +127,19 @@ export function EventMinutesRow({
   // Someone else may have started them; the note-taking read decides, and
   // its Take notes wins over Request minutes.
   if (!minutes && canDraft && takingQuery.isPending) return null;
+  // Someone is recording minutes this member can't open yet: say who, and
+  // offer nothing, as the meeting is still on.
+  if (live) {
+    return (
+      <ListSection>
+        <ListRow
+          label={MEETING_ENTRY_COPY.label}
+          value={live}
+          variant="detail"
+        />
+      </ListSection>
+    );
+  }
   const askable = minutes ? null : requestQuery.data;
   if (askable) return <RequestMinutesRow state={askable} />;
   if (!minutes && !canRecord) return null;
@@ -165,7 +189,9 @@ export function EventMinutesRow({
           />
         ) : (
           <ListRow
-            label={records ? MEETING_ENTRY_COPY.record : MEETING_ENTRY_COPY.write}
+            label={
+              records ? MEETING_ENTRY_COPY.record : MEETING_ENTRY_COPY.write
+            }
             description={MEETING_ENTRY_COPY.none}
             busy={start.isPending}
             onPress={() => void write()}

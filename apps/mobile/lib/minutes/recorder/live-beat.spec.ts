@@ -33,18 +33,19 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("useLiveRecordingBeat", () => {
-  it("says so when recording starts, every minute while it records, and once when it stops", () => {
+  it("says so when recording starts, every minute while it records, and once when it stops", async () => {
     const { rerender } = renderHook(() => useLiveRecordingBeat(true));
     expect(harness.put).not.toHaveBeenCalled();
 
     harness.state.current = recording("mtg-1");
     rerender();
+    await act(async () => {});
     expect(harness.put).toHaveBeenCalledTimes(1);
     expect(harness.put.mock.calls[0][1]).toEqual({
       params: { path: { id: "mtg-1" } },
     });
-    act(() => {
-      vi.advanceTimersByTime(LIVE_BEAT_MS * 2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIVE_BEAT_MS * 2);
     });
     expect(harness.put).toHaveBeenCalledTimes(3);
 
@@ -56,11 +57,32 @@ describe("useLiveRecordingBeat", () => {
       total: 10,
     };
     rerender();
+    await act(async () => {});
     expect(harness.del).toHaveBeenCalledTimes(1);
-    act(() => {
-      vi.advanceTimersByTime(LIVE_BEAT_MS * 2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIVE_BEAT_MS * 2);
     });
     expect(harness.put).toHaveBeenCalledTimes(3);
+  });
+
+  it("sends the stop only after a beat still in flight has landed", async () => {
+    let land: (value: unknown) => void = () => {};
+    harness.put.mockReturnValueOnce(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    harness.state.current = recording("mtg-1");
+    const { rerender } = renderHook(() => useLiveRecordingBeat(true));
+    await act(async () => {});
+    expect(harness.put).toHaveBeenCalledTimes(1);
+    harness.state.current = { phase: "idle", refusal: null };
+    rerender();
+    await act(async () => {});
+    // The PUT hasn't answered: a DELETE sent now could land first.
+    expect(harness.del).not.toHaveBeenCalled();
+    await act(async () => land({}));
+    expect(harness.del).toHaveBeenCalledTimes(1);
   });
 
   it("sends nothing while the meetings module is off", () => {

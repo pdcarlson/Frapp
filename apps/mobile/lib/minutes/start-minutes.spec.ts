@@ -98,7 +98,7 @@ describe("meetingChoices", () => {
     expect(own.options[0].detail).toContain(MEETING_START_COPY.yours);
   });
 
-  it("shows the meeting on now as Has minutes when they are someone else's, and picks No meeting", () => {
+  it("lists the meeting on now with Open minutes when the member can read them, and picks No meeting", () => {
     for (const held of [
       minutes("tonight", "draft", "someone-else"),
       minutes("tonight", "posted", ME),
@@ -110,13 +110,29 @@ describe("meetingChoices", () => {
         choices.options.map((option) => [
           option.title,
           option.detail,
+          option.opens ?? null,
           option.disabled ?? false,
         ]),
       ).toEqual([
-        ["Chapter Meeting", "On now · Has minutes", true],
-        [MEETING_START_COPY.noneTitle, "Link one later", false],
+        ["Chapter Meeting", "On now · Open minutes", "m-tonight", false],
+        [MEETING_START_COPY.noneTitle, "Link one later", null, false],
       ]);
     }
+  });
+
+  it("shows a meeting whose minutes the member can't read as Has minutes, never to pick", () => {
+    const choices = meetingChoices(
+      [tonight],
+      [],
+      ME,
+      NOW,
+      new Set(["tonight"]),
+    );
+    expect(choices.options[0]).toMatchObject({
+      title: "Chapter Meeting",
+      detail: "On now · Has minutes",
+      disabled: true,
+    });
   });
 
   it("treats an event the server refused as taken, though its minutes can't be read", () => {

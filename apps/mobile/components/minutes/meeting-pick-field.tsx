@@ -30,6 +30,7 @@ export function MeetingPickField({
   label,
   options,
   onChange,
+  onOpen,
 }: {
   /** The meeting picked, or null when the officer has to pick one. */
   value: MeetingChoice | null;
@@ -37,6 +38,8 @@ export function MeetingPickField({
   label: { title: string; detail: string } | null;
   options: readonly MeetingOption[];
   onChange: (choice: MeetingChoice) => void;
+  /** A row whose minutes this member can open: opens them, as on the web. */
+  onOpen: (meetingId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -78,6 +81,10 @@ export function MeetingPickField({
               accessibilityValue={picked ? "Picked" : undefined}
               disabled={option.disabled}
               onPress={() => {
+                if (option.opens) {
+                  onOpen(option.opens);
+                  return;
+                }
                 onChange(option.choice);
                 setOpen(false);
               }}

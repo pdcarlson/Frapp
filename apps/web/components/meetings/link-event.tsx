@@ -6,6 +6,7 @@ import { useEvents, useLinkMeetingEvent, useMeetings } from "@repo/hooks";
 import {
   DEFAULT_MEETING_NAME,
   MEETING_ENTRY_COPY,
+  MINUTES_WITHOUT_MEETING_NAME,
   MEETING_NOTE_TAKERS_COPY,
   meetingWhenLabel,
 } from "@repo/validation";
@@ -47,7 +48,9 @@ export function LinkEventPanel({
   const [open, setOpen] = useState(false);
   const [making, setMaking] = useState(false);
   const [meeting, setMeeting] = useState<OffCalendarMeeting>({
-    name: meetingName,
+    // Minutes started with no meeting go by a placeholder, which is no
+    // meeting's name: blank, so it is made as "Chapter meeting".
+    name: meetingName === MINUTES_WITHOUT_MEETING_NAME ? "" : meetingName,
     date: "",
     startTime: "",
     endTime: "",
@@ -89,14 +92,7 @@ export function LinkEventPanel({
   }
 
   function makeIt() {
-    const span = offCalendarSpan(
-      meeting,
-      asArray<EventRow>(eventsQuery.data),
-      new Date(),
-      // These minutes are written: their meeting is over, so today doesn't
-      // mean starting now.
-      { live: false },
-    );
+    const span = offCalendarSpan(meeting, asArray<EventRow>(eventsQuery.data));
     if ("problem" in span) {
       setProblem(span.problem);
       return;

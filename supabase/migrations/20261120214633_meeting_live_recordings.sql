@@ -1,5 +1,5 @@
 -- Who is recording a meeting right now (Paul, 2026-11-20: show "Winston
--- Hewitt is recording"; `spec/behavior/meetings.md` § Recording in the app).
+-- Hewitt is recording"; `spec/behavior/meetings.md` § Where a draft stands).
 --
 -- WHAT CHANGES
 --

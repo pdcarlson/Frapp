@@ -12,6 +12,7 @@ import {
   MINUTES_START_COPY,
   STANDARDS_MEETING_NOTE,
   likelyMeeting,
+  meetingIsOn,
   type MeetingType,
 } from "@repo/validation";
 import {
@@ -312,14 +313,11 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
         (event, index) => index < FIRST_ROWS || event.id === pickedId,
       );
   const hidden = recent.length - shownEvents.length;
-  const onNowId = useMemo(() => {
-    const on = recent.find((event) => {
-      const startAt = Date.parse(event.start_time);
-      const endAt = Date.parse(event.end_time ?? "") || startAt + 3_600_000;
-      return startAt <= now && now < endAt;
-    });
-    return on?.id ?? null;
-  }, [recent, now]);
+  // The phone's On now: the meeting whose check-in window is open.
+  const onNowId = useMemo(
+    () => recent.find((event) => meetingIsOn(event, now))?.id ?? null,
+    [recent, now],
+  );
 
   return (
     <>
