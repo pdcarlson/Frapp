@@ -211,8 +211,16 @@ function jwt(claims: Record<string, unknown>): string {
 }
 
 /** User 1 in chapter 1, then the same member's refreshed token. */
-const TOKEN_1 = jwt({ sub: "user-1", active_chapter_id: "chapter-uuid-1", n: 1 });
-const TOKEN_2 = jwt({ sub: "user-1", active_chapter_id: "chapter-uuid-1", n: 2 });
+const TOKEN_1 = jwt({
+  sub: "user-1",
+  active_chapter_id: "chapter-uuid-1",
+  n: 1,
+});
+const TOKEN_2 = jwt({
+  sub: "user-1",
+  active_chapter_id: "chapter-uuid-1",
+  n: 2,
+});
 /** Another account in the same chapter: a magic-link swap. */
 const TOKEN_2_OTHER_USER = jwt({
   sub: "user-2",
@@ -536,7 +544,10 @@ describe("AuthSessionProvider — chapter context", () => {
     // Child effects run before the parent token-mirror effect. If the
     // Bearer were only written in that parent effect, this sample would
     // still be User A's token.
-    expect(seen).toContainEqual({ userId: "user-2", token: TOKEN_2_OTHER_USER });
+    expect(seen).toContainEqual({
+      userId: "user-2",
+      token: TOKEN_2_OTHER_USER,
+    });
   });
 
   it("drops unscoped product cache after writing the new Bearer on a same-chapter swap", async () => {
