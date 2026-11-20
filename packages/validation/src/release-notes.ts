@@ -126,9 +126,12 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Event rows now say when an event starts and ends, not just when it starts.",
       "Tapping Get Frapp on an invite link copies the invite, so after installing, one tap on Paste opens your chapter's invite.",
       "The app's dark surfaces are a softer near-black now, with gentler steps between the page, cards and menus.",
+      "Each Coming up date in minutes now says when it's on the calendar or has a task, and its ⋯ menu adds it to the calendar, makes it a task or copies it.",
+      "Officers can give someone a role or put them in a group right from their profile, Chapter settings keeps roles and groups on one Roles and groups page, and the Directory can filter by group.",
     ],
     web: [
       "Rows show more at a glance: an event says when check-in is open, a task says how it repeats and how far along its checklist and photos are, and a study session says which zone it was in.",
+      "Clicking someone in the Directory opens a small card beside them instead of taking over the page.",
     ],
     phone: [
       "Documents now say when they take effect, and study sessions show the date and time the same way the web does.",
