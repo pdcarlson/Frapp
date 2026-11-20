@@ -1,0 +1,35 @@
+<!-- @dsCard group="Actions" height=420 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle class="dot" cx="5" cy="12" r="1.6"/><circle class="dot" cx="12" cy="12" r="1.6"/><circle class="dot" cx="19" cy="12" r="1.6"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></symbol>
+<symbol id="i-fwd" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3"/><path d="M14 2v4M8 10v4M16 18v4"/></symbol>
+<symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+</defs></svg>
+<div class="fr-stage">
+  <div class="fr-col">
+    <div class="fr-plat">Web: seven variants, two heights, sized to the label</div>
+    <div class="fr-pane"><div class="fr-body fr-stack" style="gap:14px">
+      <div class="fr-line"><span class="fr-plat" style="width:92px">Primary</span><button class="fr-btn primary">Create event</button><button class="fr-btn primary sm">Mark done</button><span class="fr-plat">one per surface</span></div>
+      <div class="fr-line"><span class="fr-plat" style="width:92px">Secondary</span><button class="fr-btn secondary">Cancel</button><button class="fr-btn secondary sm"><svg class="fr-g s16" aria-hidden="true"><use href="#i-filter"/></svg>Filter</button><button class="fr-btn secondary is-focus">Focused</button></div>
+      <div class="fr-line"><span class="fr-plat" style="width:92px">Action</span><button class="fr-new"><svg class="fr-g s16" aria-hidden="true"><use href="#i-plus"/></svg>New event</button><button class="fr-action">Adjust points</button><span class="fr-plat">the page's main action</span></div>
+      <div class="fr-line"><span class="fr-plat" style="width:92px">Tinted</span><button class="fr-btn tinted sm">Sign up</button><span class="fr-plat" style="width:66px;margin-left:16px">Ghost</span><button class="fr-btn ghost sm">Show all</button><button class="fr-icon-btn" aria-label="More"><svg class="fr-g" aria-hidden="true"><use href="#i-more"/></svg></button></div>
+      <div class="fr-line"><span class="fr-plat" style="width:92px">Destructive</span><button class="fr-btn destructive">Delete task</button><span class="fr-plat" style="width:66px;margin-left:16px">Link</span><button class="fr-btn link">Open the event</button></div>
+      <div class="fr-line"><span class="fr-plat" style="width:92px">Disabled</span><button class="fr-btn is-disabled">Create event</button><span class="fr-t-caption fr-mu">Add a title first</span></div>
+    </div></div>
+  </div>
+  <div class="fr-col phone">
+    <div class="fr-plat">Phone: the commit is the floating glass action bar</div>
+    <div class="fr-device" style="height:290px">
+      <div class="fr-phone-top"><span class="fr-capsule fr-glass"><svg class="fr-g heavy" aria-hidden="true"><use href="#i-back"/></svg>Tasks</span></div>
+      <div class="fr-body">
+        <div class="fr-t-headline" style="font-size:20px">Book the banquet hall deposit</div>
+        <div class="fr-state" style="margin-top:8px;font-size:12.5px"><span class="fr-avatar sm fr-hue-teal">DO</span><span><b>Devin Okafor</b> marked it done <span class="when">today at 12:05 AM</span></span></div>
+        <div class="fr-group" style="margin-top:12px"><div class="fr-row"><div class="fr-text"><span class="fr-row-title">Photos</span></div><span class="fr-trail"><span class="fr-value">2</span><svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></span></div></div>
+      </div>
+      <div class="fr-actionbar fr-glass"><span class="fr-pill"><svg class="fr-g s16" aria-hidden="true"><use href="#i-check"/></svg>Confirm</span><span class="fr-round" aria-label="Send back"><svg class="fr-g" aria-hidden="true"><use href="#i-undo"/></svg></span><span class="fr-round" aria-label="More"><svg class="fr-g" aria-hidden="true"><use href="#i-more"/></svg></span></div>
+    </div>
+  </div>
+</div>

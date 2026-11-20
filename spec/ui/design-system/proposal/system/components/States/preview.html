@@ -1,0 +1,45 @@
+<!-- @dsCard group="Status and feedback" height=440 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></symbol>
+<symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-2.34-5.66"/><path d="M20 4v5h-5"/></symbol>
+</defs></svg>
+<div class="fr-stage">
+  <div class="fr-col">
+    <div class="fr-plat">Loading: the loaded layout's own shape</div>
+    <div class="fr-pane"><div class="fr-body">
+      <div class="fr-section"><span class="fr-skel" style="width:72px;height:11px"></span></div>
+      <div class="fr-group">
+        <div class="fr-row"><span class="fr-skel" style="width:32px;height:32px"></span><div class="fr-text" style="gap:8px"><span class="fr-skel" style="width:58%;height:12px"></span><span class="fr-skel" style="width:36%;height:10px"></span></div></div>
+        <div class="fr-row"><span class="fr-skel" style="width:32px;height:32px"></span><div class="fr-text" style="gap:8px"><span class="fr-skel" style="width:44%;height:12px"></span><span class="fr-skel" style="width:28%;height:10px"></span></div></div>
+        <div class="fr-row"><span class="fr-skel" style="width:32px;height:32px"></span><div class="fr-text" style="gap:8px"><span class="fr-skel" style="width:62%;height:12px"></span><span class="fr-skel" style="width:40%;height:10px"></span></div></div>
+      </div>
+    </div></div>
+    <div class="fr-plat" style="margin-top:8px">Pending: gray in place, nothing moves</div>
+    <div class="fr-pane"><div class="fr-body"><div class="fr-group">
+      <div class="fr-row web" style="opacity:.55"><span class="fr-check round"></span><div class="fr-text"><span class="fr-row-title">Order the composite frames</span><span class="fr-meta">Due December 4</span></div></div>
+    </div></div></div>
+  </div>
+  <div class="fr-col">
+    <div class="fr-plat">Empty: the real layout at zero, the first action where the first item goes</div>
+    <div class="fr-pane"><div class="fr-body">
+      <div class="fr-section"><span class="fr-name">This week</span><span class="fr-count">0</span></div>
+      <div class="fr-group">
+        <div class="fr-note-row"><span class="fr-grow">No tasks this week.</span><button class="fr-btn link">New task</button></div>
+      </div>
+      <div class="fr-section"><span class="fr-name">Results</span></div>
+      <div class="fr-group"><div class="fr-note-row">No tasks match "banquet".</div></div>
+    </div></div>
+    <div class="fr-plat" style="margin-top:8px">Not this</div>
+    <div class="fr-pane"><div class="fr-body"><div class="fr-note-row" style="padding:0;min-height:0">Nothing on your plate. Tasks given to you show up here. Tap + to add your first one.</div></div></div>
+  </div>
+  <div class="fr-col" style="flex:0 0 250px">
+    <div class="fr-plat">Error: the one state that gets a card</div>
+    <div class="fr-error">
+      <span class="ico"><svg class="fr-g s24" aria-hidden="true"><use href="#i-alert"/></svg></span>
+      <div class="t">Couldn't load tasks</div>
+      <div class="d">The connection dropped while loading.</div>
+      <button class="fr-btn secondary sm" style="margin-top:4px"><svg class="fr-g s16" aria-hidden="true"><use href="#i-retry"/></svg>Try again</button>
+    </div>
+    <div class="fr-note">What happened, in plain words, and one way out. Never a status code, never a key.</div>
+  </div>
+</div>

@@ -38,6 +38,7 @@ complete, so add the row in the same change that adds the file.
 | [`accent-engine.md`](accent-engine.md) | Chapter accent pipeline: seed → Radix scale → roles, caching |
 | [`reference/signet-design-system.dc.html`](reference/signet-design-system.dc.html) | System panels: foundations, accent stress tests, components, states |
 | [`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html) | The 23 locked mobile screens |
+| [`proposal/`](proposal/README.md) | A proposed design system awaiting Paul's rulings (2026-11-20). Not spec: it owns nothing until he signs off, and is deleted once its accepted parts move to their owners |
 
 ---
 

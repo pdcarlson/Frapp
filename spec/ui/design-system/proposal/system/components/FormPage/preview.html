@@ -1,0 +1,70 @@
+<!-- @dsCard group="Screens" height=666 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle class="dot" cx="5" cy="12" r="1.6"/><circle class="dot" cx="12" cy="12" r="1.6"/><circle class="dot" cx="19" cy="12" r="1.6"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></symbol>
+<symbol id="i-fwd" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+</defs></svg>
+<div class="fr-stage">
+  <div class="fr-col">
+    <div class="fr-plat">Web: a create form. The commit is in the header and names the thing.</div>
+    <div class="fr-pane">
+      <div class="fr-header" style="padding-left:8px">
+        <span class="fr-pinned left"><button class="fr-icon-btn" aria-label="Back to Events"><svg class="fr-g heavy" aria-hidden="true"><use href="#i-back"/></svg></button><span class="fr-pin">1</span></span>
+        <span class="fr-title" style="font-size:16px">New event</span>
+        <span class="fr-reason fr-pinned inline">Add a name first<span class="fr-pin">2</span></span>
+        <span class="fr-pinned"><button class="fr-btn is-disabled sm">Create event</button><span class="fr-pin">3</span></span>
+      </div>
+      <div class="fr-body">
+        <div class="fr-titlefield">Event name</div>
+        <div class="fr-stack" style="gap:12px">
+          <div class="fr-group">
+            <div class="fr-prop"><div class="k"><div class="n">Type</div></div><div class="v fr-pinned inline">None<svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg><span class="fr-pin">4</span></div></div>
+            <div class="fr-prop"><div class="k"><div class="n">When</div></div><div class="v">Pick a day<svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></div></div>
+            <div class="fr-prop"><div class="k"><div class="n">Repeat</div></div><div class="v">Never<svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></div></div>
+            <div class="fr-prop"><div class="k"><div class="n">Location</div></div><div class="v">Add a place<svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="fr-group">
+            <div class="fr-prop"><div class="k"><div class="n">Who's coming</div></div><div class="v">Everyone<svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></div></div>
+            <div class="fr-prop"><div class="k"><div class="n">Points</div></div><div class="v">10 points<svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></div></div>
+          </div>
+          <div class="fr-group">
+            <div class="fr-addrow"><svg class="fr-g s16" aria-hidden="true"><use href="#i-plus"/></svg><span class="fr-grow">Add agenda item</span><span class="fr-pin">5</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="fr-legend">
+      <div><span class="fr-pin">1</span><span><b>Back keeps the draft.</b> No Cancel button, no "are you sure".</span></div>
+      <div><span class="fr-pin">2</span><span><b>Why it can't be pressed yet</b>, beside the button.</span></div>
+      <div><span class="fr-pin">3</span><span><b>The commit:</b> verb and noun, one, in the header.</span></div>
+      <div><span class="fr-pin">4</span><span><b>Each value opens its picker in place.</b></span></div>
+      <div><span class="fr-pin">5</span><span><b>Add a line</b> is a row, not a button.</span></div>
+      <div><span class="fr-pin" style="background:var(--destructive-text)">×</span><span><b>No footer.</b> No "Ctrl + Enter" hint, no helper lines.</span></div>
+    </div>
+  </div>
+  <div class="fr-col phone">
+    <div class="fr-plat">Phone: a pushed screen, not a tall sheet</div>
+    <div class="fr-device" style="height:470px">
+      <div class="fr-phone-top"><span class="fr-pinned left"><span class="fr-capsule fr-glass"><svg class="fr-g heavy" aria-hidden="true"><use href="#i-back"/></svg>Events</span><span class="fr-pin">1</span></span></div>
+      <div class="fr-body">
+        <div class="fr-titlefield">Event name</div>
+        <div class="fr-stack" style="gap:12px">
+          <div class="fr-group">
+            <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Type</span></div><span class="fr-trail"><span class="fr-value">None</span><svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></span></div>
+            <div class="fr-row"><div class="fr-text"><span class="fr-row-title">When</span></div><span class="fr-trail"><span class="fr-value">Pick a day</span><svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></span></div>
+            <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Repeat</span></div><span class="fr-trail"><span class="fr-value">Never</span><svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></span></div>
+          </div>
+          <div class="fr-group">
+            <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Who's coming</span></div><span class="fr-trail"><span class="fr-value">Everyone</span><svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="fr-actionbar fr-glass"><span class="fr-pinned"><span class="fr-pill" style="opacity:.5">Create event</span><span class="fr-pin">3</span></span><span class="fr-round" aria-label="More: Discard draft"><svg class="fr-g" aria-hidden="true"><use href="#i-more"/></svg></span></div>
+    </div>
+    <div class="fr-legend one">
+      <div><span class="fr-pin">3</span><span><b>The same words</b> as web, in the action bar. Discard is under More.</span></div>
+    </div>
+  </div>
+</div>

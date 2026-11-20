@@ -1,0 +1,1170 @@
+{
+ "rules": [
+  {
+   "id": "C1",
+   "rule": "Notification: the title says what happened, the body says which item; no restating, no instructions, no abbreviations",
+   "count": 41,
+   "method": "50 title/body templates read at every notifyUser/notifyMembers/notifyChapter call site in apps/api/src plus one mobile local notification; classified by hand; count = templates not OK",
+   "classes": {
+    "other": 3,
+    "body gives an instruction": 10,
+    "body restates title": 14,
+    "OK": 9,
+    "title doesn't say what happened": 6,
+    "contains abbreviation/emoji": 8
+   },
+   "files": [
+    {
+     "path": "apps/api/src/application/workers/scheduled-jobs.service.ts",
+     "count": 7
+    },
+    {
+     "path": "apps/api/src/application/services/invite.service.ts",
+     "count": 4
+    },
+    {
+     "path": "apps/api/src/application/services/financial-invoice.service.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/api/src/application/services/event-excuse.service.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/api/src/application/services/event-announcement.service.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/api/src/application/services/task.service.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/api/src/application/services/service-entry.service.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/api/src/application/services/meeting-draft.service.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/api/src/application/services/event-series.service.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/api/src/application/workers/discord-import-worker.service.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/api/src/application/services/open-task.service.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/api/src/application/services/push-copy.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/api/src/application/services/meeting.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/points.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/meeting-notes.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/meeting-minutes-request.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/last-year-suggestions.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/chat-scheduled-message.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/chat-report.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/billing.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/ai-suggestion.service.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/meeting-recording.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/workers/chat-reminder-sweep.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/workers/chat-push-worker.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/workers/activity-recap-push.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/workers/meeting-date-reminder-sweep.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/notifications/study-pause.ts",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "C2",
+   "rule": "Indicate, don't narrate: no directive or explaining sentences",
+   "count": 255,
+   "method": "copy-work/c2.sh: 18 rg patterns over apps/web, apps/mobile, packages; non-comment lines holding a quote, backtick or JSX text; specs and release-notes.ts excluded; a line matching two patterns counts twice; Choose/Pick are 136 of the lines and are mostly form prompts",
+   "files": [
+    {
+     "path": "packages/validation/src/error-copy.ts",
+     "count": 23
+    },
+    {
+     "path": "apps/web/components/discord-import/mapping-issues.ts",
+     "count": 9
+    },
+    {
+     "path": "packages/validation/src/meeting-recording.ts",
+     "count": 7
+    },
+    {
+     "path": "packages/validation/src/meeting-copy.ts",
+     "count": 7
+    },
+    {
+     "path": "apps/mobile/components/documents/upload-document-sheet.tsx",
+     "count": 6
+    },
+    {
+     "path": "apps/web/components/discord-import/import-wizard.tsx",
+     "count": 5
+    },
+    {
+     "path": "packages/validation/src/repeat-draft.ts",
+     "count": 5
+    },
+    {
+     "path": "packages/hooks/src/auth-error-copy.ts",
+     "count": 5
+    },
+    {
+     "path": "apps/web/components/meetings/recording-upload.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/mobile/lib/notifications/push.ts",
+     "count": 4
+    },
+    {
+     "path": "apps/web/components/billing/plan-panel.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/web/components/chat/chat-shell.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/mobile/lib/auth-providers.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/lib/chat/use-chat-channel.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/web/components/onboarding/display-step.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/web/components/shared/bulk-drop-zone.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/lib/onboarding/display-step.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/app/(app)/preferences.tsx",
+     "count": 3
+    },
+    {
+     "path": "packages/hooks/src/pay-errors.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/web/components/chat/message-reminder-menu.tsx",
+     "count": 3
+    },
+    {
+     "path": "packages/hooks/src/scheduled-message-times.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/app/(app)/documents.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/components/profile/profile-photo.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/roles/presidency.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/documents/drive-folder-panel.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/backwork/backwork-upload-sheet.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/profile/profile-photo-control.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/shared/upload-sheet.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/components/study/start-card.tsx",
+     "count": 2
+    },
+    {
+     "path": "packages/validation/src/recurrence.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/backwork/bulk/bulk-upload-page.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/roles/groups-section.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/discord-import/import-states.tsx",
+     "count": 2
+    },
+    {
+     "path": "packages/chat-core/src/block-copy.ts",
+     "count": 2
+    },
+    {
+     "path": "packages/validation/src/self-assignable-roles.ts",
+     "count": 2
+    },
+    {
+     "path": "packages/validation/src/meeting-draft.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/lib/events/check-in-location.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/study/study-page.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/app/(app)/dues.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/tasks/due-date-field.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/tasks/add-task-row.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/tasks/task-form.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/points/points-adjustment-form.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/onboarding/chapter-wizard.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/events/events-navigator.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/events/event-editor-dialog.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/billing/invoice-list.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/components/chat/remind-sheet.tsx",
+     "count": 2
+    },
+    {
+     "path": "packages/validation/src/act.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/auth/app-handoff.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/directory/start-dm.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/events.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/chat/schedule-send.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/service-hours.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/tasks.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/state-block.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/quick-actions/quick-actions-host.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/settings/linked-apps-section.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/members/members-directory.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/geofences/zone-picker.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/geofences/zone-shape.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/chat/reaction-bar.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/chat/use-rail-reorder.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/quick-actions/quick-actions-panel.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/backwork/bulk/pdf-redactor.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/lib/chapter-logo.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/documents/upload-document-panel.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/documents/folder-import-panel.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/shared/file-picker.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/reports/reports-page.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/role.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/(tabs)/activity.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/chapter-settings.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(auth)/chapter-picker.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/minutes/minutes-editor.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/tasks/task-follower.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/tasks/task-form-fields.tsx",
+     "count": 1
+    },
+    {
+     "path": "packages/hooks/src/use-discord-connection.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/service/service-page.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/chat/deferred-panels.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/chat/composer-shell.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/onboarding/chapter-wizard/use-invite-shares.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/chat/channel-list.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/chat/message-thread-screen.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/chat/channel-form-sheet.tsx",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/minutes-read.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/ask.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/minutes-flow.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(auth)/join.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(auth)/terms.tsx",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/ask-greeting.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/hooks/src/member-status.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/app/layout.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/app/(auth)/no-access/page.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/events/my-check-in.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/payments/stripe.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/(tabs)/index.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/invite.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(auth)/sign-in.tsx",
+     "count": 1
+    },
+    {
+     "path": "packages/chat-core/src/channels-refused-copy.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/hooks/src/join-errors.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/hooks/src/invite-card.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/service/use-service-review.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/events/events-page.tsx",
+     "count": 1
+    },
+    {
+     "path": "packages/chat-core/src/forms.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/ai-suggestion-copy.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/screen-copy.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/hooks/src/member-threads.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/lib/google-drive-picker.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/tasks/tasks-board.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/settings/settings-roles-tab.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/settings/settings-semester-tab.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/ui/date-field.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/backwork/backwork-page.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/discord-import/channel-mapping-step.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/discord-import/upload-step.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/discord-import/review-step.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/service/log-hours-form.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/meetings/start-minutes-panel.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/personal-settings/chapter-alerts-section.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/layout/chapter-nav-header.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/alumni/alumni-directory.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/profile/blocked-members-card.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/chat-admin/chat-report-copy.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/chat/chat-background-picker.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/chat/channel-header-title.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/chat/event-quick-form.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/chat/channel-access-rows.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/tasks/create-task.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/directory.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(auth)/create-chapter.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/tasks/open-task-screen.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/chat/scheduled-messages-sheet.tsx",
+     "count": 1
+    },
+    {
+     "path": "packages/chat-core/src/card-closing.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/task-follower.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/birthday.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/minutes-edit.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/hooks/src/use-chat-background.ts",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "C3",
+   "rule": "Empty states: one factual line, the same words on web and phone",
+   "count": 21,
+   "method": "python regex over every <InlineNote>…</InlineNote> in apps/web and apps/mobile (147), plus rg for literals starting No/Nothing/Nobody/None (239 lines incl. packages); 30 states compared by hand; count = states with a narrating or directing sentence on at least one app (12 differ between web and phone)",
+   "files": [
+    {
+     "path": "apps/mobile/app/(app)/suggested-tasks.tsx",
+     "count": 6
+    },
+    {
+     "path": "apps/web/components/chat-admin/chat-admin-page.tsx",
+     "count": 6
+    },
+    {
+     "path": "apps/web/components/chat/chat-shell.tsx",
+     "count": 6
+    },
+    {
+     "path": "apps/mobile/app/(app)/(tabs)/activity.tsx",
+     "count": 5
+    },
+    {
+     "path": "apps/web/app/(dashboard)/points/page.tsx",
+     "count": 5
+    },
+    {
+     "path": "apps/web/components/tasks/tasks-board.tsx",
+     "count": 5
+    },
+    {
+     "path": "apps/mobile/app/(app)/directory.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/web/components/activity/activity-page.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/web/components/events/events-page.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/web/components/roles/groups-section.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/web/components/settings/settings-classes-tab.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/web/components/tasks/task-review.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/mobile/app/(app)/(tabs)/index.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/app/(app)/(tabs)/messages.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/app/(app)/documents.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/app/(app)/minutes-series.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/app/(app)/minutes.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/app/(app)/study.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/app/(app)/tasks.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/web/components/alumni/alumni-directory.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/web/components/backwork/backwork-page.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/web/components/billing/invoice-list.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/web/components/members/members-directory.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/web/components/service/service-leaderboard.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/app/(app)/arrange-channels.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/app/(app)/host-check-in.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/app/(app)/minutes-transcript.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/activity/activity-panel.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/backwork/bulk/bulk-upload-page.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/chat-admin/chat-reports-card.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/chat/deferred-panel.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/documents/document-list.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/meetings/minutes-read.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/points/points-audit-card.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/reports/reports-page.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/service/service-page.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/study/study-page.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/app/(app)/dues.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/event-details.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/invite.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/minutes-details.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/notifications.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/service-hours.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/task-details.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/directory/actives-filter-sheet.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/directory/member-profile-screen.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/events/events-calendar.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/minutes/event-minutes-row.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/settings/blocked-members-sheet.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/state-block.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/tasks/open-task-screen.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/events/attendance-panel.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/geofences/study-zones-manager.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/meetings/meetings-page.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/meetings/minutes-page.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/meetings/start-minutes-panel.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/personal-settings/chapter-alerts-section.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/personal-settings/my-invoices-section.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/profile/blocked-members-card.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/service/service-yours.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/settings/module-who-can.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/settings/settings-fields-tab.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/settings/settings-page.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/settings/settings-rail.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/settings/settings-semester-tab.tsx",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "C4",
+   "rule": "One status word per state, on both apps",
+   "count": 12,
+   "method": "read STATUS_LABELS and every per-feature label map found by rg for exact status-word literals; count = states with more than one word in use",
+   "files": [
+    {
+     "path": "packages/validation/src/status-labels.ts",
+     "count": 6
+    },
+    {
+     "path": "packages/hooks/src/task-card.ts",
+     "count": 3
+    },
+    {
+     "path": "packages/validation/src/meeting-copy.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/web/components/events/my-check-in.tsx",
+     "count": 4
+    },
+    {
+     "path": "apps/mobile/app/(app)/event-details.tsx",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/lib/dues/invoices.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/web/components/billing/invoice-status.ts",
+     "count": 2
+    },
+    {
+     "path": "packages/hooks/src/service-entry-card.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/tasks/task-screen.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/hooks/src/use-invites.ts",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "C5",
+   "rule": "No abbreviations; dates written out; one duration shape",
+   "count": 37,
+   "method": "copy-work/c5.sh patterns (hrs, compact h/m, weekday/month short, dateStyle medium, class-year apostrophe; emoji-data.ts dropped) plus the tight pts search (8 lines); includes about 6 non-display lines (log messages, a Drive query, a CSV guard)",
+   "files": [
+    {
+     "path": "packages/formatting/src/minutes.ts",
+     "count": 4
+    },
+    {
+     "path": "apps/mobile/lib/minutes/minutes-list.ts",
+     "count": 3
+    },
+    {
+     "path": "apps/mobile/components/study/week-summary.tsx",
+     "count": 2
+    },
+    {
+     "path": "packages/chat-core/src/threads.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/api/src/application/services/push-copy.ts",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/lib/study/format.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/service-hours/log-hours-sheet.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/chapter-points-config.service.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/event-form-rows.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/interface/filters/all-exceptions.filter.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/account-deletion.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/events/events-time-grid.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/events/events-time-grid.tsx",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/act.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/validation/src/minutes-read.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/hooks/src/activity-rows.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/application/services/event-announcement.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/members/member-detail-rows.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/api/src/infrastructure/google/google-drive-api.client.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/formatting/src/spreadsheet-cell.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/hooks/src/profile-stats.ts",
+     "count": 1
+    },
+    {
+     "path": "packages/formatting/src/display.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/components/you/profile-sections.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/mobile/components/tasks/task-form-fields.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/auth/chapter-showcase.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/landing/components/home/chat-frame.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/landing/components/home/event-frame.tsx",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "C6",
+   "rule": "One label per action",
+   "count": 9,
+   "method": "copy-work/c6.sh: exact literal or JSX-text occurrences of 46 labels per app; count = action families with more than one label in use",
+   "files": []
+  },
+  {
+   "id": "C7",
+   "rule": "No emoji, no Greek letters, no 'Signet' on screen",
+   "count": 8,
+   "method": "rg with Unicode ranges for emoji and dingbats and for the Greek blocks, and for 'Signet' inside string literals, over apps/web, apps/mobile, apps/api/src, packages (emoji-data.ts excluded); count = user-visible hits; Signet on screen = 0",
+   "files": [
+    {
+     "path": "apps/web/components/onboarding/chapter-wizard.tsx",
+     "count": 2
+    },
+    {
+     "path": "apps/api/src/application/workers/birthday-post-sweep.service.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/lib/tasks/format.ts",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(app)/check-in.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/web/components/settings/settings-org-tab.tsx",
+     "count": 1
+    },
+    {
+     "path": "apps/mobile/app/(auth)/create-chapter.tsx",
+     "count": 1
+    },
+    {
+     "path": "packages/chat-core/src/emoji-recent.ts",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "C8",
+   "rule": "Web and phone use the same words for the same screen",
+   "count": 17,
+   "method": "rg -o of label/title/placeholder/aria-label/accessibilityLabel literals from each screen's files on both apps, compared by hand; count = mismatches listed",
+   "files": []
+  }
+ ]
+}

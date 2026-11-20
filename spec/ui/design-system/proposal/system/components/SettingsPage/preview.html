@@ -1,0 +1,60 @@
+<!-- @dsCard group="Surfaces" height=666 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></symbol>
+<symbol id="i-fwd" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+</defs></svg>
+<div class="fr-stage">
+  <div class="fr-col">
+    <div class="fr-plat">Web: a rail of sections, grouped rows, each row one trailing thing</div>
+    <div class="fr-pane" style="display:flex">
+      <div style="width:168px;flex:none;padding:16px 8px;border-right:1px solid var(--border)">
+        <div class="fr-section" style="padding:0 8px"><span class="fr-name">My account</span></div>
+        <div class="fr-row web" style="border-radius:10px;padding:6px 8px"><span class="fr-row-title" style="font-weight:400;color:var(--muted-foreground)">Notifications</span></div>
+        <div class="fr-row web" style="border-radius:10px;padding:6px 8px"><span class="fr-row-title" style="font-weight:400;color:var(--muted-foreground)">Appearance</span></div>
+        <div class="fr-section" style="padding:0 8px;margin-top:16px"><span class="fr-name">This chapter</span></div>
+        <div class="fr-row web" style="border-radius:10px;padding:6px 8px;background:var(--accent-subtle)"><span class="fr-row-title" style="color:var(--accent-text)">Chapter alerts</span></div>
+        <div class="fr-row web" style="border-radius:10px;padding:6px 8px"><span class="fr-row-title" style="font-weight:400;color:var(--muted-foreground)">Blocked members</span></div>
+      </div>
+      <div class="fr-body fr-grow">
+        <div class="fr-section"><span class="fr-name">Chat messages</span></div>
+        <div class="fr-group">
+          <div class="fr-prop"><div class="k"><div class="n">Notify me about</div></div><div class="v">All messages<svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></div></div>
+          <div class="fr-prop"><div class="k"><div class="n">Quiet hours</div></div><div class="v">Off<svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></div></div>
+        </div>
+        <div class="fr-section"><span class="fr-name">Chapter</span></div>
+        <div class="fr-group">
+          <div class="fr-prop"><div class="k"><div class="n">Events</div><div class="d">Reminders, new events, time and location changes</div></div><span class="fr-switch is-on"></span></div>
+          <div class="fr-prop"><div class="k"><div class="n">Points</div><div class="d">Awards, fines and leaderboard movement</div></div><span class="fr-switch is-on"></span></div>
+          <div class="fr-prop"><div class="k"><div class="n">Tasks</div><div class="d">Assigned, due soon, overdue, completed</div></div><span class="fr-switch"></span></div>
+          <div class="fr-prop"><div class="k"><div class="n">Weekly recap</div><div class="d">Sunday morning</div></div><span class="fr-switch is-on"></span></div>
+        </div>
+        <div class="fr-section"><span class="fr-name">More</span></div>
+        <div class="fr-group">
+          <div class="fr-prop"><div class="k"><div class="n">Announcements</div><div class="d">Always on</div></div><div class="v"><svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="fr-note">No Save button: a switch or a pick saves as it changes. No sentence explains a row whose label already says it.</div>
+  </div>
+  <div class="fr-col phone">
+    <div class="fr-plat">Phone: the same groups, rows and words</div>
+    <div class="fr-device">
+      <div class="fr-phone-top"><span class="fr-capsule fr-glass"><svg class="fr-g heavy" aria-hidden="true"><use href="#i-back"/></svg>Settings</span></div>
+      <div class="fr-phone-header"><span class="fr-title">Chapter alerts</span></div>
+      <div class="fr-body">
+        <div class="fr-section"><span class="fr-name">Chat messages</span></div>
+        <div class="fr-group">
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Notify me about</span></div><span class="fr-trail"><span class="fr-value">All messages</span><svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></span></div>
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Quiet hours</span></div><span class="fr-trail"><span class="fr-value">Off</span><svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></span></div>
+        </div>
+        <div class="fr-section"><span class="fr-name">Chapter</span></div>
+        <div class="fr-group">
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Events</span><span class="fr-meta">Reminders, new events, changes</span></div><span class="fr-switch touch is-on"></span></div>
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Points</span><span class="fr-meta">Awards, fines, leaderboard</span></div><span class="fr-switch touch is-on"></span></div>
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Tasks</span><span class="fr-meta">Assigned, due soon, overdue</span></div><span class="fr-switch touch"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

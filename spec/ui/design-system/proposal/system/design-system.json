@@ -1,0 +1,114 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-20T22:32:11Z"
+  },
+  "title": "Frapp",
+  "namespace": "Frapp",
+  "libraries": [],
+  "sections": {},
+  "groups": [
+    "Logos",
+    "Today"
+  ],
+  "assetGroups": {
+    "Logos": {
+      "name": "Logos",
+      "tile": "l",
+      "order": [
+        "frapp-emblem.svg",
+        "frapp-emblem-rounded.svg",
+        "frapp-emblem-glyph.svg"
+      ],
+      "files": {
+        "frapp-emblem.svg": {
+          "name": "frapp-emblem.svg",
+          "blob": "cf7cfabad05f1a401d947d1e84dbc4cc",
+          "size": 3622,
+          "type": "image/svg+xml"
+        },
+        "frapp-emblem-rounded.svg": {
+          "name": "frapp-emblem-rounded.svg",
+          "blob": "38928f7edd92f5ba764b2fec155c2025",
+          "size": 3627,
+          "type": "image/svg+xml"
+        },
+        "frapp-emblem-glyph.svg": {
+          "name": "frapp-emblem-glyph.svg",
+          "blob": "7ecd3674abb54c1add37b5e64e06ddca",
+          "size": 3564,
+          "type": "image/svg+xml"
+        }
+      }
+    },
+    "Today": {
+      "name": "Today",
+      "tile": "l",
+      "order": [
+        "events-web-today.png",
+        "events-phone-today.png",
+        "service-web-today.png",
+        "service-phone-today.png",
+        "event-record-web-today.png",
+        "event-record-phone-today.png",
+        "points-web-today.png"
+      ],
+      "files": {
+        "events-web-today.png": {
+          "name": "events-web-today.png",
+          "blob": "4fe8187e81af0114a36d057fc133f088",
+          "size": 102305,
+          "type": "image/png"
+        },
+        "events-phone-today.png": {
+          "name": "events-phone-today.png",
+          "blob": "da369088af1278aebb6508130e9984f4",
+          "size": 101447,
+          "type": "image/png"
+        },
+        "service-web-today.png": {
+          "name": "service-web-today.png",
+          "blob": "24b43d4e436ee60ea2dafc0d31a0bbf6",
+          "size": 65727,
+          "type": "image/png"
+        },
+        "service-phone-today.png": {
+          "name": "service-phone-today.png",
+          "blob": "4324dc187801bc7641f9f5f094369920",
+          "size": 53836,
+          "type": "image/png"
+        },
+        "event-record-web-today.png": {
+          "name": "event-record-web-today.png",
+          "blob": "7e4e59ede613c09f1dfde7e91fa78920",
+          "size": 82578,
+          "type": "image/png"
+        },
+        "event-record-phone-today.png": {
+          "name": "event-record-phone-today.png",
+          "blob": "34881c749e504b3bffe591f75646338b",
+          "size": 131360,
+          "type": "image/png"
+        },
+        "points-web-today.png": {
+          "name": "points-web-today.png",
+          "blob": "033d005327d76ae8b75f05d348a1d589",
+          "size": 89656,
+          "type": "image/png"
+        }
+      }
+    }
+  },
+  "blobs": {},
+  "docs": {
+    "sections": []
+  },
+  "lastChange": {
+    "by": "Claude",
+    "at": "2026-11-20T22:53:24Z",
+    "via": "Claude Code",
+    "note": "Added Screen layouts: six page types, Service hours and Events redrawn beside today's captures, the event record against today, and nine layout decisions."
+  }
+}

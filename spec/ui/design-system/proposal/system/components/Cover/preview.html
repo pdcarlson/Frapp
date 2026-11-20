@@ -1,0 +1,27 @@
+<!-- @dsCard height=288 -->
+<style>
+  .cv{position:relative;width:960px;height:288px;background:var(--background);overflow:hidden;font-family:var(--font-sans)}
+  .cv svg{position:absolute;inset:0}
+  .cv .blk{rx:var(--radius-2xl)}
+  .cv .tile{rx:var(--radius-lg);fill:var(--surface-1);stroke:var(--border);stroke-width:1}
+  .cv .disc{fill:var(--popover);stroke:var(--border);stroke-width:1}
+  .cv .primary{fill:var(--primary)}
+  .cv .popover{fill:var(--popover)}
+  .cv .card{fill:var(--card)}
+  .cv .subtle{fill:var(--accent-subtle);stroke:var(--accent-border);stroke-width:1}
+  .cv .txt{position:absolute;left:var(--space-2xl);bottom:var(--space-lg);max-width:440px}
+  .cv .name{font-size:120px;line-height:.95;font-weight:700;letter-spacing:-0.03em;color:var(--foreground)}
+  .cv .tag{margin-top:var(--space-lg);font-size:14px;line-height:1.35;color:var(--muted)}
+</style>
+<div class="cv">
+  <svg viewBox="0 0 960 288" width="960" height="288" aria-hidden="true">
+    <!--
+      blocks: primary 104x160, popover 216x104, card 104x160, accent-subtle 104x104 (all on a 48 + 8 pitch: space-3xl + space-sm)
+      arrangement: one modular grid, flush, from x = 496 to the right edge; the chapter colour is one tall slab, the ladder steps hold the rest
+      pattern: geometric, modular, dense UI row. Tiles cut by the radius tokens, some merged like rows in a raised group, because the system says "everything sits in a raised group with an edge" and "squares are things, circles are people" (the one disc)
+      scales: pitch space-3xl + space-sm, tiles radius-lg, blocks radius-2xl, edges the border hairline
+    -->
+    <rect class="blk primary" x="608" y="4" width="104" height="160"/><rect class="blk popover" x="720" y="4" width="216" height="104"/><rect class="blk subtle" x="496" y="172" width="104" height="104"/><rect class="blk card" x="720" y="116" width="104" height="160"/><rect class="tile" x="496" y="4" width="48" height="48"/><rect class="tile" x="552" y="4" width="48" height="48"/><rect class="tile" x="496" y="60" width="48" height="48"/><rect class="tile" x="552" y="60" width="48" height="48"/><rect class="tile" x="496" y="116" width="48" height="48"/><rect class="tile" x="552" y="116" width="48" height="48"/><rect class="tile" x="608" y="172" width="48" height="48"/><rect class="tile" x="664" y="172" width="48" height="48"/><rect class="tile" x="608" y="228" width="48" height="48"/><rect class="tile" x="664" y="228" width="48" height="48"/><rect class="tile" x="832" y="116" width="48" height="48"/><rect class="tile" x="888" y="116" width="48" height="48"/><rect class="tile" x="888" y="172" width="48" height="48"/><rect class="tile" x="832" y="228" width="48" height="48"/><rect class="tile" x="888" y="228" width="48" height="48"/><circle class="disc" cx="856" cy="196" r="24"/>
+  </svg>
+  <div class="txt"><div class="name">Frapp</div><div class="tag">The chapter&#39;s house, kept in order.</div></div>
+</div>

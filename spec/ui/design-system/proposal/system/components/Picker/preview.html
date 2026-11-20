@@ -1,0 +1,58 @@
+<!-- @dsCard group="Selection" height=478 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+<symbol id="i-fwd" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.2"/><path d="M15.2 15.2l4.3 4.3"/></symbol>
+</defs></svg>
+<div class="fr-stage">
+  <div class="fr-col">
+    <div class="fr-plat">Web: the field shows its value; the list opens under it</div>
+    <div class="fr-pane"><div class="fr-body" style="display:flex;gap:24px;align-items:flex-start">
+      <div style="width:220px" class="fr-stack">
+        <div class="fr-t-label">Repeat</div>
+        <div class="fr-field is-open"><span class="fr-grow">Weekly</span><svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></div>
+        <div class="fr-menu" style="min-width:0">
+          <div class="fr-menu-item">Never</div>
+          <div class="fr-menu-item is-hover">Weekly<span class="end" style="color:var(--foreground)"><svg class="fr-g s16" aria-hidden="true"><use href="#i-check"/></svg></span></div>
+          <div class="fr-menu-item">Every two weeks</div>
+          <div class="fr-menu-item">Monthly</div>
+        </div>
+      </div>
+      <div style="width:250px" class="fr-stack">
+        <div class="fr-t-label">Assigned to</div>
+        <div class="fr-field is-open"><span class="fr-grow">Devin Okafor</span><svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></div>
+        <div class="fr-menu" style="min-width:0">
+          <div class="fr-menu-search"><svg class="fr-g s16" aria-hidden="true"><use href="#i-search"/></svg><span>Search members</span></div>
+          <div class="fr-menu-item"><span class="fr-avatar sm fr-hue-periwinkle">AW</span>Aaron Whitfield</div>
+          <div class="fr-menu-item is-hover"><span class="fr-avatar sm fr-hue-teal">DO</span>Devin Okafor<span class="end" style="color:var(--foreground)"><svg class="fr-g s16" aria-hidden="true"><use href="#i-check"/></svg></span></div>
+          <div class="fr-menu-item"><span class="fr-avatar sm fr-hue-rose">EB</span>Elias Brandt</div>
+          <div class="fr-menu-item"><span class="fr-avatar sm fr-hue-sand">JR</span>Julian Reyes</div>
+        </div>
+        <div class="fr-note">Past 8 options the list gets a search field.</div>
+      </div>
+    </div></div>
+  </div>
+  <div class="fr-col phone">
+    <div class="fr-plat">Phone: a sheet sized to its options. A tap picks and closes.</div>
+    <div class="fr-device" style="height:340px">
+      <div class="fr-body" style="padding-top:16px">
+        <div class="fr-group">
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Repeat</span></div><span class="fr-trail"><span class="fr-value">Weekly</span><svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></span></div>
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title">Location</span></div><span class="fr-trail"><span class="fr-value">Great Room</span><svg class="fr-g s16 heavy" aria-hidden="true"><use href="#i-fwd"/></svg></span></div>
+        </div>
+      </div>
+      <div class="fr-scrim"></div>
+      <div class="fr-sheet">
+        <div class="fr-grabber"></div>
+        <div class="fr-group on-popover">
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title" style="font-weight:400;font-size:16px">Never</span></div></div>
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title" style="font-size:16px">Weekly</span></div><span class="fr-trail" style="color:var(--primary)"><svg class="fr-g" aria-hidden="true"><use href="#i-check"/></svg></span></div>
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title" style="font-weight:400;font-size:16px">Every two weeks</span></div></div>
+          <div class="fr-row"><div class="fr-text"><span class="fr-row-title" style="font-weight:400;font-size:16px">Monthly</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="fr-note">No title bar, no Done, no Cancel. Never full height for a short list.</div>
+  </div>
+</div>

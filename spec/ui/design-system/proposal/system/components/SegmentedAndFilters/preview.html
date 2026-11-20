@@ -1,0 +1,45 @@
+<!-- @dsCard group="Selection" height=478 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.2"/><path d="M15.2 15.2l4.3 4.3"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3"/><path d="M14 2v4M8 10v4M16 18v4"/></symbol>
+</defs></svg>
+<div class="fr-stage">
+  <div class="fr-col">
+    <div class="fr-plat">Web: a view switch, one Filter button, the filters that are on</div>
+    <div class="fr-pane">
+      <div class="fr-header">
+        <span class="fr-title">Directory</span>
+        <span class="fr-seg"><span class="is-on">Actives</span><span>Alumni</span></span>
+        <button class="fr-btn secondary sm"><svg class="fr-g s16" aria-hidden="true"><use href="#i-filter"/></svg>Filter<span class="fr-count-dot">2</span></button>
+        <button class="fr-action">Invite member</button>
+      </div>
+      <div class="fr-active-filters">
+        <span class="fr-chip outline"><span class="fr-mu">Role</span>Secretary <svg class="fr-g s16" aria-hidden="true"><use href="#i-x"/></svg></span>
+        <span class="fr-chip outline"><span class="fr-mu">Graduation year</span>2027 <svg class="fr-g s16" aria-hidden="true"><use href="#i-x"/></svg></span>
+        <button class="fr-btn link" style="font-size:12.5px">Clear all</button>
+      </div>
+      <div class="fr-body fr-stack" style="gap:16px">
+        <div class="fr-line"><span class="fr-plat" style="width:170px">View switch (neutral)</span><span class="fr-seg"><span class="is-on">My tasks</span><span>Everyone's</span></span><span class="fr-seg"><span>All time</span><span class="is-on">Semester</span><span>Month</span></span></div>
+        <div class="fr-line"><span class="fr-plat" style="width:170px">A choice in a form (accent)</span><span class="fr-seg accent"><span>All messages</span><span class="is-on">Mentions only</span></span></div>
+        <div class="fr-line"><span class="fr-verdict dont" style="width:170px">Not this: a row of dropdown pills</span><span class="fr-btn secondary sm" style="border-radius:18px">Role <svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></span><span class="fr-btn secondary sm" style="border-radius:18px">Group <svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></span><span class="fr-btn secondary sm" style="border-radius:18px">Status <svg class="fr-g s16" aria-hidden="true"><use href="#i-down"/></svg></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="fr-col phone">
+    <div class="fr-plat">Phone: the same switch, one Filters chip, a sheet</div>
+    <div class="fr-device" style="height:356px">
+      <div class="fr-phone-header" style="padding-top:16px"><span class="fr-title">Directory</span><span class="fr-hbtn" aria-label="Search"><svg class="fr-g" aria-hidden="true"><use href="#i-search"/></svg></span></div>
+      <div class="fr-body fr-stack" style="gap:12px">
+        <span class="fr-seg touch"><span class="is-on">Actives</span><span>Alumni</span></span>
+        <div class="fr-line"><span class="fr-chip is-on" style="height:32px;border-radius:10px;padding:0 12px;font-size:14px"><svg class="fr-g s16" aria-hidden="true"><use href="#i-filter"/></svg>Filters · 2</span></div>
+        <div class="fr-group">
+          <div class="fr-row"><span class="fr-avatar fr-hue-periwinkle">AW</span><div class="fr-text"><span class="fr-row-title">Aaron Whitfield</span><span class="fr-meta">Secretary<span class="sep">·</span>Class of 2027</span></div></div>
+          <div class="fr-row"><span class="fr-avatar fr-hue-green">LF</span><div class="fr-text"><span class="fr-row-title">Luca Ferretti</span><span class="fr-meta">Secretary<span class="sep">·</span>Class of 2027</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="fr-note">Two or three named sets people switch between all day are a segmented control. Everything else is a filter.</div>
+  </div>
+</div>
