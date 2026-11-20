@@ -120,6 +120,21 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-20",
+    title: "New in this update",
+    changes: [
+      "Event rows now say when an event starts and ends, not just when it starts.",
+      "Tapping Get Frapp on an invite link copies the invite, so after installing, one tap on Paste opens your chapter's invite.",
+      "The app's dark surfaces are a softer near-black now, with gentler steps between the page, cards and menus.",
+    ],
+    web: [
+      "Rows show more at a glance: an event says when check-in is open, a task says how it repeats and how far along its checklist and photos are, and a study session says which zone it was in.",
+    ],
+    phone: [
+      "Documents now say when they take effect, and study sessions show the date and time the same way the web does.",
+    ],
+  },
+  {
     date: "2026-11-19",
     title: "New in this update",
     changes: [
