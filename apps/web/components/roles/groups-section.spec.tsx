@@ -128,7 +128,7 @@ describe("GroupsSection (#4076)", () => {
     render(<GroupsSection canManage />);
     await user.click(screen.getByRole("button", { name: "Edit Third floor" }));
     await user.type(screen.getByLabelText("Add a member"), "ben");
-    await user.click(screen.getByRole("button", { name: "Add Ben Park" }));
+    await user.click(screen.getByRole("option", { name: "Ben Park" }));
     await user.click(
       screen.getByRole("button", { name: "Remove Ann Lee from Third floor" }),
     );
@@ -138,6 +138,15 @@ describe("GroupsSection (#4076)", () => {
       id: "g-floor",
       memberIds: ["u2"],
     });
+  });
+
+  it("lists everyone who can be added as soon as the search is clicked (#5738)", async () => {
+    const user = userEvent.setup();
+    render(<GroupsSection canManage />);
+    await user.click(screen.getByRole("button", { name: "Edit Third floor" }));
+    await user.click(screen.getByLabelText("Add a member"));
+    expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("option", { name: "Ann Lee" })).toBeNull();
   });
 
   it("lets an automatic group's ping switch change, and not its name or members", async () => {

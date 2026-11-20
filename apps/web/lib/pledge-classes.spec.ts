@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  addRow,
   classAssignments,
-  nextOrderNumber,
   renumberRows,
   type ClassEditorRow,
 } from "./pledge-classes";
@@ -25,21 +25,42 @@ describe("renumberRows", () => {
     ]);
   });
 
-  it("numbers 1 to n when any row has no number", () => {
+  it("numbers 1 to n when no row has a number", () => {
     expect(
-      renumberRows([row("b", ""), row("a", "9")]).map((entry) => entry.number),
+      renumberRows([row("b", ""), row("a", "")]).map((entry) => entry.number),
     ).toEqual(["1", "2"]);
+  });
+
+  it("keeps the numbers rows hold and counts on from the highest for the rest", () => {
+    expect(
+      renumberRows([row("b", ""), row("a", "41"), row("c", "47")]).map(
+        (entry) => [entry.memberId, entry.number],
+      ),
+    ).toEqual([
+      ["b", "41"],
+      ["a", "47"],
+      ["c", "48"],
+    ]);
   });
 });
 
-describe("nextOrderNumber", () => {
-  it("is one past the highest when every row is numbered", () => {
-    expect(nextOrderNumber([row("a", "3"), row("b", "8")])).toBe("9");
-    expect(nextOrderNumber([])).toBe("1");
+describe("addRow", () => {
+  it("adds a member at the end, one past the highest number", () => {
+    expect(
+      addRow([row("a", "41"), row("b", "42")], {
+        memberId: "c",
+        name: "c",
+      }).map((entry) => entry.number),
+    ).toEqual(["41", "42", "43"]);
   });
 
-  it("is blank when the class is not fully numbered", () => {
-    expect(nextOrderNumber([row("a", "3"), row("b", "")])).toBe("");
+  it("numbers a class with no numbers yet from 1", () => {
+    expect(
+      addRow([row("a", "")], { memberId: "b", name: "b" }).map(
+        (entry) => entry.number,
+      ),
+    ).toEqual(["1", "2"]);
+    expect(addRow([], { memberId: "a", name: "a" })[0]?.number).toBe("1");
   });
 });
 

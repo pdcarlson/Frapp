@@ -36,6 +36,7 @@ import {
 } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InlineNote } from "@/components/shared/inline-note";
+import { MemberSearchField } from "@/components/shared/member-search-field";
 import {
   Panel,
   PanelBody,
@@ -47,9 +48,6 @@ import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleto
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage } from "@/lib/utils";
-
-/** How many matches the add-member search lists at once. */
-const ADD_MATCH_LIMIT = 8;
 
 function memberCountLabel(count: number): string {
   return count === 1 ? "1 member" : `${count} members`;
@@ -399,7 +397,6 @@ function GroupEditor({
   );
   const [mentionable, setMentionable] = useState(group.mentionable);
   const [picked, setPicked] = useState<string[]>(group.member_ids);
-  const [search, setSearch] = useState("");
   const busy = update.isPending || setMembers.isPending;
 
   const byUser = useMemo(
@@ -407,17 +404,13 @@ function GroupEditor({
     [members],
   );
   const pickedSet = useMemo(() => new Set(picked), [picked]);
-  const matches = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return [];
-    return members
-      .filter(
-        (member) =>
-          !pickedSet.has(member.user_id) &&
-          rowName(member).toLowerCase().includes(query),
-      )
-      .slice(0, ADD_MATCH_LIMIT);
-  }, [members, pickedSet, search]);
+  const addable = useMemo(
+    () =>
+      members
+        .filter((member) => !pickedSet.has(member.user_id))
+        .sort((a, b) => rowName(a).localeCompare(rowName(b))),
+    [members, pickedSet],
+  );
   const rows = picked
     .map((userId) => ({
       userId,
@@ -527,49 +520,17 @@ function GroupEditor({
         </div>
 
         {manual ? (
-          <div className="grid gap-1">
-            <Label htmlFor="group-add-member">Add a member</Label>
-            <Input
-              id="group-add-member"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by name"
-              autoComplete="off"
-              disabled={busy}
-            />
-            {search.trim() ? (
-              matches.length > 0 ? (
-                <ul className="divide-y divide-border rounded-md border border-border">
-                  {matches.map((member) => (
-                    <li
-                      key={member.user_id}
-                      className="flex items-center justify-between gap-3 px-3 py-1.5"
-                    >
-                      <p className="min-w-0 truncate text-sm">
-                        {rowName(member)}
-                      </p>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          setPicked((previous) => [
-                            ...previous,
-                            member.user_id,
-                          ]);
-                          setSearch("");
-                        }}
-                        aria-label={`Add ${rowName(member)}`}
-                      >
-                        Add
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <InlineNote>No other member matches.</InlineNote>
-              )
-            ) : null}
-          </div>
+          <MemberSearchField
+            label="Add a member"
+            items={addable}
+            nameOf={rowName}
+            keyOf={(member) => member.user_id}
+            onAdd={(member) =>
+              setPicked((previous) => [...previous, member.user_id])
+            }
+            emptyText="Everyone is already in it."
+            disabled={busy}
+          />
         ) : null}
 
         <div className="space-y-2">

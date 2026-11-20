@@ -25,20 +25,26 @@ import { FOCUS_RING } from "@/components/ui/focus"
  * caption to be wired with `aria-describedby` — that half belongs to the form
  * that owns the caption and is not something this primitive can do for it.
  */
+/**
+ * The field's look, for a text field this primitive can't render: cmdk's own
+ * input, which must be the element carrying the combobox roles
+ * (`components/shared/member-search-field.tsx`).
+ */
+const INPUT_CLASSES = cn(
+  "flex h-10 w-full rounded-md border border-control-edge bg-surface-1 px-3 py-1 text-base pointer-coarse:h-11 text-foreground caret-primary transition-colors",
+  "file:border-0 file:bg-transparent file:text-sm file:font-semibold file:text-foreground",
+  "placeholder:text-muted-foreground",
+  FOCUS_RING,
+  "enabled:aria-[invalid=true]:border-destructive enabled:aria-[invalid=true]:focus-visible:border-destructive enabled:aria-[invalid=true]:focus-visible:ring-destructive/25",
+  "disabled:cursor-not-allowed disabled:border-border disabled:text-disabled"
+)
+
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => {
     return (
       <input
         type={type}
-        className={cn(
-          "flex h-10 w-full rounded-md border border-control-edge bg-surface-1 px-3 py-1 text-base pointer-coarse:h-11 text-foreground caret-primary transition-colors",
-          "file:border-0 file:bg-transparent file:text-sm file:font-semibold file:text-foreground",
-          "placeholder:text-muted-foreground",
-          FOCUS_RING,
-          "enabled:aria-[invalid=true]:border-destructive enabled:aria-[invalid=true]:focus-visible:border-destructive enabled:aria-[invalid=true]:focus-visible:ring-destructive/25",
-          "disabled:cursor-not-allowed disabled:border-border disabled:text-disabled",
-          className
-        )}
+        className={cn(INPUT_CLASSES, className)}
         ref={ref}
         {...props}
       />
@@ -47,4 +53,4 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
 )
 Input.displayName = "Input"
 
-export { Input }
+export { Input, INPUT_CLASSES }

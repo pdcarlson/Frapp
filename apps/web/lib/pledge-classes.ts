@@ -10,33 +10,40 @@ export type ClassEditorRow = {
 };
 
 /**
- * The rows' numbers after the rows were put in a new order.
+ * The rows' numbers after the rows were put in a new order, or one was added.
+ * The numbers follow the list (#5738): there is no number to type in the
+ * class editor.
  *
- * When every row already holds a number, the same numbers are dealt back out
- * lowest first. A chapter that numbers everyone chapter-wide (a roll or bond
- * number) keeps the numbers this class holds, 41 to 52 say, and only who holds
- * which changes. Otherwise the rows are numbered 1 to n, which is what a
- * chapter that orders people inside a class wants from a first drag.
+ * The numbers the rows already hold are kept and dealt back out lowest first,
+ * and a row without one takes the next number after the highest. A chapter
+ * that numbers everyone chapter-wide (a roll or bond number) keeps the numbers
+ * this class holds, 41 to 52 say, and only who holds which changes; a class
+ * with no numbers yet is numbered 1 to n. A row past `MEMBER_ORDER_NUMBER_MAX`
+ * is left without one.
  */
-export function renumberRows(rows: readonly ClassEditorRow[]): ClassEditorRow[] {
-  const numbers = rows.map((row) => parseOrderNumber(row.number));
-  const allNumbered = numbers.every(
-    (value): value is number => typeof value === "number",
-  );
-  const dealt = allNumbered
-    ? [...(numbers as number[])].sort((a, b) => a - b)
-    : rows.map((_, index) => index + 1);
-  return rows.map((row, index) => ({ ...row, number: String(dealt[index]) }));
+export function renumberRows(
+  rows: readonly ClassEditorRow[],
+): ClassEditorRow[] {
+  const held = rows
+    .map((row) => parseOrderNumber(row.number))
+    .filter((value): value is number => typeof value === "number");
+  let next = Math.max(0, ...held);
+  const fresh = Array.from({ length: rows.length - held.length }, () => ++next);
+  const dealt = [...held, ...fresh]
+    .filter((value) => value <= MEMBER_ORDER_NUMBER_MAX)
+    .sort((a, b) => a - b);
+  return rows.map((row, index) => ({
+    ...row,
+    number: dealt[index] === undefined ? "" : String(dealt[index]),
+  }));
 }
 
-/** The number a member added to the end of the class starts with. */
-export function nextOrderNumber(rows: readonly ClassEditorRow[]): string {
-  const numbers = rows.map((row) => parseOrderNumber(row.number));
-  if (!numbers.every((value): value is number => typeof value === "number")) {
-    return "";
-  }
-  const next = Math.max(0, ...numbers) + 1;
-  return next <= MEMBER_ORDER_NUMBER_MAX ? String(next) : "";
+/** The rows with a member added at the end, as the newest of the class. */
+export function addRow(
+  rows: readonly ClassEditorRow[],
+  added: Omit<ClassEditorRow, "number">,
+): ClassEditorRow[] {
+  return renumberRows([...rows, { ...added, number: "" }]);
 }
 
 type SavedMember = {
