@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -11,9 +12,13 @@ import * as Clipboard from "expo-clipboard";
 import { useRouter } from "expo-router";
 import {
   useChapterRoster,
+  useClearMeetingDateReminder,
   useComingUpTracking,
+  useMeetingDateReminders,
   useMemberDisplayNames,
+  useSetMeetingDateReminder,
 } from "@repo/hooks";
+import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   COMING_UP_COPY,
@@ -22,6 +27,8 @@ import {
   comingUpEventTimes,
   comingUpIsAhead,
   comingUpMenu,
+  comingUpReminderFor,
+  comingUpReminderTime,
   suggestTaskOwner,
   type ComingUpMenuAction,
   type MeetingContent,
@@ -29,10 +36,12 @@ import {
 import {
   CalendarPlusGlyph,
   CheckGlyph,
+  CloseGlyph,
   CopyGlyph,
   ForwardGlyph,
   MoreGlyph,
 } from "@/components/control-glyphs";
+import { BellGlyph } from "@/components/notifications/push-ask";
 import { NewEventSheet } from "@/components/events/new-event-sheet";
 import { MinutesDates } from "@/components/minutes/minutes-body";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
@@ -49,6 +58,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 type DateItem = MeetingContent["dates"][number];
 
 const GLYPHS: Record<ComingUpMenuAction, (color: string) => React.ReactNode> = {
+  remindMe: (color) => <BellGlyph color={color} size={20} />,
+  cancelReminder: (color) => <CloseGlyph color={color} />,
   openEvent: (color) => <ForwardGlyph color={color} />,
   addToCalendar: (color) => <CalendarPlusGlyph color={color} />,
   makeTask: (color) => <CheckGlyph color={color} />,
@@ -62,13 +73,21 @@ const GLYPHS: Record<ComingUpMenuAction, (color: string) => React.ReactNode> = {
  * and its ⋯ turns it into one: Open the event (or Add to calendar, the New
  * event sheet on that day with the date's words), Make a task (the task
  * sheet, due that day, Who guessed from the words as suggested tasks guess
- * it) and Copy date. Web's `coming-up-dates.tsx` draws the same chips and
+ * it) and Copy date. Remind me, for every reader, pushes the date to them
+ * the evening before (or that morning), and a "Reminder · December 3, 6 PM"
+ * chip says it is set. Web's `coming-up-dates.tsx` draws the same chips and
  * menu in the same order, from `@repo/validation`'s `coming-up-tracking.ts`.
+ *
+ * The phone has no toast, so a set or a cancel confirms as Save does: a tick
+ * of haptics, the chip appearing or going, and the words said to a screen
+ * reader. A failed write says so in an alert.
  */
 export function ComingUpDates({
+  meetingId,
   dates,
   viewerId,
 }: {
+  meetingId: string;
   dates: MeetingContent["dates"];
   viewerId: string | null;
 }) {
@@ -80,6 +99,11 @@ export function ComingUpDates({
   const names = useMemberDisplayNames();
   const roster = useChapterRoster();
   const itemMenu = useItemMenu();
+  const reminders = useMeetingDateReminders(meetingId);
+  const setReminder = useSetMeetingDateReminder(meetingId);
+  const clearReminder = useClearMeetingDateReminder(meetingId);
+  const reminderOn = (item: DateItem) =>
+    comingUpReminderFor(reminders.data ?? [], item);
 
   const [eventFor, setEventFor] = useState<{
     key: string;
@@ -100,7 +124,37 @@ export function ComingUpDates({
 
   function run(action: ComingUpMenuAction, item: DateItem, index: number) {
     const key = `${item.date}-${index}`;
-    if (action === "openEvent") {
+    if (action === "remindMe") {
+      const at = comingUpReminderTime(item.date);
+      if (!at) return;
+      selectionHaptic();
+      setReminder
+        .mutateAsync({ date: item.date, text: item.text, remindAt: at })
+        .then(
+          () => {
+            AccessibilityInfo.announceForAccessibility(
+              COMING_UP_COPY.reminderSet(at),
+            );
+          },
+          (error: unknown) => {
+            Alert.alert(COMING_UP_COPY.reminderSetFailed, errorCopy(error));
+          },
+        );
+    } else if (action === "cancelReminder") {
+      const reminder = reminderOn(item);
+      if (!reminder) return;
+      selectionHaptic();
+      clearReminder.mutateAsync(reminder.id).then(
+        () => {
+          AccessibilityInfo.announceForAccessibility(
+            COMING_UP_COPY.reminderCanceled,
+          );
+        },
+        (error: unknown) => {
+          Alert.alert(COMING_UP_COPY.reminderCancelFailed, errorCopy(error));
+        },
+      );
+    } else if (action === "openEvent") {
       const event = tracking[index]?.event;
       if (event) {
         router.push({ pathname: "/event-details", params: { id: event.id } });
@@ -150,10 +204,14 @@ export function ComingUpDates({
     <>
       <MinutesDates
         dates={dates}
-        below={(_, index) => {
-          const track = tracking[index];
-          if (!track) return null;
-          const chips = comingUpChips(track, names.nameFor, viewerId);
+        below={(item, index) => {
+          const track = tracking[index] ?? { event: null, tasks: [] };
+          const chips = comingUpChips(
+            track,
+            names.nameFor,
+            viewerId,
+            reminderOn(item),
+          );
           if (chips.length === 0) return null;
           return (
             <View style={styles.chips}>
@@ -165,7 +223,7 @@ export function ComingUpDates({
                           pathname: "/event-details",
                           params: { id: track.event!.id },
                         })
-                    : track.tasks[0]
+                    : chip.key === "task" && track.tasks[0]
                       ? () =>
                           router.push({
                             pathname: "/task-details",
@@ -197,6 +255,8 @@ export function ComingUpDates({
             upcoming: comingUpIsAhead(item.date),
             canCreateEvents,
             canManageTasks,
+            hasReminder: !!reminderOn(item),
+            canRemind: comingUpReminderTime(item.date) !== null,
           }).map((entry) => ({
             key: entry.action,
             label: entry.label,

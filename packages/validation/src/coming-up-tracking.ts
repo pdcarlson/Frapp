@@ -157,23 +157,32 @@ export const COMING_UP_COPY = {
   task: (name: string | null) => (name ? `Task · ${name}` : "Task made"),
   taskForPeople: (count: number) => `Task · ${count} people`,
   tasks: (count: number) => `${count} tasks`,
+  remindMe: "Remind me",
+  cancelReminder: "Cancel reminder",
+  reminder: (at: Date) => `Reminder · ${comingUpReminderWhen(at)}`,
+  reminderSet: (at: Date) => `We'll remind you ${comingUpReminderWhen(at)}`,
+  reminderSetFailed: "Couldn't set the reminder",
+  reminderCanceled: "Reminder canceled",
+  reminderCancelFailed: "Couldn't cancel the reminder",
 } as const;
 
 /** One chip under a date: what already tracks it. */
 export interface ComingUpChip {
-  key: "event" | "task";
+  key: "event" | "task" | "reminder";
   label: string;
 }
 
 /**
  * The chips under a date, in the order both apps draw them: the calendar
  * first, then the task: whose it is ("Task · Jake", "Task · You" for the
- * viewer's own), how many it went to ("Task · 12 people"), or "2 tasks".
+ * viewer's own), how many it went to ("Task · 12 people"), or "2 tasks";
+ * then the viewer's own reminder ("Reminder · December 3, 6 PM").
  */
 export function comingUpChips(
   tracking: ComingUpDateTracking<ComingUpEventCandidate, ComingUpTaskCandidate>,
   nameFor: (userId: string) => string | null,
   viewerId: string | null = null,
+  reminder: { remind_at: string } | null = null,
 ): ComingUpChip[] {
   const chips: ComingUpChip[] = [];
   if (tracking.event) {
@@ -196,18 +205,30 @@ export function comingUpChips(
       label: COMING_UP_COPY.tasks(tracking.tasks.length),
     });
   }
+  if (reminder) {
+    chips.push({
+      key: "reminder",
+      label: COMING_UP_COPY.reminder(new Date(reminder.remind_at)),
+    });
+  }
   return chips;
 }
 
 export type ComingUpMenuAction =
-  "openEvent" | "addToCalendar" | "makeTask" | "copyDate";
+  | "remindMe"
+  | "cancelReminder"
+  | "openEvent"
+  | "addToCalendar"
+  | "makeTask"
+  | "copyDate";
 
 /**
- * What a date's ⋯ offers, in order: the event when one is on that day
- * (anyone who can see it may open it), else Add to calendar for who may
- * create events; Make a task for who manages tasks; Copy date for everyone.
- * A day already gone offers neither create, since both forms refuse a time
- * that has passed. Remind me joins it in #5672's next step.
+ * What a date's ⋯ offers, in order: Remind me for every reader while a
+ * reminder can still come before the day (Cancel reminder once they set
+ * one); the event when one is on that day (anyone who can see it may open
+ * it), else Add to calendar for who may create events; Make a task for who
+ * manages tasks; Copy date for everyone. A day already gone offers neither
+ * create, since both forms refuse a time that has passed.
  */
 export function comingUpMenu(input: {
   hasEvent: boolean;
@@ -215,8 +236,20 @@ export function comingUpMenu(input: {
   upcoming: boolean;
   canCreateEvents: boolean;
   canManageTasks: boolean;
+  /** The viewer set a reminder on this date. */
+  hasReminder?: boolean;
+  /** A reminder could still come before the day (`comingUpReminderTime`). */
+  canRemind?: boolean;
 }): { action: ComingUpMenuAction; label: string }[] {
   const items: { action: ComingUpMenuAction; label: string }[] = [];
+  if (input.hasReminder) {
+    items.push({
+      action: "cancelReminder",
+      label: COMING_UP_COPY.cancelReminder,
+    });
+  } else if (input.canRemind) {
+    items.push({ action: "remindMe", label: COMING_UP_COPY.remindMe });
+  }
   if (input.hasEvent) {
     items.push({ action: "openEvent", label: COMING_UP_COPY.openEvent });
   } else if (input.canCreateEvents && input.upcoming) {
@@ -263,6 +296,65 @@ export function comingUpEventTimes(
     start = new Date(Math.ceil((now.getTime() + 1) / quarter) * quarter);
   }
   return { start, end: new Date(start.getTime() + 60 * 60_000) };
+}
+
+/** The hour of the evening before that a reminder comes, as a planner's would. */
+const REMINDER_EVENING_HOUR = 18;
+/** The hour of the day itself, when the evening before has passed. */
+const REMINDER_MORNING_HOUR = 9;
+
+/** How far ahead the API takes a reminder (`reminder-window.ts`). */
+const REMINDER_MAX_AHEAD_DAYS = 365;
+
+/**
+ * When Remind me reminds, on the viewer's calendar: 6 PM the evening before,
+ * or 9 AM on the day once that has passed. Null once both have, or for a
+ * day gone: the date is under way, and a reminder would only be noise. Null
+ * too for a day the API would refuse: more than a year off, or one that
+ * doesn't exist ("2026-02-30").
+ */
+export function comingUpReminderTime(
+  date: string,
+  now: Date = new Date(),
+): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) return null;
+  const [year, month, day] = [
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  ];
+  const morning = new Date(year, month, day, REMINDER_MORNING_HOUR);
+  if (morning.getMonth() !== month || morning.getDate() !== day) return null;
+  const latest = now.getTime() + REMINDER_MAX_AHEAD_DAYS * 24 * 60 * 60_000;
+  const evening = new Date(year, month, day - 1, REMINDER_EVENING_HOUR);
+  const at = evening > now ? evening : morning > now ? morning : null;
+  return at && at.getTime() <= latest ? at : null;
+}
+
+/** "December 3, 6 PM", or "December 3, 6:30 PM": when a reminder comes. */
+export function comingUpReminderWhen(at: Date): string {
+  const day = at.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+  });
+  const time = at
+    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    .replace(":00", "");
+  return `${day}, ${time}`;
+}
+
+/** The viewer's reminder on a date: the one set on its day and words. */
+export function comingUpReminderFor<R extends { date: string; text: string }>(
+  reminders: readonly R[],
+  item: { date: string; text: string },
+): R | null {
+  const text = item.text.trim();
+  return (
+    reminders.find(
+      (reminder) => reminder.date === item.date && reminder.text === text,
+    ) ?? null
+  );
 }
 
 /** "Wednesday, December 2: Philanthropy committee reports back". */

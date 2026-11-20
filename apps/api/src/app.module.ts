@@ -25,6 +25,7 @@ import { MeetingModule } from './modules/meeting/meeting.module';
 import { MeetingDraftModule } from './modules/meeting/meeting-draft.module';
 import { MeetingRecordingModule } from './modules/meeting/meeting-recording.module';
 import { MeetingMinutesRequestModule } from './modules/meeting/meeting-minutes-request.module';
+import { MeetingDateReminderModule } from './modules/meeting/meeting-date-reminder.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { PointsModule } from './modules/points/points.module';
 import { BillingModule } from './modules/billing/billing.module';
@@ -162,6 +163,7 @@ import { validateEnv } from './config/env.validation';
     MeetingDraftModule,
     MeetingRecordingModule,
     MeetingMinutesRequestModule,
+    MeetingDateReminderModule,
     BootstrapModule,
   ],
   providers: [

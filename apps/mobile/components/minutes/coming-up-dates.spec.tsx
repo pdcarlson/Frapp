@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText } from "@/test/screen-text";
 
@@ -12,6 +12,14 @@ const mocks = vi.hoisted(() => ({
   taskSheet: vi.fn(),
   copy: vi.fn(() => Promise.resolve(true)),
   permissions: [] as string[],
+  reminders: [] as Array<{
+    id: string;
+    date: string;
+    text: string;
+    remind_at: string;
+  }>,
+  setReminder: vi.fn(),
+  clearReminder: vi.fn(),
   menus: [] as Array<{
     title: string;
     actions: Array<{ label: string; run: () => void }>;
@@ -51,6 +59,9 @@ vi.mock("@repo/hooks", () => ({
   useChapterRoster: () => ({
     data: [{ user_id: "u-jake", display_name: "Jake Ruiz" }],
   }),
+  useMeetingDateReminders: () => ({ data: mocks.reminders }),
+  useSetMeetingDateReminder: () => ({ mutateAsync: mocks.setReminder }),
+  useClearMeetingDateReminder: () => ({ mutateAsync: mocks.clearReminder }),
 }));
 
 vi.mock("@/components/item-actions-menu", () => ({
@@ -91,7 +102,7 @@ function render(): ReactTestRenderer {
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <ComingUpDates dates={dates} viewerId="u-me" />
+        <ComingUpDates meetingId="m-1" dates={dates} viewerId="u-me" />
       </FrappThemeProvider>,
     );
   });
@@ -105,13 +116,23 @@ const labelsOf = (title: string) =>
     .actions.map((action) => action.label);
 
 describe("ComingUpDates", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
+    // Two weeks before the dates: inside the year a reminder may be set.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2099, 10, 20, 12));
     mocks.push.mockReset();
     mocks.eventSheet.mockReset();
     mocks.taskSheet.mockReset();
     mocks.copy.mockClear();
     mocks.menus = [];
     mocks.permissions = [];
+    mocks.reminders = [];
+    mocks.setReminder.mockReset().mockResolvedValue({});
+    mocks.clearReminder.mockReset().mockResolvedValue(undefined);
     mocks.tracking = [
       {
         event: null,
@@ -155,11 +176,13 @@ describe("ComingUpDates", () => {
     mocks.permissions = ["events:create", "tasks:manage"];
     render();
     expect(labelsOf("Jake Ruiz collects dues")).toEqual([
+      "Remind me",
       "Add to calendar",
       "Make a task",
       "Copy date",
     ]);
     expect(labelsOf("Winter formal")).toEqual([
+      "Remind me",
       "Open the event",
       "Make a task",
       "Copy date",
@@ -168,7 +191,10 @@ describe("ComingUpDates", () => {
 
   it("leaves a member only what they can do", () => {
     render();
-    expect(labelsOf("Jake Ruiz collects dues")).toEqual(["Copy date"]);
+    expect(labelsOf("Jake Ruiz collects dues")).toEqual([
+      "Remind me",
+      "Copy date",
+    ]);
   });
 
   const pick = (title: string, label: string) => {
@@ -210,5 +236,49 @@ describe("ComingUpDates", () => {
     expect(mocks.copy).toHaveBeenCalledWith(
       expect.stringMatching(/December 6(, 2099)?: Winter formal$/),
     );
+  });
+
+  it("reminds any reader the evening before, and says so to a screen reader", async () => {
+    const { AccessibilityInfo } = await import("react-native");
+    const announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    render();
+    pick("Winter formal", "Remind me");
+    expect(mocks.setReminder).toHaveBeenCalledWith({
+      date: "2099-12-06",
+      text: "Winter formal",
+      remindAt: new Date(2099, 11, 5, 18),
+    });
+    await vi.waitFor(() =>
+      expect(announce).toHaveBeenCalledWith(
+        "We'll remind you December 5, 6 PM",
+      ),
+    );
+    announce.mockRestore();
+  });
+
+  it("shows a set reminder as a chip, and cancels it from the menu", () => {
+    mocks.reminders = [
+      {
+        id: "r-1",
+        date: "2099-12-06",
+        text: "Winter formal",
+        remind_at: new Date(2099, 11, 5, 18).toISOString(),
+      },
+    ];
+    const tree = render();
+    expect(drawnText(tree.root)).toContain("Reminder · December 5, 6 PM");
+    // Only the event and task chips open anything.
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityRole === "link" &&
+          drawnText(node).startsWith("Reminder"),
+      ),
+    ).toHaveLength(0);
+    expect(labelsOf("Winter formal")[0]).toBe("Cancel reminder");
+    pick("Winter formal", "Cancel reminder");
+    expect(mocks.clearReminder).toHaveBeenCalledWith("r-1");
   });
 });

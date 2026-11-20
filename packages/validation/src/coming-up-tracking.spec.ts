@@ -5,6 +5,9 @@ import {
   comingUpEventTimes,
   comingUpMenu,
   comingUpIsAhead,
+  comingUpReminderFor,
+  comingUpReminderTime,
+  comingUpReminderWhen,
   comingUpTracking,
 } from "./coming-up-tracking";
 
@@ -116,6 +119,18 @@ describe("comingUpChips", () => {
       comingUpChips({ event: null, tasks: [{ ...made, people: 12 }] }, nameFor),
     ).toEqual([{ key: "task", label: "Task · 12 people" }]);
   });
+
+  it("ends with the viewer's own reminder", () => {
+    const at = new Date(2026, 11, 3, 18);
+    expect(
+      comingUpChips({ event, tasks: [] }, nameFor, null, {
+        remind_at: at.toISOString(),
+      }),
+    ).toEqual([
+      { key: "event", label: "On the calendar" },
+      { key: "reminder", label: "Reminder · December 3, 6 PM" },
+    ]);
+  });
 });
 
 describe("comingUpMenu", () => {
@@ -176,5 +191,69 @@ describe("comingUpIsAhead", () => {
     const now = new Date(2026, 10, 19, 23, 30);
     expect(comingUpIsAhead("2026-11-19", now)).toBe(true);
     expect(comingUpIsAhead("2026-11-18", now)).toBe(false);
+  });
+});
+
+describe("Remind me", () => {
+  it("is offered to every reader first, and becomes Cancel reminder once set", () => {
+    const base = {
+      hasEvent: false,
+      upcoming: true,
+      canCreateEvents: false,
+      canManageTasks: false,
+    };
+    const labels = (over: Partial<Parameters<typeof comingUpMenu>[0]>) =>
+      comingUpMenu({ ...base, ...over }).map((item) => item.label);
+    expect(labels({ canRemind: true })).toEqual(["Remind me", "Copy date"]);
+    expect(labels({ canRemind: true, hasReminder: true })).toEqual([
+      "Cancel reminder",
+      "Copy date",
+    ]);
+    expect(labels({ canRemind: false })).toEqual(["Copy date"]);
+  });
+
+  it("reminds at 6 PM the evening before, else 9 AM on the day, else not at all", () => {
+    expect(
+      comingUpReminderTime("2026-12-04", new Date(2026, 10, 20, 12)),
+    ).toEqual(new Date(2026, 11, 3, 18));
+    expect(
+      comingUpReminderTime("2026-12-04", new Date(2026, 11, 3, 19)),
+    ).toEqual(new Date(2026, 11, 4, 9));
+    expect(
+      comingUpReminderTime("2026-12-04", new Date(2026, 11, 4, 10)),
+    ).toBeNull();
+    expect(comingUpReminderTime("soon", new Date(2026, 10, 20))).toBeNull();
+    // A day that doesn't exist, or one past what the API takes.
+    expect(
+      comingUpReminderTime("2027-02-30", new Date(2026, 10, 20)),
+    ).toBeNull();
+    expect(
+      comingUpReminderTime("2028-01-15", new Date(2026, 10, 20)),
+    ).toBeNull();
+  });
+
+  it("writes when it comes out, minutes only when there are some", () => {
+    expect(comingUpReminderWhen(new Date(2026, 11, 3, 18))).toBe(
+      "December 3, 6 PM",
+    );
+    expect(comingUpReminderWhen(new Date(2026, 11, 3, 18, 30))).toBe(
+      "December 3, 6:30 PM",
+    );
+  });
+
+  it("finds the viewer's reminder by the date's day and words", () => {
+    const reminders = [
+      { id: "r1", date: "2026-12-04", text: "Winter formal" },
+      { id: "r2", date: "2026-12-06", text: "Winter formal" },
+    ];
+    expect(
+      comingUpReminderFor(reminders, {
+        date: "2026-12-06",
+        text: "Winter formal ",
+      })?.id,
+    ).toBe("r2");
+    expect(
+      comingUpReminderFor(reminders, { date: "2026-12-04", text: "Formal" }),
+    ).toBeNull();
   });
 });
