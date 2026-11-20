@@ -9,6 +9,7 @@ import type {
   ChapterGroup,
   ChapterGroupMembership,
 } from '#domain/entities/chapter-group.entity';
+import { CHAPTER_GROUP_KINDS, groupKindOpensChannels } from '@repo/validation';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { fetchAllPages } from '../supabase.utils';
 import {
@@ -17,6 +18,13 @@ import {
   PG_NO_DATA_FOUND,
   PG_UNIQUE_VIOLATION,
 } from '#domain/constants/postgres-error-codes';
+
+/**
+ * The kinds of group that can open a channel, read from the one rule
+ * (`groupKindOpensChannels`), so a kind added later is closed here until that
+ * rule opens it.
+ */
+const CHANNEL_KINDS = CHAPTER_GROUP_KINDS.filter(groupKindOpensChannels);
 
 /** Rows per membership page; the server's own cap may be lower. */
 const MEMBERSHIP_PAGE = 1000;
@@ -139,7 +147,7 @@ export class SupabaseChapterGroupRepository implements IChapterGroupRepository {
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
       // Only groups that can open a channel (`groupKindOpensChannels`).
-      .neq('kind', 'class_year');
+      .in('kind', CHANNEL_KINDS);
     if (error) throw new SupabaseQueryError(error);
     return (data ?? []).map((row) => row.group_id);
   }

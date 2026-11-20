@@ -50,6 +50,7 @@ export * from "./channel-access-lists";
 export * from "./chapter-branding";
 export * from "./chapter-config";
 export * from "./chapter-goals";
+export * from "./chapter-groups";
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export * from "./chapter-mark";
 // The audit log (#3909): what may change on a line already in it.

@@ -21,7 +21,7 @@ import {
   plainName,
   wordsArg,
 } from './chapter-tool-kit';
-import { groupsByMember, roleNames, rolesHeld } from './people';
+import { askableGroups, groupsByMember, roleNames, rolesHeld } from './people';
 
 const MATCH_LIMIT = 8;
 
@@ -82,7 +82,7 @@ export class FindMemberAgentTool implements AgentReadTool<Args> {
       this.groups.list(context.chapterId),
     ]);
     const names = roleNames(roles);
-    const inGroups = groupsByMember(groups);
+    const inGroups = groupsByMember(askableGroups(groups));
     const people = new People(matches);
     const rows = matches.map((profile) => {
       const held = rolesHeld(profile, names);

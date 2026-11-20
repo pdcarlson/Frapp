@@ -4088,7 +4088,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the chapter's groups with their members: manual ones, then pledge classes and class years that have members */
+        /** List the chapter's groups with their members: manual ones, then pledge classes, class years and majors that have members */
         get: operations["ChapterGroupController_list_v1"];
         put?: never;
         /** Make a group and, optionally, pick its members */
@@ -9854,7 +9854,7 @@ export interface components {
             audience_role_id?: string;
             /**
              * Format: uuid
-             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`.
+             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class, class year or major) get a copy. An empty group is a 400. Not with `audience_role_id`.
              */
             audience_group_id?: string;
             /**
@@ -10161,7 +10161,7 @@ export interface components {
             role_id?: string;
             /**
              * Format: uuid
-             * @description Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400.
+             * @description Only this chapter group’s active members (manual, pledge class, class year or major) may claim it. An empty group is a 400.
              */
             group_id?: string;
             /**
@@ -10652,11 +10652,11 @@ export interface components {
             /** Format: uuid */
             chapter_id: string;
             /**
-             * @description `manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change.
+             * @description `manual`: an officer picks its members. `pledge_class`, `class_year` and `major`: Frapp keeps one per pledge class, per graduation year and per major (matched ignoring case and spacing), and its members follow the members’ own data; only its color and ping switch can change. A `class_year` or `major` group can’t go on a channel list or be what a task is from: members set their own.
              * @enum {string}
              */
-            kind: "manual" | "pledge_class" | "class_year";
-            /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, or "Class of" and the year. */
+            kind: "manual" | "pledge_class" | "class_year" | "major";
+            /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, "Class of" and the year, or the major as most of its members write it. */
             name: string;
             /** @description One of the role palette colors, or null. */
             color: string | null;
@@ -10669,6 +10669,8 @@ export interface components {
             pledge_class_id: string | null;
             /** @description The graduation year a `class_year` group follows. */
             class_year: number | null;
+            /** @description The major a `major` group follows, folded: trimmed, spacing collapsed, lower case. */
+            major_key: string | null;
             /** @description The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers. */
             member_ids: string[];
             /** Format: date-time */
@@ -10690,7 +10692,7 @@ export interface components {
             member_ids?: string[];
         };
         UpdateChapterGroupDto: {
-            /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here. */
+            /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class, year or major and is refused here. */
             name?: string;
             /**
              * @description One of the role palette colors, in any letter case. Null clears it.
