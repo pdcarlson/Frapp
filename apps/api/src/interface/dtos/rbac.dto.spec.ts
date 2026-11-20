@@ -81,6 +81,7 @@ describe('role and tier name', () => {
 describe('role and tier switches', () => {
   it.each([
     [UpdateRoleDto, 'self_assignable'],
+    [CreateRoleDto, 'self_assignable'],
     [UpdateRoleDto, 'mentionable'],
     [CreateRoleDto, 'mentionable'],
     [UpdateRoleTierDto, 'mentionable'],

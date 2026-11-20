@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useCreateRole } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
-import { NEW_PICKABLE_ROLE_COPY } from "@repo/validation";
+import { NEW_PICKABLE_ROLE_COPY, ROLE_NAME_MAX_LENGTH } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
@@ -24,9 +24,6 @@ import {
 } from "@/components/sheet-scaffold";
 import { successHaptic } from "@/lib/haptics";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
-
-/** The longest role name, as web's Add role field allows. */
-const NAME_MAX_LENGTH = 60;
 
 export interface NewPickableRoleSheetProps {
   /** Opens the new role's page, where its color and switches are set. */
@@ -150,7 +147,7 @@ export const NewPickableRoleSheet = forwardRef<
             placeholder={NEW_PICKABLE_ROLE_COPY.placeholder}
             placeholderTextColor={tokens.color.text.muted}
             accessibilityLabel="Role name"
-            maxLength={NAME_MAX_LENGTH}
+            maxLength={ROLE_NAME_MAX_LENGTH}
             style={[styles.field, focused ? styles.fieldFocused : null]}
           />
         </View>

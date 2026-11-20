@@ -119,7 +119,7 @@ export const NEW_PICKABLE_ROLE_COPY = {
   add: "Add role",
   title: "New Non-chapter business role",
   placeholder: "Intramural soccer",
-  hint: "Members can join it as soon as it's added. To open a channel to it, add it under that channel's Who can see in Chat settings.",
+  hint: "Members can join it as soon as it's added. To open a channel to it, edit the channel and add this role to who can see it.",
   failed: "Couldn't add the role",
   failedBody: "Check the name isn't already used, then try again.",
 } as const;

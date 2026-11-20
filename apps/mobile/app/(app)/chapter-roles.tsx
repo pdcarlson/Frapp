@@ -54,8 +54,9 @@ const SEARCH_FROM = 8;
  * Built for a chapter with a hundred roles, not five: the tiers carry the
  * permissions, so an officer changes five tiers rather than a hundred roles,
  * and a search field narrows the list once it passes eight roles. Making,
- * reordering and deleting tiers and roles stay on web, where a chapter sets
- * its structure up once; the phone changes what they can do.
+ * reordering and deleting tiers and roles stay on web (all but the one
+ * exception below), where a chapter sets its structure up once; the phone
+ * changes what they can do.
  *
  * Roles members pick themselves (Non-chapter business, #4958) get their own
  * section after the roles outside the tiers, as on web, and the one place the
@@ -332,7 +333,11 @@ export default function ChapterRolesScreen() {
         ) : null}
         <Text style={styles.note}>
           Add, rename and reorder {words.plural}, roles and groups on the web
-          dashboard. Put someone in a group from their profile.
+          dashboard
+          {canAddPickable && canSeeRoles
+            ? "; roles members pick themselves can be added here too"
+            : ""}
+          . Put someone in a group from their profile.
         </Text>
         <NewPickableRoleSheet
           ref={newPickableRef}

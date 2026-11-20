@@ -62,9 +62,11 @@ export function useCreateRole() {
       const id = (data as { id?: unknown } | undefined)?.id;
       return { id: typeof id === "string" ? id : null };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
-    },
+    // Returned, so `mutateAsync` resolves once the list holds the new role:
+    // a caller that opens its page straight after would otherwise find it
+    // missing and read "This role is gone" (#5736).
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["roles", chapterId] }),
   });
 }
 

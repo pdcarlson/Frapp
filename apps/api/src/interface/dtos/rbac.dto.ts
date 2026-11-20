@@ -20,6 +20,7 @@ import {
   PERMISSION_MODULES,
   ROLE_COLOR_HEXES,
   ROLE_NAME_MAX_LENGTH,
+  ROLE_TIER_NAME_MAX_LENGTH,
   type PermissionModuleKey,
   type PermissionScope,
 } from '@repo/validation';
@@ -28,8 +29,6 @@ import {
   ROLE_TIER_POSITION_MAX,
 } from '#domain/constants/field-limits';
 
-/** `role_tiers_name_len` (migration `20261111140000`). */
-const ROLE_TIER_NAME_MAX_LENGTH = 80;
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
 /**

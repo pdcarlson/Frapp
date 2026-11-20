@@ -18,6 +18,8 @@ import { SELF_ASSIGNABLE_SECTION_CAPTION } from "@repo/validation";
  * rank rules let them change Brothers and Brother but not Officers.
  */
 const h = vi.hoisted(() => ({
+  // What the screen hands the Add role sheet (#5736), so a test can finish it.
+  pickableSheet: null as null | { onCreated: (roleId: string) => void },
   permissions: [] as string[],
   roles: [] as unknown[],
   rolesUpdatedAt: 0,
@@ -114,9 +116,10 @@ vi.mock("@/components/roles/new-pickable-role-sheet", async () => {
   const React = await import("react");
   return {
     NewPickableRoleSheet: React.forwardRef(function NewPickableRoleSheet(
-      _props: object,
+      props: { onCreated: (roleId: string) => void },
       ref: React.Ref<{ present: () => void }>,
     ) {
+      h.pickableSheet = props;
       React.useImperativeHandle(ref, () => ({ present: vi.fn() }));
       return null;
     }),
@@ -756,6 +759,36 @@ describe("Non-chapter business on the phone (#4958)", () => {
     expect(text).toContain(SELF_ASSIGNABLE_SECTION_CAPTION);
     expect(text).not.toContain("Turn it on from");
     expect(text.indexOf("Add role", business)).toBeGreaterThan(business);
+  });
+
+  it("keeps Add role once Non-chapter business has roles", () => {
+    h.roles = [
+      ...h.roles,
+      role({ id: "r-ims", name: "Intramurals", self_assignable: true }),
+    ];
+    const text = screenText(render(<ChapterRolesScreen />));
+    expect(text.indexOf("Add role")).toBeGreaterThan(
+      text.indexOf("Intramurals"),
+    );
+  });
+
+  it("opens the new role's page once the sheet creates it", () => {
+    render(<ChapterRolesScreen />);
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => h.pickableSheet!.onCreated("r-new"));
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/role",
+      params: { roleId: "r-new" },
+    });
+  });
+
+  it("offers no Add role to a roles manager who sits outside the tiers", () => {
+    h.permissions = ["roles:manage", "members:view"];
+    h.members = [{ user_id: "me", role_ids: ["r-rush"] }];
+    const text = screenText(render(<ChapterRolesScreen />));
+    expect(text).toContain("Non-chapter business");
+    expect(text).not.toContain("Add role");
   });
 });
 

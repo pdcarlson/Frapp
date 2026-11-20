@@ -266,6 +266,18 @@ describe("the tier list", () => {
     expect(onOpenRole).toHaveBeenCalledWith("new-im");
   });
 
+  it("offers no Add role under Non-chapter business to a roles manager outside the tiers", () => {
+    h.members = [{ user_id: "me", role_ids: ["alum"] }];
+    h.mine = ["roles:manage", "members:view"];
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    const business = screen.getByRole("region", {
+      name: "Non-chapter business",
+    });
+    expect(
+      within(business).queryByRole("button", { name: "Add role" }),
+    ).toBeNull();
+  });
+
   it("keeps Add role under Non-chapter business once it has roles", () => {
     h.roles = [
       ...h.roles,

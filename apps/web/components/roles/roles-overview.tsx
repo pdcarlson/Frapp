@@ -17,6 +17,8 @@ import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import {
   isEveryoneRole,
   NEW_PICKABLE_ROLE_COPY,
+  ROLE_NAME_MAX_LENGTH,
+  ROLE_TIER_NAME_MAX_LENGTH,
   roleColorOrNull,
   SELF_ASSIGNABLE_SECTION_CAPTION,
 } from "@repo/validation";
@@ -632,7 +634,7 @@ function TierBlock({
             autoFocus
             aria-label={`${words.Singular} name`}
             value={draft}
-            maxLength={60}
+            maxLength={ROLE_TIER_NAME_MAX_LENGTH}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") setRenaming(false);
@@ -771,7 +773,7 @@ function AddRoleRow({
             pickable ? NEW_PICKABLE_ROLE_COPY.placeholder : "Philanthropy chair"
           }
           value={name}
-          maxLength={60}
+          maxLength={ROLE_NAME_MAX_LENGTH}
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") setOpen(false);
@@ -838,7 +840,7 @@ function AddTierForm({
         aria-label={`New ${words.singular} name`}
         placeholder="Committee chairs"
         value={name}
-        maxLength={60}
+        maxLength={ROLE_TIER_NAME_MAX_LENGTH}
         onChange={(event) => setName(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape") setOpen(false);

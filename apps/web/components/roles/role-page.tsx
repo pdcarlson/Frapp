@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDeleteRole, useUpdateRole } from "@repo/hooks";
 import {
   isEveryoneRole,
+  ROLE_NAME_MAX_LENGTH,
   roleColorOrNull,
   type RoleColorHex,
   SELF_ASSIGNABLE_REFUSAL_COPY,
@@ -369,7 +370,7 @@ function RoleBody({
             <Input
               id="role-name"
               value={name}
-              maxLength={60}
+              maxLength={ROLE_NAME_MAX_LENGTH}
               disabled={!editable || everyone}
               onChange={(event) => setName(event.target.value)}
             />
