@@ -174,6 +174,8 @@ export function openItemMenu(
 ): void {
   if (menu.actions.length === 0) return;
   pressHaptic();
+  // One menu at a time: one still up is dismissed, so its question answers.
+  const replaced = opened;
   opened = {
     ...menu,
     pageY: at.pageY ?? Dimensions.get("window").height / 3,
@@ -181,6 +183,7 @@ export function openItemMenu(
     trigger: at.trigger ?? null,
   };
   hostListeners.forEach((listener) => listener());
+  replaced?.onDismiss?.();
 }
 
 type HostedMenu = ItemMenu & {
@@ -209,7 +212,11 @@ function closeHosted(picked: boolean) {
 
 /** Draws `openItemMenu`'s menu. Mount once, inside the overlay layer. */
 export function ItemMenuHost() {
-  const target = useSyncExternalStore(subscribeHost, hostSnapshot, hostSnapshot);
+  const target = useSyncExternalStore(
+    subscribeHost,
+    hostSnapshot,
+    hostSnapshot,
+  );
   const dismiss = useCallback(() => closeHosted(false), []);
   const picked = useCallback(() => closeHosted(true), []);
   return (
