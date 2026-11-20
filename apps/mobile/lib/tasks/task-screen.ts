@@ -29,6 +29,7 @@ import {
   isTaskStatus,
   TASK_ACTION_LABELS,
   taskAwaitsReview,
+  taskCompletedBy,
   taskConfirmLabel,
   taskSendBackOpen,
   type TaskStatus,
@@ -367,16 +368,23 @@ export function taskHistory(
     row.createdBy ? `Assigned by ${nameOf(row.createdBy)}` : "Assigned",
     row.createdAt,
   );
-  // No name: the read has no `completed_by`, and an officer may mark a
-  // member's task done for them.
-  // "Submitted to Exec board" when a group follows it (#5473), the words
-  // web's review header takes (`TASK_FOLLOWER_COPY.submittedTo`).
+  // Who marked it done (#5732): `completed_by`, since an officer may mark a
+  // member's task done for them; the assignee on a completion from before
+  // the API kept it. "Submitted to Exec board" when a group follows it
+  // (#5473), the words web's review header takes
+  // (`TASK_FOLLOWER_COPY.submittedTo`).
   if (row.isDone) {
+    const doneBy = taskCompletedBy({
+      completed_by: row.completedBy,
+      assignee_id: row.assigneeId,
+    });
     add(
       "done",
-      "Marked done",
+      doneBy ? `Marked done by ${nameOf(doneBy)}` : "Marked done",
       row.completedAt,
-      row.followedBy ? TASK_FOLLOWER_COPY.submittedTo(row.followedByName) : null,
+      row.followedBy
+        ? TASK_FOLLOWER_COPY.submittedTo(row.followedByName)
+        : null,
     );
   }
   add("sent-back", "Sent back", row.sentBackAt, row.sentBackReason);

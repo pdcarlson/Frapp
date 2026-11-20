@@ -1024,12 +1024,14 @@ This keeps ephemerality real — there's no third path that lets a sender unilat
 - Beside a channel, the list shows everyone who can read it, by the same rule that admits a read: the whole chapter for a public channel, the holders of a required permission (or the wildcard) for a role-gated one, and `member_ids` for a private channel or group DM.
   A 1:1 DM shows no list.
   Only a member who can read the channel can ask for its list (`GET /v1/channels/{id}/members`).
-- Grouped under each reader's highest role (lowest `display_order`, ties by name), groups in role order and readers with no role last under "No role", names A to Z inside each group (`groupChannelMembersByRole` in `@repo/hooks`, shared by web and mobile).
-  The hidden Everyone role's group is headed **Members**, never "Everyone": the API names it (`EVERYONE_MEMBER_LIST_HEADING` in `@repo/validation`) and marks it with `top_role.everyone`, as Discord heads members with no hoisted role plainly rather than "@everyone" (2026-11-12).
-  Grouped by role rather than presence since 2026-11-06, because role is known with the first read: the presence groups this replaced drew one "Members" group and then moved every name when presence arrived.
-  Presence now only paints a row's dot and dims an offline avatar.
+- Grouped by tier, the chapter's tiers top down (Cabinet, then the chairs, and so on), each reader under the highest tier any of their roles is in; inside a tier, readers in title order (the President first, then the rest of the tier's roles in the order the Roles page lists them), then names A to Z (`groupChannelMembersByTier` in `@repo/hooks`, shared by web and mobile).
+  Readers with no role in any tier come last, under **Members** (**Everyone else** when a tier already has that name).
+  _(Changed 2026-11-20, Paul: the list was grouped under each reader's highest role by `display_order` alone, so a Discord-imported role outside the tiers at order 0, such as "First Floor", outranked the President and headed the list; one heading per office also split a chapter's Cabinet into a heading per officer.)_
+  A member's **title** is their highest-ranked role by one rank everywhere (`compareRolesByRank` in `@repo/validation`): the wildcard role first, then tier position, then the role's order inside its tier, then name. It sits under the name as one muted line, joined to a custom status line by a middle dot, and is left out when it is the Everyone role or only repeats the group heading. The same rank picks a member's name color and the Directory's role line.
+  Grouped by tier rather than presence since 2026-11-06, because tiers are known with the first read: the presence groups this replaced drew one "Members" group and then moved every name when presence arrived.
+  Presence only paints a row's dot and dims an offline avatar: an offline member keeps their place (Paul and Shawn, 2026-11-20: never a separate Offline group as Discord draws).
   Names take the member's role color, as in the timeline.
-  An API that sends no `role_id` gets one "Members" list in role-rank order instead.
+  An API that sends no `tier_id` gets one "Members" list in rank order instead; app builds from before the tiers still group by `role_id`/`role_name`, which the API ranks the same way.
 - Past 12 readers a search field sits above the groups: every typed word must start a word of the name (split on spaces, hyphens, apostrophes and periods), ignoring case and accents.
   No match reads "No one named “…”".
 - On mobile the list is a tall sheet from the thread header's members button, shown on every channel but a 1:1 DM, with the same groups and search.
@@ -2245,7 +2247,7 @@ That is a real cross-tenant surface and it is contained by two things, both re-c
   _Since #3722 (2026-11-11) the importer still writes the old read-only switch and `channels:read:<name>` gates, and the database turns them into the channel's who-can-see and who-can-post lists as it is created, from what each role holds then (§ [Who can see and post](#who-can-see-and-post));
   the importer writing lists itself, which would close the gap below, is [#4286](https://github.com/pdcarlson/Frapp/issues/4286)._
   **Known gaps:** Discord answers per role and Frapp has only read-only or not, so the roles a read-only channel let talk in Discord can post in Frapp only if they hold `announcements:post`, which by default the two top tiers hold in a chapter created since #4071's second PR and only the President holds in an older one;
-  the admin grants it in Settings → Roles.
+  the admin widens it afterwards in the channel's who-can-post list, since the permission has had no switch in Settings → Roles since [#5728](https://github.com/pdcarlson/Frapp/issues/5728) (2026-11-20).
   A channel that denies `@everyone` and allows a member role is indistinguishable from `#announcements` with an exec allow, and comes out read-only until the admin turns it off.
   The reverse: on a server that lets nobody talk by default and allows members per channel, an `#announcements` that allows only exec took talking from nobody, and exec can still talk there, so it comes out postable until the admin turns the switch on.
 - **The bot reads only what its roles can see.**

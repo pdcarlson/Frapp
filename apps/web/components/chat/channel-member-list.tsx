@@ -3,14 +3,15 @@
 import { useId, useMemo, useState, type MouseEvent } from "react";
 import {
   MEMBER_SEARCH_THRESHOLD,
+  channelMemberTitle,
   filterChannelMembers,
-  groupChannelMembersByRole,
+  groupChannelMembersByTier,
   memberAvatarHue,
   memberAvatarTint,
   memberLabel,
   useChannelMembers,
   useMemberDisplayNames,
-  type ChannelMemberRoleGroup,
+  type ChannelMemberGroup as SharedChannelMemberGroup,
 } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -38,22 +39,27 @@ export interface ChannelMemberRow {
   name: string;
   avatarUrl: string | null;
   roleColor: string | null;
+  /** Where their highest-ranked role sits in the chapter's roles; lower first. */
   roleRank: number | null;
-  /** The highest role's id, the group this row sits in. */
-  roleId: string | null;
-  roleName: string | null;
+  /** Their title (highest-ranked role), or `null` for none or the Everyone role. */
+  title: string | null;
+  /** The highest tier they are in, the group this row sits in. */
+  tierId: string | null;
+  tierName: string | null;
+  tierRank: number | null;
   /** `null` until presence has resolved: no dot, and no claim of Offline. */
   status: PresenceStatus | null;
   /** The member's custom status line (#3845), or `null`. */
   line: string | null;
 }
 
-type ChannelMemberGroup = ChannelMemberRoleGroup<ChannelMemberRow>;
+type ChannelMemberGroup = SharedChannelMemberGroup<ChannelMemberRow>;
 
 /**
- * Who can read the open channel, Discord-style (#3536): grouped under each
- * reader's highest role, in role order, names A to Z and in their role color
- * (`groupChannelMembersByRole`, shared with the mobile sheet). Presence only
+ * Who can read the open channel (#3536): a group per tier, the chapter's
+ * tiers top down, and inside each the members by title (President first),
+ * then names A to Z, in their role color, each officer's title under their
+ * name (`groupChannelMembersByTier`, shared with the mobile sheet). Presence only
  * paints the dot and dims an offline avatar: it never moves a row, so the list
  * holds still when presence arrives (principles.md P4.4). Past
  * {@link MEMBER_SEARCH_THRESHOLD} readers a search field filters by name.
@@ -106,8 +112,10 @@ export function ChannelMemberList({
         avatarUrl: avatarFor(member.user_id),
         roleColor: roleColorFor(member.user_id),
         roleRank: member.role_rank,
-        roleId: member.role_id ?? null,
-        roleName: member.role_name ?? null,
+        title: member.title ?? null,
+        tierId: member.tier_id ?? null,
+        tierName: member.tier_name ?? null,
+        tierRank: member.tier_rank ?? null,
         status: presence.isReady ? presence.statusOf(member.user_id) : null,
         line: presence.isReady ? presence.lineOf(member.user_id) : null,
       })),
@@ -116,7 +124,7 @@ export function ChannelMemberList({
   const searchable = rows.length > MEMBER_SEARCH_THRESHOLD;
   const trimmed = searchable ? query.trim() : "";
   const groups = useMemo(
-    () => groupChannelMembersByRole(filterChannelMembers(rows, trimmed)),
+    () => groupChannelMembersByTier(filterChannelMembers(rows, trimmed), rows),
     [rows, trimmed],
   );
 
@@ -218,6 +226,7 @@ function MemberGroup({
           <MemberRow
             key={row.userId}
             row={row}
+            title={channelMemberTitle(row, group.label)}
             onOpen={
               onOpenProfile
                 ? (event) => onOpenProfile(row.userId, event.currentTarget)
@@ -241,9 +250,12 @@ function MemberGroup({
  */
 function MemberRow({
   row,
+  title,
   onOpen,
 }: {
   row: ChannelMemberRow;
+  /** Their title, when it adds to the group heading. */
+  title: string | null;
   onOpen?: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const offline = row.status === "offline" || row.status === "invisible";
@@ -278,7 +290,17 @@ function MemberRow({
         >
           {row.name}
         </span>
-        <CustomStatusLine line={row.line} />
+        {title ? (
+          <span
+            data-member-title=""
+            className="block min-w-0 truncate text-caption text-muted-foreground"
+          >
+            {title}
+            {row.line ? ` \u00b7 ${row.line}` : null}
+          </span>
+        ) : (
+          <CustomStatusLine line={row.line} />
+        )}
       </span>
       {row.status ? (
         <span className="sr-only">, {presenceLabel(row.status)}</span>
@@ -287,7 +309,7 @@ function MemberRow({
   );
   const rowClass = cn(
     "flex w-full items-center gap-2 rounded-md px-2",
-    row.line ? "h-10" : "h-8",
+    title || row.line ? "h-10" : "h-8",
   );
   return (
     <li data-presence={row.status ?? undefined}>

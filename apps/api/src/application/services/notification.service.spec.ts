@@ -72,6 +72,7 @@ describe('NotificationService', () => {
       deleteMany: jest.fn(),
       deleteConversation: jest.fn(),
       rewriteChatMessageBody: jest.fn(),
+      deleteTaskCompletionRows: jest.fn(),
     };
     mockPushTokenRepo = {
       create: jest.fn(),

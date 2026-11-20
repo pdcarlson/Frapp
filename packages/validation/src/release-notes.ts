@@ -136,10 +136,13 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Your first chapter channel now greets you with a welcome card showing the next two events and a quick way to finish your profile, in place of the old tour.",
       "Officers can now have a chapter link out for each role at once, such as one for the pledge class and one for brothers, and pick the role when they make one.",
       "Officers who post minutes now get a quick review that turns each upcoming Coming up date into a task, with the person the minutes name filled in.",
+      "A chapter can now let its top officers give and take away roles at their own level, such as one officer making another Stewardship Chair, by turning on Give roles at your own level in Roles and groups.",
+      "Invite emails now lead with your chapter's name and open the invite from one button, with no long link to copy.",
     ],
     web: [
       "Rows show more at a glance: an event says when check-in is open, a task says how it repeats and how far along its checklist and photos are, and a study session says which zone it was in.",
       "Clicking someone in the Directory opens a small card beside them instead of taking over the page.",
+      "Long dropdowns, like the channel picker in chat settings, now stay inside the window and scroll, so every choice can be reached.",
     ],
     phone: [
       "Documents now say when they take effect, and study sessions show the date and time the same way the web does.",

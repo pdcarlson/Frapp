@@ -3,9 +3,10 @@ import { MEMBER_ORDER_NUMBER_MAX } from "./field-limits";
 /**
  * A member's order number (#3939) from the text an officer typed: an integer
  * from 1 to {@link MEMBER_ORDER_NUMBER_MAX}, `null` for a blank field (no
- * number), and `undefined` for anything else. Web's profile sheet and class
- * editor and mobile's member sheet (#3991) read a typed number through this,
- * so they refuse the same input the API's DTO does.
+ * number), and `undefined` for anything else. Web's profile sheet and mobile's
+ * member sheet (#3991) read a typed number through this, so they refuse the
+ * same input the API's DTO does. Web's class editor has no typed number since
+ * #5738, but still checks the numbers it holds through it.
  */
 export function parseOrderNumber(text: string): number | null | undefined {
   const trimmed = text.trim();

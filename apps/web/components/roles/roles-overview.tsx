@@ -10,6 +10,7 @@ import {
   useDeleteRoleTier,
   useReorderRoleTiers,
   useUpdateRole,
+  useIsPermissionHidden,
   useUpdateRoleTier,
 } from "@repo/hooks";
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
@@ -39,6 +40,7 @@ import {
   reachesOutside,
   reachesRole,
   reachesTier,
+  shownPermissionCount,
   type TierRow,
   type TieredRole,
 } from "@repo/hooks/role-tiers";
@@ -565,7 +567,8 @@ function TierBlock({
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(tier.name);
   const headingId = `roles-tier-${tier.id}`;
-  const permissionCount = tier.permissions.filter((p) => p !== "*").length;
+  const isHidden = useIsPermissionHidden();
+  const permissionCount = shownPermissionCount(tier.permissions, isHidden);
 
   async function submitRename(event: FormEvent) {
     event.preventDefault();

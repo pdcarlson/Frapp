@@ -5,8 +5,9 @@ import { SignetTokens } from "@repo/theme/signet";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
   MEMBER_SEARCH_THRESHOLD,
+  channelMemberTitle,
   filterChannelMembers,
-  groupChannelMembersByRole,
+  groupChannelMembersByTier,
   memberAvatarHue,
   memberAvatarTint,
   memberLabel,
@@ -46,8 +47,9 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * Who can read the open channel (#3536), as a tall sheet from the thread
  * header: the mobile face of web's member column
  * (`apps/web/components/chat/channel-member-list.tsx`), from the same read
- * (`GET /v1/channels/{id}/members`), in the same role groups
- * (`groupChannelMembersByRole`) and with the same search past
+ * (`GET /v1/channels/{id}/members`), in the same tier groups with each
+ * officer's title under their name (`groupChannelMembersByTier`) and with
+ * the same search past
  * `MEMBER_SEARCH_THRESHOLD` readers.
  *
  * **Presence** (#3917): each avatar carries web's dot (Online, Idle, Do Not
@@ -145,9 +147,13 @@ export interface ChannelMemberSheetRow {
   /** Their profile photo, or `null` for initials. */
   avatarUrl: string | null;
   roleColor: string | null;
+  /** Where their highest-ranked role sits in the chapter's roles; lower first. */
   roleRank: number | null;
-  roleId: string | null;
-  roleName: string | null;
+  /** Their title, or `null` for none or the Everyone role. */
+  title: string | null;
+  tierId: string | null;
+  tierName: string | null;
+  tierRank: number | null;
 }
 
 export function MemberRows({
@@ -175,15 +181,17 @@ export function MemberRows({
         avatarUrl: avatarFor(member.user_id),
         roleColor: roleColorFor(member.user_id),
         roleRank: member.role_rank,
-        roleId: member.role_id ?? null,
-        roleName: member.role_name ?? null,
+        title: member.title ?? null,
+        tierId: member.tier_id ?? null,
+        tierName: member.tier_name ?? null,
+        tierRank: member.tier_rank ?? null,
       })),
     [membersQuery.data, byId, avatarFor, roleColorFor],
   );
   const searchable = rows.length > MEMBER_SEARCH_THRESHOLD;
   const trimmed = searchable ? query.trim() : "";
   const groups = useMemo(
-    () => groupChannelMembersByRole(filterChannelMembers(rows, trimmed)),
+    () => groupChannelMembersByTier(filterChannelMembers(rows, trimmed), rows),
     [rows, trimmed],
   );
 
@@ -243,6 +251,7 @@ export function MemberRows({
               <ChannelMemberRow
                 key={row.userId}
                 row={row}
+                title={channelMemberTitle(row, group.label)}
                 styles={styles}
                 ringColor={tokens.color.surface.popover}
                 onOpenProfile={onOpenProfile}
@@ -261,11 +270,14 @@ export function MemberRows({
  */
 function ChannelMemberRow({
   row,
+  title,
   styles,
   ringColor,
   onOpenProfile,
 }: {
   row: ChannelMemberSheetRow;
+  /** Their title, when it adds to the group heading. */
+  title: string | null;
   /** The sheet's stylesheet, built once for every row. */
   styles: ReturnType<typeof createStyles>;
   ringColor: string;
@@ -281,9 +293,13 @@ function ChannelMemberRow({
         pressed && onOpenProfile ? styles.rowPressed : null,
       ]}
       accessibilityRole={onOpenProfile ? "button" : undefined}
-      accessibilityLabel={
-        status ? `${row.name}, ${presenceLabel(status)}` : row.name
-      }
+      accessibilityLabel={[
+        row.name,
+        title,
+        status ? presenceLabel(status) : null,
+      ]
+        .filter(Boolean)
+        .join(", ")}
       accessibilityHint={onOpenProfile ? "Opens their profile" : undefined}
       disabled={!onOpenProfile}
       onPress={() => onOpenProfile?.(row.userId)}
@@ -318,9 +334,9 @@ function ChannelMemberRow({
         >
           {row.name}
         </Text>
-        {line ? (
+        {title || line ? (
           <Text numberOfLines={1} style={styles.statusLine}>
-            {line}
+            {[title, line].filter(Boolean).join(" \u00b7 ")}
           </Text>
         ) : null}
       </View>

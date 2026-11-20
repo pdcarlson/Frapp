@@ -33,6 +33,8 @@ const ROLES = [
   everyone: false,
   grantsBase: false,
   selfAssignable: true,
+  display_order: 0,
+  tier_id: null,
   joinable: true,
 }));
 

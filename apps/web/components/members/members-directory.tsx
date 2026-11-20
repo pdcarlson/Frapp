@@ -16,6 +16,7 @@ import {
   usePledgeClasses,
   fraternalOrderComparator,
   usesFraternalOrder,
+  useRoleTiers,
   useRoles,
   useUpdateMemberRoles,
 } from "@repo/hooks";
@@ -79,6 +80,8 @@ import {
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
 import {
+  highestRankedRole,
+  tierPositionsOf,
   directoryNoSearchMatches,
   matchesPhoneReachFilter,
   PHONE_REACH_FILTER_OPTIONS,
@@ -287,10 +290,21 @@ export function MembersDirectory() {
       : rows.filter((member) => member.is_alumni !== true);
   }, [activeQuery.data, usingSearch]);
 
+  const allRoles = useMemo(
+    () => parseChapterRoles(rolesQuery.data),
+    [rolesQuery.data],
+  );
   // The Everyone role (#4191) is no filter, column or assignment.
   const roleOptions = useMemo(
-    () => parseChapterRoles(rolesQuery.data).filter((role) => !role.everyone),
-    [rolesQuery.data],
+    () => allRoles.filter((role) => !role.everyone),
+    [allRoles],
+  );
+  // The tiers rank the roles for a member's title; until they load (or for
+  // a reader they are closed to) the roles rank by their own order.
+  const tiersQuery = useRoleTiers();
+  const tierPositions = useMemo(
+    () => tierPositionsOf(tiersQuery.data ?? []),
+    [tiersQuery.data],
   );
   const roleNameById = useMemo(
     () => new Map(roleOptions.map((role) => [role.id, role.name])),
@@ -468,14 +482,25 @@ export function MembersDirectory() {
   // `null`, not an em dash, for the same reason `formatJoined` returns one: an
   // absent role drops out of the `·`-joined meta line rather than rendering a
   // placeholder glyph.
-  // The first role the list knows, so the Everyone role (#4191), which it
-  // leaves out, is skipped rather than shown as a raw id. While the roles load
-  // the first id stands in, as before.
+  // The member's title: their highest-ranked role (tier first, then the
+  // role's order in its tier), the same pick chat's member list makes. A
+  // member whose highest role is the Everyone role (#4191), which no list
+  // names, has none, so a floor or class role outside the tiers never stands
+  // in as a title. While the roles or tiers load, the first id stands in.
+  // Ranking waits for the tiers too, so a title never flips from a floor role
+  // to the office once they arrive; a failed tier read ranks without them.
+  const rankReady =
+    allRoles.length > 0 &&
+    (tiersQuery.data !== undefined || tiersQuery.isError);
   const primaryRoleName = (member: MemberProfile): string | null => {
-    const known = member.role_ids.find((id) => roleNameById.has(id));
-    if (known) return roleNameById.get(known) ?? null;
-    if (roleOptions.length > 0) return null;
-    return member.role_ids[0] ?? null;
+    if (!rankReady) return member.role_ids[0] ?? null;
+    const held = new Set(member.role_ids);
+    const top = highestRankedRole(
+      allRoles.filter((role) => held.has(role.id)),
+      tierPositions,
+    );
+    if (!top || top.everyone) return null;
+    return top.name;
   };
 
   const filteredMembers = useMemo(() => {
@@ -572,6 +597,9 @@ export function MembersDirectory() {
     sortDir,
     pointsByUserId,
     roleNameById,
+    allRoles,
+    tierPositions,
+    rankReady,
     pledgeClasses,
   ]);
 

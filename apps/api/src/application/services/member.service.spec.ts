@@ -14,6 +14,7 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
@@ -65,6 +66,10 @@ describe('MemberService', () => {
   };
   let mockChannelRepo: { removeUserFromPrivateChannels: jest.Mock };
   let mockChannelCache: { invalidate: jest.Mock };
+
+  const mockTierRepo = {
+    findByChapter: jest.fn().mockResolvedValue([]),
+  };
 
   beforeEach(async () => {
     mockRepo = {
@@ -162,6 +167,7 @@ describe('MemberService', () => {
         { provide: MEMBER_REPOSITORY, useValue: mockRepo },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        { provide: ROLE_TIER_REPOSITORY, useValue: mockTierRepo },
         { provide: CustomFieldService, useValue: mockCustomFieldService },
         { provide: RbacService, useValue: mockRbacService },
         { provide: ChapterAuditLogService, useValue: mockAuditLogService },
@@ -378,6 +384,44 @@ describe('MemberService', () => {
       expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledTimes(
         1,
       );
+    });
+
+    it("paints the highest-ranked role's color, tier before display_order", async () => {
+      // Staging, 2026-11-20: an untiered "First Floor" at display_order 0
+      // colored the President's name.
+      mockRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          user_id: 'user-1',
+          chapter_id: 'chapter-1',
+          role_ids: ['role-floor', 'role-pres'],
+        }),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'role-floor',
+          name: 'First Floor',
+          color: '#5CC8F0',
+          display_order: 0,
+          tier_id: null,
+        }),
+        roleFixture({
+          id: 'role-pres',
+          name: 'President',
+          color: '#F2994A',
+          display_order: 1,
+          tier_id: 'tier-cabinet',
+        }),
+      ]);
+      mockTierRepo.findByChapter.mockResolvedValueOnce([
+        { id: 'tier-cabinet', position: 1 },
+      ]);
+
+      const [entry] = await service.findRosterByChapter('chapter-1');
+
+      expect(entry.role_color).toBe('#F2994A');
     });
 
     it('reads through the narrow projection, never the full user row', async () => {

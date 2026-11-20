@@ -432,6 +432,7 @@ describe('SupabaseTaskRepository — tenant scope', () => {
           ...row,
           status: 'COMPLETED',
           completed_at: '2026-08-30T00:00:00Z',
+          completed_by: 'officer-1',
           points_awarded: false,
         })),
       },
@@ -446,6 +447,8 @@ describe('SupabaseTaskRepository — tenant scope', () => {
       id: TASK_B,
       status: 'IN_PROGRESS',
       completed_at: null,
+      // Who marked it done goes with the completion (#5732).
+      completed_by: null,
     });
     // The assignee's own take-back is not a send-back.
     expect(reopened).not.toHaveProperty('sent_back_at', expect.any(String));

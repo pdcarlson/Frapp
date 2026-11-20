@@ -39,6 +39,10 @@ export type ChapterRole = {
   grantsBase: boolean;
   /** Members add and remove it themselves (#4958). */
   selfAssignable: boolean;
+  /** Its order inside its tier, for the rank (`compareRolesByRank`). */
+  display_order: number;
+  /** Its tier, or `null` outside the tiers. */
+  tier_id: string | null;
 };
 
 /**
@@ -84,6 +88,9 @@ export function parseChapterRoles(data: unknown): ChapterRole[] {
         everyone: isEveryoneRole(role),
         grantsBase: can("members:view", permissions),
         selfAssignable: role.self_assignable === true,
+        display_order:
+          typeof role.display_order === "number" ? role.display_order : 0,
+        tier_id: typeof role.tier_id === "string" ? role.tier_id : null,
       },
     ];
   });

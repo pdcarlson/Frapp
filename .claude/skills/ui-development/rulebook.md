@@ -99,6 +99,10 @@ These cause most of the iterations, so they come first.
 - **Create forms are a borderless title plus property rows** (Type, When, Repeat, Location, Who's coming,
   Points, Description, Notes, Check-in for an event), each opening its menu in place, identical on web
   and phone. Create is small in the header. No "More options", no big Cancel/Create footer. (11-19)
+  Changed in #5748 by shawnatomklein-eng, 2026-11-20: on both apps the rows sit in three framed groups
+  on the raised surface; on web every clickable value is a quiet chip with the control edge (a chevron on
+  a menu), and the phone keeps its row chevrons
+  ([`components.md` § Property rows](../../../spec/ui/design-system/components.md#property-rows)).
   *Changed 11-20 by Paul: the phone commit is the floating glass action bar and the web one names the
   thing; see § 9.*
 - **Record pages read top-down in the order people use them.** An event is details, then agenda, then
@@ -189,6 +193,13 @@ These cause most of the iterations, so they come first.
   posts included. (11-04)
 - **Push copy works from the lock screen:** who did what, and when, like a calendar invite; never just
   "New event". (11-06)
+- **State facts, never narrate directions.** A push, Activity row or status line says what happened and
+  what came with it ("Moiz finished: Book the venue", "1 photo · 10 points"), never what to do about it
+  ("send it back if something's off", "Confirm to award 10 points"). The screen's own controls are the
+  next step. Paul: "Please stop narrating like directions." (11-20, #5732)
+- **A record says its state first.** A task, request or submission that someone acted on shows who did it
+  and when right under its title ("Moiz Steenhuis marked it done today at 12:05 AM"), with what they sent
+  under that, before its fields. History names the actor too. (11-20, #5732)
 - **The same moment has the same words on both apps.** Shared strings live in a shared package. (P6.5)
 - **Don't invent labels Paul won't use** ("Needs you" was rejected). Use the chapter's words. (11-13)
 

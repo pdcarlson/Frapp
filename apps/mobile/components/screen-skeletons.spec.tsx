@@ -473,6 +473,7 @@ describe("Placeholder rows sit on their real row's frame", () => {
           dueAt: null,
           assigneeId: null,
           completedAt: null,
+          completedBy: null,
           confirmedAt: null,
           pointReward: 5,
           pointsAwarded: false,

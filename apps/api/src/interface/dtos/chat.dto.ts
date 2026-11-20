@@ -329,7 +329,7 @@ export class ChannelMemberDto {
     type: Number,
     nullable: true,
     description:
-      "The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`.",
+      "Where the member's highest-ranked role sits among the chapter's roles in rank order (the President's role first, then by tier, then each role's order in its tier), 0 for the top; lower ranks higher, null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`.",
   })
   role_rank: number | null;
 
@@ -346,9 +346,40 @@ export class ChannelMemberDto {
     type: String,
     nullable: true,
     description:
-      "The group's heading: that role's name, \"Members\" for the chapter's Everyone role, or null when they hold no role.",
+      'That role\'s name, "Members" for the chapter\'s Everyone role, or null when they hold no role. Older app builds group by it; current ones group by tier.',
   })
   role_name: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "The member's title: their highest-ranked role's name, or null for the chapter's Everyone role or no role.",
+  })
+  title: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The highest tier any of their roles is in, the group the list files them under, or null when none of their roles is in a tier.',
+  })
+  tier_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "That tier's name, the group's heading; null with tier_id.",
+  })
+  tier_name: string | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: "That tier's position, 1 for the top tier; null with tier_id.",
+  })
+  tier_rank: number | null;
 }
 
 export class CreateGroupDmDto {

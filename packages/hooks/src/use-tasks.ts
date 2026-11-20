@@ -9,6 +9,7 @@ import {
   type TaskProofKind,
 } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { useViewerUserId } from "./use-user";
 import { useChapterScope } from "./chapter-scope";
 import { invalidatePointReads } from "./use-points";
 import { activityKeys } from "./use-activity";
@@ -53,6 +54,8 @@ interface CachedTask {
   due_date?: string;
   due_at?: string | null;
   completed_at?: string | null;
+  /** Who marked it done (#5732). */
+  completed_by?: string | null;
   confirmed_at?: string | null;
   points_awarded?: boolean;
   point_reward?: number | null;
@@ -77,6 +80,7 @@ type TaskPatch = Partial<
     | "status"
     | "stored_status"
     | "completed_at"
+    | "completed_by"
     | "confirmed_at"
     | "points_awarded"
     | "sent_back_at"
@@ -582,6 +586,8 @@ export function useUpdateTaskStatus() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
+  // Who is marking it done, for the cache's `completed_by` (#5732).
+  const viewerId = useViewerUserId();
   return useMutation({
     mutationKey: ["tasks", "update-task-status"],
     // No retry. The web client retries a failed mutation twice when the
@@ -636,6 +642,9 @@ export function useUpdateTaskStatus() {
       // alone otherwise, so a "Done <weekday>" subtitle does not blank for a beat.
       if (body.status === "COMPLETED") {
         patch.completed_at = new Date().toISOString();
+        // The server stamps the caller: an officer marking it done for them
+        // reads as the officer's, not the assignee's, before the refetch.
+        patch.completed_by = viewerId;
         // A task with no points and no proof is Done as it is marked (#4635):
         // the server confirms it in the same write.
         if (row && row.proof_kind !== undefined && !taskNeedsSignOff(row)) {
@@ -651,6 +660,7 @@ export function useUpdateTaskStatus() {
         (row?.stored_status ?? row?.status) === "COMPLETED"
       ) {
         patch.completed_at = null;
+        patch.completed_by = null;
         // Taking back a Done that needed no sign-off unconfirms it too.
         if (row?.points_awarded) {
           patch.confirmed_at = null;
