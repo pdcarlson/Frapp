@@ -848,7 +848,8 @@ export class AiSuggestionService {
    * accept, or the suggestion expired meanwhile, what `make` made is taken
    * back with `unmake` and the refusal says what happened. One that lost to a
    * dismiss at the same moment keeps it: the two answers agree that it is
-   * not a task, and a send racing a send made the same thing.
+   * not a task. A send racing a send must make the same thing (the caller
+   * keys what it makes by the suggestion), so the loser keeps it too.
    */
   async handleElsewhere<T>(
     chapterId: string,
@@ -864,15 +865,16 @@ export class AiSuggestionService {
     },
   ): Promise<T> {
     const { row } = await this.loadForDecision(chapterId, userId, id);
+    // A repeat first: a decided row has no text left for `accepts` to read.
+    const already = await handling.findMade(row);
+    if (already) return already;
+    if (!this.isWaiting(row)) throw this.refusal(row);
     if (!handling.accepts(row)) {
       throw new BadRequestException({
         code: 'ai.suggestion.not_handled_here',
         message: 'This suggestion can’t be handled that way.',
       });
     }
-    const already = await handling.findMade(row);
-    if (already) return already;
-    if (!this.isWaiting(row)) throw this.refusal(row);
 
     const made = await handling.make(row);
     let claimed: AiSuggestion | null;
@@ -905,10 +907,11 @@ export class AiSuggestionService {
   }
 
   /**
-   * Undo of `handleElsewhere` (#5790): puts the suggestion back to waiting
-   * with the words `findMade` kept for it, then takes back what was made.
-   * Refused, with what happened, when there is nothing to undo or the
-   * suggestion can't be put back (it expired since).
+   * Undo of `handleElsewhere` (#5790): checks `mayUndo`, puts the
+   * suggestion back to waiting with the words `wordsOf` kept for it, then
+   * takes back what was made; if that fails, the suggestion is closed again
+   * so it can't also become a task. Refused, with what happened, when there
+   * is nothing to undo, the words are gone, or the suggestion expired.
    */
   async undoHandled<T>(
     chapterId: string,
@@ -916,10 +919,13 @@ export class AiSuggestionService {
     id: string,
     handling: {
       findMade: (row: AiSuggestion) => Promise<T | null>;
+      /** Throws when this member may not take back what was made. */
+      mayUndo: (made: T) => Promise<void>;
+      /** The suggestion's words, or null once they are no longer kept. */
       wordsOf: (made: T) => {
         payload: Record<string, unknown>;
         quote: string | null;
-      };
+      } | null;
       unmake: (made: T) => Promise<void>;
     },
   ): Promise<void> {
@@ -930,14 +936,33 @@ export class AiSuggestionService {
       if (this.isWaiting(row)) return;
       throw this.refusal(row);
     }
-    const reopened = await this.repo.reopen(
-      chapterId,
-      id,
-      handling.wordsOf(made),
-      this.now().toISOString(),
-    );
-    if (!reopened) throw this.refusal(await this.reread(chapterId, id));
-    await handling.unmake(made);
+    await handling.mayUndo(made);
+    const words = handling.wordsOf(made);
+    if (!words) throw this.refusal(row);
+    const now = this.now().toISOString();
+    const reopened = await this.repo.reopen(chapterId, id, words, now);
+    if (!reopened) {
+      const after = await this.reread(chapterId, id);
+      if (after.status === 'dismissed' && after.expires_at <= now) {
+        throw new ConflictException({
+          code: 'ai.suggestion.expired',
+          message: 'This suggestion has expired.',
+        });
+      }
+      throw this.refusal(after);
+    }
+    try {
+      await handling.unmake(made);
+    } catch (error) {
+      // Closed again, so it can't become a task while the item stands.
+      await this.repo.claim(chapterId, id, {
+        status: 'dismissed',
+        decidedBy: userId,
+        edited: false,
+        now: this.now().toISOString(),
+      });
+      throw error;
+    }
   }
 
   /**

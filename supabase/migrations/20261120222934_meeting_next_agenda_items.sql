@@ -14,22 +14,29 @@
 --      onto the next one created, and is deleted at `expires_at` (30 days)
 --      if none is.
 --    - `ai_suggestion_id` (unique): the suggested task it was sent from, so a
---      suggestion sent twice is one item; `suggestion_payload` and
---      `suggestion_quote` keep that suggestion's words so Undo can put it
---      back, since a decided suggestion holds none. Set null if that row goes.
+--      suggestion sent twice is one item. Set null if that row goes.
+--    - `suggestion_payload` and `suggestion_quote` keep that suggestion's
+--      words for a day, so Undo can put it back (a decided suggestion holds
+--      none); the API's hourly sweep empties them after that.
 --    - Deleting the minutes deletes it: its words came from them. Deleting
 --      the meeting it was placed on leaves it, with no meeting.
 -- 2. `event_agenda_suggestions.kind` gains `minutes`: an `offered` item
 --    under one event's agenda, with `source_meeting_id` the minutes it was
 --    sent from.
+-- 3. `delete_replaced_occurrences`, as `20261118191604` left it, now also
+--    moves `meeting_next_agenda_items` rows onto the rebuilt meeting when a
+--    series edit rebuilds its upcoming meetings, as it moves their agendas.
+--    The function is otherwise unchanged.
 --
--- Locks. The new table's foreign keys add triggers to `chapters`,
+-- Locks. The file runs in one transaction, so every lock below holds until
+-- it commits. The new table's foreign keys add triggers to `chapters`,
 -- `meetings`, `events`, `ai_suggestions` and `users`, each taking SHARE ROW
--- EXCLUSIVE until commit; the table is new and empty, so that is
--- milliseconds. Swapping the kind check takes ACCESS EXCLUSIVE on
--- `event_agenda_suggestions` for the drop and the add; the add is NOT VALID
--- and the validate that follows takes only SHARE UPDATE EXCLUSIVE while it
--- reads the table (a few rows per upcoming meeting).
+-- EXCLUSIVE until commit. Swapping the kind check takes ACCESS
+-- EXCLUSIVE on `event_agenda_suggestions`, also until commit, through the
+-- add's read of the table. `create or replace function` takes no table
+-- lock. Every table touched is small (a few rows per upcoming meeting), so the
+-- whole file commits in milliseconds; reads and writes on those tables wait
+-- that long.
 
 -- 1. ------------------------------------------------------------------------
 
@@ -93,7 +100,113 @@ alter table public.event_agenda_suggestions
 
 alter table public.event_agenda_suggestions
   add constraint event_agenda_suggestions_kind_check
-  check (kind in ('tabled', 'minutes', 'ai')) not valid;
+  check (kind in ('tabled', 'minutes', 'ai'));
 
-alter table public.event_agenda_suggestions
-  validate constraint event_agenda_suggestions_kind_check;
+-- 3. ------------------------------------------------------------------------
+
+create or replace function public.delete_replaced_occurrences(
+  p_chapter_id uuid,
+  p_old_ids uuid[],
+  p_from_ids uuid[],
+  p_to_ids uuid[]
+)
+returns setof public.event_excuses
+language plpgsql
+volatile
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  if coalesce(array_length(p_from_ids, 1), 0)
+     <> coalesce(array_length(p_to_ids, 1), 0) then
+    raise exception 'from and to must pair up'
+      using errcode = '22023';
+  end if;
+
+  -- Both ends of every pair are this chapter's events, and only an old row
+  -- being deleted is carried from.
+  if exists (
+    select 1
+      from unnest(p_from_ids, p_to_ids) as m(from_id, to_id)
+     where not (m.from_id = any(p_old_ids))
+        or not exists (
+          select 1 from public.events e
+           where e.id = m.to_id and e.chapter_id = p_chapter_id
+        )
+  ) then
+    raise exception 'every pair must carry from an old occurrence to one of the chapter''s events'
+      using errcode = '22023';
+  end if;
+
+  -- A meeting's agenda and attachments are its own (#4934), so a rebuilt
+  -- meeting takes over the one it replaces.
+  update public.events e
+     set agenda = o.agenda,
+         attachments = o.attachments
+    from unnest(p_from_ids, p_to_ids) as m(from_id, to_id)
+    join public.events o
+      on o.id = m.from_id
+     and o.chapter_id = p_chapter_id
+   where e.id = m.to_id
+     and e.chapter_id = p_chapter_id;
+
+  -- An approved excuse's EXCUSED row first, while the excuse still says which
+  -- member it belongs to on the old meeting.
+  update public.event_attendance a
+     set event_id = m.to_id
+    from unnest(p_from_ids, p_to_ids) as m(from_id, to_id)
+   where a.event_id = m.from_id
+     and a.status = 'EXCUSED'
+     and exists (
+       select 1 from public.event_excuses x
+        where x.event_id = m.from_id
+          and x.user_id = a.user_id
+          and x.chapter_id = p_chapter_id
+          and x.status = 'APPROVED'
+     );
+
+  update public.event_excuses x
+     set event_id = m.to_id
+    from unnest(p_from_ids, p_to_ids) as m(from_id, to_id)
+   where x.event_id = m.from_id
+     and x.chapter_id = p_chapter_id;
+
+  -- Its suggested agenda items, decided ones included, and when the model
+  -- last wrote them (#5534): what was added there stays added, what was
+  -- dismissed stays dismissed, and the rebuilt meeting isn't asked again.
+  update public.event_agenda_suggestions s
+     set event_id = m.to_id
+    from unnest(p_from_ids, p_to_ids) as m(from_id, to_id)
+   where s.event_id = m.from_id
+     and s.chapter_id = p_chapter_id;
+
+  -- What an officer sent there from earlier minutes (#5790): the rebuilt
+  -- meeting takes over the agenda item, so it takes over the record of it.
+  update public.meeting_next_agenda_items n
+     set event_id = m.to_id
+    from unnest(p_from_ids, p_to_ids) as m(from_id, to_id)
+   where n.event_id = m.from_id
+     and n.chapter_id = p_chapter_id;
+
+  update public.event_agenda_suggestion_runs r
+     set event_id = m.to_id
+    from unnest(p_from_ids, p_to_ids) as m(from_id, to_id)
+   where r.event_id = m.from_id
+     and r.chapter_id = p_chapter_id
+     and not exists (
+       select 1 from public.event_agenda_suggestion_runs t
+        where t.event_id = m.to_id
+     );
+
+  return query
+    select x.*
+      from public.event_excuses x
+     where x.event_id = any(p_old_ids)
+       and x.chapter_id = p_chapter_id
+       and x.status in ('PENDING', 'APPROVED');
+
+  delete from public.events
+   where id = any(p_old_ids)
+     and chapter_id = p_chapter_id;
+end;
+$$;

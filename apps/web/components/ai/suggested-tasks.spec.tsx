@@ -399,6 +399,19 @@ describe("SuggestedTasks (#4313)", () => {
         }),
       ),
     );
+    const shown = mocks.toast.mock.calls.at(-1)![0] as {
+      description: React.ReactElement;
+      action: React.ReactElement<{ onClick: () => void }>;
+    };
+    // The link goes to the meeting it was added to, and Undo takes it back.
+    render(shown.description);
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute(
+      "href",
+      "/events?event=e-next",
+    );
+    mocks.undoNextAgenda.mockResolvedValue(undefined);
+    shown.action.props.onClick();
+    expect(mocks.undoNextAgenda).toHaveBeenCalledWith("1");
   });
 
   it("says when the item waits for the next meeting to be scheduled (#5790)", async () => {

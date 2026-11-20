@@ -63,6 +63,7 @@ import {
   stillOpenItems,
   topicLines,
 } from '#domain/utils/minutes-context';
+import { isSameMeetingKind } from '#domain/utils/next-meeting';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { AiConsentService } from './ai/ai-consent.service';
 import { AiGatewayService, type AiObjectResult } from './ai/ai-gateway.service';
@@ -88,6 +89,8 @@ interface Context {
   audience: string;
   /** Same-audience posted minutes this member may read, newest first. */
   earlier: Meeting[];
+  /** Each of those minutes' own meeting, by the minutes' id. */
+  earlierEvents: Map<string, Event>;
   /** The member's time zone, for the days the model is told. */
   timeZone: string;
 }
@@ -264,6 +267,9 @@ export class AgendaSuggestionService {
       event,
       audience: audienceKey(event),
       earlier: earlier.map((entry) => entry.row),
+      earlierEvents: new Map(
+        earlier.map((entry) => [entry.row.id, entry.event]),
+      ),
       timeZone: validTimeZone(options.timeZone),
     };
   }
@@ -315,9 +321,15 @@ export class AgendaSuggestionService {
       chapterId,
       context.earlier.map((row) => row.id),
     );
+    // Only on the same kind of meeting as the minutes': type, else series or
+    // name (`isSameMeetingKind`), as a send picks one.
+    const sentHere = sentItems.filter((item) => {
+      const source = context.earlierEvents.get(item.meeting_id);
+      return source ? isSameMeetingKind(source, event, audienceKey) : false;
+    });
     const all = [
       ...tabledCandidates(minutes, agenda, new Set(), Infinity),
-      ...sentCandidates(sentItems, agenda, new Set(), Infinity),
+      ...sentCandidates(sentHere, agenda, new Set(), Infinity),
     ];
     const existing = await this.repo.listForEvent(chapterId, event.id);
     const added = await this.repo.addedKeys(
@@ -344,7 +356,7 @@ export class AgendaSuggestionService {
       tabled.map((candidate) => agendaKeyText(candidate.text)),
     );
     const sent = sentCandidates(
-      sentItems,
+      sentHere,
       agenda,
       excluded,
       AGENDA_SUGGESTIONS_TABLED_MAX,

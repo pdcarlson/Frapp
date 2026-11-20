@@ -40,6 +40,8 @@ import { SupabaseMemberRepository } from '../../infrastructure/supabase/reposito
 import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { EVENT_AGENDA_SUGGESTION_REPOSITORY } from '#domain/repositories/event-agenda-suggestion.repository.interface';
+import { SupabaseEventAgendaSuggestionRepository } from '../../infrastructure/supabase/repositories/supabase-event-agenda-suggestion.repository';
 import { MEETING_NEXT_AGENDA_ITEM_REPOSITORY } from '#domain/repositories/meeting-next-agenda-item.repository.interface';
 import { SupabaseMeetingNextAgendaItemRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-next-agenda-item.repository';
 
@@ -120,7 +122,12 @@ import { SupabaseMeetingNextAgendaItemRepository } from '../../infrastructure/su
       provide: AI_SUGGESTION_REPOSITORY,
       useClass: SupabaseAiSuggestionRepository,
     },
-    // What earlier minutes sent to the next meeting's agenda (#5790).
+    // What earlier minutes sent to the next meeting's agenda (#5790), and
+    // whether an officer already added an offered one (Undo).
+    {
+      provide: EVENT_AGENDA_SUGGESTION_REPOSITORY,
+      useClass: SupabaseEventAgendaSuggestionRepository,
+    },
     {
       provide: MEETING_NEXT_AGENDA_ITEM_REPOSITORY,
       useClass: SupabaseMeetingNextAgendaItemRepository,

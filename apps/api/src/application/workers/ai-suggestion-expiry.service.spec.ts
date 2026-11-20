@@ -21,7 +21,11 @@ describe('AiSuggestionExpiryService (#4309)', () => {
           finish = resolve;
         }),
     );
-    const nextAgenda = { deleteExpired: jest.fn(async () => 0) };
+    const nextAgenda = {
+      placeWaitingEverywhere: jest.fn(async () => 0),
+      deleteExpired: jest.fn(async () => 0),
+      forgetWords: jest.fn(async () => 0),
+    };
     const sweep = new AiSuggestionExpiryService(
       suggestions as never,
       nextAgenda as never,
@@ -35,6 +39,8 @@ describe('AiSuggestionExpiryService (#4309)', () => {
     await sweep.handleAiSuggestionExpirySweep();
     expect(order).toEqual(['release', 'expire', 'release', 'expire']);
     // Items sent to a next meeting never created go after 30 days (#5790).
+    expect(nextAgenda.placeWaitingEverywhere).toHaveBeenCalledTimes(2);
     expect(nextAgenda.deleteExpired).toHaveBeenCalledTimes(2);
+    expect(nextAgenda.forgetWords).toHaveBeenCalledTimes(2);
   });
 });

@@ -1156,6 +1156,7 @@ describe('AiSuggestionService (#4309)', () => {
       await service.handleElsewhere(CHAPTER, OFFICER, created[0].id, options);
       await service.undoHandled(CHAPTER, OFFICER, created[0].id, {
         findMade: options.findMade,
+        mayUndo: async () => undefined,
         wordsOf: () => ({ payload: { title: 'Task 1' }, quote: 'Task 1' }),
         unmake: options.unmake,
       });
@@ -1169,10 +1170,65 @@ describe('AiSuggestionService (#4309)', () => {
       // A second Undo finds it waiting and changes nothing.
       await service.undoHandled(CHAPTER, OFFICER, created[0].id, {
         findMade: options.findMade,
+        mayUndo: async () => undefined,
         wordsOf: () => ({ payload: {}, quote: null }),
         unmake: options.unmake,
       });
       expect(options.unmake).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers a repeat even though the decided row has no text left to check', async () => {
+      const { service } = build();
+      const { created } = await proposeTen(service);
+      const { options } = handling();
+      // As the real caller does: it can only judge a row that still has text.
+      const needsText = {
+        ...options,
+        accepts: (row: AiSuggestion) => typeof row.payload.title === 'string',
+      };
+      await service.handleElsewhere(CHAPTER, OFFICER, created[0].id, needsText);
+      const again = await service.handleElsewhere(
+        CHAPTER,
+        OFFICER,
+        created[0].id,
+        needsText,
+      );
+      expect(again.id).toBe(`made-${created[0].id}`);
+    });
+
+    it('closes the suggestion again when taking the thing back fails', async () => {
+      const { service, repo } = build();
+      const { created } = await proposeTen(service);
+      const { options } = handling();
+      await service.handleElsewhere(CHAPTER, OFFICER, created[0].id, options);
+      await expect(
+        service.undoHandled(CHAPTER, OFFICER, created[0].id, {
+          findMade: options.findMade,
+          mayUndo: async () => undefined,
+          wordsOf: () => ({ payload: { title: 'Task 1' }, quote: null }),
+          unmake: async () => {
+            throw new Error('db down');
+          },
+        }),
+      ).rejects.toThrow('db down');
+      expect(repo.rows[0].status).toBe('dismissed');
+    });
+
+    it('refuses Undo once the kept words are gone, leaving everything as it was', async () => {
+      const { service, repo } = build();
+      const { created } = await proposeTen(service);
+      const { made, options } = handling();
+      await service.handleElsewhere(CHAPTER, OFFICER, created[0].id, options);
+      await expect(
+        service.undoHandled(CHAPTER, OFFICER, created[0].id, {
+          findMade: options.findMade,
+          mayUndo: async () => undefined,
+          wordsOf: () => null,
+          unmake: options.unmake,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'ai.suggestion.decided' } });
+      expect(repo.rows[0].status).toBe('dismissed');
+      expect(made).toHaveLength(1);
     });
 
     it('refuses a kind it can’t handle, and a member who may not decide it', async () => {

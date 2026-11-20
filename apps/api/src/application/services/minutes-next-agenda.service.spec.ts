@@ -76,6 +76,8 @@ class FakeItems {
     },
   );
   deleteExpired = jest.fn(async () => 0);
+  listWaitingChapters = jest.fn(async () => [CHAPTER]);
+  forgetWords = jest.fn(async () => 0);
 }
 
 function setup(options: {
@@ -143,12 +145,14 @@ function setup(options: {
         _id: string,
         handling: {
           findMade: (r: AiSuggestion) => Promise<unknown>;
+          mayUndo: (m: unknown) => Promise<void>;
           wordsOf: (m: unknown) => unknown;
           unmake: (m: unknown) => Promise<void>;
         },
       ) => {
         const made = await handling.findMade(suggestion());
         if (!made) return;
+        await handling.mayUndo(made);
         undone.push(handling.wordsOf(made));
         await handling.unmake(made);
       },
@@ -156,15 +160,17 @@ function setup(options: {
   };
   const items = new FakeItems();
   const undone: unknown[] = [];
+  const added = { keys: new Set<string>() };
   const service = new MinutesNextAgendaService(
     suggestions as never,
     events as never,
     meetings as never,
     rbac as never,
     items,
+    { addedKeys: jest.fn(async () => added.keys) },
   );
   service.now = () => NOW;
-  return { service, events, items, byId, rbac, undone };
+  return { service, events, items, byId, rbac, undone, added };
 }
 
 const last = event('evt-last', {
@@ -190,7 +196,7 @@ describe('MinutesNextAgendaService (#5790)', () => {
     expect(outcome.event?.id).toBe('evt-next');
     expect(byId.get('evt-next')!.agenda).toEqual([
       {
-        id: nextAgendaItemIdOf(outcome.item.id),
+        id: nextAgendaItemIdOf('sugg-1'),
         text: 'Plan 2 to 3 backup activities for each rush event in case it slows down.',
         done: false,
       },
@@ -212,6 +218,69 @@ describe('MinutesNextAgendaService (#5790)', () => {
     expect(outcome.item.state).toBe('offered');
     expect(outcome.event?.id).toBe('evt-next');
     expect(byId.get('evt-next')!.agenda).toEqual([]);
+  });
+
+  it('offers it, and names no meeting, when the officer can’t see the next one', async () => {
+    const { service, byId } = setup({
+      events: [last, event('evt-next')],
+      hidden: ['evt-next'],
+    });
+    const outcome = await service.send(CHAPTER, OFFICER, 'sugg-1', null);
+    expect(outcome.item.state).toBe('offered');
+    expect(outcome.event).toBeNull();
+    expect(byId.get('evt-next')!.agenda).toEqual([]);
+  });
+
+  it('places a waiting item for its sender only if they can edit the new meeting', async () => {
+    const { service, byId, items, rbac } = setup({ events: [last] });
+    await service.send(CHAPTER, OFFICER, 'sugg-1', null);
+    rbac.memberHasAnyPermission.mockResolvedValue(false);
+    byId.set('evt-new', event('evt-new'));
+    expect(await service.placeWaiting(CHAPTER)).toBe(1);
+    expect(items.rows[0]).toMatchObject({
+      state: 'offered',
+      event_id: 'evt-new',
+    });
+    expect(byId.get('evt-new')!.agenda).toEqual([]);
+  });
+
+  it('places waiting items whenever an event is created (#5790 wiring)', async () => {
+    const { service, events } = setup({ events: [last] });
+    service.onModuleInit();
+    const placeWaiting = jest
+      .spyOn(service, 'placeWaiting')
+      .mockResolvedValue(0);
+    const listener = events.onCreated.mock.calls[0][0] as (
+      chapterId: string,
+      event: Event,
+    ) => Promise<void>;
+    await listener(CHAPTER, event('evt-new'));
+    expect(placeWaiting).toHaveBeenCalledWith(CHAPTER);
+  });
+
+  it('refuses Undo to an officer who can’t edit the meeting it went on', async () => {
+    const { service, byId, rbac } = setup({
+      events: [last, event('evt-next')],
+    });
+    await service.send(CHAPTER, OFFICER, 'sugg-1', null);
+    rbac.memberHasAnyPermission.mockResolvedValue(false);
+    await expect(
+      service.undo(CHAPTER, 'member-2', 'sugg-1'),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(byId.get('evt-next')!.agenda).toHaveLength(1);
+  });
+
+  it('refuses Undo of an offered item another officer already added', async () => {
+    const { service, items, added } = setup({
+      events: [last, event('evt-next')],
+      mayEdit: false,
+    });
+    await service.send(CHAPTER, OFFICER, 'sugg-1', null);
+    added.keys = new Set([`minutes:${items.rows[0].id}`]);
+    await expect(
+      service.undo(CHAPTER, OFFICER, 'sugg-1'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(items.rows).toHaveLength(1);
   });
 
   it('offers it when the next meeting’s agenda is full', async () => {

@@ -38,16 +38,16 @@ export const AI_SUGGESTION_COPY = {
    */
   more: "More",
   /**
-   * Instead of a task, the action item is offered under the agenda of the
-   * next meetings with the same people (#5790; Shawn, 2026-11-20). No meeting
-   * is picked: an officer adds it there (Paul, 2026-11-18).
+   * Instead of a task, the action item goes onto the agenda of the next
+   * meeting with the same people (#5790; Shawn, 2026-11-20).
    */
   toAgenda: "Add to next meeting's agenda",
   /** What happened, said in the toast (web) or above the list (phone). */
   toAgendaPlaced: (meeting: string) => `Added to ${meeting}`,
+  toAgendaPlacedNext: "Added to the next meeting's agenda",
   toAgendaOffered: (meeting: string) => `Suggested on ${meeting}`,
-  toAgendaOfferedBody:
-    "You can't edit that meeting's agenda, so it's under Suggested there for an officer to add.",
+  toAgendaOfferedNext: "Suggested on the next meeting",
+  toAgendaOfferedBody: "It's under Suggested there, for an officer to add.",
   toAgendaWaiting: (name: string) =>
     `Will be added to the next ${name} when it's scheduled`,
   toAgendaWaitingBody: "If none is scheduled in 30 days, it's dropped.",
@@ -95,6 +95,8 @@ const REFUSALS: Record<string, string> = {
   "ai.suggestion.accepting": "Another officer is accepting this one right now.",
   "ai.suggestion.not_found":
     "This suggestion is gone. What it came from changed.",
+  "ai.suggestion.not_handled_here":
+    "These minutes' meeting was deleted, so there's no next meeting to add it to.",
 };
 
 /** The line for a refusal code, or null for one this build has no words for. */
@@ -111,8 +113,9 @@ export type NextAgendaOutcomeKind = (typeof NEXT_AGENDA_OUTCOMES)[number];
 /**
  * What Add to next meeting's agenda says it did (#5790), the same on web and
  * phone: "Added to Chapter Meeting, Sunday, November 22", "Suggested on …"
- * when the officer can't edit that meeting, or "Will be added to the next
- * Chapter Meeting when it's scheduled".
+ * when it went under Suggested there (the officer can't edit that meeting,
+ * or its agenda is full), or "Will be added to the next Chapter Meeting when
+ * it's scheduled". A meeting the officer can't see is never named.
  */
 export function nextAgendaOutcomeLines(
   outcome: {
@@ -127,12 +130,19 @@ export function nextAgendaOutcomeLines(
         .filter(Boolean)
         .join(", ")
     : "";
-  if (outcome.outcome === "placed" && where) {
-    return { title: AI_SUGGESTION_COPY.toAgendaPlaced(where), body: null };
-  }
-  if (outcome.outcome === "offered" && where) {
+  if (outcome.outcome === "placed") {
     return {
-      title: AI_SUGGESTION_COPY.toAgendaOffered(where),
+      title: where
+        ? AI_SUGGESTION_COPY.toAgendaPlaced(where)
+        : AI_SUGGESTION_COPY.toAgendaPlacedNext,
+      body: null,
+    };
+  }
+  if (outcome.outcome === "offered") {
+    return {
+      title: where
+        ? AI_SUGGESTION_COPY.toAgendaOffered(where)
+        : AI_SUGGESTION_COPY.toAgendaOfferedNext,
       body: AI_SUGGESTION_COPY.toAgendaOfferedBody,
     };
   }

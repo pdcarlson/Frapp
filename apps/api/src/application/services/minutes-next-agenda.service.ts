@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -16,14 +17,16 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { AiSuggestion } from '#domain/entities/ai-suggestion.entity';
 import type { Event } from '#domain/entities/event.entity';
-import type {
-  MeetingNextAgendaItem,
-  MeetingNextAgendaItemState,
-} from '#domain/entities/meeting-next-agenda-item.entity';
+import type { MeetingNextAgendaItem } from '#domain/entities/meeting-next-agenda-item.entity';
+import {
+  EVENT_AGENDA_SUGGESTION_REPOSITORY,
+  type IEventAgendaSuggestionRepository,
+} from '#domain/repositories/event-agenda-suggestion.repository.interface';
 import {
   MEETING_NEXT_AGENDA_ITEM_REPOSITORY,
   type IMeetingNextAgendaItemRepository,
 } from '#domain/repositories/meeting-next-agenda-item.repository.interface';
+import { sentSuggestionKey } from '#domain/utils/agenda-suggestions';
 import {
   NEXT_AGENDA_WAIT_DAYS,
   NEXT_MEETING_LOOKAHEAD_DAYS,
@@ -38,11 +41,16 @@ import { assertModuleEnabled, type EnabledModules } from './module-gate';
 import { RbacService } from './rbac.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** How long Undo stays possible, and the suggestion's words are kept for it. */
+export const NEXT_AGENDA_UNDO_MS = DAY_MS;
 
 /** What a send did, and where the item went. */
 export interface NextAgendaOutcome {
   item: MeetingNextAgendaItem;
-  /** The meeting it was added to or offered on; null while it waits. */
+  /**
+   * The meeting it was added to or offered on, when the sender can see it;
+   * null while it waits, or when that meeting is hidden from them.
+   */
   event: Event | null;
   /** The minutes' own meeting's name, for "the next Chapter Meeting". */
   sourceName: string;
@@ -63,8 +71,10 @@ export interface NextAgendaOutcome {
  * - **Waiting** when no such meeting is on the calendar: it goes onto the
  *   next one created, by the same rules for the officer who sent it, and is
  *   deleted after 30 days if none is.
- * - The suggestion is closed, never a task. Undo takes the item back off and
- *   puts the suggestion back as it was.
+ * - The suggestion is closed, never a task. Undo, for a day, takes the item
+ *   back off and puts the suggestion back as it was.
+ * - Its agenda item's id is the suggestion's (`nextAgendaItemIdOf`), so two
+ *   sends, or two placements, racing each other add one item.
  *
  * This changes Paul's rule of 2026-11-18 (`meetings.md` "Where it goes
  * next": no rule picks the next instance), by Shawn's ask; the spec keeps
@@ -83,6 +93,11 @@ export class MinutesNextAgendaService implements OnModuleInit {
     private readonly rbac: RbacService,
     @Inject(MEETING_NEXT_AGENDA_ITEM_REPOSITORY)
     private readonly repo: IMeetingNextAgendaItemRepository,
+    @Inject(EVENT_AGENDA_SUGGESTION_REPOSITORY)
+    private readonly agendaSuggestions: Pick<
+      IEventAgendaSuggestionRepository,
+      'addedKeys'
+    >,
   ) {}
 
   onModuleInit(): void {
@@ -107,7 +122,7 @@ export class MinutesNextAgendaService implements OnModuleInit {
         agendaTextOf(row) !== '',
       findMade: async (row) => {
         const item = await this.repo.findBySuggestion(chapterId, row.id);
-        return item ? this.outcomeOf(chapterId, item) : null;
+        return item ? this.outcomeOf(chapterId, userId, item) : null;
       },
       make: (row) => this.make(chapterId, userId, row),
       unmake: (made) => this.unmake(chapterId, made.item),
@@ -125,17 +140,21 @@ export class MinutesNextAgendaService implements OnModuleInit {
   ): Promise<void> {
     await this.suggestions.undoHandled(chapterId, userId, suggestionId, {
       findMade: (row) => this.repo.findBySuggestion(chapterId, row.id),
-      wordsOf: (item) => ({
-        payload: item.suggestion_payload,
-        quote: item.suggestion_quote,
-      }),
+      mayUndo: (item) => this.assertMayUndo(chapterId, userId, item),
+      // Kept for a day; after that the sweep empties them and Undo is over.
+      wordsOf: (item) =>
+        Object.keys(item.suggestion_payload).length > 0 &&
+        Date.parse(item.created_at) > this.now().getTime() - NEXT_AGENDA_UNDO_MS
+          ? { payload: item.suggestion_payload, quote: item.suggestion_quote }
+          : null,
       unmake: (item) => this.unmake(chapterId, item),
     });
   }
 
   /**
    * Puts the chapter's waiting items onto their next meeting, now that one
-   * may exist: called after every event is created. Each goes on for the
+   * may exist: after every event is created, and hourly from the sweep (a
+   * series edit adds meetings without a create). Each goes on for the
    * officer who sent it, by the same rules as a send.
    */
   async placeWaiting(chapterId: string): Promise<number> {
@@ -143,38 +162,72 @@ export class MinutesNextAgendaService implements OnModuleInit {
     const waiting = await this.repo.listWaiting(chapterId, now.toISOString());
     if (waiting.length === 0) return 0;
     const upcoming = await this.upcoming(chapterId, now);
+    const sources = new Map<string, Event | null>();
     let moved = 0;
     for (const item of waiting) {
-      const source = item.source_event_id
-        ? await this.events
-            .findById(item.source_event_id, chapterId)
-            .catch(() => null)
-        : null;
+      const sourceId = item.source_event_id;
+      if (!sourceId) continue;
+      if (!sources.has(sourceId)) {
+        sources.set(sourceId, await this.eventOrNull(sourceId, chapterId));
+      }
+      const source = sources.get(sourceId);
       if (!source) continue;
       const next = nextMeetingOf(source, upcoming, now, audienceKey);
-      if (!next) continue;
-      const state = item.created_by
-        ? await this.place(chapterId, item.created_by, next, item)
-        : 'offered';
+      if (!next || !item.ai_suggestion_id) continue;
+      const agendaItemId = nextAgendaItemIdOf(item.ai_suggestion_id);
+      const { state } = item.created_by
+        ? await this.place(chapterId, item.created_by, next, {
+            agendaItemId,
+            text: item.text,
+          })
+        : { state: 'offered' as const };
       const ok = await this.repo.moveWaiting(
         chapterId,
         item.id,
         state === 'placed'
-          ? {
-              state,
-              event_id: next.id,
-              agenda_item_id: nextAgendaItemIdOf(item.id),
-            }
+          ? { state, event_id: next.id, agenda_item_id: agendaItemId }
           : { state: 'offered', event_id: next.id },
       );
-      if (!ok && state === 'placed') {
-        // Another creation moved it first, or Undo took it back.
-        await this.takeOff(chapterId, next.id, nextAgendaItemIdOf(item.id));
-        continue;
+      if (ok) {
+        moved += 1;
+      } else if (
+        state === 'placed' &&
+        !(await this.repo.findBySuggestion(chapterId, item.ai_suggestion_id))
+      ) {
+        // Undo took it back meanwhile. Another placement that won put the
+        // same item (one id) on and keeps it.
+        await this.takeOff(chapterId, next.id, agendaItemId);
       }
-      if (ok) moved += 1;
     }
     return moved;
+  }
+
+  /** The hourly sweep's pass over every chapter with an item waiting. */
+  async placeWaitingEverywhere(): Promise<number> {
+    const chapters = await this.repo.listWaitingChapters(
+      this.now().toISOString(),
+    );
+    let moved = 0;
+    for (const chapterId of chapters) {
+      try {
+        moved += await this.placeWaiting(chapterId);
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'next-agenda-place-waiting',
+          message: `Placing waiting next-agenda items failed in chapter ${chapterId}`,
+          error,
+        });
+      }
+    }
+    return moved;
+  }
+
+  /** Empties the kept words of items whose Undo is over. */
+  async forgetWords(): Promise<number> {
+    return this.repo.forgetWords(
+      new Date(this.now().getTime() - NEXT_AGENDA_UNDO_MS).toISOString(),
+    );
   }
 
   /** Deletes the waiting items no meeting picked up in 30 days. */
@@ -193,12 +246,10 @@ export class MinutesNextAgendaService implements OnModuleInit {
       userId,
     );
     const source = meeting.event_id
-      ? await this.events
-          .findById(meeting.event_id, chapterId)
-          .catch(() => null)
+      ? await this.eventOrNull(meeting.event_id, chapterId)
       : null;
     if (!source) {
-      // Minutes with no meeting of their own have no "next" to go to.
+      // Minutes whose meeting was deleted have no "next" to go to.
       throw new BadRequestException({
         code: 'ai.suggestion.not_handled_here',
         message: 'These minutes have no meeting to follow.',
@@ -211,23 +262,23 @@ export class MinutesNextAgendaService implements OnModuleInit {
       now,
       audienceKey,
     );
-    const id = randomUUID();
+    const agendaItemId = nextAgendaItemIdOf(row.id);
     const text = agendaTextOf(row);
-    const state: MeetingNextAgendaItemState = next
-      ? await this.place(chapterId, userId, next, { id, text })
-      : 'waiting';
+    const placed = next
+      ? await this.place(chapterId, userId, next, { agendaItemId, text })
+      : { state: 'waiting' as const, visible: false };
     try {
       const item = await this.repo.insert({
-        id,
+        id: randomUUID(),
         chapter_id: chapterId,
         meeting_id: meeting.id,
         source_event_id: source.id,
         text,
-        state,
+        state: placed.state,
         event_id: next?.id ?? null,
-        agenda_item_id: state === 'placed' ? nextAgendaItemIdOf(id) : null,
+        agenda_item_id: placed.state === 'placed' ? agendaItemId : null,
         expires_at:
-          state === 'waiting'
+          placed.state === 'waiting'
             ? new Date(
                 now.getTime() + NEXT_AGENDA_WAIT_DAYS * DAY_MS,
               ).toISOString()
@@ -237,10 +288,14 @@ export class MinutesNextAgendaService implements OnModuleInit {
         suggestion_quote: row.quote,
         created_by: userId,
       });
-      return { item, event: next, sourceName: source.name };
+      return {
+        item,
+        event: next && placed.visible ? next : null,
+        sourceName: source.name,
+      };
     } catch (error) {
-      if (state === 'placed' && next) {
-        await this.takeOff(chapterId, next.id, nextAgendaItemIdOf(id));
+      if (placed.state === 'placed' && next) {
+        await this.takeOff(chapterId, next.id, agendaItemId);
       }
       throw error;
     }
@@ -248,39 +303,73 @@ export class MinutesNextAgendaService implements OnModuleInit {
 
   /**
    * Puts the item on `next`'s agenda when `userId` may edit it and the agenda
-   * has room; otherwise it is offered there under Suggested.
+   * has room; otherwise it is offered there under Suggested. `visible` says
+   * whether they can see `next`, so a hidden meeting is never named to them.
    */
   private async place(
     chapterId: string,
     userId: string,
     next: Event,
-    item: { id: string; text: string },
-  ): Promise<'placed' | 'offered'> {
-    const [mayEdit, sees] = await Promise.all([
+    item: { agendaItemId: string; text: string },
+  ): Promise<{ state: 'placed' | 'offered'; visible: boolean }> {
+    const [mayEdit, visible] = await Promise.all([
       this.rbac.memberHasAnyPermission(chapterId, userId, [
         SystemPermissions.EVENTS_UPDATE,
       ]),
-      this.events
-        .findById(next.id, chapterId, userId)
-        .then(() => true)
-        .catch((error: unknown) => {
-          if (error instanceof NotFoundException) return false;
-          throw error;
-        }),
+      this.sees(chapterId, userId, next.id),
     ]);
-    if (!mayEdit || !sees) return 'offered';
+    if (!mayEdit || !visible) return { state: 'offered', visible };
     const agendaItem: EventAgendaItem = {
-      id: nextAgendaItemIdOf(item.id),
+      id: item.agendaItemId,
       text: item.text,
       done: false,
     };
     try {
       await this.events.appendAgendaItem(next.id, chapterId, agendaItem);
-      return 'placed';
+      return { state: 'placed', visible };
     } catch (error) {
       // A full agenda: offered there instead, for an officer to make room.
-      if (error instanceof ConflictException) return 'offered';
+      if (error instanceof ConflictException) {
+        return { state: 'offered', visible };
+      }
       throw error;
+    }
+  }
+
+  /**
+   * Undo takes an item off a meeting's agenda, so it needs what editing that
+   * agenda needs; and an offered item another officer already added from
+   * Suggested has left the sender's hands.
+   */
+  private async assertMayUndo(
+    chapterId: string,
+    userId: string,
+    item: MeetingNextAgendaItem,
+  ): Promise<void> {
+    if (item.state === 'placed' && item.event_id) {
+      const [mayEdit, visible] = await Promise.all([
+        this.rbac.memberHasAnyPermission(chapterId, userId, [
+          SystemPermissions.EVENTS_UPDATE,
+        ]),
+        this.sees(chapterId, userId, item.event_id),
+      ]);
+      if (!mayEdit || !visible) {
+        throw new ForbiddenException({
+          code: 'ai.suggestion.forbidden',
+          message: 'You can’t edit that meeting’s agenda.',
+        });
+      }
+    }
+    if (item.state === 'offered') {
+      const added = await this.agendaSuggestions.addedKeys(chapterId, [
+        sentSuggestionKey(item.id),
+      ]);
+      if (added.size > 0) {
+        throw new ConflictException({
+          code: 'ai.suggestion.decided',
+          message: 'An officer already added it to a meeting’s agenda.',
+        });
+      }
     }
   }
 
@@ -316,22 +405,46 @@ export class MinutesNextAgendaService implements OnModuleInit {
 
   private async outcomeOf(
     chapterId: string,
+    userId: string,
     item: MeetingNextAgendaItem,
   ): Promise<NextAgendaOutcome> {
     const [event, source] = await Promise.all([
       item.event_id
-        ? this.events.findById(item.event_id, chapterId).catch(() => null)
+        ? this.events
+            .findById(item.event_id, chapterId, userId)
+            .catch(nullIfNotFound)
         : null,
       item.source_event_id
-        ? this.events
-            .findById(item.source_event_id, chapterId)
-            .catch(() => null)
+        ? this.eventOrNull(item.source_event_id, chapterId)
         : null,
     ]);
     return { item, event, sourceName: source?.name ?? '' };
   }
 
-  /** The chapter's meetings in the next few months, as the server sees them. */
+  /** Whether `userId` can see the event, by the events list's own rule. */
+  private sees(
+    chapterId: string,
+    userId: string,
+    eventId: string,
+  ): Promise<boolean> {
+    return this.events
+      .findById(eventId, chapterId, userId)
+      .then(() => true)
+      .catch((error: unknown) => {
+        if (error instanceof NotFoundException) return false;
+        throw error;
+      });
+  }
+
+  /** The event as the server sees it, or null when it is gone. */
+  private eventOrNull(
+    eventId: string,
+    chapterId: string,
+  ): Promise<Event | null> {
+    return this.events.findById(eventId, chapterId).catch(nullIfNotFound);
+  }
+
+  /** The chapter's meetings in the coming year, as the server sees them. */
   private upcoming(chapterId: string, now: Date): Promise<Event[]> {
     return this.events.findByChapter(chapterId, undefined, {
       endsAfter: now.toISOString(),
@@ -342,9 +455,15 @@ export class MinutesNextAgendaService implements OnModuleInit {
   }
 }
 
-/** The agenda item an item sent on becomes: one per item. */
-export function nextAgendaItemIdOf(itemId: string): string {
-  return `n-${itemId}`;
+/** The agenda item a suggestion sent on becomes: one per suggestion. */
+export function nextAgendaItemIdOf(suggestionId: string): string {
+  return `n-${suggestionId}`;
+}
+
+/** A read that answers null for a missing event and rethrows anything else. */
+function nullIfNotFound(error: unknown): null {
+  if (error instanceof NotFoundException) return null;
+  throw error;
 }
 
 /**

@@ -358,6 +358,18 @@ describe('AgendaSuggestionService', () => {
     expect(again.suggestions).toEqual([]);
   });
 
+  it('offers a sent item only on the same kind of meeting as its minutes (#5790)', async () => {
+    const { service } = setup({
+      events: [event('evt-mixer', { name: 'Mixer' }), event('evt-last')],
+      earlier: [minutes('m-last', 'evt-last', '2026-11-18', [])],
+      sent: [{ id: 'sent-1', meeting_id: 'm-last', text: 'Rush backups' }],
+    });
+    const list = await service.list(CHAPTER, 'evt-mixer', OFFICER, {
+      now: NOW,
+    });
+    expect(list.suggestions).toEqual([]);
+  });
+
   it('never offers a sent item on a meeting with another audience (#5790)', async () => {
     const { service } = setup({
       events: [

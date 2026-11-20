@@ -37,11 +37,19 @@ export class AiSuggestionExpiryService {
       if (expired > 0) {
         this.logger.log(`Expired ${expired} AI suggestions`);
       }
-      // Items sent to a next meeting that was never created (#5790).
+      // Items sent to the next meeting's agenda (#5790): place the waiting
+      // ones a series edit's new meetings can take (that adds meetings
+      // without a create), drop the ones no meeting took in 30 days, and
+      // forget the suggestion words kept for Undo once its day is over.
+      const placed = await this.nextAgenda.placeWaitingEverywhere();
+      if (placed > 0) {
+        this.logger.log(`Placed ${placed} waiting next-agenda items`);
+      }
       const dropped = await this.nextAgenda.deleteExpired();
       if (dropped > 0) {
         this.logger.log(`Deleted ${dropped} next-agenda items no meeting took`);
       }
+      await this.nextAgenda.forgetWords();
     } finally {
       this.running = false;
     }

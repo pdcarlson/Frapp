@@ -49,4 +49,13 @@ export interface IMeetingNextAgendaItemRepository {
 
   /** Deletes every `waiting` item, in every chapter, expired by `now`. */
   deleteExpired(now: string): Promise<number>;
+
+  /** The chapters, any of them, with a `waiting` item not expired at `now`. */
+  listWaitingChapters(now: string): Promise<string[]>;
+
+  /**
+   * Empties the kept suggestion words of every item, in every chapter, sent
+   * before `before`: Undo is over for them. Returns how many.
+   */
+  forgetWords(before: string): Promise<number>;
 }

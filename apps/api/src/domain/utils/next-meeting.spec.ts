@@ -49,19 +49,27 @@ describe('next meeting (#5790)', () => {
     ).toBe(false);
   });
 
-  it('falls back to the series, then the name, when the meeting has no type', () => {
+  it('falls back to the series or the name when the meeting has no type', () => {
     const occurrence = event('occ-1', { parent_event_id: 'series-1' });
     expect(
       isSameMeetingKind(
         occurrence,
-        event('occ-2', { parent_event_id: 'series-1' }),
+        event('occ-2', { parent_event_id: 'series-1', name: 'Renamed' }),
+        audience,
+      ),
+    ).toBe(true);
+    // Next term's series of the same meeting is a new series with its name.
+    expect(
+      isSameMeetingKind(
+        occurrence,
+        event('next-term', { parent_event_id: 'series-2' }),
         audience,
       ),
     ).toBe(true);
     expect(
       isSameMeetingKind(
         occurrence,
-        event('other', { name: 'Chapter Meeting' }),
+        event('social', { name: 'Mixer' }),
         audience,
       ),
     ).toBe(false);

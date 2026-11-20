@@ -480,6 +480,17 @@ describe("Suggested tasks", () => {
     expect(state.accept).not.toHaveBeenCalled();
     expect(state.dismiss).not.toHaveBeenCalled();
     expect(screenText(tree)).toContain("Added to Chapter Meeting, ");
+    // The meeting it went to opens from the note.
+    const open = tree.root.findAll(
+      (node) =>
+        node.props.accessibilityRole === "link" &&
+        node.props.accessibilityLabel === AI_SUGGESTION_COPY.toAgendaOpen,
+    )[0]!;
+    act(() => open.props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "e2" },
+    });
     // Undo, in the note, takes it back.
     await act(async () => {
       tree.root

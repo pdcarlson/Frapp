@@ -22,8 +22,9 @@ const IDS_PER_READ = 50;
 
 /**
  * `meeting_next_agenda_items` (#5790). RLS on and no policies: the API's
- * service role is the only reader, and every query here but the sweep
- * filters on `chapter_id` because nothing else would.
+ * service role is the only reader, and every query here but the sweep's
+ * (`deleteExpired`, `listWaitingChapters`, `forgetWords`) filters on
+ * `chapter_id` because nothing else would.
  */
 @Injectable()
 export class SupabaseMeetingNextAgendaItemRepository implements IMeetingNextAgendaItemRepository {
@@ -131,6 +132,30 @@ export class SupabaseMeetingNextAgendaItemRepository implements IMeetingNextAgen
       .select('id');
     if (error) throw new SupabaseQueryError(error);
     return data.length > 0;
+  }
+
+  async listWaitingChapters(now: string): Promise<string[]> {
+    // Cross-chapter by design: the hourly sweep serves the whole database.
+    const { data, error } = await this.supabase
+      .from('meeting_next_agenda_items')
+      .select('chapter_id')
+      .eq('state', 'waiting')
+      .gt('expires_at', now)
+      .limit(1000);
+    if (error) throw new SupabaseQueryError(error);
+    return [...new Set(data.map((row) => row.chapter_id))];
+  }
+
+  async forgetWords(before: string): Promise<number> {
+    // Cross-chapter by design: the hourly sweep serves the whole database.
+    const { data, error } = await this.supabase
+      .from('meeting_next_agenda_items')
+      .update({ suggestion_payload: {}, suggestion_quote: null })
+      .lt('created_at', before)
+      .filter('suggestion_payload', 'neq', '{}')
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return data.length;
   }
 
   async deleteExpired(now: string): Promise<number> {

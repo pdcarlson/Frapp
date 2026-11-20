@@ -256,6 +256,7 @@ function SuggestedTasks() {
   const [sentOn, setSentOn] = useState<{
     id: string;
     line: string;
+    meetingId: string | null;
   } | null>(null);
   // The open task each suggestion reads like, from the tasks this officer
   // can see (#5562).
@@ -335,9 +336,10 @@ function SuggestedTasks() {
   }
 
   /**
-   * Add to next meeting's agenda (#5790): instead of a task, the action item
-   * is offered under Suggested on the next meetings with the same people.
-   * No meeting is picked; an officer adds it there.
+   * Add to next meeting's agenda (#5790; Shawn, 2026-11-20): the action item
+   * goes onto the next meeting with the same people, or under Suggested there
+   * when the officer can't edit it, or waits for that meeting to be created.
+   * The note above the list says which, with Undo and the meeting to open.
    */
   async function sendToNextAgenda(item: Waiting) {
     setGone(null);
@@ -345,18 +347,51 @@ function SuggestedTasks() {
     setSentOn(null);
     setBusy({ id: item.id, doing: "dismiss" });
     try {
-      const lines = nextAgendaOutcomeLines(
-        await toNextAgenda.mutateAsync(item.id),
-      );
+      const outcome = await toNextAgenda.mutateAsync(item.id);
+      const lines = nextAgendaOutcomeLines(outcome);
       setSentOn({
         id: item.id,
         line: lines.body ? `${lines.title}. ${lines.body}` : `${lines.title}.`,
+        meetingId: outcome.meeting?.id ?? null,
       });
     } catch (error) {
       fail(item, error);
     } finally {
       setBusy(null);
     }
+  }
+
+  /** The note's links after a send: the meeting it went to, then Undo. */
+  function sentActions(sent: { id: string; meetingId: string | null }) {
+    const undo = {
+      label: AI_SUGGESTION_COPY.undo,
+      onPress: () => {
+        setSentOn(null);
+        undoNextAgenda
+          .mutateAsync(sent.id)
+          .catch((error: unknown) =>
+            setGone(
+              `${AI_SUGGESTION_COPY.undoFailed}: ${
+                aiSuggestionRefusalLine(codeOf(error)) ??
+                AI_SUGGESTION_COPY.tryAgain
+              }`,
+            ),
+          );
+      },
+    };
+    const { meetingId } = sent;
+    if (!meetingId) return [undo];
+    return [
+      {
+        label: AI_SUGGESTION_COPY.toAgendaOpen,
+        onPress: () =>
+          router.push({
+            pathname: "/event-details",
+            params: { id: meetingId },
+          }),
+      },
+      undo,
+    ];
   }
 
   async function dismissRow(
@@ -525,27 +560,7 @@ function SuggestedTasks() {
         {gone ? <InlineNote tone="warning">{gone}</InlineNote> : null}
         {added ? <InlineNote>{LAST_YEAR_COPY.eventAdded}</InlineNote> : null}
         {sentOn ? (
-          <InlineNote
-            action={{
-              label: AI_SUGGESTION_COPY.undo,
-              onPress: () => {
-                const id = sentOn.id;
-                setSentOn(null);
-                undoNextAgenda
-                  .mutateAsync(id)
-                  .catch((error: unknown) =>
-                    setGone(
-                      `${AI_SUGGESTION_COPY.undoFailed}: ${
-                        aiSuggestionRefusalLine(codeOf(error)) ??
-                        AI_SUGGESTION_COPY.tryAgain
-                      }`,
-                    ),
-                  );
-              },
-            }}
-          >
-            {sentOn.line}
-          </InlineNote>
+          <InlineNote action={sentActions(sentOn)}>{sentOn.line}</InlineNote>
         ) : null}
         {suggestionsQuery.isPending ? (
           <SuggestionsSkeleton />
