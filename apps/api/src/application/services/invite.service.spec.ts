@@ -131,6 +131,7 @@ describe('InviteService', () => {
     };
 
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findByChapter: jest.fn(),
@@ -854,6 +855,7 @@ describe('InviteService', () => {
       user_id: 'user-2',
       chapter_id: 'ch-1',
       role_ids: [memberRole.id],
+      joined_via_invite_id: 'inv-1',
     });
     expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
     // Activation funnel step 3 (#267) — recorded only on a successful join.
@@ -1557,7 +1559,25 @@ describe('InviteService', () => {
     });
   });
 
-  describe("the inviter's notice (#596, #5625)", () => {
+  /**
+   * The join notices go out when the new member first finishes onboarding
+   * (#5627), not at redeem: redeem, then finish, as the clients do.
+   */
+  async function redeemThenFinish(token = 'test-uuid', userId = 'user-2') {
+    const result = await service.redeem(token, userId);
+    const used = (await mockInviteRepo.findByToken.mock.results.at(-1)
+      ?.value) as Invite;
+    expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+    mockInviteRepo.findById.mockResolvedValue(used);
+    await service.announceJoin({
+      user_id: userId,
+      chapter_id: used.chapter_id,
+      joined_via_invite_id: used.id,
+    });
+    return result;
+  }
+
+  describe("the inviter's notice (#596, #5625, #5627)", () => {
     const memberRole = seededMemberRole();
     const member: Member = memberFixture({
       user_id: 'user-2',
@@ -1572,8 +1592,28 @@ describe('InviteService', () => {
       mockRbac.findUserIdsWithAnyPermissions.mockResolvedValue([]);
     });
 
-    it('tells the inviter their invite was accepted, as a notification and never a DM', async () => {
+    it('sends nothing at redeem, and keeps the invite for the finish (#5627)', async () => {
       await service.redeem('test-uuid', 'user-2');
+
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ joined_via_invite_id: 'inv-1' }),
+      );
+    });
+
+    it('announces nobody who came in without an invite', async () => {
+      await service.announceJoin({
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        joined_via_invite_id: null,
+      });
+
+      expect(mockInviteRepo.findById).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+    });
+
+    it('tells the inviter their invite was accepted, as a notification and never a DM', async () => {
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledTimes(1);
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
@@ -1594,7 +1634,7 @@ describe('InviteService', () => {
         inviteRow({ reusable: true }),
       );
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
         'ch-1',
@@ -1611,7 +1651,7 @@ describe('InviteService', () => {
         'user-officer',
       ]);
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledTimes(2);
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
@@ -1631,7 +1671,7 @@ describe('InviteService', () => {
         inviteRow({ created_by: 'user-2' }),
       );
 
-      const result = await service.redeem('test-uuid', 'user-2');
+      const result = await redeemThenFinish();
 
       expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
       expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
@@ -1640,7 +1680,7 @@ describe('InviteService', () => {
     it('still names someone when the new member has no profile yet', async () => {
       mockUserRepo.findByIds.mockResolvedValue([]);
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
         'ch-1',
@@ -1679,6 +1719,7 @@ describe('InviteService', () => {
       user_id: 'user-2',
       chapter_id: 'ch-1',
       role_ids: [memberRole.id],
+      joined_via_invite_id: 'inv-1',
     });
     expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
   });
@@ -1936,7 +1977,7 @@ describe('InviteService', () => {
         'user-officer',
       ]);
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockRbac.findUserIdsWithAnyPermissions).toHaveBeenCalledWith(
         'ch-1',
@@ -1971,7 +2012,7 @@ describe('InviteService', () => {
         'user-officer',
       ]);
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
         'ch-1',
@@ -1987,7 +2028,7 @@ describe('InviteService', () => {
     it('tells only the inviter when nobody else can act on a join', async () => {
       mockRbac.findUserIdsWithAnyPermissions.mockResolvedValue(['user-2']);
 
-      await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+      await expect(redeemThenFinish()).resolves.toEqual({
         chapterId: 'ch-1',
         memberId: member.id,
       });
@@ -2009,7 +2050,7 @@ describe('InviteService', () => {
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
 
-      await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+      await expect(redeemThenFinish()).resolves.toEqual({
         chapterId: 'ch-1',
         memberId: member.id,
       });
@@ -2032,7 +2073,7 @@ describe('InviteService', () => {
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
 
-      await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+      await expect(redeemThenFinish()).resolves.toEqual({
         chapterId: 'ch-1',
         memberId: member.id,
       });
@@ -2191,6 +2232,7 @@ describe('InviteService', () => {
       user_id: 'user-2',
       chapter_id: 'ch-1',
       role_ids: [],
+      joined_via_invite_id: 'inv-1',
     });
   });
 
@@ -2689,6 +2731,7 @@ describe('InviteService', () => {
         user_id: 'user-joiner',
         chapter_id: CHAPTER_ID,
         role_ids: ['role-brother'],
+        joined_via_invite_id: 'inv-old',
       });
     });
   });

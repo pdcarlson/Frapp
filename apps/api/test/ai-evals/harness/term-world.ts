@@ -278,6 +278,7 @@ export function createTermWorld(
     dismissed_ops_nudges: [],
     pledge_class_id: null,
     order_number: null,
+    joined_via_invite_id: null,
     created_at: stamp,
     updated_at: stamp,
   });

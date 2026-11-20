@@ -178,6 +178,25 @@ export class SupabaseMemberRepository implements IMemberRepository {
     return data;
   }
 
+  async completeOnboarding(
+    id: string,
+  ): Promise<{ member: Member; changed: boolean }> {
+    const { data, error } = await this.supabase
+      .from('members')
+      .update({ has_completed_onboarding: true })
+      .eq('id', id)
+      .eq('has_completed_onboarding', false)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    if (data) return { member: data, changed: true };
+    // Already done: read the row as it stands.
+    return {
+      member: await this.update(id, { has_completed_onboarding: true }),
+      changed: false,
+    };
+  }
+
   async setRoleIds(
     chapterId: string,
     memberId: string,

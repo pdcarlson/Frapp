@@ -4,6 +4,7 @@ import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory'
 import { MemberController } from './member.controller';
 import { MemberService } from '../../application/services/member.service';
 import { MemberPhoneReachService } from '../../application/services/member-phone-reach.service';
+import { InviteService } from '../../application/services/invite.service';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
@@ -15,6 +16,7 @@ import {
 describe('MemberController', () => {
   let controller: MemberController;
   let memberService: jest.Mocked<MemberService>;
+  let inviteService: { announceJoin: jest.Mock };
 
   beforeEach(async () => {
     memberService = {
@@ -32,6 +34,8 @@ describe('MemberController', () => {
       remove: jest.fn(),
     } as any;
 
+    inviteService = { announceJoin: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [MemberController],
       providers: [
@@ -40,6 +44,7 @@ describe('MemberController', () => {
           provide: MemberPhoneReachService,
           useValue: { findForViewer: jest.fn() },
         },
+        { provide: InviteService, useValue: inviteService },
       ],
     }).compile();
 
@@ -251,7 +256,10 @@ describe('MemberController', () => {
     it('updates onboarding status for current member', async () => {
       const dto: UpdateOnboardingDto = { has_completed_onboarding: true };
       const updatedMember = { id: 'member-1', ...dto } as any;
-      memberService.updateOnboarding.mockResolvedValue(updatedMember);
+      memberService.updateOnboarding.mockResolvedValue({
+        member: updatedMember,
+        firstFinish: false,
+      });
 
       const result = await controller.updateOnboarding({ id: 'member-1' }, dto);
 
@@ -260,6 +268,28 @@ describe('MemberController', () => {
         true,
       );
       expect(result).toEqual(updatedMember);
+      expect(inviteService.announceJoin).not.toHaveBeenCalled();
+    });
+
+    it('tells the chapter who joined on the first finish (#5627)', async () => {
+      const updatedMember = {
+        id: 'member-1',
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        joined_via_invite_id: 'inv-1',
+        has_completed_onboarding: true,
+      } as any;
+      memberService.updateOnboarding.mockResolvedValue({
+        member: updatedMember,
+        firstFinish: true,
+      });
+
+      await controller.updateOnboarding(
+        { id: 'member-1' },
+        { has_completed_onboarding: true },
+      );
+
+      expect(inviteService.announceJoin).toHaveBeenCalledWith(updatedMember);
     });
   });
 

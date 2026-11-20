@@ -68,6 +68,7 @@ describe('MemberService', () => {
 
   beforeEach(async () => {
     mockRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findByChapter: jest.fn(),
@@ -993,14 +994,27 @@ describe('MemberService', () => {
       has_completed_onboarding: true,
       updated_at: '2024-01-02',
     });
-    mockRepo.update.mockResolvedValue(updatedMember);
+    mockRepo.completeOnboarding.mockResolvedValue({
+      member: updatedMember,
+      changed: true,
+    });
 
     const result = await service.updateOnboarding('member-1', true);
 
-    expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-      has_completed_onboarding: true,
+    // Only when it was still false, so the join is announced once (#5627).
+    expect(mockRepo.completeOnboarding).toHaveBeenCalledWith('member-1');
+    expect(mockRepo.update).not.toHaveBeenCalled();
+    expect(result).toEqual({ member: updatedMember, firstFinish: true });
+  });
+
+  it('is no first finish when onboarding was already done', async () => {
+    const member = memberFixture({ has_completed_onboarding: true });
+    mockRepo.completeOnboarding.mockResolvedValue({ member, changed: false });
+
+    await expect(service.updateOnboarding('member-1', true)).resolves.toEqual({
+      member,
+      firstFinish: false,
     });
-    expect(result).toEqual(updatedMember);
   });
 
   // #4071: the rank rules on giving and taking roles, over a chapter with a

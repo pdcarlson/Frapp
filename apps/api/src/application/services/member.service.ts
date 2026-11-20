@@ -527,13 +527,23 @@ export class MemberService {
     }
   }
 
+  /**
+   * `firstFinish` is true for the one request that turned the flag on (#5627),
+   * which is when the chapter is told who joined (`InviteService.announceJoin`).
+   */
   async updateOnboarding(
     memberId: string,
     completed: boolean,
-  ): Promise<Member> {
-    return this.memberRepo.update(memberId, {
-      has_completed_onboarding: completed,
+  ): Promise<{ member: Member; firstFinish: boolean }> {
+    if (completed) {
+      const { member, changed } =
+        await this.memberRepo.completeOnboarding(memberId);
+      return { member, firstFinish: changed };
+    }
+    const member = await this.memberRepo.update(memberId, {
+      has_completed_onboarding: false,
     });
+    return { member, firstFinish: false };
   }
 
   /**

@@ -36,6 +36,12 @@ export interface IMemberRepository {
   create(data: Partial<Member>): Promise<Member>;
   update(id: string, data: Partial<Member>): Promise<Member>;
   /**
+   * Set `has_completed_onboarding` true, only when it is still false (#5627).
+   * `changed` is true for the one request that turned it, so two clients
+   * finishing at once announce the member once.
+   */
+  completeOnboarding(id: string): Promise<{ member: Member; changed: boolean }>;
+  /**
    * Write a member's `role_ids` through the `set_member_role_ids` RPC: only
    * when the row still holds `expectedRoleIds` (the value the caller read) and
    * every id it newly gives names a live role of the chapter, under the role

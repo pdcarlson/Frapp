@@ -141,6 +141,7 @@ describe('ChannelAccessService', () => {
       update: jest.fn(),
     };
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUser: jest.fn(),
       findByUserAndChapter: jest.fn(),

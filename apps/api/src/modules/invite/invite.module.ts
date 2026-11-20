@@ -34,5 +34,8 @@ import { AnalyticsModule } from '../analytics/analytics.module';
     AuthSyncInterceptor,
     { provide: INVITE_REPOSITORY, useClass: SupabaseInviteRepository },
   ],
+  // MemberController announces a join once the member finishes onboarding
+  // (#5627).
+  exports: [InviteService],
 })
 export class InviteModule {}
