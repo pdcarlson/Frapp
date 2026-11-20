@@ -68,6 +68,8 @@ what failed and how it was fixed or filed, by id or rulebook section. The questi
   P5, P7.4)
 - **Words:** no explaining line, no abbreviation, no internal, no emoji, the same words on both apps?
   (P1, P2, P6.5)
+- **Buttons:** every button sized to its label, none stretched full width across a profile, card or
+  page body? (rulebook § 7)
 - **Controls:** shared pickers, no native date/time/select on web, validation on blur, kept drafts, text
   centred in its box?
 

@@ -196,6 +196,11 @@ These cause most of the iterations, so they come first.
   every string in product source, specs aside. Members' own emoji are their content. (11-05)
 - **Compact controls** from the control size scale (Chip 24, Row 32, Small 36, Field 40; 44 for touch).
   "All the bubbles just feel way too big." (11-05, foundations §9)
+- **No giant full-width buttons.** A button is sized to its label, from the control size scale, never
+  stretched across a profile, card, panel or page body. A person's profile puts Message beside the other
+  actions as a compact button (iMessage, Slack and Linear profiles), not a bar under the name. Web and phone
+  alike. Full width stays only on single-column sign-in and setup forms (Linear, Notion, Slack sign-in);
+  sheet commit buttons wait on Paul's call. "Not a big huge button guy." (11-20, #5708)
 - **Near-black neutral surfaces**, no warm yellow. On the phone every card sits one surface step down;
   tinted tiles only on You. (11-05, 11-11, 11-13)
 - **The accent goes only where `foundations.md` § Where the accent goes allows it.** Scrollbars, mention
