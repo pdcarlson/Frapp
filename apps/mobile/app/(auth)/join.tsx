@@ -87,7 +87,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * The question has no invite field: nobody types an invite, and Paste takes
  * the link or the bare invite alike (`pastedInviteToken`), here and on the
  * card's "This invite link doesn't work". The canvas's six cells for a
- * shared code were never the data model (`spec/behavior/onboarding.md`).
+ * shared code were never the data model (`spec/ui/mobile/screens.md` § s02).
  */
 
 type JoinView = "choose" | "confirm";

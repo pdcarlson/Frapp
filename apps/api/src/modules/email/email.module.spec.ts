@@ -27,6 +27,7 @@ describe('selectEmailProvider', () => {
         to: 'a@example.com',
         joinUrl: 'https://app.frapp.live/join?token=t',
         role: 'Member',
+        validDays: 7,
       }),
     ).resolves.toBe(true);
     expect(log).toHaveBeenCalledWith(
@@ -48,6 +49,7 @@ describe('selectEmailProvider', () => {
         to: 'a@example.com',
         joinUrl: 'https://app.frapp.live/join?token=t',
         role: 'Member',
+        validDays: 7,
       }),
     ).resolves.toBe(false);
     expect(log).toHaveBeenCalledWith(
@@ -68,6 +70,7 @@ describe('selectEmailProvider', () => {
         to: 'a@example.com',
         joinUrl: 'https://app.staging.frapp.live/join?token=t',
         role: 'Member',
+        validDays: 7,
       }),
     ).resolves.toBe(true);
   });

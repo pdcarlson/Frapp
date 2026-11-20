@@ -31,37 +31,57 @@ function clipName(value: string | null | undefined): string | null {
 /**
  * "You're invited to join Phi Gamma Delta Tau Nu on Frapp". The subject
  * leaves the inviter out: their display name is free text, and the subject
- * line is what a phishing attempt would borrow. Exported for its spec.
+ * line is what a phishing attempt would borrow.
  */
 function inviteSubject(params: SendInviteEmailParams): string {
   return `You're invited to join ${clipName(params.chapterName) ?? 'a chapter'} on Frapp`;
 }
 
 /**
- * "Paul Carlson invited you to join Phi Gamma Delta Tau Nu on Frapp", with
- * either name left out when it is unknown. Exported for its spec.
+ * "Paul Carlson invited you to join on Frapp as Pledge." The chapter is the
+ * heading above it, so the line names who sent it, the product and the role,
+ * leaving out the sender when unknown and the role for the Everyone role,
+ * which is not a role at all. Both bodies carry it, so even the plain-text
+ * part says what the invite is for (ADR-25).
  */
-function inviteHeadline(params: SendInviteEmailParams): string {
-  const chapter = clipName(params.chapterName) ?? 'a chapter';
+function inviteLine(params: SendInviteEmailParams): string {
   const inviter = clipName(params.inviterName);
-  return inviter
-    ? `${inviter} invited you to join ${chapter} on Frapp`
-    : `You're invited to join ${chapter} on Frapp`;
+  const role = clipName(params.role);
+  const who = inviter
+    ? `${inviter} invited you to join`
+    : "You've been invited to join";
+  return role ? `${who} on Frapp as ${role}.` : `${who} on Frapp.`;
 }
 
+/** "The invite works once, for 7 days. If you weren't expecting it, …" */
+function inviteFootnote(params: SendInviteEmailParams): string {
+  const days = params.validDays === 1 ? '1 day' : `${params.validDays} days`;
+  return `The invite works once, for ${days}. If you weren't expecting it, you can ignore this email.`;
+}
+
+/**
+ * Chapter first, one button, and no raw link: the link is the button's, so
+ * the body has nothing to copy by mistake and nothing to mistake for the
+ * button (#5628). The plain-text part, for mail clients that show no HTML,
+ * has to carry the link itself. Inline styles only, as mail clients drop
+ * `<style>`.
+ */
 function inviteEmailHtml(params: SendInviteEmailParams): string {
-  const { joinUrl, role } = params;
+  const chapter = clipName(params.chapterName) ?? 'Your chapter';
   return (
-    `<p>${escapeHtml(inviteHeadline(params))}.</p>` +
-    `<p>You'll join as <strong>${escapeHtml(role)}</strong>. The link works once and expires in 7 days.</p>` +
-    `<p><a href="${joinUrl}">Accept the invite</a></p>` +
-    `<p>Or copy this link into your browser:<br>${joinUrl}</p>`
+    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px 16px;color:#1b1a22;line-height:1.5">` +
+    `<p style="margin:0 0 4px;font-size:13px;color:#5d5a6b">Frapp</p>` +
+    `<h1 style="margin:0 0 12px;font-size:24px;line-height:1.25">${escapeHtml(chapter)}</h1>` +
+    `<p style="margin:0 0 24px;font-size:16px">${escapeHtml(inviteLine(params))}</p>` +
+    `<p style="margin:0 0 24px"><a href="${escapeHtml(params.joinUrl)}" style="display:inline-block;background:#1b1a22;color:#ffffff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open the invite</a></p>` +
+    `<p style="margin:0;font-size:13px;color:#5d5a6b">${escapeHtml(inviteFootnote(params))}</p>` +
+    `</div>`
   );
 }
 
 function inviteEmailText(params: SendInviteEmailParams): string {
-  const { joinUrl, role } = params;
-  return `${inviteHeadline(params)}.\n\nYou'll join as ${role}. The link works once and expires in 7 days.\n\nAccept the invite: ${joinUrl}`;
+  const chapter = clipName(params.chapterName) ?? 'Your chapter';
+  return `${chapter}\n\n${inviteLine(params)}\n\nOpen the invite: ${params.joinUrl}\n\n${inviteFootnote(params)}`;
 }
 
 /**
