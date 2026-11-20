@@ -319,7 +319,8 @@ describe('ChannelAccessService', () => {
     const member = (user_id: string, channel_access: ChannelAccessHolder) => ({
       user_id,
       permissions: new Set<string>(),
-      top_role_order: null,
+      top_role_rank: null,
+      top_tier: null,
       top_role: null,
       channel_access,
     });
@@ -392,28 +393,32 @@ describe('ChannelAccessService', () => {
       {
         user_id: 'president',
         permissions: new Set(['*']),
-        top_role_order: 0,
+        top_role_rank: 0,
+        top_tier: { id: 't-cabinet', name: 'Cabinet', position: 1 },
         top_role: { id: 'r-pres', name: 'President' },
         channel_access: WILDCARD,
       },
       {
         user_id: 'member-of-private',
         permissions: new Set<string>(),
-        top_role_order: 4,
+        top_role_rank: 4,
+        top_tier: null,
         top_role: { id: 'r-mem', name: 'Member' },
         channel_access: EMPTY_ACCESS_HOLDER,
       },
       {
         user_id: 'secret-holder',
         permissions: new Set<string>(),
-        top_role_order: 2,
+        top_role_rank: 2,
+        top_tier: null,
         top_role: { id: 'r-sec', name: 'Secret' },
         channel_access: holderOf(SECRET),
       },
       {
         user_id: 'no-role',
         permissions: new Set<string>(),
-        top_role_order: null,
+        top_role_rank: null,
+        top_tier: null,
         top_role: null,
         channel_access: EMPTY_ACCESS_HOLDER,
       },
@@ -440,24 +445,47 @@ describe('ChannelAccessService', () => {
           role_rank: 0,
           role_id: 'r-pres',
           role_name: 'President',
+          title: 'President',
+          tier_id: 't-cabinet',
+          tier_name: 'Cabinet',
+          tier_rank: 1,
         },
         {
           user_id: 'member-of-private',
           role_rank: 4,
           role_id: 'r-mem',
           role_name: 'Member',
+          title: 'Member',
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
         },
         {
           user_id: 'secret-holder',
           role_rank: 2,
           role_id: 'r-sec',
           role_name: 'Secret',
+          title: 'Secret',
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
         },
-        { user_id: 'no-role', role_rank: null, role_id: null, role_name: null },
+        {
+          user_id: 'no-role',
+          role_rank: null,
+          role_id: null,
+          role_name: null,
+          title: null,
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
+        },
       ]);
       expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
         'chap-1',
         false,
+        undefined,
+        true,
       );
     });
 
@@ -496,6 +524,10 @@ describe('ChannelAccessService', () => {
           role_rank: 4,
           role_id: 'r-mem',
           role_name: 'Member',
+          title: 'Member',
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
         },
       ]);
     });
@@ -506,7 +538,8 @@ describe('ChannelAccessService', () => {
         {
           user_id: 'plain-member',
           permissions: new Set<string>(),
-          top_role_order: 4,
+          top_role_rank: 4,
+          top_tier: null,
           top_role: { id: 'r-everyone', name: 'Everyone', everyone: true },
           channel_access: EMPTY_ACCESS_HOLDER,
         },
@@ -524,6 +557,10 @@ describe('ChannelAccessService', () => {
           role_rank: 4,
           role_id: 'r-everyone',
           role_name: 'Members',
+          title: null,
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
         },
       ]);
     });

@@ -7,7 +7,7 @@ import { ProfileSection } from "@/components/profile/profile-section";
 import { MeetFrappAiDialog } from "@/components/ai/meet-frapp-ai";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
-import { SettingsSwitchCard } from "@/components/personal-settings/settings-switch-card";
+import { SettingsGroup, SettingsRow } from "@/components/shared/settings-row";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 
@@ -72,16 +72,18 @@ export function AiSection() {
 
   return (
     <ProfileSection id="ai" title={FRAPP_AI_COPY.settingsTitle}>
-      <SettingsSwitchCard
-        label={FRAPP_AI_COPY.settingsSwitch}
-        caption={FRAPP_AI_COPY.settingsCaption}
-        checked={consent.answer === "yes"}
-        disabled={isOffline || choice.pending}
-        onCheckedChange={(next) => {
-          if (next) setMeetOpen(true);
-          else void turnOff();
-        }}
-      />
+      <SettingsGroup>
+        <SettingsRow
+          label={FRAPP_AI_COPY.settingsSwitch}
+          description={FRAPP_AI_COPY.settingsCaption}
+          checked={consent.answer === "yes"}
+          disabled={isOffline || choice.pending}
+          onCheckedChange={(next) => {
+            if (next) setMeetOpen(true);
+            else void turnOff();
+          }}
+        />
+      </SettingsGroup>
       <MeetFrappAiDialog
         open={meetOpen}
         onAnswered={(on) => {

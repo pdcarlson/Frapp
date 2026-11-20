@@ -36,6 +36,8 @@ export type BoardTask = {
   point_reward: number | null;
   points_awarded: boolean;
   completed_at: string | null;
+  /** Who marked it done (#5732): null while open, and on an older completion. */
+  completed_by?: string | null;
   confirmed_at: string | null;
   created_at: string;
   /** How it repeats, on a copy of a repeating task (#5119). */

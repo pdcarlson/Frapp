@@ -4,8 +4,10 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -21,7 +23,10 @@ import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
 import {
   EVERYONE_ROLE_NAME,
+  highestRankedRole,
   isEveryoneRole,
+  sortRolesByRank,
+  tierPositionsOf,
   reservedMentionName,
   permissionDefinition,
   permissionModuleLabel,
@@ -164,41 +169,34 @@ export interface ChapterMemberAccess {
    * list the event read gate checks an invitation against (`isInvited`).
    */
   role_ids: string[];
-  /** Smallest `display_order` among held live roles; `null` when none. */
-  top_role_order: number | null;
   /**
-   * The held live role that `top_role_order` belongs to (ties broken by name,
-   * then id, so the pick is stable), or `null` when none. Chat's member list
-   * groups readers under it; `everyone` marks the chapter's Everyone role
-   * (#4191), which that list never names.
+   * Where the member's highest role sits among all the chapter's roles in
+   * rank order (`sortRolesByRank`: wildcard, tier position, the role's order
+   * in its tier, name), 0 for the top; `null` when they hold none. Lower
+   * ranks higher. Without `withTiers`, the top role's `display_order`.
+   */
+  top_role_rank: number | null;
+  /**
+   * The member's highest-ranked live role (`highestRankedRole`), their title,
+   * or `null` when none. Chat's member list orders readers by it; `everyone`
+   * marks the chapter's Everyone role (#4191), which no list names.
    */
   top_role: { id: string; name: string; everyone?: true } | null;
+  /**
+   * The highest tier any of their roles sits in (the chapter's top tier for
+   * the holder of the President's wildcard role), the heading chat's member
+   * list files them under; `null` when none of their roles is in a tier, or
+   * without `withTiers`.
+   */
+  top_tier: { id: string; name: string; position: number } | null;
   /** What the member holds for a channel's who-can-see and who-can-post lists (#3722). */
   channel_access: ChannelAccessHolder;
 }
 
-/**
- * The highest of a member's roles: lowest `display_order` (as on the Roles
- * page), ties broken by name, then id, so two calls agree.
- */
-function topRole(roles: readonly Role[]): Role | null {
-  let best: Role | null = null;
-  for (const role of roles) {
-    if (
-      !best ||
-      role.display_order < best.display_order ||
-      (role.display_order === best.display_order &&
-        (role.name.localeCompare(best.name) < 0 ||
-          (role.name === best.name && role.id < best.id)))
-    ) {
-      best = role;
-    }
-  }
-  return best;
-}
-
 @Injectable()
 export class RbacService {
+  private readonly logger = new Logger(RbacService.name);
+
   constructor(
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
@@ -1347,15 +1345,19 @@ export class RbacService {
 
   /**
    * Every member of `chapterId` with their flattened effective permissions and
-   * the rank of their highest role, from two reads (roster and roles) rather
-   * than ~2N. The one place a chapter-wide permission resolve is
+   * the rank of their highest role, from two reads (roster and roles, plus the
+   * tiers with `withTiers` and the groups with `withGroups`) rather than ~2N. The one place a chapter-wide permission resolve is
    * built, so {@link findUserIdsWithPermissions} and the channel member list
    * (`ChannelAccessService.listChannelMembers`) cannot disagree about who holds
    * what.
    *
-   * `top_role_order` is the smallest `display_order` among the member's live
-   * roles in this chapter (lower ranks higher, as on the Roles page), or `null`
-   * for a member who holds none.
+   * `top_role` is the member's highest-ranked live role in this chapter by
+   * the shared rank (`@repo/validation` `compareRolesByRank`: tier first,
+   * then the role's order in its tier), so a Discord-imported role outside
+   * the tiers at `display_order` 0 never outranks the President. The tiers
+   * are read only with `withTiers` (the channel member list, the one caller
+   * that shows ranks); without it every role counts as outside the tiers,
+   * `top_role_rank` is the top role's `display_order` and `top_tier` is null.
    *
    * **Re-scoped to the chapter twice over.** Both reads filter on
    * `chapter_id`, and the role maps below additionally drop any row whose
@@ -1377,10 +1379,25 @@ export class RbacService {
     chapterId: string,
     withGroups = false,
     roster?: () => Promise<readonly Member[]>,
+    withTiers = false,
   ): Promise<ChapterMemberAccess[]> {
-    const [members, roles, memberships] = await Promise.all([
+    const [members, roles, tiers, memberships] = await Promise.all([
       roster ? roster() : this.memberRepo.findByChapter(chapterId),
       this.roleRepo.findByChapter(chapterId),
+      // Only the channel member list shows ranks and tiers, so only it pays
+      // for the read, and a failed read costs it its tier groups (every
+      // reader then ranks by role order in one list), never anyone's access.
+      withTiers
+        ? this.tierRepo.findByChapter(chapterId).catch((error: unknown) => {
+            logThrowable(
+              this.logger,
+              'warn',
+              `Role tiers unavailable for chapter ${chapterId}`,
+              error,
+            );
+            return [] as RoleTier[];
+          })
+        : Promise.resolve([] as RoleTier[]),
       withGroups
         ? this.groupRepo.findMemberships(chapterId)
         : Promise.resolve([]),
@@ -1395,11 +1412,26 @@ export class RbacService {
       else groupsOf.set(user_id, [group_id]);
     }
 
+    const chapterRoles = roles.filter((role) => role.chapter_id === chapterId);
     const roleById = new Map(
-      roles
-        .filter((role) => role.chapter_id === chapterId)
-        .map((role) => [role.id.toLowerCase(), role] as const),
+      chapterRoles.map((role) => [role.id.toLowerCase(), role] as const),
     );
+    const positions = tierPositionsOf(tiers);
+    const tierById = new Map(tiers.map((tier) => [tier.id, tier] as const));
+    // Ranks are only read by the channel member list (`withTiers`).
+    const rankOf = withTiers
+      ? new Map(
+          sortRolesByRank(chapterRoles, positions).map(
+            (role, index) => [role.id, index] as const,
+          ),
+        )
+      : null;
+    // The President's role outranks every tier wherever it sits, so its
+    // holder files under the chapter's top tier, President first.
+    let firstTier: RoleTier | null = null;
+    for (const tier of tiers) {
+      if (!firstTier || tier.position < firstTier.position) firstTier = tier;
+    }
 
     const held = new Map<string, string[]>();
     for (const member of members) {
@@ -1421,19 +1453,38 @@ export class RbacService {
             .filter((role): role is Role => role !== undefined),
         ),
       ];
-      const top = topRole(liveRoles);
+      const top = highestRankedRole(liveRoles, positions);
+      let topTier: RoleTier | null =
+        top && top.permissions.includes(WILDCARD) ? firstTier : null;
+      for (const role of liveRoles) {
+        const tier = role.tier_id ? tierById.get(role.tier_id) : undefined;
+        if (tier && (!topTier || tier.position < topTier.position)) {
+          topTier = tier;
+        }
+      }
       return {
         user_id: userId,
         permissions: flattenPermissionSets(
           liveRoles.map((role) => role.permissions),
         ),
         role_ids: [...new Set(roleIds)],
-        top_role_order: top?.display_order ?? null,
+        top_role_rank: top
+          ? rankOf
+            ? (rankOf.get(top.id) ?? null)
+            : top.display_order
+          : null,
         top_role: top
           ? {
               id: top.id,
               name: top.name,
               ...(isEveryoneRole(top) ? { everyone: true } : {}),
+            }
+          : null,
+        top_tier: topTier
+          ? {
+              id: topTier.id,
+              name: topTier.name,
+              position: topTier.position,
             }
           : null,
         channel_access: accessHolderFromRoles(

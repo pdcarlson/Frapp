@@ -112,19 +112,15 @@ async function selectChapterMeeting(
   );
 }
 
-/** Sets the list's time window through the Filter popover. */
+/** Sets the list's time window through the Filter menu. */
 async function showTime(
   user: ReturnType<typeof userEvent.setup>,
   name: "Upcoming" | "Past" | "All",
 ) {
   await user.click(screen.getByRole("button", { name: /^filter events/i }));
-  await user.click(
-    within(screen.getByRole("radiogroup", { name: "Time" })).getByRole(
-      "radio",
-      { name },
-    ),
-  );
-  await user.keyboard("{Escape}");
+  screen.getByRole("menuitem", { name: /^Time/ }).focus();
+  await user.keyboard("{ArrowRight}");
+  await user.click(await screen.findByRole("menuitemradio", { name }));
 }
 
 // The one event whose check-in has closed, so the one auto-absent is sent for

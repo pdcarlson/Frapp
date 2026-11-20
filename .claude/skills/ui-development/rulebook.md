@@ -1,6 +1,6 @@
 # The owner's UI rulebook
 
-Every UI ruling Paul has given, from 2026-11-04 to 2026-11-19, as rules you follow without being told
+Every UI ruling Paul has given, from 2026-11-04 to 2026-11-20, as rules you follow without being told
 again. He has said most of these more than once, and the reason this file exists is his message of
 2026-11-19: "I'M SO SO TIRED OF TELLING YOU THE SAME STUFF EVERY FUCKING TIME AND ITERATING ON EVERY
 FUCKING UI CHANGE … it's like a never ending loop of fix one problem and find 4 more that you fix to a
@@ -99,6 +99,12 @@ These cause most of the iterations, so they come first.
 - **Create forms are a borderless title plus property rows** (Type, When, Repeat, Location, Who's coming,
   Points, Description, Notes, Check-in for an event), each opening its menu in place, identical on web
   and phone. Create is small in the header. No "More options", no big Cancel/Create footer. (11-19)
+  Changed in #5748 by shawnatomklein-eng, 2026-11-20: on both apps the rows sit in three framed groups
+  on the raised surface; on web every clickable value is a quiet chip with the control edge (a chevron on
+  a menu), and the phone keeps its row chevrons
+  ([`components.md` § Property rows](../../../spec/ui/design-system/components.md#property-rows)).
+  *Changed 11-20 by Paul: the phone commit is the floating glass action bar and the web one names the
+  thing; see § 9.*
 - **Record pages read top-down in the order people use them.** An event is details, then agenda, then
   attendance; a series is one Repeat row and a "Next Friday" link, never a list. (11-19)
 - **Long content is scannable:** one meta line, a short summary (3 bullets or fewer), collapsible topic
@@ -140,7 +146,7 @@ These cause most of the iterations, so they come first.
   chips. Times are not locked to 5-minute steps; an event's end keeps its length when the start moves.
   (11-06, 11-12, 11-16, 11-19)
 - **lint** **No native `<select>` on web.** Use `Select` or a `DropdownMenu` that shows its state and
-  sticks. (11-06)
+  sticks. (11-06) Which picker for which job: § 9.
 - **lint** **No browser `confirm`, `alert` or `prompt`** (`window.`, `globalThis.`, or bare `alert` and
   `prompt`; a bare `confirm` is the usual local name for `useConfirmDialog`'s function, so check that one
   yourself). A destructive step uses `useConfirmDialog`.
@@ -187,6 +193,13 @@ These cause most of the iterations, so they come first.
   posts included. (11-04)
 - **Push copy works from the lock screen:** who did what, and when, like a calendar invite; never just
   "New event". (11-06)
+- **State facts, never narrate directions.** A push, Activity row or status line says what happened and
+  what came with it ("Moiz finished: Book the venue", "1 photo · 10 points"), never what to do about it
+  ("send it back if something's off", "Confirm to award 10 points"). The screen's own controls are the
+  next step. Paul: "Please stop narrating like directions." (11-20, #5732)
+- **A record says its state first.** A task, request or submission that someone acted on shows who did it
+  and when right under its title ("Moiz Steenhuis marked it done today at 12:05 AM"), with what they sent
+  under that, before its fields. History names the actor too. (11-20, #5732)
 - **The same moment has the same words on both apps.** Shared strings live in a shared package. (P6.5)
 - **Don't invent labels Paul won't use** ("Needs you" was rejected). Use the chapter's words. (11-13)
 
@@ -200,9 +213,15 @@ These cause most of the iterations, so they come first.
   stretched across a profile, card, panel or page body. A person's profile puts Message beside the other
   actions as a compact button (iMessage, Slack and Linear profiles), not a bar under the name. Web and phone
   alike. Full width stays only on single-column sign-in and setup forms (Linear, Notion, Slack sign-in);
-  sheet commit buttons wait on Paul's call. "Not a big huge button guy." (11-20, #5708)
+  sheet commits are the floating glass action bar since Paul's call of 11-20 (§ 9). "Not a big huge
+  button guy." (11-20, #5708)
 - **Near-black neutral surfaces**, no warm yellow. On the phone every card sits one surface step down;
   tinted tiles only on You. (11-05, 11-11, 11-13)
+- **Every pane and every section has a hairline edge.** The sidebar, the page and chat each meet at a
+  full-height `border` line; a page's sections (a summary card, then To do, then a list) are split by a
+  hairline or sit in a bordered group, never by a heading and a gap alone. The fill steps stay soft; the
+  line does the separating, at `--border` (18% white since 11-20). Phone alike: a section is a
+  `ListSection` or a card, each edged. "more hairlines. I cant tell surfaces apart" (11-20)
 - **The accent goes only where `foundations.md` § Where the accent goes allows it.** Scrollbars, mention
   chips, hover fills and icons blend in. (11-05, 11-06)
 - **Mobile chrome is floating glass** (the Bevel direction): glass tab pill, round glass "+", glass back
@@ -218,9 +237,63 @@ These cause most of the iterations, so they come first.
 
 - **Swipe back on every pushed screen**; Android back closes the top sheet; Escape closes the top layer on
   web. (11-06, P7)
+- **Every page has a visible way back, and the sidebar says where you are.** A web page draws its title
+  and its X in the page header; a page under a section (a meeting's minutes under Meetings, Bulk upload
+  under Backwork) lights that section's sidebar row, and the row then goes back to its list. A phone
+  screen draws its back row or a close, never only the swipe. "I'm in a minutes tab under meetings but
+  there's no way for me to x out or to go back, nor is meetings selected on the side bar … what is
+  allowing stuff like this to slip through?" (11-20). Checked on every route by
+  `apps/web/components/layout/every-page-has-a-way-back.spec.ts` and
+  `apps/mobile/lib/every-screen-has-a-way-back.spec.ts`: a new page fails there until it has both.
 - **Opening a notification doesn't stack the screen on itself.** (11-07)
 - **Several sections to fill in is a pushed screen on the phone, not a sheet.** A sheet is for one short
   pick or action over what's under it; a profile or settings page with sections opens as its own screen with
   a back row, on the page background ("not sure a sheet is the move here", on Finish your profile). (11-20)
 - **Standard affordances everywhere:** right-click, long-press, share sheet, pull to refresh, drag a file
   onto chat. As obvious as Discord or iMessage on day one. (11-06, P7)
+
+## 9. One component per job
+
+Paul, 2026-11-20: "there's like 12 different ways of doing dropdowns and menus and settings across the
+app … every screen you go to is a different fucking system", and "it's overwhelming to me". The count
+that day was 57 patterns on web and 44 on the phone for five jobs. Each job now has one component per
+app; build with it, and never draw a sixth way. The anatomy, the variants and the research behind each
+are canonical in [`components.md` § 13](../../../spec/ui/design-system/components.md#13-one-component-per-job);
+the plan and the screens still to migrate are #5739. A site not yet migrated is debt, not precedent.
+
+- **Picking a value:** web `Select` (or `SearchablePicker` for a long list), phone `OptionSheet`. The
+  field shows its current value; search appears past 8 options; no Save or Cancel. `SegmentedChoice` /
+  `Segmented` only for 2 to 4 short choices that stay visible; swatches only for a look (accent,
+  background, density). Never a hand-drawn radio list, and never filter chips used as a form picker.
+- **lint** (partly) **Acting on a thing:** one action menu. Web: `RowMenu` (right-click plus the row's ⋯) and
+  `ActionMenuButton` (a header's ⋯), the same entries. Phone: the glass menu through `useItemMenu`, from
+  long-press and every ⋯. Most used first, at most three groups, Delete red and last and confirmed.
+  Right-click and long-press are shortcuts, never the only way in; the screen's main action is a visible
+  button, and a menu of one or two items becomes buttons. Never the iOS system action sheet, an Alert
+  with three or more buttons, or a bottom sheet of actions. A chat message's long-press sheet with its
+  reaction row is the one exception. Lint catches only a hand-drawn ⋯ icon or a `ui/context-menu`
+  import on web, and the iOS action sheet, `lib/action-menu` or an inline Alert of three or more buttons
+  on the phone; the rest of this rule is checked in review.
+- **Settings:** web `SettingsGroup` and `SettingsRow` (`components/shared/settings-row.tsx`), phone
+  `ListSection` and `ListRow`. A row is a label, at most one muted line, and one trailing thing: a switch,
+  a value that opens the picker, or a chevron. **Settings save on their own** (Paul's pick, 11-20): a
+  switch or a pick the moment it changes; typed text on Enter or leaving the field, with a quiet "Saved",
+  and Escape puts the old text back. No Save button on a settings page.
+- **Filtering a list:** web `FilterMenu` and `ActiveFilterChips` (`components/shared/filter-menu.tsx`):
+  search, one Filter button with its count, and the view switch, in the page header; the filters that are
+  on show as removable chips under the header, with Clear all once two or more are on (the menu always
+  has it). Sort is a row in the menu. Phone: the search field, one Filters chip, and a sheet with the
+  same rows in the same order ending in "Show 23 members"; the shared phone sheet doesn't exist yet and
+  is built from the Directory's in the filters PR (#5739). A list that splits into two or three named sets people switch between all day (Actives /
+  Alumni, All / Unread) is a segmented view switch, not a filter.
+- **Creating and editing:** a borderless title plus property rows (§ 2), on the record itself when
+  editing, saved per row. **Phone commit is the floating glass action bar** from task approval
+  (`TaskActionBar`; Paul, 11-20: "i like the one for the task approval a lot and how it has options
+  embedded"): one labelled pill with its glyph and verb, plus icon buttons for related options, each a
+  glyph everyone reads the same or else in the ⋯. **Web commit is one small labelled button at the
+  header's trailing edge** that names the thing ("Create event", never "Create") and, while it can't be
+  pressed, is dimmed and says why ("Add a title first"); a long page form also ends with it. A short
+  question (rename, report, confirm) is a centred dialog with compact buttons on the right.
+- **Ground a new pattern in research, not only in other apps** (Paul, 11-20: "PLEASE REVIEW GOOD UI
+  DESIGN RESEARCH BEFORE DOING ANYTHING WITH THE STANDARDS. NOT JUST OTHER UIs"): Apple's Human Interface
+  Guidelines, Nielsen Norman Group, Baymard, Material. Name the guideline in the PR beside the apps.

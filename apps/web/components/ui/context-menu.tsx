@@ -39,7 +39,7 @@ const ContextMenuContent = React.forwardRef<
       className={cn(
         MENU_CONTENT_CLASS,
         "max-h-[var(--radix-context-menu-content-available-height)]",
-        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 origin-[--radix-context-menu-content-transform-origin]",
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 origin-(--radix-context-menu-content-transform-origin)",
         className,
       )}
       {...props}
@@ -130,7 +130,7 @@ const ContextMenuSubContent = React.forwardRef<
       className={cn(
         MENU_CONTENT_CLASS,
         "max-h-[var(--radix-context-menu-content-available-height)]",
-        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 origin-[--radix-context-menu-content-transform-origin]",
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 origin-(--radix-context-menu-content-transform-origin)",
         className,
       )}
       {...props}

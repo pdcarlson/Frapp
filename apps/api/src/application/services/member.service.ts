@@ -11,16 +11,23 @@ import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interf
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { ChannelCacheService } from './channel-cache.service';
-import { rolesAfterSave, topRoleColor } from '@repo/validation';
+import {
+  rolesAfterSave,
+  tierPositionsOf,
+  topRoleColor,
+} from '@repo/validation';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
+import type { IRoleTierRepository } from '#domain/repositories/role-tier.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { Member } from '#domain/entities/member.entity';
 import { Role } from '#domain/entities/role.entity';
 import { flattenPermissionSets } from '#domain/utils/permissions';
 import {
+  canAssignAt,
   canReach,
   holderRank,
   permissionsNotHeld,
@@ -172,6 +179,8 @@ export class MemberService {
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    @Inject(ROLE_TIER_REPOSITORY)
+    private readonly tierRepo: IRoleTierRepository,
     private readonly customFieldService: CustomFieldService,
     private readonly rbacService: RbacService,
     private readonly auditLogService: ChapterAuditLogService,
@@ -236,7 +245,7 @@ export class MemberService {
     if (!members.length) return [];
 
     const userIds = [...new Set(members.map((member) => member.user_id))];
-    const [identities, roles] = await Promise.all([
+    const [identities, roles, tiers] = await Promise.all([
       this.userRepo.findDisplayIdentitiesByIds(userIds),
       // Role colors only decorate names, so a failed roles read paints every
       // name plain rather than taking the whole roster (and with it every
@@ -250,7 +259,20 @@ export class MemberService {
         );
         return [];
       }),
+      // The tiers rank the roles (a role's tier before its own order), so the
+      // color is the highest-ranked role's; without them the colors fall back
+      // to `display_order` rather than failing the roster.
+      this.tierRepo.findByChapter(chapterId).catch((error: unknown) => {
+        logThrowable(
+          this.logger,
+          'warn',
+          `Roster role tiers unavailable for chapter ${chapterId}`,
+          error,
+        );
+        return [];
+      }),
     ]);
+    const positions = tierPositionsOf(tiers);
     const byId = new Map(identities.map((user) => [user.id, user]));
     // A user holds one membership per chapter, but the read is not keyed that
     // way, so a duplicate row unions its roles rather than replacing them.
@@ -269,7 +291,11 @@ export class MemberService {
         user_id: user.id,
         display_name: user.display_name,
         avatar_url: user.avatar_url,
-        role_color: topRoleColor(roles, roleIdsByUser.get(userId) ?? []),
+        role_color: topRoleColor(
+          roles,
+          roleIdsByUser.get(userId) ?? [],
+          positions,
+        ),
       });
     }
     return this.photoUrls.signRows(roster, (entry) => entry.user_id);
@@ -365,6 +391,9 @@ export class MemberService {
    * - every role added or taken away must rank below the caller's own;
    * - the member must rank below the caller too, unless it is the caller
    *   themselves, so a chair cannot strip an officer's roles;
+   * - a caller holding `roles:assign_own_level` also reaches their own rank
+   *   on both counts (`canAssignAt`, #5725), so a cabinet officer can make
+   *   another cabinet officer Stewardship Chair;
    * - on their own row, the caller may not end up holding a permission they
    *   did not already hold, so nobody hands themselves a lower role that
    *   carries more than they have.
@@ -497,8 +526,8 @@ export class MemberService {
 
     const isSelf = reach.memberId === member.id;
     if (
-      changed.some((role) => !canReach(reach, roleRank(role, positions))) ||
-      (!isSelf && !canReach(reach, holderRank(before, positions)))
+      changed.some((role) => !canAssignAt(reach, roleRank(role, positions))) ||
+      (!isSelf && !canAssignAt(reach, holderRank(before, positions)))
     ) {
       throw new ForbiddenException(
         'You can only give or take away roles ranked below your own, and only from members ranked below you.',

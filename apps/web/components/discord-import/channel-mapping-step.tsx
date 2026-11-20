@@ -1105,8 +1105,9 @@ function ChannelRow({
                 ? "On because members couldn't talk here in Discord. "
                 : ""}
               When on, only members who can post announcements can post (by
-              default the President; give exec that permission in Settings
-              &rarr; Roles).
+              default the President, or the top two tiers in a newer chapter).
+              After the import, change who can post in the channel&rsquo;s
+              settings.
             </p>
           </div>
           <Switch

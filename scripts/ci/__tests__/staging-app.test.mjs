@@ -123,20 +123,11 @@ test("the workflow records each binary under the name and lifetime the plan read
   }
 });
 
-test("a run after a staging deploy builds iOS from the record and never Android", async () => {
+test("a run after a staging deploy builds both platforms from the record", async () => {
   const asked = [];
-  const r = await plan({ choice: "auto", autoPlatforms: ["ios"], exists: async (p) => (asked.push(p), false) });
-  assert.deepEqual([r.ios, r.android], [true, false]);
-  assert.deepEqual(asked, ["ios"]);
-  assert.match(r.reasons.android, /dispatch the workflow/);
-  // A named choice is a person's, and isn't narrowed.
-  const all = await plan({ choice: "all", autoPlatforms: ["ios"], exists: async () => false });
-  assert.deepEqual([all.ios, all.android], [true, true]);
-
-  const logged = [];
-  const base = { BUILD: "auto", RUNTIME: "0.13.0-0123456789ab", GITHUB_REPOSITORY: "o/r", GITHUB_REPOSITORY_ID: "1", GITHUB_TOKEN: "t" };
-  assert.equal(await planMain({ env: { ...base, AUTO_PLATFORMS: "ios,web" }, log: (l) => logged.push(l) }), 1);
-  assert.match(logged[0], /AUTO_PLATFORMS/);
+  const r = await plan({ choice: "auto", exists: async (p) => (asked.push(p), p === "ios") });
+  assert.deepEqual([r.ios, r.android], [false, true]);
+  assert.deepEqual(asked, ["ios", "android"]);
 });
 
 test("the workflow follows Deploy staging and builds the commit its title names", () => {
@@ -147,7 +138,7 @@ test("the workflow follows Deploy staging and builds the commit its title names"
   // The title this workflow strips `staging ` from is the one Deploy staging sets.
   assert.ok(deploy.includes('run-name: "staging ${{ github.event.workflow_run.head_sha }}"'));
   assert.ok(workflow.includes('SHA="${DEPLOY_TITLE#staging }"'));
-  assert.ok(workflow.includes("AUTO_PLATFORMS: ${{ github.event_name == 'workflow_run' && 'ios' || 'ios,android' }}"));
+  assert.ok(!workflow.includes("AUTO_PLATFORMS"));
   // No job reads the event's own commit: on workflow_run that is main's tip, not the deployed commit.
   assert.equal([...workflow.matchAll(/\$\{\{ github\.sha \}\}/g)].length, 1);
 });

@@ -69,7 +69,11 @@ export function keepsBrowserMenu(
   }
   const selection =
     typeof window === "undefined" ? null : window.getSelection();
-  if (!selection || selection.isCollapsed || selection.toString().trim() === "") {
+  if (
+    !selection ||
+    selection.isCollapsed ||
+    selection.toString().trim() === ""
+  ) {
     return false;
   }
   return (
@@ -136,45 +140,7 @@ export function RowMenu({
   // cleared as it passes: Radix skips its long-press timer while the trigger is
   // disabled, so a verdict left standing would swallow the next long-press.
   const [browserMenu, setBrowserMenu] = useState(false);
-  const [buttonOpen, setButtonOpen] = useState(false);
-
-  const button = (
-    <DropdownMenu open={buttonOpen} onOpenChange={setButtonOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={label}
-          title="More"
-          className={cn(
-            compactControlClassName,
-            "shrink-0",
-            // Out of the way until the row is hovered or focused; never hidden
-            // from touch, where there is no hover.
-            "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100",
-          )}
-        >
-          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="min-w-[220px]"
-        // The content is portaled, but React still bubbles its events up the
-        // component tree to the row's context-menu trigger: without this, a
-        // right-click or a long-press on an open ⋯ menu would open the row's
-        // menu on top of it.
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <Entries entries={entries} kind="dropdown" />
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  const button = <MoreButton entries={entries} label={label} onRow />;
 
   return (
     <ContextMenu>
@@ -199,7 +165,10 @@ export function RowMenu({
           // The menu key and Shift+F10 fire `contextmenu` with no pointerdown
           // first, so a verdict left over from the last right-click must not
           // decide them.
-          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+          if (
+            event.key === "ContextMenu" ||
+            (event.shiftKey && event.key === "F10")
+          ) {
             setBrowserMenu(false);
           }
         }}
@@ -211,4 +180,75 @@ export function RowMenu({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+/**
+ * The ⋯ button and its menu. On a row it hides until the row is hovered or
+ * focused (never on touch); in a page or record header it always shows.
+ */
+function MoreButton({
+  entries,
+  label,
+  onRow = false,
+}: {
+  entries: readonly RowMenuEntry[];
+  label: string;
+  onRow?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          title="More"
+          className={cn(
+            compactControlClassName,
+            "shrink-0",
+            // Out of the way until the row is hovered or focused; never hidden
+            // from touch, where there is no hover.
+            onRow &&
+              "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100",
+          )}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-[220px]"
+        // The content is portaled, but React still bubbles its events up the
+        // component tree to a row's context-menu trigger: without this, a
+        // right-click or a long-press on an open ⋯ menu would open the row's
+        // menu on top of it.
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <Entries entries={entries} kind="dropdown" />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * The ⋯ in a page, panel or record header: the same entries and menu as a
+ * row's, always visible. Every "more actions" button on web is this or
+ * `RowMenu` (rulebook § 9, `spec/ui/design-system/components.md` § Action
+ * menu); lint flags a hand-built ⋯ anywhere else.
+ */
+export function ActionMenuButton({
+  entries,
+  label,
+}: {
+  entries: readonly RowMenuEntry[];
+  /** Accessible name, e.g. "More for Chapter Meeting". */
+  label: string;
+}) {
+  return <MoreButton entries={entries} label={label} />;
 }

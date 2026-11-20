@@ -390,6 +390,7 @@ export function createTermWorld(
       point_reward: task.points > 0 ? task.points : null,
       points_awarded: task.status === 'done' && task.points > 0,
       completed_at: finished ? dueNoon : null,
+      completed_by: null,
       confirmed_at: task.status === 'done' ? dueNoon : null,
       sent_back_at: task.status === 'sent_back' ? dueNoon : null,
       proof_kind: 'none',

@@ -1,3 +1,8 @@
+import {
+  highestRankedRole,
+  type RankableRole,
+  type TierPositions,
+} from "./role-rank";
 /**
  * The fixed set of colors a chapter role can wear (#3485).
  *
@@ -71,40 +76,31 @@ export function roleColorOrNull(value: unknown): RoleColorHex | null {
 }
 
 /** The fields {@link topRoleColor} reads from a role row. */
-export interface RoleColorSource {
-  id: string;
+export interface RoleColorSource extends RankableRole {
   color: string | null;
-  display_order: number;
 }
 
 /**
  * The color a member wears: that of their highest-ranked role that has a
  * palette color, or `null` when none of their roles has one.
  *
- * "Highest-ranked" is the lowest `display_order`, the order the Roles page
- * lists them in and the one the presidency fallback ranks by. A role with no
- * color is skipped rather than winning with nothing, so a Treasurer who is
- * also a plain Member still reads as Treasurer. Ties on `display_order` fall
- * back to the role id, so the answer does not depend on row order.
+ * "Highest-ranked" is {@link compareRolesByRank}: the wildcard role, then
+ * tier position, then the role's order inside its tier, the same rank that
+ * names a member's title. A role with no color is skipped rather than
+ * winning with nothing, so a Treasurer who is also a plain Member still reads
+ * as Treasurer. Without `positions` every role counts as outside the tiers,
+ * which falls back to `display_order`.
  */
 export function topRoleColor(
   roles: readonly RoleColorSource[],
   roleIds: readonly string[],
+  positions: TierPositions = new Map(),
 ): RoleColorHex | null {
   if (roleIds.length === 0) return null;
   const held = new Set(roleIds);
-  let best: { order: number; id: string; hex: RoleColorHex } | null = null;
-  for (const role of roles) {
-    if (!held.has(role.id)) continue;
-    const hex = roleColorOrNull(role.color);
-    if (!hex) continue;
-    if (
-      !best ||
-      role.display_order < best.order ||
-      (role.display_order === best.order && role.id < best.id)
-    ) {
-      best = { order: role.display_order, id: role.id, hex };
-    }
-  }
-  return best?.hex ?? null;
+  const colored = roles.filter(
+    (role) => held.has(role.id) && roleColorOrNull(role.color) !== null,
+  );
+  const best = highestRankedRole(colored, positions);
+  return best ? roleColorOrNull(best.color) : null;
 }

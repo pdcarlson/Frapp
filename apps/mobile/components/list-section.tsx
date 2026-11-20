@@ -412,6 +412,13 @@ export type ListRowProps = {
   onLongPress?: () => void;
   /** The spoken name of `onLongPress`'s action, e.g. "Delete document". */
   longPressLabel?: string;
+  /**
+   * Named screen-reader actions that replace the single long-press one, for a
+   * row whose long press opens a menu: each menu entry is offered by name
+   * (`itemMenuAccessibility`), as the other menu rows do.
+   */
+  accessibilityActions?: PressableProps["accessibilityActions"];
+  onAccessibilityAction?: PressableProps["onAccessibilityAction"];
   accessibilityHint?: string;
   /**
    * What a screen reader reads as the row's value when the trailing status is
@@ -471,6 +478,8 @@ export function ListRow({
   onPress,
   onLongPress,
   longPressLabel,
+  accessibilityActions,
+  onAccessibilityAction,
   accessibilityHint,
   accessibilityValue,
   destructive = false,
@@ -555,16 +564,23 @@ export function ListRow({
       // Offered only while the row takes presses: `disabled` doesn't reach a
       // custom action, so a busy row would otherwise take a second one.
       accessibilityActions={
-        onLongPress && !disabled && !busy
-          ? [{ name: "longpress", label: longPressLabel ?? "More actions" }]
-          : undefined
+        disabled || busy
+          ? undefined
+          : (accessibilityActions ??
+            (onLongPress
+              ? [{ name: "longpress", label: longPressLabel ?? "More actions" }]
+              : undefined))
       }
       onAccessibilityAction={
-        onLongPress && !disabled && !busy
-          ? (event) => {
-              if (event.nativeEvent.actionName === "longpress") onLongPress();
-            }
-          : undefined
+        disabled || busy
+          ? undefined
+          : (onAccessibilityAction ??
+            (onLongPress
+              ? (event) => {
+                  if (event.nativeEvent.actionName === "longpress")
+                    onLongPress();
+                }
+              : undefined))
       }
       // `usePressFeedback`: a ripple on Android, bounded by the row because
       // `ListSection` clips its children, and a one-rung lift on iOS.

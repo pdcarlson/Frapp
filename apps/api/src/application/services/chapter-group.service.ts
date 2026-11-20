@@ -342,7 +342,8 @@ export class ChapterGroupService {
 
   /**
    * Delete a manual group. Every channel list naming it loses the entry (a
-   * trigger), so a channel only it could see is left to `*` until an officer
+   * trigger), so a channel only it could see falls to the chapter's top tier
+   * (migration `20261120051720`) until an officer
    * picks again, as when a role is deleted.
    */
   async remove(id: string, chapterId: string, actorUserId: string) {

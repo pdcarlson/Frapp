@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { ActivityService } from './activity.service';
 import type { ActivityLink } from './activity-link.service';
-import type { AssignedTaskItem, TaskListOptions } from './task.service';
+import type { AssignedTaskItem, TaskRowListOptions } from './task.service';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { TaskView } from '#domain/entities/task.entity';
 import type { ChatMessage } from '#domain/entities/chat.entity';
@@ -37,6 +37,7 @@ const task = (overrides: Partial<TaskView>): TaskView => ({
   point_reward: 5,
   points_awarded: false,
   completed_at: null,
+  completed_by: null,
   confirmed_at: null,
   sent_back_at: null,
   proof_kind: 'none',
@@ -94,8 +95,14 @@ const event = (overrides: Partial<Event>): Event =>
 
 function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   const taskService = {
-    list: jest.fn().mockResolvedValue([]),
-    count: jest.fn().mockResolvedValue(0),
+    listRows: jest.fn().mockResolvedValue({ tasks: [], total: 0 }),
+    // As `TaskService.withGroupSummaries` gives them: a fixture's group, or
+    // null for a one-person task.
+    withGroupSummaries: jest.fn((_chapterId: string, tasks: TaskView[]) =>
+      Promise.resolve(
+        tasks.map((row) => ({ ...row, group: row.group ?? null })),
+      ),
+    ),
     listAssignedItems: jest.fn().mockResolvedValue([]),
   };
   const serviceEntryService = {
@@ -298,11 +305,11 @@ const formCard = (
  * separately, each narrowed as the repository narrows it in SQL (#4037).
  */
 function serveTasks(
-  taskService: { list: jest.Mock; count: jest.Mock },
+  taskService: { listRows: jest.Mock },
   own: TaskView[],
   all: TaskView[] = [],
 ) {
-  const matching = (isAdmin: boolean, options: TaskListOptions) =>
+  const matching = (isAdmin: boolean, options: TaskRowListOptions) =>
     (isAdmin ? all : own).filter(
       (row) =>
         (options.status === undefined ||
@@ -315,14 +322,18 @@ function serveTasks(
           row.assignee_id !== options.notAssigneeId) &&
         (options.completedSince === undefined ||
           (row.completed_at !== null &&
-            row.completed_at >= options.completedSince)),
+            row.completed_at >= options.completedSince)) &&
+        (options.unconfirmedOrCompletedSince === undefined ||
+          row.confirmed_at === null ||
+          (row.completed_at !== null &&
+            row.completed_at >= options.unconfirmedOrCompletedSince)),
     );
-  taskService.list.mockImplementation(
+  taskService.listRows.mockImplementation(
     (
       _chapterId: string,
       _userId: string,
       isAdmin: boolean,
-      options: TaskListOptions = {},
+      options: TaskRowListOptions = {},
     ) => {
       const rows = matching(isAdmin, options);
       if (options.order === 'longest_waiting') {
@@ -330,16 +341,11 @@ function serveTasks(
           (a.completed_at ?? '').localeCompare(b.completed_at ?? ''),
         );
       }
-      return Promise.resolve(rows.slice(0, options.limit ?? rows.length));
+      return Promise.resolve({
+        tasks: rows.slice(0, options.limit ?? rows.length),
+        total: rows.length,
+      });
     },
-  );
-  taskService.count.mockImplementation(
-    (
-      _chapterId: string,
-      _userId: string,
-      isAdmin: boolean,
-      options: TaskListOptions = {},
-    ) => Promise.resolve(matching(isAdmin, options).length),
   );
 }
 
@@ -937,9 +943,10 @@ describe('ActivityService', () => {
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
-      expect(taskService.list).toHaveBeenCalledTimes(1);
-      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, false, {
-        confirmed: false,
+      // One read: their tasks not yet confirmed, with this week's done ones.
+      expect(taskService.listRows).toHaveBeenCalledTimes(1);
+      expect(taskService.listRows).toHaveBeenCalledWith(CHAPTER, ME, false, {
+        unconfirmedOrCompletedSince: WEEK_START,
       });
       expect(view.needs_you.tasks.map((row) => row.id)).toEqual([
         'sooner',
@@ -1019,29 +1026,22 @@ describe('ActivityService', () => {
 
       const view = await service.getActivity(CHAPTER, ME, null);
 
-      // Two filtered reads, never the chapter's whole history (#4037).
-      const waiting = {
+      // Two filtered reads, never the chapter's whole history (#4037); the
+      // waiting ones counted by the same read (#5746).
+      expect(taskService.listRows).toHaveBeenCalledWith(CHAPTER, ME, true, {
         status: TaskStatus.COMPLETED,
         confirmed: false,
         notAssigneeId: ME,
-      };
-      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, true, {
-        ...waiting,
         order: 'longest_waiting',
         limit: 25,
+        withTotal: true,
       });
-      expect(taskService.count).toHaveBeenCalledWith(
-        CHAPTER,
-        ME,
-        true,
-        waiting,
-      );
-      expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, true, {
+      expect(taskService.listRows).toHaveBeenCalledWith(CHAPTER, ME, true, {
         createdBy: ME,
         limit: 25,
       });
       // Every chapter-wide read is narrowed and capped.
-      for (const [, , isAdmin, options] of taskService.list.mock.calls) {
+      for (const [, , isAdmin, options] of taskService.listRows.mock.calls) {
         if (isAdmin) expect(options).toHaveProperty('limit', 25);
       }
       expect(view.needs_you.task_confirmations.map((row) => row.id)).toEqual([
@@ -1101,7 +1101,7 @@ describe('ActivityService', () => {
 
       const view = await service.getActivity(CHAPTER, ME, { tasks: false });
 
-      expect(taskService.list).not.toHaveBeenCalled();
+      expect(taskService.listRows).not.toHaveBeenCalled();
       expect(taskService.listAssignedItems).not.toHaveBeenCalled();
       expect(view.made_by_you.task_items).toEqual([]);
     });
@@ -2414,7 +2414,7 @@ describe('ActivityService', () => {
 
   it('serves the other sections when one fails, and names the one that did', async () => {
     const { service, taskService, messageRepo } = build();
-    taskService.list.mockRejectedValue(new Error('db down'));
+    taskService.listRows.mockRejectedValue(new Error('db down'));
     servePolls(messageRepo, [pollCard({ id: 'poll-1' })]);
 
     const view = await service.getActivity(CHAPTER, ME, null);
@@ -2453,9 +2453,12 @@ describe('ActivityService', () => {
 
   it('caps each list at 25 rows and counts what waits before the cap', async () => {
     const { service, taskService } = build();
-    taskService.list.mockResolvedValue(
-      Array.from({ length: 30 }, (_, index) => task({ id: `task-${index}` })),
-    );
+    taskService.listRows.mockResolvedValue({
+      tasks: Array.from({ length: 30 }, (_, index) =>
+        task({ id: `task-${index}` }),
+      ),
+      total: 30,
+    });
 
     const view = await service.getActivity(CHAPTER, ME, null);
 
@@ -2500,9 +2503,8 @@ describe('ActivityService', () => {
 
       expect(named.week.start).toBe('2026-11-08T05:00:00.000Z');
       expect(named.week.end).toBe('2026-11-15T05:00:00.000Z');
-      expect(taskService.count).toHaveBeenCalledWith(CHAPTER, ME, false, {
-        status: TaskStatus.COMPLETED,
-        completedSince: '2026-11-08T05:00:00.000Z',
+      expect(taskService.listRows).toHaveBeenCalledWith(CHAPTER, ME, false, {
+        unconfirmedOrCompletedSince: '2026-11-08T05:00:00.000Z',
       });
       expect(wide.week.start).toBe(WEEK_START);
     });
@@ -2822,7 +2824,7 @@ describe('ActivityService', () => {
 
     it('serves a part that failed null and names it, so it never reads as zero', async () => {
       const { service, taskService, eventService, attendanceRepo } = build();
-      taskService.count.mockRejectedValue(new Error('boom'));
+      taskService.listRows.mockRejectedValue(new Error('boom'));
       eventService.findByChapter.mockResolvedValue([
         event({ id: 'e', start_time: iso(HOUR), end_time: iso(2 * HOUR) }),
       ]);
@@ -3348,7 +3350,7 @@ describe('ActivityService', () => {
       const archive = await service.getArchive(CHAPTER, ME, null);
 
       expect(archive.tasks).toEqual([]);
-      for (const [, , isAdmin] of taskService.list.mock.calls) {
+      for (const [, , isAdmin] of taskService.listRows.mock.calls) {
         expect(isAdmin).toBe(false);
       }
     });
@@ -3485,7 +3487,7 @@ describe('ActivityService', () => {
         polls: false,
       });
 
-      expect(taskService.list).not.toHaveBeenCalled();
+      expect(taskService.listRows).not.toHaveBeenCalled();
       expect(messageRepo.findCardsByChapter).not.toHaveBeenCalled();
       expect(archive).toEqual({
         events: [],

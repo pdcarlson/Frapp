@@ -22051,6 +22051,119 @@
         ]
       }
     },
+    "/v1/meetings-no-minutes": {
+      "get": {
+        "operationId": "MeetingNoMinutesController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingNoMinutesListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The events this officer can see that are marked \"No minutes\", so the Meetings list stops asking for them",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/events/{id}/no-minutes": {
+      "put": {
+        "operationId": "MeetingNoMinutesController_mark_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a meeting that ended as having no minutes. Marking it again changes nothing. 409 `meeting.not_over`, 409 `meeting.already_started`",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingNoMinutesController_unmark_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Take a meeting’s \"No minutes\" mark off, so it asks for minutes again",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/meetings/{id}/date-reminders": {
       "get": {
         "operationId": "MeetingDateReminderController_list_v1",
@@ -26430,7 +26543,7 @@
           "role_rank": {
             "type": "number",
             "nullable": true,
-            "description": "The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`."
+            "description": "Where the member's highest-ranked role sits among the chapter's roles in rank order (the President's role first, then by tier, then each role's order in its tier), 0 for the top; lower ranks higher, null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`."
           },
           "role_id": {
             "type": "string",
@@ -26441,14 +26554,39 @@
           "role_name": {
             "type": "string",
             "nullable": true,
-            "description": "The group's heading: that role's name, \"Members\" for the chapter's Everyone role, or null when they hold no role."
+            "description": "That role's name, \"Members\" for the chapter's Everyone role, or null when they hold no role. Older app builds group by it; current ones group by tier."
+          },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "description": "The member's title: their highest-ranked role's name, or null for the chapter's Everyone role or no role."
+          },
+          "tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The highest tier any of their roles is in, the group the list files them under, or null when none of their roles is in a tier."
+          },
+          "tier_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That tier's name, the group's heading; null with tier_id."
+          },
+          "tier_rank": {
+            "type": "number",
+            "nullable": true,
+            "description": "That tier's position, 1 for the top tier; null with tier_id."
           }
         },
         "required": [
           "user_id",
           "role_rank",
           "role_id",
-          "role_name"
+          "role_name",
+          "title",
+          "tier_id",
+          "tier_name",
+          "tier_rank"
         ]
       },
       "AddChannelMemberDto": {
@@ -31168,6 +31306,12 @@
             "nullable": true,
             "description": "The assignee's reply sent with Mark done, or null. Cleared with the completion."
           },
+          "completed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who marked it done (#5732): the assignee, or an officer marking it done for them. Null while it is open, and on a completion from before this was kept."
+          },
           "series_id": {
             "type": "string",
             "format": "uuid",
@@ -31240,6 +31384,7 @@
           "proof_link",
           "sent_back_reason",
           "completion_note",
+          "completed_by",
           "series_id",
           "occurrence_date",
           "group_id",
@@ -39842,6 +39987,22 @@
           "event_id",
           "requested",
           "pinged"
+        ]
+      },
+      "MeetingNoMinutesListDto": {
+        "type": "object",
+        "properties": {
+          "event_ids": {
+            "description": "Events this officer can see that an officer marked \"No minutes\", so the Meetings list stops asking for them.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "event_ids"
         ]
       },
       "MeetingDateReminderDto": {

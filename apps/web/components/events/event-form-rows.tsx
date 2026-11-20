@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { ChevronDown } from "lucide-react";
 import {
   EVENT_FORM_GLYPHS,
   type EventFormGlyphName,
@@ -44,6 +45,20 @@ export function EventFormGlyph({
 }
 
 /**
+ * A run of rows framed on the raised surface, a hairline between each (when
+ * and where; who and points; the rest), the way the phone's sheet sets them
+ * and Google Calendar's editor groups its fields (#5742), so the form doesn't
+ * read as bare text on the page.
+ */
+export function PropertyGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="divide-y divide-border rounded-md border border-input bg-surface-1 px-2">
+      {children}
+    </div>
+  );
+}
+
+/**
  * One row. The label names the control in the value slot (`htmlFor`, or the
  * value's own `aria-label` for a menu trigger). At a docked panel's narrow
  * width the label column narrows and the value keeps the room.
@@ -70,7 +85,7 @@ export function PropertyRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[1rem_minmax(4.5rem,6.5rem)_minmax(0,1fr)_auto] gap-x-2.5",
+        "grid grid-cols-[1rem_minmax(4.5rem,6.5rem)_minmax(0,1fr)_auto] gap-x-2.5 py-1.5 pl-1",
         align === "center" ? "items-center" : "items-start",
       )}
     >
@@ -97,8 +112,8 @@ export function PropertyRow({
 }
 
 /**
- * The value as a button that opens its menu: the value's own text, lit on
- * hover, the muted tone when nothing is set. Forwarded so a `PopoverTrigger
+ * The value as a button that opens its menu: a chip sized to the value's own
+ * text with a chevron, the muted tone when nothing is set. Forwarded so a `PopoverTrigger
  * asChild` can hold it.
  */
 export const RowValueButton = React.forwardRef<
@@ -107,26 +122,36 @@ export const RowValueButton = React.forwardRef<
     empty?: boolean;
     invalid?: boolean;
   }
->(function RowValueButton({ className, empty, invalid, ...props }, ref) {
+>(function RowValueButton(
+  { className, empty, invalid, children, ...props },
+  ref,
+) {
   return (
     <button
       ref={ref}
       type="button"
       className={cn(
         ROW_VALUE,
-        "truncate text-left",
+        QUIET_FIELD,
+        "w-fit max-w-full justify-between gap-2 text-left [&:disabled_svg]:text-disabled",
         empty ? "text-muted-foreground" : "text-foreground",
         invalid && "text-destructive-text",
         className,
       )}
       {...props}
-    />
+    >
+      <span className="min-w-0 truncate">{children}</span>
+      <ChevronDown
+        aria-hidden="true"
+        className="h-4 w-4 shrink-0 text-muted-foreground"
+      />
+    </button>
   );
 });
 
 /**
- * The value as a field typed in place: borderless at rest, a surface and the
- * focus ring once it holds the caret.
+ * The value as a field typed in place: borderless at rest, the card step and
+ * the focus ring once it holds the caret.
  */
 export const RowInput = React.forwardRef<
   HTMLInputElement,
@@ -137,7 +162,7 @@ export const RowInput = React.forwardRef<
       ref={ref}
       className={cn(
         ROW_VALUE,
-        "truncate caret-primary placeholder:text-muted-foreground focus:bg-surface-1",
+        "truncate caret-primary placeholder:text-muted-foreground focus:bg-card",
         "aria-[invalid=true]:text-destructive-text",
         className,
       )}
@@ -169,13 +194,24 @@ export const RowTextarea = React.forwardRef<
       onChange={onChange}
       className={cn(
         ROW_VALUE,
-        "h-auto resize-none py-2 leading-5 caret-primary placeholder:text-muted-foreground focus:bg-surface-1",
+        "h-auto resize-none py-2 leading-5 caret-primary placeholder:text-muted-foreground focus:bg-card",
         className,
       )}
       {...props}
     />
   );
 });
+
+/**
+ * A value you click to change, drawn as a quiet chip at rest (#5742): the
+ * card step on the group's surface, lit on hover, as Linear's issue
+ * properties read, with the control edge (foundations §3), since a fill one
+ * step off its seat doesn't tell a member where to click on its own.
+ * Exported for the When row's day and times and the points box, which are
+ * the same kind of value.
+ */
+export const QUIET_FIELD =
+  "border border-control-edge bg-card hover:bg-card-hover disabled:border-border";
 
 /**
  * The Small step (foundations.md §9): 36 to a mouse, 44 to a finger, the

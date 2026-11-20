@@ -136,7 +136,7 @@ export default [
     rules: {
       "no-restricted-syntax": [
         "error",
-        ...mobileUiSyntaxExcept(["emoji"]),
+        ...mobileUiSyntaxExcept(["emoji", "systemMenu"]),
         nativeModuleImport,
       ],
     },
@@ -147,6 +147,33 @@ export default [
     files: ["lib/keyboard.tsx"],
     rules: {
       "no-restricted-syntax": ["error", ...mobileUiSyntaxExcept([])],
+    },
+  },
+  // #5739: the system action sheet and Alerts used as menus, onto the glass
+  // menu (useItemMenu) or OptionSheet. Grandfathered from that rule alone;
+  // the native-module guard is restated because this object replaces the
+  // rule's options. This list only shrinks: never add a file to pass lint.
+  {
+    files: [
+      "app/(app)/task-details.tsx",
+      "components/activity/activity-snooze.tsx",
+      "components/activity/nudge-card.tsx",
+      "components/ask/ask-proposal.tsx",
+      "components/more/chapter-link-section.tsx",
+      "components/more/invited-list.tsx",
+      "components/profile/profile-photo.tsx",
+      "components/settings/linked-apps-section.tsx",
+      "lib/action-menu.ts",
+      "lib/directory/member-menu.ts",
+      "lib/directory/phone-actions.ts",
+      "lib/series-scope.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...mobileUiSyntaxExcept(["systemMenu"]),
+        nativeModuleImport,
+      ],
     },
   },
 ];

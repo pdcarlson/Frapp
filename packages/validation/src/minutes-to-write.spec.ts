@@ -117,3 +117,31 @@ describe("minutesToWrite", () => {
     expect(needs.map((event) => event.id)).not.toContain("bad");
   });
 });
+
+describe("minutesToWrite, with meetings marked No minutes", () => {
+  const events = [
+    {
+      id: "a",
+      name: "Chapter Meeting",
+      start_time: "2026-11-18T19:00:00Z",
+      end_time: "2026-11-18T20:00:00Z",
+    },
+    {
+      id: "b",
+      name: "Exec Meeting",
+      start_time: "2026-11-17T19:00:00Z",
+      end_time: "2026-11-17T20:00:00Z",
+    },
+  ];
+
+  it("settles a marked meeting: it leaves Needs and reads as skipped", () => {
+    const result = minutesToWrite(events, new Set(), NOW, new Set(["b"]));
+    expect(result.needs.map((e) => e.id)).toEqual(["a"]);
+    expect(result.skipped.map((e) => e.id)).toEqual(["b"]);
+  });
+
+  it("lets minutes win over the mark", () => {
+    const result = minutesToWrite(events, new Set(["b"]), NOW, new Set(["b"]));
+    expect(result.skipped).toEqual([]);
+  });
+});

@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   taking: [] as unknown[],
   takingReady: true,
   permissions: ["meetings:record"] as string[],
+  noMinutes: [] as string[],
+  noMinutesFailed: false,
+  setNoMinutes: vi.fn(),
   start: vi.fn(),
   push: vi.fn(),
   toast: vi.fn(),
@@ -30,6 +33,13 @@ vi.mock("@repo/hooks", () => ({
     options?.enabled === false
       ? { data: undefined, isSuccess: false }
       : { data: mocks.events, isSuccess: true },
+  useMeetingsNoMinutes: (options?: { enabled?: boolean }) =>
+    options?.enabled === false
+      ? { data: undefined, isSuccess: false }
+      : mocks.noMinutesFailed
+        ? { data: undefined, isSuccess: false, isError: true }
+        : { data: mocks.noMinutes, isSuccess: true },
+  useSetMeetingNoMinutes: () => ({ mutateAsync: mocks.setNoMinutes }),
   useMemberDisplayNames: () => ({ nameFor: () => "Shawn Klein" }),
   useMyPermissions: () => ({ data: { permissions: mocks.permissions } }),
   useStartMeeting: () => ({ mutateAsync: mocks.start, isPending: false }),
@@ -60,6 +70,7 @@ const { MeetingsPage } = await import("./meetings-page");
 const iso = (offset: number) => new Date(Date.now() + offset).toISOString();
 
 beforeEach(() => {
+  mocks.noMinutesFailed = false;
   mocks.permissions = ["meetings:record"];
   mocks.taking = [];
   mocks.takingReady = true;
@@ -86,26 +97,133 @@ beforeEach(() => {
     { id: "e-social", name: "Date party", start_time: iso(-30 * HOUR) },
     { id: "e-next", name: "Exec Meeting", start_time: iso(30 * HOUR) },
   ];
+  mocks.noMinutes = [];
+  mocks.setNoMinutes.mockReset();
+  mocks.setNoMinutes.mockResolvedValue(undefined);
   mocks.start.mockReset();
   mocks.push.mockReset();
   mocks.toast.mockReset();
 });
 
+const rowNames = () =>
+  [...document.querySelectorAll("span.block.text-sm.font-semibold")].map(
+    (node) => node.textContent,
+  );
+
 describe("Meetings, tied to their events", () => {
+  it("puts the next meeting on top, then every past meeting at its date", () => {
+    render(<MeetingsPage />);
+    // Next up, then This week: the meeting with no minutes (yesterday)
+    // above the minutes posted the day before.
+    expect(rowNames()).toEqual([
+      "Exec Meeting",
+      "Chapter Meeting",
+      "Cabinet Meeting",
+    ]);
+  });
+
+  it("marks a meeting as having no minutes, with Undo", async () => {
+    render(<MeetingsPage />);
+    fireEvent.pointerDown(
+      screen.getByRole("button", {
+        name: MEETING_LIST_COPY.rowActions("Chapter Meeting"),
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: MEETING_LIST_COPY.markNoMinutes,
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.setNoMinutes).toHaveBeenCalledWith({
+        eventId: "e-needs",
+        noMinutes: true,
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: MEETING_LIST_COPY.markedNoMinutes("Chapter Meeting"),
+        }),
+      ),
+    );
+    // Undo takes the mark back; a failed undo says so.
+    mocks.setNoMinutes.mockRejectedValueOnce(new Error("offline"));
+    const undo = mocks.toast.mock.calls[0]![0].action;
+    undo.props.onClick();
+    expect(mocks.setNoMinutes).toHaveBeenLastCalledWith({
+      eventId: "e-needs",
+      noMinutes: false,
+    });
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          title: MEETING_LIST_COPY.noMinutesFailed,
+          variant: "destructive",
+        }),
+      ),
+    );
+  });
+
+  it("asks for minutes again from a settled meeting's menu", async () => {
+    mocks.noMinutes = ["e-needs"];
+    mocks.setNoMinutes.mockResolvedValue(undefined);
+    render(<MeetingsPage />);
+    fireEvent.pointerDown(
+      screen.getByRole("button", {
+        name: MEETING_LIST_COPY.rowActions("Chapter Meeting"),
+      }),
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: MEETING_LIST_COPY.undoNoMinutes,
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.setNoMinutes).toHaveBeenCalledWith({
+        eventId: "e-needs",
+        noMinutes: false,
+      }),
+    );
+  });
+
+  it("still lists the calendar when the No minutes read fails", () => {
+    mocks.noMinutesFailed = true;
+    render(<MeetingsPage />);
+    expect(screen.getByText(MEETING_LIST_COPY.nextUp)).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: `${MEETING_LIST_COPY.writeMinutes}: Chapter Meeting`,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("shows a meeting marked so as settled: No minutes, and no Write minutes", () => {
+    mocks.noMinutes = ["e-needs"];
+    render(<MeetingsPage />);
+    expect(screen.getByText(MEETING_LIST_COPY.noMinutes)).toBeTruthy();
+    expect(
+      screen.queryByRole("button", {
+        name: `${MEETING_LIST_COPY.writeMinutes}: Chapter Meeting`,
+      }),
+    ).toBeNull();
+  });
+
   it("lists a meeting that ended with no minutes, and starts them in one press", async () => {
     mocks.start.mockResolvedValue({ id: "m-new" });
     render(<MeetingsPage />);
-    expect(screen.getByText(MEETING_LIST_COPY.needsMinutes)).toBeTruthy();
     // A social asks for no minutes, and posted minutes aren't asked again.
     expect(screen.queryByText("Date party")).toBeNull();
     expect(
       screen.queryByRole("button", {
-        name: `${MEETING_LIST_COPY.startMinutes}: Cabinet Meeting`,
+        name: `${MEETING_LIST_COPY.writeMinutes}: Cabinet Meeting`,
       }),
     ).toBeNull();
     fireEvent.click(
       screen.getByRole("button", {
-        name: `${MEETING_LIST_COPY.startMinutes}: Chapter Meeting`,
+        name: `${MEETING_LIST_COPY.writeMinutes}: Chapter Meeting`,
       }),
     );
     await waitFor(() =>
@@ -151,19 +269,31 @@ describe("Meetings, tied to their events", () => {
   it("asks nothing of a member who doesn't record minutes", () => {
     mocks.permissions = [];
     render(<MeetingsPage />);
-    expect(screen.queryByText(MEETING_LIST_COPY.needsMinutes)).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: `${MEETING_LIST_COPY.writeMinutes}: Chapter Meeting`,
+      }),
+    ).toBeNull();
     expect(screen.queryByText(MEETING_LIST_COPY.nextUp)).toBeNull();
   });
 
   it("leaves out a meeting the viewer takes notes on, and waits for that read", () => {
     mocks.taking = [{ meeting_id: "m-other", event_id: "e-needs" }];
     const { unmount } = render(<MeetingsPage />);
-    expect(screen.queryByText(MEETING_LIST_COPY.needsMinutes)).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: `${MEETING_LIST_COPY.writeMinutes}: Chapter Meeting`,
+      }),
+    ).toBeNull();
     unmount();
     mocks.taking = [];
     mocks.takingReady = false;
     render(<MeetingsPage />);
-    expect(screen.queryByText(MEETING_LIST_COPY.needsMinutes)).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: `${MEETING_LIST_COPY.writeMinutes}: Chapter Meeting`,
+      }),
+    ).toBeNull();
   });
 
   it("says so when someone else already started them, and drops the row", async () => {
@@ -171,11 +301,15 @@ describe("Meetings, tied to their events", () => {
     render(<MeetingsPage />);
     fireEvent.click(
       screen.getByRole("button", {
-        name: `${MEETING_LIST_COPY.startMinutes}: Chapter Meeting`,
+        name: `${MEETING_LIST_COPY.writeMinutes}: Chapter Meeting`,
       }),
     );
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
     expect(mocks.push).not.toHaveBeenCalled();
-    expect(screen.queryByText(MEETING_LIST_COPY.needsMinutes)).toBeNull();
+    expect(
+      screen.queryByRole("button", {
+        name: `${MEETING_LIST_COPY.writeMinutes}: Chapter Meeting`,
+      }),
+    ).toBeNull();
   });
 });

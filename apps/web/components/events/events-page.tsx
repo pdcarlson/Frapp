@@ -12,7 +12,7 @@ import {
 } from "react";
 import { OpenLinkedEvent } from "./open-linked-event";
 import { CalendarSubscribeMenu } from "./calendar-subscribe-menu";
-import { ChevronLeft, ChevronRight, ListFilter } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   RolesGlyph,
   SearchGlyph,
@@ -83,11 +83,10 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { SegmentedChoice } from "@/components/ui/segmented";
+  ActiveFilterChips,
+  FilterMenu,
+  type FilterMenuFilter,
+} from "@/components/shared/filter-menu";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
@@ -239,7 +238,6 @@ export function EventsPage() {
     useState<AttendanceFilter>("all");
   const [recurrenceFilter, setRecurrenceFilter] =
     useState<CadenceFilter>("all");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   // Beside chat the search is a glyph until pressed (#5560); it stays a
   // field while it holds text.
   const [searchOpen, setSearchOpen] = useState(false);
@@ -874,20 +872,37 @@ export function EventsPage() {
   const narrowedByKind =
     attendanceFilter !== "all" || recurrenceFilter !== "all";
   const hasEvents = events.length > 0;
-  // Filters away from their defaults, for the Filter button's count.
-  const activeFilterCount =
-    (timeFilter !== "upcoming" ? 1 : 0) +
-    (attendanceFilter !== "all" ? 1 : 0) +
-    (recurrenceFilter !== "all" ? 1 : 0);
   const shownCount = visibleEventIds.length;
   const nowDate = new Date(nowTick);
 
-  // The popover's Clear: every filter back to its default.
-  function clearFilters() {
-    setTimeFilter("upcoming");
-    setAttendanceFilter("all");
-    setRecurrenceFilter("all");
-  }
+  // The Filter menu's rows, also drawn as the chips of the filters that are
+  // on. Upcoming is Time's resting value, so it counts as no filter.
+  const eventFilters: FilterMenuFilter[] = [
+    {
+      key: "time",
+      label: "Time",
+      options: TIME_OPTIONS,
+      value: timeFilter,
+      anyValue: "upcoming",
+      onChange: (value) => setTimeFilter(value as TimeFilter),
+    },
+    {
+      key: "attendance",
+      label: "Attendance",
+      options: ATTENDANCE_OPTIONS,
+      value: attendanceFilter,
+      anyValue: "all",
+      onChange: (value) => setAttendanceFilter(value as AttendanceFilter),
+    },
+    {
+      key: "cadence",
+      label: "Cadence",
+      options: CADENCE_OPTIONS,
+      value: recurrenceFilter,
+      anyValue: "all",
+      onChange: (value) => setRecurrenceFilter(value as CadenceFilter),
+    },
+  ];
 
   // The "No events match these filters" line's Clear filters: only the kind
   // filters it blames. Time stays, so an officer working in Past stays there.
@@ -1217,90 +1232,7 @@ export function EventsPage() {
             />
           </div>
         )}
-        <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
-          <PopoverTrigger asChild>
-            {narrow ? (
-              <IconButton
-                variant="secondary"
-                className="relative shrink-0"
-                label={
-                  activeFilterCount > 0
-                    ? `Filter events, ${activeFilterCount} on`
-                    : "Filter events"
-                }
-              >
-                <ListFilter className="h-4 w-4" aria-hidden="true" />
-                {activeFilterCount > 0 ? (
-                  <Badge
-                    variant="default"
-                    aria-hidden="true"
-                    className="absolute -right-1.5 -top-1.5 h-4 min-w-4 justify-center px-1"
-                  >
-                    {activeFilterCount}
-                  </Badge>
-                ) : null}
-              </IconButton>
-            ) : (
-              <Button
-                size="toolbar"
-                variant="secondary"
-                className="shrink-0 gap-2"
-                aria-label={
-                  activeFilterCount > 0
-                    ? `Filter events, ${activeFilterCount} on`
-                    : "Filter events"
-                }
-              >
-                <ListFilter className="h-4 w-4" aria-hidden="true" />
-                Filter
-                {activeFilterCount > 0 ? (
-                  <Badge variant="default" aria-hidden="true">
-                    {activeFilterCount}
-                  </Badge>
-                ) : null}
-              </Button>
-            )}
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-auto min-w-72 space-y-4">
-            <FilterRow label="Time">
-              <SegmentedChoice
-                label="Time"
-                options={TIME_OPTIONS}
-                value={timeFilter}
-                onChange={setTimeFilter}
-                fill
-              />
-            </FilterRow>
-            <FilterRow label="Attendance">
-              <SegmentedChoice
-                label="Attendance"
-                options={ATTENDANCE_OPTIONS}
-                value={attendanceFilter}
-                onChange={setAttendanceFilter}
-                fill
-              />
-            </FilterRow>
-            <FilterRow label="Cadence">
-              <SegmentedChoice
-                label="Cadence"
-                options={CADENCE_OPTIONS}
-                value={recurrenceFilter}
-                onChange={setRecurrenceFilter}
-                fill
-              />
-            </FilterRow>
-            <div className="flex justify-end">
-              <Button
-                size="toolbar"
-                variant="ghost"
-                disabled={activeFilterCount === 0}
-                onClick={clearFilters}
-              >
-                Clear
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
+        <FilterMenu filters={eventFilters} thing="events" narrow={narrow} />
         <CalendarSubscribeMenu iconOnly={narrow} />
         <Can allOf={EVENT_CREATE_PERMISSIONS}>
           <NewButton
@@ -1310,6 +1242,7 @@ export function EventsPage() {
           />
         </Can>
       </PageActions>
+      <ActiveFilterChips filters={eventFilters} />
 
       {/*
         Under the row it explains. Search and the filters stay live: a lapsed
@@ -1668,24 +1601,6 @@ export function EventsPage() {
         }}
       />
       {confirmDialog}
-    </div>
-  );
-}
-
-/** One filter in the popover: its name over its segmented answers. */
-function FilterRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <p className="text-caption font-semibold text-muted-foreground">
-        {label}
-      </p>
-      {children}
     </div>
   );
 }

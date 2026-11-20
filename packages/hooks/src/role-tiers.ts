@@ -151,13 +151,22 @@ export type Reach = {
   rank: number;
   /** What the caller holds, for the "never grant what you lack" rule. */
   held: ReadonlySet<string>;
+  /** The caller's `users.id`, so their own profile reads as theirs. */
+  userId?: string | null;
 };
+
+/**
+ * With `roles:manage`, reach your own rank as well as below it when giving
+ * and taking roles (Paul, 2026-11-20, #5725): the API's `canAssignAt`.
+ */
+export const ASSIGN_OWN_LEVEL_PERMISSION = "roles:assign_own_level";
 
 export function callerReach(
   myRoleIds: readonly string[] | null,
   myPermissions: readonly string[],
   roles: readonly TieredRole[],
   tiers: readonly TierRow[],
+  viewerUserId: string | null = null,
 ): Reach {
   const positions = new Map(tiers.map((tier) => [tier.id, tier.position]));
   let rank = OUTSIDE_TIERS_RANK;
@@ -174,6 +183,7 @@ export function callerReach(
     known: wildcard || myRoleIds !== null,
     rank,
     held: new Set(myPermissions),
+    userId: viewerUserId,
   };
 }
 
@@ -195,6 +205,53 @@ export function reachesRole(
   if (reach.wildcard) return true;
   const positions = new Map(tiers.map((tier) => [tier.id, tier.position]));
   return roleRank(role, positions) > reach.rank;
+}
+
+/**
+ * Whether the caller may give or take away something at `rank` on a
+ * member: below their own, or at it too with `roles:assign_own_level`
+ * (#5725). Never above, and nothing from outside the tiers.
+ */
+function assignsAt(reach: Reach, rank: number): boolean {
+  if (reach.wildcard || rank > reach.rank) return true;
+  return (
+    reach.held.has(ASSIGN_OWN_LEVEL_PERMISSION) &&
+    Number.isFinite(reach.rank) &&
+    rank === reach.rank
+  );
+}
+
+/** Whether the caller may give or take away this role on a member. */
+export function assignsRole(
+  reach: Reach,
+  role: TieredRole,
+  tiers: readonly TierRow[],
+): boolean {
+  if (isWildcardRole(role)) return false;
+  const positions = new Map(tiers.map((tier) => [tier.id, tier.position]));
+  return assignsAt(reach, roleRank(role, positions));
+}
+
+/**
+ * Whether the caller may change this member's roles at all: their own, or a
+ * member ranked below them, or at their level with `roles:assign_own_level`.
+ */
+export function assignsToMember(
+  reach: Reach,
+  member: { userId: string; roleIds: readonly string[] },
+  roles: readonly TieredRole[],
+  tiers: readonly TierRow[],
+): boolean {
+  if (reach.wildcard) return true;
+  if (reach.userId && reach.userId === member.userId) return true;
+  const positions = new Map(tiers.map((tier) => [tier.id, tier.position]));
+  let rank = OUTSIDE_TIERS_RANK;
+  for (const role of roles) {
+    if (member.roleIds.includes(role.id)) {
+      rank = Math.min(rank, roleRank(role, positions));
+    }
+  }
+  return assignsAt(reach, rank);
 }
 
 /**
@@ -235,6 +292,18 @@ export type PermissionRow = {
   label: string;
   description: string | null;
 };
+
+/**
+ * How many switches a holder's page shows as on: its permissions less the
+ * wildcard and the hidden ones (`isPermissionHidden`), so a tier's count in
+ * the list matches its page (#5728).
+ */
+export function shownPermissionCount(
+  permissions: readonly string[],
+  isHidden: (permission: string) => boolean,
+): number {
+  return new Set(permissions.filter((p) => p !== "*" && !isHidden(p))).size;
+}
 
 /**
  * Every permission in the registry, plus any other string the holder carries

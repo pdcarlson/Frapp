@@ -162,10 +162,11 @@ describe("the step indicator's track", () => {
     // 4.188 until the 2026-11-12 ladder (#3826) raised every fill's floor, then
     // `#4B1A7E`'s `#9B70D9` until engine v4 (2026-11-19) re-lifted the corpus
     // on the violet ladder, whose brighter hairline (12%) also narrows the
-    // border track's figure. The ranking is the same throughout, and on
+    // border track's figure, as did its lift to 18% on 2026-11-20 (Paul's
+    // "more hairlines", #5739). The ranking is the same throughout, and on
     // `--background` the fill clears the 3:1 non-text floor.
     expect(worstOnBackground).toBeGreaterThan(worstOnBorder);
-    expect(worstOnBorder).toBeCloseTo(3.772, 2);
+    expect(worstOnBorder).toBeCloseTo(3.049, 2);
     expect(worstOnBackground).toBeCloseTo(5.015, 2);
   });
 });

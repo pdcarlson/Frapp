@@ -216,16 +216,24 @@ export function minutesGist(tldr: string | null | undefined): string | null {
 export const MEETING_LIST_COPY = {
   title: "Minutes",
   /**
-   * Meetings, tied to their events (Paul, 2026-11-19): meetings on the
-   * calendar that ended with no minutes, drafts, then what was posted, with
-   * the next meeting at the foot.
+   * Meetings, tied to their events (Paul, 2026-11-19), as one timeline
+   * (Paul, 2026-11-20; `minutesTimeline`): the next meeting on top, then
+   * every past meeting at its date, a meeting that ended with no minutes
+   * among them. "Write minutes", not "Start": the meeting already happened.
    */
-  needsMinutes: "Needs minutes",
-  startMinutes: "Start minutes",
+  writeMinutes: "Write minutes",
+  /** An officer settles a meeting that had none: it stops asking. */
+  markNoMinutes: "No minutes for this meeting",
+  /** The tag on a meeting marked so. */
+  noMinutes: "No minutes",
+  /** Takes the mark off: the meeting asks for minutes again. */
+  undoNoMinutes: "Ask for minutes again",
+  markedNoMinutes: (name: string) => `${name} marked as no minutes`,
+  noMinutesFailed: "Couldn't save that",
+  undo: "Undo",
   nextUp: "Next up",
   openEvent: "Open event",
-  drafts: "In progress",
-  posted: "Minutes",
+  rowActions: (name: string) => `More for ${name}`,
   none: "Minutes show here once a secretary posts them.",
   loadFailedTitle: "Couldn't load the minutes",
   loadFailedBody: "Check your connection and try again.",

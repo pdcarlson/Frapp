@@ -57,7 +57,7 @@ export const MEETING_START_COPY = {
     `${name} already has minutes, so pick another meeting or take notes from the event.`,
   readFailed:
     "Couldn't read the calendar, so Frapp can't tell which meeting this is. Check the connection and try again.",
-  start: "Start minutes",
+  start: "Write minutes",
   yours: "Your draft",
   hasRecording: (name: string) =>
     `${name} already has a recording, so its minutes are open as they are.`,

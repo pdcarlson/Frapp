@@ -50,6 +50,8 @@ const ROLES = [
   role("r-sec", "Corresponding Secretary", "t-exec", {
     permissions: ["members:view"],
   }),
+  role("r-social", "Social chair", "t-chairs"),
+  role("r-rush", "Rush chair", "t-chairs"),
   role("r-everyone", "Everyone", "t-chairs", {
     system_key: "MEMBER",
     is_system: true,
@@ -190,7 +192,7 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
     const headings = within(list)
       .getAllByRole("group")
       .map((g) => g.getAttribute("aria-label"));
-    expect(headings).toEqual(["Groups", "Exec board"]);
+    expect(headings).toEqual(["Groups", "Exec board", "Chairs"]);
     expect(within(list).queryByText("Fall 2025")).toBeNull();
 
     await user.click(
@@ -206,6 +208,134 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
     expect(
       within(list).getByRole("menuitemcheckbox", { name: /President/ }),
     ).toBeDisabled();
+  });
+
+  // #5752: a tick used to disable every row while it saved, which dropped
+  // focus to the page; the profile panel took it back, and that closed the
+  // list after each pick. Now the ticked row shows its new state at once and
+  // keeps focus, and other ticks queue behind its save.
+  it("shows a tick at once and keeps the list open for more while it saves", async () => {
+    const user = userEvent.setup();
+    let finish: () => void = () => {};
+    setMembership.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({});
+        }),
+    );
+    renderIt();
+    await user.click(screen.getByRole("button", { name: "Add to group" }));
+    const list = screen.getByRole("dialog", {
+      name: "Roles and groups for Jimmy Mitchell",
+    });
+    const campus = within(list).getByRole("menuitemcheckbox", {
+      name: /On campus/,
+    });
+    await user.click(campus);
+
+    // Saving: ticked already, focus kept, waiting without being disabled.
+    expect(campus).toHaveAttribute("aria-checked", "true");
+    expect(campus).toHaveFocus();
+    expect(campus).not.toBeDisabled();
+    expect(campus).toHaveAttribute("aria-disabled", "true");
+    // A second press on the same row while it saves does nothing.
+    await user.click(campus);
+    expect(setMembership).toHaveBeenCalledTimes(1);
+
+    // Another row takes its tick now and saves once the first is done.
+    const house = within(list).getByRole("menuitemcheckbox", {
+      name: /In house/,
+    });
+    await user.click(house);
+    expect(house).toHaveAttribute("aria-checked", "false");
+    expect(setMembership).toHaveBeenCalledTimes(1);
+
+    finish();
+    await waitFor(() =>
+      expect(setMembership).toHaveBeenLastCalledWith({
+        groupId: "g-house",
+        userId: "u1",
+        in: false,
+      }),
+    );
+    await waitFor(() => expect(campus).not.toHaveAttribute("aria-disabled"));
+    expect(
+      screen.getByRole("dialog", {
+        name: "Roles and groups for Jimmy Mitchell",
+      }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", {
+          name: "Roles and groups for Jimmy Mitchell",
+        }),
+      ).toBeNull(),
+    );
+  });
+
+  it("gives two roles in one opening, the second built on the first", async () => {
+    const user = userEvent.setup();
+    let finish: () => void = () => {};
+    updateRoles.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({});
+        }),
+    );
+    renderIt(["r-sec", "r-everyone"]);
+    await user.click(screen.getByRole("button", { name: "Add role" }));
+    const list = screen.getByRole("dialog", {
+      name: "Roles and groups for Jimmy Mitchell",
+    });
+    await user.click(
+      within(list).getByRole("menuitemcheckbox", { name: /Social chair/ }),
+    );
+    // The second tick comes before the first save answers.
+    await user.click(
+      within(list).getByRole("menuitemcheckbox", { name: /Rush chair/ }),
+    );
+    expect(updateRoles).toHaveBeenCalledTimes(1);
+    expect(updateRoles).toHaveBeenLastCalledWith({
+      id: "m1",
+      role_ids: ["r-sec", "r-everyone", "r-social"],
+    });
+
+    finish();
+    await waitFor(() => expect(updateRoles).toHaveBeenCalledTimes(2));
+    expect(updateRoles).toHaveBeenLastCalledWith({
+      id: "m1",
+      role_ids: ["r-sec", "r-everyone", "r-social", "r-rush"],
+    });
+    expect(list).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(list).getByRole("menuitemcheckbox", { name: /Rush chair/ }),
+      ).toHaveAttribute("aria-checked", "true"),
+    );
+    expect(
+      within(list).getByRole("menuitemcheckbox", { name: /Social chair/ }),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("closes the list on a click outside it", async () => {
+    const user = userEvent.setup();
+    renderIt();
+    await user.click(screen.getByRole("button", { name: "Add role" }));
+    expect(
+      screen.getByRole("dialog", {
+        name: "Roles and groups for Jimmy Mitchell",
+      }),
+    ).toBeInTheDocument();
+    await user.click(document.body);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", {
+          name: "Roles and groups for Jimmy Mitchell",
+        }),
+      ).toBeNull(),
+    );
   });
 
   it("builds a second quick tick on the first, before the profile re-reads", async () => {

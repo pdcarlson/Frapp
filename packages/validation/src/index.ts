@@ -156,6 +156,7 @@ export * from "./minutes-flow";
 export * from "./minutes-read";
 export * from "./minutes-request-copy";
 // Which meetings on the calendar need minutes, and the next one coming.
+export * from "./minutes-timeline";
 export * from "./minutes-to-write";
 export * from "./module-enablement";
 export * from "./module-refusal";
@@ -233,6 +234,7 @@ export {
 // editor and the phone's New event sheet (#4488).
 export * from "./repeat-draft";
 export * from "./role-colors";
+export * from "./role-rank";
 export * from "./screen-copy";
 // Roles members pick themselves (#4958): the safety rule and its words.
 export * from "./self-assignable-roles";
@@ -284,6 +286,7 @@ export {
   normalizeExtension,
   type UploadKind,
 } from "./upload-allowlists";
+export * from "./week-start";
 export * from "./welcome-card";
 // Point-in-polygon, shared by the API's geofence check and the phone's s10 screen.
 export * from "./zone-geometry";

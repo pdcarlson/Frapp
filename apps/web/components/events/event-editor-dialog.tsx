@@ -12,7 +12,9 @@ import { AttendanceEditor } from "@/components/events/attendance-editor";
 import { EventTypeRow } from "@/components/events/event-type-picker";
 import { AgendaDraftList } from "@/components/events/event-agenda";
 import {
+  PropertyGroup,
   PropertyRow,
+  QUIET_FIELD,
   RowInput,
   RowTextarea,
   RowValueButton,
@@ -148,9 +150,11 @@ function addDays(day: string, days: number): string {
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
 }
 
-/** A field set flat into the row: no box until it is hovered or focused. */
-const INLINE_FIELD =
-  "h-9 border-transparent bg-transparent px-2 shadow-none hover:bg-card-hover focus-visible:bg-surface-1 pointer-coarse:h-11";
+/** A day or time in the When row, drawn as the rows' quiet chip (#5742). */
+const INLINE_FIELD = cn(
+  "h-9 px-2 text-sm shadow-none pointer-coarse:h-11",
+  QUIET_FIELD,
+);
 
 /**
  * The When row's value, laid out as Google Calendar's event editor sets it
@@ -1602,7 +1606,7 @@ export function EventEditorDialog({
             at rest instead of waiting behind More options. The phone's sheet
             draws the same rows in the same order (`EVENT_FORM_ROWS`).
           */}
-          <div className="grid gap-0.5">
+          <PropertyGroup>
             <EventTypeRow
               value={eventTypeId}
               onPick={handlePickType}
@@ -1681,6 +1685,9 @@ export function EventEditorDialog({
               />
             </PropertyRow>
 
+          </PropertyGroup>
+
+          <PropertyGroup>
             <PropertyRow
               glyph="attendance"
               label={EVENT_FORM_ROW_LABELS.attendance}
@@ -1728,7 +1735,7 @@ export function EventEditorDialog({
                     type="number"
                     min={0}
                     inputMode="numeric"
-                    className="w-20 tabular-nums"
+                    className={cn("w-20 tabular-nums", QUIET_FIELD)}
                     value={pointValue}
                     onChange={handlePointValueChange}
                   />
@@ -1739,6 +1746,9 @@ export function EventEditorDialog({
               </PropertyRow>
             ) : null}
 
+          </PropertyGroup>
+
+          <PropertyGroup>
             {/*
               The agenda while the event is made (Paul 2026-11-19: "where is
               the ability to add agenda items"). Only on create: an event's
@@ -1956,7 +1966,7 @@ export function EventEditorDialog({
                 </PopoverContent>
               </Popover>
             </PropertyRow>
-          </div>
+          </PropertyGroup>
 
           {canSetRequirements ? null : (
             <p className="text-caption text-muted-foreground">

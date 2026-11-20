@@ -499,6 +499,11 @@ export class MeetingService {
     return this.view(chapterId, meeting, event, viewerId, access);
   }
 
+  /** Whether the event has minutes at all, a draft or posted, whoever's. */
+  async hasMinutesFor(chapterId: string, eventId: string): Promise<boolean> {
+    return (await this.meetingRepo.findByEvent(chapterId, eventId)) !== null;
+  }
+
   async start(
     chapterId: string,
     userId: string,

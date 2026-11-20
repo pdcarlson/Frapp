@@ -742,6 +742,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
 - **The row is the control.**
   Actives and alumni rows both open `MemberDetailSheet` (alumni since [#2484](https://github.com/pdcarlson/Frapp/issues/2484)).
   *Changed 2026-11-19 (Paul picked "a small card from the row", [#5684](https://github.com/frapplive/Frapp/issues/5684)): a row or tile opens the member's card beside it (chat's `MemberPopout`), and the card's View profile opens `MemberDetailSheet` as before.*
+  *Changed 2026-11-20 ([#5749](https://github.com/frapplive/Frapp/issues/5749), Shawn): a list row opens the card below the row, flipping above it near the window's bottom, since a row spans the Directory and beside it the card ran off the window's left edge; a grid tile still opens it beside the tile.*
   There is no trailing "View details" button: a 44px button inside a 36px row sets the row's height on its own.
 - **One member profile, every door** ([#3726](https://github.com/pdcarlson/Frapp/issues/3726)).
   `MemberDetailSheet` (`components/members/member-detail-sheet.tsx`) reads a member by `users.id` (`GET /v1/members/by-user/{userId}`), so chat can open it with only a sender or mention id: since 2026-11-15 (#4593) a sender's name or photo, an `@` chip or a member-list row opens chat's profile popout first, and the sheet is its View profile ([`chat/README.md` § Mentions](../../behavior/chat/README.md#mentions), "The web profile popout").
@@ -801,10 +802,16 @@ Flushed last ([#2500](https://github.com/pdcarlson/Frapp/issues/2500)); the boar
 - **Two pages on one route, scoped like Discord's channel settings** (Paul, 2026-11-11: "scope the chat admin panel to whatever channel you're editing"; "reported messages should be at the bottom"; "don't need a list of all the channels right here").
   `?channel=<id>` is that channel's page alone: a `<h2>` naming the channel with its type as a badge and an All chat settings link back, its settings with Delete channel beside Save, its pinned messages, then the reports filed in that channel last (`GET /v1/chat/reports?channel_id=`).
   It shows no other channel, no categories and no chapter background.
-  Without a channel the page is the chapter's: Channels (New channel, and an Edit a channel picker for when the chat rail isn't beside the page), Categories, the chapter's chat background, and the whole report queue last, the only place a report about a DM appears.
+  Without a channel the page is the chapter's: Channels (New channel), Categories, the chapter's chat background, and the whole report queue last, the only place a report about a DM appears.
+  **Categories fold out to their channels** ([#5727](https://github.com/pdcarlson/Frapp/issues/5727), Shawn, 2026-11-20), the way Discord's server settings list channels under their categories and Slack's sidebar sections fold: each category row is a toggle (a chevron that turns, the name, then its access summary and channel count), closed until clicked, and opens to its channels, each row opening that channel's page.
+  The groups are the rail's sections in the rail's order: channels in no category first, under **Uncategorized** (the rail's "Channels"; this page already says "uncategorized" in the channel form and the delete warning), then the categories in the server's order, then **System** (the audit log) last, each sorted inside by the chapter's drag order and then A to Z (`groupChannelsByCategory`, `compareChannelOrder`).
+  Uncategorized and System have no row actions. A group starts closed, except Uncategorized when the chapter has no categories, since it is then the only way to a channel; once the officer opens or closes a group, that choice holds until they leave the page, through a category being created or deleted.
+  This replaced the Edit a channel picker, which reached the same pages and ran off the screen at 20 or more channels ([#5724](https://github.com/pdcarlson/Frapp/issues/5724)).
   **Reports stay out of the way** (Paul, 2026-11-11: "it doesn't need to be staring you right in the face"): on either page the queue draws nothing while it loads and, with no open report, folds to one quiet Report history link that opens the tabs;
   an open report, a failed read, or the notification's `#reported-messages` link shows it in full.
-  Neither page lists every channel: the chat rail is that list, and its right-click Edit channel opens a channel's page.
+  A channel's own page lists no other channel; the chat rail's right-click Edit channel opens it, and so does a row in the chapter page's category tree.
+  Until 2026-11-20 neither page listed every channel ("the chat rail is that list").
+  Changed in #5733 by shawnatomklein-eng, 2026-11-20: the chapter's page lists every channel inside its folded category.
   The form has no type field because the update route takes none; the create panel, where the type is chosen, says it is final.
 - **The report queue keeps two lines of its own**: under its label, that each report shows the message as it read when reported and that who reported it is never shown; and on the Open tab, that Mark reviewed and Dismiss leave the message up.
   A row can show neither, and neither button's label says the second.
@@ -849,7 +856,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   *(Changed in [#5560](https://github.com/pdcarlson/Frapp/issues/5560) by pdcarlson, 2026-11-19: it is the agenda's loudest row and the word `Required` in the events hue, above; what it means is unchanged.)*
   The toolbar is `PageActions` like every route's: the List and Calendar toggle leads as the page's primary control, a segmented control ([`components.md`](../design-system/components.md) § Segmented control;
   it was underlined tabs until #3822), and the page opens on whichever view this person last used on this browser;
-  then search and one **Filter** button, whose popover holds Time, Attendance and Cadence as segmented controls and Clear, and which shows a count while any is off its default (Time only on the list, the one view it applies to).
+  then search and one **Filter** button (`FilterMenu`, [`components.md`](../design-system/components.md) § 13 Filter bar), whose menu has a row each for Time, Attendance and Cadence and Clear all, and which shows a count while any is off its default; the filters that are on show as removable chips under the header (2026-11-20, #5739) (Time only on the list, the one view it applies to).
   New event holds the trailing edge.
   On a phone search and Filter take `order-last`, so the view toggle and New event keep the first line.
   The calendar is a radius-14 hairline frame on `--background`, not a card.
@@ -1397,9 +1404,8 @@ The **mark** is the exception, because [`../brand-identity.md`](../brand-identit
 The mirror half is `/profile`: it renders *inside* a chapter, so its s15 identity header takes the accent roles rather than the house family the board happens to draw it in.
 
 **The reference wins on visuals and not on the data model.** s02 draws a six-cell row for a shared chapter code;
-[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies single-use invite tokens that last 7 days, and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
-So `/join` takes s02's chrome — the title ladder (the back affordance went with the 2026-11-05 split frame, whose header and footer links do that job), the primary, the `--surface-1` hint card — and keeps one token field that accepts a pasted raw token or the join URL officers copy (`extractInviteToken` in `@repo/validation`).
-`apps/mobile/app/(auth)/join.tsx` had already made that call in its own docstring; both surfaces now record it, so neither can drift.
+[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies invite links instead (a personal one used once, or an officer's chapter link for a role, each lasting 7 days), and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
+So `/join` takes s02's chrome — the title ladder (the back affordance went with the 2026-11-05 split frame, whose header and footer links do that job), the primary, the `--surface-1` hint card — and not its input. Since #5625 the page leads with the invite card; its one token field, behind **Have a different invite?** or shown when there is no invite, accepts a pasted raw token or the join URL officers copy (`extractInviteToken` in `@repo/validation`). The phone has no field at all ([`../mobile/screens.md`](../mobile/screens.md)).
 
 The settings blocks this history describes on `/profile` (quiet hours, notifications, blocked members) moved to the personal Settings page on 2026-11-10 ([§ Two doors](#two-doors-chapter-settings-and-your-settings)); the rules they settled moved with them.
 

@@ -25,7 +25,11 @@ import {
 } from '#domain/entities/task.entity';
 import { reportCaughtFailure } from '../../observability/report-caught-failure';
 import { SupabaseQueryError } from '../supabase-query-error';
-import { escapeFilterValue, fetchAllPages } from '../supabase.utils';
+import {
+  escapeFilterValue,
+  fetchAllPages,
+  fetchCountedPages,
+} from '../supabase.utils';
 
 /** Task ids per subtask read: 100 uuids keep the URL near 4 KB. */
 const SUBTASK_READ_BATCH = 100;
@@ -71,30 +75,40 @@ export class SupabaseTaskRepository implements ITaskRepository {
     chapterId: string,
     query: TaskListQuery = {},
   ): Promise<Task[]> {
-    const build = () => {
-      const q = this.filtered(
-        this.supabase.from('tasks').select('*'),
-        chapterId,
-        query,
-      );
-      if (query.order === 'longest_waiting') {
-        return q
-          .order('completed_at', { ascending: true, nullsFirst: false })
-          .order('created_at', { ascending: true })
-          .order('id', { ascending: true });
-      }
-      return q
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false });
-    };
-
     // Paged even under a `limit`: only an empty page proves the rows ran out
     // (`fetchAllPages`), so a hosted row cap below `limit` still returns a full
     // page, and a caller can read a short page as the last one.
-    return fetchAllPages((from, to) => build().range(from, to), {
-      pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
-      limit: query.limit,
-    });
+    return fetchAllPages(
+      (from, to) => this.listQuery(chapterId, query, false).range(from, to),
+      {
+        pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
+        limit: query.limit,
+      },
+    );
+  }
+
+  /**
+   * The chapter's tasks that match `query`, filtered and in its order, for
+   * {@link findByChapter} and {@link findByChapterCounted}; `count` asks
+   * PostgREST for the exact number of matching rows.
+   */
+  private listQuery(chapterId: string, query: TaskListQuery, count: boolean) {
+    const q = this.filtered(
+      this.supabase
+        .from('tasks')
+        .select('*', count ? { count: 'exact' } : undefined),
+      chapterId,
+      query,
+    );
+    if (query.order === 'longest_waiting') {
+      return q
+        .order('completed_at', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
+    }
+    return q
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
   }
 
   async findSince(
@@ -116,6 +130,27 @@ export class SupabaseTaskRepository implements ITaskRepository {
           .range(from, to),
       { pageSize: 1000 },
     );
+  }
+
+  async findByChapterCounted(
+    chapterId: string,
+    query: TaskListQuery = {},
+    { withTotal = false }: { withTotal?: boolean } = {},
+  ): Promise<{ tasks: Task[]; total: number | null }> {
+    // Counted when the caller wants the total, or the read is uncapped, which
+    // the count ends without an empty page; a capped read stops at its limit
+    // anyway, and counting it is a second pass for nothing
+    // (`fetchCountedPages`).
+    const { rows, total } = await fetchCountedPages<Task>(
+      (from, to, withCount) =>
+        this.listQuery(chapterId, query, withCount).range(from, to),
+      {
+        pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
+        limit: query.limit,
+        count: withTotal || query.limit === undefined,
+      },
+    );
+    return { tasks: rows, total };
   }
 
   async countByChapter(
@@ -162,6 +197,11 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (query.confirmed === true) q = q.not('confirmed_at', 'is', null);
     if (query.confirmed === false) q = q.is('confirmed_at', null);
     if (query.completedSince) q = q.gte('completed_at', query.completedSince);
+    if (query.unconfirmedOrCompletedSince) {
+      q = q.or(
+        `confirmed_at.is.null,completed_at.gte.${escapeFilterValue(query.unconfirmedOrCompletedSince)}`,
+      );
+    }
     if (query.after) {
       // Strictly after the cursor in (created_at desc, id desc): an earlier
       // `created_at`, or the same one and a lower `id`. Spelled without a
@@ -267,6 +307,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .update({
         status: TaskStatus.IN_PROGRESS,
         completed_at: null,
+        completed_by: null,
         // A completion's link and reply go with it (#4635); its photo rows
         // are the caller's to delete.
         proof_link: null,

@@ -43,6 +43,13 @@ describe("isPermissionHidden (#4504)", () => {
     expect(isPermissionHidden("meetings:record", true)).toBe(false);
   });
 
+  it("hides the retired permissions everywhere, AI or not (#5728)", () => {
+    for (const permission of ["announcements:post", "alumni:post"]) {
+      expect(isPermissionHidden(permission, true)).toBe(true);
+      expect(isPermissionHidden(permission, false)).toBe(true);
+    }
+  });
+
   it("leaves every other switch alone, whatever is held off", () => {
     h.heldOff.add("meetings");
     expect(isPermissionHidden("events:create", false)).toBe(false);

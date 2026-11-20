@@ -79,6 +79,15 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "Manage roles",
     "Create, edit and delete roles, give roles to members, edit pledge classes, and fix the names and graduation years of members ranked below them.",
   ),
+  // Paul, 2026-11-20 (#5725): a switch a chapter turns on for its top tier,
+  // so one cabinet officer can make another Stewardship Chair. Without it,
+  // the roles and the member must both rank below you (#4071).
+  chapterPermission(
+    "roles:assign_own_level",
+    "chapter",
+    "Give roles at your own level",
+    "With Manage roles, also give and take away roles for members at your own level, and roles at your own level, not only those below it. Nobody reaches anyone ranked above them.",
+  ),
   chapterPermission(
     "chapter-config:view",
     "chapter",
@@ -359,6 +368,25 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "Change the chapter's plan and create member invoices.",
   ),
 ];
+
+/**
+ * Permissions left off the role and tier pages, web and phone (through
+ * `isPermissionHidden` in `@repo/hooks`), and off a module page's "Who can"
+ * (`modulePermissions`), where both showed as switches captioned "No longer
+ * used" (#5728). They decide no channel's posters since #3722. The Discord
+ * import's read-gate picker, fed by the API catalog, still lists them.
+ *
+ * They stay in the registry, the API catalog and stored role data until
+ * #4286 retires them, because two readers remain: the Discord importer starts
+ * a read-only channel's posters from `announcements:post` holders, and the
+ * phone's Support the Chapter button shows to `alumni:post` holders. The
+ * seeded roles carry what those read. `alumni:post` also decides who may give
+ * the Alumni role, as any role's permissions do (#5729).
+ */
+export const RETIRED_PERMISSIONS: ReadonlySet<string> = new Set([
+  "alumni:post",
+  "announcements:post",
+]);
 
 const BY_PERMISSION: ReadonlyMap<string, PermissionDefinition> = new Map(
   PERMISSION_REGISTRY.map((entry) => [entry.permission, entry]),

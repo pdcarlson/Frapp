@@ -121,6 +121,26 @@ describe("MemberPopout", () => {
     );
   });
 
+  // The Directory asks for "bottom": a row spans the page, and beside it the
+  // card ran off the window's left edge (#5749). Chat's default stays beside.
+  it("opens on the side it is asked for, beside by default", async () => {
+    const { unmount } = renderPopout();
+    await waitFor(() =>
+      expect(screen.getByTestId("member-popout")).toHaveAttribute(
+        "data-side",
+        "right",
+      ),
+    );
+    unmount();
+    renderPopout({ side: "bottom" });
+    await waitFor(() =>
+      expect(screen.getByTestId("member-popout")).toHaveAttribute(
+        "data-side",
+        "bottom",
+      ),
+    );
+  });
+
   it("hands the card's roles and groups the member, editable once read", () => {
     renderPopout();
     expect(assignmentProps.current).toMatchObject({
