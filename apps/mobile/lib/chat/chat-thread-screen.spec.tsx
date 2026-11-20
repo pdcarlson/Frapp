@@ -402,6 +402,7 @@ function channelState(
     typingUsers: [],
     emitTyping: vi.fn(),
     connection: "live",
+    unavailable: false,
     retry: vi.fn(async () => {}),
     discard: vi.fn(async () => {}),
     ...overrides,
@@ -999,6 +1000,27 @@ describe("chat thread identity gate (#2250)", () => {
     expect(skeletons(tree)).toHaveLength(0);
     act(() => byLabel(tree, "Try again").props.onPress());
     expect(channel.reload).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread whose channel can't be read any more (#5765)", () => {
+  it("says the channel is gone in place of the timeline and the composer", () => {
+    // Its reads are refused too once the list is read again, so the load
+    // error underneath must not be what the member sees.
+    channel = channelState({
+      unavailable: true,
+      loadError: new Error("Forbidden"),
+    });
+    const tree = render();
+
+    const text = screenText(tree);
+    expect(text).toContain("This channel is no longer available");
+    expect(text).toContain("It was deleted, or you can no longer see it.");
+    expect(text).not.toContain("Couldn't load messages");
+    expect(rows(tree)).toHaveLength(0);
+    expect(skeletons(tree)).toHaveLength(0);
+    expect(tree.root.findAllByType(ChatComposer)).toHaveLength(0);
     act(() => tree.unmount());
   });
 });

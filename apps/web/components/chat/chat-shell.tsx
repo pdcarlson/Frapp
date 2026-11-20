@@ -15,6 +15,10 @@ import {
   channelsRoleRefusalBody,
   isRoleRefusal,
 } from "@repo/chat-core/channels-refused-copy";
+import {
+  CHANNEL_UNAVAILABLE_BODY,
+  CHANNEL_UNAVAILABLE_TITLE,
+} from "@repo/chat-core/join-denied";
 import { MembersGlyph } from "./chat-glyphs";
 import { ChannelMemberList } from "./channel-member-list";
 import { channelDescription } from "@repo/hooks/channel-start";
@@ -177,11 +181,7 @@ import {
 import { ChannelListSkeleton } from "./channel-list-skeleton";
 import { ChatBackground, useChapterLetters } from "./chat-background";
 import { ChatDropTarget } from "./chat-drop-target";
-import {
-  CatchUpOffer,
-  useCatchUp,
-  type CatchUpScope,
-} from "./catch-up-panel";
+import { CatchUpOffer, useCatchUp, type CatchUpScope } from "./catch-up-panel";
 import {
   MessageTimeline,
   MessageTimelineSkeleton,
@@ -1058,8 +1058,29 @@ export function ChatShell({
     as on mobile, rather than never being remembered.
   */
   const lastChannelChapter = activeChapterId ?? "sole";
+  /*
+    The open channel Realtime kept refusing once it was open: deleted, or the
+    member's access went (#5765). Held against what was open when it happened
+    (the selection, the list and the chapter), so the thread says it is gone
+    instead of quietly landing on another channel when the re-read list drops
+    it, and anything that opens something else moves on from it: a channel
+    picked from the rail, the other list, a chapter switch, or a selection
+    cleared by a delete or a hidden DM. Set below, once the channel's hook
+    reports it; let go here, while rendering, once what was open changes.
+  */
+  const [lostChannel, setLostChannel] = useState<{
+    selected: string | null;
+    view: ChatView;
+    chapter: string;
+  } | null>(null);
+  const channelLost =
+    lostChannel !== null &&
+    lostChannel.selected === selectedChannelId &&
+    lostChannel.view === view &&
+    lostChannel.chapter === lastChannelChapter;
+  if (lostChannel !== null && !channelLost) setLostChannel(null);
   const activeChannelId = useMemo(() => {
-    if (requestedChannelMissing) return null;
+    if (requestedChannelMissing || channelLost) return null;
     if (selectedChannelId) {
       const selected =
         channels.find((ch) => ch.id === selectedChannelId) ??
@@ -1098,6 +1119,7 @@ export function ChatShell({
     channels,
     railChannels,
     requestedChannelMissing,
+    channelLost,
     userId,
     lastChannelChapter,
     view,
@@ -1297,6 +1319,16 @@ export function ChatShell({
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
+  // Adjusted while rendering, as React's "storing information from previous
+  // renders" does, rather than in an effect: the next render resolves no
+  // active channel, so this runs once per channel lost.
+  if (channel.unavailable && activeChannelId !== null && lostChannel === null) {
+    setLostChannel({
+      selected: selectedChannelId,
+      view,
+      chapter: lastChannelChapter,
+    });
+  }
   // Whether this server has GIF search set up (#4631); the composer's GIF
   // button waits on it.
   const gifs = useGifAvailability();
@@ -3336,6 +3368,7 @@ export function ChatShell({
     directView &&
     channelsPaneState === "ready" &&
     !requestedChannelMissing &&
+    !channelLost &&
     !selectionPending &&
     userId !== null &&
     activeChannelId === null;
@@ -3344,6 +3377,7 @@ export function ChatShell({
   const timelineReady =
     channelsPaneState === "ready" &&
     !requestedChannelMissing &&
+    !channelLost &&
     !directNoneOpen;
   const memberColumnMounted =
     !membersHidden &&
@@ -3566,9 +3600,7 @@ export function ChatShell({
           canPost={activeChannel.can_post !== false}
           onClose={closeThread}
           onCatchUp={canCatchUpHere ? startThreadCatchUp : undefined}
-          catchUpBlock={
-            catchUp.openKind === "thread" ? catchUp.element : null
-          }
+          catchUpBlock={catchUp.openKind === "thread" ? catchUp.element : null}
           jumpTo={threadJump}
           askRefusal={replyAskRefusalFor}
           // A reply scheduled into this thread (#5005): the API checks it as
@@ -4093,6 +4125,28 @@ export function ChatShell({
                   // "Browse channels" has to actually show it. Dismissing alone
                   // resolved the #general fallback and painted a timeline, which
                   // is a different channel rather than a list.
+                  setNarrowPane("channels");
+                }}
+              >
+                Browse channels
+              </InlineNoteAction>
+            </InlineNote>
+          </div>
+        ) : null}
+        {channelsPaneState === "ready" &&
+        channelLost &&
+        !requestedChannelMissing ? (
+          <div
+            className="min-h-0 flex-1 overflow-y-auto p-4"
+            data-testid="chat-channel-unavailable"
+          >
+            <InlineNote>
+              {`${CHANNEL_UNAVAILABLE_TITLE}. ${CHANNEL_UNAVAILABLE_BODY} `}
+              <InlineNoteAction
+                onClick={() => {
+                  setLostChannel(null);
+                  // As the link-target line's: below `lg` the list is its
+                  // own pane, so Browse channels has to show it.
                   setNarrowPane("channels");
                 }}
               >

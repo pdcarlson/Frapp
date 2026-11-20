@@ -1864,6 +1864,7 @@ function chatChannelResult(
     draft: string;
     setDraft: (body: string) => void;
     typingUsers: string[];
+    unavailable: boolean;
   }> = {},
 ) {
   return {
@@ -1882,6 +1883,7 @@ function chatChannelResult(
     typingUsers: overrides.typingUsers ?? [],
     emitTyping: vi.fn(),
     connection: "live",
+    unavailable: overrides.unavailable ?? false,
     retry: vi.fn(),
     discard: vi.fn(),
     dispatchSlash: vi.fn(),
@@ -2315,6 +2317,91 @@ describe("ChatShell catch me up (#3946)", () => {
         since: expect.any(String),
       }),
     );
+  });
+});
+
+describe("ChatShell when the open channel can't be read any more (#5765)", () => {
+  it("says the channel is gone in its place, and lets go of it", async () => {
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({ unavailable: channelId === "chan-general" }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-channel-unavailable")).toHaveTextContent(
+        "This channel is no longer available. It was deleted, or you can no longer see it.",
+      ),
+    );
+    // The thread's subscription is released: the shell asks for no channel.
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith(null);
+    expect(screen.queryByTestId("composer")).toBeNull();
+    // The list stays beside it to pick another from.
+    expect(screen.getByTestId("channel-list")).toBeTruthy();
+  });
+
+  it("Browse channels moves on from it", async () => {
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({ unavailable: channelId === "chan-general" }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+    const browse = await screen.findByRole("button", {
+      name: "Browse channels",
+    });
+
+    // Read again, the list let it back in.
+    mockUseChatChannel.mockImplementation(() => chatChannelResult());
+    fireEvent.click(browse);
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("chat-channel-unavailable")).toBeNull(),
+    );
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-general");
+  });
+
+  it("picking another channel from the rail moves on from it", async () => {
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({ unavailable: channelId === "chan-general" }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("chat-channel-unavailable");
+
+    fireEvent.click(screen.getByTestId("pick-random"));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("chat-channel-unavailable")).toBeNull(),
+    );
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith("chan-random");
+  });
+
+  it("switching to the other list moves on from it", async () => {
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({ unavailable: channelId === "chan-general" }),
+    );
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("chat-channel-unavailable");
+
+    rerender(<ChatShell initialChannelId="chan-general" view="direct" />);
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("chat-channel-unavailable")).toBeNull(),
+    );
+  });
+
+  it("the same channel refused again says so again", async () => {
+    mockUseChatChannel.mockImplementation((channelId: string | null) =>
+      chatChannelResult({ unavailable: channelId === "chan-general" }),
+    );
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Browse channels" }),
+    );
+
+    // Opened again, still refused: the note is back, not a dead timeline.
+    await waitFor(() =>
+      expect(mockUseChatChannel).toHaveBeenCalledWith("chan-general"),
+    );
+    expect(await screen.findByTestId("chat-channel-unavailable")).toBeTruthy();
+    expect(mockUseChatChannel).toHaveBeenLastCalledWith(null);
   });
 });
 

@@ -47,6 +47,10 @@ import {
 } from "@repo/chat-core/message-actions";
 import { setChannelLocked } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import {
+  CHANNEL_UNAVAILABLE_BODY,
+  CHANNEL_UNAVAILABLE_TITLE,
+} from "@repo/chat-core/join-denied";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import { canFlagMessage } from "@repo/chat-core/flags";
@@ -405,6 +409,7 @@ function ChannelThreadScreen() {
     typingUsers,
     emitTyping,
     connection,
+    unavailable,
     retry,
     discard,
   } = useChatChannel(channelId);
@@ -1988,6 +1993,7 @@ function ChannelThreadScreen() {
           <ScreenReady
             ready={
               !channelId ||
+              unavailable ||
               !!loadError ||
               (!viewerId && viewerQuery.isError) ||
               (!isLoading && !!viewerId)
@@ -1999,6 +2005,16 @@ function ChannelThreadScreen() {
               <Text style={styles.stateBody}>
                 Open a channel from Chat to see its messages.
               </Text>
+            </View>
+          ) : unavailable ? (
+            // Realtime refused the channel: deleted, or the member's access
+            // went (#5765). Ahead of the load error, because the channel's own
+            // reads are refused too once the list is read again. The header's
+            // Back is the way out, as on any thread; web's line carries a
+            // Browse channels link instead, having no Back.
+            <View style={styles.stateBlock} testID="chat-channel-unavailable">
+              <Text style={styles.stateTitle}>{CHANNEL_UNAVAILABLE_TITLE}</Text>
+              <Text style={styles.stateBody}>{CHANNEL_UNAVAILABLE_BODY}</Text>
             </View>
           ) : loadError ? (
             // Ahead of the identity gate, as on web (#2243): a failed read
@@ -2208,7 +2224,7 @@ function ChannelThreadScreen() {
         */}
           {/* The audit log (#3909): only Frapp posts there, so there is no
               composer at all, just the line that says so. */}
-          {postCapability.isAuditLog ? (
+          {unavailable ? null : postCapability.isAuditLog ? (
             <Text
               style={styles.auditLogNote}
               accessibilityRole="text"

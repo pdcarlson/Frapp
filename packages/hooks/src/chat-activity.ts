@@ -6,6 +6,7 @@ import { useFrappClient } from "./use-frapp-client";
 import { isChannelHeldUnread, trackActivityStamping } from "./read-cursor";
 import {
   CHANNEL_UNREAD_COUNTS_KEY,
+  invalidateChannelSet,
   invalidateChannelSummaries,
 } from "./use-chat";
 
@@ -28,7 +29,8 @@ export type ChatActivity =
       deleted: boolean;
     }
   | { type: "resync" }
-  | { type: "joined" };
+  | { type: "joined" }
+  | { type: "unavailable"; channelId: string };
 
 /**
  * How long activity is gathered before it is acted on. A burst (three quick
@@ -127,14 +129,21 @@ export interface ChatActivityHandler {
  *   until the member leaves it; it is on screen, and its rail row shows no
  *   badge while it is the active channel.
  *
+ * - An `unavailable` (Realtime refused a channel the member may no longer
+ *   read, #5765) reads the channel list again at once, with everything under
+ *   it: a deleted channel leaves the rail, and a thread whose channel is gone
+ *   closes. It is rare (one per refused channel per token), so it isn't
+ *   coalesced.
+ *
  * A round's stamps wait for every earlier round's, so a slow stamp can't be
  * overtaken by a later round's re-read that would count the message as unread.
  * The re-reads themselves aren't waited on: a slow or retrying summary read
  * must not hold back the next message's update.
  *
- * Invalidates those two keys exactly, never the `["channels"]` prefix, which
- * would also re-read the channel list, its categories and every open channel's
- * detail on every message in the chapter.
+ * Message traffic invalidates those two keys exactly, never the `["channels"]`
+ * prefix, which would also re-read the channel list, its categories and every
+ * open channel's detail on every message in the chapter. Only `unavailable`,
+ * which says the channel set itself changed, reads the prefix.
  */
 export function createChatActivityHandler(
   options: ChatActivityHandlerOptions,
@@ -246,6 +255,10 @@ export function createChatActivityHandler(
 
   const handle = (activity: ChatActivity) => {
     if (disposed) return;
+    if (activity.type === "unavailable") {
+      invalidateChannelSet(options.queryClient);
+      return;
+    }
     if (activity.type === "joined") {
       checkJoin();
       return;
