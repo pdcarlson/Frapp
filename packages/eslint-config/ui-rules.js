@@ -1,6 +1,8 @@
 /**
  * The owner's UI rulings that a syntax tree can check
- * (`.claude/skills/ui-development/rulebook.md`, marked **lint** there).
+ * (`.claude/skills/ui-development/rulebook.md`, marked **lint** there), plus
+ * build-correctness guards for UI code that are not rulings and have no
+ * rulebook line (`tailwindBareVar`).
  *
  * Each entry is a `no-restricted-syntax` selector. They are exported as arrays,
  * not as a config object, because ESLint replaces a rule's options wholesale
@@ -52,11 +54,31 @@ const BROWSER_DIALOG_MESSAGE =
   "No browser confirm/alert/prompt. Use useConfirmDialog from @/components/shared/confirm-dialog for a destructive step, and keep a form's draft instead of asking (owner rulings 2026-11-06, 2026-11-13).";
 
 /**
+ * Tailwind 3 wrapped a bare `--var` in an arbitrary value in `var()`; Tailwind
+ * 4 doesn't, so `max-h-[--x]` compiles to `max-height: --x`, which the browser
+ * drops without a word. That left every web Select with no height cap, running
+ * off the window with no scroll (#5724). v4 spells it `max-h-(--x)`, or
+ * `max-h-[var(--x)]`. Matches any `-[--` in a string, which is how such a
+ * class reads wherever it sits (a className, `cn(...)`, a constant), and the
+ * type-hinted form `bg-[color:--x]`, which fails the same way.
+ */
+const TAILWIND_BARE_VAR = "/-\\[([a-z-]+:)?--/";
+const TAILWIND_BARE_VAR_MESSAGE =
+  "Tailwind 4 doesn't wrap a bare --variable in [...] in var(), so this class compiles to nothing the browser keeps (#5724). Write it as max-h-(--x) or max-h-[var(--x)].";
+
+/**
  * Web-only rulings, by name, so an app config can grandfather one file from
  * one rule without dropping the others (`webUiSyntaxExcept`).
  */
 const webUiRules = {
   emoji,
+  tailwindBareVar: [
+    { selector: `Literal[value=${TAILWIND_BARE_VAR}]`, message: TAILWIND_BARE_VAR_MESSAGE },
+    {
+      selector: `TemplateElement[value.cooked=${TAILWIND_BARE_VAR}]`,
+      message: TAILWIND_BARE_VAR_MESSAGE,
+    },
+  ],
   // Owner, 2026-11-16 and 2026-11-19: "time picker is horrid", no native time
   // input anywhere. The year-less DateField is the 2026-11-12 ruling. `Input`
   // too: the ShadCN wrapper passes `type` straight to the browser.
@@ -126,6 +148,8 @@ export function mobileUiSyntaxExcept(except) {
 
 /**
  * Specs and tests use emoji as members' own content (a reaction, a message
- * body), so they are checked with `except: ["emoji"]`.
+ * body), and quote bare-variable classes as rendered markup or as what a
+ * guard rejects, so web checks them with `except: ["emoji",
+ * "tailwindBareVar"]` and mobile with `except: ["emoji"]`.
  */
 export const TEST_FILES = ["**/*.spec.{ts,tsx}", "**/*.test.{ts,tsx}"];

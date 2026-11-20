@@ -11,7 +11,8 @@ Shared ESLint flat configs used across the monorepo.
   in [`isomorphic.js`](./isomorphic.js).
 - `@repo/eslint-config/next-js` — Next.js + React + hooks config.
 - `@repo/eslint-config/react-internal` — React library config for shared packages.
-- `@repo/eslint-config/ui-rules` — the owner's UI rulings a syntax tree can check, as
+- `@repo/eslint-config/ui-rules` — the owner's UI rulings a syntax tree can check, plus
+  build-correctness guards for UI code (a Tailwind 4 bare-variable class), as
   `no-restricted-syntax` selectors for `apps/web` and `apps/mobile`, with per-file grandfathering.
   Why and how: the comment in [`ui-rules.js`](./ui-rules.js) and
   [`.claude/skills/ui-development/rulebook.md`](../../.claude/skills/ui-development/rulebook.md).
