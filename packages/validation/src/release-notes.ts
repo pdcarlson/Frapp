@@ -138,11 +138,17 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers who post minutes now get a quick review that turns each upcoming Coming up date into a task, with the person the minutes name filled in.",
       "A chapter can now let its top officers give and take away roles at their own level, such as one officer making another Stewardship Chair, by turning on Give roles at your own level in Roles and groups.",
       "Invite emails now lead with your chapter's name and open the invite from one button, with no long link to copy.",
+      "Role and tier settings no longer show two switches that did nothing, Post announcements and Post in the alumni channel.",
+      "The members list beside a channel now runs tier by tier, President first, with each officer's title under their name.",
+      "A finished task now says who marked it done and when at the top, with their proof under it, and its history shows it too.",
     ],
     web: [
       "Rows show more at a glance: an event says when check-in is open, a task says how it repeats and how far along its checklist and photos are, and a study session says which zone it was in.",
       "Clicking someone in the Directory opens a small card beside them instead of taking over the page.",
       "Long dropdowns, like the channel picker in chat settings, now stay inside the window and scroll, so every choice can be reached.",
+      "In Settings → Chat, click a category to see its channels, and click a channel to open its settings.",
+      "Event forms now group their settings in three framed boxes, and the day, times, points and every menu look like fields you can click.",
+      "Setting up a pledge class is quicker: the member search lists everyone as soon as you click it, and you set the order by dragging names instead of typing numbers.",
     ],
     phone: [
       "Documents now say when they take effect, and study sessions show the date and time the same way the web does.",
