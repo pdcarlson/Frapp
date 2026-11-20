@@ -54,6 +54,7 @@ export * from "./settings-search";
 export * from "./setup-checklist";
 export * from "./similar-tasks";
 export * from "./task-card";
+export * from "./task-link-choices";
 export * from "./task-review";
 export * from "./task-views";
 export * from "./unset-features";

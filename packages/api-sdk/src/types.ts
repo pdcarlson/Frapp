@@ -3561,6 +3561,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tasks/{id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post an existing task's card into a chat channel
+         * @description The chat + sheet's Task row (#5772). Any member who can read the task (its assignee, a `tasks:manage` holder, or a follower) may link it; the card is sent as them, and channel access is checked as for any message.
+         */
+        post: operations["TaskController_share_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tasks/{id}/status": {
         parameters: {
             query?: never;
@@ -9889,6 +9909,22 @@ export interface components {
             photos: components["schemas"]["TaskPhotoDto"][];
             /** @description On a task for everyone: its group, as task reads carry it (#4295 step 3). */
             group?: components["schemas"]["TaskGroupSummaryDto"];
+        };
+        ShareTaskToChatDto: {
+            /**
+             * Format: uuid
+             * @description The channel to post the card in.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Client-generated idempotency key, reconciling the optimistic placeholder.
+             */
+            client_message_id: string;
+        };
+        ShareTaskToChatResponseDto: {
+            /** @description True once the card is in the channel. The route answers 4xx instead of `false` when it could not post. */
+            card_posted: boolean;
         };
         UpdateTaskDto: {
             title?: string;
@@ -21194,6 +21230,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskPhotoUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_share_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareTaskToChatDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareTaskToChatResponseDto"];
                 };
             };
             /** @description Error */

@@ -86,6 +86,7 @@ import {
   gifToSend,
   useGifAvailability,
   useSetMessageReminder,
+  memberFallbackLabel,
 } from "@repo/hooks";
 import { sidebarThreadsByChannel } from "@repo/chat-core/threads";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
@@ -225,7 +226,6 @@ import {
   CLOSE_FORM_CONFIRM_TITLE,
 } from "@repo/chat-core/forms";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
-import { emptyFormDraft, type FormDraft } from "@repo/chat-core/form-draft";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { WelcomeCard } from "@/components/onboarding/welcome-card";
@@ -270,33 +270,27 @@ import {
   pollDraftFromArgs,
   type PollDraft,
 } from "@repo/chat-core/poll-draft";
-import {
-  emptyRolePickerDraft,
-  type RolePickerDraft,
-} from "./role-picker-draft";
-import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
 import { eventQuickDraftFrom, type EventQuickDraft } from "./event-quick-draft";
 import {
   Composer,
   EventEditorDialog,
   EventQuickForm,
-  FormBuilder,
   LogHoursForm,
   MemberDetailSheet,
   PointsAdjustmentForm,
   PollForm,
   preloadChatPanels,
   preloadComposer,
-  RolePickerForm,
-  SignupForm,
   TaskForm,
   ThreadPanel,
 } from "./deferred-panels";
+import { TaskPlusView } from "./task-link-picker";
 import { afterFirstPaint } from "@/lib/after-first-paint";
 import { usePlusDrafts } from "./use-plus-drafts";
 import {
   PLUS_MENU_COMMANDS,
   PLUS_MENU_PERMISSIONS,
+  TASK_CREATE_PERMISSIONS,
   plusMenuForms,
   type PlusMenuCommand,
   type PlusMenuForm,
@@ -1680,12 +1674,12 @@ export function ChatShell({
       };
       if (command.name === "task") {
         if (parseTaskArgs(args).ok) return null;
+        // A bare `/task` (or the card's row) opens the Task picker, which
+        // links a task any member can see (#5772); only typed details,
+        // which make a new one, need the create grant.
         if (
-          roleRefuses(
-            PLUS_MENU_PERMISSIONS.task,
-            "create tasks",
-            "creating tasks",
-          )
+          args.trim().length > 0 &&
+          roleRefuses(TASK_CREATE_PERMISSIONS, "create tasks", "creating tasks")
         ) {
           return "refused";
         }
@@ -1853,68 +1847,6 @@ export function ChatShell({
               }}
             />
           );
-        case "signup":
-          return (
-            <SignupForm
-              key={key}
-              {...kept}
-              initialDraft={
-                plusDrafts.get<SignupDraft>(channelId, "signup") ??
-                emptySignupDraft()
-              }
-              onDiscard={discard}
-              onPost={async (signup) => {
-                const result = await channel.sendSignup(channelId, signup);
-                if (result.ok && result.warning) {
-                  toast({
-                    title: "Sign-up sheet posted",
-                    description: result.warning,
-                  });
-                }
-                return result;
-              }}
-            />
-          );
-        case "roles":
-          return (
-            <RolePickerForm
-              key={key}
-              {...kept}
-              initialDraft={
-                plusDrafts.get<RolePickerDraft>(channelId, "roles") ??
-                emptyRolePickerDraft()
-              }
-              onDiscard={discard}
-              onPost={async (picker) => {
-                const result = await channel.sendRolePicker(channelId, picker);
-                if (result.ok && result.warning) {
-                  toast({
-                    title: "Role picker posted",
-                    description: result.warning,
-                  });
-                }
-                return result;
-              }}
-            />
-          );
-        case "form":
-          return (
-            <FormBuilder
-              key={key}
-              {...kept}
-              initialDraft={
-                plusDrafts.get<FormDraft>(channelId, "form") ?? emptyFormDraft()
-              }
-              onDiscard={discard}
-              onPost={async (form) => {
-                const result = await channel.sendForm(channelId, form);
-                if (result.ok && result.warning) {
-                  toast({ title: "Form posted", description: result.warning });
-                }
-                return result;
-              }}
-            />
-          );
         case "event":
           return (
             <EventQuickForm
@@ -1934,18 +1866,37 @@ export function ChatShell({
               }}
             />
           );
-        case "task":
+        case "task": {
+          const taskDraft = plusDrafts.get<TaskDraft>(channelId, "task");
           return (
-            <TaskForm
+            <TaskPlusView
               key={key}
-              {...kept}
-              initialDraft={plusDrafts.get<TaskDraft>(channelId, "task")}
-              onDiscard={discard}
-              onPost={(input) =>
-                postFromForm("task", () => channel.postTask(channelId, input))
+              startNew={taskDraft !== undefined}
+              canCreate={
+                !!permissionsPayload &&
+                canAll(
+                  [...TASK_CREATE_PERMISSIONS],
+                  permissionsPayload.permissions,
+                )
               }
+              nameOf={(id) => nameFor(id) ?? memberFallbackLabel(id)}
+              onLink={(task) => channel.linkTask(channelId, task)}
+              onDone={card.close}
+              renderForm={() => (
+                <TaskForm
+                  {...kept}
+                  initialDraft={taskDraft}
+                  onDiscard={discard}
+                  onPost={(input) =>
+                    postFromForm("task", () =>
+                      channel.postTask(channelId, input),
+                    )
+                  }
+                />
+              )}
             />
           );
+        }
         case "hours":
           return (
             <LogHoursForm
@@ -1984,6 +1935,7 @@ export function ChatShell({
       activeChannelId,
       channel,
       hoursGate,
+      nameFor,
       permissionsPayload,
       plusDrafts,
       postFromForm,

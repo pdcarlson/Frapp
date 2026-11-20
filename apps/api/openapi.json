@@ -11948,6 +11948,63 @@
         ]
       }
     },
+    "/v1/tasks/{id}/share": {
+      "post": {
+        "description": "The chat + sheet's Task row (#5772). Any member who can read the task (its assignee, a `tasks:manage` holder, or a follower) may link it; the card is sent as them, and channel access is checked as for any message.",
+        "operationId": "TaskController_share_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareTaskToChatDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareTaskToChatResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post an existing task's card into a chat channel",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/v1/tasks/{id}/status": {
       "patch": {
         "operationId": "TaskController_updateStatus_v1",
@@ -31392,6 +31449,37 @@
           "followed_by",
           "created_at",
           "photos"
+        ]
+      },
+      "ShareTaskToChatDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel to post the card in."
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated idempotency key, reconciling the optimistic placeholder."
+          }
+        },
+        "required": [
+          "channel_id",
+          "client_message_id"
+        ]
+      },
+      "ShareTaskToChatResponseDto": {
+        "type": "object",
+        "properties": {
+          "card_posted": {
+            "type": "boolean",
+            "description": "True once the card is in the channel. The route answers 4xx instead of `false` when it could not post."
+          }
+        },
+        "required": [
+          "card_posted"
         ]
       },
       "UpdateTaskDto": {
