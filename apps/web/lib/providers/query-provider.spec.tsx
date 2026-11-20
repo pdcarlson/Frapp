@@ -8,11 +8,7 @@ import {
   useMutation,
   useQuery,
 } from "@tanstack/react-query";
-import {
-  makeQueryClient,
-  QueryProvider,
-  queryRetryDelay,
-} from "./query-provider";
+import { makeQueryClient, QueryProvider } from "./query-provider";
 
 /**
  * The one behaviour this file exists to pin: **a dashboard write attempted
@@ -303,11 +299,15 @@ describe("QueryProvider — which failed queries retry", () => {
     ).toBe(7);
   });
 
-  it("waits longer between a busy server's retries", () => {
+  it("waits longer, jittered, between a busy server's retries", () => {
+    // The client's own default, not the harness's `retryDelay: 0`.
+    const retryDelay = makeQueryClient().getDefaultOptions().queries
+      ?.retryDelay as (attempt: number, error: unknown) => number;
     const busy = { statusCode: 429, message: "Rate exceeded." };
-    expect([0, 1, 2, 3, 4, 5].map((n) => queryRetryDelay(n, busy))).toEqual([
-      2000, 4000, 8000, 16000, 30000, 30000,
-    ]);
-    expect(queryRetryDelay(0, { statusCode: 500 })).toBe(1000);
+    const first = retryDelay(0, busy);
+    expect(first).toBeGreaterThanOrEqual(1000);
+    expect(first).toBeLessThanOrEqual(2000);
+    expect(retryDelay(5, busy)).toBeGreaterThanOrEqual(15_000);
+    expect(retryDelay(0, { statusCode: 500 })).toBe(1000);
   });
 });

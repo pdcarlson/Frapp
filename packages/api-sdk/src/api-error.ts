@@ -171,14 +171,14 @@ export function isRetryableFailure(error: unknown): boolean {
  * server was too busy to take the request, not refusing this member's pace.
  *
  * Cloud Run answers a plain-text `Rate exceeded.` when every copy of the
- * service is full, before the request reaches the API (seen 2026-11-20, when
- * a load test on staging turned members' reads away). {@link failureOf} keeps
- * that text as `message`. The API's own 429s carry their own sentence (the
+ * service is full, before the request reaches the API (a direct request to
+ * staging got `429 Rate exceeded.` during a load test on 2026-11-20).
+ * {@link failureOf} keeps that text as `message`. The API's own 429s carry their own sentence (the
  * throttler's `THROTTLED_MESSAGE`, the points and invite caps), so this never
  * matches them; a 429 with no text at all is left to read as the throttler's.
  * A busy refusal is shared by everyone and passes as soon as the load does,
  * so it is retried like a 5xx, and a member reads "busy", never "too many
- * requests" (`spec/ui/resilience/api-retry.md` § Reads).
+ * requests" (`spec/ui/resilience/api-retry.md` § Server busy).
  */
 export function isServerBusy(error: unknown): boolean {
   if ((statusOf(error) ?? responseStatusOf(error)) !== 429) return false;
@@ -188,9 +188,10 @@ export function isServerBusy(error: unknown): boolean {
 
 /**
  * The status a wrapped `Error` carries on `response` or `context` (chat-core's
- * `throwApiError`), where {@link statusOf} doesn't look.
+ * `throwApiError`), where {@link statusOf} doesn't look. `@repo/hooks`'
+ * `errorCopy` and `canTryAgain` read it too.
  */
-function responseStatusOf(error: unknown): number | undefined {
+export function responseStatusOf(error: unknown): number | undefined {
   const candidate = error as {
     response?: { status?: unknown };
     context?: { status?: unknown };
@@ -204,12 +205,34 @@ const EDGE_BUSY_MESSAGE = /^rate exceeded\.?$/i;
 
 /**
  * How many more attempts a read gets while the server is busy
- * ({@link isServerBusy}): with {@link busyRetryDelayMs} about a minute and a
- * half of waiting, under a loading state rather than an error.
+ * ({@link isServerBusy}): with {@link readRetryDelayMs} between about 45 s and
+ * a minute and a half of waiting, under a loading state rather than an error.
  */
 export const BUSY_READ_RETRIES = 6;
 
-/** The wait before busy retry number `attempt` (0-based): 2, 4, 8, 16, 30, 30 s. */
+/**
+ * The ceiling of the wait before busy retry number `attempt` (0-based): 2, 4,
+ * 8, 16, 30, 30 s.
+ */
 export function busyRetryDelayMs(attempt: number): number {
   return Math.min(2000 * 2 ** attempt, 30_000);
+}
+
+/**
+ * The wait before a read's next attempt, web's and mobile's alike.
+ *
+ * A busy server's 429 waits {@link busyRetryDelayMs}, jittered to between half
+ * and all of it: every client is turned away at the same moment, and retries on
+ * one fixed schedule would come back as synchronized waves onto the copies
+ * that are already full. Anything else backs off 1, 2, 4 s up to 30 s,
+ * TanStack's own default. `random` is for tests.
+ */
+export function readRetryDelayMs(
+  attempt: number,
+  error: unknown,
+  random: () => number = Math.random,
+): number {
+  if (!isServerBusy(error)) return Math.min(1000 * 2 ** attempt, 30_000);
+  const ceiling = busyRetryDelayMs(attempt);
+  return Math.round(ceiling / 2 + random() * (ceiling / 2));
 }

@@ -446,6 +446,11 @@ describe("dispatchPoints — replay refusals and resolution (#1733 review)", () 
     ],
     ["the throttler's sentence", RATE_LIMITED_COPY, RATE_LIMITED_COPY],
     ["no message", undefined, RATE_LIMITED_COPY],
+    [
+      "Cloud Run's busy text",
+      "Rate exceeded.",
+      "Frapp is busy right now. Try again in a moment.",
+    ],
   ])(
     "tells the officer when to try again after a first-attempt 429 carrying %s (#3061)",
     async (_label, message, expected) => {

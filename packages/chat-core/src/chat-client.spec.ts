@@ -2193,6 +2193,7 @@ describe("classifyChatError", () => {
       terminal: true,
       status: 403,
       message: "You don't have access to this channel.",
+      busy: false,
     });
   });
 
@@ -2207,6 +2208,7 @@ describe("classifyChatError", () => {
       terminal: true,
       status: 400,
       message: "Try again in a moment.",
+      busy: false,
     });
   });
 
@@ -2229,6 +2231,20 @@ describe("classifyChatError", () => {
       terminal: true,
       status: 404,
       message: "It may have been deleted. Refresh and try again.",
+      busy: false,
+    });
+  });
+
+  it("words Cloud Run's busy 429 as busy, still terminal", () => {
+    const wrapped = Object.assign(new Error("Rate exceeded."), {
+      response: { status: 429 },
+      context: { status: 429 },
+    });
+    expect(classifyChatError(wrapped)).toEqual({
+      terminal: true,
+      status: 429,
+      message: "Frapp is busy right now. Try again in a moment.",
+      busy: true,
     });
   });
 
@@ -2237,6 +2253,7 @@ describe("classifyChatError", () => {
       terminal: false,
       status: undefined,
       message: "Couldn't reach Frapp. Check your connection and try again.",
+      busy: false,
     });
   });
 });

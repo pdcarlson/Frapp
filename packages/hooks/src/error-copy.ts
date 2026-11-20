@@ -2,6 +2,7 @@ import {
   codeOf,
   isDefinitiveClientError,
   isServerBusy,
+  responseStatusOf,
   serverMessageOf,
   statusOf,
 } from "@repo/api-sdk";
@@ -58,7 +59,7 @@ export function errorCopy(
   const known = serverCopyOf(error);
   if (known) return known;
 
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   const message = serverMessageOf(error);
   if (status !== undefined && message) {
     if (
@@ -85,7 +86,7 @@ export function errorCopy(
  */
 export function serverCopyOf(error: unknown): string | null {
   const code = codeOf(error);
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   // A message on something with no status is a client `Error`'s, not the
   // server's, so only a code is read from it.
   const message = status === undefined ? null : serverMessageOf(error);
@@ -131,20 +132,6 @@ function isMemberSentence(message: string): boolean {
 }
 
 /**
- * The status `@repo/chat-core` hangs on the `Error` it wraps a refusal in
- * (`throwApiError`: `response.status`, or `context.status`), where
- * {@link statusOf} doesn't look.
- */
-function wrappedStatusOf(error: unknown): number | undefined {
-  const candidate = error as {
-    response?: { status?: unknown };
-    context?: { status?: unknown };
-  } | null;
-  const status = candidate?.response?.status ?? candidate?.context?.status;
-  return typeof status === "number" ? status : undefined;
-}
-
-/**
  * Whether a failure with no status is a dropped connection: `fetch`'s
  * `TypeError` (`Failed to fetch` in Chrome, `Load failed` in Safari,
  * `NetworkError…` in Firefox, `Network request failed` in React Native), or
@@ -184,7 +171,7 @@ export function canTryAgain(error: unknown): boolean {
     return false;
   }
   if (isServerBusy(error)) return true;
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   if (status !== undefined) return !isDefinitiveClientError(status);
   // No status: only a request that got no answer. A device refusal (location
   // denied, no geolocation) or a bug thrown in client code fails the same way
@@ -236,7 +223,7 @@ export const LOAD_FAILURE_SIGN_IN_COPY =
  * refreshed ({@link LOAD_FAILURE_SIGN_IN_COPY}).
  */
 export function describeLoadFailure(error: unknown): string {
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   if (status === undefined) return OFFLINE_COPY;
   if (status === 401) return LOAD_FAILURE_SIGN_IN_COPY;
   return errorCopy(error, LOAD_FAILURE_SERVER_COPY);

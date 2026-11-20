@@ -5,6 +5,7 @@ import {
   isDefinitiveClientError,
   isRetryableFailure,
   isServerBusy,
+  readRetryDelayMs,
   serverMessageOf,
   statusOf,
   throwUnlessOk,
@@ -212,5 +213,23 @@ describe("isServerBusy", () => {
     ).toBe(false);
     expect(isServerBusy({ statusCode: 503 })).toBe(false);
     expect(isServerBusy(new TypeError("Failed to fetch"))).toBe(false);
+  });
+});
+
+describe("readRetryDelayMs", () => {
+  const busy = { statusCode: 429, message: "Rate exceeded." };
+
+  it("spreads a busy server's retries between half and all of 2, 4, 8, 16, 30, 30 s", () => {
+    const ceilings = [2000, 4000, 8000, 16000, 30000, 30000];
+    ceilings.forEach((ceiling, attempt) => {
+      expect(readRetryDelayMs(attempt, busy, () => 0)).toBe(ceiling / 2);
+      expect(readRetryDelayMs(attempt, busy, () => 1)).toBe(ceiling);
+    });
+  });
+
+  it("keeps the ordinary 1, 2, 4 s backoff for anything else", () => {
+    expect([0, 1, 2].map((n) => readRetryDelayMs(n, { statusCode: 500 }))).toEqual([
+      1000, 2000, 4000,
+    ]);
   });
 });

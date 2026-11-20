@@ -4,9 +4,9 @@ import React, { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   BUSY_READ_RETRIES,
-  busyRetryDelayMs,
   isRetryableFailure,
   isServerBusy,
+  readRetryDelayMs,
 } from "@repo/api-sdk";
 import { createReportingCaches } from "@/lib/sentry/query-errors";
 
@@ -34,23 +34,16 @@ const MUTATION_RETRIES = 2;
  * no read is waiting on a retry to pick up a fresh token: the retry would
  * carry the same token and get the same 401.
  *
- * `spec/ui/resilience/api-retry.md` § Reads.
+ * A busy server's 429 (`isServerBusy`: Cloud Run's `Rate exceeded.`, sent
+ * before the API sees the request) is the exception: it passes when the load
+ * does, so it gets `BUSY_READ_RETRIES` under the read's loading state.
+ *
+ * `spec/ui/resilience/api-retry.md` § Reads, § Server busy.
  */
-function retryQuery(failureCount: number, error: unknown): boolean {
+export function retryQuery(failureCount: number, error: unknown): boolean {
   if (isServerBusy(error)) return failureCount < BUSY_READ_RETRIES;
   if (failureCount >= QUERY_RETRIES) return false;
   return isRetryableFailure(error);
-}
-
-/**
- * The wait before a query's next attempt. A busy server's 429
- * (`isServerBusy`) waits longer and keeps trying for about a minute and a half
- * (`BUSY_READ_RETRIES`), so a short overload shows as loading, not as a
- * "Couldn't load" state; anything else backs off 2, 4, 8 s up to 30 s.
- */
-export function queryRetryDelay(attempt: number, error: unknown): number {
-  if (isServerBusy(error)) return busyRetryDelayMs(attempt);
-  return Math.min(1000 * 2 ** attempt, 30_000);
 }
 
 /**
@@ -80,7 +73,8 @@ export function makeQueryClient() {
         staleTime: 30_000,
         gcTime: 10 * 60_000,
         retry: retryQuery,
-        retryDelay: queryRetryDelay,
+        // A busy server's 429 waits longer, jittered (`readRetryDelayMs`).
+        retryDelay: (attempt, error) => readRetryDelayMs(attempt, error),
         refetchOnWindowFocus: true,
         refetchOnReconnect: "always",
       },

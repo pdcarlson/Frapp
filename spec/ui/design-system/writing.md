@@ -87,7 +87,7 @@ a toast with no server message says `Try again in a moment.` Where a screen has 
 shared with the API and mobile since 2026-11-10, #4069).
 
 **Failed writes offer Try again when asking again can fix it (2026-11-13).**
-A write that fails says what failed (the title, `Couldn't start study session`) and why (the shared map's line), and adds a **Try again** action only when sending the same write again may go through: no response, a 5xx, or a proxy timeout (`canTryAgain` in `@repo/hooks/error-copy`, the API retry policy's predicate).
+A write that fails says what failed (the title, `Couldn't start study session`) and why (the shared map's line), and adds a **Try again** action only when sending the same write again may go through: no response, a 5xx, a proxy timeout, or a busy server's 429 (`canTryAgain` in `@repo/hooks/error-copy`, the API retry policy's predicate).
 A refusal the API decided (a 4xx: outside the study zone, check-in not open, not allowed, too many requests) shows its reason and no button, because pressing it would be refused again.
 Web shows it as a destructive toast with a `Try again` action (`toastFailure`, `apps/web/lib/failure-toast.tsx`); mobile as a system alert with `Not now` and `Try again` (`alertFailure`, `apps/mobile/lib/failure-alert.ts`), as Messages and Mail offer a failed send.
 Try again repeats the write itself, never a confirm the member already answered.
