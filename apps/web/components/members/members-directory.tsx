@@ -250,6 +250,11 @@ export function MembersDirectory() {
   const [popoutAnchor, setPopoutAnchor] = useState<MemberPopoutAnchor | null>(
     null,
   );
+  // A list row spans the Directory's width, so a card beside it has no room
+  // on either side and lands off the window's left edge (#5749); it opens
+  // below the row, as GitHub's and Linear's hover cards open under a name. A
+  // grid tile is narrow, so its card opens beside it.
+  const [popoutSide, setPopoutSide] = useState<"right" | "bottom">("bottom");
 
   const chapterWords = useChapterVocabulary();
   const trimmedQuery = query.trim();
@@ -745,10 +750,15 @@ export function MembersDirectory() {
    * the Directory). Their roles and groups are set on the card; View profile
    * opens the full record in the Directory's place.
    */
-  function openMember(member: MemberProfile, opener: HTMLElement) {
+  function openMember(
+    member: MemberProfile,
+    opener: HTMLElement,
+    side: "right" | "bottom" = "bottom",
+  ) {
     setActiveMemberId(memberId(member));
     setActiveUserId(typeof member.user_id === "string" ? member.user_id : null);
     setPopoutAnchor(anchorFor(opener));
+    setPopoutSide(side);
     setPopoutOpen(true);
   }
 
@@ -1180,7 +1190,7 @@ export function MembersDirectory() {
               factsOf={factsOf}
               selectedIds={selectedMemberIds}
               onToggle={toggleMember}
-              onOpen={openMember}
+              onOpen={(member, opener) => openMember(member, opener, "right")}
               avatarTintFor={avatarTintFor}
             />
           ) : (
@@ -1401,6 +1411,7 @@ export function MembersDirectory() {
       <MemberPopout
         userId={activeUserId}
         anchor={popoutAnchor}
+        side={popoutSide}
         open={popoutOpen}
         onOpenChange={setPopoutOpen}
         identity={

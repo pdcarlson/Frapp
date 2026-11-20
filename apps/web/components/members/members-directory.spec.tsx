@@ -188,14 +188,20 @@ vi.mock("@/components/chat/member-popout", () => ({
     userId,
     identity,
     onViewProfile,
+    side,
   }: {
     open: boolean;
     userId: string | null;
     identity: { name: string | null } | null;
     onViewProfile: (userId: string) => void;
+    side?: string;
   }) =>
     open && userId ? (
-      <div data-testid="member-card" data-user-id={userId}>
+      <div
+        data-testid="member-card"
+        data-user-id={userId}
+        data-side={side ?? "right"}
+      >
         {identity?.name}
         <button type="button" onClick={() => onViewProfile(userId)}>
           View profile
@@ -314,6 +320,12 @@ describe("Directory on the greenfield shell", () => {
     // Directory (Paul, 2026-11-19); View profile opens the full record.
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
     expect(screen.getByTestId("member-card")).toHaveTextContent("Ada Lovelace");
+    // A row is as wide as the Directory, so its card opens below it; beside
+    // it there is no room and the card ran off the window's left edge (#5749).
+    expect(screen.getByTestId("member-card")).toHaveAttribute(
+      "data-side",
+      "bottom",
+    );
     expect(screen.queryByTestId("detail-sheet")).toBeNull();
     await user.click(screen.getByRole("button", { name: "View profile" }));
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
@@ -877,6 +889,11 @@ describe("Directory as a grid (#4175)", () => {
     expect(screen.getByTestId("member-card")).toHaveAttribute(
       "data-user-id",
       "u-1",
+    );
+    // A tile is narrow, so its card opens beside it (#5749).
+    expect(screen.getByTestId("member-card")).toHaveAttribute(
+      "data-side",
+      "right",
     );
     await user.click(screen.getByRole("button", { name: "View profile" }));
     expect(screen.getByTestId("detail-sheet")).toHaveAttribute(
