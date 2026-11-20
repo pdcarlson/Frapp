@@ -6,6 +6,7 @@ import {
   EVENT_DESCRIPTION_MAX_LENGTH,
   OFFLINE_COPY,
   REQUEST_VALIDATION_FAILED_CODE,
+  SERVER_BUSY_COPY,
   SERVER_MESSAGE_COPY,
   STATUS_ERROR_COPY,
   tooLongRefusal,
@@ -306,6 +307,25 @@ describe("errorCopy", () => {
       expect(line).toMatch(/^[A-Z].*\.$/);
       expect(line).not.toMatch(/[A-Z]{3,}|_/);
     }
+  });
+});
+
+describe("a busy server's 429", () => {
+  const busy = { statusCode: 429, message: "Rate exceeded." };
+
+  it("reads busy, never too many requests, on a load and an action", () => {
+    expect(describeLoadFailure(busy)).toBe(SERVER_BUSY_COPY);
+    expect(errorCopy(busy, FALLBACK)).toBe(SERVER_BUSY_COPY);
+  });
+
+  it("offers Try again, because the same call will pass once the load does", () => {
+    expect(canTryAgain(busy)).toBe(true);
+  });
+
+  it("leaves the throttler's own 429 as it was", () => {
+    const throttled = nest(429, STATUS_ERROR_COPY[429]!);
+    expect(describeLoadFailure(throttled)).toBe(STATUS_ERROR_COPY[429]);
+    expect(canTryAgain(throttled)).toBe(false);
   });
 });
 

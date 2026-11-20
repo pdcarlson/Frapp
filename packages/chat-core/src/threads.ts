@@ -17,7 +17,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { randomClientId } from "@repo/api-sdk";
+import { randomClientId, statusOf } from "@repo/api-sdk";
 import type { MentionPick } from "@repo/validation";
 import { firstName } from "./channel-preview";
 import { replyPreviewText } from "./reply-preview";
@@ -143,7 +143,12 @@ function apiError(error: unknown, fallback: string): Error {
     error && typeof error === "object" && "message" in error
       ? String((error as { message: unknown }).message)
       : fallback;
-  return Object.assign(new Error(message), { cause: error });
+  // The status rides along where `classifyChatError` reads it, so a 429 or a
+  // busy server's 429 is worded as one.
+  return Object.assign(new Error(message), {
+    cause: error,
+    statusCode: statusOf(error),
+  });
 }
 
 export async function fetchThread(
@@ -376,7 +381,9 @@ export async function sendThreadReply(
   } catch (err) {
     const classified = classifyChatError(err);
     const reason =
-      classified.status === 429 ? RATE_LIMITED_COPY : classified.message;
+      classified.status === 429 && !classified.busy
+        ? RATE_LIMITED_COPY
+        : classified.message;
     queryClient.setQueryData<ChannelCache>(key, (prev) =>
       markFailed(prev ?? emptyCache(), clientId, reason),
     );

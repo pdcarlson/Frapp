@@ -1,12 +1,15 @@
 import {
   codeOf,
   isDefinitiveClientError,
+  isServerBusy,
+  responseStatusOf,
   serverMessageOf,
   statusOf,
 } from "@repo/api-sdk";
 import {
   OFFLINE_COPY,
   refusalCopy,
+  SERVER_BUSY_COPY,
   STATUS_ERROR_COPY,
   TRY_AGAIN,
 } from "@repo/validation";
@@ -51,10 +54,12 @@ export function errorCopy(
     return error.status === 413 ? STATUS_ERROR_COPY[413]! : error.message;
   }
 
+  if (isServerBusy(error)) return SERVER_BUSY_COPY;
+
   const known = serverCopyOf(error);
   if (known) return known;
 
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   const message = serverMessageOf(error);
   if (status !== undefined && message) {
     if (
@@ -81,7 +86,7 @@ export function errorCopy(
  */
 export function serverCopyOf(error: unknown): string | null {
   const code = codeOf(error);
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   // A message on something with no status is a client `Error`'s, not the
   // server's, so only a code is read from it.
   const message = status === undefined ? null : serverMessageOf(error);
@@ -127,20 +132,6 @@ function isMemberSentence(message: string): boolean {
 }
 
 /**
- * The status `@repo/chat-core` hangs on the `Error` it wraps a refusal in
- * (`throwApiError`: `response.status`, or `context.status`), where
- * {@link statusOf} doesn't look.
- */
-function wrappedStatusOf(error: unknown): number | undefined {
-  const candidate = error as {
-    response?: { status?: unknown };
-    context?: { status?: unknown };
-  } | null;
-  const status = candidate?.response?.status ?? candidate?.context?.status;
-  return typeof status === "number" ? status : undefined;
-}
-
-/**
  * Whether a failure with no status is a dropped connection: `fetch`'s
  * `TypeError` (`Failed to fetch` in Chrome, `Load failed` in Safari,
  * `NetworkError…` in Firefox, `Network request failed` in React Native), or
@@ -164,7 +155,8 @@ export { TRY_AGAIN };
  * reads it), a 5xx, and an intermediary's 408, 460 or 499; false for any
  * other statusless failure (location denied, a client bug, an abort), for a
  * refusal the API decided (any other 4xx, the throttler's 429 included), which
- * would only be refused again, and for an error the client wrote for members. It is the API retry policy's one predicate
+ * would only be refused again (a busy server's 429 is not one: `isServerBusy`),
+ * and for an error the client wrote for members. It is the API retry policy's one predicate
  * (`isDefinitiveClientError`, `spec/ui/resilience/api-retry.md`), read through
  * chat-core's wrapped status too.
  *
@@ -178,7 +170,8 @@ export function canTryAgain(error: unknown): boolean {
   ) {
     return false;
   }
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  if (isServerBusy(error)) return true;
+  const status = statusOf(error) ?? responseStatusOf(error);
   if (status !== undefined) return !isDefinitiveClientError(status);
   // No status: only a request that got no answer. A device refusal (location
   // denied, no geolocation) or a bug thrown in client code fails the same way
@@ -230,7 +223,7 @@ export const LOAD_FAILURE_SIGN_IN_COPY =
  * refreshed ({@link LOAD_FAILURE_SIGN_IN_COPY}).
  */
 export function describeLoadFailure(error: unknown): string {
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   if (status === undefined) return OFFLINE_COPY;
   if (status === 401) return LOAD_FAILURE_SIGN_IN_COPY;
   return errorCopy(error, LOAD_FAILURE_SERVER_COPY);

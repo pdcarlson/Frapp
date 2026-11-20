@@ -21,6 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import {
   isDefinitiveClientError,
+  isServerBusy,
   randomClientId,
   serverMessageOf,
   statusOf,
@@ -78,6 +79,7 @@ import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import {
   OFFLINE_COPY,
   refusalCopy,
+  SERVER_BUSY_COPY,
   STATUS_ERROR_COPY,
   TRY_AGAIN,
   type AnalyticsProperties,
@@ -250,6 +252,9 @@ function chatRefusalCopy(
  * `client_message_id` once the minute is up. `sendMessage` titles that toast
  * `Message not sent` rather than `Message rejected` and reads it as
  * `RATE_LIMITED_COPY`, because the server refused the pace, not the message.
+ * A busy server's 429 (`isServerBusy`, sent before the API saw the request) is
+ * terminal the same way but reads `SERVER_BUSY_COPY` in `message`, for every
+ * caller (`spec/ui/resilience/api-retry.md` § Server busy).
  * A flush that outruns the bucket fails each row past it the same way, each
  * with its own Retry. Stopping the flush at the first 429 would leave those
  * rows pending with nothing to resend them, which is the case this avoids.
@@ -269,8 +274,10 @@ export function classifyChatError(error: unknown): {
   terminal: boolean;
   status?: number;
   message: string;
+  /** A busy server's 429 (`isServerBusy`); `message` then says so. */
+  busy: boolean;
 } {
-  if (!error) return { terminal: false, message: "Unknown error" };
+  if (!error) return { terminal: false, message: "Unknown error", busy: false };
   const e = error as FunctionsErrorWithStatus;
   let status: number | undefined = statusOf(error);
   if (
@@ -289,10 +296,14 @@ export function classifyChatError(error: unknown): {
       status = (resp as { status?: number }).status;
     }
   }
-  const message = chatRefusalCopy(serverReasonOf(error), status);
+  const reason = serverReasonOf(error);
+  // A busy server's 429 (Cloud Run's `Rate exceeded.` when every copy of the
+  // API is full) is nobody's pace: it reads as busy on every chat write.
+  const busy = status === 429 && isServerBusy({ statusCode: 429, message: reason });
+  const message = busy ? SERVER_BUSY_COPY : chatRefusalCopy(reason, status);
   const terminal =
     typeof status === "number" && isDefinitiveClientError(status);
-  return { terminal, status, message };
+  return { terminal, status, message, busy };
 }
 
 /**
@@ -311,10 +322,10 @@ export const RATE_LIMITED_COPY =
  * the web composer and mobile's photo upload both read their upload-URL mint
  * through this, so one response can't read two ways (#2199). It is
  * `classifyChatError`'s terminal split with one exception: a 429 reads as
- * `RATE_LIMITED_COPY`, whatever its body says. Its remedy is waiting a full
- * minute (the throttler blocks a key for its whole 60s window), which a
- * caller's "in a moment" retry sentence understates, and an intermediary's 429
- * carries its own text. It is also `null` for a refusal with no message, so
+ * `RATE_LIMITED_COPY`, whatever else its body says, except a busy server's
+ * (`isServerBusy`), which reads `SERVER_BUSY_COPY`. The throttler's remedy is
+ * waiting a full minute (it blocks a key for its whole 60s window), which a
+ * caller's "in a moment" retry sentence understates. It is also `null` for a refusal with no message, so
  * the caller's sentence stands in for an empty line.
  *
  * Reads API bodies only. A thrown `Error` is `null` here, because what one
@@ -324,7 +335,9 @@ export const RATE_LIMITED_COPY =
 export function definitiveRefusalMessage(error: unknown): string | null {
   if (error instanceof Error) return null;
   const { terminal, status } = classifyChatError(error);
-  if (status === 429) return RATE_LIMITED_COPY;
+  if (status === 429) {
+    return isServerBusy(error) ? SERVER_BUSY_COPY : RATE_LIMITED_COPY;
+  }
   if (!terminal) return null;
   const reason = serverReasonOf(error);
   return reason === null ? null : chatRefusalCopy(reason, status);
@@ -598,10 +611,12 @@ export async function sendMessage(
   } catch (err) {
     const classified = classifyChatError(err);
     const { terminal, status } = classified;
-    // Any 429 reads as the one-minute sentence: an intermediary's carries its
-    // own text, and the row's Retry is the remedy either way.
+    // A 429 reads as the one-minute sentence, unless it is a busy server's,
+    // which `classifyChatError` words as busy. The row's Retry is the remedy
+    // either way.
     const throttled = status === 429;
-    const message = throttled ? RATE_LIMITED_COPY : classified.message;
+    const message =
+      throttled && !classified.busy ? RATE_LIMITED_COPY : classified.message;
     if (terminal) {
       patchCache(ctx.queryClient, args.channelId, (cache) =>
         markFailed(cache, clientId, message),

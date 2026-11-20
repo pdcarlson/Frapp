@@ -295,6 +295,36 @@ describe("sendThreadReply (#3785)", () => {
     expect(row?._status).toBe("failed");
     expect(row?.thread_root_id).toBe(ROOT);
   });
+
+  test.each([
+    [
+      "the throttler's 429",
+      "Too many requests in a short time. Wait a minute, then try again.",
+      "Too many requests in a short time. Wait a minute, then try again.",
+    ],
+    [
+      "a busy server's 429",
+      "Rate exceeded.",
+      "Frapp is busy right now. Try again in a moment.",
+    ],
+  ])("words %s as the send path does", async (_label, message, expected) => {
+    const queryClient = new QueryClient();
+    const api = {
+      POST: vi.fn(async () => ({
+        data: undefined,
+        error: { statusCode: 429, message },
+        response: { status: 429 },
+      })),
+    } as unknown as FrappApiClient;
+    const result = await sendThreadReply(queryClient, api, {
+      channelId: CH,
+      rootId: ROOT,
+      senderId: "me",
+      content: "hello",
+      clientMessageId: "client-1",
+    });
+    expect(result.error).toBe(expected);
+  });
 });
 
 describe("a GIF as a thread reply (#4657)", () => {

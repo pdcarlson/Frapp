@@ -149,8 +149,8 @@ export function isDefinitiveClientError(status: number): boolean {
  * definitive client refusal. A 5xx, an intermediary's 4xx
  * ({@link isDefinitiveClientError}'s carve-out) and a failure with no status
  * at all (a dropped connection, a timeout) may have reached the origin, or may
- * pass next time; a definitive 4xx, the throttler's 429 included, will be
- * refused again.
+ * pass next time, and so may a busy server's 429 ({@link isServerBusy}); a
+ * definitive 4xx, the throttler's 429 included, will be refused again.
  *
  * It is the web client's default mutation retry (`query-provider.tsx`) and the
  * gate on `useAdjustPoints`' retries, so "never retry a client error"
@@ -159,5 +159,80 @@ export function isDefinitiveClientError(status: number): boolean {
  */
 export function isRetryableFailure(error: unknown): boolean {
   const status = statusOf(error);
-  return status === undefined || !isDefinitiveClientError(status);
+  return (
+    status === undefined ||
+    !isDefinitiveClientError(status) ||
+    isServerBusy(error)
+  );
+}
+
+/**
+ * Whether a 429 came from in front of the API rather than from it: the
+ * server was too busy to take the request, not refusing this member's pace.
+ *
+ * Cloud Run answers a plain-text `Rate exceeded.` when every copy of the
+ * service is full, before the request reaches the API (a direct request to
+ * staging got `429 Rate exceeded.` during a load test on 2026-11-20).
+ * {@link failureOf} keeps that text as `message`. The API's own 429s carry their own sentence (the
+ * throttler's `THROTTLED_MESSAGE`, the points and invite caps), so this never
+ * matches them; a 429 with no text at all is left to read as the throttler's.
+ * A busy refusal is shared by everyone and passes as soon as the load does,
+ * so it is retried like a 5xx, and a member reads "busy", never "too many
+ * requests" (`spec/ui/resilience/api-retry.md` § Server busy).
+ */
+export function isServerBusy(error: unknown): boolean {
+  if ((statusOf(error) ?? responseStatusOf(error)) !== 429) return false;
+  const message = serverMessageOf(error);
+  return message !== null && EDGE_BUSY_MESSAGE.test(message.trim());
+}
+
+/**
+ * The status a wrapped `Error` carries on `response` or `context` (chat-core's
+ * `throwApiError`), where {@link statusOf} doesn't look. `@repo/hooks`'
+ * `errorCopy` and `canTryAgain` read it too.
+ */
+export function responseStatusOf(error: unknown): number | undefined {
+  const candidate = error as {
+    response?: { status?: unknown };
+    context?: { status?: unknown };
+  } | null;
+  const status = candidate?.response?.status ?? candidate?.context?.status;
+  return typeof status === "number" ? status : undefined;
+}
+
+/** Cloud Run's text for a request no copy of the service could take. */
+const EDGE_BUSY_MESSAGE = /^rate exceeded\.?$/i;
+
+/**
+ * How many more attempts a read gets while the server is busy
+ * ({@link isServerBusy}): with {@link readRetryDelayMs} between about 45 s and
+ * a minute and a half of waiting, under a loading state rather than an error.
+ */
+export const BUSY_READ_RETRIES = 6;
+
+/**
+ * The ceiling of the wait before busy retry number `attempt` (0-based): 2, 4,
+ * 8, 16, 30, 30 s.
+ */
+export function busyRetryDelayMs(attempt: number): number {
+  return Math.min(2000 * 2 ** attempt, 30_000);
+}
+
+/**
+ * The wait before a read's next attempt, web's and mobile's alike.
+ *
+ * A busy server's 429 waits {@link busyRetryDelayMs}, jittered to between half
+ * and all of it: every client is turned away at the same moment, and retries on
+ * one fixed schedule would come back as synchronized waves onto the copies
+ * that are already full. Anything else backs off 1, 2, 4 s up to 30 s,
+ * TanStack's own default. `random` is for tests.
+ */
+export function readRetryDelayMs(
+  attempt: number,
+  error: unknown,
+  random: () => number = Math.random,
+): number {
+  if (!isServerBusy(error)) return Math.min(1000 * 2 ** attempt, 30_000);
+  const ceiling = busyRetryDelayMs(attempt);
+  return Math.round(ceiling / 2 + random() * (ceiling / 2));
 }

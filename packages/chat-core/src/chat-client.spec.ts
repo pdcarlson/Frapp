@@ -37,6 +37,7 @@ import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import {
   assertContentFreeProperties,
   moduleDisabledMessage,
+  SERVER_BUSY_COPY,
 } from "@repo/validation";
 import { memberFacingRefusal, POLLS_OFF_COPY } from "./polls";
 import {
@@ -2192,6 +2193,7 @@ describe("classifyChatError", () => {
       terminal: true,
       status: 403,
       message: "You don't have access to this channel.",
+      busy: false,
     });
   });
 
@@ -2206,6 +2208,7 @@ describe("classifyChatError", () => {
       terminal: true,
       status: 400,
       message: "Try again in a moment.",
+      busy: false,
     });
   });
 
@@ -2228,6 +2231,20 @@ describe("classifyChatError", () => {
       terminal: true,
       status: 404,
       message: "It may have been deleted. Refresh and try again.",
+      busy: false,
+    });
+  });
+
+  it("words Cloud Run's busy 429 as busy, still terminal", () => {
+    const wrapped = Object.assign(new Error("Rate exceeded."), {
+      response: { status: 429 },
+      context: { status: 429 },
+    });
+    expect(classifyChatError(wrapped)).toEqual({
+      terminal: true,
+      status: 429,
+      message: "Frapp is busy right now. Try again in a moment.",
+      busy: true,
     });
   });
 
@@ -2236,6 +2253,7 @@ describe("classifyChatError", () => {
       terminal: false,
       status: undefined,
       message: "Couldn't reach Frapp. Check your connection and try again.",
+      busy: false,
     });
   });
 });
@@ -2264,6 +2282,12 @@ describe("definitiveRefusalMessage", () => {
       );
     },
   );
+
+  it("reads Cloud Run's full-service 429 as busy, not as the member's pace", () => {
+    expect(
+      definitiveRefusalMessage({ statusCode: 429, message: "Rate exceeded." }),
+    ).toBe(SERVER_BUSY_COPY);
+  });
 
   it.each([
     ["a 5xx", { statusCode: 500, message: "Internal server error" }],

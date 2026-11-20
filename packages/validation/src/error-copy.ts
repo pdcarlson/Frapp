@@ -24,6 +24,13 @@ export const TRY_AGAIN = "Try again in a moment.";
 /** A member's name sent blank, on their own profile or an officer's fix. */
 export const BLANK_NAME_REFUSAL = "Enter a name.";
 
+/**
+ * A 429 sent from in front of the API because every copy of it was full
+ * (`isServerBusy` in `@repo/api-sdk`): nothing the member did, and it passes
+ * when the load does. writing.md § Rate limited (global).
+ */
+export const SERVER_BUSY_COPY = "Frapp is busy right now. Try again in a moment.";
+
 export const OFFLINE_COPY =
   "Couldn't reach Frapp. Check your connection and try again.";
 const MODULE_OFF =

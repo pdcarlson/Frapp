@@ -10,7 +10,7 @@
  * fault is `{ ok: true, warning }` (#1718) — not an escaped rejection.
  */
 
-import type { TaskProofKind } from "@repo/validation";
+import { SERVER_BUSY_COPY, type TaskProofKind } from "@repo/validation";
 import {
   parseAnnounceArgs,
   parseEventArgs,
@@ -37,6 +37,7 @@ import {
 } from "./chat-client";
 import {
   isDefinitiveClientError,
+  isServerBusy,
   randomClientId,
   serverMessageOf,
 } from "@repo/api-sdk";
@@ -569,7 +570,11 @@ async function submitPointsAdjustment(
         ok: false,
         error:
           status === 429
-            ? `${REFUSED_ERROR} ${serverMessageOf(refusal) ?? RATE_LIMITED_COPY}`
+            ? `${REFUSED_ERROR} ${
+                isServerBusy({ statusCode: 429, message: serverMessageOf(refusal) })
+                  ? SERVER_BUSY_COPY
+                  : (serverMessageOf(refusal) ?? RATE_LIMITED_COPY)
+              }`
             : REFUSED_ERROR,
       };
     }
