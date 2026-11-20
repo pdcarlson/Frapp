@@ -42,10 +42,20 @@ describe("roleColorOrNull", () => {
 
 describe("topRoleColor", () => {
   const roles = [
-    { id: "president", color: roleColor("orange"), display_order: 1 },
-    { id: "treasurer", color: roleColor("green"), display_order: 2 },
-    { id: "member", color: null, display_order: 5 },
-    { id: "legacy", color: "#FFD700", display_order: 0 },
+    {
+      id: "president",
+      name: "president",
+      color: roleColor("orange"),
+      display_order: 1,
+    },
+    {
+      id: "treasurer",
+      name: "treasurer",
+      color: roleColor("green"),
+      display_order: 2,
+    },
+    { id: "member", name: "member", color: null, display_order: 5 },
+    { id: "legacy", name: "legacy", color: "#FFD700", display_order: 0 },
   ];
 
   it("picks the lowest display_order role that has a palette color", () => {
@@ -65,10 +75,31 @@ describe("topRoleColor", () => {
     expect(topRoleColor(roles, ["gone"])).toBeNull();
   });
 
+  it("ranks by tier before display_order, so an untiered role at 0 never wins", () => {
+    const tiered = [
+      {
+        id: "pres",
+        name: "President",
+        color: roleColor("orange"),
+        display_order: 1,
+        tier_id: "cabinet",
+      },
+      {
+        id: "floor",
+        name: "First Floor",
+        color: roleColor("sky"),
+        display_order: 0,
+        tier_id: null,
+      },
+    ];
+    const positions = new Map([["cabinet", 1]]);
+    expect(topRoleColor(tiered, ["floor", "pres"], positions)).toBe("#F2994A");
+  });
+
   it("breaks display_order ties by role id, not row order", () => {
     const tied = [
-      { id: "b", color: roleColor("sky"), display_order: 3 },
-      { id: "a", color: roleColor("rose"), display_order: 3 },
+      { id: "b", name: "Same", color: roleColor("sky"), display_order: 3 },
+      { id: "a", name: "Same", color: roleColor("rose"), display_order: 3 },
     ];
     expect(topRoleColor(tied, ["a", "b"])).toBe("#F47FA4");
     expect(topRoleColor([...tied].reverse(), ["a", "b"])).toBe("#F47FA4");

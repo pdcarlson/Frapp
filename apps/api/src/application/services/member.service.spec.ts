@@ -14,6 +14,7 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
@@ -162,6 +163,10 @@ describe('MemberService', () => {
         { provide: MEMBER_REPOSITORY, useValue: mockRepo },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        {
+          provide: ROLE_TIER_REPOSITORY,
+          useValue: { findByChapter: jest.fn().mockResolvedValue([]) },
+        },
         { provide: CustomFieldService, useValue: mockCustomFieldService },
         { provide: RbacService, useValue: mockRbacService },
         { provide: ChapterAuditLogService, useValue: mockAuditLogService },

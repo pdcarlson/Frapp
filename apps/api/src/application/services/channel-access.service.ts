@@ -142,15 +142,31 @@ function canReadAs(
 /** One reader of a channel, from {@link ChannelAccessService.listChannelMembers}. */
 export interface ChannelMemberEntry {
   user_id: string;
-  /** The member's highest role's `display_order` (lower ranks higher); `null` when they hold none. */
+  /**
+   * Where the member's highest-ranked role sits in the chapter's roles in
+   * rank order (tier, then the role's order in its tier), 0 for the top;
+   * lower ranks higher, `null` when they hold none.
+   */
   role_rank: number | null;
   /** That role's id, the key the list groups readers under; `null` with `role_rank`. */
   role_id: string | null;
   /**
    * The group's heading: that role's name, or "Members" for the Everyone
-   * role (#4191); `null` with `role_rank`.
+   * role (#4191); `null` with `role_rank`. Kept for app builds that group
+   * by role; current builds group by tier.
    */
   role_name: string | null;
+  /**
+   * The member's title: their highest-ranked role's name, or `null` for the
+   * Everyone role (no title) or no role.
+   */
+  title: string | null;
+  /** The highest tier any of their roles is in, the group the list files them under; `null` for none. */
+  tier_id: string | null;
+  /** That tier's name, the group's heading; `null` with `tier_id`. */
+  tier_name: string | null;
+  /** That tier's position (1 is the top tier); `null` with `tier_id`. */
+  tier_rank: number | null;
 }
 
 /**
@@ -367,7 +383,7 @@ export class ChannelAccessService {
     );
     return (await this.channelReaders(channel, chapterId)).map((member) => ({
       user_id: member.user_id,
-      role_rank: member.top_role_order,
+      role_rank: member.top_role_rank,
       role_id: member.top_role?.id ?? null,
       // Everyone (#4191) is offered by no list, so its holders read as the
       // rest of the chapter rather than as a role called Everyone.
@@ -376,6 +392,13 @@ export class ChannelAccessService {
           ? EVERYONE_MEMBER_LIST_HEADING
           : member.top_role.name
         : null,
+      title:
+        member.top_role && !member.top_role.everyone
+          ? member.top_role.name
+          : null,
+      tier_id: member.top_tier?.id ?? null,
+      tier_name: member.top_tier?.name ?? null,
+      tier_rank: member.top_tier?.position ?? null,
     }));
   }
 

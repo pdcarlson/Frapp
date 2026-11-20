@@ -2249,7 +2249,8 @@ describe('RbacService', () => {
           user_id: 'user-officer',
           permissions: new Set([SystemPermissions.CHANNELS_MANAGE]),
           role_ids: ['role-member', 'role-officer'],
-          top_role_order: 2,
+          top_role_rank: 1,
+          top_tier: null,
           top_role: { id: 'role-officer', name: 'role-role-officer' },
           channel_access: {
             entries: new Set(['role:role-member', 'role:role-officer']),
@@ -2261,11 +2262,62 @@ describe('RbacService', () => {
           user_id: 'user-none',
           permissions: new Set(),
           role_ids: [],
-          top_role_order: null,
+          top_role_rank: null,
+          top_tier: null,
           top_role: null,
           channel_access: EMPTY_ACCESS_HOLDER,
         },
       ]);
+    });
+
+    it('ranks by tier before display_order, and files under the highest tier', async () => {
+      // Staging, 2026-11-20: an untiered "First Floor" at display_order 0
+      // outranked the member's office and became their title.
+      const tier = (id: string, position: number) => ({
+        id,
+        chapter_id: 'ch-1',
+        position,
+        name: `tier-${id}`,
+        permissions: [],
+        mentionable: true,
+        created_at: '2026-11-20T00:00:00Z',
+        updated_at: '2026-11-20T00:00:00Z',
+      });
+      mockTierRepo.findByChapter.mockResolvedValue([
+        tier('cabinet', 1),
+        tier('brothers', 4),
+      ]);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        { ...role('role-floor', 0), tier_id: null },
+        { ...role('role-treasurer', 2), tier_id: 'cabinet' },
+        { ...role('role-everyone', 5), tier_id: 'brothers' },
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          id: 'm-1',
+          user_id: 'user-gabe',
+          role_ids: ['role-floor', 'role-everyone', 'role-treasurer'],
+        }),
+        memberFixture({
+          id: 'm-2',
+          user_id: 'user-plain',
+          role_ids: ['role-floor', 'role-everyone'],
+        }),
+      ]);
+
+      const result = await service.getChapterMemberAccess('ch-1');
+      const byUser = new Map(result.map((entry) => [entry.user_id, entry]));
+
+      expect(byUser.get('user-gabe')).toMatchObject({
+        top_role: { id: 'role-treasurer' },
+        top_role_rank: 0,
+        top_tier: { id: 'cabinet', name: 'tier-cabinet', position: 1 },
+      });
+      expect(byUser.get('user-plain')).toMatchObject({
+        top_role: { id: 'role-everyone' },
+        top_role_rank: 1,
+        top_tier: { id: 'brothers', name: 'tier-brothers', position: 4 },
+      });
     });
 
     it('carries group entries with groups, and never a class year (#4076)', async () => {
@@ -2346,7 +2398,8 @@ describe('RbacService', () => {
         // As stored: the event read gate matches an invitation against the
         // member's own list, and no event of this chapter names this role.
         role_ids: ['role-foreign'],
-        top_role_order: null,
+        top_role_rank: null,
+        top_tier: null,
         top_role: null,
         // A foreign role's `*` must not pass a channel's lists either.
         channel_access: EMPTY_ACCESS_HOLDER,
@@ -2373,7 +2426,8 @@ describe('RbacService', () => {
             SystemPermissions.CHANNELS_MANAGE,
           ]),
           role_ids: ['role-a', 'role-b'],
-          top_role_order: 1,
+          top_role_rank: 0,
+          top_tier: null,
           top_role: { id: 'role-b', name: 'role-role-b' },
           channel_access: {
             entries: new Set(['role:role-a', 'role:role-b']),

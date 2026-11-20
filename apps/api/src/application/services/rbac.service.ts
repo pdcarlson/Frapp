@@ -21,7 +21,10 @@ import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
 import {
   EVERYONE_ROLE_NAME,
+  highestRankedRole,
   isEveryoneRole,
+  sortRolesByRank,
+  tierPositionsOf,
   reservedMentionName,
   permissionDefinition,
   permissionModuleLabel,
@@ -143,37 +146,26 @@ export interface ChapterMemberAccess {
    * list the event read gate checks an invitation against (`isInvited`).
    */
   role_ids: string[];
-  /** Smallest `display_order` among held live roles; `null` when none. */
-  top_role_order: number | null;
   /**
-   * The held live role that `top_role_order` belongs to (ties broken by name,
-   * then id, so the pick is stable), or `null` when none. Chat's member list
-   * groups readers under it; `everyone` marks the chapter's Everyone role
-   * (#4191), which that list never names.
+   * Where the member's highest role sits among all the chapter's roles in
+   * rank order (`sortRolesByRank`: wildcard, tier position, the role's order
+   * in its tier, name), 0 for the top; `null` when they hold none. Lower
+   * ranks higher.
+   */
+  top_role_rank: number | null;
+  /**
+   * The member's highest-ranked live role (`highestRankedRole`), their title,
+   * or `null` when none. Chat's member list orders readers by it; `everyone`
+   * marks the chapter's Everyone role (#4191), which no list names.
    */
   top_role: { id: string; name: string; everyone?: true } | null;
+  /**
+   * The highest tier any of their roles sits in, the heading chat's member
+   * list files them under; `null` when none of their roles is in a tier.
+   */
+  top_tier: { id: string; name: string; position: number } | null;
   /** What the member holds for a channel's who-can-see and who-can-post lists (#3722). */
   channel_access: ChannelAccessHolder;
-}
-
-/**
- * The highest of a member's roles: lowest `display_order` (as on the Roles
- * page), ties broken by name, then id, so two calls agree.
- */
-function topRole(roles: readonly Role[]): Role | null {
-  let best: Role | null = null;
-  for (const role of roles) {
-    if (
-      !best ||
-      role.display_order < best.display_order ||
-      (role.display_order === best.display_order &&
-        (role.name.localeCompare(best.name) < 0 ||
-          (role.name === best.name && role.id < best.id)))
-    ) {
-      best = role;
-    }
-  }
-  return best;
 }
 
 @Injectable()
@@ -1326,9 +1318,10 @@ export class RbacService {
    * (`ChannelAccessService.listChannelMembers`) cannot disagree about who holds
    * what.
    *
-   * `top_role_order` is the smallest `display_order` among the member's live
-   * roles in this chapter (lower ranks higher, as on the Roles page), or `null`
-   * for a member who holds none.
+   * `top_role` is the member's highest-ranked live role in this chapter by
+   * the shared rank (`@repo/validation` `compareRolesByRank`: tier first,
+   * then the role's order in its tier), so a Discord-imported role outside
+   * the tiers at `display_order` 0 never outranks the President.
    *
    * **Re-scoped to the chapter twice over.** Both reads filter on
    * `chapter_id`, and the role maps below additionally drop any row whose
@@ -1351,9 +1344,10 @@ export class RbacService {
     withGroups = false,
     roster?: () => Promise<readonly Member[]>,
   ): Promise<ChapterMemberAccess[]> {
-    const [members, roles, memberships] = await Promise.all([
+    const [members, roles, tiers, memberships] = await Promise.all([
       roster ? roster() : this.memberRepo.findByChapter(chapterId),
       this.roleRepo.findByChapter(chapterId),
+      this.tierRepo.findByChapter(chapterId),
       withGroups
         ? this.groupRepo.findMemberships(chapterId)
         : Promise.resolve([]),
@@ -1368,10 +1362,16 @@ export class RbacService {
       else groupsOf.set(user_id, [group_id]);
     }
 
+    const chapterRoles = roles.filter((role) => role.chapter_id === chapterId);
     const roleById = new Map(
-      roles
-        .filter((role) => role.chapter_id === chapterId)
-        .map((role) => [role.id.toLowerCase(), role] as const),
+      chapterRoles.map((role) => [role.id.toLowerCase(), role] as const),
+    );
+    const positions = tierPositionsOf(tiers);
+    const tierById = new Map(tiers.map((tier) => [tier.id, tier] as const));
+    const rankOf = new Map(
+      sortRolesByRank(chapterRoles, positions).map(
+        (role, index) => [role.id, index] as const,
+      ),
     );
 
     const held = new Map<string, string[]>();
@@ -1394,19 +1394,33 @@ export class RbacService {
             .filter((role): role is Role => role !== undefined),
         ),
       ];
-      const top = topRole(liveRoles);
+      const top = highestRankedRole(liveRoles, positions);
+      let topTier: RoleTier | null = null;
+      for (const role of liveRoles) {
+        const tier = role.tier_id ? tierById.get(role.tier_id) : undefined;
+        if (tier && (!topTier || tier.position < topTier.position)) {
+          topTier = tier;
+        }
+      }
       return {
         user_id: userId,
         permissions: flattenPermissionSets(
           liveRoles.map((role) => role.permissions),
         ),
         role_ids: [...new Set(roleIds)],
-        top_role_order: top?.display_order ?? null,
+        top_role_rank: top ? (rankOf.get(top.id) ?? null) : null,
         top_role: top
           ? {
               id: top.id,
               name: top.name,
               ...(isEveryoneRole(top) ? { everyone: true } : {}),
+            }
+          : null,
+        top_tier: topTier
+          ? {
+              id: topTier.id,
+              name: topTier.name,
+              position: topTier.position,
             }
           : null,
         channel_access: accessHolderFromRoles(

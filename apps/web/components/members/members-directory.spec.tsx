@@ -122,6 +122,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useMembers: () => membersRead,
     useMemberSearch: (q: string) => (q ? searchRead : membersRead),
     useRoles: () => rolesRead,
+    useRoleTiers: () => ({ data: [] }),
     useGroups: () => groupsRead,
     useLeaderboard: () => leaderboardRead,
     useMemberPhoneReach: () => ({ reach: phoneReachRead.value }),
