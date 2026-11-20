@@ -70,6 +70,14 @@ describe("groupChannelMembersByTier", () => {
       row("b", "Bo", 9, null, null, null, "Alumni"),
     ]);
     expect(groups.map((g) => g.label)).toEqual(["Members", "Everyone else"]);
+    // A search that hides the tier keeps the heading the full list gives.
+    const all = [
+      row("a", "Al", 5, "t-mem", "Members", 3),
+      row("b", "Bo", 9, null, null, null, "Alumni"),
+    ];
+    expect(
+      groupChannelMembersByTier([all[1]!], all).map((g) => g.label),
+    ).toEqual(["Everyone else"]);
   });
 
   it("falls back to one ranked list when the API sends no tiers", () => {

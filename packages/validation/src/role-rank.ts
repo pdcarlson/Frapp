@@ -7,12 +7,16 @@
  * A role ranks by, in turn:
  *
  * 1. Holding the wildcard `*` (the President's role), above everything,
- *    wherever it sits, as the API's rank rules have it (`role-rank.ts`).
+ *    wherever it sits, as the API's rank rules have it
+ *    (`apps/api/src/domain/utils/role-rank.ts`).
  * 2. Its tier's `position` (1 is highest). A role outside every tier, or
  *    naming a tier the chapter no longer has, ranks below every tier.
- * 3. Its own `display_order` inside the tier (the order the Roles page lists
+ * 3. Outside the tiers only, a system role (Alumni, the Everyone role) above
+ *    one the chapter made or imported, whose `display_order` the chapter never
+ *    set against the system roles'.
+ * 4. Its own `display_order` inside the tier (the order the Roles page lists
  *    a tier's roles in).
- * 4. Its name, then its id, so two calls always agree.
+ * 5. Its name, then its id, so two calls always agree.
  *
  * `display_order` alone is not a rank: roles imported from Discord or made
  * outside the tiers carry `0`, which used to put a "First Floor" above the
@@ -26,6 +30,7 @@ export interface RankableRole {
   display_order: number;
   tier_id?: string | null;
   permissions?: readonly string[] | null;
+  is_system?: boolean;
 }
 
 /** A tier's position by id, from the chapter's tiers. */
@@ -53,6 +58,9 @@ export function compareRolesByRank(
   const tierA = tierRankOf(a, positions);
   const tierB = tierRankOf(b, positions);
   if (tierA !== tierB) return tierA < tierB ? -1 : 1;
+  if (tierA === Number.POSITIVE_INFINITY && !a.is_system !== !b.is_system) {
+    return a.is_system ? -1 : 1;
+  }
   if (a.display_order !== b.display_order) {
     return a.display_order - b.display_order;
   }

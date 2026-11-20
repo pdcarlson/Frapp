@@ -124,7 +124,7 @@ export function ChannelMemberList({
   const searchable = rows.length > MEMBER_SEARCH_THRESHOLD;
   const trimmed = searchable ? query.trim() : "";
   const groups = useMemo(
-    () => groupChannelMembersByTier(filterChannelMembers(rows, trimmed)),
+    () => groupChannelMembersByTier(filterChannelMembers(rows, trimmed), rows),
     [rows, trimmed],
   );
 

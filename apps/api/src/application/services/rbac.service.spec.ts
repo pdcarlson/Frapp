@@ -2249,7 +2249,7 @@ describe('RbacService', () => {
           user_id: 'user-officer',
           permissions: new Set([SystemPermissions.CHANNELS_MANAGE]),
           role_ids: ['role-member', 'role-officer'],
-          top_role_rank: 1,
+          top_role_rank: 2,
           top_tier: null,
           top_role: { id: 'role-officer', name: 'role-role-officer' },
           channel_access: {
@@ -2305,7 +2305,12 @@ describe('RbacService', () => {
         }),
       ]);
 
-      const result = await service.getChapterMemberAccess('ch-1');
+      const result = await service.getChapterMemberAccess(
+        'ch-1',
+        false,
+        undefined,
+        true,
+      );
       const byUser = new Map(result.map((entry) => [entry.user_id, entry]));
 
       expect(byUser.get('user-gabe')).toMatchObject({
@@ -2317,6 +2322,72 @@ describe('RbacService', () => {
         top_role: { id: 'role-everyone' },
         top_role_rank: 1,
         top_tier: { id: 'brothers', name: 'tier-brothers', position: 4 },
+      });
+    });
+
+    it("files the President's holder under the top tier, and reads no tiers unless asked", async () => {
+      const tier = (id: string, position: number) => ({
+        id,
+        chapter_id: 'ch-1',
+        position,
+        name: `tier-${id}`,
+        permissions: [],
+        mentionable: true,
+        created_at: '2026-11-20T00:00:00Z',
+        updated_at: '2026-11-20T00:00:00Z',
+      });
+      mockTierRepo.findByChapter.mockResolvedValue([
+        tier('brothers', 4),
+        tier('cabinet', 1),
+      ]);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        // A President's role moved out of the tiers still leads Cabinet.
+        { ...role('role-pres', 1, ['*']), tier_id: null },
+        { ...role('role-everyone', 5), tier_id: 'brothers' },
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          user_id: 'user-pres',
+          role_ids: ['role-everyone', 'role-pres'],
+        }),
+      ]);
+
+      const [ranked] = await service.getChapterMemberAccess(
+        'ch-1',
+        false,
+        undefined,
+        true,
+      );
+      expect(ranked).toMatchObject({
+        top_role: { id: 'role-pres' },
+        top_role_rank: 0,
+        top_tier: { id: 'cabinet', position: 1 },
+      });
+
+      mockTierRepo.findByChapter.mockClear();
+      const [plain] = await service.getChapterMemberAccess('ch-1');
+      expect(mockTierRepo.findByChapter).not.toHaveBeenCalled();
+      expect(plain.top_tier).toBeNull();
+    });
+
+    it('lists the members without tiers when the tier read fails', async () => {
+      mockTierRepo.findByChapter.mockRejectedValue(new Error('timeout'));
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        { ...role('role-everyone', 5), tier_id: 'brothers' },
+      ]);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        memberFixture({ user_id: 'user-1', role_ids: ['role-everyone'] }),
+      ]);
+
+      const [entry] = await service.getChapterMemberAccess(
+        'ch-1',
+        false,
+        undefined,
+        true,
+      );
+      expect(entry).toMatchObject({
+        top_role: { id: 'role-everyone' },
+        top_tier: null,
       });
     });
 
@@ -2426,7 +2497,7 @@ describe('RbacService', () => {
             SystemPermissions.CHANNELS_MANAGE,
           ]),
           role_ids: ['role-a', 'role-b'],
-          top_role_rank: 0,
+          top_role_rank: 1,
           top_tier: null,
           top_role: { id: 'role-b', name: 'role-role-b' },
           channel_access: {

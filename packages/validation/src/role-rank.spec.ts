@@ -82,6 +82,29 @@ describe("role rank", () => {
     expect(highestRankedRole([b, a], positions)).toBe(a);
   });
 
+  it("ranks a system role above an imported one outside the tiers", () => {
+    const alumni = {
+      id: "alum",
+      name: "Alumni",
+      display_order: 7,
+      tier_id: null,
+      is_system: true,
+    };
+    const floor = {
+      id: "fl",
+      name: "First Floor",
+      display_order: 0,
+      tier_id: null,
+    };
+    expect(highestRankedRole([floor, alumni], positions)).toBe(alumni);
+    // Inside a tier, a system role ranks only by its order.
+    const tieredAlumni = { ...alumni, tier_id: "cabinet", display_order: 9 };
+    const tieredFloor = { ...floor, tier_id: "cabinet" };
+    expect(highestRankedRole([tieredAlumni, tieredFloor], positions)).toBe(
+      tieredFloor,
+    );
+  });
+
   it("returns null for no roles", () => {
     expect(highestRankedRole([], positions)).toBeNull();
   });

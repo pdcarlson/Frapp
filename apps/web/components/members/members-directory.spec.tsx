@@ -102,6 +102,11 @@ vi.mock("@/components/meetings/live-meeting-card", () => ({
   LiveMeetingCard: () => null,
 }));
 
+const tiersRead = vi.hoisted(() => ({
+  data: [] as Array<{ id: string; position: number }> | undefined,
+  isError: false,
+}));
+
 const groupsRead = vi.hoisted(() => ({
   data: [
     { id: "g-house", name: "In house", kind: "manual", member_ids: ["u-1"] },
@@ -122,7 +127,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useMembers: () => membersRead,
     useMemberSearch: (q: string) => (q ? searchRead : membersRead),
     useRoles: () => rolesRead,
-    useRoleTiers: () => ({ data: [] }),
+    useRoleTiers: () => tiersRead,
     useGroups: () => groupsRead,
     useLeaderboard: () => leaderboardRead,
     useMemberPhoneReach: () => ({ reach: phoneReachRead.value }),
@@ -230,6 +235,7 @@ beforeEach(() => {
   );
   Object.assign(leaderboardRead, read([{ user_id: "u-1", total: 42 }]));
   phoneReachRead.value = null;
+  Object.assign(tiersRead, { data: [], isError: false });
 });
 
 describe("Directory on the greenfield shell", () => {
@@ -334,6 +340,42 @@ describe("Directory on the greenfield shell", () => {
     const grace = screen.getByRole("button", { name: /^Grace Hopper,/ });
     expect(grace).not.toHaveAccessibleName(/joined/i);
     expect(grace).not.toHaveAccessibleName(/Treasurer/);
+  });
+
+  it("titles a member by their highest-ranked role, tier before list order (2026-11-20)", () => {
+    // Staging's bug: an imported floor role at display_order 0 outranked the
+    // office, so Gabe read "First Floor" and Paul "Web Development".
+    Object.assign(
+      membersRead,
+      read([{ ...MEMBERS[0], role_ids: ["r-floor", "r-1"] }]),
+    );
+    Object.assign(
+      rolesRead,
+      read([
+        {
+          id: "r-floor",
+          name: "First Floor",
+          is_system: false,
+          permissions: [],
+          display_order: 0,
+          tier_id: null,
+        },
+        {
+          id: "r-1",
+          name: "Treasurer",
+          is_system: false,
+          permissions: [],
+          display_order: 3,
+          tier_id: "t-cabinet",
+        },
+      ]),
+    );
+    Object.assign(tiersRead, { data: [{ id: "t-cabinet", position: 1 }] });
+    render(<MembersDirectory />);
+
+    const ada = screen.getByRole("button", { name: /^Ada Lovelace,/ });
+    expect(ada).toHaveAccessibleName(/Treasurer/);
+    expect(ada).not.toHaveAccessibleName(/First Floor/);
   });
 
   it("labels a member whose name is only whitespace with the shared fallback", () => {

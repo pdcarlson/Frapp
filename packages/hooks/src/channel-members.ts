@@ -70,6 +70,8 @@ export const OUTSIDE_TIERS_FALLBACK_LABEL = "Everyone else";
  */
 export function groupChannelMembersByTier<T extends GroupableChannelMember>(
   rows: readonly T[],
+  /** The unfiltered list, so a search can't change a group's heading. */
+  allRows: readonly T[] = rows,
 ): ChannelMemberGroup<T>[] {
   if (!rows.length) return [];
   const groups = new Map<string, ChannelMemberGroup<T> & { rank: number }>();
@@ -94,12 +96,13 @@ export function groupChannelMembersByTier<T extends GroupableChannelMember>(
   // A tier the chapter itself calls "Members" keeps that heading, and the
   // readers outside every tier read as everyone else beside it.
   const outside = groups.get(OUTSIDE_TIERS_GROUP_KEY);
+  const heading = foldForSearch(EVERYONE_MEMBER_LIST_HEADING);
   if (
     outside &&
-    [...groups.values()].some(
-      (group) =>
-        group !== outside &&
-        foldForSearch(group.label) === foldForSearch(outside.label),
+    allRows.some(
+      (row) =>
+        Boolean(row.tierId) &&
+        foldForSearch(row.tierName || EVERYONE_MEMBER_LIST_HEADING) === heading,
     )
   ) {
     outside.label = OUTSIDE_TIERS_FALLBACK_LABEL;

@@ -484,6 +484,8 @@ describe('ChannelAccessService', () => {
       expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
         'chap-1',
         false,
+        undefined,
+        true,
       );
     });
 

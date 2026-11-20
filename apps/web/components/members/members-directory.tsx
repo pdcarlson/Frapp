@@ -486,16 +486,21 @@ export function MembersDirectory() {
   // role's order in its tier), the same pick chat's member list makes. A
   // member whose highest role is the Everyone role (#4191), which no list
   // names, has none, so a floor or class role outside the tiers never stands
-  // in as a title. While the roles load the first id stands in, as before.
+  // in as a title. While the roles or tiers load, the first id stands in.
+  // Ranking waits for the tiers too, so a title never flips from a floor role
+  // to the office once they arrive; a failed tier read ranks without them.
+  const rankReady =
+    allRoles.length > 0 &&
+    (tiersQuery.data !== undefined || tiersQuery.isError);
   const primaryRoleName = (member: MemberProfile): string | null => {
+    if (!rankReady) return member.role_ids[0] ?? null;
     const held = new Set(member.role_ids);
     const top = highestRankedRole(
       allRoles.filter((role) => held.has(role.id)),
       tierPositions,
     );
-    if (top) return top.everyone ? null : top.name;
-    if (allRoles.length > 0) return null;
-    return member.role_ids[0] ?? null;
+    if (!top || top.everyone) return null;
+    return top.name;
   };
 
   const filteredMembers = useMemo(() => {
@@ -592,6 +597,9 @@ export function MembersDirectory() {
     sortDir,
     pointsByUserId,
     roleNameById,
+    allRoles,
+    tierPositions,
+    rankReady,
     pledgeClasses,
   ]);
 

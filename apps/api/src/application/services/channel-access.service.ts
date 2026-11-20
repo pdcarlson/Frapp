@@ -360,9 +360,10 @@ export class ChannelAccessService {
    * member the same {@link canAccessChannel} predicate admits, with the rank
    * of their highest role for sorting. Names, avatars, role colors and
    * presence are joined on the client from the roster and the presence socket
-   * it already holds, so this read carries ids and ranks only.
+   * it already holds, so this read carries ids, ranks, titles and tiers only.
    *
-   * Three reads for any channel type (`RbacService.getChapterMemberAccess`),
+   * Four reads for any channel type (`RbacService.getChapterMemberAccess`
+   * with its tiers),
    * never one role lookup per member: a listed channel in a chapter of 150
    * would otherwise cost ~300 queries per open.
    *
@@ -381,25 +382,27 @@ export class ChannelAccessService {
       userId,
       'read',
     );
-    return (await this.channelReaders(channel, chapterId)).map((member) => ({
-      user_id: member.user_id,
-      role_rank: member.top_role_rank,
-      role_id: member.top_role?.id ?? null,
-      // Everyone (#4191) is offered by no list, so its holders read as the
-      // rest of the chapter rather than as a role called Everyone.
-      role_name: member.top_role
-        ? member.top_role.everyone
-          ? EVERYONE_MEMBER_LIST_HEADING
-          : member.top_role.name
-        : null,
-      title:
-        member.top_role && !member.top_role.everyone
-          ? member.top_role.name
+    return (await this.channelReaders(channel, chapterId, true)).map(
+      (member) => ({
+        user_id: member.user_id,
+        role_rank: member.top_role_rank,
+        role_id: member.top_role?.id ?? null,
+        // Everyone (#4191) is offered by no list, so its holders read as the
+        // rest of the chapter rather than as a role called Everyone.
+        role_name: member.top_role
+          ? member.top_role.everyone
+            ? EVERYONE_MEMBER_LIST_HEADING
+            : member.top_role.name
           : null,
-      tier_id: member.top_tier?.id ?? null,
-      tier_name: member.top_tier?.name ?? null,
-      tier_rank: member.top_tier?.position ?? null,
-    }));
+        title:
+          member.top_role && !member.top_role.everyone
+            ? member.top_role.name
+            : null,
+        tier_id: member.top_tier?.id ?? null,
+        tier_name: member.top_tier?.name ?? null,
+        tier_rank: member.top_tier?.position ?? null,
+      }),
+    );
   }
 
   /**
@@ -412,11 +415,14 @@ export class ChannelAccessService {
   async channelReaders(
     channel: ChatChannel,
     chapterId: string,
+    withTiers = false,
   ): Promise<ChapterMemberAccess[]> {
     const predicateChannel = toPredicateChannel(channel);
     const access = await this.rbac.getChapterMemberAccess(
       chapterId,
       listsNameGroups(predicateChannel),
+      undefined,
+      withTiers,
     );
     return access.filter((member) => canReadAs(predicateChannel, member));
   }
