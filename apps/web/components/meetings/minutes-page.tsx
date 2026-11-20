@@ -2,6 +2,7 @@
 
 import {
   type ComponentProps,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -123,6 +124,8 @@ import { LinkEventPanel } from "@/components/meetings/link-event";
 import { NotesDraftPanel } from "@/components/meetings/notes-draft-panel";
 import { AttendanceBackfill } from "@/components/meetings/attendance-backfill";
 import { SuggestedTasks } from "@/components/ai/suggested-tasks";
+import { ComingUpDates } from "@/components/meetings/coming-up-dates";
+import { ComingUpPostReview } from "@/components/meetings/coming-up-post-review";
 import { MinutesPageSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
@@ -132,7 +135,6 @@ import {
 import {
   ActionChecklist,
   Attendees,
-  DatesView,
   DecisionsView,
   LinesView,
   MinutesJumpBar,
@@ -266,6 +268,9 @@ function Minutes({
   // Posting switches to the read view at once (Paul, 2026-11-16); the post
   // itself lands a moment later, and a failure puts the editor back.
   const [posting, setPosting] = useState(false);
+  // The review of the Coming up dates, once the minutes post (#5672).
+  const [reviewing, setReviewing] = useState(false);
+  const endReview = useCallback(() => setReviewing(false), []);
   const [saveFailed, setSaveFailed] = useState(false);
   const dirty = !sameDraft(draft, base);
   // The latest of each, for saves that finish after more typing.
@@ -477,6 +482,7 @@ function Minutes({
       adopt(posted);
       setPosting(false);
       toast({ title: MEETING_COPY.posted_toast });
+      setReviewing(true);
     } catch (error) {
       restore();
       if (codeOf(error) === "meeting.stale") {
@@ -1031,7 +1037,11 @@ function Minutes({
                     {view.content.summary}
                   </p>
                 ) : key === "dates" ? (
-                  <DatesView dates={view.content.dates} />
+                  <ComingUpDates
+                    meetingId={meeting.id}
+                    dates={view.content.dates}
+                    viewerId={viewer?.id ?? null}
+                  />
                 ) : key === "decisions" ? (
                   <DecisionsView decisions={view.content.decisions} />
                 ) : key === "action_items" ? (
@@ -1101,6 +1111,14 @@ function Minutes({
         )}
       </fieldset>
 
+      {reviewing ? (
+        <ComingUpPostReview
+          meetingId={meeting.id}
+          content={base.content}
+          viewerId={viewer?.id ?? null}
+          onDone={endReview}
+        />
+      ) : null}
       {meeting.can_edit ? (
         <MinutesDetailsDialog
           meeting={meeting}

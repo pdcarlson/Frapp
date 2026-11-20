@@ -3,6 +3,7 @@ import type {
   StyleSpecification,
   SymbolLayerSpecification,
 } from "maplibre-gl";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * OpenFreeMap's `dark` style, re-inked so an officer can find a building on
@@ -17,9 +18,13 @@ import type {
  * by importance, water and green space faintly tinted, and building and place
  * names (the library, the union) in readable gray.
  *
- * The grays are neutral, like Signet's surface ladder (the owner picked
- * neutral over a blue-tinted ladder, spec/ui/design-system/foundations.md);
- * the ground sits a notch above Signet's base so the map reads as a surface.
+ * The grays carry the same faint violet as Signet's surface ladder (the
+ * owner's 2026-11-19 ladder, spec/ui/design-system/foundations.md §2; before
+ * that they were neutral like the neutral ladder), so the map reads as part of
+ * the app rather than a gray poster set into it. The ground is `--surface-1`,
+ * a notch above Signet's base so the map reads as a surface, and every other
+ * gray leans the way the ladder does: green a touch low, blue a touch high.
+ * Labels lean less, as the ladder's text tokens do.
  *
  * Colors are paint overrides keyed by the style's layer ids and types. A
  * layer that stops existing upstream, or changes type, is left stock, so an
@@ -29,23 +34,25 @@ import type {
  */
 
 /** Ground, buildings, roads: each step lighter than the one under it. */
+const GROUND = signetDarkTokens.color.surface.surface1;
+
 const INK = {
-  ground: "#141414",
+  ground: GROUND,
   green: "#162019",
   water: "#141d27",
-  building: "#2c2c2c",
-  buildingEdge: "#4a4a4a",
-  path: "#313131",
-  minor: "#3b3b3b",
-  majorCasing: "#5e5e5e",
-  major: "#4c4c4c",
-  motorwayCasing: "#6c6c6c",
-  motorway: "#585858",
-  rail: "#3b3b3b",
-  roadLabel: "#b6b6b6",
-  placeLabel: "#a5a5a5",
-  poiLabel: "#d4d4d4",
-  halo: "#141414",
+  building: "#2c2a32",
+  buildingEdge: "#4a4850",
+  path: "#312f37",
+  minor: "#3b3941",
+  majorCasing: "#5e5c64",
+  major: "#4c4a52",
+  motorwayCasing: "#6c6a72",
+  motorway: "#58565e",
+  rail: "#3b3941",
+  roadLabel: "#b6b4ba",
+  placeLabel: "#a5a3a9",
+  poiLabel: "#d4d2d8",
+  halo: GROUND,
 } as const;
 
 type Paint = Record<string, unknown>;

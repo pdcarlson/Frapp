@@ -132,7 +132,7 @@ describe("every route with an on-screen text field avoids the keyboard (#3354)",
   it("finds the routes it guards", () => {
     // A regex that silently stopped matching would pass every case below.
     expect(ROUTES_WITH_FIELDS).toEqual(
-      expect.arrayContaining(["(auth)/sign-in.tsx", "(auth)/join.tsx"]),
+      expect.arrayContaining(["(auth)/sign-in.tsx", "(auth)/welcome.tsx"]),
     );
   });
 

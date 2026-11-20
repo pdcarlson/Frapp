@@ -40,7 +40,11 @@ import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-prim
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
-import { useRememberedInviteToken } from "@/lib/onboarding/invite-token";
+import { InvitePasteStrip } from "@/components/onboarding/invite-paste";
+import {
+  rememberInviteToken,
+  useRememberedInviteToken,
+} from "@/lib/onboarding/invite-token";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 const PROVIDER_LABEL: Record<OAuthProvider, string> = {
@@ -61,9 +65,10 @@ export default function SignIn() {
     status,
   } = useAuthSession();
   // The invite card's own "Have a password? Sign in" comes here on purpose
-  // (`password=1`). Any other arrival with an invite remembered (the app
-  // reopened after it was closed mid-sign-in) goes back to that invite's
-  // card, which signs in and joins in one tap (#5625).
+  // (`password=1`). Any other arrival with an invite remembered goes back to
+  // that invite's card, which signs in and joins in one tap (#5625): one
+  // pasted on the strip below (#5626), or one the app was closed with
+  // mid-sign-in.
   const { password: passwordOnly } = useLocalSearchParams<{
     password?: string;
   }>();
@@ -563,6 +568,21 @@ export default function SignIn() {
               </View>
 
               <View style={styles.actions}>
+                {/*
+                  The invite Get Frapp copied on web `/join` (#5626): pasted,
+                  it is remembered, and the redirect above opens its card,
+                  which signs in and joins in one tap. Above the ways in,
+                  since a newcomer reads down to it first; someone signing
+                  back in passes over it. Not on the card's own password
+                  sign-in (`password=1`): an invite is already open there, and
+                  a paste would replace it without the redirect to show it.
+                */}
+                {passwordOnly === "1" ? null : (
+                  <InvitePasteStrip
+                    onInvite={(token) => rememberInviteToken(token)}
+                    disabled={busy}
+                  />
+                )}
                 {messages}
                 {renderProvider(layout.primary, true)}
                 {layout.secondary

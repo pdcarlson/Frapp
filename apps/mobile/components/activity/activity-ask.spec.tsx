@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { StyleSheet } from "react-native";
 import { describe, expect, it, vi } from "vitest";
-import { signetDarkTokens } from "@repo/theme/signet";
+import { ACCENT_SUBTLE_HOVER_MIX, signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, fontFamilyFor } from "@/lib/theme";
 
 // Stand-ins no token carries, so a style that skips the chapter's palette
@@ -115,7 +115,7 @@ describe("ActivityAskButton (#4206)", () => {
   it("steps its fill up one when pressed, as web's accent-subtle-hover", () => {
     const { chip } = renderButton(false);
     expect(chip(true).backgroundColor).toBe(
-      mixHex(BRAND.accentBorder, 0.15, BRAND.accentSubtle),
+      mixHex(BRAND.accentBorder, ACCENT_SUBTLE_HOVER_MIX, BRAND.accentSubtle),
     );
     expect(chip(true).backgroundColor).not.toBe(BRAND.accentSubtle);
     expect(chip(true).opacity).toBeUndefined();

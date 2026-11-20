@@ -60,6 +60,7 @@ export const SCREEN_TITLES = {
   "check-in": "Check in",
   "host-check-in": "Host check-in",
   "whats-new": "What's new",
+  "finish-profile": "Finish your profile",
   minutes: "Minutes",
   // One meeting's minutes: the capsule over it says where back goes.
   "minutes-details": "Minutes",
@@ -70,7 +71,7 @@ export const SCREEN_TITLES = {
   "suggested-tasks": "Suggested",
   "arrange-channels": "Arrange channels",
   "chapter-settings": "Chapter settings",
-  "chapter-roles": "Roles",
+  "chapter-roles": "Roles and groups",
   // A tier's and a role's pages are titled by their own name, which a
   // capsule has no room for, so both read as the list they belong to.
   "role-tier": "Roles",

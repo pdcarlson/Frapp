@@ -637,6 +637,10 @@ describe("Calendar day rows", () => {
     // A count read as text is written out, as web writes it (#4135).
     expect(screenText(tree)).toMatch(/Library · 15 points/);
     expect(screenText(tree)).not.toContain("+15 pts");
+    // Start to end, as web's agenda row says it (2026-11-19).
+    expect(screenText(tree)).toMatch(
+      /\d{1,2}:\d{2}( [AP]M)? – \d{1,2}:\d{2} [AP]M · Library/,
+    );
   });
 
   it("splits a day's rows by hairlines, none above the first, and bleeds into the gutter", () => {

@@ -15,6 +15,7 @@ import {
   TASK_AUDIENCE_COPY,
   taskGroupLabel,
   taskNeedsSignOff,
+  taskRowFacts,
 } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,8 +34,9 @@ import type { BoardTask, GroupTileData } from "./board-task";
  * The Tasks page's compact list (Paul, 2026-11-18: "I had to scroll all the
  * way down"): one 40px row a task, as Linear's, Asana's and Todoist's lists
  * are, so an exec's 20 to 40 tasks fit on a screen. A row says what, who,
- * when and for how many points; everything else, and every edit, is in the
- * task's panel, which the row opens.
+ * when and for how many points, then how it repeats, its checklist and its
+ * photos as the phone's row does (`TaskFacts`, 2026-11-19); everything else,
+ * and every edit, is in the task's panel, which the row opens.
  */
 
 /** A row's hairline list, flush on the page. */
@@ -178,6 +180,7 @@ export function TaskRow({
             {TASK_DONE_LABEL}
           </Badge>
         ) : null}
+        <TaskFacts task={task} done={status === "COMPLETED"} part="spoken" />
       </button>
       {task.followed_by ? (
         <FollowerChip
@@ -194,6 +197,7 @@ export function TaskRow({
         <PersonChip person={person} />
       )}
       <DueText task={task} due={due} />
+      <TaskFacts task={task} done={status === "COMPLETED"} part="shown" />
       <PointsTag points={task.point_reward} />
       {waiting && canConfirm ? (
         <Button
@@ -298,6 +302,44 @@ function AudienceText({ label }: { label: string }) {
     <span className="inline-flex min-w-0 max-w-[14rem] shrink items-center gap-1.5 text-caption text-muted-foreground">
       <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <span className="sr-only truncate @lg:not-sr-only">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * How it repeats, how far through its checklist it is and its reference
+ * photos, after the due: "Due Monday · ↻ Weekly · 2 of 5 · 1 photo", the
+ * facts and order the phone's row says (`taskRowFacts`, 2026-11-19). Drawn
+ * after the due, muted, from a medium pane up; in a narrower one the row has
+ * room only for its title, person and due, so the facts are spoken with the
+ * title instead (`part="spoken"`, inside the row's button), never lost.
+ */
+function TaskFacts({
+  task,
+  done,
+  part,
+}: {
+  task: BoardTask;
+  done: boolean;
+  part: "shown" | "spoken";
+}) {
+  const facts = taskRowFacts({
+    done,
+    subtasksDone: (task.subtasks ?? []).filter((subtask) => subtask.done_at)
+      .length,
+    subtasksTotal: task.subtasks?.length ?? 0,
+    photos: task.photos,
+    series: task.series,
+  });
+  const line = part === "shown" ? facts.shown : facts.spoken;
+  if (!line) return null;
+  if (part === "spoken") return <span className="sr-only">{`, ${line}`}</span>;
+  return (
+    <span
+      aria-hidden="true"
+      className="hidden min-w-0 max-w-[14rem] shrink truncate text-caption text-muted-foreground @md:inline"
+    >
+      {line}
     </span>
   );
 }

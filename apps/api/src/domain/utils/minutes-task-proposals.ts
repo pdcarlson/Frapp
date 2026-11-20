@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
-  TASK_TITLE_MAX_LENGTH,
   readMeetingContent,
+  taskTitleFrom,
   type MeetingActionItem,
 } from '@repo/validation';
 
@@ -50,14 +50,6 @@ export function actionItemKey(text: string): string {
   return createHash('sha256').update(normalized).digest('hex').slice(0, 32);
 }
 
-/** A title the task form would take: cut at a word when the item runs long. */
-function titleFrom(text: string): string {
-  if (text.length <= TASK_TITLE_MAX_LENGTH) return text;
-  const cut = text.slice(0, TASK_TITLE_MAX_LENGTH - 1);
-  const atWord = cut.replace(/\s+\S*$/, '');
-  return `${(atWord.length > TASK_TITLE_MAX_LENGTH / 2 ? atWord : cut).trimEnd()}…`;
-}
-
 /**
  * A title that had to be cut keeps its whole line in the description;
  * otherwise there is none. The minutes it came from are the task's
@@ -85,7 +77,7 @@ export function taskProposalsFromMinutes(
       continue;
     }
     seen.add(dedupeKey);
-    const title = titleFrom(text);
+    const title = taskTitleFrom(text);
     proposals.push({
       dedupeKey,
       payload: {

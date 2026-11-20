@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   rolesUpdatedAt: 0,
   tiers: [] as unknown[],
   members: [] as unknown[],
+  groups: [] as unknown[],
   vocabulary: {} as Record<string, string>,
   updateRole: vi.fn<(input: unknown) => Promise<object>>(async () => ({})),
   updateTier: vi.fn<(input: unknown) => Promise<object>>(async () => ({})),
@@ -64,6 +65,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useRoles: () => ({ ...ok(h.roles), dataUpdatedAt: h.rolesUpdatedAt }),
     useRoleTiers: () => ok(h.tiers),
     useMembers: () => ok(h.members),
+    useGroups: () => ok(h.groups),
     useViewerUserId: () => "me",
     useCurrentChapter: () =>
       ok({ enabled_modules: { geofences: true }, vocabulary: h.vocabulary }),
@@ -164,13 +166,39 @@ beforeEach(() => {
   h.permissions = ["*"];
   h.vocabulary = {};
   h.tiers = [
-    { id: "t-off", name: "Officers", position: 1, permissions: ["events:create", "members:invite"] },
-    { id: "t-bro", name: "Brothers", position: 2, permissions: ["members:view"] },
+    {
+      id: "t-off",
+      name: "Officers",
+      position: 1,
+      permissions: ["events:create", "members:invite"],
+    },
+    {
+      id: "t-bro",
+      name: "Brothers",
+      position: 2,
+      permissions: ["members:view"],
+    },
   ];
   h.roles = [
-    role({ id: "r-pres", name: "President", permissions: ["*"], is_system: true, system_key: "PRESIDENT" }),
-    role({ id: "r-tres", name: "Treasurer", tier_id: "t-off", permissions: ["events:create", "members:invite"] }),
-    role({ id: "r-bro", name: "Brother", tier_id: "t-bro", permissions: ["members:view"] }),
+    role({
+      id: "r-pres",
+      name: "President",
+      permissions: ["*"],
+      is_system: true,
+      system_key: "PRESIDENT",
+    }),
+    role({
+      id: "r-tres",
+      name: "Treasurer",
+      tier_id: "t-off",
+      permissions: ["events:create", "members:invite"],
+    }),
+    role({
+      id: "r-bro",
+      name: "Brother",
+      tier_id: "t-bro",
+      permissions: ["members:view"],
+    }),
     role({ id: "r-rush", name: "Rush Chair", permissions: ["members:view"] }),
   ];
   h.members = [
@@ -182,6 +210,22 @@ beforeEach(() => {
   h.updateTier.mockClear().mockResolvedValue({});
   h.aiConsent = null;
   h.rolesUpdatedAt = 0;
+  h.groups = [
+    {
+      id: "g-house",
+      name: "In house",
+      kind: "manual",
+      color: null,
+      member_ids: ["me", "u2"],
+    },
+    {
+      id: "g-class",
+      name: "Fall 2025",
+      kind: "pledge_class",
+      color: null,
+      member_ids: ["me"],
+    },
+  ];
   vi.mocked(useLocalSearchParams).mockReturnValue({});
 });
 
@@ -230,13 +274,13 @@ describe("Chapter settings (#4074)", () => {
     ).toHaveLength(0);
   });
 
-  it("shows a roles manager only Roles, which opens the Roles screen", () => {
+  it("shows a roles manager only Roles and groups, which opens that screen", () => {
     h.permissions = ["roles:manage", "members:view"];
     const tree = render(<ChapterSettingsScreen />);
     expect(screenText(tree)).not.toContain("Chapter accent");
     const push = vi.mocked(useRouter().push);
     push.mockClear();
-    act(() => pressable(tree, "Roles").props.onPress());
+    act(() => pressable(tree, "Roles and groups").props.onPress());
     expect(push).toHaveBeenCalledWith("/chapter-roles");
   });
 });
@@ -360,6 +404,25 @@ describe("Chapter settings → AI (#4789)", () => {
 });
 
 describe("Roles (#4074)", () => {
+  it("lists the chapter's groups after the roles, own first, with counts", () => {
+    const tree = render(<ChapterRolesScreen />);
+    const text = screenText(tree);
+    expect(text).toContain("Groups");
+    expect(text.indexOf("In house")).toBeGreaterThan(
+      text.indexOf("Rush Chair"),
+    );
+    expect(text.indexOf("Fall 2025")).toBeGreaterThan(text.indexOf("In house"));
+    expect(text).toContain("Follows pledge class");
+  });
+
+  it("shows a groups manager without roles:manage only the groups", () => {
+    h.permissions = ["groups:manage", "members:view"];
+    const tree = render(<ChapterRolesScreen />);
+    const text = screenText(tree);
+    expect(text).toContain("In house");
+    expect(text).not.toContain("Treasurer");
+  });
+
   it("lists the tiers in rank order with their roles, then the roles outside", () => {
     const text = screenText(render(<ChapterRolesScreen />));
     expect(text).toContain("4 roles in 2 tiers");
@@ -383,7 +446,14 @@ describe("Roles (#4074)", () => {
   it("notes the President's and Everyone's roles as web's list does", () => {
     h.roles = [
       ...h.roles,
-      role({ id: "r-all", name: "Everyone", tier_id: "t-bro", permissions: ["members:view"], is_system: true, system_key: "MEMBER" }),
+      role({
+        id: "r-all",
+        name: "Everyone",
+        tier_id: "t-bro",
+        permissions: ["members:view"],
+        is_system: true,
+        system_key: "MEMBER",
+      }),
     ];
     const text = screenText(render(<ChapterRolesScreen />));
     expect(text).toContain("Can do everything");
@@ -419,7 +489,7 @@ describe("Roles (#4074)", () => {
     });
   });
 
-  it("finds a role by name once the list is long", () => {
+  it("finds a role or group by name once the list is long", () => {
     h.roles = [
       ...h.roles,
       ...Array.from({ length: 10 }, (_, index) =>
@@ -434,13 +504,16 @@ describe("Roles (#4074)", () => {
     const search = tree.root.find(
       (node) =>
         (node.type as unknown) === "TextInput" &&
-        node.props.accessibilityLabel === "Find a role",
+        node.props.accessibilityLabel === "Find a role or group",
     );
     act(() => search.props.onChangeText("rush"));
     const text = screenText(tree);
     expect(text).toContain("Rush Chair");
     expect(text).not.toContain("Committee 3");
     expect(text).not.toContain("Treasurer");
+    expect(text).not.toContain("In house");
+    act(() => search.props.onChangeText("house"));
+    expect(screenText(tree)).toContain("In house");
   });
 });
 
@@ -591,7 +664,12 @@ describe("Non-chapter business on the phone (#4958)", () => {
   it("lets a marked role that became unsafe be turned off", () => {
     h.roles = [
       ...h.roles,
-      role({ id: "r-ims", name: "Intramurals", tier_id: "t-bro", self_assignable: true }),
+      role({
+        id: "r-ims",
+        name: "Intramurals",
+        tier_id: "t-bro",
+        self_assignable: true,
+      }),
     ];
     vi.mocked(useLocalSearchParams).mockReturnValue({ roleId: "r-ims" });
     const [toggle] = pickSwitch(render(<RoleScreen />));

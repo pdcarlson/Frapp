@@ -32,7 +32,9 @@ export const MEMBER_HASH_HUES: readonly RoleColorHex[] =
  * AA. The new `--popover` (`#313131`) is too light for that recipe: 18% over it
  * leaves Violet's initials at 3.80:1. 14% over `--card` (`#262626`) paints
  * nearly the fill the old recipe did (Orange `#43362B`, was `#443426`) and
- * keeps every hue's initials at 4.69:1 or better.
+ * kept every hue's initials at 4.69:1 or better. The darker violet `--card`
+ * of 2026-11-19 (`#1F1D25`) paints a darker fill (Orange `#3D2E2A`), which
+ * raises them (Orange 5.81:1, Violet 5.19:1).
  */
 const MEMBER_AVATAR_TINT_ALPHA = 0.14;
 

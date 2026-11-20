@@ -21,24 +21,23 @@ import {
   useDeleteAccount,
   usePendingInvites,
 } from "@repo/hooks";
-import { OAUTH_MEMBERSHIP_HINT } from "@repo/hooks/auth-error-copy";
 import { normalizeAccentInput } from "@repo/hooks/chapter-identity";
-import { chapterInitials } from "@repo/validation";
+import { chapterInitials, INVITE_PASTE_COPY } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { BackRow } from "@/components/back-row";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
 import { JoinWithInvite } from "@/components/onboarding/join-with-invite";
 import {
-  OnboardingFieldLabel,
-  OnboardingTextInput,
-} from "@/components/onboarding/onboarding-field";
-import {
-  ONBOARDING_COLUMN_WIDTH,
-  OnboardingPrimaryButton,
-} from "@/components/onboarding/onboarding-primary-button";
+  InvitePasteButton,
+  useInvitePaste,
+} from "@/components/onboarding/invite-paste";
+import { ONBOARDING_COLUMN_WIDTH } from "@/components/onboarding/onboarding-primary-button";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
-import { OtherAccountLine } from "@/components/onboarding/other-account-line";
+import {
+  OtherAccountLine,
+  PromptLine,
+} from "@/components/onboarding/other-account-line";
 import {
   SignedInAs,
   useOnboardingSignOut,
@@ -48,7 +47,8 @@ import { useAuthSession } from "@/lib/auth-session";
 import {
   consumeRememberedInviteToken,
   extractInviteToken,
-  extractInviteTokenFromQuery,
+  inviteFromParams,
+  type InviteParams,
   peekInviteTokenFromLink,
   peekRememberedInviteThen,
   peekRememberedInviteToken,
@@ -60,10 +60,10 @@ import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { useAuthGateDestination } from "@/lib/onboarding/use-auth-gate";
-import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s02, "How are you getting in?" (`spec/ui/mobile/screens.md`, #3350), and
+ * s02, "Joining a chapter?" (`spec/ui/mobile/screens.md`, #3350, #5626), and
  * the invite card (#5625).
  *
  * An invite link, or an invite remembered across a sign-in or a relaunch,
@@ -71,56 +71,28 @@ import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * first, then one tap that signs in and joins. Web `/join` shows the same
  * card. Signed out with no invite, the screen sends the member to sign-in.
  *
- * Signed in with no invite, it asks one question with two large answers: "I
- * have an invite" opens the invite step here, and "I'm starting our chapter"
- * opens `/create-chapter`. The question also offers each pending invite
- * emailed to the account's verified address (`GET /v1/invites/mine`, #3782),
- * as web `/join` does (#3776). Tapping one opens the card on that invite.
+ * Signed in with no invite, it asks "Joining a chapter?" (#5626): the system
+ * Paste, pinned in thumb reach, opens the card on the invite web `/join`
+ * copied when the member tapped Get Frapp, since iOS can't carry a link
+ * through an install. Each pending invite emailed to the account's verified
+ * address (`GET /v1/invites/mine`, #3782) is offered above it, as web `/join`
+ * does (#3776), and opens the card in one tap. "Starting a chapter? Create a
+ * chapter" is one quiet line under Paste, for the founder.
  *
  * One surface, like s01 (#3349). Every signed-in view shows the account it is
  * signed in as, with Sign out beside it (#3782), and Delete account sits in
  * the Account menu in the top corner, because this is the only screen a
  * zero-membership account can reach (Apple 5.1.1(v), #2295).
  *
- * The invite step is one field that also accepts a pasted URL; the canvas draws
- * six cells for a shared code, but joining is single-use invite tokens
- * (`spec/behavior/onboarding.md` wins over the drawing for the data model).
- * Nothing joins from the field itself: Continue opens the card.
+ * The question has no invite field: nobody types an invite, and Paste takes
+ * the link or the bare invite alike (`pastedInviteToken`), here and on the
+ * card's "This invite link doesn't work". The canvas's six cells for a
+ * shared code were never the data model (`spec/ui/mobile/screens.md` § s02).
  */
 
-type JoinView = "choose" | "invite" | "confirm";
+type JoinView = "choose" | "confirm";
 
-export const JOIN_CHOICE_TITLE = "How are you getting in?";
-export const JOIN_INVITE_TITLE = "Join with an invite";
-
-type InviteParams = {
-  token?: string | string[];
-  invite?: string | string[];
-  code?: string | string[];
-};
-
-/** The invite a route param carries (`?token=`, `?invite=`, `?code=`), or null. */
-function inviteFromParams(params: InviteParams): string | null {
-  const paramValue = (value: string | string[] | undefined): string | null => {
-    if (typeof value === "string") return value;
-    if (Array.isArray(value) && typeof value[0] === "string") {
-      return value[0];
-    }
-    return null;
-  };
-  return extractInviteToken(
-    extractInviteTokenFromQuery((key) => {
-      switch (key) {
-        case "token":
-          return paramValue(params.token);
-        case "invite":
-          return paramValue(params.invite);
-        case "code":
-          return paramValue(params.code);
-      }
-    }),
-  );
-}
+export const JOIN_CHOICE_TITLE = INVITE_PASTE_COPY.title;
 
 export default function JoinChapter() {
   const { tokens } = useFrappTheme();
@@ -143,17 +115,15 @@ export default function JoinChapter() {
   // brought the member here. A link carries one invite, and that is the one
   // the member came for, so the question offers no others, as web `/join`
   // offers none when opened with a token.
-  // Set once the effect below applies one; until then `inviteIncoming`
-  // (below) reads the same answer at render, so the first render already
-  // knows and the offers are never fetched for a link-opened visit.
+  // Set once the effect below applies a link or param; until then
+  // `inviteIncoming` (below) reads the same answer at render, so the first
+  // render already knows and the offers are never fetched for a link-opened
+  // visit. A remembered invite counts only while it is remembered: one pasted
+  // here and then declined with Back leaves the emailed offers as they were.
   const [appliedLinkInvite, setAppliedLinkInvite] = useState(false);
-  // Whether the confirm step was opened from a pending-invite offer: its back
-  // goes to the question, since the field never held that invite.
+  // Whether the confirm step was opened from a pending-invite offer: backing
+  // out of it keeps nothing remembered, since an offer never was.
   const [fromOffer, setFromOffer] = useState(false);
-  // What the field held when an offer was picked, put back on Back from the
-  // offer's confirm step, so a pasted invite isn't lost to a look at an offer.
-  const [tokenBeforeOffer, setTokenBeforeOffer] = useState("");
-  const [error, setError] = useState<string | null>(null);
   // A join, or the open of a chapter the member is already in, running on the
   // card: it holds the screen like a deletion does.
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -165,7 +135,7 @@ export default function JoinChapter() {
   const appliedInvites = useRef(new Set<string>());
   // The link and params the effect last acted on. A re-run where they are
   // unchanged (a join or deletion that held links just ended) has nothing to
-  // apply, so it leaves the field, the step and any error alone.
+  // apply, so it leaves the invite and the step alone.
   const handledInputs = useRef<string | null>(null);
   // A join or deletion in flight holds the screen on the invite that started
   // it, so a link opened meanwhile waits for it to end (`stepBack` holds the
@@ -215,12 +185,10 @@ export default function JoinChapter() {
     }
     const next = fresh ?? rememberedInvite;
     if (next) {
-      // A link just opened wins over whatever the field holds: the confirm
-      // step hides the field, so a kept value would be joined unseen. A
-      // remembered invite only fills an empty field.
+      // A link just opened wins over the invite the card holds. A remembered
+      // invite only fills an empty one.
       setToken((current) => (fresh || current.length === 0 ? next : current));
-      setError(null);
-      setAppliedLinkInvite(true);
+      if (fresh) setAppliedLinkInvite(true);
       setFromOffer(false);
       // An opened invite link has already answered the question and filled
       // the field, so it goes straight to the confirm step.
@@ -276,30 +244,20 @@ export default function JoinChapter() {
   }, [submitting]);
 
   /**
-   * One step back: from the confirm step to the field, which keeps the
-   * invite so it can be changed, and from the field to the question.
+   * One step back, from the card to the question. Backing out declines an
+   * opened or pasted invite, so the next visit asks again; an emailed one
+   * stays offered on the question.
    */
   const stepBack = useCallback(() => {
     // Held while a join or deletion runs, so the result lands on the view
     // that started it.
     if (submitting) return;
-    setError(null);
-    if (view === "confirm" && fromOffer) {
-      // The offer's invite never went through the field, so backing out
-      // returns to the question with the field empty.
-      setFromOffer(false);
-      setToken(tokenBeforeOffer);
-      setView("choose");
-      return;
-    }
-    if (view === "confirm") {
-      setView("invite");
-      return;
-    }
-    // Backing out declines an opened invite: the next visit asks again.
-    consumeRememberedInviteToken();
+    if (view !== "confirm") return;
+    if (!fromOffer) consumeRememberedInviteToken();
+    setFromOffer(false);
+    setToken("");
     setView("choose");
-  }, [fromOffer, submitting, tokenBeforeOffer, view]);
+  }, [fromOffer, submitting, view]);
 
   // Android's back button steps back inside this screen before leaving it:
   // it closes the Account menu, then steps back a view, as `‹ Back` does.
@@ -351,6 +309,37 @@ export default function JoinChapter() {
     view === "confirm" ||
     (status !== "authenticated" && incomingInvite !== null);
 
+  /**
+   * An invite pasted on the question (#5626), or on the card's not-an-invite
+   * screen: remembered, as a link's is, and opened on the card.
+   */
+  const openInvite = useCallback(
+    (next: string) => {
+      if (submitting) return;
+      setAccountOpen(false);
+      rememberInviteToken(next);
+      setToken(next);
+      setFromOffer(false);
+      setView("confirm");
+    },
+    [submitting],
+  );
+  const paste = useInvitePaste(openInvite);
+  // What a paste said belongs to the question as it was then: any way onto
+  // the card (an offer, a link) or off to chapter setup clears it.
+  const clearPasteMessage = paste.clear;
+  useEffect(() => {
+    if (view === "confirm") clearPasteMessage();
+  }, [clearPasteMessage, view]);
+
+  /** Off the card, signed out: back to sign-in, the invite forgotten. */
+  const leaveInvite = useCallback(() => {
+    if (submitting) return;
+    consumeRememberedInviteToken();
+    setToken("");
+    router.replace("/(auth)/sign-in");
+  }, [router, submitting]);
+
   if (status === "unauthenticated" && incomingInvite === null) {
     return <Redirect href="/(auth)/sign-in" />;
   }
@@ -371,13 +360,11 @@ export default function JoinChapter() {
    * unreachable from here, so without this row that account can never be
    * deleted from the app (#2295).
    *
-   * The failure deliberately uses the shared native alert rather than this
-   * screen's `error` slot. That slot belongs to invite redemption and is
-   * cleared on every keystroke (`onChangeText`) and on every join attempt, so a
-   * "deletion didn't finish, please retry" notice put there is erased by the
-   * user's next tap — on the one flow whose entire contract is retry. The
-   * alert also announces itself to VoiceOver and survives navigation, matching
-   * Settings exactly.
+   * The failure deliberately uses the shared native alert rather than a line
+   * on the screen, which the member's next tap (a paste, a join) would
+   * replace: on the one flow whose entire contract is retry. The alert also
+   * announces itself to VoiceOver and survives navigation, matching Settings
+   * exactly.
    */
   function handleDeleteAccount() {
     confirmDeleteAccount({
@@ -388,38 +375,12 @@ export default function JoinChapter() {
     });
   }
 
-  /** The field's Continue, and its Go key: on to the confirm step. */
-  function handleContinue() {
-    // A field that already has focus can still send Go after `editable`
-    // turns false.
-    if (submitting) return;
-    if (!extractInviteToken(token)) {
-      setError("Paste the invite your officer sent, or open the invite link.");
-      return;
-    }
-    setError(null);
-    setFromOffer(false);
-    setView("confirm");
-  }
-
-  /** A pending-invite offer: on to the confirm step with its invite. */
+  /** A pending-invite offer: on to the card with its invite. */
   function handlePickOffer(offerToken: string) {
     if (submitting) return;
     setAccountOpen(false);
-    setTokenBeforeOffer(token);
     setToken(offerToken);
-    setError(null);
     setFromOffer(true);
-    setView("confirm");
-  }
-
-  /** Another link, pasted on the card's not-an-invite screen. */
-  function handleOtherInvite(next: string) {
-    if (submitting) return;
-    rememberInviteToken(next);
-    setToken(next);
-    setError(null);
-    setFromOffer(false);
     setView("confirm");
   }
 
@@ -451,11 +412,7 @@ export default function JoinChapter() {
         <BackRow
           house
           label="Back"
-          accessibilityLabel={
-            view === "confirm" && !fromOffer
-              ? "Back to the invite"
-              : "Back to the choices"
-          }
+          accessibilityLabel="Back to the choices"
           disabled={submitting}
           onPress={stepBack}
           trailing={accountButton}
@@ -479,9 +436,9 @@ export default function JoinChapter() {
     >
       <KeyboardAvoidingArea style={styles.flex} atScreenBottom>
         {/*
-          The column scrolls: on a 375x667 phone with the keyboard up the
-          invite step does not fit, and a non-scrolling column would clip its
-          last control.
+          The column scrolls: on a 375x667 phone, offers above Paste and the
+          card's longer states do not fit, and a non-scrolling column would
+          clip their last control.
         */}
         {/*
           What the menu covers leaves the accessibility tree while it is up:
@@ -517,7 +474,8 @@ export default function JoinChapter() {
                 ) : undefined
               }
               onBusyChange={setInviteBusy}
-              onOtherInvite={handleOtherInvite}
+              onOtherInvite={openInvite}
+              onLeave={leaveInvite}
             />
           ) : (
             <>
@@ -542,9 +500,8 @@ export default function JoinChapter() {
                 </View>
 
                 {view === "choose" ? (
-                  // At the top, like the other two views, so the title doesn't
-                  // jump from mid-screen to the top on the first tap. No line
-                  // under it: the two answers already say how a member gets in.
+                  // At the top, like the card, so the title doesn't jump from
+                  // mid-screen to the top on the first tap.
                   <Animated.View
                     key="choose"
                     entering={entering}
@@ -553,8 +510,8 @@ export default function JoinChapter() {
                     <Text style={styles.title}>{JOIN_CHOICE_TITLE}</Text>
 
                     {offers.length > 0 ? (
-                      // Invites emailed to this account, above the two answers
-                      // (#3782). Each opens the confirm step on its invite.
+                      // Invites emailed to this account, first: one tap opens
+                      // the card (#3782).
                       <View style={styles.choices}>
                         {offers.map((offer) => (
                           <ChoiceRow
@@ -591,38 +548,28 @@ export default function JoinChapter() {
                       </View>
                     ) : null}
 
-                    <View style={styles.choices}>
-                      <ChoiceRow
-                        title="I have an invite"
-                        body="Use the link your officer sent."
-                        disabled={submitting}
-                        dimmed={submitting}
-                        onPress={() => {
-                          setAccountOpen(false);
-                          setView("invite");
-                        }}
-                      />
-                      <ChoiceRow
-                        title="I'm starting our chapter"
-                        body="Set it up, then invite everyone."
-                        accessibilityHint="Opens chapter setup."
-                        disabled={submitting}
-                        dimmed={submitting}
-                        onPress={() => {
-                          setAccountOpen(false);
-                          router.push("/create-chapter");
-                        }}
-                      />
-                    </View>
+                    {/*
+                      What Paste is for, until a paste finds no invite: then
+                      what to do instead, in the same place, so nothing moves.
+                    */}
+                    <Text
+                      style={paste.message ? styles.errorLede : styles.subtitle}
+                      accessibilityLiveRegion="polite"
+                    >
+                      {paste.message ??
+                        (offers.length > 0
+                          ? INVITE_PASTE_COPY.ledeWithOffers
+                          : INVITE_PASTE_COPY.lede)}
+                    </Text>
 
                     {/*
-                  For someone already in a chapter who signed in with another
-                  account than the one they joined with. Not when an invite
-                  link or an emailed invite brought them: those are the
-                  account an officer meant. Held until the emailed-invites
-                  read settles, so it never shows and then vanishes; a read
-                  that failed still shows it, since it is the way out.
-                */}
+                      For someone already in a chapter who signed in with another
+                      account than the one they joined with. Not when an invite
+                      link or an emailed invite brought them: those are the
+                      account an officer meant. Held until the emailed-invites
+                      read settles, so it never shows and then vanishes; a read
+                      that failed still shows it, since it is the way out.
+                    */}
                     {gateDestination === "join" &&
                     !arrivedWithInvite &&
                     !pendingInvites.isPending &&
@@ -634,60 +581,33 @@ export default function JoinChapter() {
                       />
                     ) : null}
                   </Animated.View>
-                ) : view === "invite" ? (
-                  <Animated.View
-                    key="invite"
-                    entering={entering}
-                    style={styles.stepBody}
-                  >
-                    <Text style={styles.title}>{JOIN_INVITE_TITLE}</Text>
-                    <Text style={styles.subtitle}>
-                      Paste the invite link or code your officer sent.
-                    </Text>
-
-                    <OnboardingFieldLabel>Invite</OnboardingFieldLabel>
-                    <OnboardingTextInput
-                      value={token}
-                      onChangeText={(value) => {
-                        setToken(value);
-                        setError(null);
-                      }}
-                      placeholder="Paste invite or link"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      autoComplete="off"
-                      // A filled field came from a link, or back from the confirm
-                      // step; the next step is Continue, not typing, so the
-                      // keyboard stays down.
-                      autoFocus={token.length === 0}
-                      textContentType="none"
-                      accessibilityLabel="Invite token"
-                      editable={!submitting}
-                      returnKeyType="next"
-                      onSubmitEditing={handleContinue}
-                      style={styles.inviteInput}
-                    />
-
-                    {error ? (
-                      <Text style={styles.errorText}>{error}</Text>
-                    ) : null}
-
-                    <Text style={styles.hintText}>{OAUTH_MEMBERSHIP_HINT}</Text>
-                  </Animated.View>
                 ) : null}
               </ScrollView>
 
               {/*
-            The step forward, pinned above the keyboard and the inset
-            (#3348 screen rules). Inside the underlay so the Account menu
-            hides it from a screen reader too.
-          */}
-              {view === "invite" ? (
+                Paste, pinned above the inset in thumb reach as every
+                onboarding step's one button is (#3348 screen rules), and the
+                founder's quiet way to chapter setup under it. Inside the
+                underlay so the Account menu hides both from a screen reader
+                too.
+              */}
+              {view === "choose" ? (
                 <View style={styles.footer}>
-                  <OnboardingPrimaryButton
-                    label="Continue"
+                  <InvitePasteButton
+                    onText={paste.onText}
+                    size="large"
                     disabled={submitting}
-                    onPress={handleContinue}
+                  />
+                  <PromptLine
+                    prompt={INVITE_PASTE_COPY.startingPrompt}
+                    action={INVITE_PASTE_COPY.startingAction}
+                    hint={INVITE_PASTE_COPY.startingHint}
+                    disabled={submitting}
+                    onPress={() => {
+                      setAccountOpen(false);
+                      paste.clear();
+                      router.push("/create-chapter");
+                    }}
                   />
                 </View>
               ) : null}
@@ -815,22 +735,19 @@ function createStyles(tokens: SignetTokens) {
       maxWidth: ONBOARDING_COLUMN_WIDTH,
       alignSelf: "center",
     },
+    // Paste, then the quiet founder line under it.
     footer: {
       paddingHorizontal: tokens.spacing.xl,
-      paddingVertical: tokens.spacing.lg,
+      paddingTop: tokens.spacing.lg,
+      paddingBottom: tokens.spacing.sm,
+      gap: tokens.spacing.xs,
     },
-    // An invite is a token, so it reads in mono, on the shared field.
-    inviteInput: {
-      fontFamily: MONO_FONT_FAMILY,
-    },
-    errorText: {
-      ...typeRole(tokens.typography.role.caption),
+    // The lede's slot, saying what a paste found: the same role and margin
+    // as the lede, so swapping one for the other moves nothing.
+    errorLede: {
+      marginBottom: tokens.spacing.sm,
+      ...typeRole(tokens.typography.role.body),
       color: tokens.color.semantic.destructive,
-    },
-    hintText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      textAlign: "center",
     },
     // The Account menu's rows, while a join or a deletion is in flight
     // (`submitting`): each row dims as a whole, to 0.5. A control that cannot

@@ -85,8 +85,10 @@ import type {
   GoogleCalendarOAuthState,
   Invite,
   Meeting,
+  MeetingDateReminder,
   MeetingDraft,
   MeetingMinutesRequest,
+  MeetingNoMinutes,
   MeetingNote,
   MeetingRecording,
   MeetingTemplate,
@@ -254,8 +256,10 @@ export interface Database {
       google_calendar_connections: TableDefinition<GoogleCalendarConnection>;
       google_calendar_oauth_states: TableDefinition<GoogleCalendarOAuthState>;
       invites: TableDefinition<Invite>;
+      meeting_date_reminders: TableDefinition<MeetingDateReminder>;
       meeting_drafts: TableDefinition<MeetingDraft>;
       meeting_minutes_requests: TableDefinition<MeetingMinutesRequest>;
+      meeting_no_minutes: TableDefinition<MeetingNoMinutes>;
       meeting_notes: TableDefinition<MeetingNote>;
       meeting_recordings: TableDefinition<MeetingRecording>;
       meeting_templates: TableDefinition<MeetingTemplate>;

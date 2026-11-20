@@ -4,7 +4,6 @@
  * owns that distinction).
  */
 
-import { parseInstant } from "@repo/formatting";
 import { localWeekStart } from "@repo/hooks";
 
 /** Minutes as the drawn `2.1 hrs`. Singular below 1.05 so `1.0 hrs` never ships. */
@@ -17,43 +16,6 @@ export function formatHoursLabel(minutes: number): string {
 /** Minutes as a bare one-decimal hour count, for the week summary's big number. */
 export function formatHoursValue(minutes: number): string {
   return (Math.max(0, minutes) / 60).toFixed(1);
-}
-
-function timeOfDay(value: string): string | null {
-  const date = parseInstant(value);
-  if (!date) return null;
-  return date.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function weekday(value: string): string | null {
-  const date = parseInstant(value);
-  if (!date) return null;
-  return date.toLocaleDateString(undefined, { weekday: "long" });
-}
-
-/**
- * A history row's meta line: `Tuesday · 7:02 – 9:10 PM`.
- *
- * The range separator is an en dash, as drawn. An open-ended session (no
- * `end_time`, which a terminal row should never have but the API does not
- * promise) degrades to the start alone rather than rendering a dangling dash.
- *
- * These are full ISO instants, not bare `YYYY-MM-DD`, so the local-noon parse
- * `lib/more/service-hours.ts` needs does not apply — a timestamp already carries
- * its offset and `new Date` reads it correctly in every zone.
- */
-export function formatSessionRange(
-  startTime: string,
-  endTime: string | null,
-): string | null {
-  const day = weekday(startTime);
-  const from = timeOfDay(startTime);
-  if (!day || !from) return null;
-  const to = endTime ? timeOfDay(endTime) : null;
-  return to ? `${day} · ${from} – ${to}` : `${day} · ${from}`;
 }
 
 /**

@@ -1438,8 +1438,6 @@ export function ChannelList({
       ref={railRef}
       className="space-y-4"
       data-reorder-rail={reorder ? "" : undefined}
-      // The first-run tour's first stop (`onboarding/tour.ts`).
-      data-channel-list={kind}
     >
       {/* Where a drag or an Alt+Arrow move is announced (#4178). */}
       {reorder ? (

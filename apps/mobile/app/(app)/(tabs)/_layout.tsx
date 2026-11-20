@@ -9,9 +9,7 @@ import {
 import { YouTabAvatar } from "@/components/you-tab-avatar";
 import { AppErrorScreen } from "@/components/route-error";
 import { GlassTabBar } from "@/components/glass-tab-bar";
-import { TourHost } from "@/components/onboarding/tour";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
-import { MeetFrappAiHost } from "@/components/ai/meet-frapp-ai-host";
 import { SCREEN_TITLES } from "@/lib/back-target";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { floatingScreenLayout } from "@/lib/floating-chrome";
@@ -68,9 +66,7 @@ export default function TabLayout() {
   });
 
   return (
-    // The first-run tour's host wraps the navigator, so its dim covers the
-    // screens and the floating bar both (`components/onboarding/tour.tsx`).
-    <TourHost>
+    <>
       <Tabs
         // On a tab, Android's back button returns to the tab the member came
         // from rather than straight to Chat (the default, "firstRoute").
@@ -129,12 +125,10 @@ export default function TabLayout() {
         />
       </Tabs>
       {/* What's new opens by itself once after an update brings a new entry
-          or new lines, never on a launch the tour is due (`lib/whats-new.ts`). */}
+          or new lines, never on a launch the welcome card is due
+          (`lib/whats-new.ts`). */}
       <WhatsNewHost />
-      {/* Meet Frapp AI, once, for an account that never answered it, after
-          What's new if both are due (`lib/startup-sheets.ts`). */}
-      <MeetFrappAiHost />
-    </TourHost>
+    </>
   );
 }
 

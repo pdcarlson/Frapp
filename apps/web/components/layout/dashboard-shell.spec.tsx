@@ -190,12 +190,9 @@ vi.mock("@/components/onboarding/chapter-wizard-gate", () => ({
 vi.mock("@/components/auth/terms-prompt", () => ({
   TermsPromptGate: () => null,
 }));
-vi.mock("@/components/onboarding/onboarding-tour", () => ({
-  OnboardingTour: () => null,
-}));
-// Meet Frapp AI's host has its own spec (`meet-frapp-ai-host.spec.tsx`).
-vi.mock("@/components/ai/meet-frapp-ai-host", () => ({
-  MeetFrappAiHost: () => null,
+// The welcome gate (#5627) has its own spec.
+vi.mock("@/components/onboarding/welcome-gate", () => ({
+  WelcomeGate: () => null,
 }));
 // Whether this member has Ask (`ask-host.tsx`); null, as for one without it,
 // unless a test says otherwise.
@@ -327,6 +324,31 @@ describe("DashboardShell", () => {
     );
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(screen.getByText("route content")).toBeInTheDocument();
+  });
+
+  it("never lets main scroll its page's header away (overflow clip, not hidden)", () => {
+    // A `hidden` box is a scroll container: a jump or a focus deep in long
+    // minutes scrolled `main` and hid the page's title and X (2026-11-20).
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const main = screen.getByRole("main");
+    expect(main.className).toContain("overflow-clip");
+    expect(main.className).not.toContain("overflow-hidden");
+  });
+
+  it("clips the chat panel too, rather than letting it scroll", () => {
+    mockPathname.value = "/chat";
+    render(
+      <DashboardShell>
+        <p>route content</p>
+      </DashboardShell>,
+    );
+    const chat = document.getElementById("chat-panel");
+    expect(chat?.className).toContain("overflow-clip");
+    expect(chat?.className).not.toContain("overflow-hidden");
   });
 
   it("titles the open route in the top bar, as its only h1", () => {

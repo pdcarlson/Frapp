@@ -18,6 +18,7 @@ import {
   WHATS_NEW_OPEN_DELAY_MS,
   WhatsNewHost,
 } from "@/components/whats-new/whats-new-host";
+import { markWelcomeDue } from "@/lib/onboarding/welcome-due";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -34,10 +35,8 @@ const nav = vi.hoisted(() => ({ pathname: "/chat" }));
 vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname }));
 
 const data = vi.hoisted(() => ({
-  user: undefined as { created_at?: string } | undefined,
-  chapters: undefined as
-    | { chapter_id: string; has_completed_onboarding: boolean }[]
-    | undefined,
+  user: undefined as { id?: string; created_at?: string } | undefined,
+  chapters: undefined as { chapter_id: string }[] | undefined,
   account: { settled: true, seen: null } as {
     settled: boolean;
     seen: string | null | undefined;
@@ -93,10 +92,8 @@ describe("WhatsNewHost", () => {
     window.localStorage.clear();
     resetWhatsNewForTests();
     nav.pathname = "/chat";
-    data.user = { created_at: "2026-01-01T00:00:00.000Z" };
-    data.chapters = [
-      { chapter_id: "chapter-1", has_completed_onboarding: true },
-    ];
+    data.user = { id: "user-1", created_at: "2026-01-01T00:00:00.000Z" };
+    data.chapters = [{ chapter_id: "chapter-1" }];
     data.account = { settled: true, seen: null };
     data.recordOnAccount.mockReset();
   });
@@ -179,10 +176,8 @@ describe("WhatsNewHost", () => {
     expect(unreadMark()).toHaveTextContent("read");
   });
 
-  it("records without showing while the first-run tour is due", () => {
-    data.chapters = [
-      { chapter_id: "chapter-1", has_completed_onboarding: false },
-    ];
+  it("records without showing while the welcome card is due", () => {
+    markWelcomeDue("user-1", "chapter-1");
     renderHost();
     wait();
     expect(screen.queryByRole("dialog")).toBeNull();

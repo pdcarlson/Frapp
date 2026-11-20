@@ -249,8 +249,8 @@ export function ChapterWizardGate() {
   // Only on a settled read (#5078). The join page leaves `["chapters"]`
   // cached as `[]`, and its redeem invalidates it, but the shell mounts on
   // `/chat` while that refetch is still in flight. Latching on the cached
-  // `[]` opened the wizard behind the tour the refetch then opened, and the
-  // latch kept it there after the tour until a reload.
+  // `[]` opened the wizard over the chapter the member had just joined, and
+  // the latch kept it there until a reload.
   const hasNoChapters =
     chaptersQuery.isSuccess &&
     !chaptersQuery.isFetching &&

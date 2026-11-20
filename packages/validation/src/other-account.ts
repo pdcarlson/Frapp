@@ -1,6 +1,5 @@
 /**
- * The quiet line under s02's two answers, on web `/join` and the phone's join
- * screen: a way back for someone who is already in a chapter but signed in
+ * The quiet line under the join question, on web `/join` and the phone's s02: a way back for someone who is already in a chapter but signed in
  * with a different account than the one they joined with (Google instead of
  * their school email, say). Tapping it signs out and lands on sign-in.
  *

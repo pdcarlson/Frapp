@@ -1,14 +1,15 @@
 import type { ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { meterGrooveOn } from "@/components/meter";
 import { useFrappTheme } from "@/lib/theme";
 
 /**
  * A ring that fills clockwise from twelve o'clock (#4766): Activity's week
  * ring, and the small gauges of its semester strip. The meter's recipe
- * (`components/meter.ts`) bent round: a groove in the page background, since
- * a ring is drawn on a card, and the caller's colour as its fill (the chapter
- * accent, or the success hue once it closes).
+ * (`components/meter.ts`) bent round: the meter's groove for the surface the
+ * ring sits on (`meterGrooveOn`), and the caller's colour as its fill (the
+ * chapter accent, or the success hue once it closes).
  *
  * Decoration: the count beside or inside it says the number, so the ring is
  * hidden from a screen reader and whatever holds it carries the sentence.
@@ -18,6 +19,7 @@ export function ProgressRing({
   stroke,
   progress,
   color,
+  on,
   children,
   testID,
 }: {
@@ -26,6 +28,8 @@ export function ProgressRing({
   /** 0 to 1. Nothing is drawn at 0, so an empty ring is only its groove. */
   progress: number;
   color: string;
+  /** The surface the ring is drawn on, which picks its groove. */
+  on: string;
   /** Drawn centred inside the ring. */
   children?: ReactNode;
   testID?: string;
@@ -46,7 +50,7 @@ export function ProgressRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={tokens.color.surface.background}
+          stroke={meterGrooveOn(tokens, on)}
           strokeWidth={stroke}
           fill="none"
         />

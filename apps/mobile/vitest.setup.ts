@@ -87,9 +87,13 @@ vi.mock("expo-location", () => ({
 }));
 
 // The clipboard is native; specs assert on the call (expo-clipboard).
+// No system Paste button (`UIPasteControl`) here, so Paste is Frapp's own
+// button, which reads `getStringAsync` on the tap (#5626).
 vi.mock("expo-clipboard", () => ({
   setStringAsync: vi.fn().mockResolvedValue(true),
   getStringAsync: vi.fn().mockResolvedValue(""),
+  isPasteButtonAvailable: false,
+  ClipboardPasteButton: () => null,
 }));
 
 // Chapter setup marks the chapter going live with a tap (#3351), and a

@@ -120,6 +120,45 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-20",
+    title: "New in this update",
+    changes: [
+      "Event rows now say when an event starts and ends, not just when it starts.",
+      "Tapping Get Frapp on an invite link copies the invite, so after installing, one tap on Paste opens your chapter's invite.",
+      "The app's dark surfaces are a softer near-black now, with gentler steps between the page, cards and menus.",
+      "Each Coming up date in minutes now says when it's on the calendar or has a task, and its ⋯ menu adds it to the calendar, makes it a task or copies it.",
+      "Officers can give someone a role or put them in a group right from their profile, Chapter settings keeps roles and groups on one Roles and groups page, and the Directory can filter by group.",
+      "You can join a chapter at 17, and Frapp AI asks you to confirm you're 18 the first time you use it.",
+      "Each Coming up date in minutes now has Remind me in its ⋯ menu, which sends you a notification the evening before, or that morning.",
+      "When someone joins, you hear about it once they've added their name, so the notice says who joined.",
+      "Right after you join a chapter you add your name and photo on one screen, and Frapp AI waits to introduce itself until you first use it.",
+      "A member's profile shows Message as a small button under their name instead of a wide bar.",
+      "Your first chapter channel now greets you with a welcome card showing the next two events and a quick way to finish your profile, in place of the old tour.",
+      "Officers can now have a chapter link out for each role at once, such as one for the pledge class and one for brothers, and pick the role when they make one.",
+      "Officers who post minutes now get a quick review that turns each upcoming Coming up date into a task, with the person the minutes name filled in.",
+      "A chapter can now let its top officers give and take away roles at their own level, such as one officer making another Stewardship Chair, by turning on Give roles at your own level in Roles and groups.",
+      "Invite emails now lead with your chapter's name and open the invite from one button, with no long link to copy.",
+      "Role and tier settings no longer show two switches that did nothing, Post announcements and Post in the alumni channel.",
+      "The members list beside a channel now runs tier by tier, President first, with each officer's title under their name.",
+      "A finished task now says who marked it done and when at the top, with their proof under it, and its history shows it too.",
+      "Meetings now read in date order with the next meeting on top, and an officer can mark a past meeting as having no minutes.",
+    ],
+    web: [
+      "Rows show more at a glance: an event says when check-in is open, a task says how it repeats and how far along its checklist and photos are, and a study session says which zone it was in.",
+      "Clicking someone in the Directory opens a small card beside them instead of taking over the page.",
+      "Long dropdowns, like the channel picker in chat settings, now stay inside the window and scroll, so every choice can be reached.",
+      "In Settings → Chat, click a category to see its channels, and click a channel to open its settings.",
+      "Event forms now group their settings in three framed boxes, and the day, times, points and every menu look like fields you can click.",
+      "Setting up a pledge class is quicker: the member search lists everyone as soon as you click it, and you set the order by dragging names instead of typing numbers.",
+      "A member's card in the Directory now opens under their row, fully on screen, and the roles and groups list stays open so you can give several in one go.",
+      "Events filters open from one Filter menu, and the filters you've turned on show as chips under the header so you can remove one with a click.",
+    ],
+    phone: [
+      "Documents now say when they take effect, and study sessions show the date and time the same way the web does.",
+      "Opening an invite to another chapter now lets you join it right in the app, without signing in again.",
+    ],
+  },
+  {
     date: "2026-11-19",
     title: "New in this update",
     changes: [
@@ -148,6 +187,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "When someone joins with your invite, you now get a notification instead of a message in your DMs.",
       "Personal invites now last 7 days, and a link that has run out lets you ask the sender for a new one in one tap.",
       "Each minutes on Meetings now says what happened, its first TL;DR line, under how many decisions and action items it holds.",
+      "Dates are written out, such as \"Friday, November 6\" and \"Due November 14\", instead of \"Fri, Nov 6\".",
     ],
     web: [
       "On a wide window, Ask Frapp now stays at the bottom of the sidebar, so it no longer moves as you open chat or a page, or covers what you're reading.",
@@ -774,7 +814,7 @@ export interface WhatsNewDecision {
  * Whether What's new opens by itself, and with which entries: the one rule
  * behind the phone's sheet (`apps/mobile/lib/whats-new.ts`) and the web
  * dashboard's dialog (`apps/web/lib/whats-new.ts`). Each surface keeps its own
- * marker and says what `tourDue` and `existingInstall` mean there.
+ * marker and says what `welcomeDue` and `existingInstall` mean there.
  *
  * `notes` is {@link RELEASE_NOTES} (newest first); dates are `YYYY-MM-DD`, so
  * they compare as strings. `seen` is a stored {@link releaseNoteVersion}, or
@@ -783,9 +823,10 @@ export interface WhatsNewDecision {
  * - A marker at or past the newest entry shows nothing and records nothing.
  *   That covers a rollback too, to an earlier day or to a shorter version of
  *   the same day's entry.
- * - `tourDue` (a first-run tour owns this visit), or no marker on a device or
- *   account that wasn't here before the newest entry (`existingInstall`
- *   false), records the newest entry without showing it: old news to them.
+ * - `welcomeDue` (a new member's welcome card owns this visit), or no marker
+ *   on a device or account that wasn't here before the newest entry
+ *   (`existingInstall` false), records the newest entry without showing it:
+ *   old news to them.
  * - No marker but `existingInstall` shows the newest entry only; what they
  *   saw before is unknown.
  * - Otherwise it shows every entry newer than the marker, and that day's
@@ -794,10 +835,10 @@ export interface WhatsNewDecision {
 export function decideWhatsNew(input: {
   notes: readonly ReleaseNote[];
   seen: string | null;
-  tourDue: boolean;
+  welcomeDue: boolean;
   existingInstall: boolean;
 }): WhatsNewDecision {
-  const { notes, seen, tourDue, existingInstall } = input;
+  const { notes, seen, welcomeDue, existingInstall } = input;
   const newest = notes[0];
   if (!newest) return { show: [], record: null };
   const newestVersion = releaseNoteVersion(newest);
@@ -809,7 +850,7 @@ export function decideWhatsNew(input: {
   if (marker !== null && !isNewerReleaseNoteVersion(versionOf(newest), marker)) {
     return { show: [], record: null };
   }
-  if (tourDue || (marker === null && !existingInstall)) {
+  if (welcomeDue || (marker === null && !existingInstall)) {
     return { show: [], record: newestVersion };
   }
   const show =

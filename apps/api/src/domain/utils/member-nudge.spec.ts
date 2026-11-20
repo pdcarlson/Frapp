@@ -36,6 +36,7 @@ function task(overrides: Partial<Task> = {}): Task {
     point_reward: null,
     points_awarded: false,
     completed_at: null,
+    completed_by: null,
     confirmed_at: null,
     sent_back_at: null,
     proof_kind: 'none',

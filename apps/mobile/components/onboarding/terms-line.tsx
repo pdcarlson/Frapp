@@ -8,7 +8,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * The Terms line under the invite card's buttons (#5625), in place of the
  * checkbox (Paul's pick, 2026-11-19): "By joining you agree to the Terms and
- * Privacy Policy and confirm you're 18 or older." The tap above it is the
+ * Privacy Policy and confirm you're 17 or older." The tap above it is the
  * acceptance, and the join carries it (`joinRedeemBody`). The words are
  * `termsLine` in `@repo/validation`, shared with web's line
  * (`apps/web/components/join/terms-line.tsx`).

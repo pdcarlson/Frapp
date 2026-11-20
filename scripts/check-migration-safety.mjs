@@ -773,6 +773,14 @@ function validateLedgerCoverage(migrations) {
  */
 export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([
   {
+    file: "supabase/migrations/20261120000243_member_joined_via_invite.sql",
+    removed: true,
+    reason:
+      "Renamed to 20261120030209 with the same SQL. #5711 merged 17 seconds after #5714's " +
+      "20261120004849 (the #4795 race); staging applied 004849 first and db push then refused " +
+      "000243. Neither hosted database had applied it at the rename (checked 2026-11-20).",
+  },
+  {
     file: "supabase/migrations/20261119210432_chat_messages_signup_form_cards_index.sql",
     removed: true,
     reason:

@@ -59,6 +59,8 @@ export interface TaskRowModel {
   /** Whom it is assigned to. */
   assigneeId: string | null;
   completedAt: string | null;
+  /** Who marked it done (#5732); null while open or from an older read. */
+  completedBy: string | null;
   /** When an officer confirmed it; `null` while it waits on one. */
   confirmedAt: string | null;
   pointReward: number | null;
@@ -233,6 +235,7 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     dueAt: str(row, "due_at"),
     assigneeId: str(row, "assignee_id"),
     completedAt: str(row, "completed_at"),
+    completedBy: str(row, "completed_by"),
     confirmedAt: str(row, "confirmed_at"),
     pointReward: num(row, "point_reward"),
     pointsAwarded: row.points_awarded === true,

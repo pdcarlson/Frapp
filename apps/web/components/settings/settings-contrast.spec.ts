@@ -69,13 +69,14 @@ describe("the capability matrix states held and missing in text tones", () => {
     // 2.184. A number in a comment is not a measurement — so the number is an
     // assertion now, and the comment cites the assertion. (2.189 on the
     // neutral ladder, 2026-11-05; 2.681 with the 2026-11-09 text ladder; 2.596
-    // on the 2026-11-12 surface ladder's lighter card.)
+    // on the 2026-11-12 surface ladder's lighter card; 2.673 on the 2026-11-19
+    // violet card.)
     const washed = ratio(
       mix(TEXT.mutedForeground, MATRIX_SURFACE, 0.4),
       MATRIX_SURFACE,
     );
     expect(washed).toBeLessThan(AA_TEXT);
-    expect(washed).toBeCloseTo(2.596, 2);
+    expect(washed).toBeCloseTo(2.673, 2);
   });
 
   it("would also read in `--muted`, since the 2026-11-09 text ladder", () => {
@@ -198,18 +199,21 @@ describe("the accent preview's label tone, computed from the draft", () => {
     expect(ratio(ink, "#0080FD")).toBeCloseTo(4.191, 2);
   });
 
-  it("finds the band empty on the 2026-11-12 ladder: every kept accent's label clears AA", () => {
+  it("finds the band empty on the preview's backdrop: every kept accent's label clears AA", () => {
     // The band is "kept by the resolver on `--card`, yet its best label ink
     // misses AA", where a label warning used to fire. On the 2026-11-05 ladder `#0086FE` was its example (4.99:1 on
     // the card, ink 4.45:1). The 2026-11-12 ladder (#3826) lightened `--card`
     // to `#262626`, and keeping an accent there takes enough luminance that
     // `onHouse` ink always clears: the closest a kept colour comes is 4.75:1.
     // So the label warning was a guard no real input reached, and #4388
-    // deleted it. If this fails, a ladder change reopened the band: bring a
-    // warning back to the Accent card, with its writing.md row.
+    // deleted it. The 2026-11-19 violet ladder's darker `--card` (`#1F1D25`)
+    // reopened it (closest 4.31:1), so the preview now resolves against
+    // `--popover` (`#2A2830`), the lightest step, which keeps it empty. If this
+    // fails, a ladder change reopened the band: bring a warning back to the
+    // Accent card, with its writing.md row.
     const onCard = (accent: string) =>
       resolveChapterAccentColor(accent, {
-        background: SURFACE.card,
+        background: SURFACE.popover,
         fallbackAccent: signetDarkTokens.color.gold.house,
       }).reason;
     expect(onCard("#0086FE")).toBe("insufficient_contrast");
@@ -243,7 +247,7 @@ describe("the accent preview's label tone, computed from the draft", () => {
       "utf8",
     );
     expect(tab).toMatch(
-      /resolveChapterAccentColor\([^)]*background: signetDarkTokens\.color\.surface\.card,\s*fallbackAccent: signetDarkTokens\.color\.gold\.house,/,
+      /resolveChapterAccentColor\([^)]*background: signetDarkTokens\.color\.surface\.popover,\s*fallbackAccent: signetDarkTokens\.color\.gold\.house,/,
     );
   });
 

@@ -52,6 +52,7 @@ function makeChapterRepo(result: {
 /** A fully-stubbed member repository; tests wire only the methods they use. */
 function makeMemberRepo(): jest.Mocked<IMemberRepository> {
   return {
+    completeOnboarding: jest.fn(),
     findById: jest.fn(),
     findByUser: jest.fn(),
     findByUserAndChapter: jest.fn(),

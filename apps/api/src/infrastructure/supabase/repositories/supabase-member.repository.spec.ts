@@ -186,6 +186,22 @@ describe('SupabaseMemberRepository — tenant scope', () => {
     });
   });
 
+  // #5627: the join is announced on the request that turned the flag on, so
+  // only that one may answer `changed`.
+  it('completeOnboarding answers changed once, then reads the finished row', async () => {
+    const first = await repo.completeOnboarding(MEMBER_A);
+    const second = await repo.completeOnboarding(MEMBER_A);
+
+    expect(first.changed).toBe(true);
+    expect(first.member.has_completed_onboarding).toBe(true);
+    expect(second.changed).toBe(false);
+    expect(second.member.has_completed_onboarding).toBe(true);
+    // The other chapter's membership of the same user is untouched.
+    expect((await repo.findById(MEMBER_B))?.has_completed_onboarding).toBe(
+      false,
+    );
+  });
+
   // An app open's GET requests join one membership read (#3752); a request
   // that may write reads its own.
   it.each([

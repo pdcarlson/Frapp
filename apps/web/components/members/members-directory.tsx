@@ -7,6 +7,7 @@ import {
   SearchGlyph,
 } from "@/components/members/directory-glyphs";
 import {
+  useGroups,
   useLeaderboard,
   useMemberDisplayNames,
   useMemberPhoneReach,
@@ -15,6 +16,7 @@ import {
   usePledgeClasses,
   fraternalOrderComparator,
   usesFraternalOrder,
+  useRoleTiers,
   useRoles,
   useUpdateMemberRoles,
 } from "@repo/hooks";
@@ -60,6 +62,11 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
+import {
+  anchorFor,
+  MemberPopout,
+  type MemberPopoutAnchor,
+} from "@/components/chat/member-popout";
 import { MemberGrid } from "@/components/members/member-grid";
 import { useListLayout } from "@/lib/list-layout";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -73,6 +80,8 @@ import {
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
 import {
+  highestRankedRole,
+  tierPositionsOf,
   directoryNoSearchMatches,
   matchesPhoneReachFilter,
   PHONE_REACH_FILTER_OPTIONS,
@@ -224,6 +233,7 @@ export function MembersDirectory() {
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [cohortFilter, setCohortFilter] = useState<string | null>(null);
   const [classFilter, setClassFilter] = useState<string | null>(null);
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"active" | "pending" | null>(
     null,
   );
@@ -236,6 +246,15 @@ export function MembersDirectory() {
   // member even once a role save moves them off this tab's list.
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  const [popoutOpen, setPopoutOpen] = useState(false);
+  const [popoutAnchor, setPopoutAnchor] = useState<MemberPopoutAnchor | null>(
+    null,
+  );
+  // A list row spans the Directory's width, so a card beside it has no room
+  // on either side and lands off the window's left edge (#5749); it opens
+  // below the row, as GitHub's and Linear's hover cards open under a name. A
+  // grid tile is narrow, so its card opens beside it.
+  const [popoutSide, setPopoutSide] = useState<"right" | "bottom">("bottom");
 
   const chapterWords = useChapterVocabulary();
   const trimmedQuery = query.trim();
@@ -276,10 +295,21 @@ export function MembersDirectory() {
       : rows.filter((member) => member.is_alumni !== true);
   }, [activeQuery.data, usingSearch]);
 
+  const allRoles = useMemo(
+    () => parseChapterRoles(rolesQuery.data),
+    [rolesQuery.data],
+  );
   // The Everyone role (#4191) is no filter, column or assignment.
   const roleOptions = useMemo(
-    () => parseChapterRoles(rolesQuery.data).filter((role) => !role.everyone),
-    [rolesQuery.data],
+    () => allRoles.filter((role) => !role.everyone),
+    [allRoles],
+  );
+  // The tiers rank the roles for a member's title; until they load (or for
+  // a reader they are closed to) the roles rank by their own order.
+  const tiersQuery = useRoleTiers();
+  const tierPositions = useMemo(
+    () => tierPositionsOf(tiersQuery.data ?? []),
+    [tiersQuery.data],
   );
   const roleNameById = useMemo(
     () => new Map(roleOptions.map((role) => [role.id, role.name])),
@@ -334,6 +364,27 @@ export function MembersDirectory() {
     filterRoleOptions.some((role) => role.id === roleFilter)
       ? roleFilter
       : null;
+  // Beside Role (Paul, 2026-11-19): who is In house, on a committee, in a
+  // pledge class. Every group the chapter has with someone in it, its own
+  // first; a group deleted meanwhile reads as no filter.
+  const groupsQuery = useGroups();
+  const groupChipOptions = useMemo(
+    () =>
+      (groupsQuery.data ?? [])
+        .filter((group) => group.member_ids.length > 0)
+        .map((group) => ({ value: group.id, label: group.name })),
+    [groupsQuery.data],
+  );
+  // Only a group the chip still offers filters: one that has emptied (its
+  // last member taken out from their card) reads as unpicked, as a deleted
+  // role does for the Role chip.
+  const groupMemberIds = useMemo(() => {
+    const group = (groupsQuery.data ?? []).find((g) => g.id === groupFilter);
+    return group && group.member_ids.length > 0
+      ? new Set(group.member_ids)
+      : null;
+  }, [groupsQuery.data, groupFilter]);
+  const effectiveGroupFilter = groupMemberIds ? groupFilter : null;
 
   const pointsByUserId = useMemo(() => {
     const map = new Map<string, number>();
@@ -436,14 +487,25 @@ export function MembersDirectory() {
   // `null`, not an em dash, for the same reason `formatJoined` returns one: an
   // absent role drops out of the `·`-joined meta line rather than rendering a
   // placeholder glyph.
-  // The first role the list knows, so the Everyone role (#4191), which it
-  // leaves out, is skipped rather than shown as a raw id. While the roles load
-  // the first id stands in, as before.
+  // The member's title: their highest-ranked role (tier first, then the
+  // role's order in its tier), the same pick chat's member list makes. A
+  // member whose highest role is the Everyone role (#4191), which no list
+  // names, has none, so a floor or class role outside the tiers never stands
+  // in as a title. While the roles or tiers load, the first id stands in.
+  // Ranking waits for the tiers too, so a title never flips from a floor role
+  // to the office once they arrive; a failed tier read ranks without them.
+  const rankReady =
+    allRoles.length > 0 &&
+    (tiersQuery.data !== undefined || tiersQuery.isError);
   const primaryRoleName = (member: MemberProfile): string | null => {
-    const known = member.role_ids.find((id) => roleNameById.has(id));
-    if (known) return roleNameById.get(known) ?? null;
-    if (roleOptions.length > 0) return null;
-    return member.role_ids[0] ?? null;
+    if (!rankReady) return member.role_ids[0] ?? null;
+    const held = new Set(member.role_ids);
+    const top = highestRankedRole(
+      allRoles.filter((role) => held.has(role.id)),
+      tierPositions,
+    );
+    if (!top || top.everyone) return null;
+    return top.name;
   };
 
   const filteredMembers = useMemo(() => {
@@ -451,6 +513,15 @@ export function MembersDirectory() {
       if (
         effectiveRoleFilter !== null &&
         !member.role_ids.includes(effectiveRoleFilter)
+      ) {
+        return false;
+      }
+      if (
+        groupMemberIds !== null &&
+        !(
+          typeof member.user_id === "string" &&
+          groupMemberIds.has(member.user_id)
+        )
       ) {
         return false;
       }
@@ -484,6 +555,7 @@ export function MembersDirectory() {
   }, [
     members,
     effectiveRoleFilter,
+    groupMemberIds,
     effectiveCohortFilter,
     effectiveClassFilter,
     statusFilter,
@@ -530,6 +602,9 @@ export function MembersDirectory() {
     sortDir,
     pointsByUserId,
     roleNameById,
+    allRoles,
+    tierPositions,
+    rankReady,
     pledgeClasses,
   ]);
 
@@ -555,6 +630,7 @@ export function MembersDirectory() {
   }, [
     trimmedQuery,
     effectiveRoleFilter,
+    effectiveGroupFilter,
     effectiveCohortFilter,
     effectiveClassFilter,
     statusFilter,
@@ -602,6 +678,7 @@ export function MembersDirectory() {
   const narrowed =
     usingSearch ||
     effectiveRoleFilter !== null ||
+    effectiveGroupFilter !== null ||
     effectiveCohortFilter !== null ||
     effectiveClassFilter !== null ||
     statusFilter !== null ||
@@ -667,10 +744,22 @@ export function MembersDirectory() {
     );
   }
 
-  function openMember(member: MemberProfile) {
+  /**
+   * A row opens the member's card beside it (Paul, 2026-11-19: a small card
+   * from the row, as chat's name does, instead of the profile taking over
+   * the Directory). Their roles and groups are set on the card; View profile
+   * opens the full record in the Directory's place.
+   */
+  function openMember(
+    member: MemberProfile,
+    opener: HTMLElement,
+    side: "right" | "bottom" = "bottom",
+  ) {
     setActiveMemberId(memberId(member));
     setActiveUserId(typeof member.user_id === "string" ? member.user_id : null);
-    setDetailSheetOpen(true);
+    setPopoutAnchor(anchorFor(opener));
+    setPopoutSide(side);
+    setPopoutOpen(true);
   }
 
   async function applyBulkRole() {
@@ -872,6 +961,15 @@ export function MembersDirectory() {
             value={effectiveRoleFilter}
             onChange={setRoleFilter}
           />
+          {groupChipOptions.length > 0 ? (
+            <FilterChip
+              label="Group"
+              anyLabel="Any group"
+              options={groupChipOptions}
+              value={effectiveGroupFilter}
+              onChange={setGroupFilter}
+            />
+          ) : null}
           <FilterChip
             label="Graduation year"
             anyLabel="Any year"
@@ -1013,6 +1111,7 @@ export function MembersDirectory() {
             <InlineNoteAction
               onClick={() => {
                 setRoleFilter(null);
+                setGroupFilter(null);
                 setCohortFilter(null);
                 setClassFilter(null);
                 setStatusFilter(null);
@@ -1091,7 +1190,7 @@ export function MembersDirectory() {
               factsOf={factsOf}
               selectedIds={selectedMemberIds}
               onToggle={toggleMember}
-              onOpen={openMember}
+              onOpen={(member, opener) => openMember(member, opener, "right")}
               avatarTintFor={avatarTintFor}
             />
           ) : (
@@ -1163,7 +1262,9 @@ export function MembersDirectory() {
                 */}
                     <button
                       type="button"
-                      onClick={() => openMember(member)}
+                      onClick={(event) =>
+                        openMember(member, event.currentTarget)
+                      }
                       aria-label={label}
                       className={cn(
                         "flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
@@ -1307,6 +1408,25 @@ export function MembersDirectory() {
         empty `sortedMembers` and renders an unknown member with its roles
         cleared and a Save that silently no-ops.
       */}
+      <MemberPopout
+        userId={activeUserId}
+        anchor={popoutAnchor}
+        side={popoutSide}
+        open={popoutOpen}
+        onOpenChange={setPopoutOpen}
+        identity={
+          activeMember
+            ? {
+                name: displayNameOf(activeMember),
+                avatarUrl:
+                  typeof activeMember.avatar_url === "string"
+                    ? activeMember.avatar_url
+                    : null,
+              }
+            : null
+        }
+        onViewProfile={() => setDetailSheetOpen(true)}
+      />
       <MemberDetailSheet
         open={detailSheetOpen}
         onOpenChange={setDetailSheetOpen}

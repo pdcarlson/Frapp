@@ -170,7 +170,7 @@ describe("the chapter wizard gate's own boundary", () => {
 
   it("waits out a refetch of a cached empty list, which is how a join lands (#5078)", () => {
     // `/join` leaves `[]` cached and its redeem refetches it; the shell mounts
-    // on `/chat` mid-refetch. Latching here put the wizard behind the tour.
+    // on `/chat` mid-refetch. Latching here opened the wizard for a member.
     chapters.isFetching = true;
     const { container, rerender } = render(<ChapterWizardGate />);
     expect(container.innerHTML).toBe("");

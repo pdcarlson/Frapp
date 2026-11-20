@@ -45,8 +45,8 @@ function houseTintedBrand(tokens: SignetTokens) {
 /**
  * Chapter picker — the supporting route with no drawn Canvas screen
  * (spec/ui/mobile/screens.md § Inventory), so it reuses s02's visual language:
- * one surface, no card, with each chapter as a row like s02's two answers
- * (#3349, #3350).
+ * one surface, no card, with each chapter as a row like s02's emailed-invite
+ * offers (#3349, #3350).
  *
  * Reached deliberately, from Chat home's chapter menu — **not** forced on members whose
  * token lacks an `active_chapter_id` claim. `lib/auth-gate.ts` explains why

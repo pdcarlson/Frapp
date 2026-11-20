@@ -47,14 +47,15 @@ import { InlineNote } from "@/components/inline-note";
  * through the same `POST /v1/invites/email`; then Share invite, setup's
  * share-first link (`useInviteShares`), which mints a fresh single-use link
  * and opens the share sheet with it, Mail and Gmail among its targets; then
- * the chapter link (#3353), one link for the whole chapter for 7 days; then
+ * Chapter links (#3353), one 7-day link per role the officer picks (#5633); then
  * the chapter's invites under Invited, each with web's Share link, Send again
  * and Revoke. No token is ever drawn. Inside a chapter the Send button, the
  * field's focus border and the link tile take the chapter accent, where
  * setup's take house gold (`spec/behavior/branding.md`).
  *
- * Neither path names a role, so the server applies the chapter's
- * `default_invite_role_id` (#422), as web's dialog does without a pick.
+ * Invite by email and Share invite name no role, so the server applies the
+ * chapter's `default_invite_role_id` (#422), as web's dialog does without a
+ * pick; Chapter links picks one per link.
  *
  * Reached from four doors, each drawn only for a member who holds
  * `members:invite` (the permission every invite route checks; by default the

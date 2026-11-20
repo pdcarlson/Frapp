@@ -32,7 +32,7 @@ import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 /**
  * The New event sheet's property rows (#5561,
  * `spec/ui/design-system/components.md` § Property rows): a mark, a quiet
- * label and the value, one row per setting in one grouped list, the order
+ * label and the value, one row per setting in grouped lists (#5742), the order
  * web's event form draws (`EVENT_FORM_ROWS`) with the same marks
  * (`@repo/theme/event-form-glyphs`) and words, so the form reads as one on
  * both apps. A row that opens something shows a chevron, as Settings rows do.

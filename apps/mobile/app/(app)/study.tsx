@@ -70,6 +70,7 @@ import {
   findZone,
   graceWindowCopy,
   selectActiveZones,
+  selectZoneNames,
   type StudyZoneModel,
 } from "@/lib/study/zones";
 import { useFrappTheme } from "@/lib/theme";
@@ -194,6 +195,10 @@ export default function StudyScreen() {
   const resumeSession = useResumeStudySession();
   const stopSession = useStopStudySession();
 
+  const zoneNames = useMemo(
+    () => selectZoneNames(zonesQuery.data),
+    [zonesQuery.data],
+  );
   const zones = useMemo(
     () => selectActiveZones(zonesQuery.data),
     [zonesQuery.data],
@@ -1182,7 +1187,9 @@ export default function StudyScreen() {
                 <SessionRow
                   key={row.id}
                   session={row}
-                  zoneName={findZone(zones, row.geofenceId)?.name ?? null}
+                  zoneName={
+                    (row.geofenceId && zoneNames.get(row.geofenceId)) || null
+                  }
                   isLast={index === all.length - 1}
                 />
               ))}

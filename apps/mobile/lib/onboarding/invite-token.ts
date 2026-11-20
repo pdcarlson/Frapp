@@ -5,16 +5,14 @@
  * Extraction lives in `@repo/validation` so web `/join` and this screen cannot
  * drift. The remembered invite is mobile-only: it waits through the sign-in
  * on the invite card, and a relaunch, until it is joined or declined.
- *
- * The drawn s02 six-cell code is a Canvas shorthand. Joining is single-use
- * invite tokens (`spec/behavior/onboarding.md`), not a shared 6-character
- * chapter code — `screens.md` already omits the drawn "Join code" row for the
- * same reason.
  */
 
 import { useEffect, useSyncExternalStore } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { extractInviteToken } from "@repo/validation";
+import {
+  extractInviteToken,
+  extractInviteTokenFromQuery,
+} from "@repo/validation";
 
 export {
   extractInviteToken,
@@ -28,6 +26,40 @@ export {
  * remembered invite, since a sign-in leaves the screen.
  */
 export type JoinThen = "join" | "ask";
+
+/** The route params an invite can arrive in: `?token=`, `?invite=`, `?code=`. */
+export type InviteParams = {
+  token?: string | string[];
+  invite?: string | string[];
+  code?: string | string[];
+};
+
+/**
+ * The invite a route's params carry, or null: s02's, the second-chapter
+ * card's (`/join-another`, #4341), and the `(auth)` gate that sends a
+ * member's invite link there.
+ */
+export function inviteFromParams(params: InviteParams): string | null {
+  const paramValue = (value: string | string[] | undefined): string | null => {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value) && typeof value[0] === "string") {
+      return value[0];
+    }
+    return null;
+  };
+  return extractInviteToken(
+    extractInviteTokenFromQuery((key) => {
+      switch (key) {
+        case "token":
+          return paramValue(params.token);
+        case "invite":
+          return paramValue(params.invite);
+        case "code":
+          return paramValue(params.code);
+      }
+    }),
+  );
+}
 
 type RememberedInvite = { token: string; then: JoinThen | null; at: number };
 

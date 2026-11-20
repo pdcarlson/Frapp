@@ -10,8 +10,10 @@ const membersQuery = vi.hoisted(() => ({
     data?: {
       user_id: string;
       role_rank: number | null;
-      role_id?: string | null;
-      role_name?: string | null;
+      title?: string | null;
+      tier_id?: string | null;
+      tier_name?: string | null;
+      tier_rank?: number | null;
     }[];
     isPending?: boolean;
     isError?: boolean;
@@ -78,28 +80,50 @@ describe("ChannelMemberList", () => {
         {
           user_id: "u-member",
           role_rank: 5,
-          role_id: "r-mem",
-          role_name: "Member",
+          title: null,
+          tier_id: "t-bro",
+          tier_name: "Brothers",
+          tier_rank: 4,
         },
         {
           user_id: "u-officer",
           role_rank: 2,
-          role_id: "r-off",
-          role_name: "Treasurer",
+          title: "Treasurer",
+          tier_id: "t-cab",
+          tier_name: "Cabinet",
+          tier_rank: 1,
         },
         {
           user_id: "u-pres",
           role_rank: 0,
-          role_id: "r-pres",
-          role_name: "President",
+          title: "President",
+          tier_id: "t-cab",
+          tier_name: "Cabinet",
+          tier_rank: 1,
         },
-        { user_id: "u-idle", role_rank: null, role_id: null, role_name: null },
-        { user_id: "u-blank", role_rank: null, role_id: null, role_name: null },
+        {
+          user_id: "u-idle",
+          role_rank: 9,
+          title: "First Floor",
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
+        },
+        {
+          user_id: "u-blank",
+          role_rank: null,
+          title: null,
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
+        },
         {
           user_id: "u-gone0001",
           role_rank: 5,
-          role_id: "r-mem",
-          role_name: "Member",
+          title: null,
+          tier_id: "t-bro",
+          tier_name: "Brothers",
+          tier_rank: 4,
         },
       ],
     };
@@ -116,7 +140,7 @@ describe("ChannelMemberList", () => {
     };
   });
 
-  it("groups readers under their highest role, in role order, names A to Z", () => {
+  it("groups readers by tier, top tier first, by title inside each, the rest last", () => {
     render(<ChannelMemberList channelId="chan-1" />);
 
     const groups = screen.getAllByRole("list");
@@ -126,9 +150,24 @@ describe("ChannelMemberList", () => {
           list.getAttribute("aria-labelledby") &&
           list.previousSibling?.textContent,
       ),
-    ).toEqual(["President1", "Treasurer1", "Member2", "No role2"]);
+    ).toEqual(["Cabinet2", "Brothers2", "Members2"]);
+    // The President leads Cabinet whatever the names, and each officer's
+    // title sits under their name; an offline member keeps their place.
+    const cabinet = within(
+      screen.getByRole("list", { name: /^Cabinet/ }),
+    ).getAllByRole("listitem");
+    expect(cabinet[0]).toHaveTextContent("Zed President");
+    expect(cabinet[0]).toHaveTextContent("President · At nationals");
+    expect(cabinet[1]).toHaveTextContent("Amy Officer");
+    expect(cabinet[1]).toHaveTextContent("Treasurer");
+    // A title outside the tiers still shows, under the plain group.
+    expect(
+      within(screen.getByRole("list", { name: /^Members/ })).getAllByRole(
+        "listitem",
+      )[0],
+    ).toHaveTextContent("First Floor");
     const members = within(
-      screen.getByRole("list", { name: /^Member/ }),
+      screen.getByRole("list", { name: /^Brothers/ }),
     ).getAllByRole("listitem");
     expect(members[0]).toHaveTextContent("Bob Member");
     // A reader the roster cannot name is still listed, under the fallback.
@@ -225,7 +264,8 @@ describe("ChannelMemberList", () => {
   // grows from 32 to 40px only when it has one.
   it("shows a member's custom status under their name, growing only that row", () => {
     render(<ChannelMemberList channelId="chan-1" />);
-    const line = screen.getByText("At nationals");
+    // An officer's title and their status share the one line under the name.
+    const line = screen.getByText("President · At nationals");
     const row = line.closest("li")!;
     expect(row).toHaveTextContent("Zed President");
     expect(row.firstElementChild).toHaveClass("h-10");
@@ -259,8 +299,10 @@ describe("ChannelMemberList", () => {
         user_id:
           index === 0 ? "u-pres" : `u-x${String(index).padStart(6, "0")}`,
         role_rank: 5,
-        role_id: "r-mem",
-        role_name: "Member",
+        title: null,
+        tier_id: "t-bro",
+        tier_name: "Brothers",
+        tier_rank: 4,
       })),
     };
     render(<ChannelMemberList channelId="chan-1" />);

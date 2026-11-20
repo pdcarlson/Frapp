@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   ROLE_COLOR_HEXES,
   ROLE_COLOR_PALETTE,
-  resolveRoleChips,
   roleColor,
   roleColorOrNull,
   topRoleColor,
@@ -43,10 +42,20 @@ describe("roleColorOrNull", () => {
 
 describe("topRoleColor", () => {
   const roles = [
-    { id: "president", color: roleColor("orange"), display_order: 1 },
-    { id: "treasurer", color: roleColor("green"), display_order: 2 },
-    { id: "member", color: null, display_order: 5 },
-    { id: "legacy", color: "#FFD700", display_order: 0 },
+    {
+      id: "president",
+      name: "president",
+      color: roleColor("orange"),
+      display_order: 1,
+    },
+    {
+      id: "treasurer",
+      name: "treasurer",
+      color: roleColor("green"),
+      display_order: 2,
+    },
+    { id: "member", name: "member", color: null, display_order: 5 },
+    { id: "legacy", name: "legacy", color: "#FFD700", display_order: 0 },
   ];
 
   it("picks the lowest display_order role that has a palette color", () => {
@@ -66,64 +75,33 @@ describe("topRoleColor", () => {
     expect(topRoleColor(roles, ["gone"])).toBeNull();
   });
 
+  it("ranks by tier before display_order, so an untiered role at 0 never wins", () => {
+    const tiered = [
+      {
+        id: "pres",
+        name: "President",
+        color: roleColor("orange"),
+        display_order: 1,
+        tier_id: "cabinet",
+      },
+      {
+        id: "floor",
+        name: "First Floor",
+        color: roleColor("sky"),
+        display_order: 0,
+        tier_id: null,
+      },
+    ];
+    const positions = new Map([["cabinet", 1]]);
+    expect(topRoleColor(tiered, ["floor", "pres"], positions)).toBe("#F2994A");
+  });
+
   it("breaks display_order ties by role id, not row order", () => {
     const tied = [
-      { id: "b", color: roleColor("sky"), display_order: 3 },
-      { id: "a", color: roleColor("rose"), display_order: 3 },
+      { id: "b", name: "Same", color: roleColor("sky"), display_order: 3 },
+      { id: "a", name: "Same", color: roleColor("rose"), display_order: 3 },
     ];
     expect(topRoleColor(tied, ["a", "b"])).toBe("#F47FA4");
     expect(topRoleColor([...tied].reverse(), ["a", "b"])).toBe("#F47FA4");
-  });
-});
-
-describe("resolveRoleChips", () => {
-  const roles = [
-    { id: "r-1", name: "President", color: "#F2994A", display_order: 1 },
-    { id: "r-2", name: "Treasurer", color: null, display_order: 3 },
-    { id: "r-3", name: "Brothers", color: "#123456", display_order: 9 },
-  ];
-
-  it("orders chips by the chapter's role rank, not by the member's list", () => {
-    expect(resolveRoleChips(roles, ["r-2", "r-1"]).map((c) => c.name)).toEqual([
-      "President",
-      "Treasurer",
-    ]);
-  });
-
-  it("keeps a palette color and drops one the palette doesn't hold", () => {
-    expect(resolveRoleChips(roles, ["r-1", "r-3"])).toEqual([
-      { id: "r-1", name: "President", color: "#F2994A" },
-      { id: "r-3", name: "Brothers", color: null },
-    ]);
-  });
-
-  it("drops an id with no match rather than rendering a raw id", () => {
-    expect(
-      resolveRoleChips(roles, ["r-1", "r-deleted"]).map((c) => c.id),
-    ).toEqual(["r-1"]);
-  });
-
-  it("returns nothing while the roles list hasn't loaded", () => {
-    expect(resolveRoleChips(undefined, ["r-1"])).toEqual([]);
-  });
-
-  it("draws a duplicated role id once", () => {
-    expect(resolveRoleChips(roles, ["r-1", "r-1"])).toHaveLength(1);
-  });
-
-  it("draws no chip for the Everyone role (#4191)", () => {
-    const withEveryone = [
-      ...roles,
-      {
-        id: "r-e",
-        name: "Everyone",
-        color: null,
-        display_order: 5,
-        system_key: "MEMBER",
-      },
-    ];
-    expect(
-      resolveRoleChips(withEveryone, ["r-e", "r-3"]).map((c) => c.id),
-    ).toEqual(["r-3"]);
   });
 });

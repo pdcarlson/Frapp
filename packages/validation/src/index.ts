@@ -67,6 +67,8 @@ export * from "./check-in-window";
 export * from "./check-in-zone-copy";
 // The request headers the SDK sets and the API reads (time zone, client version).
 export * from "./client-headers";
+// What already tracks each Coming up date: its event and its tasks (#5672).
+export * from "./coming-up-tracking";
 // Connection state machine (`spec/ui/resilience/connection-state.md`). Shared so web and
 // mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns
 // the effects that feed it; this package owns the rule.
@@ -116,6 +118,9 @@ export * from "./field-limits";
 export * from "./invite-emails";
 // The invite card funnel (#5663): steps, closed property sets, shapes.
 export * from "./invite-funnel";
+// The invite carried through an install by the clipboard (#5626). See
+// ./invite-paste.
+export * from "./invite-paste";
 // Invite paste/URL extraction and https minting, shared so web `/join`,
 // mobile s02, the API email helper, and the landing `/join` redirect cannot
 // drift on what a copied join link is or whether a public http: origin is
@@ -151,6 +156,7 @@ export * from "./minutes-flow";
 export * from "./minutes-read";
 export * from "./minutes-request-copy";
 // Which meetings on the calendar need minutes, and the next one coming.
+export * from "./minutes-timeline";
 export * from "./minutes-to-write";
 export * from "./module-enablement";
 export * from "./module-refusal";
@@ -171,6 +177,8 @@ export * from "./notification-categories";
 // The inbox's first page, which the API bootstrap, the SDK batch and
 // `useNotifications` must agree on (#4962).
 export * from "./notification-inbox";
+// The "You" screen after joining, web and phone (#5627).
+export * from "./onboarding-you";
 // ── Ops-setup nudges (issue #492) ────────────────────────────────────────────
 // Shared for the same reason as the categories above: each `key` is written
 // verbatim into `members.dismissed_ops_nudges`, the column is an unconstrained
@@ -226,6 +234,7 @@ export {
 // editor and the phone's New event sheet (#4488).
 export * from "./repeat-draft";
 export * from "./role-colors";
+export * from "./role-rank";
 export * from "./screen-copy";
 // Roles members pick themselves (#4958): the safety rule and its words.
 export * from "./self-assignable-roles";
@@ -247,6 +256,7 @@ export * from "./task-audience";
 export * from "./task-follower";
 // A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
 export * from "./task-proof";
+export * from "./task-row-facts";
 // Who a suggested task names, guessed from its own words (Paul, 2026-11-18).
 export * from "./task-suggestion-guess";
 export * from "./thumbhash";
@@ -276,5 +286,7 @@ export {
   normalizeExtension,
   type UploadKind,
 } from "./upload-allowlists";
+export * from "./week-start";
+export * from "./welcome-card";
 // Point-in-polygon, shared by the API's geofence check and the phone's s10 screen.
 export * from "./zone-geometry";

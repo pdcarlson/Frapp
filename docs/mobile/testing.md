@@ -77,10 +77,7 @@ except the on-screen readout of the keyboard path, which a unit test covers:
 - [ ] **Figtree** renders visibly different weights for 400, 600 and 700 on
       the sign-in screen (s01): its title is 700, its button labels 600 and its body
       copy 400. Android is the honest test, because it can't fake weights from
-      one file. A `ScreenShell` title (You, Settings) is 700 too. The invite
-      field on the join screen (s02), behind its "I have an invite" answer (an
-      account with no chapter lands on the question first), renders in a
-      monospace face.
+      one file. A `ScreenShell` title (You, Settings) is 700 too.
 - [ ] **Sheets and the keyboard.** You → Service hours, then the header's
       **+** tile (labelled "Log service hours" for a screen reader), presents
       the s20 "Log service hours" sheet with its grabber,
@@ -134,7 +131,7 @@ device run, check:
 device pass a script can see. What they check, and what they leave to a phone in hand, is listed
 once, in [`device-pass.md` § What the automated flows cover](device-pass.md#what-the-automated-flows-cover).
 They select by what a member reads (labels, placeholders, accessibility labels) plus a few test
-IDs (the tab bar's `tab-<route>` and the +'s `tab-plus`), so renaming a You row, a tour button or
+IDs (the tab bar's `tab-<route>` and the +'s `tab-plus`), so renaming a You row, the welcome card's close or
 the composer's placeholder means updating them.
 
 They run in Expo Workflows, on an Android emulator and an iOS simulator, against staging. The

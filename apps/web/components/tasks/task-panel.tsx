@@ -5,12 +5,11 @@ import { useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, MoreHorizontal, Undo2, Users } from "lucide-react";
 import {
   TASK_ACTION_LABELS,
-  TASK_CONFIRMED_LABEL,
-  TASK_NEEDS_CHANGES_LABEL,
-  TASK_STATUS_LABELS,
   actionStatus,
   canReopenOwnTask,
   isSentBack,
+  taskStatusLabel,
+  taskHandedInLine,
   useMeeting,
   useReleaseTask,
   useUpdateTask,
@@ -234,7 +233,6 @@ function TaskPanelBody({
   const task = isGroup ? target.tile.sample : target.task;
   const viewerUnknown = myUserId === "";
   const isMine = !viewerUnknown && !isGroup && task.assignee_id === myUserId;
-  const status = actionStatus(task);
   const sentBack = isSentBack(task);
   const editable = canManage && !task.points_awarded;
   const repeats = taskSeriesLive(task.series);
@@ -354,17 +352,34 @@ function TaskPanelBody({
     await save({ reference_photo_paths: [...keptPaths, ...uploaded] });
   }
 
-  const statusWord = sentBack
-    ? TASK_NEEDS_CHANGES_LABEL
-    : status === "COMPLETED" && task.points_awarded
-      ? TASK_CONFIRMED_LABEL
-      : TASK_STATUS_LABELS[task.status];
+  const statusWord = taskStatusLabel(task);
 
   const assignee = personOf(task.assignee_id);
   const references = (task.photos ?? []).filter(
     (photo) => photo.kind === "reference",
   );
   const copyOf = isGroup ? null : copyAudience(task);
+  // Handed in (#5732): who marked it done and when, under the status, with
+  // the proof under it, so a done task reads as one before its fields do.
+  const handedIn = isGroup
+    ? null
+    : taskHandedInLine(task, (userId) =>
+        userId === myUserId ? "You" : personOf(userId).name,
+      );
+  const proof = isGroup ? null : (
+    <TaskProof
+      task={
+        editable
+          ? {
+              ...task,
+              photos: (task.photos ?? []).filter((p) => p.kind !== "reference"),
+            }
+          : task
+      }
+      showProof={isMine || canManage}
+      sentBack={sentBack}
+    />
+  );
   const groupLabel = isGroup
     ? taskGroupLabel({
         audience: task.group?.audience ?? "everyone",
@@ -398,6 +413,12 @@ function TaskPanelBody({
           }
         />
       )}
+      {handedIn ? (
+        <div className="grid gap-3">
+          <p className="text-body text-foreground">{handedIn}</p>
+          {proof}
+        </div>
+      ) : null}
       <dl className="grid gap-1">
         <FieldRow label="Who">
           {isGroup ? (
@@ -551,21 +572,8 @@ function TaskPanelBody({
           copies={target.copies}
           personOf={personOf}
         />
-      ) : (
-        <TaskProof
-          task={
-            editable
-              ? {
-                  ...task,
-                  photos: (task.photos ?? []).filter(
-                    (p) => p.kind !== "reference",
-                  ),
-                }
-              : task
-          }
-          showProof={isMine || canManage}
-          sentBack={sentBack}
-        />
+      ) : handedIn ? null : (
+        proof
       )}
       {editable ? (
         // One line held at its height, so "Saving…" never moves anything.
@@ -1330,11 +1338,7 @@ function GroupProgress({
                     : "text-muted-foreground",
                 )}
               >
-                {isSentBack(copy)
-                  ? TASK_NEEDS_CHANGES_LABEL
-                  : copy.status === "COMPLETED" && copy.points_awarded
-                    ? TASK_CONFIRMED_LABEL
-                    : TASK_STATUS_LABELS[copy.status]}
+                {taskStatusLabel(copy)}
               </span>
             </li>
           );

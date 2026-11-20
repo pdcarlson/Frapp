@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatTimer } from "@repo/formatting";
-import {
-  formatHoursLabel,
-  formatHoursValue,
-  formatSessionRange,
-  startOfWeek,
-} from "./format";
+import { formatHoursLabel, formatHoursValue, startOfWeek } from "./format";
 
 describe("formatTimer", () => {
   it("renders the drawn over-an-hour reading", () => {
@@ -47,27 +42,6 @@ describe("formatHoursValue", () => {
   it("is the bare number the week summary leads with", () => {
     expect(formatHoursValue(324)).toBe("5.4");
     expect(formatHoursValue(0)).toBe("0.0");
-  });
-});
-
-describe("formatSessionRange", () => {
-  it("renders weekday, start and end with the drawn en dash", () => {
-    const meta = formatSessionRange(
-      "2026-08-18T19:02:00.000Z",
-      "2026-08-18T21:10:00.000Z",
-    );
-    expect(meta).toContain(" · ");
-    expect(meta).toContain(" – ");
-  });
-
-  it("degrades to the start alone rather than dangling a dash", () => {
-    const meta = formatSessionRange("2026-08-18T19:02:00.000Z", null);
-    expect(meta).not.toContain("–");
-    expect(meta).not.toBeNull();
-  });
-
-  it("returns null for a timestamp it cannot read", () => {
-    expect(formatSessionRange("later", null)).toBeNull();
   });
 });
 

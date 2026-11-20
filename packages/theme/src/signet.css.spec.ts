@@ -15,7 +15,11 @@ import {
   WEB_TAILWIND,
 } from "./config-sources";
 
-import { getSignetCssVars, signetDarkTokens } from "./signet";
+import {
+  ACCENT_SUBTLE_HOVER_MIX,
+  getSignetCssVars,
+  signetDarkTokens,
+} from "./signet";
 import config from "./tailwind.config";
 
 /**
@@ -332,6 +336,14 @@ describe("the derived accent steps track the slot rather than restating it", () 
       expect(value).toMatch(/var\(--/);
     },
   );
+});
+
+describe("the Tinted hover mix is the shared constant", () => {
+  it("matches ACCENT_SUBTLE_HOVER_MIX, which the phone and the contrast fixture read", () => {
+    expect(root.get("--accent-subtle-hover")).toBe(
+      `color-mix(in srgb, var(--accent-border) ${Math.round(ACCENT_SUBTLE_HOVER_MIX * 100)}%, var(--accent-subtle))`,
+    );
+  });
 });
 
 describe("the status tints are the §5 recipe over a fixed semantic (#2376)", () => {

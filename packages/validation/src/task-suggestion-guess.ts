@@ -9,6 +9,21 @@
  * helpers in `@repo/formatting` (`suggestTaskDue`).
  */
 
+import { TASK_TITLE_MAX_LENGTH } from "./field-limits";
+
+/**
+ * A line of the minutes as a task's title: whole when it fits, else cut at a
+ * word with an ellipsis, the whole line then going in the description. The
+ * API cuts a suggested task's title from its action item this way, and the
+ * review at Post a Coming up date's (#5672), so the two never disagree.
+ */
+export function taskTitleFrom(text: string): string {
+  if (text.length <= TASK_TITLE_MAX_LENGTH) return text;
+  const cut = text.slice(0, TASK_TITLE_MAX_LENGTH - 1);
+  const atWord = cut.replace(/\s+\S*$/u, "");
+  return `${(atWord.length > TASK_TITLE_MAX_LENGTH / 2 ? atWord : cut).trimEnd()}…`;
+}
+
 export interface GuessableMember {
   user_id?: string | null;
   display_name?: string | null;

@@ -279,11 +279,11 @@ A `/points` command refused 429 on its first attempt adds the body's sentence to
 | No results (filters) | — | `No actives match these filters.` then a **Clear filters** link (one line) |
 | No results (search) | — | `Nobody matches “<query>”.` then a **Clear search** link (one line), the phone's words, since the search spans actives and alumni *(was `No actives match “<query>”.` until #4135, 2026-11-12)* |
 | Empty and no results, mobile s13 | — | `No actives yet.`; a search, which spans both tabs, `Nobody matches “<query>”.` then **Clear search**; the Actives filters, the web row's `No actives match these filters.` then **Clear filters** (one line each; the alumni rows are [Alumni](#alumni-dashboard)'s) |
-| Actives filter sheet, mobile s13 | `Filter actives` | Sections `Status`, `Graduation year`, the chapter's class word, `Role`, each led by `Any` (`Any role` for the role list); `Search roles`; a role search that matches nothing, `No roles match that search.`; the role list loading, `Loading roles…`; failed, `Couldn't load roles.` then **Retry**; **Clear filters** while any is set ([#3971](https://github.com/pdcarlson/Frapp/issues/3971)) |
+| Actives filter sheet, mobile s13 | `Filter actives` | Sections `Status`, `Graduation year`, the chapter's class word, `Group` (when a group has members; added 2026-11-19), `Role`, each led by `Any` (`Any role` for the role list); `Search roles`; a role search that matches nothing, `No roles match that search.`; the role list loading, `Loading roles…`; failed, `Couldn't load roles.` then **Retry**; **Clear filters** while any is set ([#3971](https://github.com/pdcarlson/Frapp/issues/3971)) |
 | Error | `Couldn't load the directory` | the load-failure line (§ copy rules); the page is Directory in the nav, and the phone says the same *(was `Couldn't load members` until #4135, 2026-11-12)* |
 | Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
 | Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
-| Member sheet: a role save that removes the last role carrying member access | `Take away <name>'s access?` | `With none of these roles, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Take away access`. Mobile s13 asks the same per tap with `Remove <role>` ([Edit roles](#edit-roles-mobile-s13)); one web save can remove several roles, so its button names the outcome. Set in `components/members/member-detail-sheet.tsx` (`handleSaveRoles`) |
+| Member sheet and card: taking away the last role carrying member access | `Take away <name>'s access?` | `Without this role, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>`, the same on mobile s13 ([Edit roles](#edit-roles-mobile-s13)); each x or untick removes one role (2026-11-19, #5684). A failed role save is `Couldn't save roles`; a group one `Couldn't add to that group` or `Couldn't take out of that group`, with the API's reason. Held once in `@repo/hooks` (`ASSIGN_COPY`) for both apps |
 | Member sheet: Remove from chapter (web and mobile s13, from the `⋯`) | `Remove <name> from the chapter?` | `They lose chat, events and the member list right away, and can come back only with a new invite.` Buttons `Cancel` and `Remove from chapter`. The `⋯` row reads `Remove from chapter`; the button is named `More for <name>`. A refusal says `Couldn't remove <name>` (mobile alert) or `Could not remove member` (web toast) with the API's reason. Held once in `@repo/hooks/member-removal-copy` for both apps |
 
 The empty and no-results rows are one line, an `InlineNote`, where the rows go, with the way back as a link in the line (empty-states plan rule 7, 2026-11-07).
@@ -325,7 +325,7 @@ No string anywhere shows a token.
 | Link row | `Or share a link` over `Paste it in a group chat. Each link lets one person join, for 7 days.`; the button reads `Copy link`, then `Copied` for two seconds |
 | List | Section `Invited`; a row is the address or `Invite link`, then `<role> · Sent today at 4:46 PM`, then `Pending`, `Joined` or `Expired`. Empty: `Nobody yet. People you invite show up here until they join.` |
 | Row menu | `Copy link`, `Send again`, `Revoke invite`; revoked toast `Invite revoked` / `<address> can't join with it now.` |
-| Chapter link (#3353) | Section `Chapter link` over `One link for the whole chapter. Post it in your group chat or Discord, and anyone with it can join for 7 days.` (`CHAPTER_LINK_HINT`, the phone's words too). With none live, the secondary `Make a chapter link`, which makes it and copies it (toast `Chapter link copied`), and under it `Expired Thursday, November 26.` when the last one ran out. A live one is a row: `Chapter link` over `Works until Thursday, November 26`, with ` · Joins as <role>` unless the role is Everyone, the secondary `Copy link`, and a `⋯` (`More for the chapter link`) reading `Make a new link` and `Turn off link`; turned off, the toast `Chapter link turned off` / `Nobody can join with it now.` Failures: `Couldn't make a chapter link`, `Couldn't turn off the link` |
+| Chapter links (#3353, per role #5633) | Section `Chapter links` over `Post a link in your group chat or Discord. Anyone with it joins at its role for 7 days.` (`CHAPTER_LINK_HINT`, the phone's words too). Each link is a row: its role (`No role` for Everyone) over `Works until Thursday, November 26` (`Expired Thursday, November 26` once it ran out), the secondary `Copy link` while it works, and a `⋯` (`More for the <role> link`) reading `Make a new link` (left out when the role is no longer one the officer may hand out) and `Turn off link`. Under them, the quiet picker `Joins as <role>` (screen-reader label `Role the new link joins at`, starting on the chapter's default) and the secondary `New link`, which reads `Make a new link` when that role already has one; either makes the link and copies it (toast `<role> link copied`). Turned off, the toast `<role> link turned off` / `Nobody can join with it now.` Failures: `Couldn't make a chapter link`, `Couldn't turn off the link`. The phone's words are in its Invite members row below. |
 
 ### Get the app (dashboard, phones)
 
@@ -356,13 +356,14 @@ Store-facing wording: Paul approves it.
 
 The agenda (#5560) groups its rows under day headings written out: `Today`, `Tomorrow`, `Yesterday`, the weekday within the coming week (`Sunday`), otherwise the month and day (`November 14`, with the year outside the current one); `formatDayHeading` in `@repo/formatting`.
 A row under one says only its time (`6:48 PM`), and a repeating series, shown once as its next meeting, says how it repeats before it: `Every Sunday · 6:48 PM`, `Every other Sunday · 6:48 PM`, `Every month on the 9th · 6:48 PM` (`seriesCadenceLabel`, `@repo/hooks/event-series`).
+*(Changed 2026-11-19, Paul's "did a better job of showing details": a row says its start to end, `6:48 – 8:00 PM` (`formatTimeRange`), and a series says how it repeats after its name, muted, `Chapter · Every Sunday`, on web as the phone's row already did; while check-in is open the row says `Check-in is open` (`CHECK_IN_OPEN_LABEL`) on both apps.)*
 *(Changed in #5560 by pdcarlson, 2026-11-19: Upcoming held today through the next 14 days, later events waiting behind a `Later` disclosure with their count (#3707, #3822). The agenda reaches four weeks and then offers **Show more**.)*
 Each day heading ends with a quiet `Hours ›` (named `Hours for Today` to a screen reader), which opens the hour grid on that day; its back button reads `Events`.
 A required event says `Required` after its title, in the events hue; the grey `Mandatory` pill is gone (#5560). The Attendance filter still says `Mandatory`.
 A task row says where it stands (`To do`, `Overdue`, `Waiting on an officer`), and one handed to many says `Assigned by you` with its progress at the right (`0 of 3 done`); a birthday row says `Birthday` under the name.
 The colour key under the navigator reads `Events`, `Tasks` and `Birthdays`, each with its count (`Events, 4` to a screen reader). The navigator's header says `Today` once it has moved off today. On a narrow pane Search, Filter and Subscribe are glyphs named `Search events`, `Filter events` and `Subscribe to chapter events in your calendar`. In the hour grid a column heading is named `Open Wednesday, November 11`.
 These lines, and the Directory's empty, error and search-miss lines, are one string on both apps: `EVENTS_COPY`, `eventsCount`, `DIRECTORY_COPY` and `directoryNoSearchMatches` in `@repo/validation` (`screen-copy.ts`, #4135, 2026-11-13).
-A point count read as text, as in a row's meta line, is written out on both apps (`7:00 PM · Great Room · 10 points`, `formatPoints`); a chip or badge says `+10 pts` (`formatPointsChip`), the phone's event rows and Event detail included (#4135; the phone's meta line said `10 pts` until then).
+A point count read as text, as in a row's meta line, is written out on both apps (`7:00 – 9:00 PM · Great Room · 10 points`, `formatPoints`; an event row has said its start to end with `formatTimeRange` since 2026-11-19); a chip or badge says `+10 pts` (`formatPointsChip`), the phone's event rows and Event detail included (#4135; the phone's meta line said `10 pts` until then).
 The toolbar's filter button is `Filter`, named `Filter events`, or `Filter events, 2 on` while filters are off their defaults, which it also shows as a count;
 its popover's groups are `Time` (`Upcoming`, `Past`, `All`), `Attendance` (`All`, `Mandatory`, `Optional`) and `Cadence` (`All`, `Repeating`, `One-time`), then `Clear`.
 Bulk selection is `Select`, then `Mark attendance complete` and `Done`, with the count reading `2 selected` (2026-11-09).
@@ -441,7 +442,7 @@ The rollover is the one that is **not** destructive-toned — it archives rather
 | Nothing for this role (the settings rail) | — | `Nothing in Settings for your role. Officer tools come with an officer role; ask your chapter president if you need one.` (one line) |
 | Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can start a new semester.` |
 | Accent hex needed | — | `Enter a hex code like #5AA9E6 to save an accent color.` (muted on an empty field, warning once something unsavable is typed) |
-| Accent preview fallback | — | `This color is hard to read on the card, so the preview shows <hex> instead. Saving stores the color you entered, and the palette is derived from it.` |
+| Accent preview fallback | — | `This color is hard to read on menus and dialogs, so the preview shows <hex> instead. Saving stores the color you entered, and the palette is derived from it.` |
 | Accent server contrast disclosure | — | `<Accent text on the app background\|Accent text on its own tinted background\|Text on the accent's solid fill\|Text on the accent's hover shade> reads at <n>:1, under the 4.5:1 minimum. Try a lighter or darker shade of this hue and save again.` |
 | Rollover confirmation | `Start a new semester labelled "<label>"?` | `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.` · confirm `Start new semester` |
 | Delete field confirmation | `Delete the field "<label>"?` | `Members lose the values they have entered for it, and the column disappears from the directory. This cannot be undone.` · confirm `Delete field` |
@@ -720,14 +721,15 @@ Channel seeding happens at chapter onboarding and has no billing prerequisite; [
 
 ### Chat Admin — channels and categories (dashboard)
 
-The channel structure below the report queue on `/chat-admin`.
-Its states stand where both of its sections would be, so they name channels, not the page: the report queue above them reads and fails on its own.
+The channel structure in Settings → Chat (`/settings?tab=chat`), above the report queue.
+Its states stand where both of its sections would be, so they name channels, not the page: the report queue below them reads and fails on its own.
 
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading channels...` |
 | Empty (channels) | — | `No channels yet. Create the first one above.` (one line) |
-| Empty (categories) | — | `No categories yet. Channels without one show as uncategorized.` (one line) |
+| Empty (categories) | — | `No categories yet. Channels without one are listed under Uncategorized.` (one line) |
+| Empty (a category opened out) | — | `No channels in this category.` (one line, under the category's row) |
 | Nothing selected (edit pane) | — | `Pick a channel to edit it.` (one line) |
 | Loading (pins) | — | `Loading pins...` |
 | Empty (pins) | — | `Nothing pinned. Pin a message from the channel.` (one line) |
@@ -893,37 +895,37 @@ A member's dues screen, not the treasurer's billing overview — and **never the
 
 The due chip says **`Past due <date>`**, not `Overdue`: `OVERDUE` is the server's flagged state and includes the chapter's `wf_dues_grace` window, which a member's client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status labels reserves the backend's own labels for states the client can actually confirm.
 
-### Profile step (mobile s03)
+### Name and photo (after a join)
 
-s03's first beat, shown when the member has no photo or no real name yet (`apps/mobile/lib/onboarding/profile-step.ts`).
-The name field never pre-fills the API's `Member` stand-in.
+The first screen after a member joins, on web (`/welcome`) and the phone (s03's first screen), shown to every member (#5627). Copy in `ONBOARDING_YOU_COPY` (`packages/validation/src/onboarding-you.ts`), shared by both.
+The name field pre-fills a real name from sign-in, and never the API's `Member` stand-in or the email before the `@`.
 The name is checked when the member presses the button, not while typing.
+It was s03's first beat, shown only when the photo or the name was missing, until #5627.
 
 | State | Title | Copy |
 |---|---|---|
-| Step | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo control (tap to choose, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. Gold `Continue` (the display beat always follows). |
+| Screen | `How the chapter sees you` | `Your photo and name go on every message you send.` The profile photo (tap to choose on the phone; `Add photo` / `Change photo` beside it on web, as on Profile), then the field labelled `Your name`, placeholder `First and last name`. One gold button: `Continue` on the phone when the notifications screen follows, else `Go to chat`. |
 | No name | as above | Under the field: `Add your name so the chapter knows who's talking.` |
-| Save failed | as above | Under the field: `Couldn't save your name. Check your connection and try again.` The member stays on the beat with what they typed. |
+| Save failed | as above | Under the field: `Couldn't save your name. Check your connection and try again.` The member stays with what they typed. |
 
 ### Display step (onboarding)
 
-The chat display pick while setting up (#3787): the web tour's second stop and mobile s03's beat after the profile one, and for a founder, who skips both, the step after create in each setup (#4056).
+The chat display pick while setting up (#3787): for a founder, the step after create in each setup (#4056). It was also mobile s03's second beat and the web tour's second stop until #5627; a member who joined now finds it under the welcome card's Finish your profile ([§ Welcome card](#welcome-card)).
 Copy in `apps/mobile/lib/onboarding/display-step.ts` and `apps/web/components/onboarding/display-step.ts`.
 
 | Surface | Title | Copy |
 |---|---|---|
-| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in Settings.` In the tour, then `Cozy`, `Compact` and `Bubbles` as one segmented control over the real messages. In the setup wizard, the three Chat density cards from Settings → Appearance and chat, then `Continue`. (It said "in your profile" until #5080; the control has lived in Settings since #3856.) |
-| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when a roles, Meet Frapp AI or notifications beat follows, else `Go to chat`. In chapter setup, always gold `Continue`. |
+| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in Settings.` In the setup wizard, the three Chat density cards from Settings → Appearance and chat, then `Continue`. (It said "in your profile" until #5080; the control has lived in Settings since #3856.) |
+| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards and a gold `Continue`, in chapter setup. |
 
 ### Pick your roles
 
-Self-assignable roles (#4958): the web tour's stop and mobile s03's beat after the display pick, shown when there's a role to join, and the pickers (web Profile's **Your roles**, the phone's **Add roles** sheet).
+Self-assignable roles (#4958): the pickers (web Profile's **Your roles**, the phone's **Add roles** sheet, and the welcome card's Finish your profile when there's a role to join). It was also a beat of mobile s03 and a stop of the web tour until #5627, which removed their `Pick your roles` title.
 Copy in `PICK_ROLES_COPY` (`packages/validation/src/self-assignable-roles.ts`), shared by both platforms.
 
 | Where | Copy |
 |---|---|
-| Onboarding title | `Pick your roles` |
-| Onboarding line, and the pickers' hint | `Pick what you're into. Each role adds its channels to Chat, and you can leave it here while it's offered.` (Was `…and you can leave any time.` until #5650: a role an officer stopped offering stays until an officer takes it off.) |
+| The pickers' hint | `Pick what you're into. Each role adds its channels to Chat, and you can leave it here while it's offered.` (Was `…and you can leave any time.` until #5650: a role an officer stopped offering stays until an officer takes it off.) |
 | Under a marked role an alum holds, which they can leave but not join again | `Alumni don't join roles. You can leave this one.` |
 
 ### Always formal
@@ -938,39 +940,20 @@ Strings in `@repo/chat-core/density`.
 | Chat settings create form (web) | `Always formal (everyone sees it in the formal display)` |
 | Save failed | Web toast `Couldn't change Always formal` / `Try again in a moment.`; mobile alert `Couldn't change Always formal` / `Nothing changed. Check your connection and try again.` |
 
-### First-run tour (web)
+### Welcome card
 
-The six stops over the real Chat screen (#5080; `apps/web/components/onboarding/tour.ts`).
-One line each in a coach mark beside the lit control; only the two stops that carry a pick have a title.
+At the top of the chapter's default channel only, where a member lands after joining, until they close it or a week passes (#5627; Paul's pick 2026-11-19, "welcome card, no tour").
+Copy in `WELCOME_CARD_COPY` and its helpers (`packages/validation/src/welcome-card.ts`), shared by web and the phone; behavior in [`onboarding.md` § After joining](../../behavior/onboarding.md#after-joining).
 
-| Stop | Line |
+| Where | Copy |
 |---|---|
-| The channel list | `You're in <chapter>. These are the chapter's channels. Click one to start talking.` (`your chapter` when the name isn't loaded). On the back-to-channels button below the side-by-side width: `You're in <chapter>. The chapter's channels are one tap back, here.` |
-| The messages | Title `Pick your chat display`, then [§ Display step](#display-step-onboarding)'s web line and the segmented control |
-| The Committees group, the channel list, or the back-to-channels button below the side-by-side width | Title and line from [§ Pick your roles](#pick-your-roles), then the switches |
-| The sidebar's Chapter group | `Events, points, study hours and the rest of the chapter are here, under Chapter.` On the menu button below `lg`: `Events, points, study hours and the rest of the chapter are in this menu, under Chapter.` |
-| The Direct messages row | `Direct messages are here.` On the menu button below `lg`: `Direct messages are in this menu too.` |
-| The avatar | `Your profile and settings are here. Replay this tour anytime from Settings → Account.` |
+| Title | `Welcome to <chapter>, <first name>` (`Welcome to <chapter>` with no real name, by Ask's greeting rule: `Member`, or one made from an email such as `jlee42`; `your chapter` when the chapter isn't loaded) |
+| Event rows, the next two | The event's name, then its day written out: `Happening now` for one already under way, `Today, 7:00 PM`, `Tomorrow, 7:00 PM`, the weekday within a week (`Saturday, 7:00 PM`), else the date (`Saturday, November 28`, with the year when it isn't this year). Each opens the event. |
+| Last row | `Finish your profile`, then `2 minutes`, muted, and a chevron |
+| Close button | An X, read out as `Close the welcome card`. Closing is for good on that device. |
+| Finish your profile (web dialog, phone screen) | Title `Finish your profile`, line `Your photo, the roles you're in and how chat looks to you.`, then the sections `Photo`, `Your roles` (only when there's a role to join) and `Chat display`, each the control from its own page. Web closes with `Done`; the phone's is a pushed screen with `‹ Chat`, not a sheet (Paul, 2026-11-20: "not sure a sheet is the move here"). |
 
-Above each line: the count, `1 of 6`, muted. Under it: `Skip tour` on the left; `Back` (from the second stop shown) and `Next` on the right, `Done` on the last stop.
-Skip shows the toast `Tour skipped` / `Replay it anytime from Settings → Account.`
-Settings → Account's row: `Tour`, `The first-run tour starts again the next time you open Chat.`, button `Replay tour`; it confirms with the toast `Tour queued` / `The tour will start the next time you open Chat.`
-
-### First-run tour (mobile)
-
-The four stops over chat after s03 (`apps/mobile/lib/onboarding/tour.ts`).
-One line each, in a popover card beside the lit spot, with the count and the action under it.
-No title: the lit control is the subject.
-
-| Stop | Line |
-|---|---|
-| Top channel section | `You're in <chapter>. Tap a channel to start talking.` (`your chapter` when the name isn't loaded) |
-| The Messages tab | `Direct messages have their own tab.` (#5310; `Direct messages are here. Swiping left opens them too.` on the door, #4610 step 3, until then) |
-| The tab bar's + | `Shortcuts live under the +. Hold it to pick your own.` |
-| The You tab | `Your profile, the directory and settings are under You.` (the More tab's line until #3839) |
-
-Under each line: the count, `1 of 4`, muted, and `Next` in the chapter accent (`Done` on the last stop).
-`Skip` in the top corner, white on the dim, read out as `Skip the tour`.
+The first-run tours it replaced, six stops over web Chat (#5080) and four over the phone's chat after s03, with Settings → Account's `Replay tour`, were removed in #5627 (2026-11-19).
 
 ### Push opt-in (mobile)
 
@@ -1135,15 +1118,16 @@ The delete confirmation is one wording for both clients, so it lives in `package
 
 ### Edit roles (mobile s13)
 
-The role editor behind the directory member profile's Roles row, the one place on mobile roles are edited.
+The roles-and-groups sheet behind the directory member profile's "+ Add role" and "+ Add to group" (2026-11-19, #5684; it was the Roles row's Edit), the one place on mobile a member's roles and groups are changed.
 Who gets it, and what it changes, is owned by [`../mobile/screens.md`](../mobile/screens.md) s13.
 
 | State | Title | Description | Home |
 |---|---|---|---|
-| The sheet | `<name>'s roles` | Search field `Search roles`; under it one fixed-height status line, blank until `Saving…` and `Saved` (it said `Tap a role to add or remove it.` until 2026-11-07) | mobile `components/directory/member-roles-sheet.tsx` |
-| President's row | — | `Changes with Transfer presidency` under the name; the row can't be tapped | mobile `lib/directory/role-editor.ts` (`ROLES_LOCKED_CAPTION`) |
-| Empty | — | `This chapter has no roles yet.`, or `No roles match that search.` while searching | mobile `components/directory/member-roles-sheet.tsx` |
-| Removing the last role carrying `members:view` | `Take away <name>'s access?` | `With none of these roles, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>` | mobile `lib/directory/role-editor.ts` (`removeBaseAccessTitle`, `removeBaseAccessBody`) |
+| The sheet | `<name>'s roles and groups` | Section headings as web's list (each tier's name, `Other roles`, `Groups`); search field `Search roles and groups`; under it one fixed-height status line, blank until `Saving…` and `Saved` (it said `Tap a role to add or remove it.` until 2026-11-07) | mobile `components/directory/member-roles-sheet.tsx` |
+| A row the viewer can't tick | — | Under the name, why: `Changes with Transfer presidency` (President), `Ranks at or above yours`, `Checking what your role can give`, `Your role can't give roles`, `Your role can't change groups`; the row can't be tapped | `@repo/hooks` `member-assignments.ts` (`ASSIGN_CAPTIONS`), shared with web |
+| Empty | — | `This chapter has no roles or groups yet.`, or `Nothing matches that search.` while searching | mobile `components/directory/member-roles-sheet.tsx` |
+| Removing the last role carrying `members:view` | `Take away <name>'s access?` | `Without this role, <name> can't open chat, the member list or events.` Buttons `Cancel` and `Remove <role>` | `@repo/hooks` (`ASSIGN_COPY`), shared with web |
+| Group save failed | `Couldn't add to that group` or `Couldn't take out of that group` | The API's reason (a channel names the group, the group is full, the member has left) | same |
 | Save failed: a role was deleted (400) | `Couldn't save roles` | `One of those roles was just deleted. The change was put back and the list refreshed.` | mobile `lib/directory/role-editor.ts` (`rolesSaveFailedBody`) |
 | Save failed: not allowed (403) | `Couldn't save roles` | `The change isn't allowed any more, so it was put back.` | same |
 | Save failed: anything else | `Couldn't save roles` | `The change didn't reach the server, so it was put back. Try again.` | same |
@@ -1253,31 +1237,30 @@ It had no states at all until the Profile & pre-auth slice, so a failed fetch re
 | Signed in (web) | — | `Signed in as <email>` · `Sign out` above the title (`Signed in` when the account has no email), on `/join` once the session is known and on every step of the web setup wizard (#3776): an account with no chapter otherwise has no way to sign out. Mobile says the same on its face (Signed in (mobile), below). |
 | Invite for this account (web, #3776) | `You've been invited to <chapter>` | The school, `from <inviter>` and the role, joined by ` · `, then a primary `Join`. One card per invite emailed to the account's verified address, with the Terms line (`By joining you agree to…`, below) under the cards. While any card shows, the field and its `Join chapter` wait behind a link, `Have a different invite?`, so the field's Join doesn't sit under the card's (#5076, 2026-11-15); opened, the field's `Join chapter` is secondary. The field waits for that read, so it never shows and then folds away. Not shown when the page was opened with an invite link. Mobile s02 offers the same invites on its question (below). |
 | Already a member (web, #3850) | `You're already in <chapter>` | `Have an invite to another chapter? Use it below.` (`Your invite to another chapter is below.` while an emailed-invite card shows) beside `Open chat` (to `/chat`), above the cards and the field. Shown when the account has a chapter, except to a member `/no-access` would send back (no role in their only chapter, `isLockedOutOfChapter`), since `/chat` would return them there. `Open chat` is the primary unless an emailed-invite card shows; either way the field's `Join chapter` turns secondary. |
-| Invite link on a phone (web, #4002) | `Join in the <app> app` (`Frapp`, or `Frapp Staging` on staging) | With an install link (2026-11-19): `Two steps, then you sign in once and land in your chapter.` over two numbered steps. Step 1 `Get <app>` + `Already have it? Skip to step 2.` and a secondary `Get <app>`, with the install hint below under it. Step 2 `Open your invite` + `Come back to this page once it's installed. Your invite stays in this link.` and a primary `Open in <app>`. Without one: `Your invite opens in the app, so you sign in once and land in your chapter.`, a primary `Open in <app>` and the note below. `Not on your phone? Join on the web instead` in the footer either way, which goes on to the invite card. With an invite (#5625), the invite card's chapter, inviter and member count head the page in place of the title and subtitle, and `Join in the <app> app, so you sign in once and land in your chapter.` sits above the steps. Shown on a phone for a live invite when the visitor is signed out, or signed in with no chapter yet, until they choose the web. Store-facing wording: Paul approves it. |
+| Invite link on a phone (web, #4002) | `Join in the <app> app` (`Frapp`, or `Frapp Staging` on staging) | With an install link (2026-11-19): `Two steps, then you sign in once and land in your chapter.` over two numbered steps. Step 1 `Get <app>` + `Tapping Get <app> copies your invite for the app.` and a secondary `Get <app>`, with the install hint below under it; after the tap the line reads `Invite copied. When <app> opens, tap Paste.`, or `Couldn't copy your invite. Once <app> is installed, come back here and tap Open in <app>.` where the browser refused (#5626). Step 2 `Paste your invite` + `Open <app> and tap Paste. Already had the app? Open it from here.` and a primary `Open in <app>`. Without one: `Your invite opens in the app, so you sign in once and land in your chapter.`, a primary `Open in <app>` and the note below. `Not on your phone? Join on the web instead` in the footer either way, which goes on to the invite card. With an invite (#5625), the invite card's chapter, inviter and member count head the page in place of the title and subtitle, and `Join in the <app> app, so you sign in once and land in your chapter.` sits above the steps. Shown on a phone for a live invite when the visitor is signed out, or signed in with no chapter yet, until they choose the web. Store-facing wording: Paul approves it. |
 | Invite link on a phone, install hint | — | TestFlight: `Opens TestFlight, Apple's app for betas. Tap Accept, then Install. If you don't have TestFlight, Apple's page offers it first.` Play tester page: `Opens Google Play's tester page. Join the test, then tap Install. If Play says you aren't a tester, ask the officer who sent your invite to add you.` A store listing (the store app with no link set): `The app is in beta, so if the store says it isn't available yet, continue in the browser.` |
 | Invite link on a phone, no install link | — | `Don't have <app> yet? Ask the officer who sent your invite how to get it, or continue in the browser.` |
 | Create a chapter (secondary) | — | `Starting a chapter?` + `Create a chapter` (returns to `/chat?setup=chapter`, which remounts the first-officer wizard without first sending an account with an emailed invite back here, #5077). |
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `Frapp couldn't be reached to confirm you're signed in. Try again in a moment.` |
-| Redeemed | `Chapter joined` | `You're in. Opening chat.` From the invite card (#5625), web toasts `Welcome to <chapter>` instead. Mobile goes to s03, which asks for the photo and name only when missing, always for the chat display, then for notifications only when push is off, and then goes to chat, where the first-run tour's first stop says `You're in <chapter>.` ([§ First-run tour (mobile)](#first-run-tour-mobile)). |
-| Mobile s02, the question (#3350) | `How are you getting in?` | No line under the title: the two answers say it. The rows above are web `/join`'s, except Unparseable paste, which mobile shares word for word; mobile s02 asks this first and offers two answers instead of a field. |
-| Mobile s02 answers | — | `I have an invite` + `Use the link your officer sent.`, then `I'm starting our chapter` + `Set it up, then invite everyone.` |
-| Mobile s02 invite step | `Join with an invite` | `Paste the invite link or code your officer sent.` (Invites from the chapter link work for many people over 7 days, #3353, so the line no longer says once and 24 hours.) The membership hint ([§ Sign in (pre-auth)](#sign-in-pre-auth)) sits under the field, and the pinned button is `Continue`, which opens the invite card. |
-| Mobile s02 invite for this account (#3782) | `You've been invited to <chapter>` | The same title and ` · `-joined line as web's (school, `from <inviter>`, role), on a row with the chapter mark, one per invite, above the two answers. A tap opens the invite card on that invite, whose `‹ Back` returns to the question with any invite pasted before put back in the field. Not shown when an invite link opened the screen. |
+| Redeemed | `Chapter joined` | No line under it since #5627 (it was `You're in. Opening chat.`). From the invite card (#5625), web toasts `Welcome to <chapter>` instead. Web then opens [§ Name and photo (after a join)](#name-and-photo-after-a-join), then chat. Mobile goes to s03, the same name and photo screen, then notifications only when push is off, and then goes to chat. Both open the chapter's default channel with the [§ Welcome card](#welcome-card) at its top. |
+| Mobile s02, the question (#3350; Paste since #5626) | `Joining a chapter?` | `If you tapped an invite link before installing Frapp, paste it here.` (`Have a different invite link? Paste it here.` when an emailed invite is offered above it), then Paste, pinned, and the quiet line `Starting a chapter?` `Create a chapter` (web's words). Paste is the system button on iOS 16 and later, whose word and mark Apple fixes. A paste with no invite in it replaces the line with `That isn't a Frapp invite. Copy the whole link, then tap Paste.`; an empty clipboard with `Nothing to paste yet. Copy the invite link, then tap Paste.` (`INVITE_PASTE_COPY` in `@repo/validation`). No field: the rows above are web `/join`'s. |
+| Mobile s01, Joining a chapter? strip (#5626) | `Joining a chapter?` | The question's line and Paste, in a quiet row above the ways in, with the same two answers to a paste that holds no invite, in the line's place. |
+| Mobile s02 invite for this account (#3782) | `You've been invited to <chapter>` | The same title and ` · `-joined line as web's (school, `from <inviter>`, role), on a row with the chapter mark, one per invite, above Paste. A tap opens the invite card on that invite, whose `‹ Back` returns to the question. Not shown when an invite link opened the screen. |
 | Signed in (mobile, #3782) | — | `Signed in as <email>` · `Sign out` under the header on every s02 view and every step of chapter setup (`Signed in` when the session has no email), as web's row above. |
 | Mobile s02 Account menu | — | `Account` in the top corner opens `Signed in as <email>` (`Your account` when the session has no email) and `Delete account` (`Deleting account…` while it runs). Sign out is on the screen's face (Signed in (mobile), above). |
 | Invite card (#5625), web and phone | `<chapter name>` under the gold eyebrow `You're invited to join` | The chapter's mark and school, then one box: `<inviter> invited you · <n> members` (either half left out when unknown; `1 member`), and `You'll join as` `<role>` (left out when joining would grant no role). Whatever opened `/join` with an invite lands here, signed in or not: a link, a remembered invite on the phone, a pending invite picked on the question. |
-| Invite card, signed out | — | `Continue with Apple`, `Continue with Google` and the quiet `Continue with email` (the phone off iOS shows Google, as sign-in does), then the Terms line `By continuing you agree to the Terms and Privacy Policy and confirm you're 18 or older.` (`termsLine` in `@repo/validation`; `Terms` and `Privacy Policy` are links) and the footer `Have a password? Sign in`. Each way in comes back joined: only a sign-in started from the card joins on its own. |
-| Invite card, signed in | — | Primary `Join chapter` (`Joining <chapter>…` while it runs; pinned in thumb reach on the phone), then `By joining you agree to the Terms and Privacy Policy and confirm you're 18 or older.` A failed join shows its error above the button. |
+| Invite card, signed out | — | `Continue with Apple`, `Continue with Google` and the quiet `Continue with email` (the phone off iOS shows Google, as sign-in does), then the Terms line `By continuing you agree to the Terms and Privacy Policy and confirm you're 17 or older.` (`termsLine` in `@repo/validation`; `Terms` and `Privacy Policy` are links) and the footer `Have a password? Sign in`. Each way in comes back joined: only a sign-in started from the card joins on its own. |
+| Invite card, signed in | — | Primary `Join chapter` (`Joining <chapter>…` while it runs; pinned in thumb reach on the phone), then `By joining you agree to the Terms and Privacy Policy and confirm you're 17 or older.` A failed join shows its error above the button. |
 | Invite card, email code | `Check your email` | Field `Email` (`you@university.edu` on the phone) and `Send code`, with `Back` under it. Then `We sent a 6-digit code to <email>. Enter it here, or tap the link in the email.` over the code field, `Continue`, and the pair `Use a different email` · `Send a new code` (`Send again in <n>s` while GoTrue's minute runs). A wrong code: `That code didn't work. Use the newest email, or send a new code.` A bad address: `Enter the email you use for school or your chapter.` (`EMAIL_CODE_COPY` in `@repo/hooks`). |
 | Invite card, already in | `<chapter name>` under the eyebrow `You're already in` | Primary `Open chat`. A sign-in from the card that finds the account already in the chapter opens it with no stop here; web toasts `You're already in <chapter>`. |
 | Dead invite card | `This invite has expired` · `This invite was already used` · `This invite was turned off` | The chapter's card stays, with `<inviter> sent it on <Weekday, Month D>`. Body: `Invite links stop working after a week so they can't spread. Ask <first name> for a new one.` · `Each personal invite works once. Ask <first name> for a new one.` · `An officer turned this link off. Ask <first name> for a new one.` (`the officer who sent it` when unnamed). Primary `Ask <first name> for a new link` (`Ask for a new link`) over `<first name> gets a notification with your name.`; done, `Asked. <first name> got a notification with your name and can send you a new link.`; failed, `Couldn't send that. Try again in a moment.` (web offline: `You're offline. Reconnect, then ask again.`). Signed out, the button opens the ways in under `Sign in first, so <first name> knows who's asking.` (`deadInviteCopy`, `askForNewLinkCopy` in `@repo/hooks`). |
-| Not an invite (404) | `This invite link doesn't work` | `Check that you copied the whole link, or ask the officer who sent it for a new one.` Then `Have another invite link?` over a field (`Paste it here`) and the secondary `Open invite`; a paste with no invite in it: `Paste the whole invite link your officer sent.` |
+| Not an invite (404) | `This invite link doesn't work` | `Check that you copied the whole link, or ask the officer who sent it for a new one.` Web: `Have another invite link?` over a field (`Paste it here`) and the secondary `Open invite`; a paste with no invite in it: `Paste the whole invite link your officer sent.` Phone: `Paste` pinned in thumb reach, as on the join question (#5626), whose `That isn't a Frapp invite. Copy the whole link, then tap Paste.` takes the body's place. Signed out, both end with `Have a password? Sign in`, which on the phone forgets the invite on the way to sign-in. |
 | Invite card couldn't load | `Couldn't open your invite` | `Frapp couldn't be reached. Try again in a moment.` with `Try again`. Web offline: `Can't open your invite` + `Reconnect, and your invite opens right here.` |
 | **410** — expired, used, or missing | — | `This invite has expired or already been used. Ask an officer for a new one.` |
 | **409** — already a member | — | `You're already a member of this chapter. Open it from your chapter list.` |
-| Terms checkbox (#2302) | — | `I'm 18 or older and agree to the Terms of Service and Privacy Policy.` Shown on the create-chapter wizard unless the server says this user already accepted the current Terms, and always on the Terms prompt. The wording is `LEGAL_ACCEPTANCE_LABEL` in `@repo/validation`, owner-approved with the September 2026 Terms. The join screens show the Terms line instead (Invite card rows above; Paul's pick 2026-11-19, #5625); the checkbox stays on the create-chapter wizard and the Terms prompt. |
+| Terms checkbox (#2302) | — | `I'm 17 or older and agree to the Terms of Service and Privacy Policy.` Shown on the create-chapter wizard unless the server says this user already accepted the current Terms, and always on the Terms prompt. The wording is `LEGAL_ACCEPTANCE_LABEL` in `@repo/validation`, owner-approved with the September 2026 Terms. The join screens show the Terms line instead (Invite card rows above; Paul's pick 2026-11-19, #5625); the checkbox stays on the create-chapter wizard and the Terms prompt. |
 | A **403** Terms refusal | — | `Agree to the Terms of Service and Privacy Policy to join.` (`JOIN_TERMS_REQUIRED_COPY`). The refusal is recognised by its code, `legal.acceptance_required`, or failing that by its message. The join screens send the acceptance with every join, so it reaches them only from an older client. |
 | **410** — the account itself was deleted, its session not yet ended | — | `This account has been deleted, so it can't join a chapter.` Told apart from the invite 410s by its message, `ACCOUNT_DELETED_MESSAGE`, since a new invite wouldn't help. It names no control: the `Signed in as … · Sign out` line above it, on web `/join` and every mobile s02 view since #3776 and #3782, is the way out. |
 | Any other failure | — | The server's message, else `Couldn't join that chapter. Check the invite and try again.` |
@@ -1299,7 +1282,7 @@ Both render `TERMS_PROMPT_COPY` from `@repo/validation`, so the strings exist on
 | State | Title | Description |
 |---|---|---|
 | Idle | `Agree to the Terms to continue` | `We've updated the Terms of Service and Privacy Policy. Read them, then agree to keep using Frapp.` It says "updated" for a member who never accepted, too: the Terms did change, and the prompt doesn't have to know which member is which. |
-| Checkbox | — | `I'm 18 or older and agree to the Terms of Service and Privacy Policy.` (the Join chapter row above) |
+| Checkbox | — | `I'm 17 or older and agree to the Terms of Service and Privacy Policy.` (the Join chapter row above) |
 | Primary | — | `Agree and continue` |
 | Tapped without the box ticked | — | `Agree to the Terms of Service and Privacy Policy to continue.` |
 | **410** — the account was deleted | — | `This account has been deleted. Sign out to continue.` |
@@ -1329,7 +1312,7 @@ Implemented in `apps/mobile/components/client-policy-gate.tsx` (`UPDATE_REQUIRED
 
 ### Already in a chapter (pre-auth)
 
-One quiet line under the join screen's answers, on web `/join` and the phone's s02, for someone who is already in a chapter but signed in with another account than the one they joined with (Google instead of their school email, say).
+One quiet line under the join question, on web `/join` and the phone's s02, for someone who is already in a chapter but signed in with another account than the one they joined with (Google instead of their school email, say).
 Tapping it signs out and lands on sign-in.
 
 | State | Text |
@@ -1390,7 +1373,7 @@ The screen draws no `Shared` list: its `Invited` list holds every link.
 
 | State | Title | Copy |
 |---|---|---|
-| Can invite | `Invite members` | Web's panel, on the phone (#3828). Top: the label `Invite by email` over a field (placeholder `name@school.edu`, screen-reader label `Email addresses to invite`), the caption `Separate addresses with commas. Each person gets their own link by email.`, and the chapter-accent primary `Send invite` (`Send <n> invites` for several; hint `Emails each address a link to join.`). Under it, `Invite sent to <address>` or `<n> invites sent`, or a problem in the destructive hue: `<address> isn't an email address. Fix or remove it.`, `<n> of these aren't email addresses. Fix or remove them.`, `Up to 50 addresses at a time. Remove some, then send.`, `Couldn't email this address. Send again, or share a link for them.` (`Couldn't email these <n> addresses. Send again, or share links for them.` for several), and on a failed send `Couldn't send invites. Try again in a moment.` Then `Or share a link` over `Paste it in a group chat, or send it from your mail app. A link lets one person in and lasts 7 days.`, setup's card, and the secondary `Share invite` with the platform's share mark (hint `Makes a new link and opens the share sheet.`). Then web's `Chapter link` section, same words (#3353): with none live, a `Make a chapter link` row (hint `Makes the link and opens the share sheet.`, caption `Expired Thursday, November 26` when the last one ran out); a live one is a `Chapter link` row captioned like web's, hint `Opens what you can do with the chapter link.`, whose menu reads `Share link`, `Make a new link`, `Turn off link`. Turned off: `Chapter link turned off. Nobody can join with it now.`; failures `Couldn't make a chapter link. Try again in a moment.` and `Couldn't turn off the link. Try again in a moment.` Last, the `Invited` caption over the chapter's invites: the address or `Invite link`, `Sent today at 4:46 PM`, and `Pending`, `Joined` or `Expired`. A row's hint is `Opens what you can do with this invite.`, and its menu reads `Share link`, `Send again`, `Revoke invite`; their results read `Invite sent again to <address>` (`Couldn't email <address>. Its new invite is listed, so you can share its link.` when it didn't go) and `Invite revoked. <address> can't join with it now.` (`That link can't be used to join now.` for a link), and their failures `Couldn't send it again. Try again in a moment.` and `Couldn't revoke the invite. Try again in a moment.` A list that didn't load reads `Couldn't load your invites.` over a `Try again` row. |
+| Can invite | `Invite members` | Web's panel, on the phone (#3828). Top: the label `Invite by email` over a field (placeholder `name@school.edu`, screen-reader label `Email addresses to invite`), the caption `Separate addresses with commas. Each person gets their own link by email.`, and the chapter-accent primary `Send invite` (`Send <n> invites` for several; hint `Emails each address a link to join.`). Under it, `Invite sent to <address>` or `<n> invites sent`, or a problem in the destructive hue: `<address> isn't an email address. Fix or remove it.`, `<n> of these aren't email addresses. Fix or remove them.`, `Up to 50 addresses at a time. Remove some, then send.`, `Couldn't email this address. Send again, or share a link for them.` (`Couldn't email these <n> addresses. Send again, or share links for them.` for several), and on a failed send `Couldn't send invites. Try again in a moment.` Then `Or share a link` over `Paste it in a group chat, or send it from your mail app. A link lets one person in and lasts 7 days.`, setup's card, and the secondary `Share invite` with the platform's share mark (hint `Makes a new link and opens the share sheet.`). Then web's `Chapter links` section, same words (#3353, per role #5633): each link a row named for its role (`No role` for Everyone), captioned like web's, hint `Opens what you can do with the <role> link.`, whose menu (titled `<role> link`) reads `Share link` while it works, `Make a new link` and `Turn off link`; then a `Joins as` row with the role (hint `Picks the role the new link joins at.`), opening a sheet of the roles, and a `New link` row (hint `Makes the link and opens the share sheet.`), which reads `Make a new link` when that role has one (hint `Makes a new link for this role, turns off its old one, and opens the share sheet.`). Turned off: `<role> link turned off. Nobody can join with it now.`; failures `Couldn't make a chapter link. Try again in a moment.` and `Couldn't turn off the link. Try again in a moment.` Last, the `Invited` caption over the chapter's invites: the address or `Invite link`, `Sent today at 4:46 PM`, and `Pending`, `Joined` or `Expired`. A row's hint is `Opens what you can do with this invite.`, and its menu reads `Share link`, `Send again`, `Revoke invite`; their results read `Invite sent again to <address>` (`Couldn't email <address>. Its new invite is listed, so you can share its link.` when it didn't go) and `Invite revoked. <address> can't join with it now.` (`That link can't be used to join now.` for a link), and their failures `Couldn't send it again. Try again in a moment.` and `Couldn't revoke the invite. Try again in a moment.` A list that didn't load reads `Couldn't load your invites.` over a `Try again` row. |
 | Can't invite | `Invite members` | One line: `Your role can't send invites. Ask an officer to send each person their own link.` No button. |
 | Role didn't load | `Invite members` | Error state `Couldn't load your role` + `Whether you can send invites depends on it, so it has to load first.`, with `Try again`. |
 | Doors | — | You's row and the Directory's + read `Invite members`; the quick action reads `Invite`; Chat home's checklist line keeps its own `Invite members`. The first three carry the hint `Opens invites to email or share with new members.`; the checklist line, like its other in-app lines, carries none. |

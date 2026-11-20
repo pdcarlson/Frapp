@@ -30,11 +30,11 @@ const MEMBER = [
 ];
 
 describe("isSettingsTabVisible", () => {
-  // #4076: a chair who keeps groups current needs no chapter config.
-  it("shows Groups to a groups:manage holder, and not to a config viewer without it", () => {
-    expect(isSettingsTabVisible("groups", ["groups:manage"])).toBe(true);
-    expect(isSettingsTabVisible("groups", ["chapter-config:view"])).toBe(false);
-    expect(isSettingsTabVisible("groups", ["*"])).toBe(true);
+  // #4076: a chair who keeps groups current needs no chapter config. Groups
+  // share the Roles and groups tab since 2026-11-19, which opens for them.
+  it("shows Roles and groups to a groups:manage holder with nothing else", () => {
+    expect(isSettingsTabVisible("roles", ["groups:manage"])).toBe(true);
+    expect(isSettingsTabVisible("roles", ["*"])).toBe(true);
   });
 
   it("shows every tab to the President's wildcard", () => {

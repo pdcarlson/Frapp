@@ -465,7 +465,7 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     id: "roles",
     label: "Roles",
     area: "chapter",
-    section: "Roles",
+    section: "Roles and groups",
     keywords: [
       "role",
       "positions",
@@ -485,7 +485,7 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     id: "default-invite-role",
     label: "Default invite role",
     area: "chapter",
-    section: "Roles",
+    section: "Roles and groups",
     keywords: [
       "invite",
       "new members join as",
@@ -499,7 +499,7 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     id: "transfer-presidency",
     label: "Transfer presidency",
     area: "chapter",
-    section: "Roles",
+    section: "Roles and groups",
     keywords: ["president", "hand over", "successor", "new president"],
     requires: "president",
     web: { page: "roles", anchor: "settings-transfer-presidency" },
@@ -508,10 +508,12 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     id: "groups",
     label: "Groups",
     area: "chapter",
-    section: "Groups",
+    section: "Roles and groups",
     keywords: ["committees", "committee", "teams", "mention groups"],
     requires: ["groups:manage"],
-    web: { page: "groups", anchor: "settings-groups" },
+    // One page with the roles since Paul's 2026-11-19 call, on both apps.
+    web: { page: "roles", anchor: "settings-groups" },
+    phone: { screen: "/chapter-roles" },
   },
   {
     id: "pledge-class",

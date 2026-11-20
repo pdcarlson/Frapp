@@ -297,9 +297,11 @@ environment; Infisical resolves it to that environment's canonical value.
 **You type the literal string `${SUPABASE_URL}` as the value.** Infisical recognizes this as a reference and resolves it at inject time.
 
 **The two app-link values (#4002) are literals, set in `prod` and `staging`.** They are the web's half of
-letting an invite link (`app.frapp.live/join?token=…`) open the installed app; the other half is a
-store build whose `apps/mobile/app.json` claims `app.frapp.live/join`, and until one ships, setting
-these changes nothing a phone does. `apps/web` publishes them at
+letting an invite link (`app.frapp.live/join?token=…`) open the installed app; the other half is the
+build's claim on `app.frapp.live/join` in `apps/mobile/app.json`, which store builds carry from
+0.11.0. So setting these in `prod` and deploying the web is live on phones: every installed build
+from 0.11.0 starts opening invite links in the app (corrected 2026-11-20, #5628: this said no build
+claimed it yet). `apps/web` publishes them at
 `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` (`lib/app-links.ts`),
 and each file answers 404 while its value is unset, which is the right state for `dev`. Since
 2026-11-17 Frapp Staging claims `app.staging.frapp.live` (`apps/mobile/app.config.js`), and a

@@ -6,10 +6,13 @@ import {
   useEvents,
   useMeetingNoteTaking,
   useMeetings,
+  useMeetingsNoMinutes,
   useMemberDisplayNames,
   usePermissionList,
+  useSetMeetingNoMinutes,
   useViewerUserId,
 } from "@repo/hooks";
+import { errorCopy } from "@repo/hooks/error-copy";
 import {
   MEETING_COPY,
   MEETING_LIST_COPY,
@@ -24,6 +27,17 @@ import {
   type MeetingType,
 } from "@repo/validation";
 import { BACK_TO_YOU } from "@/components/back-row";
+import {
+  CloseGlyph,
+  PencilGlyph,
+  RetryGlyph,
+} from "@/components/control-glyphs";
+import {
+  itemMenuAccessibility,
+  longPressOf,
+  useItemMenu,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
 import { FilterChips, SearchField } from "@/components/filter-chips";
 import { InlineNote } from "@/components/inline-note";
 import {
@@ -50,6 +64,7 @@ import {
 import {
   minutesListView,
   minutesRowTime,
+  type MinutesGroup,
   showsTypeTag,
   type MinutesListRow,
 } from "@/lib/minutes/minutes-list";
@@ -75,10 +90,13 @@ import { useFrappTheme } from "@/lib/theme";
  * An officer who records minutes gets the floating "+", which opens the
  * same New minutes the tab bar's + does, Record first.
  *
- * Tied to the calendar (Paul, 2026-11-19), as web's Meetings is: for an
- * officer who records minutes the list opens on Needs minutes, the
- * meetings that ended in the last 30 days with none, each started in one tap, and
- * ends on Next up, the coming meeting (`minutesToWrite`).
+ * Tied to the calendar (Paul, 2026-11-19) and one timeline (Paul,
+ * 2026-11-20: "should this go in chronological order?"), as web's Meetings
+ * is: for an officer who records minutes, Next up, the coming meeting, sits
+ * on top, and every past meeting sits at its date among the minutes, drafts
+ * included: one that ended in the last 30 days with none reads Write
+ * minutes, and its long-press offers "No minutes for this meeting", which
+ * settles it (`minutesToWrite`, `minutesTimeline`).
  */
 export default function MinutesScreen() {
   // More, the event row and the push all hide while `meetings` is off for the
@@ -102,7 +120,15 @@ function MinutesScreenBody() {
   // who can start minutes from them.
   const eventsQuery = useEvents({ enabled: on && canRecord });
   const takingQuery = useMeetingNoteTaking({ enabled: on && canRecord });
-  const refresh = useRefetchAll([meetingsQuery, eventsQuery, takingQuery]);
+  const noMinutesQuery = useMeetingsNoMinutes({ enabled: on && canRecord });
+  const setNoMinutes = useSetMeetingNoMinutes();
+  const itemMenu = useItemMenu();
+  const refresh = useRefetchAll([
+    meetingsQuery,
+    eventsQuery,
+    takingQuery,
+    noMinutesQuery,
+  ]);
   const starter = useStartMinutesFor();
   const [startingId, setStartingId] = useState<string | null>(null);
   // Events whose start answered "already started": someone else's draft
@@ -130,15 +156,26 @@ function MinutesScreenBody() {
     () => meetingsQuery.data ?? [],
     [meetingsQuery.data],
   );
-  const view = minutesListView(rows, { now, type, query });
   const toWrite = useMemo(() => {
     const started = startedEventIds(rows, takingQuery.data);
     for (const id of taken) started.add(id);
     const events = Array.isArray(eventsQuery.data)
       ? (eventsQuery.data as CalendarMeeting[])
       : [];
-    return minutesToWrite(events, started, now);
-  }, [rows, takingQuery.data, eventsQuery.data, taken, now]);
+    return minutesToWrite(
+      events,
+      started,
+      now,
+      new Set(noMinutesQuery.data ?? []),
+    );
+  }, [
+    rows,
+    takingQuery.data,
+    eventsQuery.data,
+    noMinutesQuery.data,
+    taken,
+    now,
+  ]);
   // Unknown is not "none written": every read answers before any is listed,
   // and a search or a type chip narrows to minutes, not the calendar.
   const showToWrite =
@@ -147,8 +184,67 @@ function MinutesScreenBody() {
     eventsQuery.isSuccess &&
     meetingsQuery.isSuccess &&
     takingQuery.isSuccess &&
+    // The marks only settle rows: if their read fails, ask for every meeting
+    // rather than hiding Next up and the rest.
+    (noMinutesQuery.isSuccess || noMinutesQuery.isError) &&
     !query.trim() &&
     type === null;
+  const view = minutesListView(rows, {
+    now,
+    type,
+    query,
+    write: showToWrite ? toWrite.needs : [],
+    skipped: showToWrite ? toWrite.skipped : [],
+  });
+
+  function say(text: string) {
+    setNotice(text);
+    AccessibilityInfo.announceForAccessibility(text);
+  }
+
+  /** Settles a meeting that had no minutes, or takes that back. */
+  function markNoMinutes(event: CalendarMeeting, noMinutes: boolean) {
+    setNoMinutes.mutateAsync({ eventId: event.id, noMinutes }).then(
+      () => {
+        if (noMinutes) say(MEETING_LIST_COPY.markedNoMinutes(event.name));
+      },
+      (error: unknown) =>
+        say(errorCopy(error, MEETING_LIST_COPY.noMinutesFailed)),
+    );
+  }
+
+  /** A calendar meeting's long-press menu, the same entries as web's ⋯. */
+  function menuFor(
+    event: CalendarMeeting,
+    skipped: boolean,
+  ): ItemMenuHandle | null {
+    return itemMenu.handleFor({
+      title: event.name,
+      actions: skipped
+        ? [
+            {
+              key: "write",
+              label: MEETING_LIST_COPY.writeMinutes,
+              glyph: (color) => <PencilGlyph color={color} />,
+              run: () => void startFor(event),
+            },
+            {
+              key: "undo",
+              label: MEETING_LIST_COPY.undoNoMinutes,
+              glyph: (color) => <RetryGlyph color={color} />,
+              run: () => markNoMinutes(event, false),
+            },
+          ]
+        : [
+            {
+              key: "no-minutes",
+              label: MEETING_LIST_COPY.markNoMinutes,
+              glyph: (color) => <CloseGlyph color={color} />,
+              run: () => markNoMinutes(event, true),
+            },
+          ],
+    });
+  }
 
   async function startFor(event: CalendarMeeting) {
     // One at a time: the row that is starting says so, the rest wait.
@@ -166,10 +262,7 @@ function MinutesScreenBody() {
         void meetingsQuery.refetch();
         void takingQuery.refetch();
       }
-      const text =
-        error instanceof Error ? error.message : MEETING_COPY.tryAgain;
-      setNotice(text);
-      AccessibilityInfo.announceForAccessibility(text);
+      say(error instanceof Error ? error.message : MEETING_COPY.tryAgain);
     } finally {
       setStartingId(null);
     }
@@ -204,9 +297,36 @@ function MinutesScreenBody() {
     );
   };
 
-  const shownCount =
-    view.drafts.length +
-    view.groups.reduce((sum, group) => sum + group.rows.length, 0);
+  const shownCount = view.groups.reduce(
+    (sum, group) => sum + group.items.length,
+    0,
+  );
+
+  const item = (entry: MinutesGroup["items"][number]) => {
+    if (entry.kind === "minutes") return row(entry.minutes);
+    const skipped = entry.kind === "skipped";
+    const menu = menuFor(entry.event, skipped);
+    return (
+      <ListRow
+        key={entry.key}
+        leading={<MeetingTypeTile type={guessMeetingType(entry.event.name)} />}
+        label={entry.event.name}
+        description={calendarLine(entry.event)}
+        value={
+          skipped ? MEETING_LIST_COPY.noMinutes : MEETING_LIST_COPY.writeMinutes
+        }
+        muted={skipped}
+        accessibilityHint={skipped ? undefined : MEETING_LIST_COPY.writeMinutes}
+        busy={startingId === entry.event.id}
+        // A settled row has nothing to start, so a tap opens its menu
+        // (Write minutes, Ask for minutes again), in place: no chevron.
+        onPress={skipped ? longPressOf(menu) : () => void startFor(entry.event)}
+        action={skipped}
+        onLongPress={longPressOf(menu)}
+        {...itemMenuAccessibility(menu)}
+      />
+    );
+  };
 
   return (
     <>
@@ -243,31 +363,31 @@ function MinutesScreenBody() {
           />
         ) : (
           <>
-            {showToWrite && toWrite.needs.length > 0 ? (
+            {showToWrite && toWrite.next ? (
               <>
-                <SectionHeader count={toWrite.needs.length}>
-                  {MEETING_LIST_COPY.needsMinutes}
-                </SectionHeader>
+                <SectionHeader>{MEETING_LIST_COPY.nextUp}</SectionHeader>
                 <ListSection>
-                  {toWrite.needs.map((event) => (
-                    <ListRow
-                      key={event.id}
-                      leading={
-                        <MeetingTypeTile type={guessMeetingType(event.name)} />
-                      }
-                      label={event.name}
-                      description={calendarLine(event)}
-                      value={MEETING_LIST_COPY.startMinutes}
-                      accessibilityHint={MEETING_LIST_COPY.startMinutes}
-                      busy={startingId === event.id}
-                      onPress={() => void startFor(event)}
-                    />
-                  ))}
+                  <ListRow
+                    leading={
+                      <MeetingTypeTile
+                        type={guessMeetingType(toWrite.next.name)}
+                      />
+                    }
+                    label={toWrite.next.name}
+                    description={calendarLine(toWrite.next)}
+                    value={MEETING_LIST_COPY.openEvent}
+                    accessibilityHint={MEETING_LIST_COPY.openEvent}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/event-details",
+                        params: { id: toWrite.next!.id },
+                      })
+                    }
+                  />
                 </ListSection>
               </>
             ) : null}
-
-            {rows.length === 0 ? (
+            {view.groups.length === 0 && !view.narrowed ? (
               <InlineNote>{MEETING_LIST_COPY.none}</InlineNote>
             ) : null}
 
@@ -309,13 +429,6 @@ function MinutesScreenBody() {
               </View>
             ) : null}
 
-            {view.drafts.length > 0 ? (
-              <>
-                <SectionHeader>{MEETING_LIST_COPY.drafts}</SectionHeader>
-                <ListSection>{view.drafts.map(row)}</ListSection>
-              </>
-            ) : null}
-
             {view.series.length > 0 ? (
               <>
                 <SectionHeader>{MEETING_LIST_COPY.series}</SectionHeader>
@@ -353,42 +466,18 @@ function MinutesScreenBody() {
             {view.groups.map((group) => (
               <View key={group.key}>
                 <SectionHeader>{group.label}</SectionHeader>
-                <ListSection>{group.rows.map(row)}</ListSection>
+                <ListSection>{group.items.map(item)}</ListSection>
               </View>
             ))}
 
             {view.narrowed && shownCount === 0 ? (
               <InlineNote>{MEETING_LIST_COPY.nothingMatches}</InlineNote>
             ) : null}
-
-            {showToWrite && toWrite.next ? (
-              <>
-                <SectionHeader>{MEETING_LIST_COPY.nextUp}</SectionHeader>
-                <ListSection>
-                  <ListRow
-                    leading={
-                      <MeetingTypeTile
-                        type={guessMeetingType(toWrite.next.name)}
-                      />
-                    }
-                    label={toWrite.next.name}
-                    description={calendarLine(toWrite.next)}
-                    value={MEETING_LIST_COPY.openEvent}
-                    accessibilityHint={MEETING_LIST_COPY.openEvent}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/event-details",
-                        params: { id: toWrite.next!.id },
-                      })
-                    }
-                  />
-                </ListSection>
-              </>
-            ) : null}
           </>
         )}
       </ScreenShell>
       {meetingActions.sheets}
+      {itemMenu.element}
     </>
   );
 }

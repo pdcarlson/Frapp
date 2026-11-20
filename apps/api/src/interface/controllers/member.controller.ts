@@ -18,6 +18,7 @@ import {
   ApiOkResponse,
 } from '@nestjs/swagger';
 import { MemberService } from '../../application/services/member.service';
+import { InviteService } from '../../application/services/invite.service';
 import { MemberPhoneReachService } from '../../application/services/member-phone-reach.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -57,6 +58,7 @@ export class MemberController {
   constructor(
     private readonly memberService: MemberService,
     private readonly phoneReachService: MemberPhoneReachService,
+    private readonly inviteService: InviteService,
   ) {}
 
   @Get()
@@ -216,10 +218,15 @@ export class MemberController {
     @CurrentMember() member: { id: string },
     @Body() dto: UpdateOnboardingDto,
   ) {
-    return this.memberService.updateOnboarding(
-      member.id,
-      dto.has_completed_onboarding,
-    );
+    const { member: updated, firstFinish } =
+      await this.memberService.updateOnboarding(
+        member.id,
+        dto.has_completed_onboarding,
+      );
+    // The member has just given their name (web /welcome, phone s03), so the
+    // chapter hears who joined now rather than at redeem (#5627).
+    if (firstFinish) await this.inviteService.announceJoin(updated);
+    return updated;
   }
 
   /**

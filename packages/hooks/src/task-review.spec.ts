@@ -3,6 +3,7 @@ import type { LiveTask } from "./task-card";
 import {
   isAwaitingReview,
   sendBackReasonChips,
+  taskHandedInLine,
   taskReview,
   withReasonChip,
 } from "./task-review";
@@ -114,5 +115,54 @@ describe("send-back reasons", () => {
       "Floor is sticky. Wrong photo",
     );
     expect(withReasonChip("Wrong photo", "wrong photo")).toBe("Wrong photo");
+  });
+});
+
+describe("taskHandedInLine (#5732)", () => {
+  const nameOf = (id: string) =>
+    id === "me" ? "you" : id === "moiz" ? "Moiz Steenhuis" : "Paul Carlson";
+  const done = {
+    status: "COMPLETED",
+    stored_status: "COMPLETED",
+    completed_at: "2026-11-04T10:05:00.000Z",
+    assignee_id: "moiz",
+    sent_back_at: null,
+  };
+
+  it("says who marked it done and when", () => {
+    expect(taskHandedInLine(done, nameOf, NOW)).toMatch(
+      /^Moiz Steenhuis marked it done today at /,
+    );
+  });
+
+  it("names an officer who marked it done for them", () => {
+    expect(
+      taskHandedInLine({ ...done, completed_by: "paul" }, nameOf, NOW),
+    ).toMatch(/^Paul Carlson marked it done/);
+  });
+
+  it("reads You for the viewer, and again on a resubmission", () => {
+    expect(
+      taskHandedInLine(
+        { ...done, completed_by: "me", sent_back_at: "2026-11-03T10:00:00Z" },
+        nameOf,
+        NOW,
+      ),
+    ).toMatch(/^You marked it done again today at /);
+  });
+
+  it("says nothing while the task is open, as after a take-back", () => {
+    expect(
+      taskHandedInLine(
+        {
+          ...done,
+          status: "OVERDUE",
+          stored_status: "IN_PROGRESS",
+          completed_at: null,
+        },
+        nameOf,
+        NOW,
+      ),
+    ).toBeNull();
   });
 });

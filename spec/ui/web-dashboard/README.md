@@ -218,7 +218,7 @@ This section holds only what is the web's own.
   Entries from before 2026-11-12 are one list.
 - **The latest deploy's lines stand out**, in the dialog and on the page, as on the phone ([`mobile/screens.md` s16](../mobile/screens.md) states the rule; Paul, 2026-11-16).
   The browser keeps its own memory of the last deploy's newest entry ([`lib/whats-new-fresh.ts`](../../../apps/web/lib/whats-new-fresh.ts)), worked out on every page load by the host so a deploy counts even when the notes aren't opened on it.
-- **A dialog, not a sheet**, mounted in the dashboard shell beside the first-run tour ([`whats-new-host.tsx`](../../../apps/web/components/whats-new/whats-new-host.tsx)).
+- **A dialog, not a sheet**, mounted in the dashboard shell ([`whats-new-host.tsx`](../../../apps/web/components/whats-new/whats-new-host.tsx)).
   It holds the entries this browser hasn't shown, drawn as the What's new page draws them, and scrolls inside itself when they run long.
   Esc, the X and a click outside close it.
   It has no Got it button, which would be a second close ([`components.md` § Chrome weight](../design-system/components.md#chrome-weight)); its one action is See all updates, to `/whats-new`.
@@ -227,13 +227,13 @@ This section holds only what is the web's own.
   [`mobile/screens.md` s16](../mobile/screens.md) states the rule for both.
   Before #4043 nothing on the account recorded it, so an entry read on the phone showed once more on the web, and once more in each new browser.
   - Changed in #4043 by shawnatomklein-eng, 2026-11-11: once per account, with a quiet mark on the other devices, where #3943 kept it once per browser.
-- **A new member is whoever's account is no older than the newest entry**, or whose first-run tour is due.
+- **A new member is whoever's account is no older than the newest entry**, or whose welcome card is due in this browser (#5627; the first-run tour's mark until then).
   A browser holds nothing that tells an old install from a fresh one, which is what the phone goes by, so the account's age stands in.
   For them the entry is recorded without being shown.
-  The stand-in has a known gap: someone whose account is older than the newest entry but who reaches the dashboard for the first time without the tour (a founder who signed up days before finishing the chapter wizard, or a member who onboarded on the phone) is shown the newest entry once.
+  The stand-in has a known gap: someone whose account is older than the newest entry but who reaches the dashboard for the first time without the welcome card (a founder who signed up days before finishing the chapter wizard, or a member who onboarded on the phone) is shown the newest entry once.
 - **It never covers a flow in progress.**
   Nothing is decided until the member has a chapter, so the chapter wizard is never interrupted; join links and sign-in are outside the shell.
-  When it is time to open, it stands down if a dialog or menu is already up (the Terms prompt, an invite, anything the member opened), on Chapter settings (Plan and billing there is a checkout landing, and the shell reads only the pathname, so the whole route stands down, as the tour does;
+  When it is time to open, it stands down if a dialog or menu is already up (the Terms prompt, an invite, anything the member opened), on Chapter settings (Plan and billing there is a checkout landing, and the shell reads only the pathname, so the whole route stands down, as the first-run tour did until #5627;
   `CHECKOUT_LANDING_PATHNAMES` in `billing-paths.ts`) and on `/whats-new` itself.
   A stood-down entry stays unread and the next navigation tries again.
 - **The account menu's What's new row carries a dot while an entry is unread**: the neutral `--foreground` dot every unread mark uses.
@@ -741,16 +741,18 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
 
 - **The row is the control.**
   Actives and alumni rows both open `MemberDetailSheet` (alumni since [#2484](https://github.com/pdcarlson/Frapp/issues/2484)).
+  *Changed 2026-11-19 (Paul picked "a small card from the row", [#5684](https://github.com/frapplive/Frapp/issues/5684)): a row or tile opens the member's card beside it (chat's `MemberPopout`), and the card's View profile opens `MemberDetailSheet` as before.*
+  *Changed 2026-11-20 ([#5749](https://github.com/frapplive/Frapp/issues/5749), Shawn): a list row opens the card below the row, flipping above it near the window's bottom, since a row spans the Directory and beside it the card ran off the window's left edge; a grid tile still opens it beside the tile.*
   There is no trailing "View details" button: a 44px button inside a 36px row sets the row's height on its own.
 - **One member profile, every door** ([#3726](https://github.com/pdcarlson/Frapp/issues/3726)).
   `MemberDetailSheet` (`components/members/member-detail-sheet.tsx`) reads a member by `users.id` (`GET /v1/members/by-user/{userId}`), so chat can open it with only a sender or mention id: since 2026-11-15 (#4593) a sender's name or photo, an `@` chip or a member-list row opens chat's profile popout first, and the sheet is its View profile ([`chat/README.md` § Mentions](../../behavior/chat/README.md#mentions), "The web profile popout").
-  It follows mobile s13's order ([`../mobile/screens.md`](../mobile/screens.md)): photo, name and the class-year line, Message as the sheet's one accent button, then a flat list of Phone (when set: the number is a `tel:` link and Text beside it an `sms:` link), Email (a `mailto:` link) and Member since, then roles as chips in the chapter's rank with each role's color dot, then the bio, with the custom fields the viewer's tier can see, those with a value (#1749), behind a More details toggle that starts closed on every opening (#3711, 2026-11-12: contact first, logistics a tap away).
+  It follows mobile s13's order ([`../mobile/screens.md`](../mobile/screens.md)): photo, name and the class-year line, Message as a small Secondary button sized to its label and centered under the name, never a full-width bar (Paul, 2026-11-20; _changed from the sheet's one full-width accent button_), then the member's roles and groups (`MemberAssignments`, below), then a flat list of Phone (when set: the number is a `tel:` link and Text beside it an `sms:` link), Email (a `mailto:` link) and Member since, then the bio, with the custom fields the viewer's tier can see, those with a value (#1749), behind a More details toggle that starts closed on every opening (#3711, 2026-11-12: contact first, logistics a tap away).
   In the Directory (actives and alumni) it opens docked in place of the list, led by a Back to directory arrow, and chat opens it docked over the chat column, led by a Back to chat arrow, so the page beside chat stays in view ([`components.md` § Surface size](../design-system/components.md#surface-size), 2026-11-12; in chat since #5616, 2026-11-19).
   Its title row draws no title, only the close or the back arrow (with the `⋯` below at its end), and the name heads the body, as § Surface size has a member sheet do.
   Under the roles sits the member's pledge class and order number ([#3939](https://github.com/pdcarlson/Frapp/issues/3939)), drawn when set, and always for a `roles:manage` holder, who gets Edit there;
   [`members.md` § Pledge class and order number](../../behavior/members.md#pledge-class-and-order-number) owns it, and mobile shows it read-only, each when set.
   Two rows mobile does not draw: Points, only where the Directory passes the leaderboard balance it already reads, and Onboarding · Pending, only while it is.
-  A viewer holding `roles:manage` gets Edit beside the Roles heading, which swaps the chips for the role checklist with Cancel and Save roles in the footer, and asks before taking away the last role with member access (#3670); everyone else sees the chips.
+  ~~A viewer holding `roles:manage` gets Edit beside the Roles heading, which swaps the chips for the role checklist with Cancel and Save roles in the footer~~ *Changed 2026-11-19 (Paul, [#5684](https://github.com/frapplive/Frapp/issues/5684)): there is no Edit mode.* Two rows of chips, Roles in the chapter's rank then Groups (the chapter's own first), each with its color dot; the same rows sit on the card. A viewer who may change one gets an x on its chip and a "+ Add role" / "+ Add to group" that opens one searchable list of the roles under their tiers and the chapter's own groups, each tick saving at once; a role out of the viewer's rank is listed, disabled, with why, and taking away the last role with member access still asks first (#3670). Rules: [`members.md` § Groups](../../behavior/members.md#groups).
   Remove from chapter is a row in the `⋯` beside the close, drawn only when the profile read says this viewer may remove this member (`viewer_can_remove`: `members:remove`, not their own profile, and the member ranks below them, [`rbac.md` § Rank](../../behavior/rbac.md#rank)), and it asks before it acts.
   Above it, Edit name and graduation year, drawn where the read says `viewer_can_edit_profile`, opens `MemberCorrectionDialog` (#4367; rules in [`members.md` § Profiles](../../behavior/members.md#profiles)).
   With nothing to hold the `⋯` is not drawn ([`components.md` § Shared rules](../design-system/components.md#2-shared-rules), 2026-11-11).
@@ -758,7 +760,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   Mobile's Block / Unblock is not on web's sheet; web blocks from a message's More menu and undoes it in `/profile`.
 - **One sort chip** in the toolbar row carries every (key, direction) pair, in place of sortable column headers.
   The pairs, and the fraternal-order sort a chapter with pledge classes or order numbers also gets, are listed in [`members.md` § Directory](../../behavior/members.md#directory).
-- **The filters are chips** (Role, Graduation year, Status, and the pledge class one a chapter with classes gets;
+- **The filters are chips** (Role, Group, Graduation year, Status, and the pledge class one a chapter with classes gets;
   [`members.md` § Directory](../../behavior/members.md#directory) owns the set), and so is the bulk bar's Assign role picker ([`components.md` §4](../design-system/components.md#4-inputs-and-selection);
   native selects until [#3970](https://github.com/pdcarlson/Frapp/issues/3970)).
   A chapter imported from Discord can hold 100+ roles, so a long list opens with a type-to-filter field above it and stays scrollable.
@@ -800,10 +802,16 @@ Flushed last ([#2500](https://github.com/pdcarlson/Frapp/issues/2500)); the boar
 - **Two pages on one route, scoped like Discord's channel settings** (Paul, 2026-11-11: "scope the chat admin panel to whatever channel you're editing"; "reported messages should be at the bottom"; "don't need a list of all the channels right here").
   `?channel=<id>` is that channel's page alone: a `<h2>` naming the channel with its type as a badge and an All chat settings link back, its settings with Delete channel beside Save, its pinned messages, then the reports filed in that channel last (`GET /v1/chat/reports?channel_id=`).
   It shows no other channel, no categories and no chapter background.
-  Without a channel the page is the chapter's: Channels (New channel, and an Edit a channel picker for when the chat rail isn't beside the page), Categories, the chapter's chat background, and the whole report queue last, the only place a report about a DM appears.
+  Without a channel the page is the chapter's: Channels (New channel), Categories, the chapter's chat background, and the whole report queue last, the only place a report about a DM appears.
+  **Categories fold out to their channels** ([#5727](https://github.com/pdcarlson/Frapp/issues/5727), Shawn, 2026-11-20), the way Discord's server settings list channels under their categories and Slack's sidebar sections fold: each category row is a toggle (a chevron that turns, the name, then its access summary and channel count), closed until clicked, and opens to its channels, each row opening that channel's page.
+  The groups are the rail's sections in the rail's order: channels in no category first, under **Uncategorized** (the rail's "Channels"; this page already says "uncategorized" in the channel form and the delete warning), then the categories in the server's order, then **System** (the audit log) last, each sorted inside by the chapter's drag order and then A to Z (`groupChannelsByCategory`, `compareChannelOrder`).
+  Uncategorized and System have no row actions. A group starts closed, except Uncategorized when the chapter has no categories, since it is then the only way to a channel; once the officer opens or closes a group, that choice holds until they leave the page, through a category being created or deleted.
+  This replaced the Edit a channel picker, which reached the same pages and ran off the screen at 20 or more channels ([#5724](https://github.com/pdcarlson/Frapp/issues/5724)).
   **Reports stay out of the way** (Paul, 2026-11-11: "it doesn't need to be staring you right in the face"): on either page the queue draws nothing while it loads and, with no open report, folds to one quiet Report history link that opens the tabs;
   an open report, a failed read, or the notification's `#reported-messages` link shows it in full.
-  Neither page lists every channel: the chat rail is that list, and its right-click Edit channel opens a channel's page.
+  A channel's own page lists no other channel; the chat rail's right-click Edit channel opens it, and so does a row in the chapter page's category tree.
+  Until 2026-11-20 neither page listed every channel ("the chat rail is that list").
+  Changed in #5733 by shawnatomklein-eng, 2026-11-20: the chapter's page lists every channel inside its folded category.
   The form has no type field because the update route takes none; the create panel, where the type is chosen, says it is final.
 - **The report queue keeps two lines of its own**: under its label, that each report shows the message as it read when reported and that who reported it is never shown; and on the Open tab, that Mark reviewed and Dismiss leave the message up.
   A row can show neither, and neither button's label says the second.
@@ -848,7 +856,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   *(Changed in [#5560](https://github.com/pdcarlson/Frapp/issues/5560) by pdcarlson, 2026-11-19: it is the agenda's loudest row and the word `Required` in the events hue, above; what it means is unchanged.)*
   The toolbar is `PageActions` like every route's: the List and Calendar toggle leads as the page's primary control, a segmented control ([`components.md`](../design-system/components.md) § Segmented control;
   it was underlined tabs until #3822), and the page opens on whichever view this person last used on this browser;
-  then search and one **Filter** button, whose popover holds Time, Attendance and Cadence as segmented controls and Clear, and which shows a count while any is off its default (Time only on the list, the one view it applies to).
+  then search and one **Filter** button (`FilterMenu`, [`components.md`](../design-system/components.md) § 13 Filter bar), whose menu has a row each for Time, Attendance and Cadence and Clear all, and which shows a count while any is off its default; the filters that are on show as removable chips under the header (2026-11-20, #5739) (Time only on the list, the one view it applies to).
   New event holds the trailing edge.
   On a phone search and Filter take `order-last`, so the view toggle and New event keep the first line.
   The calendar is a radius-14 hairline frame on `--background`, not a card.
@@ -946,7 +954,7 @@ The personal page has a rail of links, one address per section (`?section=`, the
 | My account | Appearance and chat | `appearance` | Chat density, kept on the browser, and the Read receipts switch, an account setting (#5519; [`chat/README.md` § Shown to the sender](../../behavior/chat/README.md#shown-to-the-sender)). No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
 | My account | Linked apps | `apps` | One row per connected app, each marked with a green check when connected, greyed when not and red once expired (#5407): Google Calendar and Discord for the active chapter, then the ways the account signs in (email, Google, Apple, read from Supabase Auth). `?section=discord` opens it. The API's Discord link handshake and Google's sign-in return here |
 | My account | Calendar | `calendar` | The Google Calendar row again, with the subscription link (Copy link, made only on that tap, and the Apple, Outlook and Reset menu) |
-| My account | Account | `account` | Replay the tour, sign out, delete account |
+| My account | Account | `account` | Sign out, delete account (Replay the tour went with the tour, #5627) |
 | My account | AI | `ai` | One Frapp AI switch: on opens Meet Frapp AI, off turns it off ([`ai.md` § Consent](../../behavior/ai.md#consent); #4790). Listed only while the server has AI; the rail waits for that answer |
 | In _chapter name_ | Chapter alerts | `alerts` | Chat messages (All messages / Mentions and DMs only, [#4124](https://github.com/pdcarlson/Frapp/issues/4124)), then the active chapter's notification categories |
 | In _chapter name_ | Blocked members | `blocked` | The active chapter's block list |
@@ -1398,9 +1406,8 @@ The **mark** is the exception, because [`../brand-identity.md`](../brand-identit
 The mirror half is `/profile`: it renders *inside* a chapter, so its s15 identity header takes the accent roles rather than the house family the board happens to draw it in.
 
 **The reference wins on visuals and not on the data model.** s02 draws a six-cell row for a shared chapter code;
-[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies single-use invite tokens that last 7 days, and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
-So `/join` takes s02's chrome — the title ladder (the back affordance went with the 2026-11-05 split frame, whose header and footer links do that job), the primary, the `--surface-1` hint card — and keeps one token field that accepts a pasted raw token or the join URL officers copy (`extractInviteToken` in `@repo/validation`).
-`apps/mobile/app/(auth)/join.tsx` had already made that call in its own docstring; both surfaces now record it, so neither can drift.
+[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies invite links instead (a personal one used once, or an officer's chapter link for a role, each lasting 7 days), and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
+So `/join` takes s02's chrome — the title ladder (the back affordance went with the 2026-11-05 split frame, whose header and footer links do that job), the primary, the `--surface-1` hint card — and not its input. Since #5625 the page leads with the invite card; its one token field, behind **Have a different invite?** or shown when there is no invite, accepts a pasted raw token or the join URL officers copy (`extractInviteToken` in `@repo/validation`). The phone has no field at all ([`../mobile/screens.md`](../mobile/screens.md)).
 
 The settings blocks this history describes on `/profile` (quiet hours, notifications, blocked members) moved to the personal Settings page on 2026-11-10 ([§ Two doors](#two-doors-chapter-settings-and-your-settings)); the rules they settled moved with them.
 

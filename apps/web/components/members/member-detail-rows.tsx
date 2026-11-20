@@ -1,6 +1,4 @@
 import type { ReactNode } from "react";
-import type { MemberRoleChip } from "@repo/validation";
-import { cn } from "@/lib/utils";
 
 /** A member profile read (`GET /v1/members/by-user/{userId}`), loosely typed. */
 export type MemberRecord = Record<string, unknown>;
@@ -54,21 +52,4 @@ export function metaLine(member: MemberRecord | null): string | null {
       : null,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(" · ") : null;
-}
-
-/** A role as a chip: its palette color as a dot, or a plain muted one. */
-export function RoleChip({ chip }: { chip: MemberRoleChip }) {
-  return (
-    <li className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-caption text-foreground">
-      <span
-        aria-hidden="true"
-        className={cn(
-          "h-2.5 w-2.5 shrink-0 rounded-full",
-          !chip.color && "bg-muted-foreground",
-        )}
-        style={chip.color ? { backgroundColor: chip.color } : undefined}
-      />
-      {chip.name}
-    </li>
-  );
 }

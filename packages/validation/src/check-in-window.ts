@@ -12,6 +12,12 @@
  * (`apps/web/components/events/check-in-close.ts`).
  */
 
+/**
+ * What an event's row says while check-in is open, on both apps (web's
+ * agenda row since 2026-11-19, the phone's before it).
+ */
+export const CHECK_IN_OPEN_LABEL = "Check-in is open";
+
 /** Minutes after `end_time` during which check-in stays open. */
 export const CHECK_IN_GRACE_MINUTES = 15;
 
@@ -83,4 +89,21 @@ export function checkInWindowBounds(
     ),
     closesAt: new Date(end.getTime() + CHECK_IN_GRACE_MINUTES * MS_PER_MINUTE),
   };
+}
+
+/**
+ * Whether the event takes check-ins at `now` (epoch ms), both ends of the
+ * window included, as the API's `AttendanceService` refuses only before
+ * `opensAt` and after `closesAt`. The one test of "open now" for every
+ * surface that only needs a yes or no: web's agenda row, its chat event card
+ * and its live minutes card (2026-11-19; each held its own copy until then).
+ */
+export function checkInOpenAt(
+  start: Date,
+  end: Date,
+  opensMinutes: unknown,
+  now: number,
+): boolean {
+  const { opensAt, closesAt } = checkInWindowBounds(start, end, opensMinutes);
+  return now >= opensAt.getTime() && now <= closesAt.getTime();
 }

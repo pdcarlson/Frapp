@@ -89,6 +89,8 @@ import {
 } from "@/components/minutes/drafting-steps";
 import { MarkAttendanceSheet } from "@/components/minutes/mark-attendance-sheet";
 import { MinutesBody, MinutesJumpBar } from "@/components/minutes/minutes-body";
+import { ComingUpDates } from "@/components/minutes/coming-up-dates";
+import { ComingUpPostReview } from "@/components/minutes/coming-up-post-review";
 import { MinutesDetailsSheet } from "@/components/minutes/minutes-details-sheet";
 import { MinutesEditor } from "@/components/minutes/minutes-editor";
 import {
@@ -283,6 +285,9 @@ function LoadedMinutes({
   const sectionY = useRef(new Map<MeetingSectionKey, number>());
   const jumpBarHeight = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
+  // The review of the Coming up dates, once the minutes post (#5672).
+  const [reviewingDates, setReviewingDates] = useState(false);
+  const endDatesReview = useCallback(() => setReviewingDates(false), []);
   const [stopping, setStopping] = useState(false);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menu = useItemMenu();
@@ -550,7 +555,9 @@ function LoadedMinutes({
       });
     } catch (error) {
       setProblem(errorCopy(error, MEETING_COPY.postFailed));
+      return;
     }
+    setReviewingDates(true);
   }
 
   const type = meetingTypeLabel(
@@ -850,6 +857,13 @@ function LoadedMinutes({
         viewerId={viewerId}
         tasks={actionTasks}
         onSectionLayout={(key, y) => sectionY.current.set(key, y)}
+        renderDates={(dates) => (
+          <ComingUpDates
+            meetingId={meeting.id}
+            dates={dates}
+            viewerId={viewerId}
+          />
+        )}
       />
     </View>
   );
@@ -1117,6 +1131,15 @@ function LoadedMinutes({
             say(MINUTES_READ_COPY.details.saved);
           }}
           onOpenEvent={openEvent}
+        />
+      ) : null}
+      {reviewingDates ? (
+        <ComingUpPostReview
+          meetingId={meeting.id}
+          content={content}
+          viewerId={viewerId}
+          onDone={endDatesReview}
+          onTracked={say}
         />
       ) : null}
       {canBackfill && meeting.event_id ? (

@@ -134,6 +134,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
           refetch: refetches.roles,
         }
       : read(state.roles, refetches.roles),
+  useGroups: () => ({ data: [] }),
   useMembers: () =>
     state.membersError
       ? {

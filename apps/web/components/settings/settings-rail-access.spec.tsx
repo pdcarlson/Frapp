@@ -216,8 +216,7 @@ describe("Settings shows each viewer what they can use", () => {
       "Semester",
       "Privacy",
       "Plan and billing",
-      "Roles",
-      "Groups",
+      "Roles and groups",
       "Pledge class",
       "Member fields",
       ...MODULE_ROWS,
@@ -335,6 +334,15 @@ describe("Settings shows each viewer what they can use", () => {
     ).toHaveAttribute("data-state", "active");
   });
 
+  it("opens Roles and groups from an old Groups link", () => {
+    permissions.current = ["*"];
+    search.current = "tab=groups";
+    render(<SettingsPage />);
+    expect(
+      screen.getByRole("tab", { name: "Roles and groups" }),
+    ).toHaveAttribute("data-state", "active");
+  });
+
   it("tells a viewer with nothing here who can change that", () => {
     permissions.current = ["members:view"];
     render(<SettingsPage />);
@@ -347,11 +355,10 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.current = ["roles:manage"];
     search.current = "tab=events";
     render(<SettingsPage />);
-    expect(tabNames()).toEqual(["Roles", "Pledge class"]);
-    expect(screen.getByRole("tab", { name: "Roles" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(tabNames()).toEqual(["Roles and groups", "Pledge class"]);
+    expect(
+      screen.getByRole("tab", { name: "Roles and groups" }),
+    ).toHaveAttribute("aria-selected", "true");
   });
 
   it("names the pledge class tab in the chapter's own word", () => {
@@ -361,7 +368,7 @@ describe("Settings shows each viewer what they can use", () => {
       vocabulary: { class: "Line" },
     } as typeof currentChapter.current;
     render(<SettingsPage />);
-    expect(tabNames()).toEqual(["Roles", "Line"]);
+    expect(tabNames()).toEqual(["Roles and groups", "Line"]);
   });
 
   it("opens the pledge class tab writable for a roles:manage holder, in the chapter's words", () => {

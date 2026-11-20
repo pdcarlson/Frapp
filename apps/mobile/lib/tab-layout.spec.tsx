@@ -30,20 +30,9 @@ vi.mock("@/lib/auth-session", () => ({
   }),
 }));
 
-// The first-run tour wraps the navigator and reads the signed-in member; it
-// has its own spec (`components/onboarding/tour.spec.tsx`).
-vi.mock("@/components/onboarding/tour", () => ({
-  TourHost: ({ children }: { children: React.ReactNode }) => children,
-  useTourAnchor: () => undefined,
-  useTourReady: () => undefined,
-}));
-// So does What's new's host beside it (`components/whats-new/whats-new-host.spec.tsx`).
+// What's new's host has its own spec (`components/whats-new/whats-new-host.spec.tsx`).
 vi.mock("@/components/whats-new/whats-new-host", () => ({
   WhatsNewHost: "WhatsNewHost",
-}));
-// And Meet Frapp AI's (`components/ai/meet-frapp-ai-host.spec.tsx`).
-vi.mock("@/components/ai/meet-frapp-ai-host", () => ({
-  MeetFrappAiHost: "MeetFrappAiHost",
 }));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),

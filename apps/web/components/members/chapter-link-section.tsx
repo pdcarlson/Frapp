@@ -4,14 +4,22 @@ import { Link2, RotateCw, Trash2 } from "lucide-react";
 import {
   CHAPTER_LINK_HINT,
   chapterLinkExpiryLabel,
-  useChapterLink,
+  useChapterLinkPicker,
+  useChapterLinks,
   useCreateChapterLink,
+  useInviteRoleChoices,
   useRevokeInvite,
   type InviteListItem,
 } from "@repo/hooks";
-import { EVERYONE_ROLE_NAME } from "@repo/validation";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SectionLabel } from "@/components/shared/section-label";
 import { RowMenu } from "@/components/shared/row-menu";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
@@ -20,11 +28,18 @@ import { buildJoinUrl } from "@/lib/invite-link";
 import { getErrorMessage } from "@/lib/utils";
 
 /**
- * The chapter link (#3353, Paul 2026-11-19: "One chapter link, 7 days"):
- * the one link an officer posts where the whole chapter will see it, the way
- * Discord's server invite and WhatsApp's group link work. Copy it, make a new
- * one (the old one stops working, as WhatsApp's Reset link does), or turn it
- * off. Mobile's Invite members screen has the same section, same words.
+ * Chapter links (#3353, Paul 2026-11-19: "One chapter link, 7 days"): links
+ * an officer posts where the chapter will see them, the way Discord's server
+ * invite and WhatsApp's group link work. Since #5633 ("Officer picks it per
+ * link") each link joins at the role the officer picked, one live link per
+ * role, so a pledge class link and a brothers link can be out at once.
+ *
+ * Each link is a row: its role, when it stops (or stopped) working, Copy
+ * link while it works, and a menu to make a new one (that role's old link
+ * stops working, as WhatsApp's Reset link does) or turn it off. An expired
+ * link stays listed, so the officer sees why the link they posted is dead. Under them, **New link** with the role it
+ * joins at, starting on the chapter's default. Mobile's Invite members screen
+ * has the same section, same words.
  */
 export function ChapterLinkSection({
   gate,
@@ -38,18 +53,19 @@ export function ChapterLinkSection({
   /** Invite data didn't load; the panel already says so. */
   paused: boolean;
 }) {
-  const linkQuery = useChapterLink();
+  const linksQuery = useChapterLinks();
+  const roles = useInviteRoleChoices();
+  const { links, newRole, pick, label, replaces, canRemake } =
+    useChapterLinkPicker(linksQuery.data, roles);
   const create = useCreateChapterLink();
   const revoke = useRevokeInvite();
   const { toast } = useToast();
-  const link = linkQuery.data ?? null;
-  const live = link?.status === "pending" ? link : null;
 
   async function copy(invite: InviteListItem) {
     const url = buildJoinUrl(window.location.origin, invite.token);
     try {
       await copyWhenReady(Promise.resolve(url));
-      toast({ title: "Chapter link copied" });
+      toast({ title: `${label(invite.role)} link copied` });
     } catch {
       toast({
         title: "Couldn't copy the link",
@@ -59,9 +75,9 @@ export function ChapterLinkSection({
     }
   }
 
-  async function makeLink() {
+  async function makeLink(role: string | null) {
     try {
-      const made = await create.mutateAsync();
+      const made = await create.mutateAsync(role ? { role } : undefined);
       await copy(made);
     } catch (error) {
       toast({
@@ -76,7 +92,7 @@ export function ChapterLinkSection({
     try {
       await revoke.mutateAsync(invite.id);
       toast({
-        title: "Chapter link turned off",
+        title: `${label(invite.role)} link turned off`,
         description: "Nobody can join with it now.",
       });
     } catch (error) {
@@ -89,33 +105,40 @@ export function ChapterLinkSection({
   }
 
   const makeProps = gate.controlProps(paused || create.isPending);
+  const revokeDisabled = revokeGate.controlProps(
+    paused || revoke.isPending,
+  ).disabled;
 
   return (
     <section aria-labelledby="chapter-link-label" className="space-y-2">
-      <SectionLabel id="chapter-link-label">Chapter link</SectionLabel>
+      <SectionLabel id="chapter-link-label">Chapter links</SectionLabel>
       <p className="text-sm text-muted-foreground">{CHAPTER_LINK_HINT}</p>
-      {live ? (
+      {links.map((link) => (
         <RowMenu
-          label="More for the chapter link"
+          key={link.id}
+          label={`More for the ${label(link.role)} link`}
           entries={[
-            {
-              type: "item",
-              key: "new",
-              label: "Make a new link",
-              icon: RotateCw,
-              onSelect: () => void makeLink(),
-              disabled: makeProps.disabled,
-            },
-            { type: "separator", key: "sep" },
+            ...(canRemake(link.role)
+              ? [
+                  {
+                    type: "item" as const,
+                    key: "new",
+                    label: "Make a new link",
+                    icon: RotateCw,
+                    onSelect: () => void makeLink(link.role),
+                    disabled: makeProps.disabled,
+                  },
+                  { type: "separator" as const, key: "sep" },
+                ]
+              : []),
             {
               type: "item",
               key: "off",
               label: "Turn off link",
               icon: Trash2,
               destructive: true,
-              onSelect: () => void turnOff(live),
-              disabled: revokeGate.controlProps(paused || revoke.isPending)
-                .disabled,
+              onSelect: () => void turnOff(link),
+              disabled: revokeDisabled,
             },
           ]}
         >
@@ -125,49 +148,60 @@ export function ChapterLinkSection({
                 <Link2 className="h-4 w-4" aria-hidden="true" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">Chapter link</p>
+                <p className="truncate text-sm font-semibold">
+                  {label(link.role)}
+                </p>
                 <p className="truncate text-caption text-muted-foreground">
-                  {[
-                    chapterLinkExpiryLabel(live),
-                    live.role === EVERYONE_ROLE_NAME
-                      ? null
-                      : `Joins as ${live.role}`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  {chapterLinkExpiryLabel(link)}
                 </p>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => void copy(live)}
-              >
-                Copy link
-              </Button>
+              {link.status === "pending" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void copy(link)}
+                >
+                  Copy link
+                </Button>
+              ) : null}
               {menuButton}
             </div>
           )}
         </RowMenu>
-      ) : (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => void makeLink()}
-            {...makeProps}
-          >
-            <Link2 className="h-4 w-4" aria-hidden="true" />
-            Make a chapter link
-          </Button>
-          {link?.status === "expired" ? (
-            <p className="text-caption text-muted-foreground">
-              {chapterLinkExpiryLabel(link)}.
-            </p>
-          ) : null}
-        </div>
-      )}
+      ))}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {roles.choices.length > 0 && newRole ? (
+          <Select value={newRole} onValueChange={pick}>
+            <SelectTrigger
+              aria-label="Role the new link joins at"
+              className="h-9 w-auto gap-1.5 border-transparent bg-transparent px-2 text-sm hover:bg-card-hover pointer-coarse:h-11"
+            >
+              <span className="text-muted-foreground">Joins as</span>
+              <span className="font-semibold">
+                <SelectValue />
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {roles.choices.map((choice) => (
+                <SelectItem key={choice.id} value={choice.name}>
+                  {choice.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => void makeLink(newRole)}
+          {...makeProps}
+        >
+          <Link2 className="h-4 w-4" aria-hidden="true" />
+          {replaces ? "Make a new link" : "New link"}
+        </Button>
+      </div>
     </section>
   );
 }

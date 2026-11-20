@@ -105,7 +105,7 @@ describe('InviteService', () => {
       findById: jest.fn(),
       findByToken: jest.fn(),
       findByChapter: jest.fn(),
-      findChapterLink: jest.fn().mockResolvedValue(null),
+      findChapterLinks: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       createMany: jest.fn(),
       markRevoked: jest.fn().mockResolvedValue(undefined),
@@ -131,6 +131,7 @@ describe('InviteService', () => {
     };
 
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findByChapter: jest.fn(),
@@ -597,14 +598,18 @@ describe('InviteService', () => {
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith({
         to: 'a@example.com',
         joinUrl: `https://app.frapp.live/join?token=${inviteData[0].token}`,
-        role: 'Member',
+        // Member is the chapter's Everyone role here, which the email
+        // doesn't name (#5628).
+        role: null,
+        validDays: 7,
         chapterName: 'Phi Gamma Delta Tau Nu',
         inviterName: 'Paul Carlson',
       });
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith({
         to: 'b@example.com',
         joinUrl: `https://app.frapp.live/join?token=${inviteData[1].token}`,
-        role: 'Member',
+        role: null,
+        validDays: 7,
         chapterName: 'Phi Gamma Delta Tau Nu',
         inviterName: 'Paul Carlson',
       });
@@ -619,6 +624,49 @@ describe('InviteService', () => {
         'b@example.com',
       ]);
       expect(result.failed).toEqual([]);
+    });
+
+    it("names no role in the email for the chapter's Everyone role, whatever it is called (#5628)", async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-member',
+          name: 'Everyone',
+          system_key: SystemRoleKeys.MEMBER,
+        }),
+      ]);
+
+      await service.createWithEmails('ch-1', 'user-1', 'Everyone', [
+        'a@example.com',
+      ]);
+
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ role: null }),
+      );
+    });
+
+    it('names a role the chapter gave the invite in the email (#5628)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-member',
+          name: 'Everyone',
+          system_key: SystemRoleKeys.MEMBER,
+        }),
+        roleFixture({
+          id: 'r-pledge',
+          name: 'Pledge',
+          system_key: null,
+          is_system: false,
+          permissions: ['members:view'],
+        }),
+      ]);
+
+      await service.createWithEmails('ch-1', 'user-1', 'Pledge', [
+        'a@example.com',
+      ]);
+
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'Pledge', validDays: 7 }),
+      );
     });
 
     it('still sends when the chapter or inviter read fails, without their names', async () => {
@@ -854,6 +902,7 @@ describe('InviteService', () => {
       user_id: 'user-2',
       chapter_id: 'ch-1',
       role_ids: [memberRole.id],
+      joined_via_invite_id: 'inv-1',
     });
     expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
     // Activation funnel step 3 (#267) — recorded only on a successful join.
@@ -1557,7 +1606,37 @@ describe('InviteService', () => {
     });
   });
 
-  describe("the inviter's notice (#596, #5625)", () => {
+  /**
+   * The join notices go out when the new member first finishes onboarding
+   * (#5627), not at redeem: redeem, then finish, as the clients do.
+   */
+  async function redeemThenFinish(
+    token = 'test-uuid',
+    userId = 'user-2',
+    inviterLeft = false,
+  ) {
+    const result = await service.redeem(token, userId);
+    const used = (await mockInviteRepo.findByToken.mock.results.at(-1)
+      ?.value) as Invite;
+    expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+    mockInviteRepo.findById.mockResolvedValue(used);
+    // The inviter is still in the chapter unless a test says otherwise.
+    if (!inviterLeft) {
+      mockMemberRepo.findByUserAndChapter.mockImplementation(async (uid) =>
+        uid === used.created_by ? memberFixture({ user_id: uid }) : null,
+      );
+    } else {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    }
+    await service.announceJoin({
+      user_id: userId,
+      chapter_id: used.chapter_id,
+      joined_via_invite_id: used.id,
+    });
+    return result;
+  }
+
+  describe("the inviter's notice (#596, #5625, #5627)", () => {
     const memberRole = seededMemberRole();
     const member: Member = memberFixture({
       user_id: 'user-2',
@@ -1572,8 +1651,28 @@ describe('InviteService', () => {
       mockRbac.findUserIdsWithAnyPermissions.mockResolvedValue([]);
     });
 
-    it('tells the inviter their invite was accepted, as a notification and never a DM', async () => {
+    it('sends nothing at redeem, and keeps the invite for the finish (#5627)', async () => {
       await service.redeem('test-uuid', 'user-2');
+
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ joined_via_invite_id: 'inv-1' }),
+      );
+    });
+
+    it('announces nobody who came in without an invite', async () => {
+      await service.announceJoin({
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        joined_via_invite_id: null,
+      });
+
+      expect(mockInviteRepo.findById).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+    });
+
+    it('tells the inviter their invite was accepted, as a notification and never a DM', async () => {
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledTimes(1);
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
@@ -1589,12 +1688,22 @@ describe('InviteService', () => {
       );
     });
 
+    it('tells no inviter who has left the chapter since', async () => {
+      await redeemThenFinish('test-uuid', 'user-2', true);
+
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalledWith(
+        'ch-1',
+        ['user-1'],
+        expect.anything(),
+      );
+    });
+
     it('names the chapter link when that is what they joined with', async () => {
       mockInviteRepo.findByToken.mockResolvedValue(
         inviteRow({ reusable: true }),
       );
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
         'ch-1',
@@ -1611,7 +1720,7 @@ describe('InviteService', () => {
         'user-officer',
       ]);
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledTimes(2);
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
@@ -1631,7 +1740,7 @@ describe('InviteService', () => {
         inviteRow({ created_by: 'user-2' }),
       );
 
-      const result = await service.redeem('test-uuid', 'user-2');
+      const result = await redeemThenFinish();
 
       expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
       expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
@@ -1640,7 +1749,7 @@ describe('InviteService', () => {
     it('still names someone when the new member has no profile yet', async () => {
       mockUserRepo.findByIds.mockResolvedValue([]);
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
         'ch-1',
@@ -1679,6 +1788,7 @@ describe('InviteService', () => {
       user_id: 'user-2',
       chapter_id: 'ch-1',
       role_ids: [memberRole.id],
+      joined_via_invite_id: 'inv-1',
     });
     expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
   });
@@ -1936,7 +2046,7 @@ describe('InviteService', () => {
         'user-officer',
       ]);
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockRbac.findUserIdsWithAnyPermissions).toHaveBeenCalledWith(
         'ch-1',
@@ -1971,7 +2081,7 @@ describe('InviteService', () => {
         'user-officer',
       ]);
 
-      await service.redeem('test-uuid', 'user-2');
+      await redeemThenFinish();
 
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
         'ch-1',
@@ -1987,7 +2097,7 @@ describe('InviteService', () => {
     it('tells only the inviter when nobody else can act on a join', async () => {
       mockRbac.findUserIdsWithAnyPermissions.mockResolvedValue(['user-2']);
 
-      await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+      await expect(redeemThenFinish()).resolves.toEqual({
         chapterId: 'ch-1',
         memberId: member.id,
       });
@@ -2009,7 +2119,7 @@ describe('InviteService', () => {
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
 
-      await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+      await expect(redeemThenFinish()).resolves.toEqual({
         chapterId: 'ch-1',
         memberId: member.id,
       });
@@ -2032,7 +2142,7 @@ describe('InviteService', () => {
         .spyOn(Logger.prototype, 'error')
         .mockImplementation(() => undefined);
 
-      await expect(service.redeem('test-uuid', 'user-2')).resolves.toEqual({
+      await expect(redeemThenFinish()).resolves.toEqual({
         chapterId: 'ch-1',
         memberId: member.id,
       });
@@ -2191,6 +2301,7 @@ describe('InviteService', () => {
       user_id: 'user-2',
       chapter_id: 'ch-1',
       role_ids: [],
+      joined_via_invite_id: 'inv-1',
     });
   });
 
@@ -2239,17 +2350,42 @@ describe('InviteService', () => {
       );
     });
 
-    it('turns off the link before it', async () => {
-      mockInviteRepo.findChapterLink.mockResolvedValue(
+    it("turns off that role's link before it, and no other role's (#5633)", async () => {
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-pledge', role: 'Pledge', reusable: true }),
         inviteRow({ id: 'link-1', reusable: true }),
-      );
+      ]);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({ id: 'role-pledge', name: 'Pledge', display_order: 4 }),
+      ]);
 
       await service.createChapterLink('ch-1', 'user-1');
 
+      expect(mockInviteRepo.markRevoked).toHaveBeenCalledTimes(1);
       expect(mockInviteRepo.markRevoked).toHaveBeenCalledWith('link-1');
       expect(
         mockInviteRepo.markRevoked.mock.invocationCallOrder[0],
       ).toBeLessThan(mockInviteRepo.create.mock.invocationCallOrder[0]);
+    });
+
+    // Paul, 2026-11-19: "Officer picks it per link".
+    it('makes a link at the role the officer picks, beside the others (#5633)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({ id: 'role-pledge', name: 'Pledge', display_order: 4 }),
+      ]);
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-1', reusable: true }),
+      ]);
+
+      const link = await service.createChapterLink('ch-1', 'user-1', 'Pledge');
+
+      expect(mockInviteRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'Pledge', reusable: true }),
+      );
+      expect(mockInviteRepo.markRevoked).not.toHaveBeenCalled();
+      expect(link).toEqual(expect.objectContaining({ role: 'Pledge' }));
     });
 
     it('answers 409 when another officer made one at the same moment', async () => {
@@ -2277,17 +2413,58 @@ describe('InviteService', () => {
       expect(rows.map((row) => row.id)).toEqual(['inv-1']);
     });
 
-    it('reads back the current link, expired ones included', async () => {
-      mockInviteRepo.findChapterLink.mockResolvedValue(
+    // Phone builds from before #5633 show only `link` and post no body to
+    // replace it, which turns off the default role's link: `link` must be that one.
+    it("answers `link` as the default role's link, not the newest (#5633)", async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({ id: 'role-pledge', name: 'Pledge', display_order: 4 }),
+      ]);
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-pledge', role: 'Pledge', reusable: true }),
+        inviteRow({ id: 'link-1', reusable: true }),
+      ]);
+
+      const view = await service.findChapterLinkView('ch-1', 'user-1');
+
+      expect(view.links.map((link) => link.id)).toEqual([
+        'link-pledge',
+        'link-1',
+      ]);
+      expect(view.link).toEqual(expect.objectContaining({ id: 'link-1' }));
+      expect(view.defaultRole).toBe('Member');
+    });
+
+    it('answers no `link` when the default role has none (#5633)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({ id: 'role-pledge', name: 'Pledge', display_order: 4 }),
+      ]);
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-pledge', role: 'Pledge', reusable: true }),
+      ]);
+
+      const view = await service.findChapterLinkView('ch-1', 'user-1');
+
+      expect(view.links).toHaveLength(1);
+      expect(view.link).toBeNull();
+    });
+
+    it("reads back every role's link, expired ones included", async () => {
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-pledge', role: 'Pledge', reusable: true }),
         inviteRow({
           id: 'link-1',
           reusable: true,
           expires_at: '2020-01-01T00:00:00.000Z',
         }),
-      );
+      ]);
 
-      await expect(service.findChapterLink('ch-1', 'user-1')).resolves.toEqual(
-        expect.objectContaining({ id: 'link-1', status: 'expired' }),
+      await expect(service.findChapterLinks('ch-1', 'user-1')).resolves.toEqual(
+        [
+          expect.objectContaining({ id: 'link-pledge', status: 'pending' }),
+          expect.objectContaining({ id: 'link-1', status: 'expired' }),
+        ],
       );
     });
 
@@ -2689,6 +2866,7 @@ describe('InviteService', () => {
         user_id: 'user-joiner',
         chapter_id: CHAPTER_ID,
         role_ids: ['role-brother'],
+        joined_via_invite_id: 'inv-old',
       });
     });
   });
@@ -2767,6 +2945,25 @@ describe('InviteService', () => {
       const rows = await service.findByChapter(CHAPTER_ID, USER.president);
 
       expect(rows).toHaveLength(invites.length);
+    });
+
+    it("shows a chair only the chapter links they could make, and won't make one above them (#5633)", async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue(tieredChapterRoles());
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        { ...pending('link-vp', 'Vice President'), reusable: true },
+        { ...pending('link-brother', 'Brother'), reusable: true },
+      ]);
+
+      const links = await service.findChapterLinks(CHAPTER_ID, USER.riskChair);
+      expect(links.map((link) => link.id)).toEqual(['link-brother']);
+
+      await expect(
+        service.createChapterLink(CHAPTER_ID, USER.riskChair, 'Vice President'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockInviteRepo.create).not.toHaveBeenCalled();
     });
 
     it("won't let a chair revoke an officer's invite", async () => {

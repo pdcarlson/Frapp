@@ -4149,7 +4149,8 @@ describe('ChatService', () => {
         {
           user_id: 'user-2',
           channel_access: EMPTY_ACCESS_HOLDER,
-          top_role_order: 0,
+          top_role_rank: 0,
+          top_tier: null,
           top_role: null,
         },
       ]);

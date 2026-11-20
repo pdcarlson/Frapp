@@ -21,6 +21,7 @@ import {
   chapterInitials,
   extractInviteToken,
   extractInviteTokenFromQuery,
+  INVITE_PASTE_COPY,
 } from "@repo/validation";
 import { JoinWithInvite } from "@/components/join/join-with-invite";
 import { TermsLine } from "@/components/join/terms-line";
@@ -48,6 +49,7 @@ import { isLockedOutOfChapter } from "@/lib/auth/no-access";
 import {
   CREATE_CHAPTER_PATH,
   JOIN_FROM_SIGN_IN_PATH,
+  WELCOME_PATH,
   isJoinSkipCandidate,
   shouldSkipJoinForMember,
 } from "@/lib/auth/join-visit";
@@ -55,15 +57,11 @@ import {
 /**
  * s02 — Join chapter (`spec/ui/design-system/reference/canvas-screens.dc.html`).
  *
- * **Where the transcription stops, and why.** s02 draws a six-cell row for a
- * shared chapter code. `spec/behavior/onboarding.md` §Invite Token Rules
- * specifies single-use opaque tokens that expire after 7 days, and
- * `spec/ui/README.md`'s precedence rule puts behavior above UI on what the
- * product *does* — so the chrome transfers and the input model does not. This
- * is the same call `apps/mobile/app/(auth)/join.tsx` already records in its own
- * docstring; both surfaces now say it in the same place so neither drifts.
- * The field accepts a pasted raw token or the join URL officers copy
- * (`extractInviteToken`); posting the URL as the token is a 410.
+ * s02's canvas draws a six-cell row for a shared chapter code; joining is by
+ * invite link instead (a personal one, or an officer's chapter link), so the page takes s02's chrome and not its
+ * input (`spec/ui/web-dashboard/README.md` records the call). The field, behind
+ * the invite card, takes a pasted raw token or a join link
+ * (`extractInviteToken`); posting the link as the token is a 410.
  *
  * The #920 Profile & pre-auth slice replaced a two-card grid that explained
  * database behaviour to a member ("Invite redemption writes directly to the
@@ -296,12 +294,12 @@ function JoinWithoutInvite() {
       joined = await joinWith(extracted, onError);
     } finally {
       // A join that landed keeps the page locked: `router.replace` only starts
-      // the navigation, and this page stays mounted until `/chat` arrives.
+      // the navigation, and this page stays mounted until `/welcome` arrives.
       if (!joined) setBusy(false);
     }
   }
 
-  /** True once the member is in and the page is on its way to `/chat`. */
+  /** True once the member is in and the page is on its way to `/welcome`. */
   async function joinWith(
     extracted: string,
     onError: (copy: string) => void,
@@ -318,11 +316,9 @@ function JoinWithoutInvite() {
         await selectChapter(chapterId);
       }
 
-      toast({
-        title: "Chapter joined",
-        description: "You're in. Opening chat.",
-      });
-      router.replace("/chat");
+      toast({ title: "Chapter joined" });
+      // Their name and photo first, then chat (#5627).
+      router.replace(WELCOME_PATH);
       router.refresh();
       return true;
     } catch (error) {
@@ -566,12 +562,12 @@ function JoinWithoutInvite() {
 /** Shared with the Suspense fallback, so the column does not grow on hydration. */
 const JOIN_FOOTER = (
   <p>
-    Starting a chapter?{" "}
+    {INVITE_PASTE_COPY.startingPrompt}{" "}
     <Link
       href={CREATE_CHAPTER_PATH}
       className="font-semibold text-accent-text hover:underline"
     >
-      Create a chapter
+      {INVITE_PASTE_COPY.startingAction}
     </Link>
   </p>
 );

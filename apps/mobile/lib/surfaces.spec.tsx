@@ -60,11 +60,13 @@ describe("pageSurfaces", () => {
   it("keeps what sits inside a card a visible step above it", () => {
     const page = pageSurfaces(signetDarkTokens);
     expect(page.raised).toBe(surface.card);
-    // foundations.md §2's floor for two surfaces that must be told apart.
+    // foundations.md §2's floor for one ladder step: 1.075 since the owner's
+    // softer 2026-11-19 ladder (1.15 on the 2026-11-12 one). The hairline
+    // carries the separation now; the step only has to stay a step.
     expect(contrast(page.card, surface.background)).toBeGreaterThanOrEqual(
-      1.15,
+      1.075,
     );
-    expect(contrast(page.raised, page.card)).toBeGreaterThanOrEqual(1.15);
+    expect(contrast(page.raised, page.card)).toBeGreaterThanOrEqual(1.075);
   });
 });
 

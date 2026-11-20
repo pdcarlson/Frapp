@@ -6,20 +6,33 @@ import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { parseChapterRoles } from "@repo/hooks/chapter-roles";
-import {
-  ROLES_SAVE_FAILED_TITLE,
-  type RoleOption,
-} from "@/lib/directory/role-editor";
+import { ASSIGN_COPY, type ChapterGroup } from "@repo/hooks";
 
 /**
- * The role editor behind Directory > member > Roles: each tap saves the
- * whole set, quick taps go out one at a time with the newest set, a failure
- * puts the list back, and taking away basic access asks first.
+ * The roles-and-groups editor behind Directory > member > "+ Add role" or
+ * "+ Add to group": each tap saves, quick role taps go out one at a time with
+ * the newest set, a failure puts the list back, and taking away basic access
+ * asks first.
  */
 
 const state = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
+  setMembership: vi.fn(),
   refetchRoles: vi.fn(),
+}));
+
+const { RAW_ROLES } = vi.hoisted(() => ({
+  RAW_ROLES: [
+    { id: "r-pres", name: "President", is_system: true, permissions: ["*"] },
+    {
+      id: "r-member",
+      name: "Member",
+      is_system: true,
+      permissions: ["members:view"],
+    },
+    { id: "r-brothers", name: "Brothers", is_system: false, permissions: [] },
+    { id: "r-cabinet", name: "Cabinet", is_system: false, permissions: [] },
+  ],
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -30,39 +43,75 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mutateAsync: state.mutateAsync,
     isPending: false,
   }),
+  useSetGroupMembership: () => ({ mutateAsync: state.setMembership }),
 }));
 
-import { MemberRolesSheet } from "./member-roles-sheet";
+vi.mock("@/lib/roles/use-roles-data", async () => {
+  const { normalizeTieredRoles } = await import("@repo/hooks/role-tiers");
+  const roles = normalizeTieredRoles(RAW_ROLES);
+  const reach = {
+    wildcard: true,
+    known: true,
+    rank: 0,
+    held: new Set(["*"]),
+  };
+  return {
+    useRolesData: () => ({ roles, tiers: [], reach, canManage: true }),
+  };
+});
 
-const OPTIONS = parseChapterRoles([
-  { id: "r-pres", name: "President", is_system: true, permissions: ["*"] },
+import {
+  MemberRolesSheet,
+  type MemberRolesSession,
+} from "./member-roles-sheet";
+
+const OPTIONS = parseChapterRoles(RAW_ROLES);
+
+const GROUPS = [
   {
-    id: "r-member",
-    name: "Member",
-    is_system: true,
-    permissions: ["members:view"],
+    id: "g-house",
+    name: "In house",
+    kind: "manual",
+    color: null,
+    member_ids: ["u-ada"],
   },
-  { id: "r-brothers", name: "Brothers", is_system: false, permissions: [] },
-  { id: "r-cabinet", name: "Cabinet", is_system: false, permissions: [] },
-]);
+  {
+    id: "g-campus",
+    name: "On campus",
+    kind: "manual",
+    color: null,
+    member_ids: [],
+  },
+  {
+    id: "g-class",
+    name: "Fall 2025",
+    kind: "pledge_class",
+    color: null,
+    member_ids: ["u-ada"],
+  },
+] as unknown as ChapterGroup[];
 
-const SESSION = {
+const SESSION: MemberRolesSession = {
   memberId: "m-ada",
+  userId: "u-ada",
+  focus: "roles",
+  canManageRoles: true,
+  canManageGroups: true,
   name: "Ada",
   heldIds: ["r-brothers", "r-member"],
   // A profile fetched before any save in a test.
   fetchedAt: 0,
 };
 
-function sheet(session: typeof SESSION) {
+function sheet(session: MemberRolesSession) {
   return (
     <FrappThemeProvider>
-      <MemberRolesSheet session={session} options={OPTIONS} />
+      <MemberRolesSheet session={session} options={OPTIONS} groups={GROUPS} />
     </FrappThemeProvider>
   );
 }
 
-function render(session: typeof SESSION = SESSION): ReactTestRenderer {
+function render(session: MemberRolesSession = SESSION): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(sheet(session));
@@ -76,13 +125,28 @@ function list(tree: ReactTestRenderer) {
   );
 }
 
+type Item = { type: string; key: string; title?: string; row?: { id: string } };
+
+function items(tree: ReactTestRenderer): Item[] {
+  return list(tree).props.data as Item[];
+}
+
+/** The rows' ids, headings left out. */
 function shownIds(tree: ReactTestRenderer): string[] {
-  return (list(tree).props.data as RoleOption[]).map((o) => o.id);
+  return items(tree)
+    .filter((item) => item.type !== "heading")
+    .map((item) => item.row!.id);
+}
+
+function headings(tree: ReactTestRenderer): string[] {
+  return items(tree)
+    .filter((item) => item.type === "heading")
+    .map((item) => item.title!);
 }
 
 /** The FlatList stand-in never renders rows, so draw one to read and tap it. */
 function row(tree: ReactTestRenderer, id: string) {
-  const item = OPTIONS.find((o) => o.id === id);
+  const item = items(tree).find((i) => i.row?.id === id);
   return list(tree).props.renderItem({ item }) as React.ReactElement<{
     onPress: () => void;
     disabled: boolean;
@@ -103,13 +167,16 @@ describe("MemberRolesSheet", () => {
     vi.mocked(Alert.alert).mockClear?.();
   });
 
-  it("lists held roles first, then the rest by name", () => {
+  it("lists the roles, then the chapter's own groups, as web's card does", () => {
     const tree = render();
+    expect(headings(tree)).toEqual(["Other roles", "Groups"]);
     expect(shownIds(tree)).toEqual([
       "r-brothers",
-      "r-member",
       "r-cabinet",
+      "r-member",
       "r-pres",
+      "g-house",
+      "g-campus",
     ]);
     expect(row(tree, "r-brothers").props.accessibilityState.checked).toBe(true);
     expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(false);
@@ -124,8 +191,8 @@ describe("MemberRolesSheet", () => {
       role_ids: ["r-brothers", "r-member", "r-cabinet"],
     });
     expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(true);
-    // The order stays as it opened, so the tapped row doesn't move.
-    expect(shownIds(tree)[2]).toBe("r-cabinet");
+    // The order is by rank and name, so the tapped row doesn't move.
+    expect(shownIds(tree)[1]).toBe("r-cabinet");
     act(() => tree.unmount());
   });
 
@@ -153,7 +220,7 @@ describe("MemberRolesSheet", () => {
     await tap(tree, "r-cabinet");
     expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(false);
     expect(Alert.alert).toHaveBeenCalledWith(
-      ROLES_SAVE_FAILED_TITLE,
+      ASSIGN_COPY.rolesFailed,
       expect.any(String),
     );
     act(() => tree.unmount());
@@ -192,7 +259,7 @@ describe("MemberRolesSheet", () => {
       }>[];
     }>;
     const input = header.props.children.find(
-      (child) => child?.props?.accessibilityLabel === "Search roles",
+      (child) => child?.props?.accessibilityLabel === "Search roles and groups",
     )!;
     act(() => input.props.onChangeText?.("cab"));
     expect(shownIds(tree)).toEqual(["r-cabinet"]);
@@ -339,6 +406,71 @@ describe("MemberRolesSheet", () => {
     expect(state.mutateAsync).toHaveBeenCalledTimes(2);
     expect(row(tree, "r-cabinet").props.accessibilityState.checked).toBe(true);
     expect(row(tree, "r-brothers").props.accessibilityState.checked).toBe(true);
+    act(() => tree.unmount());
+  });
+
+  it("opened for a group, lists the groups first, and saves a tick at once", async () => {
+    state.setMembership.mockResolvedValue({});
+    const tree = render({ ...SESSION, focus: "groups" });
+    expect(headings(tree)).toEqual(["Groups", "Other roles"]);
+    // A pledge class's group follows the member's details and is never listed.
+    expect(shownIds(tree)).not.toContain("g-class");
+    expect(row(tree, "g-house").props.accessibilityState.checked).toBe(true);
+    await tap(tree, "g-campus");
+    expect(state.setMembership).toHaveBeenCalledWith({
+      groupId: "g-campus",
+      userId: "u-ada",
+      in: true,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("says the API's reason when a group save is refused", async () => {
+    state.setMembership.mockRejectedValueOnce({
+      statusCode: 403,
+      message:
+        "A channel uses this group to decide who can see or post in it. Only someone who can manage channels can change who is in it.",
+    });
+    const tree = render({ ...SESSION, focus: "groups" });
+    await tap(tree, "g-campus");
+    const [title, body] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
+    expect(title).toBe(ASSIGN_COPY.groupAddFailed);
+    expect(body).toContain("Only someone who can manage channels");
+    act(() => tree.unmount());
+  });
+
+  it("keeps Saving… while a role save is out, whatever a group tap does", async () => {
+    let release!: () => void;
+    state.mutateAsync.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    state.setMembership.mockResolvedValueOnce({});
+    const tree = render();
+    await tap(tree, "r-cabinet");
+    await tap(tree, "g-campus");
+    // The header is a prop element the FlatList stand-in doesn't render.
+    const header = list(tree).props.ListHeaderComponent as React.ReactElement<{
+      children: React.ReactElement<{
+        accessibilityLiveRegion?: string;
+        children?: unknown;
+      }>[];
+    }>;
+    const statusLine = header.props.children.find(
+      (child) => child?.props?.accessibilityLiveRegion === "polite",
+    );
+    expect(statusLine?.props.children).toBe("Saving…");
+    await act(async () => release());
+    act(() => tree.unmount());
+  });
+
+  it("says why a group can't be ticked by someone without groups:manage", () => {
+    const tree = render({ ...SESSION, canManageGroups: false });
+    const house = row(tree, "g-house").props as unknown as {
+      disabled: boolean;
+      accessibilityHint?: string;
+    };
+    expect(house.disabled).toBe(true);
+    expect(house.accessibilityHint).toBe("Your role can't change groups");
     act(() => tree.unmount());
   });
 });

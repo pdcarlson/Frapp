@@ -1,5 +1,5 @@
 /**
- * Signet design tokens — the dark-first neutral graphite palette.
+ * Signet design tokens — the dark-first violet near-black palette.
  *
  * This started as an ADDITIVE entrypoint beside the legacy bone/bronze/ink
  * tokens, with `apps/mobile` its first consumer. It is now the ONLY token set
@@ -38,7 +38,7 @@ export type SignetTypeRole = {
 
 export type SignetTokens = {
   color: {
-    /** The neutral ladder. Each step is visibly lighter than the one below; elevation is luminance, never shadow. */
+    /** The surface ladder, a faintly violet near-black. Each step is a soft step lighter than the one below (1.08 / 1.10 / 1.15); the hairline separates, elevation is luminance, never shadow. */
     surface: {
       background: string;
       surface1: string;
@@ -153,7 +153,12 @@ export type SignetTokens = {
     "2xl": number;
     "3xl": number;
   };
-  touch: { minimum: number; button: number; buttonLarge: number; tabBar: number };
+  touch: {
+    minimum: number;
+    button: number;
+    buttonLarge: number;
+    tabBar: number;
+  };
   focus: { ringWidth: number; ringOpacity: number };
   /**
    * Scrollbars are quiet chrome drawn on every scroll region: a thin neutral
@@ -179,15 +184,15 @@ export type SignetTokens = {
 const SIGNET_DARK: SignetTokens = {
   color: {
     surface: {
-      background: "#050505",
-      surface1: "#1A1A1A",
-      card: "#262626",
-      popover: "#313131",
+      background: "#0B0A0D",
+      surface1: "#151419",
+      card: "#1F1D25",
+      popover: "#2A2830",
     },
     border: {
-      hairline: "rgba(255,255,255,0.08)",
-      input: "rgba(255,255,255,0.14)",
-      control: "rgba(255,255,255,0.42)",
+      hairline: "rgba(255,255,255,0.18)",
+      input: "rgba(255,255,255,0.20)",
+      control: "rgba(255,255,255,0.40)",
     },
     text: {
       foreground: "#F5F5F5",
@@ -254,6 +259,16 @@ const SIGNET_DARK: SignetTokens = {
 };
 
 export const signetDarkTokens: SignetTokens = SIGNET_DARK;
+
+/**
+ * How far the Tinted hover and press move from `--accent-subtle` toward
+ * `--accent-border`: `signet.css`'s `--accent-subtle-hover` mix, the phone's
+ * pressed Tinted fill (`apps/mobile/components/tinted-control.ts`) and web's
+ * contrast fixture all read it, and `signet.css.spec.ts` pins the stylesheet to
+ * it. 0.15 until the 2026-11-19 violet ladder, where 15% put a hovered
+ * mention row's Violet name under AA for the darkest blue chapter.
+ */
+export const ACCENT_SUBTLE_HOVER_MIX = 0.14;
 
 /** Keyed so a future appearance is a new entry here, not a change at every call site. */
 const SIGNET_TOKENS: Record<SignetAppearance, SignetTokens> = {

@@ -1,14 +1,22 @@
 import { Fragment, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import {
+  groupFollowsLabel,
+  useGroups,
+  useIsPermissionHidden,
+  usePermissionList,
+} from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import {
   byDisplayOrder,
   isWildcardRole,
+  shownPermissionCount,
   type TieredRole,
 } from "@repo/hooks/role-tiers";
 import {
+  canAny,
   isEveryoneRole,
   roleColorOrNull,
   selfAssignableSectionCaption,
@@ -27,11 +35,11 @@ import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { useRolesData } from "@/lib/roles/use-roles-data";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-/** A role list longer than this gets a search field, as web's does. */
+/** A list longer than this gets a search field, as web's does. */
 const SEARCH_FROM = 8;
 
 /**
- * Chapter settings → Roles on the phone (#4074): the chapter's tiers in rank
+ * Chapter settings → Roles and groups on the phone (#4074): the chapter's tiers in rank
  * order, each with its roles, then the roles outside the tiers. Web's Roles
  * tab (#3990) in the grouped-list shape iOS Settings and Discord mobile's
  * Server Settings → Roles use: one section per tier, a Permissions row first
@@ -49,16 +57,49 @@ const SEARCH_FROM = 8;
  *
  * Tier names, and the word for a tier, are the chapter's own
  * (`tierWords(vocab("tier"))`), never a constant.
+ *
+ * Groups follow the roles on the same screen (Paul, 2026-11-19: roles and
+ * groups live in one place, as on web's Roles and groups tab): the chapter's
+ * own groups, then the ones that follow each member's pledge class and
+ * graduation year, each with how many are in it. A member is put in or taken
+ * out of a group from their profile; making and renaming groups stays on web
+ * with the rest of the structure. The roles part shows to whoever web shows
+ * it to (`chapter-config:view` or `roles:manage`), so a `groups:manage`
+ * holder without either sees only the groups.
  */
 export default function ChapterRolesScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const data = useRolesData();
-  const { rolesQuery, tiersQuery, roles, tiers, memberCounts, words, canManage } =
-    data;
+  const {
+    rolesQuery,
+    tiersQuery,
+    roles,
+    tiers,
+    memberCounts,
+    words,
+    canManage,
+  } = data;
   const [query, setQuery] = useState("");
   const filtering = normalizeWords(query).length > 0;
+  const permissions = usePermissionList();
+  const isHidden = useIsPermissionHidden();
+  const canSeeRoles = canAny(
+    ["roles:manage", "chapter-config:view"],
+    permissions,
+  );
+  const groupsQuery = useGroups({ enabled: true });
+  const groups = useMemo(() => {
+    const all = groupsQuery.data ?? [];
+    const shown = filtering
+      ? all.filter((group) => matchesWordStarts(group.name, query))
+      : all;
+    return [
+      ...shown.filter((group) => group.kind === "manual"),
+      ...shown.filter((group) => group.kind !== "manual"),
+    ];
+  }, [groupsQuery.data, filtering, query]);
 
   const sections = useMemo(() => {
     const tierIds = new Set(tiers.map((tier) => tier.id));
@@ -109,7 +150,10 @@ export default function ChapterRolesScreen() {
     router.push({ pathname: "/role", params: { roleId: role.id } });
 
   let body: React.ReactNode;
-  if ((rolesQuery.isError && rolesQuery.data === undefined) || (tiersQuery.isError && tiersQuery.data === undefined)) {
+  if (
+    (rolesQuery.isError && rolesQuery.data === undefined) ||
+    (tiersQuery.isError && tiersQuery.data === undefined)
+  ) {
     body = (
       <ErrorState
         title="Couldn't load roles"
@@ -137,23 +181,26 @@ export default function ChapterRolesScreen() {
     const shown = sections.filter(
       (section) =>
         section.roles.length > 0 ||
-        (!filtering && (section.tier !== null || (section.pickable && canManage))),
+        (!filtering &&
+          (section.tier !== null || (section.pickable && canManage))),
     );
     body = (
       <>
-        {roles.length > SEARCH_FROM ? (
+        {roles.length + (groupsQuery.data?.length ?? 0) > SEARCH_FROM ? (
           <SearchField
             value={query}
             onChangeText={setQuery}
-            placeholder="Find a role"
-            accessibilityLabel="Find a role"
+            placeholder="Find a role or group"
+            accessibilityLabel="Find a role or group"
             searchGlyph
           />
         ) : null}
-        {filtering && shown.length === 0 ? (
-          <Text style={styles.note}>No role matches “{query.trim()}”.</Text>
+        {filtering &&
+        (canSeeRoles ? shown.length : 0) === 0 &&
+        groups.length === 0 ? (
+          <Text style={styles.note}>Nothing matches “{query.trim()}”.</Text>
         ) : null}
-        {shown.map((section) => (
+        {(canSeeRoles ? shown : []).map((section) => (
           <Fragment key={section.key}>
             <SectionHeader count={section.roles.length}>
               {section.title}
@@ -162,7 +209,7 @@ export default function ChapterRolesScreen() {
               {section.tier && !filtering ? (
                 <ListRow
                   label="Permissions"
-                  value={`${section.tier.permissions.length} on`}
+                  value={`${shownPermissionCount(section.tier.permissions, isHidden)} on`}
                   accessibilityHint={`Opens what every role in ${section.tier.name} can do.`}
                   onPress={() =>
                     router.push({
@@ -225,9 +272,46 @@ export default function ChapterRolesScreen() {
             </ListSection>
           </Fragment>
         ))}
+        {groupsQuery.data && (groups.length > 0 || !filtering) ? (
+          <>
+            <SectionHeader count={groups.length}>Groups</SectionHeader>
+            <ListSection>
+              {groups.length === 0 ? (
+                <ListRow
+                  label="No groups yet"
+                  description="Groups, such as In house or a committee, are for pinging and assigning. They give no permissions."
+                  variant="detail"
+                />
+              ) : (
+                groups.map((group) => {
+                  const color = roleColorOrNull(group.color);
+                  const count = group.member_ids.length;
+                  return (
+                    <ListRow
+                      key={group.id}
+                      variant="detail"
+                      label={group.name}
+                      leading={
+                        <View
+                          style={[
+                            styles.dot,
+                            color ? { backgroundColor: color } : null,
+                          ]}
+                        />
+                      }
+                      description={groupFollowsLabel(group)}
+                      value={String(count)}
+                      accessibilityValue={`${count} ${count === 1 ? "member" : "members"}`}
+                    />
+                  );
+                })
+              )}
+            </ListSection>
+          </>
+        ) : null}
         <Text style={styles.note}>
-          Add, rename and reorder {words.plural} and roles on the web
-          dashboard.
+          Add, rename and reorder {words.plural}, roles and groups on the web
+          dashboard. Put someone in a group from their profile.
         </Text>
       </>
     );
@@ -236,9 +320,15 @@ export default function ChapterRolesScreen() {
   return (
     <ScreenShell
       back={BACK_TO_CHAPTER_SETTINGS}
-      title="Roles"
-      subtitle={subtitle}
-      refresh={() => Promise.all([rolesQuery.refetch(), tiersQuery.refetch()])}
+      title="Roles and groups"
+      subtitle={canSeeRoles ? subtitle : undefined}
+      refresh={() =>
+        Promise.all([
+          rolesQuery.refetch(),
+          tiersQuery.refetch(),
+          groupsQuery.refetch(),
+        ])
+      }
     >
       {body}
     </ScreenShell>

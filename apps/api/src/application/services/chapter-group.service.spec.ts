@@ -236,6 +236,101 @@ describe('ChapterGroupService (#4076)', () => {
     });
   });
 
+  describe('addMember and removeMember (from a profile)', () => {
+    it('adds one member and audits the list before and after', async () => {
+      repo.findById.mockResolvedValue(group('m', 'In house'));
+      repo.findMemberIds.mockResolvedValue(['u1']);
+      repo.addMember.mockResolvedValue('added');
+
+      const view = await service.addMember('m', CHAPTER, ACTOR, 'u2');
+
+      expect(repo.addMember).toHaveBeenCalledWith('m', CHAPTER, 'u2');
+      expect(view.member_ids).toEqual(['u1', 'u2']);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'chapter_group_members_set',
+          diff: { members: { from: ['u1'], to: ['u1', 'u2'] } },
+        }),
+      );
+    });
+
+    it('writes no audit row when the member was already in it', async () => {
+      repo.findById.mockResolvedValue(group('m', 'In house'));
+      repo.findMemberIds.mockResolvedValue(['u2']);
+      repo.addMember.mockResolvedValue('already');
+
+      await service.addMember('m', CHAPTER, ACTOR, 'u2');
+
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('refuses someone who is not in the chapter', async () => {
+      repo.findById.mockResolvedValue(group('m', 'In house'));
+      repo.findMemberIds.mockResolvedValue([]);
+      repo.addMember.mockResolvedValue('member_not_found');
+
+      await expect(
+        service.addMember('m', CHAPTER, ACTOR, 'stranger'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses an automatic group', async () => {
+      repo.findById.mockResolvedValue(
+        group('p', 'Alpha', { kind: 'pledge_class', pledge_class_id: 'pc' }),
+      );
+
+      await expect(
+        service.addMember('p', CHAPTER, ACTOR, 'u2'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.removeMember('p', CHAPTER, ACTOR, 'u2'),
+      ).rejects.toThrow(BadRequestException);
+      expect(repo.addMember).not.toHaveBeenCalled();
+      expect(repo.removeMember).not.toHaveBeenCalled();
+    });
+
+    it('refuses a full group', async () => {
+      repo.findById.mockResolvedValue(group('m', 'In house'));
+      repo.findMemberIds.mockResolvedValue(
+        Array.from({ length: 2000 }, (_, i) => `u${i}`),
+      );
+
+      await expect(
+        service.addMember('m', CHAPTER, ACTOR, 'new'),
+      ).rejects.toThrow(BadRequestException);
+      expect(repo.addMember).not.toHaveBeenCalled();
+    });
+
+    it('needs channels:manage once a channel list names the group', async () => {
+      repo.findById.mockResolvedValue(group('m', 'Exec'));
+      repo.isNamedOnChannelList.mockResolvedValue(true);
+
+      await expect(
+        service.addMember('m', CHAPTER, ACTOR, ACTOR),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.removeMember('m', CHAPTER, ACTOR, 'u1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(repo.addMember).not.toHaveBeenCalled();
+      expect(repo.removeMember).not.toHaveBeenCalled();
+    });
+
+    it('removes one member and audits only when they were in it', async () => {
+      repo.findById.mockResolvedValue(group('m', 'In house'));
+      repo.findMemberIds.mockResolvedValue(['u1', 'u2']);
+      repo.removeMember.mockResolvedValueOnce(true);
+
+      const view = await service.removeMember('m', CHAPTER, ACTOR, 'u2');
+      expect(view.member_ids).toEqual(['u1']);
+      expect(audit.record).toHaveBeenCalledTimes(1);
+
+      repo.findMemberIds.mockResolvedValue(['u1']);
+      repo.removeMember.mockResolvedValueOnce(false);
+      await service.removeMember('m', CHAPTER, ACTOR, 'u2');
+      expect(audit.record).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('setMembers', () => {
     it('replaces the list and audits who it was before and after', async () => {
       repo.findById.mockResolvedValue(group('m', 'Third floor'));

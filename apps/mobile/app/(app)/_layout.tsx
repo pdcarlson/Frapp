@@ -167,6 +167,11 @@ export default function AppLayout() {
         name="whats-new"
         options={{ title: SCREEN_TITLES["whats-new"] }}
       />
+      {/* From the welcome card in a new member's first channel (#5627). */}
+      <Stack.Screen
+        name="finish-profile"
+        options={{ title: SCREEN_TITLES["finish-profile"] }}
+      />
       <Stack.Screen
         name="arrange-channels"
         options={{ title: SCREEN_TITLES["arrange-channels"] }}

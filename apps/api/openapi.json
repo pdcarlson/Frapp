@@ -2639,7 +2639,7 @@
     },
     "/v1/invites/chapter-link": {
       "get": {
-        "description": "One link many people join with, at the chapter default invite role, for 7 days. Turn it off with DELETE /v1/invites/:id.",
+        "description": "Links many people join with, each at the role an officer picked, for 7 days. Turn one off with DELETE /v1/invites/:id.",
         "operationId": "InviteController_getChapterLink_v1",
         "parameters": [],
         "responses": {
@@ -2669,15 +2669,25 @@
             "bearer": []
           }
         ],
-        "summary": "The chapter's shareable invite link, if it has one (#3353)",
+        "summary": "The chapter's shareable invite links, one per role (#3353, #5633)",
         "tags": [
           "Invites"
         ]
       },
       "post": {
-        "description": "403 when the current link grants a role above the caller (only a higher officer may replace it); 409 when another officer made one at the same moment.",
+        "description": "The role defaults to the chapter default invite role. 403 when the role is above the caller; 409 when another officer made a link for the same role at the same moment.",
         "operationId": "InviteController_createChapterLink_v1",
         "parameters": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChapterLinkDto"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "",
@@ -2705,7 +2715,7 @@
             "bearer": []
           }
         ],
-        "summary": "Make the chapter's shareable invite link, turning off the one before it (#3353)",
+        "summary": "Make a shareable invite link for a role, turning off that role's link before it (#3353, #5633)",
         "tags": [
           "Invites"
         ]
@@ -13749,6 +13759,112 @@
         ]
       }
     },
+    "/v1/groups/{id}/members/{userId}": {
+      "post": {
+        "operationId": "ChapterGroupController_addMember_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGroupDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Put one member in a manual group",
+        "tags": [
+          "Groups"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterGroupController_removeMember_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterGroupDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Take one member out of a manual group",
+        "tags": [
+          "Groups"
+        ]
+      }
+    },
     "/v1/rush/candidates": {
       "get": {
         "operationId": "RushController_lookup_v1",
@@ -21935,6 +22051,270 @@
         ]
       }
     },
+    "/v1/meetings-no-minutes": {
+      "get": {
+        "operationId": "MeetingNoMinutesController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingNoMinutesListDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The events this officer can see that are marked \"No minutes\", so the Meetings list stops asking for them",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/events/{id}/no-minutes": {
+      "put": {
+        "operationId": "MeetingNoMinutesController_mark_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark a meeting that ended as having no minutes. Marking it again changes nothing. 409 `meeting.not_over`, 409 `meeting.already_started`",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingNoMinutesController_unmark_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Take a meeting’s \"No minutes\" mark off, so it asks for minutes again",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/date-reminders": {
+      "get": {
+        "operationId": "MeetingDateReminderController_list_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingDateReminderDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller’s reminders still waiting on these minutes’ Coming up dates, soonest first",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "put": {
+        "description": "One reminder per member per date, named by its day and words. 404 when the caller can’t read the minutes, or the date is no longer in them.",
+        "operationId": "MeetingDateReminderController_set_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMeetingDateReminderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingDateReminderDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remind the caller about one of the minutes’ Coming up dates, or move that reminder",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/date-reminders/{reminderId}": {
+      "delete": {
+        "operationId": "MeetingDateReminderController_clear_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reminderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cancel one of the caller’s date reminders (idempotent)",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/bootstrap": {
       "get": {
         "description": "The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.",
@@ -22150,7 +22530,7 @@
         "properties": {
           "accept_terms_privacy": {
             "type": "boolean",
-            "description": "The user ticked \"I'm 18 or older and agree to the Terms of Service and Privacy Policy.\" Must be true. The timestamp and version are recorded server-side, never from this payload."
+            "description": "The user ticked \"I'm 17 or older and agree to the Terms of Service and Privacy Policy.\" Must be true. The timestamp and version are recorded server-side, never from this payload."
           }
         },
         "required": [
@@ -23883,7 +24263,8 @@
         "type": "object",
         "properties": {
           "has_completed_onboarding": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "true marks onboarding done; the first time it does, the inviter and the officers are told who joined. Finishing is one-way: false is accepted and changes nothing (#5627)."
           }
         },
         "required": [
@@ -23993,18 +24374,41 @@
         "properties": {
           "link": {
             "nullable": true,
-            "description": "The chapter's link that no officer has turned off, expired or not (status says which). Null when there is none, or when it grants a role the caller couldn't invite someone into.",
+            "description": "For builds from before #5633, which showed one link and replaced it with a body-less POST: the link that POST turns off, the default role's (`default_role`). Null when that role has none.",
             "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/InviteListItemDto"
               }
             ]
+          },
+          "default_role": {
+            "type": "string",
+            "nullable": true,
+            "description": "The role a POST with no role makes a link for: the chapter default invite role, or the caller's own rank's member role when the default is above them. The role picker starts on it. Null when the caller can invite into neither."
+          },
+          "links": {
+            "description": "The chapter's links that no officer has turned off, expired or not (status says which), at most one per role, newest first. Only those granting a role the caller could invite someone into.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InviteListItemDto"
+            }
           }
         },
         "required": [
-          "link"
+          "link",
+          "default_role",
+          "links"
         ]
+      },
+      "CreateChapterLinkDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "The role the link grants. Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. Making a link for a role turns off that role's old link only."
+          }
+        }
       },
       "BatchCreateInvitesDto": {
         "type": "object",
@@ -26135,7 +26539,7 @@
           "role_rank": {
             "type": "number",
             "nullable": true,
-            "description": "The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`."
+            "description": "Where the member's highest-ranked role sits among the chapter's roles in rank order (the President's role first, then by tier, then each role's order in its tier), 0 for the top; lower ranks higher, null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`."
           },
           "role_id": {
             "type": "string",
@@ -26146,14 +26550,39 @@
           "role_name": {
             "type": "string",
             "nullable": true,
-            "description": "The group's heading: that role's name, \"Members\" for the chapter's Everyone role, or null when they hold no role."
+            "description": "That role's name, \"Members\" for the chapter's Everyone role, or null when they hold no role. Older app builds group by it; current ones group by tier."
+          },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "description": "The member's title: their highest-ranked role's name, or null for the chapter's Everyone role or no role."
+          },
+          "tier_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The highest tier any of their roles is in, the group the list files them under, or null when none of their roles is in a tier."
+          },
+          "tier_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "That tier's name, the group's heading; null with tier_id."
+          },
+          "tier_rank": {
+            "type": "number",
+            "nullable": true,
+            "description": "That tier's position, 1 for the top tier; null with tier_id."
           }
         },
         "required": [
           "user_id",
           "role_rank",
           "role_id",
-          "role_name"
+          "role_name",
+          "title",
+          "tier_id",
+          "tier_name",
+          "tier_rank"
         ]
       },
       "AddChannelMemberDto": {
@@ -30873,6 +31302,12 @@
             "nullable": true,
             "description": "The assignee's reply sent with Mark done, or null. Cleared with the completion."
           },
+          "completed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who marked it done (#5732): the assignee, or an officer marking it done for them. Null while it is open, and on a completion from before this was kept."
+          },
           "series_id": {
             "type": "string",
             "format": "uuid",
@@ -30945,6 +31380,7 @@
           "proof_link",
           "sent_back_reason",
           "completion_note",
+          "completed_by",
           "series_id",
           "occurrence_date",
           "group_id",
@@ -39547,6 +39983,73 @@
           "event_id",
           "requested",
           "pinged"
+        ]
+      },
+      "MeetingNoMinutesListDto": {
+        "type": "object",
+        "properties": {
+          "event_ids": {
+            "description": "Events this officer can see that an officer marked \"No minutes\", so the Meetings list stops asking for them.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "event_ids"
+        ]
+      },
+      "MeetingDateReminderDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "example": "2026-12-04",
+            "description": "`YYYY-MM-DD`."
+          },
+          "text": {
+            "type": "string"
+          },
+          "remind_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "text",
+          "remind_at"
+        ]
+      },
+      "SetMeetingDateReminderDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "example": "2026-12-04",
+            "description": "The date’s day, as the minutes give it (`YYYY-MM-DD`)."
+          },
+          "text": {
+            "type": "string",
+            "description": "The date’s words, as the minutes give them. Together with the day they name the date, which has to be in the minutes as they read now."
+          },
+          "remind_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting it again for the same date moves it."
+          }
+        },
+        "required": [
+          "date",
+          "text",
+          "remind_at"
         ]
       },
       "BootstrapDto": {

@@ -35,10 +35,11 @@ import { PRIVACY_URL } from "@/lib/legal-links";
  * makes Continue an explicit yes under Apple 5.1.2(i). Notion AI and Slack AI
  * introduce themselves the same way, on one card with one button.
  *
- * It opens by itself once for an account that never answered
- * (`meet-frapp-ai-host.tsx`, right after the first-run tour for a new
- * member), at an AI entry point for a member who chose Not now
- * ({@link useAiConsentGate}), and from Settings when the switch is turned on.
+ * It opens at the first use of an AI feature by a member who hasn't turned
+ * Frapp AI on, whether they never answered or chose Not now
+ * ({@link useAiConsentGate}), in the officer's chapter setup, and from
+ * Settings when the switch is turned on. It no longer opens by itself after a
+ * join (#5627): a member meets it when they reach for it.
  */
 
 const POINT_GLYPHS: Record<FrappAiPoint["key"], ReactNode> = {

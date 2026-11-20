@@ -29,6 +29,12 @@ export interface Task {
   point_reward: number | null;
   points_awarded: boolean;
   completed_at: string | null;
+  /**
+   * Who marked it done (#5732): the assignee, or an officer marking it done
+   * for them. Set with `completed_at`, cleared with it. Null on a completion
+   * from before the column, which reads as the assignee's.
+   */
+  completed_by: string | null;
   confirmed_at: string | null;
   /**
    * When an officer last sent the completion back to the assignee; `null`

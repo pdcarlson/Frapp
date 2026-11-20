@@ -1,6 +1,8 @@
 /**
  * The owner's UI rulings that a syntax tree can check
- * (`.claude/skills/ui-development/rulebook.md`, marked **lint** there).
+ * (`.claude/skills/ui-development/rulebook.md`, marked **lint** there), plus
+ * build-correctness guards for UI code that are not rulings and have no
+ * rulebook line (`tailwindBareVar`).
  *
  * Each entry is a `no-restricted-syntax` selector. They are exported as arrays,
  * not as a config object, because ESLint replaces a rule's options wholesale
@@ -52,11 +54,31 @@ const BROWSER_DIALOG_MESSAGE =
   "No browser confirm/alert/prompt. Use useConfirmDialog from @/components/shared/confirm-dialog for a destructive step, and keep a form's draft instead of asking (owner rulings 2026-11-06, 2026-11-13).";
 
 /**
+ * Tailwind 3 wrapped a bare `--var` in an arbitrary value in `var()`; Tailwind
+ * 4 doesn't, so `max-h-[--x]` compiles to `max-height: --x`, which the browser
+ * drops without a word. That left every web Select with no height cap, running
+ * off the window with no scroll (#5724). v4 spells it `max-h-(--x)`, or
+ * `max-h-[var(--x)]`. Matches any `-[--` in a string, which is how such a
+ * class reads wherever it sits (a className, `cn(...)`, a constant), and the
+ * type-hinted form `bg-[color:--x]`, which fails the same way.
+ */
+const TAILWIND_BARE_VAR = "/-\\[([a-z-]+:)?--/";
+const TAILWIND_BARE_VAR_MESSAGE =
+  "Tailwind 4 doesn't wrap a bare --variable in [...] in var(), so this class compiles to nothing the browser keeps (#5724). Write it as max-h-(--x) or max-h-[var(--x)].";
+
+/**
  * Web-only rulings, by name, so an app config can grandfather one file from
  * one rule without dropping the others (`webUiSyntaxExcept`).
  */
 const webUiRules = {
   emoji,
+  tailwindBareVar: [
+    { selector: `Literal[value=${TAILWIND_BARE_VAR}]`, message: TAILWIND_BARE_VAR_MESSAGE },
+    {
+      selector: `TemplateElement[value.cooked=${TAILWIND_BARE_VAR}]`,
+      message: TAILWIND_BARE_VAR_MESSAGE,
+    },
+  ],
   // Owner, 2026-11-16 and 2026-11-19: "time picker is horrid", no native time
   // input anywhere. The year-less DateField is the 2026-11-12 ruling. `Input`
   // too: the ShadCN wrapper passes `type` straight to the browser.
@@ -97,6 +119,23 @@ const webUiRules = {
   ],
 };
 
+// One component per job (owner, 2026-11-20: "12 different ways of doing
+// dropdowns and menus and settings ... every screen you go to is a different
+// fucking system"). Rulebook § 9 and `spec/ui/design-system/components.md`.
+const MORE_MENU_MESSAGE =
+  "One action menu (owner ruling 2026-11-20). A row's ⋯ is RowMenu, a header's ⋯ is ActionMenuButton, both from @/components/shared/row-menu, so right-click, hover ⋯ and header ⋯ show the same list.";
+webUiRules.moreMenu = [
+  {
+    selector:
+      "JSXOpeningElement[name.name=/^(MoreHorizontal|MoreVertical|Ellipsis|EllipsisVertical)$/]",
+    message: MORE_MENU_MESSAGE,
+  },
+  {
+    selector: "ImportDeclaration[source.value='@/components/ui/context-menu']",
+    message: MORE_MENU_MESSAGE,
+  },
+];
+
 /**
  * Every web UI rule except the named ones, for a grandfathered file.
  *
@@ -114,18 +153,47 @@ export function webUiSyntaxExcept(except) {
 /** @type {Array<{selector: string, message: string}>} */
 export const webUiSyntax = webUiSyntaxExcept([]);
 
+const PHONE_MENU_MESSAGE =
+  "One action menu on the phone (owner ruling 2026-11-20): the glass menu, through useItemMenu / ItemActionsMenu from components/item-actions-menu (long-press and every ⋯), and OptionSheet to pick a value. Never the system action sheet or an Alert with a list of choices.";
+
+/** The phone's rulings, by name, as `webUiRules`. */
+const mobileUiRules = {
+  emoji,
+  systemMenu: [
+    {
+      selector: "ImportSpecifier[imported.name='ActionSheetIOS']",
+      message: PHONE_MENU_MESSAGE,
+    },
+    {
+      selector: "ImportDeclaration[source.value=/(^|\\/)action-menu$/]",
+      message: PHONE_MENU_MESSAGE,
+    },
+    // An Alert is a notice or a yes/no confirm: two buttons at most. Three or
+    // more is a menu drawn by the system.
+    {
+      selector:
+        "CallExpression[callee.object.name='Alert'][callee.property.name='alert'] > ArrayExpression[elements.length>2]",
+      message: PHONE_MENU_MESSAGE,
+    },
+  ],
+};
+
 /**
- * The phone's rules, by the same names.
+ * Every phone UI rule except the named ones.
  *
- * @param {Array<"emoji">} except
+ * @param {Array<keyof typeof mobileUiRules>} except
  * @returns {Array<{selector: string, message: string}>}
  */
 export function mobileUiSyntaxExcept(except) {
-  return except.includes("emoji") ? [] : [...emoji];
+  return Object.entries(mobileUiRules)
+    .filter(([name]) => !except.includes(name))
+    .flatMap(([, entries]) => entries);
 }
 
 /**
  * Specs and tests use emoji as members' own content (a reaction, a message
- * body), so they are checked with `except: ["emoji"]`.
+ * body), and quote bare-variable classes as rendered markup or as what a
+ * guard rejects, so web checks them with `except: ["emoji",
+ * "tailwindBareVar"]` and mobile with `except: ["emoji"]`.
  */
 export const TEST_FILES = ["**/*.spec.{ts,tsx}", "**/*.test.{ts,tsx}"];

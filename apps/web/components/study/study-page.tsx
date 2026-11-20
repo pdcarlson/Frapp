@@ -188,6 +188,15 @@ export function StudyPage() {
     () => asArray<Geofence>(geofencesQuery.data).filter((g) => g.is_active),
     [geofencesQuery.data],
   );
+  // Every zone by id, retired ones too: a session's row is titled with the
+  // zone it was in, as the phone's row is, even after the zone is turned off.
+  const zoneNames = useMemo(
+    () =>
+      new Map(
+        asArray<Geofence>(geofencesQuery.data).map((g) => [g.id, g.name]),
+      ),
+    [geofencesQuery.data],
+  );
   const sessions = useMemo(
     () =>
       asArray<StudySession>(sessionsQuery.data).sort((a, b) =>
@@ -801,9 +810,14 @@ export function StudyPage() {
                   key={session.id}
                   className="flex min-h-11 flex-col gap-1 py-2 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-3"
                 >
+                  {/*
+                    Where, then when, then how long, as the phone's row reads
+                    (2026-11-19): the zone is what a member remembers a
+                    session by.
+                  */}
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold tabular-nums">
-                      {formatMinutesRounded(session.total_foreground_minutes)}
+                    <p className="truncate text-sm font-semibold">
+                      {zoneNames.get(session.geofence_id) ?? "Study session"}
                     </p>
                     {when ? (
                       <p className="text-caption text-muted-foreground">
@@ -812,6 +826,9 @@ export function StudyPage() {
                     ) : null}
                   </div>
                   <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatMinutesRounded(session.total_foreground_minutes)}
+                    </span>
                     <Badge variant={studySessionStatusKind(session.status)}>
                       {studySessionStatusLabel(session.status)}
                     </Badge>

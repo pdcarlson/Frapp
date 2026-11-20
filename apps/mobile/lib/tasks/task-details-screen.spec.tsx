@@ -475,8 +475,9 @@ describe("The task's states", () => {
     expect(tree.root.findByType(StatusChip).props.label).toBe(
       "Waiting on an officer",
     );
-    expect(screenText(tree)).toContain("Marked done");
-    expect(screenText(tree)).not.toContain("Marked done by");
+    // Who handed it in, under the title, and in History (#5732).
+    expect(screenText(tree)).toContain("You marked it done");
+    expect(screenText(tree)).toContain("Marked done by you");
     expect(control(tree, "Mark done")).toBeUndefined();
     press(tree, "More");
     expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Mark not done"]);
@@ -1441,7 +1442,8 @@ describe("A task a group follows (#5613)", () => {
   const fromSheet = (tree: ReactTestRenderer) =>
     tree.root.find(
       (node) =>
-        node.props.title === "From" && typeof node.props.onSelect === "function",
+        node.props.title === "From" &&
+        typeof node.props.onSelect === "function",
     );
 
   afterEach(() => {
@@ -1466,7 +1468,12 @@ describe("A task a group follows (#5613)", () => {
 
   it("changes a group task's From on every copy from edit mode", async () => {
     permissions = ["members:view", "tasks:manage"];
-    whoFollowers.push({ entry: EXEC, kind: "tier", name: "Exec board", count: 4 });
+    whoFollowers.push({
+      entry: EXEC,
+      kind: "tier",
+      name: "Exec board",
+      count: 4,
+    });
     task = copy("u-ana");
     const tree = render();
     press(tree, "Edit task");
@@ -1483,7 +1490,12 @@ describe("A task a group follows (#5613)", () => {
 
   it("says a repeating task can't be from a group, in place of the row", () => {
     permissions = ["members:view", "tasks:manage"];
-    whoFollowers.push({ entry: EXEC, kind: "tier", name: "Exec board", count: 4 });
+    whoFollowers.push({
+      entry: EXEC,
+      kind: "tier",
+      name: "Exec board",
+      count: 4,
+    });
     task = {
       ...PLAIN,
       series: {

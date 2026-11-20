@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   foldMentionName,
+  GROUP_MEMBERS_MAX,
   GROUPS_MAX,
   reservedMentionName,
 } from '@repo/validation';
@@ -246,10 +247,7 @@ export class ChapterGroupService {
     actorUserId: string,
     memberIds: string[],
   ): Promise<ChapterGroupView> {
-    const group = await this.groupRepo.findById(id, chapterId);
-    if (!group) throw new NotFoundException(NOT_FOUND);
-    if (group.kind !== 'manual') throw new BadRequestException(AUTOMATIC);
-
+    const group = await this.manualGroup(id, chapterId);
     await this.assertMayChangeAccess(chapterId, actorUserId, id);
 
     const before = await this.memberIdsOf(chapterId, id);
@@ -262,21 +260,90 @@ export class ChapterGroupService {
     const added = after.filter((userId) => !before.includes(userId));
     const removed = before.filter((userId) => !after.includes(userId));
     if (added.length > 0 || removed.length > 0) {
-      await this.audit.record({
-        chapterId,
-        actorUserId,
-        action: 'chapter_group_members_set',
-        targetType: AUDIT_TARGET_TYPE,
-        targetId: id,
-        diff: { members: { from: before, to: after } },
-      });
+      await this.recordMembers(chapterId, actorUserId, id, before, after);
     }
     return { ...group, member_ids: after };
   }
 
   /**
+   * Put one member in a manual group, or take them out, from their profile
+   * (Paul, 2026-11-19: groups set where the person is, not only from the
+   * group's editor). The same gates as a whole-list save: `groups:manage`
+   * (the controller), and `channels:manage` too when a channel list names
+   * the group. A change that changes nothing (already in, already out) is
+   * no write and no audit row. Answers the group with who is in it after.
+   */
+  async addMember(
+    id: string,
+    chapterId: string,
+    actorUserId: string,
+    userId: string,
+  ): Promise<ChapterGroupView> {
+    const group = await this.manualGroup(id, chapterId);
+    await this.assertMayChangeAccess(chapterId, actorUserId, id);
+    const before = await this.memberIdsOf(chapterId, id);
+    if (!before.includes(userId) && before.length >= GROUP_MEMBERS_MAX) {
+      throw new BadRequestException(GROUP_FULL);
+    }
+    const result = await this.groupRepo.addMember(id, chapterId, userId);
+    if (result === 'group_not_found') throw new NotFoundException(NOT_FOUND);
+    if (result === 'member_not_found') {
+      throw new BadRequestException(NOT_A_MEMBER);
+    }
+    // One row in or out, so the list after is the one before with it: no
+    // second read of a list that can hold thousands.
+    if (result !== 'added') return { ...group, member_ids: before };
+    const after = [...before, userId];
+    await this.recordMembers(chapterId, actorUserId, id, before, after);
+    return { ...group, member_ids: after };
+  }
+
+  /** See {@link ChapterGroupService.addMember}. */
+  async removeMember(
+    id: string,
+    chapterId: string,
+    actorUserId: string,
+    userId: string,
+  ): Promise<ChapterGroupView> {
+    const group = await this.manualGroup(id, chapterId);
+    await this.assertMayChangeAccess(chapterId, actorUserId, id);
+    const before = await this.memberIdsOf(chapterId, id);
+    const removed = await this.groupRepo.removeMember(id, chapterId, userId);
+    if (!removed) return { ...group, member_ids: before };
+    const after = before.filter((memberId) => memberId !== userId);
+    await this.recordMembers(chapterId, actorUserId, id, before, after);
+    return { ...group, member_ids: after };
+  }
+
+  private async manualGroup(id: string, chapterId: string) {
+    const group = await this.groupRepo.findById(id, chapterId);
+    if (!group) throw new NotFoundException(NOT_FOUND);
+    if (group.kind !== 'manual') throw new BadRequestException(AUTOMATIC);
+    return group;
+  }
+
+  /** The same audit row a whole-list save writes, so the feed reads alike. */
+  private recordMembers(
+    chapterId: string,
+    actorUserId: string,
+    groupId: string,
+    before: string[],
+    after: string[],
+  ) {
+    return this.audit.record({
+      chapterId,
+      actorUserId,
+      action: 'chapter_group_members_set',
+      targetType: AUDIT_TARGET_TYPE,
+      targetId: groupId,
+      diff: { members: { from: before, to: after } },
+    });
+  }
+
+  /**
    * Delete a manual group. Every channel list naming it loses the entry (a
-   * trigger), so a channel only it could see is left to `*` until an officer
+   * trigger), so a channel only it could see falls to the chapter's top tier
+   * (migration `20261120051720`) until an officer
    * picks again, as when a role is deleted.
    */
   async remove(id: string, chapterId: string, actorUserId: string) {
@@ -365,6 +432,7 @@ const NAME_TAKEN =
   'A role, tier or group already has that name. Pick another so @mentions reach the right people.';
 const NOT_A_MEMBER =
   'Someone you picked is no longer in the chapter. Reload and pick again.';
+const GROUP_FULL = `A group can hold ${GROUP_MEMBERS_MAX.toLocaleString('en-US')} members.`;
 const AUTOMATIC =
   "This group follows pledge classes or graduation years, so who's in it changes with them.";
 

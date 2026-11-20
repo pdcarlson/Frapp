@@ -11,7 +11,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { formatDueTimeLabel, localClock } from "@repo/formatting";
-import { MEETING_ENTRY_COPY, can, checkInWindowBounds } from "@repo/validation";
+import { MEETING_ENTRY_COPY, can, checkInOpenAt } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { useMeetingsModuleOn } from "@/components/meetings/event-minutes";
 import {
@@ -72,12 +72,9 @@ export function liveMeetingFor(
     const start = new Date(event.start_time);
     const end = new Date(event.end_time);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) continue;
-    const { opensAt, closesAt } = checkInWindowBounds(
-      start,
-      end,
-      event.check_in_opens_minutes,
-    );
-    if (now < opensAt.getTime() || now > closesAt.getTime()) continue;
+    if (!checkInOpenAt(start, end, event.check_in_opens_minutes, now)) {
+      continue;
+    }
     if (!best || Date.parse(best.start_time) < start.getTime()) best = event;
   }
   return best;

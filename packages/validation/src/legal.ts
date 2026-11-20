@@ -3,21 +3,31 @@
 // legal.ts`, #3268): clients never compare against it.
 
 /**
- * The checkbox every acceptance surface shows: the create-chapter wizard, the
- * join screens and the Terms prompt, on web and mobile. The owner approved this
- * wording with the Terms of 2026-09 (#2261), so change it only with them, and
- * with the Terms.
+ * The youngest a member may be (#2261). Paul chose 17 on 2026-11-19 (#5627),
+ * with Frapp AI asking anyone who turns it on to confirm they're 18
+ * ({@link AI_MINIMUM_AGE}). It was 18 from 2026-09-23 until then. The Terms'
+ * Eligibility section says the same (`apps/landing/app/terms/page.tsx`).
  */
-export const LEGAL_ACCEPTANCE_LABEL =
-  "I'm 18 or older and agree to the Terms of Service and Privacy Policy.";
+export const MINIMUM_AGE = 17;
 
 /**
- * The youngest a member may be (#2261). Paul chose 17 on 2026-11-19, with
- * Frapp AI asking anyone who opens it to confirm they're 18 (Google Cloud's
- * terms bar generative AI in services for people under 18, ADR-28). The two
- * ship together in #5627, so this stays 18 until that check exists.
+ * The youngest anyone may use Frapp AI: Google Cloud's terms bar generative
+ * AI in services for people under 18 (ADR-28). Meet Frapp AI's Continue
+ * confirms it (`FRAPP_AI_COPY.disclosure`), and nothing the member asks or
+ * writes reaches a model without that yes (gate 2 of `spec/behavior/ai.md`
+ * § Consent; the chapter's own records stand behind the president's switch,
+ * gate 1). The words are the client's: a phone build from before #5627 shows
+ * Continue without the age line until it is replaced.
  */
-export const MINIMUM_AGE = 18;
+export const AI_MINIMUM_AGE = 18;
+
+/**
+ * The checkbox the create-chapter wizard and the Terms prompt show, on web
+ * and mobile. The owner approved this wording with the Terms of 2026-09
+ * (#2261), so change it only with them, and with the Terms; the age moved to
+ * 17 with them on 2026-11-19 (#5627).
+ */
+export const LEGAL_ACCEPTANCE_LABEL = `I'm ${MINIMUM_AGE} or older and agree to the Terms of Service and Privacy Policy.`;
 
 /**
  * The one line under the join screens' buttons that replaced the checkbox

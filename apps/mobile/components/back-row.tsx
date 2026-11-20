@@ -57,9 +57,9 @@ export const BACK_TO_CHAPTER_SETTINGS: BackTarget = {
   label: "Chapter settings",
   href: "/chapter-settings",
 };
-/** A tier's or a role's page, opened from Roles (#4074). */
+/** A tier's or a role's page, opened from Roles and groups (#4074). */
 export const BACK_TO_ROLES: BackTarget = {
-  label: "Roles",
+  label: "Roles and groups",
   href: "/chapter-roles",
 };
 /** s07, opened from a Calendar row (and from Chat home's Up next). */

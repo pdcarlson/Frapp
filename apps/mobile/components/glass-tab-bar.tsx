@@ -33,7 +33,6 @@ import { useOwnStatus } from "@/lib/account/own-status";
 import { activityCountChip } from "@/lib/activity/count-chip";
 import { useActivityRereadOnTab } from "@/lib/activity/use-activity-reread";
 import { TabLabel } from "@/components/tab-glyphs";
-import { useTourAnchor } from "@/components/onboarding/tour";
 import {
   unreadConversationsSpoken,
   useUnreadConversationCount,
@@ -112,11 +111,6 @@ export function GlassTabBar({
     unreadConversationsSpoken(unreadConversations);
   const reduceMotion = useReducedMotion();
   const { shown, available, save, ready } = useQuickActions();
-  // Three of the first-run tour's stops: the Messages tab, the + and the
-  // You tab.
-  const messagesAnchor = useTourAnchor("messages");
-  const plusAnchor = useTourAnchor("quickActions");
-  const youAnchor = useTourAnchor("you");
   // The status a member picked (#3845) shows on the You tab's avatar, so the
   // tab names it too. Online is the one nobody picks, so it says nothing.
   const own = useOwnStatus();
@@ -429,13 +423,6 @@ export function GlassTabBar({
             return (
               <Pressable
                 key={route.key}
-                ref={
-                  name === "you"
-                    ? youAnchor
-                    : name === "messages"
-                      ? messagesAnchor
-                      : undefined
-                }
                 accessibilityRole="tab"
                 accessibilityState={{ selected: focused }}
                 accessibilityLabel={
@@ -588,7 +575,6 @@ export function GlassTabBar({
         ]}
       >
         <Pressable
-          ref={plusAnchor}
           // The Maestro flows tap the + by this id: open, its label is shared
           // with the scrim, whose center sits under the panel.
           testID="tab-plus"

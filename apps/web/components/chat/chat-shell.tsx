@@ -228,6 +228,7 @@ import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import { emptyFormDraft, type FormDraft } from "@repo/chat-core/form-draft";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
+import { WelcomeCard } from "@/components/onboarding/welcome-card";
 import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
 import { AllThreadsPopover } from "./all-threads-popover";
@@ -670,6 +671,15 @@ export function ChatShell({
         muted: levelByChannelId.get(ch.id) === "off",
       })),
     [channelsQuery.data, levelByChannelId],
+  );
+  // The channel a new member lands in, where the welcome card shows (#5627).
+  const defaultChannelId = useMemo(
+    () =>
+      landingChannelId(
+        channels.filter((ch) => !isDirectChannel(ch)),
+        null,
+      ),
+    [channels],
   );
   // The rail's half of the list (#3774): channels, or direct and group
   // messages. Everything that resolves a channel by id (links, search,
@@ -4010,6 +4020,17 @@ export function ChatShell({
           costs the common case one early return.
         */}
         <OpsSetupNudge />
+        {/*
+          A new member's welcome card (#5627), over the chapter's default
+          channel only, where they land: never every channel they open.
+        */}
+        <WelcomeCard
+          inDefaultChannel={
+            !!activeChannelId &&
+            !directView &&
+            activeChannelId === defaultChannelId
+          }
+        />
         {/*
           The four states that used to replace the whole route now render inside
           this column, so the channels column beside them stays usable: a member

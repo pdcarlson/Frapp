@@ -33,9 +33,15 @@ const refetchInvites = vi.fn();
 let invitesOptions:
   { enabled?: boolean; refetchInterval?: number | false } | undefined;
 let inviteRows: Record<string, unknown>[] = [];
-let chapterLink: Record<string, unknown> | null = null;
+let chapterLinks: Record<string, unknown>[] = [];
+let chapterLinkDefault: string | null = null;
 const createChapterLink = vi.fn();
 let invitesFailed = false;
+const ROLE_CHOICES = [
+  { id: "r-everyone", name: "Everyone", label: "No role" },
+  { id: "r-brother", name: "Brother", label: "Brother" },
+  { id: "r-pledge", name: "Pledge", label: "Pledge" },
+];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -50,7 +56,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateInvite: () => ({ isPending: false, mutateAsync: createInvite }),
   useEmailInvites: () => ({ isPending: false, mutateAsync: emailInvites }),
   useRevokeInvite: () => ({ isPending: false, mutateAsync: revokeInvite }),
-  useChapterLink: () => ({ data: chapterLink }),
+  useChapterLinks: () => ({
+    data: { links: chapterLinks, defaultRole: chapterLinkDefault },
+  }),
+  useInviteRoleChoices: () => ({
+    choices: ROLE_CHOICES,
+    defaultRole: "Everyone",
+    isPending: false,
+    isError: false,
+  }),
   useCreateChapterLink: () => ({
     isPending: false,
     mutateAsync: createChapterLink,
@@ -142,6 +156,16 @@ function rowFor(tree: ReactTestRenderer, label: string) {
   );
 }
 
+/** A live chapter link's row, not the Joins as sheet's row of that name. */
+function linkRow(tree: ReactTestRenderer, label: string) {
+  return tree.root.find(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      node.props.accessibilityLabel === label &&
+      node.props.accessibilityRole !== "radio",
+  );
+}
+
 function rerender(tree: ReactTestRenderer) {
   act(() =>
     tree.update(
@@ -173,7 +197,8 @@ beforeEach(() => {
   invitesOptions = undefined;
   inviteRows = [];
   invitesFailed = false;
-  chapterLink = null;
+  chapterLinks = [];
+  chapterLinkDefault = null;
   createChapterLink.mockReset().mockResolvedValue({
     ...ROW,
     id: "link-1",
@@ -366,41 +391,155 @@ describe("Invite members", () => {
     tree.unmount();
   });
 
-  // #3353, Paul 2026-11-19: "One chapter link, 7 days".
-  it("makes a chapter link and opens the share sheet with it", async () => {
+  // #3353, Paul 2026-11-19: "One chapter link, 7 days"; #5633: one per role.
+  it("makes a chapter link at the chapter's default role and shares it", async () => {
     const tree = render();
-    expect(screenText(tree)).toContain("One link for the whole chapter.");
+    expect(screenText(tree)).toContain("Post a link in your group chat");
+    expect(rowFor(tree, "Joins as")).toBeTruthy();
+    expect(screenText(tree)).toContain("No role");
     const make = pressables(
       tree,
       "Makes the link and opens the share sheet.",
     )[0];
     await act(async () => make.props.onPress());
-    expect(createChapterLink).toHaveBeenCalled();
+    expect(createChapterLink).toHaveBeenCalledWith({ role: "Everyone" });
     const [content] = vi.mocked(Share.share).mock.calls[0];
     expect(content.message).toContain("Join FIJI Tau Nu on Frapp");
     expect(content.message).toContain("tok-chapter");
     tree.unmount();
   });
 
-  it("shares, replaces or turns off a live chapter link from its menu", async () => {
-    chapterLink = {
-      ...ROW,
-      id: "link-1",
-      token: "tok-chapter",
-      role: "Everyone",
-      email: null,
-      status: "pending",
-      reusable: true,
-      expires_at: "2026-11-26T12:00:00.000Z",
-    };
+  it("lists each role's live link and makes one for the role picked", async () => {
+    chapterLinks = [
+      {
+        ...ROW,
+        id: "link-pledge",
+        token: "tok-pledge",
+        role: "Pledge",
+        email: null,
+        status: "pending",
+        reusable: true,
+        expires_at: "2026-11-26T12:00:00.000Z",
+      },
+      {
+        ...ROW,
+        id: "link-old",
+        token: "tok-old",
+        role: "Brother",
+        email: null,
+        status: "expired",
+        reusable: true,
+        expires_at: "2026-11-10T12:00:00.000Z",
+      },
+    ];
+    const tree = render();
+    expect(linkRow(tree, "Pledge")).toBeTruthy();
+    expect(screenText(tree)).toContain("Works until Thursday, November 26");
+    // An expired link stays listed, so the officer sees why it's dead.
+    expect(linkRow(tree, "Brother")).toBeTruthy();
+    expect(screenText(tree)).toContain("Expired Tuesday, November 10");
+
+    // Picking Pledge, which has a link, turns the button into a replacement;
+    // Everyone has none, so it's a plain New link.
+    const sheet = tree.root.find(
+      (node) =>
+        typeof node.props.onSelect === "function" &&
+        node.props.title === "Joins as",
+    );
+    act(() => sheet.props.onSelect("Pledge"));
+    const replace = pressables(
+      tree,
+      "Makes a new link for this role, turns off its old one, and opens the share sheet.",
+    )[0];
+    expect(replace).toBeTruthy();
+    act(() => sheet.props.onSelect("Everyone"));
+    await act(async () =>
+      pressables(
+        tree,
+        "Makes the link and opens the share sheet.",
+      )[0].props.onPress(),
+    );
+    expect(createChapterLink).toHaveBeenCalledWith({ role: "Everyone" });
+    tree.unmount();
+  });
+
+  it("starts Joins as on the role the API says a link gets", () => {
+    chapterLinkDefault = "Brother";
+    const tree = render();
+    const sheet = tree.root.find(
+      (node) =>
+        typeof node.props.onSelect === "function" &&
+        node.props.title === "Joins as",
+    );
+    expect(sheet.props.selected).toBe("Brother");
+    tree.unmount();
+  });
+
+  it("offers no Share link on an expired link, and no new link for a role no longer offered", () => {
+    chapterLinks = [
+      {
+        ...ROW,
+        id: "link-old",
+        token: "tok-old",
+        role: "Brother",
+        email: null,
+        status: "expired",
+        reusable: true,
+        expires_at: "2026-11-10T12:00:00.000Z",
+      },
+      {
+        ...ROW,
+        id: "link-gone",
+        token: "tok-gone",
+        role: "Rush chair",
+        email: null,
+        status: "pending",
+        reusable: true,
+        expires_at: "2026-11-26T12:00:00.000Z",
+      },
+    ];
     const sheet = vi
       .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
       .mockImplementation(() => undefined);
     const tree = render();
-    expect(screenText(tree)).toContain("Works until Thursday, November 26");
 
-    act(() => rowFor(tree, "Chapter link").props.onPress());
+    act(() => linkRow(tree, "Brother").props.onPress());
+    expect(sheet.mock.calls[0][0].options).toEqual([
+      "Make a new link",
+      "Turn off link",
+      "Cancel",
+    ]);
+    act(() => linkRow(tree, "Rush chair").props.onPress());
+    expect(sheet.mock.calls[1][0].options).toEqual([
+      "Share link",
+      "Turn off link",
+      "Cancel",
+    ]);
+    sheet.mockRestore();
+    tree.unmount();
+  });
+
+  it("shares, replaces or turns off a live chapter link from its menu", async () => {
+    chapterLinks = [
+      {
+        ...ROW,
+        id: "link-1",
+        token: "tok-chapter",
+        role: "Brother",
+        email: null,
+        status: "pending",
+        reusable: true,
+        expires_at: "2026-11-26T12:00:00.000Z",
+      },
+    ];
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const tree = render();
+
+    act(() => linkRow(tree, "Brother").props.onPress());
     const [options, pick] = sheet.mock.calls[0];
+    expect(options.title).toBe("Brother link");
     expect(options.options).toEqual([
       "Share link",
       "Make a new link",
@@ -411,28 +550,11 @@ describe("Invite members", () => {
 
     await act(async () => pick(2));
     expect(revokeInvite).toHaveBeenCalledWith("link-1");
-    expect(screenText(tree)).toContain("Chapter link turned off.");
+    expect(screenText(tree)).toContain("Brother link turned off.");
 
     await act(async () => pick(1));
-    expect(createChapterLink).toHaveBeenCalled();
+    expect(createChapterLink).toHaveBeenCalledWith({ role: "Brother" });
     sheet.mockRestore();
-    tree.unmount();
-  });
-
-  it("offers a new chapter link once the last one expired", () => {
-    chapterLink = {
-      ...ROW,
-      id: "link-1",
-      token: "tok-chapter",
-      role: "Everyone",
-      email: null,
-      status: "expired",
-      reusable: true,
-      expires_at: "2026-11-26T12:00:00.000Z",
-    };
-    const tree = render();
-    expect(screenText(tree)).toContain("Make a chapter link");
-    expect(screenText(tree)).toContain("Expired Thursday, November 26");
     tree.unmount();
   });
 

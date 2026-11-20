@@ -56,9 +56,8 @@ import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
 import { NoAccessRedirect } from "@/components/layout/no-access-redirect";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
-import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
+import { WelcomeGate } from "@/components/onboarding/welcome-gate";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
-import { MeetFrappAiHost } from "@/components/ai/meet-frapp-ai-host";
 import { GetTheAppCard } from "@/components/layout/get-the-app-card";
 import { AskBar } from "@/components/ask/ask-bar";
 import { useAskEntry } from "@/components/ask/ask-host";
@@ -429,7 +428,8 @@ export function DashboardShell({
   }, [navCollapsed]);
 
   const chatPanelClassName = cn(
-    "flex min-h-0 min-w-0 flex-col overflow-hidden bg-background",
+    // `clip`, as `<main>` is: never a scroll container that hides its header.
+    "flex min-h-0 min-w-0 flex-col overflow-clip bg-background",
     onChatRoute
       ? // Alone: the whole row. Closed, it still shows below the
         // side-by-side width, where `/chat` is the chat page.
@@ -496,11 +496,10 @@ export function DashboardShell({
       <NoAccessRedirect />
       {/* A member who hasn't accepted the current Terms (#2302). */}
       <TermsPromptGate />
-      <OnboardingTour />
+      {/* Back to the name and photo for a member who hasn't finished joining (#5627). */}
+      <WelcomeGate />
       {/* What's new, by itself once after an update (#3943). */}
       <WhatsNewHost />
-      {/* Meet Frapp AI, once, for an account that never answered it (#4790). */}
-      <MeetFrappAiHost />
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         {/*
@@ -601,11 +600,19 @@ export function DashboardShell({
           for, so the skip link, the confirm dialog's focus fallback
           (`confirm-dialog.tsx`) and the 375px floor suite, which measures
           inside `<main>`, all reach chat as well as the page.
+
+          `overflow-clip`, not `hidden`, for the shell's own reason (#4000,
+          above): a `hidden` box is still a scroll container, so a jump, a
+          focused control or an anchor deep in a long page (minutes) scrolled
+          `<main>` itself and slid the page's header, its title and X, up
+          under the top bar, with no wheel to bring it back (Paul,
+          2026-11-20: "no way for me to x out or to go back"). Only the page
+          and chat's own scrollers scroll.
         */}
         <main
           id="main-content"
           ref={splitRowRef}
-          className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          className="flex min-h-0 min-w-0 flex-1 overflow-clip"
         >
           {/*
             The tool page. It scrolls independently of the nav, which is what

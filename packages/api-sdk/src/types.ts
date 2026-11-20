@@ -876,14 +876,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The chapter's shareable invite link, if it has one (#3353)
-         * @description One link many people join with, at the chapter default invite role, for 7 days. Turn it off with DELETE /v1/invites/:id.
+         * The chapter's shareable invite links, one per role (#3353, #5633)
+         * @description Links many people join with, each at the role an officer picked, for 7 days. Turn one off with DELETE /v1/invites/:id.
          */
         get: operations["InviteController_getChapterLink_v1"];
         put?: never;
         /**
-         * Make the chapter's shareable invite link, turning off the one before it (#3353)
-         * @description 403 when the current link grants a role above the caller (only a higher officer may replace it); 409 when another officer made one at the same moment.
+         * Make a shareable invite link for a role, turning off that role's link before it (#3353, #5633)
+         * @description The role defaults to the chapter default invite role. 403 when the role is above the caller; 409 when another officer made a link for the same role at the same moment.
          */
         post: operations["InviteController_createChapterLink_v1"];
         delete?: never;
@@ -4079,6 +4079,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/groups/{id}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put one member in a manual group */
+        post: operations["ChapterGroupController_addMember_v1"];
+        /** Take one member out of a manual group */
+        delete: operations["ChapterGroupController_removeMember_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/rush/candidates": {
         parameters: {
             query?: never;
@@ -6603,6 +6621,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings-no-minutes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The events this officer can see that are marked "No minutes", so the Meetings list stops asking for them */
+        get: operations["MeetingNoMinutesController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/no-minutes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Mark a meeting that ended as having no minutes. Marking it again changes nothing. 409 `meeting.not_over`, 409 `meeting.already_started` */
+        put: operations["MeetingNoMinutesController_mark_v1"];
+        post?: never;
+        /** Take a meeting’s "No minutes" mark off, so it asks for minutes again */
+        delete: operations["MeetingNoMinutesController_unmark_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/date-reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller’s reminders still waiting on these minutes’ Coming up dates, soonest first */
+        get: operations["MeetingDateReminderController_list_v1"];
+        /**
+         * Remind the caller about one of the minutes’ Coming up dates, or move that reminder
+         * @description One reminder per member per date, named by its day and words. 404 when the caller can’t read the minutes, or the date is no longer in them.
+         */
+        put: operations["MeetingDateReminderController_set_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/date-reminders/{reminderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Cancel one of the caller’s date reminders (idempotent) */
+        delete: operations["MeetingDateReminderController_clear_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bootstrap": {
         parameters: {
             query?: never;
@@ -6696,7 +6787,7 @@ export interface components {
             required: boolean;
         };
         AcceptLegalTermsDto: {
-            /** @description The user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
+            /** @description The user ticked "I'm 17 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
             accept_terms_privacy: boolean;
         };
         WhatsNewSeenDto: {
@@ -7314,6 +7405,7 @@ export interface components {
             graduation_year?: number | null;
         };
         UpdateOnboardingDto: {
+            /** @description true marks onboarding done; the first time it does, the inviter and the officers are told who joined. Finishing is one-way: false is accepted and changes nothing (#5627). */
             has_completed_onboarding: boolean;
         };
         DismissOpsNudgeDto: {
@@ -7351,8 +7443,16 @@ export interface components {
             reusable: boolean;
         };
         ChapterLinkResponseDto: {
-            /** @description The chapter's link that no officer has turned off, expired or not (status says which). Null when there is none, or when it grants a role the caller couldn't invite someone into. */
+            /** @description For builds from before #5633, which showed one link and replaced it with a body-less POST: the link that POST turns off, the default role's (`default_role`). Null when that role has none. */
             link: components["schemas"]["InviteListItemDto"] | null;
+            /** @description The role a POST with no role makes a link for: the chapter default invite role, or the caller's own rank's member role when the default is above them. The role picker starts on it. Null when the caller can invite into neither. */
+            default_role: string | null;
+            /** @description The chapter's links that no officer has turned off, expired or not (status says which), at most one per role, newest first. Only those granting a role the caller could invite someone into. */
+            links: components["schemas"]["InviteListItemDto"][];
+        };
+        CreateChapterLinkDto: {
+            /** @description The role the link grants. Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. Making a link for a role turns off that role's old link only. */
+            role?: string;
         };
         BatchCreateInvitesDto: {
             /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
@@ -8141,15 +8241,26 @@ export interface components {
              * @description The member's `users.id`.
              */
             user_id: string;
-            /** @description The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`. */
+            /** @description Where the member's highest-ranked role sits among the chapter's roles in rank order (the President's role first, then by tier, then each role's order in its tier), 0 for the top; lower ranks higher, null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`. */
             role_rank: number | null;
             /**
              * Format: uuid
              * @description The id of that highest role, which the list groups readers under, or null when they hold no role.
              */
             role_id: string | null;
-            /** @description The group's heading: that role's name, "Members" for the chapter's Everyone role, or null when they hold no role. */
+            /** @description That role's name, "Members" for the chapter's Everyone role, or null when they hold no role. Older app builds group by it; current ones group by tier. */
             role_name: string | null;
+            /** @description The member's title: their highest-ranked role's name, or null for the chapter's Everyone role or no role. */
+            title: string | null;
+            /**
+             * Format: uuid
+             * @description The highest tier any of their roles is in, the group the list files them under, or null when none of their roles is in a tier.
+             */
+            tier_id: string | null;
+            /** @description That tier's name, the group's heading; null with tier_id. */
+            tier_name: string | null;
+            /** @description That tier's position, 1 for the top tier; null with tier_id. */
+            tier_rank: number | null;
         };
         AddChannelMemberDto: {
             /** @description The `users.id` to add. Must be a member of the channel's chapter. */
@@ -9741,6 +9852,11 @@ export interface components {
             sent_back_reason: string | null;
             /** @description The assignee's reply sent with Mark done, or null. Cleared with the completion. */
             completion_note: string | null;
+            /**
+             * Format: uuid
+             * @description Who marked it done (#5732): the assignee, or an officer marking it done for them. Null while it is open, and on a completion from before this was kept.
+             */
+            completed_by: string | null;
             /**
              * Format: uuid
              * @description The repeating series this task is a copy of (#5119), or null for a task that doesn’t repeat.
@@ -12962,6 +13078,36 @@ export interface components {
             /** @description This ask sent a reminder. False when the daily guard held it back: whoever is writing them was already reminded within the day. */
             pinged: boolean;
         };
+        MeetingNoMinutesListDto: {
+            /** @description Events this officer can see that an officer marked "No minutes", so the Meetings list stops asking for them. */
+            event_ids: string[];
+        };
+        MeetingDateReminderDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `YYYY-MM-DD`.
+             * @example 2026-12-04
+             */
+            date: string;
+            text: string;
+            /** Format: date-time */
+            remind_at: string;
+        };
+        SetMeetingDateReminderDto: {
+            /**
+             * @description The date’s day, as the minutes give it (`YYYY-MM-DD`).
+             * @example 2026-12-04
+             */
+            date: string;
+            /** @description The date’s words, as the minutes give them. Together with the day they name the date, which has to be in the minutes as they read now. */
+            text: string;
+            /**
+             * Format: date-time
+             * @description When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting it again for the same date moves it.
+             */
+            remind_at: string;
+        };
         BootstrapDto: {
             /** @description As `GET /v1/users/me`. */
             user?: {
@@ -14923,7 +15069,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateChapterLinkDto"];
+            };
+        };
         responses: {
             201: {
                 headers: {
@@ -22264,6 +22414,68 @@ export interface operations {
             };
         };
     };
+    ChapterGroupController_addMember_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_removeMember_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     RushController_lookup_v1: {
         parameters: {
             query: {
@@ -27954,6 +28166,183 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MinutesRequestSentDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNoMinutesController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNoMinutesListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNoMinutesController_mark_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNoMinutesController_unmark_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDateReminderController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDateReminderDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDateReminderController_set_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMeetingDateReminderDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDateReminderDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDateReminderController_clear_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                reminderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

@@ -72,6 +72,7 @@ describe('NotificationService', () => {
       deleteMany: jest.fn(),
       deleteConversation: jest.fn(),
       rewriteChatMessageBody: jest.fn(),
+      deleteTaskCompletionRows: jest.fn(),
     };
     mockPushTokenRepo = {
       create: jest.fn(),
@@ -96,6 +97,7 @@ describe('NotificationService', () => {
       setTimeZone: jest.fn(),
     };
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findByChapter: jest.fn(),

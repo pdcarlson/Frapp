@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { formatMinutesRounded } from "@repo/formatting";
+import { localWeekStart } from "@repo/validation";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -12,16 +13,8 @@ type ActivityStandingSection = ActivityStanding["unavailable"][number];
 /** Chapter-scoped keys; the read is `activityStandingKeys.chapter(chapterId)`. */
 export const activityStandingKeys = createChapterQueryKeys("activity-standing");
 
-/**
- * The start of the member's week on this device: last Sunday at local
- * midnight. The phone's Study screen and More row count this week too
- * (`startOfWeek` in `apps/mobile/lib/study/format.ts` returns it).
- */
-export function localWeekStart(now: Date = new Date()): Date {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  start.setDate(start.getDate() - start.getDay());
-  return start;
-}
+// The week rule lives in @repo/validation so the Meetings lists share it.
+export { localWeekStart };
 
 /**
  * How the member is doing this semester (`GET /v1/activity/standing`,

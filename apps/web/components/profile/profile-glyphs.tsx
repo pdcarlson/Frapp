@@ -15,7 +15,7 @@
  *
  * `ProfileGlyph` and the Chat, Events, Backwork, Study hours and Points
  * re-exports went with the first-run slideshow that was their one consumer
- * (#5080): the spotlight tour lights the real controls and draws no glyph.
+ * (#5080).
  *
  * **Control furniture stays Lucide** (§6.2.2): `Loader2`, `ArrowLeft`,
  * `ArrowRight`, `Check`, `CheckCircle2`, `Copy` and `PencilLine` — every one a
@@ -29,7 +29,7 @@
  * s04's `#` channel sigil. It lives in `components/auth/signet-mark.tsx`.
  *
  * **The ✦ leaves this family without a replacement.** `chapter-wizard.tsx`
- * and the first-run slideshow (replaced by the spotlight tour, #5080) each
+ * and the first-run slideshow (gone since #5080) each
  * marked a non-Ask surface with Lucide's `Sparkles`, which `components.md` §11
  * reserves for the Ask entry point. The wizard's eyebrow now carries no glyph
  * at all — its label already names the intent, which is how
