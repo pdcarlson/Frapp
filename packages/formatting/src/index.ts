@@ -83,9 +83,4 @@ export {
   suggestedDueTime,
   suggestTaskDue,
 } from "./due-time";
-export {
-  formatPhone,
-  formatPhoneInput,
-  normalizePhone,
-  type PhoneInputState,
-} from "./phone";
+export { formatPhone, formatPhoneInput, normalizePhone } from "./phone";

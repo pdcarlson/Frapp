@@ -15,7 +15,7 @@ import { AsYouType, parsePhoneNumberFromString } from "libphonenumber-js/min";
  */
 
 /** The country a number without a `+` is read in. */
-export const PHONE_DEFAULT_COUNTRY = "US";
+const PHONE_DEFAULT_COUNTRY = "US";
 
 /** The most digits a phone number has (E.164's cap). */
 const PHONE_MAX_DIGITS = 15;
@@ -55,7 +55,7 @@ export function formatPhone(value: string | null | undefined): string {
 }
 
 /** What a Phone field shows after a keystroke, and where its caret goes. */
-export interface PhoneInputState {
+interface PhoneInputState {
   value: string;
   caret: number;
 }
