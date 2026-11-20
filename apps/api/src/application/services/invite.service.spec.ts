@@ -105,7 +105,7 @@ describe('InviteService', () => {
       findById: jest.fn(),
       findByToken: jest.fn(),
       findByChapter: jest.fn(),
-      findChapterLink: jest.fn().mockResolvedValue(null),
+      findChapterLinks: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
       createMany: jest.fn(),
       markRevoked: jest.fn().mockResolvedValue(undefined),
@@ -2303,17 +2303,42 @@ describe('InviteService', () => {
       );
     });
 
-    it('turns off the link before it', async () => {
-      mockInviteRepo.findChapterLink.mockResolvedValue(
+    it("turns off that role's link before it, and no other role's (#5633)", async () => {
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-pledge', role: 'Pledge', reusable: true }),
         inviteRow({ id: 'link-1', reusable: true }),
-      );
+      ]);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({ id: 'role-pledge', name: 'Pledge', display_order: 4 }),
+      ]);
 
       await service.createChapterLink('ch-1', 'user-1');
 
+      expect(mockInviteRepo.markRevoked).toHaveBeenCalledTimes(1);
       expect(mockInviteRepo.markRevoked).toHaveBeenCalledWith('link-1');
       expect(
         mockInviteRepo.markRevoked.mock.invocationCallOrder[0],
       ).toBeLessThan(mockInviteRepo.create.mock.invocationCallOrder[0]);
+    });
+
+    // Paul, 2026-11-19: "Officer picks it per link".
+    it('makes a link at the role the officer picks, beside the others (#5633)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        memberRole,
+        roleFixture({ id: 'role-pledge', name: 'Pledge', display_order: 4 }),
+      ]);
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-1', reusable: true }),
+      ]);
+
+      const link = await service.createChapterLink('ch-1', 'user-1', 'Pledge');
+
+      expect(mockInviteRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'Pledge', reusable: true }),
+      );
+      expect(mockInviteRepo.markRevoked).not.toHaveBeenCalled();
+      expect(link).toEqual(expect.objectContaining({ role: 'Pledge' }));
     });
 
     it('answers 409 when another officer made one at the same moment', async () => {
@@ -2341,18 +2366,22 @@ describe('InviteService', () => {
       expect(rows.map((row) => row.id)).toEqual(['inv-1']);
     });
 
-    it('reads back the current link, expired ones included', async () => {
-      mockInviteRepo.findChapterLink.mockResolvedValue(
+    it('reads back every role\'s link, expired ones included', async () => {
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        inviteRow({ id: 'link-pledge', role: 'Pledge', reusable: true }),
         inviteRow({
           id: 'link-1',
           reusable: true,
           expires_at: '2020-01-01T00:00:00.000Z',
         }),
-      );
+      ]);
 
-      await expect(service.findChapterLink('ch-1', 'user-1')).resolves.toEqual(
+      await expect(
+        service.findChapterLinks('ch-1', 'user-1'),
+      ).resolves.toEqual([
+        expect.objectContaining({ id: 'link-pledge', status: 'pending' }),
         expect.objectContaining({ id: 'link-1', status: 'expired' }),
-      );
+      ]);
     });
 
     it('lets many people join without using it up', async () => {
@@ -2832,6 +2861,25 @@ describe('InviteService', () => {
       const rows = await service.findByChapter(CHAPTER_ID, USER.president);
 
       expect(rows).toHaveLength(invites.length);
+    });
+
+    it("shows a chair only the chapter links they could make, and won't make one above them (#5633)", async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue(tieredChapterRoles());
+      mockInviteRepo.findChapterLinks.mockResolvedValue([
+        { ...pending('link-vp', 'Vice President'), reusable: true },
+        { ...pending('link-brother', 'Brother'), reusable: true },
+      ]);
+
+      const links = await service.findChapterLinks(CHAPTER_ID, USER.riskChair);
+      expect(links.map((link) => link.id)).toEqual(['link-brother']);
+
+      await expect(
+        service.createChapterLink(CHAPTER_ID, USER.riskChair, 'Vice President'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockInviteRepo.create).not.toHaveBeenCalled();
     });
 
     it("won't let a chair revoke an officer's invite", async () => {

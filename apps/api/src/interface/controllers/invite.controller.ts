@@ -48,6 +48,7 @@ import {
   PendingInviteDto,
   InvitableRolesDto,
   ChapterLinkResponseDto,
+  CreateChapterLinkDto,
 } from '../dtos/invite.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
@@ -85,18 +86,17 @@ export class InviteController {
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
   @ApiOperation({
-    summary: "The chapter's shareable invite link, if it has one (#3353)",
+    summary: "The chapter's shareable invite links, one per role (#3353, #5633)",
     description:
-      'One link many people join with, at the chapter default invite role, for 7 days. Turn it off with DELETE /v1/invites/:id.',
+      'Links many people join with, each at the role an officer picked, for 7 days. Turn one off with DELETE /v1/invites/:id.',
   })
   @ApiOkResponse({ type: ChapterLinkResponseDto })
   async getChapterLink(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ): Promise<ChapterLinkResponseDto> {
-    return {
-      link: await this.inviteService.findChapterLink(chapterId, userId),
-    };
+    const links = await this.inviteService.findChapterLinks(chapterId, userId);
+    return { link: links[0] ?? null, links };
   }
 
   @Post('chapter-link')
@@ -105,9 +105,9 @@ export class InviteController {
   @GraceBlocked()
   @ApiOperation({
     summary:
-      "Make the chapter's shareable invite link, turning off the one before it (#3353)",
+      "Make a shareable invite link for a role, turning off that role's link before it (#3353, #5633)",
     description:
-      '403 when the current link grants a role above the caller (only a higher officer may replace it); 409 when another officer made one at the same moment.',
+      'The role defaults to the chapter default invite role. 403 when the role is above the caller; 409 when another officer made a link for the same role at the same moment.',
   })
   @ApiCreatedResponse({ type: InviteListItemDto })
   @FeatureEvent('invite-created', () => ({
@@ -117,8 +117,9 @@ export class InviteController {
   async createChapterLink(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
+    @Body() body: CreateChapterLinkDto = {},
   ): Promise<InviteListItemDto> {
-    return this.inviteService.createChapterLink(chapterId, userId);
+    return this.inviteService.createChapterLink(chapterId, userId, body?.role);
   }
 
   @Post('batch')

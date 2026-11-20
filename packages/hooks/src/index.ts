@@ -115,6 +115,7 @@ export * from "./use-hidden-permissions";
 export * from "./use-important-messages";
 export * from "./use-invite-funnel";
 export * from "./use-invites";
+export * from "./invite-role-choices";
 export * from "./use-invoices";
 export * from "./use-meeting-date-reminders";
 export * from "./use-meetings";

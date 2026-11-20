@@ -1,17 +1,20 @@
 import { useRef, useState } from "react";
 import { Share, StyleSheet, Text, View } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   CHAPTER_LINK_HINT,
   chapterLinkExpiryLabel,
-  useChapterLink,
+  inviteRoleLabel,
+  useChapterLinks,
   useCreateChapterLink,
+  useInviteRoleChoices,
   useRevokeInvite,
   type InviteListItem,
 } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
-import { EVERYONE_ROLE_NAME } from "@repo/validation";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { OptionSheet } from "@/components/option-sheet";
 import { showActionMenu } from "@/lib/action-menu";
 import {
   inviteShareContent,
@@ -24,27 +27,23 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 export const SHARE_CHAPTER_LINK = "Share link";
 export const MAKE_NEW_LINK = "Make a new link";
 export const TURN_OFF_LINK = "Turn off link";
-
-/** The caption under a live link: when it stops, and the role it gives. */
-export function chapterLinkCaption(
-  link: Pick<InviteListItem, "status" | "expires_at" | "role">,
-): string {
-  return [
-    chapterLinkExpiryLabel(link),
-    link.role === EVERYONE_ROLE_NAME ? null : `Joins as ${link.role}`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
+export const NEW_LINK = "New link";
+export const JOINS_AS = "Joins as";
 
 /**
- * The chapter link on the phone's Invite members screen (#3353, Paul
- * 2026-11-19: "One chapter link, 7 days"), web's Chapter link section with the
- * same words: one link for the whole chapter, the way Discord's server invite
- * and WhatsApp's group link work. With none live, Make a chapter link makes
- * one and opens the share sheet with it. A live one is a row whose menu
- * shares it, makes a new one (the old one stops working) or turns it off.
- * Where web copies, the phone shares, as the Invited list's rows do.
+ * Chapter links on the phone's Invite members screen (#3353, Paul 2026-11-19:
+ * "One chapter link, 7 days"), web's Chapter links section with the same
+ * words: links an officer posts where the chapter will see them, the way
+ * Discord's server invite and WhatsApp's group link work. Since #5633
+ * ("Officer picks it per link") each link joins at the role the officer
+ * picked, one live link per role.
+ *
+ * Each live link is a row named for its role, captioned with when it stops
+ * working, whose menu shares it, makes a new one (that role's old link stops
+ * working) or turns it off. Under them, Joins as picks the role for the next
+ * link (the chapter's default to start) and New link makes it and opens the
+ * share sheet. Where web copies, the phone shares, as the Invited list's rows
+ * do.
  */
 export function ChapterLinkSection({
   chapterName,
@@ -54,17 +53,32 @@ export function ChapterLinkSection({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const linkQuery = useChapterLink();
+  const linksQuery = useChapterLinks();
+  const roles = useInviteRoleChoices();
   const create = useCreateChapterLink();
   const revoke = useRevokeInvite();
+  const sheetRef = useRef<BottomSheetModal>(null);
   const running = useRef(false);
-  const [busy, setBusy] = useState(false);
+  // Which row is working: a link's id, or "new" for the New link row.
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{
     text: string;
     tone: "done" | "problem";
   } | null>(null);
-  const link = linkQuery.data ?? null;
-  const live = link?.status === "pending" ? link : null;
+  const live = (linksQuery.data ?? []).filter(
+    (link) => link.status === "pending",
+  );
+  // `null` until the officer picks: the chapter's default, once it loads. A
+  // pick that has since left the list (a role deleted or ranked up) falls
+  // back to the default too.
+  const [picked, setPicked] = useState<string | null>(null);
+  const newRole =
+    (picked && roles.choices.some((choice) => choice.name === picked)
+      ? picked
+      : roles.defaultRole) ?? null;
+  const label = (role: string) => inviteRoleLabel(role, roles.choices);
+  // Making a link for a role that has one replaces it, so the row says so.
+  const replaces = live.some((link) => link.role === newRole);
 
   async function share(invite: InviteListItem) {
     if (!chapterName) return;
@@ -78,10 +92,14 @@ export function ChapterLinkSection({
     }
   }
 
-  async function guarded(work: () => Promise<void>, failure: string) {
+  async function guarded(
+    row: string,
+    work: () => Promise<void>,
+    failure: string,
+  ) {
     if (running.current) return;
     running.current = true;
-    setBusy(true);
+    setBusy(row);
     setMessage(null);
     try {
       await work();
@@ -89,38 +107,49 @@ export function ChapterLinkSection({
       setMessage({ text: errorCopy(caught, failure), tone: "problem" });
     } finally {
       running.current = false;
-      setBusy(false);
+      setBusy(null);
     }
   }
 
-  function makeLink() {
-    void guarded(async () => {
-      const made = await create.mutateAsync();
-      // The share sheet doesn't hold the lock: iOS doesn't always say when
-      // it closes.
-      void share(made);
-    }, "Couldn't make a chapter link. Try again in a moment.");
+  function makeLink(row: string, role: string | null) {
+    void guarded(
+      row,
+      async () => {
+        const made = await create.mutateAsync(role ? { role } : undefined);
+        // The share sheet doesn't hold the lock: iOS doesn't always say when
+        // it closes.
+        void share(made);
+      },
+      "Couldn't make a chapter link. Try again in a moment.",
+    );
   }
 
   function turnOff(invite: InviteListItem) {
-    void guarded(async () => {
-      await revoke.mutateAsync(invite.id);
-      setMessage({
-        text: "Chapter link turned off. Nobody can join with it now.",
-        tone: "done",
-      });
-    }, "Couldn't turn off the link. Try again in a moment.");
+    void guarded(
+      invite.id,
+      async () => {
+        await revoke.mutateAsync(invite.id);
+        setMessage({
+          text: `${label(invite.role)} link turned off. Nobody can join with it now.`,
+          tone: "done",
+        });
+      },
+      "Couldn't turn off the link. Try again in a moment.",
+    );
   }
 
   function openMenu(invite: InviteListItem) {
     if (running.current) return;
     showActionMenu({
-      title: "Chapter link",
+      title: `${label(invite.role)} link`,
       rows: [
         ...(chapterName
           ? [{ label: SHARE_CHAPTER_LINK, onPress: () => void share(invite) }]
           : []),
-        { label: MAKE_NEW_LINK, onPress: makeLink },
+        {
+          label: MAKE_NEW_LINK,
+          onPress: () => makeLink(invite.id, invite.role),
+        },
         {
           label: TURN_OFF_LINK,
           style: "destructive" as const,
@@ -133,7 +162,7 @@ export function ChapterLinkSection({
 
   return (
     <View style={styles.stack}>
-      <SectionHeader>Chapter link</SectionHeader>
+      <SectionHeader>Chapter links</SectionHeader>
       <Text style={styles.body}>{CHAPTER_LINK_HINT}</Text>
       {message ? (
         <Text
@@ -144,31 +173,50 @@ export function ChapterLinkSection({
         </Text>
       ) : null}
       <ListSection>
-        {live ? (
+        {live.map((link) => (
           <ListRow
-            label="Chapter link"
-            description={chapterLinkCaption(live)}
+            key={link.id}
+            label={label(link.role)}
+            description={chapterLinkExpiryLabel(link)}
             action
-            busy={busy}
-            accessibilityHint="Opens what you can do with the chapter link."
-            onPress={() => openMenu(live)}
+            busy={busy === link.id}
+            accessibilityHint={`Opens what you can do with the ${label(link.role)} link.`}
+            onPress={() => openMenu(link)}
           />
-        ) : (
+        ))}
+        {roles.choices.length > 0 && newRole ? (
           <ListRow
-            label="Make a chapter link"
-            description={
-              link?.status === "expired"
-                ? chapterLinkExpiryLabel(link)
-                : undefined
-            }
-            action
-            busy={busy}
-            disabled={!chapterName}
-            accessibilityHint="Makes the link and opens the share sheet."
-            onPress={makeLink}
+            label={JOINS_AS}
+            value={label(newRole)}
+            accessibilityHint="Picks the role the new link joins at."
+            onPress={() => sheetRef.current?.present()}
           />
-        )}
+        ) : null}
+        <ListRow
+          label={replaces ? MAKE_NEW_LINK : NEW_LINK}
+          action
+          busy={busy === "new"}
+          disabled={!chapterName}
+          accessibilityHint={
+            replaces
+              ? "Makes a new link for this role, turns off its old one, and opens the share sheet."
+              : "Makes the link and opens the share sheet."
+          }
+          onPress={() => makeLink("new", newRole)}
+        />
       </ListSection>
+      <OptionSheet
+        ref={sheetRef}
+        title={JOINS_AS}
+        options={roles.choices.map((choice) => ({
+          value: choice.name,
+          label: choice.label,
+        }))}
+        selected={newRole}
+        onSelect={(next) => {
+          if (next) setPicked(next);
+        }}
+      />
     </View>
   );
 }

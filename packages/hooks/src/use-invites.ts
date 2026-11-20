@@ -144,14 +144,15 @@ export function useCreateInvite() {
 }
 
 /**
- * The chapter link (#3353, Paul 2026-11-19: "One chapter link, 7 days"): one
- * link an officer posts where the chapter will see it, such as its Discord.
- * Anyone who opens it joins at the chapter's default invite role until it
- * expires or an officer turns it off (`useRevokeInvite`). `null` when there
- * is none; an expired one comes back with `status: "expired"`. Under the
+ * The chapter links (#3353, Paul 2026-11-19: "One chapter link, 7 days"):
+ * links an officer posts where the chapter will see them, such as its
+ * Discord. Anyone who opens one joins at the role the officer picked for it
+ * (#5633: "Officer picks it per link"), one live link per role, until it
+ * expires or an officer turns it off (`useRevokeInvite`). Newest first; an
+ * expired one comes back with `status: "expired"`. Under the
  * `["invites", chapterId]` prefix, so every invite write refreshes it.
  */
-export function useChapterLink(options?: { enabled?: boolean }) {
+export function useChapterLinks(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
@@ -161,7 +162,7 @@ export function useChapterLink(options?: { enabled?: boolean }) {
         signal,
       });
       if (error) throw error;
-      return data.link;
+      return data.links;
     },
     staleTime: 60_000,
     enabled: (options?.enabled ?? true) && !!chapterId,
@@ -173,22 +174,27 @@ export function useChapterLink(options?: { enabled?: boolean }) {
  * the phone's Invite members screen alike.
  */
 export const CHAPTER_LINK_HINT =
-  "One link for the whole chapter. Post it in your group chat or Discord, and anyone with it can join for 7 days.";
+  "Post a link in your group chat or Discord. Anyone with it joins at its role for 7 days.";
 
-/** A new chapter link; the one before it stops working at once. */
+/**
+ * A new chapter link for `role` (the chapter's default invite role when
+ * left out); that role's link before it stops working at once, and other
+ * roles' links are untouched (#5633).
+ */
 export function useCreateChapterLink() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["invites", "create-chapter-link"],
-    mutationFn: async () => {
-      const { data, error } = await client.POST("/v1/invites/chapter-link");
+    mutationFn: async (input?: { role?: string }) => {
+      const { data, error } = await client.POST("/v1/invites/chapter-link", {
+        body: input?.role ? { role: input.role } : {},
+      });
       if (error) throw error;
       return data;
     },
-    onSuccess: (link) => {
-      queryClient.setQueryData(["invites", chapterId, "chapter-link"], link);
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["invites", chapterId] });
     },
   });

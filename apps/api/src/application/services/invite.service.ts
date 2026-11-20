@@ -511,42 +511,47 @@ export class InviteService {
   }
 
   /**
-   * The chapter link (#3353): one link an officer posts where the whole
-   * chapter will see it, such as its Discord. Anyone who opens it joins at the
-   * chapter's default invite role (`resolveInviteRole` with no role named)
-   * until it expires after {@link CHAPTER_LINK_DAYS} days or an officer turns
-   * it off. Null when there is none, or when the one there grants a role the
-   * caller couldn't invite someone into ({@link inviteVisibility}): its link
-   * is not theirs to copy. An expired one is returned, so the screen can say
-   * it expired.
+   * The chapter links (#3353): links an officer posts where the chapter will
+   * see them, such as its Discord. Anyone who opens one joins at the role the
+   * officer picked for it (#5633, Paul 2026-11-19: "Officer picks it per
+   * link"), until it expires after {@link CHAPTER_LINK_DAYS} days or an
+   * officer turns it off; a chapter has at most one live link per role, so a
+   * pledge class link and a brothers link can be out at once. Newest first,
+   * and only those granting a role the caller could invite someone into
+   * ({@link inviteVisibility}): a higher officer's link is not theirs to
+   * copy. Expired ones are returned, so the screen can say they expired.
    */
-  async findChapterLink(
+  async findChapterLinks(
     chapterId: string,
     userId: string,
-  ): Promise<InviteListItem | null> {
-    const [link, visible] = await Promise.all([
-      this.inviteRepo.findChapterLink(chapterId),
+  ): Promise<InviteListItem[]> {
+    const [links, visible] = await Promise.all([
+      this.inviteRepo.findChapterLinks(chapterId),
       this.inviteVisibility(chapterId, userId),
     ]);
-    if (!link || !visible(link)) return null;
-    return toListItem(link, new Date());
+    const now = new Date();
+    return links.filter(visible).map((link) => toListItem(link, now));
   }
 
   /**
-   * A new chapter link, replacing the current one: the old link stops working
-   * the moment the new one exists, so an officer who thinks a link spread too
-   * far makes a new one. A link granting a role above the caller's reach is
-   * not theirs to replace (403), as it is not theirs to revoke.
+   * A new chapter link for `requestedRole` (the chapter's default invite role
+   * when none is named, as before #5633), replacing that role's current one:
+   * the old link stops working the moment the new one exists, so an officer
+   * who thinks a link spread too far makes a new one. Other roles' links are
+   * untouched. The role must be one the caller could invite someone into
+   * (`resolveInviteRole`, 403 otherwise), as for a personal invite.
    */
   async createChapterLink(
     chapterId: string,
     createdBy: string,
+    requestedRole?: string,
   ): Promise<InviteListItem> {
-    const [{ role }, current, visible] = await Promise.all([
-      this.resolveInviteRole(chapterId, undefined, createdBy),
-      this.inviteRepo.findChapterLink(chapterId),
+    const [{ role }, links, visible] = await Promise.all([
+      this.resolveInviteRole(chapterId, requestedRole, createdBy),
+      this.inviteRepo.findChapterLinks(chapterId),
       this.inviteVisibility(chapterId, createdBy),
     ]);
+    const current = links.find((link) => link.role === role);
     if (current && !visible(current)) {
       throw new ForbiddenException({
         code: 'invite.chapter_link_out_of_reach',
@@ -561,12 +566,13 @@ export class InviteService {
         this.prepareInviteData(chapterId, createdBy, role, null, true),
       );
     } catch (error) {
-      // Another officer made one at the same moment (`invites_one_chapter_link`).
+      // Another officer made one for this role at the same moment
+      // (`invites_one_chapter_link_per_role`).
       if (isUniqueViolation(error)) {
         throw new ConflictException({
           code: 'invite.chapter_link_conflict',
           message:
-            'Another officer just made a chapter link. Reload to see it.',
+            'Another officer just made a chapter link for this role. Reload to see it.',
         });
       }
       throw error;

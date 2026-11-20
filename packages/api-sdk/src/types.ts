@@ -876,14 +876,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The chapter's shareable invite link, if it has one (#3353)
-         * @description One link many people join with, at the chapter default invite role, for 7 days. Turn it off with DELETE /v1/invites/:id.
+         * The chapter's shareable invite links, one per role (#3353, #5633)
+         * @description Links many people join with, each at the role an officer picked, for 7 days. Turn one off with DELETE /v1/invites/:id.
          */
         get: operations["InviteController_getChapterLink_v1"];
         put?: never;
         /**
-         * Make the chapter's shareable invite link, turning off the one before it (#3353)
-         * @description 403 when the current link grants a role above the caller (only a higher officer may replace it); 409 when another officer made one at the same moment.
+         * Make a shareable invite link for a role, turning off that role's link before it (#3353, #5633)
+         * @description The role defaults to the chapter default invite role. 403 when the role is above the caller; 409 when another officer made a link for the same role at the same moment.
          */
         post: operations["InviteController_createChapterLink_v1"];
         delete?: never;
@@ -7408,8 +7408,14 @@ export interface components {
             reusable: boolean;
         };
         ChapterLinkResponseDto: {
-            /** @description The chapter's link that no officer has turned off, expired or not (status says which). Null when there is none, or when it grants a role the caller couldn't invite someone into. */
+            /** @description The newest of `links`, for builds from before #5633, which showed one link. Null when `links` is empty. */
             link: components["schemas"]["InviteListItemDto"] | null;
+            /** @description The chapter's links that no officer has turned off, expired or not (status says which), at most one per role, newest first. Only those granting a role the caller could invite someone into. */
+            links: components["schemas"]["InviteListItemDto"][];
+        };
+        CreateChapterLinkDto: {
+            /** @description The role the link grants. Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. Making a link for a role turns off that role's old link only. */
+            role?: string;
         };
         BatchCreateInvitesDto: {
             /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
@@ -15006,7 +15012,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChapterLinkDto"];
+            };
+        };
         responses: {
             201: {
                 headers: {

@@ -7,7 +7,7 @@ import {
   useEmailInvites,
   useInvitableRoleIds,
   useInvites,
-  useOrgConfig,
+  useInviteRoleChoices,
   useRevokeInvite,
   useRoles,
   INVITE_STATUS_LABEL,
@@ -48,26 +48,15 @@ import {
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { ChapterLinkSection } from "@/components/members/chapter-link-section";
 import { getErrorMessage, cn } from "@/lib/utils";
-import { parseChapterRoles, toRoleOptions } from "@repo/hooks/chapter-roles";
 import { EVERYONE_ROLE_NAME } from "@repo/validation";
 import { buildJoinUrl } from "@/lib/invite-link";
 
 /**
- * Seeded display name of the Member system role — the role a chapter with no
- * configured default falls back to.
- *
- * Only a fallback now. The picker finds Member by `system_key` first, as the
- * server-side fallback in `InviteService.resolveInviteRole` does, so a chapter
- * that renamed Member still lands on it. `GET /v1/roles` returns the whole
- * row, `system_key` included; it is only untyped, because the route declares
- * no response schema (#1049). (Corrected 2026-09-29, #2484: this comment used
- * to say the key was not projected, and matched by name alone because of it.)
- * The name still covers a legacy Member role that predates the key.
+ * The role the picker holds before the catalog loads: the Everyone role's
+ * seeded name, which the API also reads as Everyone (#4191). The default once
+ * roles load is `useInviteRoleChoices`'s.
  */
 const SEEDED_MEMBER_ROLE_NAME = "Member";
-
-/** What the picker calls the Everyone role (#4191). */
-const NO_ROLE_LABEL = "No role";
 
 /** The kept draft's name (#4593). */
 const INVITE_DRAFT = "invite-members";
@@ -122,7 +111,6 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   );
   const activeChapterId = useActiveChapterId();
   const rolesQuery = useRoles();
-  const orgConfigQuery = useOrgConfig();
   const invitesQuery = useInvites();
   const invitableRolesQuery = useInvitableRoleIds();
   const emailInvites = useEmailInvites();
@@ -143,60 +131,13 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const { toast } = useToast();
   const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
 
-  // The Everyone role (#4191) stays in the picker as "No role", first: an
-  // invite into it joins with no role, as one with no default does.
-  const everyoneRole = useMemo(
-    () => parseChapterRoles(rolesQuery.data).find((role) => role.everyone),
-    [rolesQuery.data],
-  );
-  const everyoneRoleId = everyoneRole?.id;
-  // A role holding `*` is left out: an invite can't grant it (the API answers
-  // 403); it changes hands only through Transfer presidency. So is a role
-  // ranked at or above the sender, or carrying a permission they lack (#4546,
-  // #1830, Paul 2026-11-16): a chair invites a brother, never a peer. Until
-  // that list loads, or if it fails, every role is offered and the API still
-  // refuses the rest.
-  const invitableRoleIds = invitableRolesQuery.data;
-  const roleOptions = useMemo(() => {
-    const allowed = invitableRoleIds ? new Set(invitableRoleIds) : null;
-    return toRoleOptions(rolesQuery.data, "keep", { dropLocked: true })
-      .filter((role) => !allowed || allowed.has(role.id))
-      .sort(
-        (first, second) =>
-          Number(second.id === everyoneRoleId) -
-            Number(first.id === everyoneRoleId) ||
-          first.name.localeCompare(second.name),
-      );
-  }, [rolesQuery.data, everyoneRoleId, invitableRoleIds]);
-
-  // The Everyone role's current name: by `system_key` (`parseChapterRoles`),
-  // then by the seeded Member name. `undefined` when neither exists.
-  const memberRoleName = useMemo(() => {
-    const keyedName = everyoneRole?.name;
-    if (
-      typeof keyedName === "string" &&
-      roleOptions.some((role) => role.name === keyedName)
-    ) {
-      return keyedName;
-    }
-    return roleOptions.find((role) => role.name === SEEDED_MEMBER_ROLE_NAME)
-      ?.name;
-  }, [everyoneRole, roleOptions]);
-
-  // #422: the chapter's configured default invite role, resolved id → name
-  // against the live catalog. `undefined` while the config query is in flight
-  // or when no default is set.
-  //
-  // Read from the officer-only config, deliberately: this dialog is an
-  // inviter's tool (`members:invite`, which among seeded roles only President
-  // holds, with `chapter-config:view`), and the member view doesn't carry
-  // `default_invite_role_id` (#2957). A custom role granted `members:invite`
-  // without `chapter-config:view` is refused the read and starts on Member.
-  const defaultRoleName = useMemo(() => {
-    const configuredId = orgConfigQuery.data?.default_invite_role_id;
-    if (!configuredId) return undefined;
-    return roleOptions.find((role) => role.id === configuredId)?.name;
-  }, [orgConfigQuery.data?.default_invite_role_id, roleOptions]);
+  // The roles this sender may hand out, Everyone first as "No role", and
+  // the one to start on: the chapter's configured default when it is one of
+  // them, else Everyone (#422, #4546). One rule for this picker and the
+  // chapter links' (`useInviteRoleChoices`), on web and the phone alike.
+  const roleChoices = useInviteRoleChoices();
+  const roleOptions = roleChoices.choices;
+  const defaultRoleName = roleChoices.defaultRole;
 
   /**
    * Keep the picker on the chapter's configured default until the admin picks
@@ -219,35 +160,21 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         !roleOptions.some((role) => role.name === roleName)
       ) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
-        setRoleName(
-          defaultRoleName ??
-            memberRoleName ??
-            roleOptions[0]?.name ??
-            SEEDED_MEMBER_ROLE_NAME,
-        );
+        setRoleName(defaultRoleName ?? SEEDED_MEMBER_ROLE_NAME);
       }
       return;
     }
-    // Member — not `roleOptions[0]` — is the fallback when no default is
-    // configured. `roleOptions` is sorted alphabetically, so seeding off it
-    // would pre-select **Alumni** on every chapter that has not set a default
-    // (which is all of them: the column ships null with no backfill). That
-    // would hand new members the alumni lifecycle restrictions instead of
-    // Member, and it is precisely the arbitrary default this issue exists to
-    // remove — reached by a new route. Member is found by `system_key`, as the
-    // server-side fallback finds it, so a renamed Member is still the one
-    // pre-selected (`memberRoleName` above).
-    const preferred =
-      defaultRoleName ??
-      memberRoleName ??
-      roleOptions[0]?.name ??
-      SEEDED_MEMBER_ROLE_NAME;
+    // Member (Everyone), not the alphabetically first role, is the fallback
+    // when no default is configured: seeding off the sorted list would
+    // pre-select **Alumni** on every chapter that has not set one
+    // (`useInviteRoleChoices`).
+    const preferred = defaultRoleName ?? SEEDED_MEMBER_ROLE_NAME;
     // No disable directive needed here: the rule reports once per effect, and
     // the branch above already carries it.
     if (preferred !== roleName) {
       setRoleName(preferred);
     }
-  }, [defaultRoleName, hasPickedRole, memberRoleName, roleName, roleOptions]);
+  }, [defaultRoleName, hasPickedRole, roleName, roleOptions]);
 
   const rows = useMemo(
     () => listedInvites(invitesQuery.data ?? []),
@@ -423,7 +350,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         <SelectContent>
           {roleOptions.map((role) => (
             <SelectItem key={role.id} value={role.name}>
-              {role.id === everyoneRoleId ? NO_ROLE_LABEL : role.name}
+              {role.label}
             </SelectItem>
           ))}
         </SelectContent>
