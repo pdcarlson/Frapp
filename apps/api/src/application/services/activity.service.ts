@@ -52,6 +52,7 @@ import type {
   ChatMessage,
 } from '#domain/entities/chat.entity';
 import type { Event } from '#domain/entities/event.entity';
+import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import type { Member } from '#domain/entities/member.entity';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
@@ -510,20 +511,21 @@ export interface ActivityView {
 export const ARCHIVE_SECTIONS = ['events', 'tasks', 'polls'] as const;
 export type ArchiveSection = (typeof ARCHIVE_SECTIONS)[number];
 
-/**
- * What the member has finished, apart from the Activity page that lists what
- * is still live (`spec/behavior/activity.md` § Archive, #5127).
- */
 /** `GET /v1/activity/now` (`spec/behavior/activity.md` § Now, #5777). */
 export interface ActivityNow {
   /**
    * The events on right now that are the caller's to see as on: required of
-   * them, or checked in to, or made by them. The one they checked in to
-   * first, then the latest start.
+   * them, checked in to, or made by them, and every one for a holder of
+   * `events:update`; never one they are excused from. The one they checked
+   * in to first, then the latest start.
    */
   events: ActivityEvent[];
 }
 
+/**
+ * What the member has finished, apart from the Activity page that lists what
+ * is still live (`spec/behavior/activity.md` § Archive, #5127).
+ */
 export interface ActivityArchive {
   /**
    * Events that invited the caller whose check-in has closed, in the last 30
@@ -1549,17 +1551,41 @@ export class ActivityService {
       (viewerRead ??= this.readViewer(chapterId, userId, () =>
         this.rbacService.getAlumniRoleId(chapterId),
       ));
-    const [rows, permissions] = await Promise.all([
-      this.toEventRows(userId, now, events, viewer, {
-        startsBefore,
-        limit: events.length,
-      }),
-      this.rbacService.getEffectivePermissions(chapterId, userId),
-    ]);
-    // An officer who runs events sees every one on (#5777): they are the
-    // ones asked where the meeting is.
+    const permissions = await this.rbacService.getEffectivePermissions(
+      chapterId,
+      userId,
+    );
+    // An officer who runs events sees every one on (#5777), invited or not:
+    // they are the ones asked where the meeting is. The event read already
+    // lets them see any event, for editing.
     const runsEvents = can(SystemPermissions.EVENTS_UPDATE, permissions);
+    // No per-event reads: the card shows neither the code nor a per-row
+    // check-in, and this is read every minute by every open Chat. The
+    // member's own rows are read once, below.
+    const rows = await this.toEventRows(userId, now, events, viewer, {
+      startsBefore,
+      limit: events.length,
+      keepUninvited: runsEvents,
+      memberReads: false,
+    });
+    const mine = await this.ownAttendance(
+      userId,
+      rows.map((row) => row.id),
+    );
     const shown = rows
+      .flatMap((row) => {
+        const own = mine?.get(row.id);
+        // Excused is not attending: Now never says "Checked in" for it.
+        if (own?.status === 'EXCUSED') return [];
+        const present = own?.status === 'PRESENT' || own?.status === 'LATE';
+        return [
+          {
+            ...row,
+            checked_in: mine === null ? null : present,
+            checked_in_at: present ? (own?.check_in_time ?? null) : null,
+          },
+        ];
+      })
       .filter(
         (row) =>
           runsEvents ||
@@ -1573,6 +1599,33 @@ export class ActivityService {
           Date.parse(b.start_time) - Date.parse(a.start_time),
       );
     return { events: shown.slice(0, EVENTS_NOW_LIMIT) };
+  }
+
+  /**
+   * The member's own attendance rows for these events, by event id, in one
+   * read. `null` when the read fails: Now still lists the events, with
+   * whether they checked in unknown.
+   */
+  private async ownAttendance(
+    userId: string,
+    eventIds: string[],
+  ): Promise<Map<string, EventAttendance> | null> {
+    if (eventIds.length === 0) return new Map();
+    try {
+      const rows = await this.attendanceRepo.findByUserForEvents(
+        userId,
+        eventIds,
+      );
+      return new Map(rows.map((row) => [row.event_id, row]));
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-now-attendance-read',
+        message: `Now could not read attendance for user ${userId}`,
+        error,
+      });
+      return null;
+    }
   }
 
   /**
@@ -1695,11 +1748,10 @@ export class ActivityService {
       userId,
       kept.map(({ event }) => event.id),
     );
-    const statusOf = new Map(
-      attendance.map((row) => [row.event_id, row.status]),
-    );
+    const attendanceOf = new Map(attendance.map((row) => [row.event_id, row]));
     return kept.map(({ event, answer }) => {
-      const status = statusOf.get(event.id);
+      const mine = attendanceOf.get(event.id);
+      const status = mine?.status;
       return activityEventRow(event, {
         attendance:
           answer.status === 'required' && !(isAlumni && !answer.byRole)
@@ -1708,6 +1760,10 @@ export class ActivityService {
         checkInOpen: false,
         needsCode: false,
         checkedIn: status === 'PRESENT' || status === 'LATE',
+        checkedInAt:
+          status === 'PRESENT' || status === 'LATE'
+            ? (mine?.check_in_time ?? null)
+            : null,
       });
     });
   }
@@ -2593,10 +2649,22 @@ export class ActivityService {
     now: number,
     events: Event[],
     viewer: () => Promise<EventViewer>,
-    options: { startsBefore: number; limit: number },
+    options: {
+      startsBefore: number;
+      limit: number;
+      /**
+       * Keep events that don't invite the member too, as optional and with
+       * no check-in (Now, for an `events:update` holder). Their row opens the
+       * event, not chat's card, so it offers no check-in the server refuses.
+       */
+      keepUninvited?: boolean;
+      /** Read whether they checked in and whether the code is needed; default true. */
+      memberReads?: boolean;
+    },
   ): Promise<ActivityEvent[]> {
     if (events.length === 0) return [];
     const { roleIds, isAlumni } = await viewer();
+    const memberReads = options.memberReads ?? true;
 
     const kept = events
       .map((event) => ({
@@ -2606,7 +2674,7 @@ export class ActivityService {
       }))
       .filter(
         ({ event, window, answer }) =>
-          answer.status !== 'not_invited' &&
+          (options.keepUninvited || answer.status !== 'not_invited') &&
           window !== null &&
           window.closesAt > now &&
           new Date(event.start_time).getTime() <= options.startsBefore,
@@ -2626,18 +2694,26 @@ export class ActivityService {
         // event is optional and is not something to check in to.
         const alumniByDefault = isAlumni && !answer.byRole;
         const checkInOpen =
-          window !== null && window.opensAt <= now && !alumniByDefault;
+          answer.status !== 'not_invited' &&
+          window !== null &&
+          window.opensAt <= now &&
+          !alumniByDefault;
         // Both only for an event the member can check in to right now, which
         // is rarely more than one, and read together. `checked_in`: the
         // answer is what decides whether it still needs them.
         // `check_in_needs_code`: whether an officer's screen now needs the
         // code (#4808); never fails the row.
-        const [checkIn, needsCode] = checkInOpen
-          ? await Promise.all([
-              this.checkInOf(event.id, userId),
-              this.eventService.checkInNeedsCode(event, userId, new Date(now)),
-            ])
-          : [null, false];
+        const [checkIn, needsCode] =
+          checkInOpen && memberReads
+            ? await Promise.all([
+                this.checkInOf(event.id, userId),
+                this.eventService.checkInNeedsCode(
+                  event,
+                  userId,
+                  new Date(now),
+                ),
+              ])
+            : [null, false];
         return activityEventRow(event, {
           attendance:
             answer.status === 'required' && !alumniByDefault

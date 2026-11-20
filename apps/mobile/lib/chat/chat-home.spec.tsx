@@ -186,6 +186,9 @@ vi.mock("@/lib/account/own-status", () => ({
 // `GET /v1/threads` serves them; the rule picking which show runs for real.
 const allThreads = vi.hoisted(() => ({ data: [] as unknown[] }));
 
+const homeEventsNow = vi.hoisted(() => ({
+  value: { events: [] as unknown[], now: Date.now() },
+}));
 vi.mock("@repo/hooks", async () => {
   // The pure helpers run for real: the point is to catch the screen using
   // them wrongly, and a stub would decide the answer itself.
@@ -199,8 +202,9 @@ vi.mock("@repo/hooks", async () => {
     refetch,
   });
   return {
-    // The Now card's read (#5777): nothing on.
-    useEventsOnNow: () => ({ events: [], now: Date.now() }),
+    // The Now card's read (#5777): nothing on unless a test says so.
+    useEventsOnNow: () => homeEventsNow.value,
+    eventNowState: actual.eventNowState,
     canHideConversation: actual.canHideConversation,
     canSetChannelDisplayLock: actual.canSetChannelDisplayLock,
     useSetChannelDisplayLock: () => ({ mutateAsync: setDisplayLock }),
@@ -402,6 +406,7 @@ import { Toggle } from "@/components/toggle";
 import { Segmented } from "@/components/segmented";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
+import { NowCard } from "@/components/now-card";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { ErrorState, NoChapterState } from "@/components/state-block";
@@ -2664,4 +2669,33 @@ it("puts Search in the title row", () => {
   const tree = render();
   act(() => pressableLabelled(tree, "Search").props.onPress());
   expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/search");
+});
+
+describe("Chat home Now card (#5777)", () => {
+  it("puts the event on now on Chat home", () => {
+    homeEventsNow.value = {
+      events: [
+        {
+          id: "recruitment",
+          name: "Recruitment Meetings",
+          location: "Chapter room",
+          start_time: new Date(Date.now() - 40 * 60_000).toISOString(),
+          end_time: new Date(Date.now() + 20 * 60_000).toISOString(),
+          check_in_opens_minutes: 10,
+          check_in_open: true,
+          checked_in: true,
+          checked_in_at: null,
+        },
+      ],
+      now: Date.now(),
+    };
+    try {
+      const tree = render();
+      const now = tree.root.findByType(NowCard);
+      expect(screenTextOf(now)).toContain("Recruitment Meetings");
+      expect(screenTextOf(now)).toContain("Checked in");
+    } finally {
+      homeEventsNow.value = { events: [], now: Date.now() };
+    }
+  });
 });

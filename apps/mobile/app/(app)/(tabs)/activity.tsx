@@ -45,6 +45,7 @@ import {
   findActivityTaskRow,
   useActivity,
   useEventsOnNow,
+  nowCardEventIds,
   withoutEvents,
   useActivityArchive,
   useActivitySnoozeWake,
@@ -301,16 +302,16 @@ export default function ActivityScreen() {
   // screen's own clock, so a snoozed row comes back within a tick of its
   // time (#4982). The week card counts from the whole read: snoozing
   // something doesn't finish it.
-  // An event on right now is the Now card's at the top (#5777), so To do,
-  // the week strip and the week card's Next leave it out rather than say it
-  // a second and third time.
+  // The event the Now card shows is at the top (#5777), so To do, the week
+  // card's Next and the Frapp card leave it out rather than say it twice. One
+  // under "+N more on now" keeps its row, since the card doesn't open it.
   const { events: onNow } = useEventsOnNow();
   const visible = useMemo(
     () =>
       activity.data
         ? withoutEvents(
             activityAwake(activity.data, now),
-            onNow.map((event) => event.id),
+            nowCardEventIds(onNow),
           )
         : undefined,
     [activity.data, now, onNow],
@@ -462,7 +463,7 @@ export default function ActivityScreen() {
       withoutWeekNext(
         nudgeRead.data,
         agenda?.next?.key ?? null,
-        onNow.map((event) => event.id),
+        nowCardEventIds(onNow),
       ),
     [nudgeRead.data, agenda?.next?.key, onNow],
   );
@@ -699,9 +700,12 @@ export default function ActivityScreen() {
         />
       );
     }
+    // Now has its own read (#5777): a meeting on stays at the top while the
+    // page's read loads or fails.
     if (activity.isPending) {
       return (
         <>
+          <NowCard />
           <SkeletonRegion label="Loading activity" flush>
             <View style={styles.body}>
               <WeekStripSkeleton />
@@ -732,6 +736,7 @@ export default function ActivityScreen() {
     if (activity.isError && !activity.data) {
       return (
         <>
+          <NowCard />
           <ErrorState
             title="Couldn't load your activity"
             body={describeLoadFailure(activity.error)}

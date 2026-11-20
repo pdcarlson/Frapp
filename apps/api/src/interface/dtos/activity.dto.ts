@@ -531,7 +531,7 @@ export class ActivityEventDto implements ActivityEvent {
     format: 'date-time',
     nullable: true,
     description:
-      'When the caller checked in, read with `checked_in`. Null otherwise, and when the attendance row has no time.',
+      'When the caller checked in, read with `checked_in`. Null when they have not, when it was not read, and when the attendance row has no time.',
   })
   checked_in_at: string | null;
 
@@ -1263,7 +1263,7 @@ export class ActivityNowDto implements ActivityNow {
   @ApiProperty({
     type: [ActivityEventDto],
     description:
-      'Events on right now (from when check-in opens until the end, whether or not the caller checked in) that invite the caller and are theirs to see as on: required of them, checked in to, or made by them. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off.',
+      'Events on right now (from when check-in opens until the end, whether or not the caller checked in) that are the caller’s to see as on: invited and required of them, checked in to, or made by them, and every event on for a holder of `events:update`; never one the caller is excused from. `checked_in` and `checked_in_at` come from their attendance row: present or late counts as checked in. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off.',
   })
   events: ActivityEventDto[];
 }

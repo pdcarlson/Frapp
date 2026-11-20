@@ -3,6 +3,7 @@ import {
   eventNowPill,
   eventNowState,
   eventsOnNow,
+  nowCardEventIds,
   withoutEvents,
   type EventNow,
 } from "./use-events-now";
@@ -86,5 +87,14 @@ describe("withoutEvents", () => {
     expect(left.coming_up.map((event) => event.id)).toEqual(["chapter"]);
     expect(left.week).toBe(activity.week);
     expect(withoutEvents(activity, [])).toBe(activity);
+  });
+});
+
+describe("nowCardEventIds", () => {
+  it("is the card's lead only, so one under +N more keeps its To do row", () => {
+    expect(nowCardEventIds([row(), row({ id: "chapter" })])).toEqual([
+      "recruitment",
+    ]);
+    expect(nowCardEventIds([])).toEqual([]);
   });
 });

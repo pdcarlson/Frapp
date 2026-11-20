@@ -40,6 +40,5 @@ export const EVENT_NOW_COPY = {
   ended: (clock: string) => `Ended ${clock}`,
   checkedIn: (clock?: string | null) =>
     clock ? `Checked in ${clock}` : "Checked in",
-  checkIn: "Check in",
   more: (count: number) => `+${count} more on now`,
 } as const;

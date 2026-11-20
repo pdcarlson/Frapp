@@ -5021,7 +5021,7 @@ export interface paths {
         };
         /**
          * Get the events on right now for the caller
-         * @description The Now card on Chat, Activity and the event (`spec/behavior/activity.md` § Now). An event is on from when its check-in opens until its end, whether or not the caller checked in. Listed when it invites the caller and requires them, they checked in to it, or they made it; the one they checked in to first, then the latest start, at most 5. Rows are the shape of `coming_up`. Its own small read, so a screen that shows only Now does not read the whole page. Empty while the chapter has Events off.
+         * @description The Now card on Chat, Activity and the event (`spec/behavior/activity.md` § Now). An event is on from when its check-in opens until its end, whether or not the caller checked in. Listed when it invites the caller and requires them, they checked in to it, or they made it, and every event on for a holder of `events:update`; never one the caller is excused from. The one they checked in to first, then the latest start, at most 5. Rows are the shape of `coming_up`. Its own small read, so a screen that shows only Now does not read the whole page. Empty while the chapter has Events off.
          */
         get: operations["ActivityController_getNow_v1"];
         put?: never;
@@ -11445,7 +11445,7 @@ export interface components {
             checked_in: boolean | null;
             /**
              * Format: date-time
-             * @description When the caller checked in, read with `checked_in`. Null otherwise, and when the attendance row has no time.
+             * @description When the caller checked in, read with `checked_in`. Null when they have not, when it was not read, and when the attendance row has no time.
              */
             checked_in_at: string | null;
             /**
@@ -11627,7 +11627,7 @@ export interface components {
             unread_since: string | null;
         };
         ActivityNowDto: {
-            /** @description Events on right now (from when check-in opens until the end, whether or not the caller checked in) that invite the caller and are theirs to see as on: required of them, checked in to, or made by them. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off. */
+            /** @description Events on right now (from when check-in opens until the end, whether or not the caller checked in) that are the caller’s to see as on: invited and required of them, checked in to, or made by them, and every event on for a holder of `events:update`; never one the caller is excused from. `checked_in` and `checked_in_at` come from their attendance row: present or late counts as checked in. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off. */
             events: components["schemas"]["ActivityEventDto"][];
         };
         ActivityArchiveDto: {

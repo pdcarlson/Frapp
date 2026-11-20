@@ -1128,3 +1128,38 @@ describe("EventDetailSheet excuses (#3735)", () => {
     expect(screen.getByTestId("excuse-review")).toBeInTheDocument();
   });
 });
+
+describe("EventDetailSheet Now pill (#5777)", () => {
+  it("says the event is on until its end, and nothing for one long over", () => {
+    const { unmount } = render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{
+          ...baseEvent,
+          start_time: new Date(Date.now() - 40 * 60_000).toISOString(),
+          end_time: new Date(Date.now() + 20 * 60_000).toISOString(),
+        }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("event-now-pill")).toHaveTextContent(
+      /^Now · until /,
+    );
+    unmount();
+
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("event-now-pill")).toBeNull();
+  });
+});

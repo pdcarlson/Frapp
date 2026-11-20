@@ -8,7 +8,8 @@ import {
   throwUnlessOk,
 } from "@repo/api-sdk";
 import type { components } from "@repo/api-sdk";
-import { useFrappClient } from "./use-frapp-client";
+import { eventsNowKey } from "./use-events-now";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { invalidatePointReads } from "./use-points";
 
 export interface AttendanceOptions {
@@ -174,6 +175,7 @@ export interface CheckInVariables {
 export function useCheckIn() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     // Rooted at `attendance`, the root `useAttendance` reads, so a failed
     // write reports to Sentry under its feature, not `unkeyed` (#3393). The
@@ -196,6 +198,12 @@ export function useCheckIn() {
       queryClient.invalidateQueries({ queryKey: ["attendance", eventId] });
       // The check-in awards the event's points in the same transaction.
       void invalidatePointReads(queryClient);
+      // The Now card says "Checked in 9:24 PM" now, not at the next poll.
+      if (chapterId) {
+        void queryClient.invalidateQueries({
+          queryKey: eventsNowKey(chapterId),
+        });
+      }
     },
     // A 409 is the member already on the list (a second scan, or a check-in
     // from another device): re-read their own row so the event page shows

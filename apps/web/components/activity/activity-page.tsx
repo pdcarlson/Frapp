@@ -97,6 +97,7 @@ import {
   useActiveChapterId,
   useActivity,
   useEventsOnNow,
+  nowCardEventIds,
   withoutEvents,
   useActivityArchive,
   useActivityRecap,
@@ -975,15 +976,16 @@ export function ActivityPage() {
   // page's own clock, so a snoozed row comes back within a tick of its time
   // (#4982). The week card counts from the whole read: snoozing something
   // doesn't finish it.
-  // An event on right now is the Now card's at the top (#5777), so To do and
-  // the week card's Next leave it out rather than say it twice.
+  // The event the Now card shows is at the top (#5777), so To do, the week
+  // card's Next and the Frapp card leave it out rather than say it twice. One
+  // under "+N more on now" keeps its row, since the card doesn't open it.
   const { events: onNow } = useEventsOnNow();
   const visible = useMemo(
     () =>
       activity.data
         ? withoutEvents(
             activityAwake(activity.data, now),
-            onNow.map((event) => event.id),
+            nowCardEventIds(onNow),
           )
         : undefined,
     [activity.data, now, onNow],
@@ -1138,19 +1140,29 @@ export function ActivityPage() {
   }
   // Held until the viewer is known (as the Events page holds its view): the
   // panel a row opens draws for the viewer.
+  // Now has its own read (#5777): a meeting on stays at the top while the
+  // page's read loads or fails.
   if (activity.isPending || (userLoading && !isOffline)) {
-    return <ActivityPageSkeleton />;
+    return (
+      <div className="space-y-8">
+        <NowCard />
+        <ActivityPageSkeleton />
+      </div>
+    );
   }
   // Only with nothing to show: a refetch that fails (this page refetches after
   // every action) keeps the list it already has rather than replacing it, and
   // the open panel with it, by an error page. The same guard as the task board.
   if (activity.isError && !activity.data) {
     return (
-      <ErrorState
-        title="Couldn't load your activity"
-        description={describeLoadFailure(activity.error)}
-        onRetry={() => void activity.refetch()}
-      />
+      <div className="space-y-8">
+        <NowCard />
+        <ErrorState
+          title="Couldn't load your activity"
+          description={describeLoadFailure(activity.error)}
+          onRetry={() => void activity.refetch()}
+        />
+      </div>
     );
   }
 

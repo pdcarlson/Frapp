@@ -638,7 +638,13 @@ describe("Activity screen (#3897)", () => {
       activity.value = {
         ...activity.value,
         data: read({
-          coming_up: [eventIn(0.1, { check_in_open: true })],
+          coming_up: [
+            eventIn(0.1, {
+              check_in_open: true,
+              // Happening now runs until the end (#5777).
+              end_time: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+            }),
+          ],
         }),
       };
       const tree = render();
@@ -663,7 +669,8 @@ describe("Activity screen (#3897)", () => {
       const live = eventIn(-0.5, {
         end_time: new Date(Date.now() + 1_800_000).toISOString(),
         check_in_open: true,
-        checked_in: true,
+        // Not checked in: Activity alone would list it as Happening now.
+        checked_in: false,
       });
       activity.value = {
         ...activity.value,
@@ -674,10 +681,13 @@ describe("Activity screen (#3897)", () => {
         const tree = render();
         const now = tree.root.findByType(NowCard);
         expect(drawnText(now)).toContain("Chapter");
-        expect(drawnText(now)).toContain("Checked in");
+        expect(drawnText(now)).toContain("Check-in is open");
         const card = tree.root.findByType(WeekCard);
         expect(card.props.next?.title).not.toBe("Chapter");
         expect(drawnText(card)).not.toContain("Happening now");
+        // Nowhere else on the page: the Now card holds every mention.
+        const count = (text: string) => text.split("Chapter").length - 1;
+        expect(count(screenText(tree))).toBe(count(drawnText(now)));
       } finally {
         eventsNow.value = { events: [], now: Date.now() };
       }

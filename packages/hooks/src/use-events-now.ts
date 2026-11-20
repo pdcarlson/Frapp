@@ -17,9 +17,9 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 export type EventNow = components["schemas"]["ActivityEventDto"];
 
 /**
- * The key for `GET /v1/activity/now`. Under the Activity read's chapter key,
- * so whatever invalidates Activity after a check-in (or a new event) brings
- * Now along without being taught about it.
+ * The key for `GET /v1/activity/now`, under Activity's chapter key so a
+ * chapter switch or sign-out clears it with the rest. A check-in re-reads it
+ * (`useCheckIn`); otherwise it is polled.
  */
 export const eventsNowKey = (chapterId: string) =>
   [...activityKeys.chapter(chapterId), "now"] as const;
@@ -96,6 +96,15 @@ export function withoutEvents(
     ...activity,
     coming_up: activity.coming_up.filter((event) => !gone.has(event.id)),
   };
+}
+
+/**
+ * The ids of what the Now card shows by itself: its lead (#5777). Activity
+ * leaves these out of To do, the week card and the Frapp card, and nothing
+ * more: an event under "+N more on now" keeps its row and its Check in.
+ */
+export function nowCardEventIds(events: readonly EventNow[]): string[] {
+  return events.slice(0, 1).map((event) => event.id);
 }
 
 /**
