@@ -8,6 +8,9 @@ import {
   AI_SUGGESTION_COPY,
   TASK_AUDIENCE_COPY,
   TASK_AUDIENCE_EVERYONE,
+  TASK_NO_DUE_DATE_LABEL,
+  TASK_REPEAT_NEEDS_DUE_DATE,
+  noTaskRepeatDraft,
   TASK_PHOTOS_MAX,
   TASK_TITLE_MAX_LENGTH,
   taskFirstDue,
@@ -194,6 +197,9 @@ export function TaskForm({
   // A task for everyone (#4295 step 3) can't repeat or carry photos yet, so
   // the form hides both and sends neither.
   const forEveryone = draft.assigneeId === TASK_AUDIENCE_EVERYONE;
+  // Whether Due may be left empty for no due date (#5761): not on a copy of
+  // a repeating task, which keeps its day.
+  const dueClearable = !editing?.repeats;
   const offersPhotos = !suggestion && !forEveryone;
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -204,7 +210,8 @@ export function TaskForm({
       title: !trimmed,
       titleTooLong: trimmed.length > TASK_TITLE_MAX_LENGTH,
       assignee: who ? !who.value : !draft.assigneeId,
-      due: !draft.dueDate,
+      // A task can have no due date (#5761), except a repeating copy.
+      due: !draft.dueDate && !dueClearable,
       // An edit keeps the task's own time even once it has passed (#4296),
       // and an accepted suggestion keeps the one the minutes gave it.
       passed: dueEntryPassed(
@@ -223,6 +230,11 @@ export function TaskForm({
     const showRepeat =
       !suggestion && !forEveryone && (!editing || editing.repeats);
     const firstDue = taskFirstDue(draft.dueDate, draft.repeat.timeZone);
+    if (showRepeat && !draft.dueDate && draft.repeat.preset !== "NONE") {
+      setMissing((prev) => ({ ...prev, repeat: TASK_REPEAT_NEEDS_DUE_DATE }));
+      edit({ showMore: true });
+      return;
+    }
     const repeat =
       showRepeat && firstDue ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
     if (repeat && !repeat.ok) {
@@ -246,8 +258,9 @@ export function TaskForm({
       title: trimmed,
       description: draft.description.trim() || undefined,
       assignee_id: draft.assigneeId,
-      // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
-      ...dueEntryFields(draft.dueDate),
+      // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003); empty is
+      // no due date (#5761).
+      ...(draft.dueDate ? dueEntryFields(draft.dueDate) : { due_date: null }),
       subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
       point_reward: suggestion ? undefined : parseGuardedInt(draft.points),
       ...(suggestion ? {} : { proof_kind: draft.proofKind }),
@@ -446,13 +459,18 @@ export function TaskForm({
             ref={dueRef}
             id={`${ids}-due`}
             className={field}
-            placeholder="Friday 5pm"
+            placeholder={dueClearable ? TASK_NO_DUE_DATE_LABEL : "Friday 5pm"}
             timeClassName={field}
             missing={missing.due}
             passed={missing.passed}
             value={draft.dueDate}
             onChange={(value) => {
-              edit({ dueDate: value });
+              // No due date can't repeat (#5761): clearing it drops the repeat.
+              edit(
+                value || !dueClearable
+                  ? { dueDate: value }
+                  : { dueDate: value, repeat: noTaskRepeatDraft() },
+              );
               setMissing((prev) => ({
                 ...prev,
                 due: prev.due && !value,
@@ -504,7 +522,18 @@ export function TaskForm({
               {TASK_AUDIENCE_COPY.noRepeat}
             </p>
           ) : null}
-          {showRepeat ? (
+          {showRepeat && !draft.dueDate ? (
+            <p
+              className={cn(
+                "text-caption",
+                missing.repeat
+                  ? "text-destructive-text"
+                  : "text-muted-foreground",
+              )}
+            >
+              {TASK_REPEAT_NEEDS_DUE_DATE}
+            </p>
+          ) : showRepeat ? (
             <div className="grid gap-1">
               <RepeatOptions
                 forTasks

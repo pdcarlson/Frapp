@@ -1178,7 +1178,7 @@ describe("TasksBoard quick add (2026-11-18)", () => {
     expect(titleField()).toHaveFocus();
   });
 
-  it("flags who and a due date on Enter, and sends nothing", async () => {
+  it("flags who on Enter, and sends nothing", async () => {
     render(<TasksBoard />);
 
     await userEvent.type(titleField(), "Order pizza{Enter}");
@@ -1186,7 +1186,8 @@ describe("TasksBoard quick add (2026-11-18)", () => {
     expect(createTaskMutate).not.toHaveBeenCalled();
     const alert = within(addForm()).getByRole("alert");
     expect(alert).toHaveTextContent("Pick who it's for.");
-    expect(alert).toHaveTextContent(/pick a due date/i);
+    // A task can have no due date (#5761).
+    expect(alert).not.toHaveTextContent(/due date/i);
     expect(
       within(addForm()).getByRole("button", { name: /^who/i }),
     ).toHaveFocus();
@@ -1304,16 +1305,19 @@ describe("TasksBoard quick add (2026-11-18)", () => {
     expect(sent.due_date).toBe(`${new Date().getFullYear()}-12-31`);
   });
 
-  it("focuses the due field when it is the one thing missing", async () => {
+  it("creates a task with no due date when Due is left empty (#5761)", async () => {
     render(<TasksBoard />);
     await pickWho(/Cole Martin/);
     await userEvent.type(titleField(), "Order pizza{Enter}");
 
-    expect(await within(addForm()).findByRole("alert")).toHaveTextContent(
-      /pick a due date/i,
-    );
-    expect(screen.getByLabelText("Due date")).toHaveFocus();
-    expect(createTaskMutate).not.toHaveBeenCalled();
+    await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
+    expect(createTaskMutate.mock.calls[0]![0]).toEqual({
+      title: "Order pizza",
+      description: undefined,
+      assignee_id: "u-other",
+      point_reward: undefined,
+    });
+    expect(within(addForm()).queryByRole("alert")).toBeNull();
   });
 
   it("keeps what was typed when the create fails", async () => {
@@ -1892,6 +1896,34 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     expect(screen.queryByRole("button", { name: "Assignee" })).toBeNull();
   });
 
+  it("puts a task with no due date under No due date, after Later (#5761)", () => {
+    permissionsRef.current = ["members:view"];
+    tasksRef.current = [
+      ...ROWS.filter((row) => row.assignee_id === ME),
+      task("someday", "Write the chapter history", ME, 0, "TODO", {
+        due_date: null,
+      }),
+    ];
+    render(<TasksBoard />);
+
+    expect(titlesIn("No due date")).toEqual(["Write the chapter history"]);
+    expect(titlesIn("Later")).toEqual(["Plan formal"]);
+    const headings = screen
+      .getAllByRole("region")
+      .map((section) => section.getAttribute("aria-labelledby"));
+    expect(headings.indexOf("tasks-column-none")).toBeGreaterThan(
+      headings.indexOf("tasks-column-later"),
+    );
+  });
+
+  it("draws no No due date group when every task has a date (#5761)", () => {
+    permissionsRef.current = ["members:view"];
+    tasksRef.current = ROWS.filter((row) => row.assignee_id === ME);
+    render(<TasksBoard />);
+
+    expect(screen.queryByRole("region", { name: "No due date" })).toBeNull();
+  });
+
   it("opens an officer on the chapter's board, and My tasks keeps only theirs", async () => {
     const user = userEvent.setup();
     render(<TasksBoard />);
@@ -2119,7 +2151,9 @@ describe("TasksBoard repeating tasks (#5119)", () => {
 
   it("says on the tile how it repeats and when it comes next", () => {
     render(<TasksBoard />);
-    expect(screen.getByText("Every Monday · next November 23")).toBeInTheDocument();
+    expect(
+      screen.getByText("Every Monday · next November 23"),
+    ).toBeInTheDocument();
   });
 
   it("says nothing once the series has ended", () => {

@@ -196,6 +196,13 @@ describe("readTaskPayload", () => {
     expect(readTaskPayload(withPayload(undefined))).toBe(null);
   });
 
+  it("reads a card for a task with no due date (#5761)", () => {
+    expect(readTaskPayload(withPayload({ ...TASK, due_date: null }))).toEqual({
+      ...TASK,
+      due_date: null,
+    });
+  });
+
   it("reads a due time, and none from a card posted before times", () => {
     const at = "2026-11-07T22:00:00.000Z";
     expect(readTaskPayload(withPayload({ ...TASK, due_at: at }))?.due_at).toBe(

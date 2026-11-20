@@ -3,6 +3,7 @@ import {
   actionStatus,
   canEditCardTask,
   canReadCardTask,
+  cardTaskDue,
   readEditableCardTask,
   isTaskStatus,
   readLiveTask,
@@ -512,6 +513,12 @@ describe("readEditableCardTask", () => {
     subtasks: [],
   };
 
+  it("opens a task with no due date (#5761)", () => {
+    expect(
+      readEditableCardTask({ ...raw, due_date: null, due_at: null }),
+    ).toMatchObject({ due_date: null, due_at: null });
+  });
+
   it("reads what the edit form opens on", () => {
     expect(readEditableCardTask(raw)).toEqual({
       id: "task-1",
@@ -576,5 +583,18 @@ describe("readEditableCardTask", () => {
     expect(readEditableCardTask(undefined)).toBeNull();
     expect(readEditableCardTask({ ...raw, assignee_id: null })).toBeNull();
     expect(readEditableCardTask({ ...raw, due_date: "" })).toBeNull();
+  });
+});
+
+describe("cardTaskDue (#5761)", () => {
+  const payload = { due_date: "2026-11-14", due_at: null };
+
+  it("reads no due date once the live task says it has none", () => {
+    expect(cardTaskDue({ due: null }, payload)).toBeNull();
+  });
+
+  it("falls back to the posted due until the live task is read", () => {
+    expect(cardTaskDue(null, payload)).toBe("2026-11-14");
+    expect(cardTaskDue({ due: undefined }, payload)).toBe("2026-11-14");
   });
 });

@@ -9,7 +9,8 @@ export type BoardTask = {
   description: string | null;
   assignee_id: string;
   created_by: string;
-  due_date: string;
+  /** Null for a task with no due date (#5761). */
+  due_date: string | null;
   /** The moment it is due, when it has a time of day (#4003). */
   due_at?: string | null;
   /** Its checklist, in order (#4003). */

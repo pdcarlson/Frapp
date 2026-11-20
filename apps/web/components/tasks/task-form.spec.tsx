@@ -110,7 +110,8 @@ describe("TaskForm (#3865, #3983)", () => {
     const { onPost } = renderDialog({ prefill: { title: "Sweep" } });
     fireEvent.click(create());
     expect(await screen.findByText("Pick an assignee.")).toBeInTheDocument();
-    expect(screen.getByText("Pick a due date.")).toBeInTheDocument();
+    // A task can have no due date (#5761), so an empty Due isn't missing.
+    expect(screen.queryByText("Pick a due date.")).toBeNull();
     // Outlined like the fields beside it, not only named under it (#3983).
     expect(screen.getByLabelText("Assignee")).toHaveAttribute(
       "aria-invalid",

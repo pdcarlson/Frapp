@@ -379,11 +379,12 @@ export function dueEntryFields(entry: string): {
  * time of its `due_at` when it has one. The inverse of {@link dueEntryFields}.
  */
 export function dueEntryFromTask(task: {
-  due_date: string;
+  due_date: string | null;
   due_at?: string | null;
 }): string {
   const at = task.due_at ? new Date(task.due_at) : null;
-  if (!at || Number.isNaN(at.getTime())) return task.due_date;
+  // An empty entry is a task with no due date (#5761).
+  if (!at || Number.isNaN(at.getTime())) return task.due_date ?? "";
   return `${localIsoDate(at)}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 

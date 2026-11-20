@@ -30,6 +30,8 @@ import {
   TASK_PROOF_KINDS,
   TASK_PROOF_KIND_HINTS,
   TASK_PROOF_KIND_LABELS,
+  TASK_NO_DUE_DATE_LABEL,
+  TASK_REPEAT_NEEDS_DUE_DATE,
   TASK_SERIES_SCOPE_COPY,
   TASK_TITLE_MAX_LENGTH,
   noTaskRepeatDraft,
@@ -195,13 +197,14 @@ function MoreMenu({
 
 /** "Thursday, November 20 at 5 PM", or "Thursday, November 20". */
 function writtenDue(task: {
-  due_date: string;
+  due_date: string | null;
   due_at?: string | null;
 }): string {
+  if (!task.due_date && !task.due_at) return TASK_NO_DUE_DATE_LABEL;
   const at = task.due_at
     ? new Date(task.due_at)
-    : parseBareDateLocalNoon(task.due_date);
-  if (!at || Number.isNaN(at.getTime())) return task.due_date;
+    : parseBareDateLocalNoon(task.due_date ?? "");
+  if (!at || Number.isNaN(at.getTime())) return task.due_date ?? "";
   const now = new Date();
   const day = at.toLocaleDateString(undefined, {
     weekday: "long",
@@ -453,7 +456,13 @@ function TaskPanelBody({
             </span>
           )}
         </FieldRow>
-        <DueRow task={task} editable={editable} onSave={save} />
+        <DueRow
+          task={task}
+          editable={editable}
+          // A repeating copy keeps its day (#5761).
+          canClear={!task.series}
+          onSave={save}
+        />
         <PointsRow
           task={task}
           editable={editable}
@@ -839,12 +848,15 @@ export function TitleField({
 export function DueRow({
   task,
   editable,
+  canClear,
   onSave,
 }: {
-  task: { due_date: string; due_at?: string | null };
+  task: { due_date: string | null; due_at?: string | null };
   editable: boolean;
+  /** Whether the field may be emptied to No due date (#5761). */
+  canClear: boolean;
   onSave: (
-    body: { due_date: string; due_at: string | null },
+    body: { due_date: string | null; due_at: string | null },
     options: { movesDay: boolean },
   ) => Promise<boolean>;
 }) {
@@ -852,10 +864,11 @@ export function DueRow({
   const [draft, setDraft] = useState<string | null>(null);
   const [problem, setProblem] = useState<"missing" | "passed" | null>(null);
   const shown = writtenDue(task);
+  const none = stored === "";
   if (!editable) {
     return (
       <FieldRow label="Due">
-        <StaticValue>{shown}</StaticValue>
+        <StaticValue muted={none}>{shown}</StaticValue>
       </FieldRow>
     );
   }
@@ -864,7 +877,7 @@ export function DueRow({
       <FieldRow label="Due">
         <button
           type="button"
-          className={valueButtonClass}
+          className={cn(valueButtonClass, none && "text-muted-foreground")}
           aria-label={`Due: ${shown}`}
           onClick={() => setDraft(stored)}
         >
@@ -881,7 +894,7 @@ export function DueRow({
           setProblem(null);
         }}
         onCommit={() => {
-          if (!draft) {
+          if (!draft && !canClear) {
             setProblem("missing");
             return;
           }
@@ -893,13 +906,15 @@ export function DueRow({
             setProblem("passed");
             return;
           }
-          const fields = dueEntryFields(draft);
+          // An emptied field takes the due date off (#5761).
+          const fields = draft ? dueEntryFields(draft) : null;
+          const dueDate = fields?.due_date ?? null;
           const typed = draft;
           setDraft(null);
           setProblem(null);
           void onSave(
-            { due_date: fields.due_date, due_at: fields.due_at ?? null },
-            { movesDay: movesDayTo(task, fields.due_date) },
+            { due_date: dueDate, due_at: fields?.due_at ?? null },
+            { movesDay: movesDayTo(task, dueDate) },
           ).then((ok) => {
             if (!ok) setDraft(typed);
           });
@@ -908,7 +923,7 @@ export function DueRow({
         <DueDateField
           autoFocus
           aria-label="Due date"
-          placeholder="Friday 5pm"
+          placeholder={canClear ? TASK_NO_DUE_DATE_LABEL : "Friday 5pm"}
           value={draft}
           missing={problem === "missing"}
           passed={problem === "passed"}
@@ -1012,6 +1027,14 @@ function RepeatRow({
     return (
       <FieldRow label="Repeat">
         <StaticValue muted>{TASK_AUDIENCE_COPY.noRepeat}</StaticValue>
+      </FieldRow>
+    );
+  }
+  if (!task.series && !task.due_date && !task.due_at) {
+    // A repeat counts from the due day (#5761).
+    return (
+      <FieldRow label="Repeat">
+        <StaticValue muted>{TASK_REPEAT_NEEDS_DUE_DATE}</StaticValue>
       </FieldRow>
     );
   }

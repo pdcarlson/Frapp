@@ -31,7 +31,8 @@ export interface EditableTask {
   title: string;
   description: string | null;
   assignee_id: string;
-  due_date: string;
+  /** Null for a task with no due date (#5761). */
+  due_date: string | null;
   due_at?: string | null;
   point_reward: number | null;
   /** The stored status: a new assignee starts anything past To do over. */
@@ -52,15 +53,20 @@ export interface EditableTask {
  * day), so a time change seen from another zone isn't a move (#5119).
  */
 function movesDay(task: EditableTask, input: TaskInput): boolean {
-  return movesDayTo(task, input.due_date);
+  return movesDayTo(task, input.due_date ?? null);
 }
 
-/** Whether a new `due_date` is another day than the task's, read as above. */
+/**
+ * Whether a new `due_date` is another day than the task's, read as above.
+ * Adding or taking off a due date (#5761) is a move too.
+ */
 export function movesDayTo(
-  task: { due_date: string; due_at?: string | null },
-  dueDate: string,
+  task: { due_date: string | null; due_at?: string | null },
+  dueDate: string | null,
 ): boolean {
-  const before = dueEntryFields(dueEntryFromTask(task)).due_date;
+  const entry = dueEntryFromTask(task);
+  const before = entry ? dueEntryFields(entry).due_date : null;
+  if (before === null || dueDate === null) return before !== dueDate;
   return dueDate.slice(0, 10) !== before.slice(0, 10);
 }
 
@@ -113,11 +119,10 @@ export function taskEditFrom(task: EditableTask, input: TaskInput): TaskEdit {
   const storedAt = task.due_at ? new Date(task.due_at).toISOString() : null;
   // A timed task's day is its time's day: an unchanged `due_at` is an
   // unchanged due, even read where the zone puts it on another day.
-  if (
-    dueAt !== storedAt ||
-    (dueAt === null && input.due_date !== task.due_date)
-  ) {
-    body.due_date = input.due_date;
+  // Null is no due date (#5761).
+  const dueDate = input.due_date ?? null;
+  if (dueAt !== storedAt || (dueAt === null && dueDate !== task.due_date)) {
+    body.due_date = dueDate;
     body.due_at = dueAt;
   }
   const points = input.point_reward || null;

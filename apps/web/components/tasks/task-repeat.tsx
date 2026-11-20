@@ -17,14 +17,15 @@ export function TaskRepeatLine({
   next = false,
 }: {
   task: {
-    due_date: string;
+    due_date: string | null;
     due_at?: string | null;
     series?: TaskSeriesLine | null;
   };
   next?: boolean;
 }) {
   const due =
-    taskFirstDue(task.due_date) ?? (task.due_at ? new Date(task.due_at) : null);
+    (task.due_date ? taskFirstDue(task.due_date) : null) ??
+    (task.due_at ? new Date(task.due_at) : null);
   const line = due ? taskSeriesLine(task.series, due, { next }) : null;
   if (!line) return null;
   return (

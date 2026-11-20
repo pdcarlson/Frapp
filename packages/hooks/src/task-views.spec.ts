@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  compareTasksByDue,
-  myTasksGroup,
-  taskDueBucket,
-} from "./task-views";
+import { compareTasksByDue, myTasksGroup, taskDueBucket } from "./task-views";
 
 // Thursday, Nov 12 2026, noon local.
 const NOW = new Date(2026, 10, 12, 12);
@@ -76,6 +72,27 @@ describe("taskDueBucket (#4295 step 5)", () => {
   });
 });
 
+describe("a task with no due date (#5761)", () => {
+  it("is in No due date whatever the day, and never overdue", () => {
+    expect(taskDueBucket({ due_date: null, status: "TODO" }, NOW)).toBe("none");
+    expect(myTasksGroup({ due_date: null, status: "IN_PROGRESS" }, NOW)).toBe(
+      "none",
+    );
+  });
+
+  it("sorts after every dated task", () => {
+    const dated = {
+      title: "z",
+      due_date: "2027-06-01",
+      due_at: null,
+      status: "TODO" as const,
+    };
+    const undated = { ...dated, title: "a", due_date: null };
+    expect(compareTasksByDue(undated, dated)).toBe(1);
+    expect(compareTasksByDue(dated, undated)).toBe(-1);
+  });
+});
+
 describe("myTasksGroup", () => {
   it("folds overdue into Today", () => {
     expect(
@@ -106,7 +123,12 @@ describe("compareTasksByDue", () => {
     const rows = [
       task("b untimed", "2026-11-12"),
       task("a untimed", "2026-11-12"),
-      task("timed", "2026-11-12", "TODO", new Date(2026, 10, 12, 15).toISOString()),
+      task(
+        "timed",
+        "2026-11-12",
+        "TODO",
+        new Date(2026, 10, 12, 15).toISOString(),
+      ),
       task("late", "2026-11-20", "OVERDUE"),
       task("earlier day", "2026-11-11"),
     ];

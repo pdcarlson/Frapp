@@ -1024,7 +1024,7 @@ export const TASK_SERIES_SCOPE_COPY = {
  * day there, so only the time travels: the server reads the time of day
  * from `due_at` and refuses any `due_date` but the open copy's own.
  */
-export function taskSeriesBody<T extends { due_date?: string }>(
+export function taskSeriesBody<T extends { due_date?: string | null }>(
   body: T,
 ): Omit<T, "due_date" | "scope"> & { scope: "series" } {
   const rest = { ...body, scope: "series" as const };

@@ -276,11 +276,13 @@ describe("parseTaskArgs", () => {
     expect(r.ok).toBe(false);
   });
 
-  it("requires a due date", () => {
+  it("makes a task with no due date when none is typed (#5761)", () => {
     const r = parseTaskArgs('"Task" @alice');
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.error).toMatch(/due date/i);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.dueDate).toBeNull();
+    expect(r.value.dueAt).toBeNull();
+    expect(r.value.pointReward).toBeNull();
   });
 
   // Monday, 9 November 2026.
@@ -332,7 +334,9 @@ describe("parseTaskArgs", () => {
     const r = parseTaskArgs('"Task" @alice soon', NOW);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error).toBe("Add a due date, like 11/14 or Friday");
+    expect(r.error).toBe(
+      "That due date can't be read. Try 11/14 or Friday, or leave it off",
+    );
     expect(parseTaskArgs('"Task" @alice 14', NOW).ok).toBe(false);
   });
 

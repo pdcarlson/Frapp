@@ -172,7 +172,8 @@ const COLUMNS: {
 type TaskGroup = {
   id: string;
   label: string;
-  empty: string;
+  /** Null: the group is drawn only when it holds a task (No due date, #5761). */
+  empty: string | null;
   tasks: Task[];
   /** Tasks for everyone drawn in this lane, ahead of its tasks. */
   groupTiles?: GroupTileData[];
@@ -1273,8 +1274,11 @@ export function TasksBoard() {
                 const tiles = group.groupTiles ?? [];
                 const count = group.tasks.length + tiles.length;
                 // In List, a group with nothing in it draws nothing: four
-                // empty headings would push the work down the page.
-                if (!isGrid && count === 0) return null;
+                // empty headings would push the work down the page. No due
+                // date (#5761) draws nothing empty in Board either.
+                if ((!isGrid || group.empty === null) && count === 0) {
+                  return null;
+                }
                 const long =
                   !isGrid &&
                   !expandedGroups.has(group.id) &&

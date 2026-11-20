@@ -28,6 +28,7 @@ import {
 } from "@/components/tasks/task-photo";
 import {
   TASK_AUDIENCE_COPY,
+  TASK_REPEAT_NEEDS_DUE_DATE,
   TASK_FOLLOWER_COPY,
   noTaskRepeatDraft,
   taskFirstDue,
@@ -45,7 +46,8 @@ import { WhoPicker } from "@/components/tasks/who-picker";
 type NewTaskBody = {
   title: string;
   description?: string;
-  due_date: string;
+  /** Omitted for a task with no due date (#5761). */
+  due_date?: string;
   /** Present only when the task has a time of day (#4003). */
   due_at?: string;
   /** Subtask titles, in order (#4003). */
@@ -151,8 +153,15 @@ export function AddTaskRow({
     const request = draft.who ? taskWhoRequest(draft.who) : null;
     const nextMissing: Missing = {
       who: !request,
-      due: !draft.due,
+      // A task can have no due date (#5761); a task up for grabs still needs
+      // one, since whoever claims it gets it by then.
+      due: !draft.due && request?.endpoint === "/v1/open-tasks",
       passed: dueEntryPassed(draft.due),
+      // A repeat counts from the due day (#5761).
+      repeat:
+        single && !draft.due && draft.repeat.preset !== "NONE"
+          ? TASK_REPEAT_NEEDS_DUE_DATE
+          : undefined,
     };
     setMissing(nextMissing);
     if (nextMissing.who) {
@@ -161,6 +170,10 @@ export function AddTaskRow({
     }
     if (nextMissing.due || nextMissing.passed) {
       dueRef.current?.focus();
+      return;
+    }
+    if (nextMissing.repeat) {
+      setMore(true);
       return;
     }
     const firstDue = taskFirstDue(draft.due, draft.repeat.timeZone);
@@ -174,16 +187,18 @@ export function AddTaskRow({
     const base = {
       title,
       description: draft.description.trim() || undefined,
-      ...dueEntryFields(draft.due),
+      ...(draft.due ? dueEntryFields(draft.due) : {}),
       point_reward: parseGuardedInt(draft.points),
       subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
       proof_kind: draft.proofKind === "none" ? undefined : draft.proofKind,
     };
     let created: boolean;
     if (request!.endpoint === "/v1/open-tasks") {
+      // Checked above: a task up for grabs always has a due date.
+      if (!draft.due) return;
       created = await onCreate({
         endpoint: "/v1/open-tasks",
-        body: { ...base, ...request!.fields },
+        body: { ...base, ...dueEntryFields(draft.due), ...request!.fields },
       });
     } else {
       let referencePhotoPaths: string[] | undefined;
@@ -197,7 +212,10 @@ export function AddTaskRow({
         try {
           referencePhotoPaths = await uploadPhotos(draft.photoFiles);
         } catch (error) {
-          setMissing((prev) => ({ ...prev, photo: uploadFailureMessage(error) }));
+          setMissing((prev) => ({
+            ...prev,
+            photo: uploadFailureMessage(error),
+          }));
           return;
         } finally {
           setUploading(false);
@@ -233,7 +251,10 @@ export function AddTaskRow({
   const repeating = !!(repeatRule?.ok && repeatRule.rule);
 
   const dirty =
-    draft.title !== "" || draft.who !== null || draft.due !== "" || draft.points !== "";
+    draft.title !== "" ||
+    draft.who !== null ||
+    draft.due !== "" ||
+    draft.points !== "";
   // Focus anywhere in the line, its pickers' popovers included (React's
   // focus events bubble through their portals).
   const [focused, setFocused] = useState(false);
@@ -248,7 +269,12 @@ export function AddTaskRow({
       onKeyDown={(event) => {
         // An open picker (any Radix layer) handles its own Escape first and
         // marks it, so the line only clears when nothing above it took it.
-        if (event.key === "Escape" && !event.defaultPrevented && !busy && dirty) {
+        if (
+          event.key === "Escape" &&
+          !event.defaultPrevented &&
+          !busy &&
+          dirty
+        ) {
           event.preventDefault();
           setDraft(EMPTY);
           setMissing({});
@@ -279,7 +305,10 @@ export function AddTaskRow({
               FOCUS_RING_WITHIN,
             )}
           >
-            <Plus className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <Plus
+              className="h-4 w-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
             <input
               ref={titleRef}
               aria-label="Task title"
@@ -327,7 +356,13 @@ export function AddTaskRow({
             disabled={controls.disabled}
             className="h-9"
             onChange={(due) => {
-              setDraft((prev) => ({ ...prev, due }));
+              // No due date can't repeat (#5761), so clearing it drops the
+              // repeat; the Repeat control then says why it is off.
+              setDraft((prev) => ({
+                ...prev,
+                due,
+                repeat: due ? prev.repeat : noTaskRepeatDraft(),
+              }));
               setMissing((prev) => ({
                 ...prev,
                 due: prev.due && !due,
@@ -365,11 +400,15 @@ export function AddTaskRow({
         </Button>
       </div>
       {missing.who || missing.due || missing.passed ? (
-        <p id={`${ids}-missing`} role="alert" className="px-3 pb-2 text-caption text-destructive-text">
+        <p
+          id={`${ids}-missing`}
+          role="alert"
+          className="px-3 pb-2 text-caption text-destructive-text"
+        >
           {[
             missing.who ? "Pick who it's for." : null,
             missing.due
-              ? "Pick a due date, like Friday or Friday 5pm."
+              ? "A task up for grabs needs a due date, like Friday or Friday 5pm."
               : missing.passed
                 ? "That time has already passed. Pick a later time or another day."
                 : null,
@@ -379,7 +418,10 @@ export function AddTaskRow({
         </p>
       ) : null}
       {more ? (
-        <div id={`${ids}-more`} className="grid gap-3 border-t border-border p-3">
+        <div
+          id={`${ids}-more`}
+          className="grid gap-3 border-t border-border p-3"
+        >
           <SubtaskListEditor
             items={draft.subtasks}
             disabled={busy}
@@ -394,7 +436,11 @@ export function AddTaskRow({
               setDraft((prev) => ({ ...prev, description: event.target.value }))
             }
           />
-          {single ? (
+          {single && !draft.due ? (
+            <p className="text-caption text-muted-foreground">
+              {TASK_REPEAT_NEEDS_DUE_DATE}
+            </p>
+          ) : single ? (
             <RepeatOptions
               forTasks
               idPrefix={`${ids}-repeat`}
@@ -412,8 +458,10 @@ export function AddTaskRow({
               {TASK_AUDIENCE_COPY.noRepeat}
             </p>
           )}
-          {missing.repeat && single ? (
-            <p className="text-caption text-destructive-text">{missing.repeat}</p>
+          {missing.repeat && single && draft.due ? (
+            <p className="text-caption text-destructive-text">
+              {missing.repeat}
+            </p>
           ) : null}
           {followerChoices.length > 0 && !someone ? (
             <div className="grid gap-1">
@@ -439,7 +487,9 @@ export function AddTaskRow({
                       const picked = followerChoices.find(
                         (choice) => choice.entry === draft.followedBy,
                       );
-                      return picked ? TASK_FOLLOWER_COPY.hint(picked.name) : null;
+                      return picked
+                        ? TASK_FOLLOWER_COPY.hint(picked.name)
+                        : null;
                     })()}
               </p>
             </div>
@@ -454,7 +504,10 @@ export function AddTaskRow({
               setDraft((prev) => ({ ...prev, ...patch }));
               if (patch.photoFiles) {
                 const files = patch.photoFiles;
-                setMissing((prev) => ({ ...prev, photo: taskPhotosProblem(files) }));
+                setMissing((prev) => ({
+                  ...prev,
+                  photo: taskPhotosProblem(files),
+                }));
               }
             }}
           />
