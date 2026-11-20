@@ -93,30 +93,24 @@ export function minutesTimeline<
   },
 ): MinutesTimelineGroup<M>[] {
   const items: MinutesTimelineItem<M>[] = [
-    ...minutes.map(
-      (row): MinutesTimelineItem<M> => ({
-        kind: "minutes",
-        key: `minutes:${row.id}`,
-        start: row.event_start_time,
-        minutes: row,
-      }),
-    ),
-    ...write.map(
-      (event): MinutesTimelineItem<M> => ({
-        kind: "write",
-        key: `event:${event.id}`,
-        start: event.start_time,
-        event,
-      }),
-    ),
-    ...skipped.map(
-      (event): MinutesTimelineItem<M> => ({
-        kind: "skipped",
-        key: `event:${event.id}`,
-        start: event.start_time,
-        event,
-      }),
-    ),
+    ...minutes.map((row): MinutesTimelineItem<M> => ({
+      kind: "minutes",
+      key: `minutes:${row.id}`,
+      start: row.event_start_time,
+      minutes: row,
+    })),
+    ...write.map((event): MinutesTimelineItem<M> => ({
+      kind: "write",
+      key: `event:${event.id}`,
+      start: event.start_time,
+      event,
+    })),
+    ...skipped.map((event): MinutesTimelineItem<M> => ({
+      kind: "skipped",
+      key: `event:${event.id}`,
+      start: event.start_time,
+      event,
+    })),
   ].sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
 
   const groups = new Map<string, MinutesTimelineGroup<M>>();

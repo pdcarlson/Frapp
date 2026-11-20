@@ -26,7 +26,11 @@ import {
   type MeetingType,
 } from "@repo/validation";
 import { BACK_TO_YOU } from "@/components/back-row";
-import { CloseGlyph, PencilGlyph, RetryGlyph } from "@/components/control-glyphs";
+import {
+  CloseGlyph,
+  PencilGlyph,
+  RetryGlyph,
+} from "@/components/control-glyphs";
 import {
   itemMenuAccessibility,
   longPressOf,
@@ -163,7 +167,14 @@ function MinutesScreenBody() {
       now,
       new Set(noMinutesQuery.data ?? []),
     );
-  }, [rows, takingQuery.data, eventsQuery.data, noMinutesQuery.data, taken, now]);
+  }, [
+    rows,
+    takingQuery.data,
+    eventsQuery.data,
+    noMinutesQuery.data,
+    taken,
+    now,
+  ]);
   // Unknown is not "none written": every read answers before any is listed,
   // and a search or a type chip narrows to minutes, not the calendar.
   const showToWrite =
@@ -455,7 +466,6 @@ function MinutesScreenBody() {
             {view.narrowed && shownCount === 0 ? (
               <InlineNote>{MEETING_LIST_COPY.nothingMatches}</InlineNote>
             ) : null}
-
           </>
         )}
       </ScreenShell>

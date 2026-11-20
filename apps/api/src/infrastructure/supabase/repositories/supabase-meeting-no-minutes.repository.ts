@@ -21,7 +21,11 @@ export class SupabaseMeetingNoMinutesRepository implements IMeetingNoMinutesRepo
     return data ?? [];
   }
 
-  async mark(chapterId: string, eventId: string, userId: string): Promise<void> {
+  async mark(
+    chapterId: string,
+    eventId: string,
+    userId: string,
+  ): Promise<void> {
     const { error } = await this.supabase
       .from('meeting_no_minutes')
       .upsert(

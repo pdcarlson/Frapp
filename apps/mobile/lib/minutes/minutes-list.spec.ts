@@ -138,13 +138,9 @@ describe("minutesListView", () => {
     const byType = minutesListView(rows, { now: NOW, type: "exec" });
     expect(byType.narrowed).toBe(true);
     expect(byType.series).toEqual([]);
-    expect(byType.groups.flatMap(ids)).toEqual([
-      "exec",
-    ]);
+    expect(byType.groups.flatMap(ids)).toEqual(["exec"]);
     const byQuery = minutesListView(rows, { now: NOW, query: "formal" });
-    expect(byQuery.groups.flatMap(ids)).toEqual([
-      "formal",
-    ]);
+    expect(byQuery.groups.flatMap(ids)).toEqual(["formal"]);
   });
 
   it("names a month of another year with its year", () => {

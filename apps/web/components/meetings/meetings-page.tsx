@@ -392,10 +392,7 @@ function CalendarMeetingRow({
         },
       ];
   return (
-    <RowMenu
-      entries={entries}
-      label={MEETING_LIST_COPY.rowActions(event.name)}
-    >
+    <RowMenu entries={entries} label={MEETING_LIST_COPY.rowActions(event.name)}>
       {(menuButton) => (
         <li className="group flex min-h-14 items-center gap-3 px-2 py-2">
           <span className="min-w-0 flex-1">

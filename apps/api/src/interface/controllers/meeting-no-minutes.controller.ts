@@ -72,7 +72,8 @@ export class MeetingNoMinutesController {
   @Delete('events/:id/no-minutes')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Take a meeting’s "No minutes" mark off, so it asks for minutes again',
+    summary:
+      'Take a meeting’s "No minutes" mark off, so it asks for minutes again',
   })
   @ApiNoContentResponse()
   async unmark(

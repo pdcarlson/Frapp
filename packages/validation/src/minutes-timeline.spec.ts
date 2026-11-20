@@ -3,7 +3,8 @@ import { minutesTimeline } from "./minutes-timeline";
 
 // A Friday afternoon, local time.
 const NOW = new Date(2026, 10, 20, 15, 0).getTime();
-const daysAgo = (days: number) => new Date(NOW - days * 86_400_000).toISOString();
+const daysAgo = (days: number) =>
+  new Date(NOW - days * 86_400_000).toISOString();
 
 describe("minutesTimeline", () => {
   it("puts every past meeting at its date, newest first, in week groups", () => {

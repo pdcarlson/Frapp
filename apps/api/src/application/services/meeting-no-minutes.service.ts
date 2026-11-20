@@ -1,8 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { MEETING_NO_MINUTES_REPOSITORY } from '#domain/repositories/meeting-no-minutes.repository.interface';
 import type { IMeetingNoMinutesRepository } from '#domain/repositories/meeting-no-minutes.repository.interface';
 import { EventService } from './event.service';
