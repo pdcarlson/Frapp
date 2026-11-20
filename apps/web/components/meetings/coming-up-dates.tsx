@@ -56,9 +56,9 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * event on that day with the date's words), Make a task (the task form, due
  * that day, Who guessed from the words as suggested tasks guess it) and Copy
  * date. Remind me, for every reader, pushes the date to them the evening
- * before, and a "Reminder · December 3, 6 PM" chip says it is set. The way
- * Apple Mail and Gmail turn a date in a message into an event, Slack's
- * "Remind me about this", and Linear's linked chips. The phone's minutes draw
+ * before (or that morning), and a "Reminder · December 3, 6 PM" chip says
+ * it is set. The way Apple Mail and Gmail turn a date in a message into an
+ * event, Slack's "Remind me about this", and Linear's linked chips. The phone's minutes draw
  * the same chips and menu, from the same `@repo/validation` words
  * (`coming-up-tracking.ts`).
  */

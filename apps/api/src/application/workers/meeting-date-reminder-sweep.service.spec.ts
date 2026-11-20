@@ -6,6 +6,8 @@ import {
 } from './meeting-date-reminder-sweep.service';
 import type { MeetingDateReminder } from '#domain/repositories/meeting-date-reminder.repository.interface';
 import type { MeetingService } from '../services/meeting.service';
+import type { RbacService } from '../services/rbac.service';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import type { NotificationService } from '../services/notification.service';
 
 const NOW = Date.parse('2026-12-03T23:00:30.000Z');
@@ -27,7 +29,13 @@ const row = (
 
 function build(
   due: MeetingDateReminder[],
-  options: { claims?: boolean; readable?: boolean } = {},
+  options: {
+    claims?: boolean;
+    readable?: boolean;
+    permissions?: string[];
+    modules?: Record<string, boolean>;
+    dates?: { date: string; text: string }[];
+  } = {},
 ) {
   const reminders = {
     upsert: jest.fn(),
@@ -37,18 +45,36 @@ function build(
     claimDue: jest.fn().mockResolvedValue(options.claims ?? true),
   };
   const meetings = {
-    get: jest
+    get: jest.fn().mockImplementation(() =>
+      options.readable === false
+        ? Promise.reject(new NotFoundException('Minutes not found'))
+        : Promise.resolve({
+            meeting: { id: 'meet-1', event_id: 'ev-1' },
+            content: {
+              dates: options.dates ?? [
+                { date: '2026-12-04', text: 'Winter formal' },
+              ],
+            },
+          }),
+    ),
+  };
+  const rbac = {
+    getEffectivePermissions: jest
       .fn()
-      .mockImplementation(() =>
-        options.readable === false
-          ? Promise.reject(new NotFoundException('Minutes not found'))
-          : Promise.resolve({ meeting: { id: 'meet-1', event_id: 'ev-1' } }),
-      ),
+      .mockResolvedValue(options.permissions ?? ['members:view']),
+  };
+  const chapters = {
+    findById: jest.fn().mockResolvedValue({
+      id: 'chap-1',
+      enabled_modules: options.modules ?? { meetings: true },
+    }),
   };
   const notifications = { notifyUser: jest.fn().mockResolvedValue(undefined) };
   const sweep = new MeetingDateReminderSweepService(
     reminders,
     meetings as unknown as MeetingService,
+    rbac as unknown as RbacService,
+    chapters as unknown as IChapterRepository,
     notifications as unknown as NotificationService,
   );
   return { sweep, reminders, notifications };
@@ -82,6 +108,22 @@ describe('MeetingDateReminderSweepService', () => {
 
   it('sends nothing for minutes the member can no longer read', async () => {
     const { sweep, notifications } = build([row()], { readable: false });
+    await expect(sweep.sweep(NOW)).resolves.toEqual({ fired: 1, pushed: 0 });
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['who is no longer a member', { permissions: [] }],
+    [
+      'in a chapter that switched minutes off',
+      { modules: { meetings: false } },
+    ],
+    [
+      'about a date corrected since',
+      { dates: [{ date: '2026-12-05', text: 'Winter formal' }] },
+    ],
+  ])('sends nothing to a member %s', async (_label, options) => {
+    const { sweep, notifications } = build([row()], options);
     await expect(sweep.sweep(NOW)).resolves.toEqual({ fired: 1, pushed: 0 });
     expect(notifications.notifyUser).not.toHaveBeenCalled();
   });

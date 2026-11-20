@@ -6,7 +6,12 @@ import type {
   IMeetingDateReminderRepository,
   MeetingDateReminder,
 } from '#domain/repositories/meeting-date-reminder.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import { SystemPermissions } from '#domain/constants/permissions';
+import { isModuleEnabled } from '@repo/validation';
 import { MeetingService } from '../services/meeting.service';
+import { RbacService } from '../services/rbac.service';
 import { NotificationService } from '../services/notification.service';
 import { REMINDER_NOTIFICATION_CATEGORY } from './chat-reminder-sweep.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
@@ -41,7 +46,13 @@ export function writtenDay(day: string): string {
  * compare-and-delete before its push: only the replica whose delete matched
  * sends, and a reminder the member moved in the meantime waits for its new
  * time. Nothing is kept once it fires; the push and its inbox row are the
- * record. No push goes out for minutes the member can no longer read.
+ * record, and a claimed row whose notification then fails is not retried.
+ *
+ * A cron has no request, so it checks here what the routes' guards check
+ * there: the member still belongs to the chapter with `members:view`, the
+ * chapter still has minutes switched on, and the minutes' own read rule still
+ * lets them in. It also checks the date is still in the minutes, so a date an
+ * officer corrected or took out never pushes its old words.
  */
 @Injectable()
 export class MeetingDateReminderSweepService {
@@ -53,6 +64,9 @@ export class MeetingDateReminderSweepService {
     @Inject(MEETING_DATE_REMINDER_REPOSITORY)
     private readonly reminders: IMeetingDateReminderRepository,
     private readonly meetings: MeetingService,
+    private readonly rbac: RbacService,
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapters: IChapterRepository,
     private readonly notificationService: NotificationService,
   ) {}
 
@@ -95,6 +109,22 @@ export class MeetingDateReminderSweepService {
 
   /** Sends the reminder's notification; false when there was none to send. */
   private async deliver(reminder: MeetingDateReminder): Promise<boolean> {
+    // What the routes' guards check: still a member who may see the
+    // chapter, in a chapter that still has minutes.
+    const permissions = await this.rbac.getEffectivePermissions(
+      reminder.chapter_id,
+      reminder.user_id,
+    );
+    if (
+      !permissions.includes('*') &&
+      !permissions.includes(SystemPermissions.MEMBERS_VIEW)
+    ) {
+      return false;
+    }
+    const chapter = await this.chapters.findById(reminder.chapter_id);
+    if (!chapter || !isModuleEnabled(chapter.enabled_modules, 'meetings')) {
+      return false;
+    }
     // The minutes' own read rule, as of now: minutes the member can no
     // longer open get no push.
     const view = await this.meetings
@@ -104,6 +134,15 @@ export class MeetingDateReminderSweepService {
         throw error;
       });
     if (!view) return false;
+    // A date corrected or taken out since: its old words would mislead.
+    if (
+      !view.content.dates.some(
+        (item) =>
+          item.date === reminder.day && item.text.trim() === reminder.text,
+      )
+    ) {
+      return false;
+    }
     const eventId = view.meeting.event_id;
     await this.notificationService.notifyUser(
       reminder.user_id,

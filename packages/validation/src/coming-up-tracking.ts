@@ -303,10 +303,15 @@ const REMINDER_EVENING_HOUR = 18;
 /** The hour of the day itself, when the evening before has passed. */
 const REMINDER_MORNING_HOUR = 9;
 
+/** How far ahead the API takes a reminder (`reminder-window.ts`). */
+const REMINDER_MAX_AHEAD_DAYS = 365;
+
 /**
  * When Remind me reminds, on the viewer's calendar: 6 PM the evening before,
  * or 9 AM on the day once that has passed. Null once both have, or for a
- * day gone: the date is under way, and a reminder would only be noise.
+ * day gone: the date is under way, and a reminder would only be noise. Null
+ * too for a day the API would refuse: more than a year off, or one that
+ * doesn't exist ("2026-02-30").
  */
 export function comingUpReminderTime(
   date: string,
@@ -319,10 +324,12 @@ export function comingUpReminderTime(
     Number(match[2]) - 1,
     Number(match[3]),
   ];
-  const evening = new Date(year, month, day - 1, REMINDER_EVENING_HOUR);
-  if (evening > now) return evening;
   const morning = new Date(year, month, day, REMINDER_MORNING_HOUR);
-  return morning > now ? morning : null;
+  if (morning.getMonth() !== month || morning.getDate() !== day) return null;
+  const latest = now.getTime() + REMINDER_MAX_AHEAD_DAYS * 24 * 60 * 60_000;
+  const evening = new Date(year, month, day - 1, REMINDER_EVENING_HOUR);
+  const at = evening > now ? evening : morning > now ? morning : null;
+  return at && at.getTime() <= latest ? at : null;
 }
 
 /** "December 3, 6 PM", or "December 3, 6:30 PM": when a reminder comes. */

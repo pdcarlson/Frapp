@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -86,7 +86,14 @@ function openMenu(text: string) {
 }
 
 describe("ComingUpDates", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
+    // Two weeks before the dates: inside the year a reminder may be set.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2099, 10, 20, 12));
     mocks.push.mockReset();
     mocks.toast.mockReset();
     mocks.eventDialog.mockReset();

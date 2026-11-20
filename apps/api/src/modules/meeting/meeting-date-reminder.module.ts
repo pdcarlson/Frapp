@@ -4,6 +4,8 @@ import { MeetingDateReminderSweepService } from '../../application/workers/meeti
 import { MeetingDateReminderController } from '../../interface/controllers/meeting-date-reminder.controller';
 import { SupabaseMeetingDateReminderRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-date-reminder.repository';
 import { MEETING_DATE_REMINDER_REPOSITORY } from '#domain/repositories/meeting-date-reminder.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
 import { RbacModule } from '../rbac/rbac.module';
 import { NotificationModule } from '../notification/notification.module';
 import { MeetingModule } from './meeting.module';
@@ -24,6 +26,7 @@ import { MeetingModule } from './meeting.module';
       provide: MEETING_DATE_REMINDER_REPOSITORY,
       useClass: SupabaseMeetingDateReminderRepository,
     },
+    { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
   ],
 })
 export class MeetingDateReminderModule {}

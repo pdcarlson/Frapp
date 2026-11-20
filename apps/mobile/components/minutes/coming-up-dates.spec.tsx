@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText } from "@/test/screen-text";
 
@@ -116,7 +116,14 @@ const labelsOf = (title: string) =>
     .actions.map((action) => action.label);
 
 describe("ComingUpDates", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
+    // Two weeks before the dates: inside the year a reminder may be set.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2099, 10, 20, 12));
     mocks.push.mockReset();
     mocks.eventSheet.mockReset();
     mocks.taskSheet.mockReset();

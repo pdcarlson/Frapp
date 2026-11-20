@@ -223,6 +223,13 @@ describe("Remind me", () => {
       comingUpReminderTime("2026-12-04", new Date(2026, 11, 4, 10)),
     ).toBeNull();
     expect(comingUpReminderTime("soon", new Date(2026, 10, 20))).toBeNull();
+    // A day that doesn't exist, or one past what the API takes.
+    expect(
+      comingUpReminderTime("2027-02-30", new Date(2026, 10, 20)),
+    ).toBeNull();
+    expect(
+      comingUpReminderTime("2028-01-15", new Date(2026, 10, 20)),
+    ).toBeNull();
   });
 
   it("writes when it comes out, minutes only when there are some", () => {

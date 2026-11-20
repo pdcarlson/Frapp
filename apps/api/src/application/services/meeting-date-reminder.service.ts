@@ -10,15 +10,17 @@ import type {
   MeetingDateReminder,
 } from '#domain/repositories/meeting-date-reminder.repository.interface';
 import { MeetingService } from './meeting.service';
+import { assertReminderWindow } from './reminder-window';
 
-/** How far ahead a reminder may be set, as for a chat message's. */
-const REMINDER_MAX_AHEAD_DAYS = 365;
-/**
- * How far in the past a new time may be and still count as "now": a client
- * clock running a little fast sets a reminder the next sweep sends.
- */
-const REMINDER_PAST_GRACE_MS = 2 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** Whether a `YYYY-MM-DD` day exists: not "2026-02-30", which the column refuses. */
+export function isCalendarDay(day: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!match) return false;
+  const at = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+  );
+  return at.toISOString().slice(0, 10) === day;
+}
 
 /** One of the caller's reminders on a minutes' Coming up date. */
 export interface MeetingDateReminderRef {
@@ -83,17 +85,9 @@ export class MeetingDateReminderService {
     input: { date: string; text: string; remindAt: Date },
     now: Date = new Date(),
   ): Promise<MeetingDateReminderRef> {
-    const at = input.remindAt.getTime();
-    if (Number.isNaN(at)) {
-      throw new BadRequestException('remind_at must be a date and time');
-    }
-    if (at < now.getTime() - REMINDER_PAST_GRACE_MS) {
-      throw new BadRequestException('remind_at must not be in the past');
-    }
-    if (at > now.getTime() + REMINDER_MAX_AHEAD_DAYS * DAY_MS) {
-      throw new BadRequestException(
-        `remind_at must be within ${REMINDER_MAX_AHEAD_DAYS} days`,
-      );
+    assertReminderWindow(input.remindAt, now);
+    if (!isCalendarDay(input.date)) {
+      throw new BadRequestException('date must be a real day');
     }
     const view = await this.meetings.get(chapterId, meetingId, userId);
     const text = input.text.trim();

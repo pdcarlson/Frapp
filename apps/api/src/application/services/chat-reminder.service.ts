@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { CHAT_MESSAGE_REMINDER_REPOSITORY } from '#domain/repositories/chat-message-reminder.repository.interface';
 import type {
   ChatMessageReminder,
@@ -12,21 +12,13 @@ import { ChannelAccessService } from './channel-access.service';
 import { maskBlockedBookmarkMessage } from './chat-block-mask';
 import { chatPushPreview } from './chat-push-preview';
 import { displayNamesById } from './display-names';
+import { assertReminderWindow } from './reminder-window';
 
-/** How far ahead a reminder may be set. */
-const REMINDER_MAX_AHEAD_DAYS = 365;
 /**
  * Rows the Reminders section carries of each kind: up to 50 due, newest
  * first, then up to 50 still waiting, soonest first.
  */
 export const REMINDER_LIST_LIMIT = 50;
-/**
- * How far in the past a new time may be and still count as "now": a client's
- * clock running a little fast, or a preset picked as the minute turns, sets a
- * reminder the next sweep sends rather than an error.
- */
-const REMINDER_PAST_GRACE_MS = 2 * 60 * 1000;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** What a reminder's row says once its channel is no longer readable. */
 export const REMINDER_UNAVAILABLE_PREVIEW =
@@ -94,18 +86,7 @@ export class ChatReminderService {
     remindAt: Date,
     now: Date = new Date(),
   ): Promise<ChatMessageReminderRef> {
-    const at = remindAt.getTime();
-    if (Number.isNaN(at)) {
-      throw new BadRequestException('remind_at must be a date and time');
-    }
-    if (at < now.getTime() - REMINDER_PAST_GRACE_MS) {
-      throw new BadRequestException('remind_at must not be in the past');
-    }
-    if (at > now.getTime() + REMINDER_MAX_AHEAD_DAYS * DAY_MS) {
-      throw new BadRequestException(
-        `remind_at must be within ${REMINDER_MAX_AHEAD_DAYS} days`,
-      );
-    }
+    assertReminderWindow(remindAt, now);
     await this.channelAccess.assertMessageAccess(messageId, chapterId, userId);
     const row = await this.reminderRepo.upsert(
       userId,

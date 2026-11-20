@@ -6,9 +6,9 @@
 -- 1. `meeting_date_reminders`: one row per member per Coming up date they
 --    asked to be reminded about. A date has no id of its own (it is an item
 --    in the minutes' `content.dates`), so a reminder names it by its day and
---    its words, as they read when it was set. Editing the minutes later
---    leaves the reminder as it was: it still fires, with the words it was
---    set on.
+--    its words, as they read when it was set. If an officer corrects or
+--    takes out that date afterwards, the sweep finds it gone and sends
+--    nothing, so a push never quotes words the minutes no longer say.
 --
 --      remind_at  when the push goes out. Setting it again moves it.
 --
@@ -49,15 +49,13 @@ create table if not exists public.meeting_date_reminders (
   remind_at timestamptz not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  -- One reminder per member per date: setting it again moves the one there is.
+  -- One reminder per member per date: setting it again moves the one there
+  -- is. Its index also serves the minutes page's read, "my reminders on
+  -- these minutes", by its leading (user_id, meeting_id).
   unique (user_id, meeting_id, day, text_md5)
 );
 
 alter table public.meeting_date_reminders enable row level security;
-
--- The minutes page's read: "my reminders on these minutes".
-create index if not exists idx_meeting_date_reminders_user_meeting
-  on public.meeting_date_reminders (user_id, chapter_id, meeting_id);
 
 -- The sweep's read: what is due, oldest first.
 create index if not exists idx_meeting_date_reminders_due

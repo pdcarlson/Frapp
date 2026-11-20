@@ -74,9 +74,9 @@ const GLYPHS: Record<ComingUpMenuAction, (color: string) => React.ReactNode> = {
  * event sheet on that day with the date's words), Make a task (the task
  * sheet, due that day, Who guessed from the words as suggested tasks guess
  * it) and Copy date. Remind me, for every reader, pushes the date to them
- * the evening before, and a "Reminder · December 3, 6 PM" chip says it is
- * set. Web's `coming-up-dates.tsx` draws the same chips and menu in the same
- * order, from `@repo/validation`'s `coming-up-tracking.ts`.
+ * the evening before (or that morning), and a "Reminder · December 3, 6 PM"
+ * chip says it is set. Web's `coming-up-dates.tsx` draws the same chips and
+ * menu in the same order, from `@repo/validation`'s `coming-up-tracking.ts`.
  *
  * The phone has no toast, so a set or a cancel confirms as Save does: a tick
  * of haptics, the chip appearing or going, and the words said to a screen
