@@ -20,6 +20,7 @@ import {
   EVENT_TYPE_NAME_MAX_LENGTH,
   EVENT_TYPE_SEARCH_FROM,
   eventTypeToAdd,
+  type EventTypeDraft,
 } from "@repo/validation";
 import { Frame, paint } from "@/components/glyph-recipe";
 import {
@@ -27,7 +28,10 @@ import {
   ForwardGlyph,
   PlusGlyph,
 } from "@/components/control-glyphs";
-import { MAX_ROWS_SIZED_TO_CONTENT } from "@/components/option-sheet";
+import {
+  MAX_ROWS_SIZED_TO_CONTENT,
+  pickSheetSizing,
+} from "@/components/option-sheet";
 import {
   SheetBackToClose,
   SheetGrabber,
@@ -152,8 +156,8 @@ export function RowDivider() {
  * Sized to its rows, as {@link OptionSheet} is, so the form stays in sight
  * above it (Paul 2026-11-20: a sheet "taking the whole screen" is an
  * anti-pattern, "you can't see what you're dealing with"); a list past
- * {@link MAX_ROWS_SIZED_TO_CONTENT} rows stops at {@link LONG_TYPE_LIST} and
- * scrolls. It was a tall sheet at full height until then.
+ * {@link MAX_ROWS_SIZED_TO_CONTENT} rows stops where every pick-one sheet
+ * does ({@link pickSheetSizing}, 70%) and scrolls. It was a tall sheet at full height until then.
  *
  * `typeFromForm`, for someone who can make types (`events:update`), shows the
  * search as "Find or add a type" whatever the count, and a name no type has
@@ -165,15 +169,15 @@ export const EventTypeSheet = forwardRef<
   {
     types: readonly EventType[];
     value: string | null;
-    onPick: (type: EventType | null) => void;
+    /**
+     * `made` is true for a type just made from the form, which the form
+     * holds without refilling from it.
+     */
+    onPick: (type: EventType | null, made?: boolean) => void;
     /** Whether each type says what it sets: not for a member (#3709). */
     showSets: boolean;
     /** The type "Create “…”" makes; absent for someone who can't make one. */
-    typeFromForm?: (name: string) => {
-      name: string;
-      point_value: number;
-      is_mandatory: boolean;
-    };
+    typeFromForm?: (name: string) => EventTypeDraft;
   }
 >(function EventTypeSheet(
   { types, value, onPick, showSets, typeFromForm },
@@ -181,15 +185,19 @@ export const EventTypeSheet = forwardRef<
 ) {
   const backgroundStyle = useSheetBackgroundStyle();
   const close = useSheetClose(ref);
-  // One more row than the types: No type, and Create while it offers.
-  const fits = types.length + 2 <= MAX_ROWS_SIZED_TO_CONTENT;
+  const { tokens } = useFrappTheme();
+  const insets = useSafeAreaInsets();
+  // One row more than the types at most: No type while the search is empty,
+  // or Create while it offers, never both. Held for the sheet's life, so a
+  // type made here can't resize it as it closes.
+  const [fits] = useState(() => types.length + 1 <= MAX_ROWS_SIZED_TO_CONTENT);
   return (
     <BottomSheetModal
       ref={ref}
       stackBehavior={SHEET_STACK_BEHAVIOR}
-      {...(fits
-        ? { enableDynamicSizing: true }
-        : { enableDynamicSizing: false, snapPoints: LONG_TYPE_LIST })}
+      {...pickSheetSizing(fits)}
+      // The search raises it with the keyboard: never under the status bar.
+      topInset={insets.top + tokens.spacing.sm}
       keyboardBehavior="interactive"
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
@@ -202,8 +210,8 @@ export const EventTypeSheet = forwardRef<
         showSets={showSets}
         fits={fits}
         typeFromForm={typeFromForm}
-        onPick={(type) => {
-          onPick(type);
+        onPick={(type, made) => {
+          onPick(type, made);
           close();
         }}
         onDone={close}
@@ -211,9 +219,6 @@ export const EventTypeSheet = forwardRef<
     </BottomSheetModal>
   );
 });
-
-/** Where a long type list stops growing: the form's top stays in sight. */
-const LONG_TYPE_LIST = ["60%"];
 
 type TypeOption =
   | { kind: "none" }
@@ -236,12 +241,8 @@ function TypeList({
   value: string | null;
   showSets: boolean;
   fits: boolean;
-  typeFromForm?: (name: string) => {
-    name: string;
-    point_value: number;
-    is_mandatory: boolean;
-  };
-  onPick: (type: EventType | null) => void;
+  typeFromForm?: (name: string) => EventTypeDraft;
+  onPick: (type: EventType | null, made?: boolean) => void;
   onDone: () => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -255,7 +256,7 @@ function TypeList({
   const showSearch = canAdd || types.length > EVENT_TYPE_SEARCH_FROM;
   const toAdd = canAdd ? eventTypeToAdd(search, types) : null;
   const rows = useMemo<TypeOption[]>(() => {
-    const query = search.trim().toLowerCase();
+    const query = search.trim().replace(/\s+/g, " ").toLowerCase();
     const matching = types.filter((type) =>
       type.name.toLowerCase().includes(query),
     );
@@ -272,7 +273,7 @@ function TypeList({
     try {
       const created = await createType.mutateAsync(typeFromForm(name));
       setSearch("");
-      onPick(created);
+      onPick(created, true);
     } catch (error) {
       setAddError(errorCopy(error, "Couldn't make the type. Try again."));
     }
@@ -294,9 +295,17 @@ function TypeList({
           autoCapitalize={canAdd ? "words" : "none"}
           autoCorrect={false}
           maxLength={EVENT_TYPE_NAME_MAX_LENGTH}
-          returnKeyType={toAdd ? "done" : "search"}
+          returnKeyType="done"
+          // Return holds the one type the search leaves, or makes the typed
+          // name when none is left, as Enter picks the top match on web; a
+          // half-typed search never becomes a type.
           onSubmitEditing={() => {
-            if (toAdd) void addType(toAdd);
+            const shown = rows.filter((row) => row.kind === "type");
+            if (shown.length === 1 && shown[0]!.kind === "type") {
+              onPick(shown[0]!.type);
+            } else if (shown.length === 0 && toAdd) {
+              void addType(toAdd);
+            }
           }}
           style={styles.search}
         />

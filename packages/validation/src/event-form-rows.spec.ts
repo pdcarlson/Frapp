@@ -103,16 +103,21 @@ describe("eventTypeToAdd", () => {
 
 describe("eventTypeFromForm", () => {
   it("carries the form's points and whether everyone must come", () => {
-    expect(eventTypeFromForm("Work party", 10, true)).toEqual({
+    expect(eventTypeFromForm("Work party", " 10 ", true)).toEqual({
       name: "Work party",
       point_value: 10,
       is_mandatory: true,
     });
   });
 
-  it("makes 0 points from a refused or missing value", () => {
-    expect(eventTypeFromForm("A", undefined, false).point_value).toBe(0);
-    expect(eventTypeFromForm("A", -3, false).point_value).toBe(0);
-    expect(eventTypeFromForm("A", 1.5, false).point_value).toBe(0);
+  it("caps points the field holds past the limit, as both apps read them", () => {
+    expect(eventTypeFromForm("A", "150000", false).point_value).toBe(100_000);
+  });
+
+  it("makes 0 points from a blank, refused or member's field", () => {
+    expect(eventTypeFromForm("A", "", false).point_value).toBe(0);
+    expect(eventTypeFromForm("A", "-3", false).point_value).toBe(0);
+    expect(eventTypeFromForm("A", "1.5", false).point_value).toBe(0);
+    expect(eventTypeFromForm("A", null, false).point_value).toBe(0);
   });
 });

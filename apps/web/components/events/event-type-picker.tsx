@@ -19,6 +19,7 @@ import {
   EVENT_TYPE_NAME_MAX_LENGTH,
   EVENT_TYPE_SEARCH_FROM,
   EVENT_TYPES_MAX,
+  type EventTypeDraft,
 } from "@repo/validation";
 import {
   TypeListEditor,
@@ -60,7 +61,7 @@ import {
  * the form fills in the type's points and attendance and the officer can
  * still change either. "No type" lets the held one go.
  *
- * A menu rather than the row of chips it replaced: seven seeded types
+ * A menu rather than the row of chips it replaced: seven types
  * already wrapped to two lines and a chapter may keep 30, pushing the name
  * down the form. Comparable: Linear's label and status menus, which search,
  * and Google Calendar's event-type tabs. Each type says what it sets ("10
@@ -88,15 +89,14 @@ export function EventTypeRow({
   disabled = false,
 }: {
   value: string | null;
-  /** `null` when the officer picks No type. */
-  onPick: (type: EventType | null) => void;
+  /**
+   * `null` when the officer picks No type. `made` is true for a type just
+   * made from the form, which the form holds without refilling from it.
+   */
+  onPick: (type: EventType | null, made?: boolean) => void;
   canManage: boolean;
   /** The type "Create “…”" makes, from the form as it stands. */
-  typeFromForm: (name: string) => {
-    name: string;
-    point_value: number;
-    is_mandatory: boolean;
-  };
+  typeFromForm: (name: string) => EventTypeDraft;
   /** Whether each type says what it sets: not for a member (#3709). */
   showSets: boolean;
   disabled?: boolean;
@@ -125,7 +125,7 @@ export function EventTypeRow({
     setAddError(null);
     try {
       const created = await createType.mutateAsync(typeFromForm(name));
-      onPick(created);
+      onPick(created, true);
       setMenuOpen(false);
     } catch (error) {
       setAddError(getErrorMessage(error, "Couldn't make the type. Try again."));
@@ -176,7 +176,7 @@ export function EventTypeRow({
                   value="No type"
                   onSelect={() => {
                     onPick(null);
-                    setOpen(false);
+                    setMenuOpen(false);
                   }}
                   className="min-h-9 text-sm text-muted-foreground pointer-coarse:min-h-11"
                 >
@@ -191,7 +191,7 @@ export function EventTypeRow({
                     value={type.name}
                     onSelect={() => {
                       onPick(type);
-                      setOpen(false);
+                      setMenuOpen(false);
                     }}
                     className="min-h-9 text-sm pointer-coarse:min-h-11"
                   >

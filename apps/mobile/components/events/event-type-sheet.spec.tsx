@@ -2,6 +2,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemberFacingError } from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
@@ -51,6 +52,12 @@ const TYPES = [
   },
 ];
 
+const SEVEN = Array.from({ length: 7 }, (_, i) => ({
+  ...TYPES[1]!,
+  id: `t-${i + 10}`,
+  name: `Kind ${i}`,
+}));
+
 const fromForm = (name: string) => ({
   name,
   point_value: 5,
@@ -58,8 +65,9 @@ const fromForm = (name: string) => ({
 });
 
 function render(
-  onPick: (type: unknown) => void,
+  onPick: (type: unknown, made?: boolean) => void,
   canAdd = true,
+  types = TYPES,
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -67,7 +75,7 @@ function render(
       <FrappThemeProvider>
         <EventTypeSheet
           ref={React.createRef()}
-          types={TYPES}
+          types={types}
           value={null}
           showSets
           onPick={onPick}
@@ -123,7 +131,58 @@ describe("EventTypeSheet", () => {
       point_value: 5,
       is_mandatory: false,
     });
-    expect(onPick).toHaveBeenCalledWith(created);
+    expect(onPick).toHaveBeenCalledWith(created, true);
+  });
+
+  it("sizes seven types, as older chapters hold, to their rows too", () => {
+    const tree = render(vi.fn(), true, SEVEN);
+    const modal = tree.root.find(
+      (node) => node.type === ("BottomSheetModal" as never),
+    );
+    expect(modal.props.enableDynamicSizing).toBe(true);
+    expect(modal.props.snapPoints).toBeUndefined();
+  });
+
+  it("stops a long list where every pick-one sheet stops, and scrolls", () => {
+    const tree = render(vi.fn(), true, [...SEVEN, ...TYPES]);
+    const modal = tree.root.find(
+      (node) => node.type === ("BottomSheetModal" as never),
+    );
+    expect(modal.props.enableDynamicSizing).toBe(false);
+    expect(modal.props.snapPoints).toEqual(["70%"]);
+  });
+
+  it("says so in the sheet when the type can't be made, and holds nothing", async () => {
+    mockCreate.mockRejectedValueOnce(
+      new MemberFacingError("That name is taken."),
+    );
+    const onPick = vi.fn();
+    const tree = render(onPick);
+    act(() => search(tree).props.onChangeText("Rush"));
+    const row = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Create \u201cRush\u201d" &&
+        typeof node.props.onPress === "function",
+    );
+    await act(async () => row.props.onPress());
+    expect(screenText(tree)).toContain("That name is taken.");
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("holds the one match on return, and never makes a type from a half search", async () => {
+    const onPick = vi.fn();
+    const tree = render(onPick);
+    act(() => search(tree).props.onChangeText("Soc"));
+    await act(async () => search(tree).props.onSubmitEditing());
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(onPick.mock.calls[0]?.[0]).toEqual(TYPES[1]);
+  });
+
+  it("finds a type typed with extra spaces", () => {
+    const tree = render(vi.fn());
+    act(() => search(tree).props.onChangeText("Chapter   meeting"));
+    expect(screenText(tree)).toContain("Chapter meeting");
+    expect(screenText(tree)).not.toContain("No type by that name");
   });
 
   it("offers no Create for a name a type already has", () => {

@@ -112,21 +112,31 @@ export function addEventTypeLabel(name: string): string {
   return `Create \u201c${name}\u201d`;
 }
 
+/** What a new event type is made of: the body of `POST /v1/event-types`. */
+export type EventTypeDraft = {
+  name: string;
+  point_value: number;
+  is_mandatory: boolean;
+};
+
 /**
  * The type made in place from the form it was made on: it carries the
- * event's points and whether everyone must come, so holding it changes
- * nothing on the form and the next event of that type starts the same.
- * Points the field refuses, or a member's form, which sets none, make 0.
+ * event's points and whether everyone must come, so the next event of that
+ * kind starts the same. The form keeps what it holds; only the type is held
+ * (and its name fills a blank name). Points are read from the field's text
+ * the same way on both apps: a whole number is kept, capped at
+ * {@link POINTS_ADJUSTMENT_MAX}; anything else, a blank field, or a
+ * member's form, which sets none (`null`), makes 0.
  */
 export function eventTypeFromForm(
   name: string,
-  points: number | undefined,
+  pointsText: string | null,
   everyoneRequired: boolean,
-): { name: string; point_value: number; is_mandatory: boolean } {
-  const point_value =
-    points === undefined || !Number.isSafeInteger(points) || points < 0
-      ? 0
-      : Math.min(points, POINTS_ADJUSTMENT_MAX);
+): EventTypeDraft {
+  const trimmed = pointsText?.trim() ?? "";
+  const point_value = /^\d+$/.test(trimmed)
+    ? Math.min(Number(trimmed), POINTS_ADJUSTMENT_MAX)
+    : 0;
   return { name, point_value, is_mandatory: everyoneRequired };
 }
 

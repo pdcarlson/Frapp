@@ -522,7 +522,19 @@ describe("EventTypeRow's Create in place (Paul 2026-11-20)", () => {
       point_value: 7,
       is_mandatory: false,
     });
-    await waitFor(() => expect(onPick).toHaveBeenCalledWith(created));
+    await waitFor(() => expect(onPick).toHaveBeenCalledWith(created, true));
+  });
+
+  it("opens on an empty search after a pick", async () => {
+    await openMenu();
+    await userEvent.type(
+      screen.getByPlaceholderText("Find or add a type"),
+      "soc",
+    );
+    await userEvent.click(screen.getByRole("option", { name: /Social/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Type: none" }));
+    expect(screen.getByPlaceholderText("Find or add a type")).toHaveValue("");
+    expect(screen.getByRole("option", { name: "No type" })).toBeInTheDocument();
   });
 
   it("offers no Create for a name a type already has, in any case", async () => {

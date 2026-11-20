@@ -63,7 +63,6 @@ import {
   useGuardedSheetRef,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
-import { parsePointReward } from "@/lib/tasks/create-task";
 import {
   EventTypeSheet,
   PropertyRow,
@@ -1106,14 +1105,29 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
               ? (typeName) =>
                   eventTypeFromForm(
                     typeName,
-                    pointsOf(draft.pointsInput),
+                    draft.pointsInput,
                     draft.attendance.everyone === "required",
                   )
               : undefined
           }
-          onPick={(type) => {
+          onPick={(type, made) => {
             if (!type) {
               update({ eventTypeId: null }, []);
+              return;
+            }
+            // A type just made from this form took its values from it: the
+            // form keeps what it holds, and only a blank name takes its name.
+            if (made) {
+              update(
+                draft.name.trim() === ""
+                  ? {
+                      eventTypeId: type.id,
+                      name: type.name,
+                      typeFilledName: type.name,
+                    }
+                  : { eventTypeId: type.id },
+                ["name"],
+              );
               return;
             }
             // Picking the held one again keeps it: the list's No type is
@@ -1232,10 +1246,4 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       color: tokens.color.semantic.destructive,
     },
   });
-}
-
-/** The points field as a number for a type made in place, or none. */
-function pointsOf(input: string): number | undefined {
-  const parsed = parsePointReward(input);
-  return parsed.kind === "value" ? parsed.points : undefined;
 }

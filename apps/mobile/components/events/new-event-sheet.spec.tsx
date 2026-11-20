@@ -503,12 +503,40 @@ describe("New event", () => {
   it("makes a type in place from the form's points and attendance (Paul 2026-11-20)", () => {
     const tree = render();
     act(() => byLabel(tree, "Points for attending").props.onChangeText("15"));
-    const sheet = tree.root.findByType(EventTypeSheet);
-    expect(sheet.props.typeFromForm("Work party")).toEqual({
+    const sheet = () => tree.root.findByType(EventTypeSheet);
+    expect(sheet().props.typeFromForm("Work party")).toEqual({
       name: "Work party",
       point_value: 15,
       is_mandatory: false,
     });
+    // Everyone required, from a required type: the made type is required.
+    pickType(tree, "Chapter meeting");
+    expect(sheet().props.typeFromForm("Rush")).toEqual({
+      name: "Rush",
+      point_value: 10,
+      is_mandatory: true,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("holds a type made in place without refilling the form from it", () => {
+    const tree = render();
+    act(() =>
+      byLabel(tree, "Points for attending").props.onChangeText("150000"),
+    );
+    act(() =>
+      tree.root.findByType(EventTypeSheet).props.onPick(
+        {
+          id: "type-work",
+          name: "Work party",
+          point_value: 100000,
+          is_mandatory: false,
+        },
+        true,
+      ),
+    );
+    expect(byLabel(tree, "Event name").props.value).toBe("Work party");
+    expect(byLabel(tree, "Points for attending").props.value).toBe("150000");
     act(() => tree.unmount());
   });
 
