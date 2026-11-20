@@ -26,13 +26,14 @@ import { useToast } from "@/lib/hooks/use-toast";
 /**
  * The review that follows Post (#5672 step 3; Paul picked "Review at Post",
  * 2026-11-19): once minutes are posted, the poster sees what each Coming up
- * date still needs, a task for the member the minutes say owns it (ticked)
- * or for the poster (unticked), and the dates already on the calendar, and
- * makes what they leave ticked in one press. The minutes post first, with
- * no question (Paul, 2026-11-16), so a review closed or failed never holds
- * them back. The host mounts it once the minutes post. How Fireflies, Granola and Otter review a call's action items
- * before they reach a tracker. The phone's `coming-up-post-review.tsx`
- * offers the same lines, in the same order and words.
+ * date still needs, a task for the member the minutes say owns it or for
+ * the poster, every one ticked for them to untick, and the dates already on
+ * the calendar, and makes what they leave ticked in one press, as Fireflies,
+ * Granola and Otter review a call's action items before they reach a
+ * tracker. The minutes post first, with no question (Paul, 2026-11-16), so
+ * a review closed or failed never holds them back. The host mounts it once
+ * the minutes post. The phone's `coming-up-post-review.tsx` offers the same
+ * lines, in the same order and words.
  */
 export function ComingUpPostReview({
   meetingId,
@@ -63,9 +64,11 @@ export function ComingUpPostReview({
     );
   }
   // Nothing to review: no date needs a task, or the poster can't make one.
+  // Judged once, before the lines freeze: the tasks Track makes refetch what
+  // `offered` reads, and must not close the review under the poster.
   useEffect(() => {
-    if (offered && !needed) onDone();
-  }, [offered, needed, onDone]);
+    if (rows === null && offered && !needed) onDone();
+  }, [rows, offered, needed, onDone]);
 
   const chosen = (rows ?? []).filter(
     (row) => row.kind === "task" && ticked.has(row.index),

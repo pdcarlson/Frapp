@@ -96,7 +96,7 @@ describe("ComingUpPostReview (phone)", () => {
         date: "2099-12-02",
         title: "Philanthropy committee reports back",
         assigneeId: null,
-        checked: false,
+        checked: true,
       }),
       row({
         index: 2,
@@ -109,7 +109,7 @@ describe("ComingUpPostReview (phone)", () => {
     ];
   });
 
-  it("offers web's lines, ticked where the minutes name an owner", () => {
+  it("offers web's lines, every task line ticked", () => {
     const tree = render();
     const text = screenText(tree);
     expect(text).toContain("Track the dates from this meeting?");
@@ -118,23 +118,24 @@ describe("ComingUpPostReview (phone)", () => {
       box(tree, /Task for Marcus Hale/).props.accessibilityState.checked,
     ).toBe(true);
     expect(box(tree, /Task for you/).props.accessibilityState.checked).toBe(
-      false,
+      true,
     );
-    expect(text).toContain("Track 1");
+    expect(text).toContain("Track 2");
   });
 
   it("makes what is left ticked, and says so", async () => {
+    mocks.track.mockResolvedValue({ made: 1, failed: 0 });
     const onTracked = vi.fn();
     const tree = render(vi.fn(), onTracked);
     act(() => box(tree, /Task for you/).props.onPress());
     await act(async () => {
-      button(tree, "Track 2").props.onPress();
+      button(tree, "Track 1").props.onPress();
     });
     expect(mocks.track).toHaveBeenCalledWith({
-      rows: [mocks.rows.current![0], mocks.rows.current![1]],
+      rows: [mocks.rows.current![0]],
       viewerId: "u-me",
     });
-    expect(onTracked).toHaveBeenCalledWith("Made 2 tasks");
+    expect(onTracked).toHaveBeenCalledWith("Made 1 task");
   });
 
   it("closes without a word when no date needs a task", () => {

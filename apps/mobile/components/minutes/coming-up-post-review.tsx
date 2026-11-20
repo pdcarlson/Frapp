@@ -32,8 +32,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * 2026-11-19), web's `coming-up-post-review.tsx` as a sheet, with the same
  * lines in the same order and words: once minutes are posted, what each
  * Coming up date still needs, a task for the member the minutes say owns it
- * (ticked) or for the poster (unticked), and the dates already on the
- * calendar. Skip and Track sit in the sheet's header, as the phone's other
+ * or for the poster, every one ticked for them to untick, and the dates
+ * already on the calendar. Skip and Track sit in the sheet's header, as the phone's other
  * short sheets put their actions. The minutes post first, with no question
  * (Paul, 2026-11-16), so a review closed or failed never holds them back.
  * The host mounts it once the minutes post.
@@ -60,9 +60,11 @@ export function ComingUpPostReview({
   const needed = !!viewerId && !!offered?.some((row) => row.kind === "task");
   if (rows === null && offered && needed) setRows(offered);
   // Nothing to review: no date needs a task, or the poster can't make one.
+  // Judged once, before the lines freeze: the tasks Track makes refetch what
+  // `offered` reads, and must not close the review under the poster.
   useEffect(() => {
-    if (offered && !needed) onDone();
-  }, [offered, needed, onDone]);
+    if (rows === null && offered && !needed) onDone();
+  }, [rows, offered, needed, onDone]);
 
   if (!rows || !viewerId) return null;
   return (

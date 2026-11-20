@@ -52,7 +52,7 @@ describe("ComingUpPostReview", () => {
         date: "2099-12-02",
         title: "Philanthropy committee reports back",
         assigneeId: null,
-        checked: false,
+        checked: true,
       }),
       row({
         index: 2,
@@ -65,7 +65,7 @@ describe("ComingUpPostReview", () => {
     ];
   });
 
-  it("shows what each date needs, ticked where the minutes name an owner", () => {
+  it("shows what each date needs, every task line ticked", () => {
     render(
       <ComingUpPostReview
         meetingId="m-1"
@@ -86,9 +86,9 @@ describe("ComingUpPostReview", () => {
       name: /Task for you/,
     }) as HTMLInputElement;
     expect(marcus.checked).toBe(true);
-    expect(mine.checked).toBe(false);
+    expect(mine.checked).toBe(true);
     expect(screen.getByText("Already on the calendar")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Track 1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Track 2" })).toBeTruthy();
   });
 
   it("makes what is left ticked, then says so and closes", async () => {
@@ -102,10 +102,10 @@ describe("ComingUpPostReview", () => {
       />,
     );
     fireEvent.click(screen.getByRole("checkbox", { name: /Task for you/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Track 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Track 1" }));
     await waitFor(() => expect(onDone).toHaveBeenCalled());
     expect(mocks.track).toHaveBeenCalledWith({
-      rows: [mocks.rows.current![0], mocks.rows.current![1]],
+      rows: [mocks.rows.current![0]],
       viewerId: "u-me",
     });
     expect(mocks.toast).toHaveBeenCalledWith({ title: "Made 1 task" });
@@ -121,7 +121,7 @@ describe("ComingUpPostReview", () => {
         onDone={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Track 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Track 2" }));
     await waitFor(() =>
       expect(mocks.toast).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -145,6 +145,22 @@ describe("ComingUpPostReview", () => {
     );
     expect(onDone).toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("stays open when what it read changes under it", () => {
+    const onDone = vi.fn();
+    const props = {
+      meetingId: "m-1",
+      content,
+      viewerId: "u-me",
+      onDone,
+    };
+    const { rerender } = render(<ComingUpPostReview {...props} />);
+    // The tasks Track makes refetch the dates' tracking: no line needs one.
+    mocks.rows.current = [];
+    rerender(<ComingUpPostReview {...props} />);
+    expect(onDone).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("Skip closes and makes nothing", () => {

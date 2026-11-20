@@ -304,8 +304,8 @@ describe("comingUpPostReview", () => {
   it("offers a task per untracked date still ahead, and shows the calendar's", () => {
     const rows = comingUpPostReview(base);
     expect(rows.map((row) => [row.index, row.kind, row.checked])).toEqual([
-      [0, "task", false],
-      [1, "task", false],
+      [0, "task", true],
+      [1, "task", true],
       [2, "calendar", false],
     ]);
     expect(rows[0]).toMatchObject({
@@ -316,16 +316,64 @@ describe("comingUpPostReview", () => {
     expect(rows[2]?.title).toBe("Winter Formal");
   });
 
-  it("ticks a task whose owner the action items name, before a name in the date", () => {
+  it("names the owner the action items give, before a name in the date", () => {
     const rows = comingUpPostReview({
       ...base,
       dates: [{ date: "2026-11-21", text: "Dana: dues due to the treasurer" }],
       tracking: [untracked],
       actionItems: [
-        { text: "Collect dues", owner_user_id: "marcus", due_date: null },
+        {
+          text: "Collect dues for the treasurer",
+          owner_user_id: "marcus",
+          due_date: null,
+        },
       ],
     });
     expect(rows[0]).toMatchObject({ assigneeId: "marcus", checked: true });
+  });
+
+  it("needs two words in common with an undated action item, one with a dated", () => {
+    const one = {
+      ...base,
+      dates: [{ date: "2026-11-21", text: "Formal dues" }],
+      tracking: [untracked],
+    };
+    expect(
+      comingUpPostReview({
+        ...one,
+        actionItems: [
+          { text: "Pay chapter dues", owner_user_id: "marcus", due_date: null },
+        ],
+      })[0]?.assigneeId,
+    ).toBeNull();
+    expect(
+      comingUpPostReview({
+        ...one,
+        actionItems: [
+          {
+            text: "Pay chapter dues",
+            owner_user_id: "marcus",
+            due_date: "2026-11-21",
+          },
+        ],
+      })[0]?.assigneeId,
+    ).toBe("marcus");
+  });
+
+  it("gives the poster a line whose named owner isn't on the roster", () => {
+    const rows = comingUpPostReview({
+      ...base,
+      dates: [{ date: "2026-11-21", text: "Dues due to the treasurer" }],
+      tracking: [untracked],
+      actionItems: [
+        {
+          text: "Collect dues for the treasurer",
+          owner_user_id: "gone",
+          due_date: null,
+        },
+      ],
+    });
+    expect(rows[0]).toMatchObject({ assigneeId: null, checked: true });
   });
 
   it("guesses from the date's own words when no action item says", () => {
@@ -344,9 +392,9 @@ describe("comingUpPostReview", () => {
   it("accepts the suggested task the action item became, once", () => {
     const suggestion = {
       id: "s1",
-      quote: "Marcus collects dues from brothers",
+      quote: "Marcus collects dues for the treasurer",
       task: {
-        title: "Collect dues from brothers",
+        title: "Collect dues for the treasurer",
         assignee_id: "marcus",
         due_date: null,
       },
@@ -355,12 +403,12 @@ describe("comingUpPostReview", () => {
       ...base,
       dates: [
         { date: "2026-11-21", text: "Dues due to the treasurer" },
-        { date: "2026-11-22", text: "Late dues" },
+        { date: "2026-11-22", text: "Treasurer chases late dues" },
       ],
       tracking: [untracked, untracked],
       actionItems: [
         {
-          text: "Marcus collects dues from brothers ",
+          text: "Marcus collects dues for the treasurer ",
           owner_user_id: "marcus",
           due_date: null,
         },
@@ -368,7 +416,7 @@ describe("comingUpPostReview", () => {
       suggestions: [suggestion],
     });
     expect(rows[0]).toMatchObject({
-      title: "Collect dues from brothers",
+      title: "Collect dues for the treasurer",
       description: null,
       assigneeId: "marcus",
       suggestion: { id: "s1", due_date: null, assignee_id: "marcus" },
@@ -383,7 +431,11 @@ describe("comingUpPostReview", () => {
       dates: [{ date: "2026-11-21", text: "Dues due" }],
       tracking: [untracked],
       actionItems: [
-        { text: "Everyone pays dues", owner_user_id: null, due_date: null },
+        {
+          text: "Everyone pays dues",
+          owner_user_id: null,
+          due_date: "2026-11-21",
+        },
       ],
       suggestions: [
         {

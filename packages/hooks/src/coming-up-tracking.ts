@@ -45,6 +45,8 @@ export function useComingUpTracking(
   canManageTasks: boolean;
   /** The events and tasks have answered, so `tracking` is what the chapter has. */
   ready: boolean;
+  /** The events or tasks couldn't be read, so `tracking` may miss what exists. */
+  failed: boolean;
 } {
   const enabled = dates.length > 0;
   const eventsQuery = useEvents({ enabled });
@@ -71,6 +73,7 @@ export function useComingUpTracking(
     // Fetching, not pending: a read its own rule holds off (no chapter
     // scope) never answers, and must not hold the review forever.
     ready: !eventsQuery.isFetching && !tasksQuery.isFetching,
+    failed: eventsQuery.isError || tasksQuery.isError,
   };
 }
 
@@ -79,7 +82,9 @@ export function useComingUpTracking(
  * lines `comingUpPostReview` offers for just-posted minutes, once everything
  * they are read from has answered (the events, the tasks, the suggested
  * tasks posting made, the roster), and null until then. Empty for a poster
- * who can't make tasks, since every line would be refused.
+ * who can't make tasks, since every line would be refused, and when any of
+ * those reads failed: a date that looks untracked may already have its task,
+ * and the review must never offer a second one.
  */
 export function useComingUpPostReview(
   meetingId: string,
@@ -87,17 +92,20 @@ export function useComingUpPostReview(
   enabled: boolean,
 ): ComingUpReviewRow[] | null {
   const dates = enabled ? content.dates : NO_DATES;
-  const { tracking, canManageTasks, ready } = useComingUpTracking(dates);
+  const { tracking, canManageTasks, ready, failed } =
+    useComingUpTracking(dates);
   const suggestions = useAiSuggestions({
     source: { type: "meeting", id: meetingId },
     enabled: enabled && dates.length > 0,
   });
   const roster = useChapterRoster();
   const waiting = !ready || suggestions.isFetching || roster.isLoading;
+  const unread = failed || suggestions.isError || roster.isError;
   return useMemo(() => {
     if (!enabled) return null;
     if (dates.length === 0 || !canManageTasks) return [];
     if (waiting) return null;
+    if (unread) return [];
     return comingUpPostReview({
       dates,
       tracking,
@@ -112,6 +120,7 @@ export function useComingUpPostReview(
     dates,
     canManageTasks,
     waiting,
+    unread,
     tracking,
     content.action_items,
     suggestions.data,

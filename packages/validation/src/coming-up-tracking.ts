@@ -9,10 +9,10 @@
  * task the chapter already has (`similar-task.ts`).
  */
 
-import { TASK_TITLE_MAX_LENGTH } from "./field-limits";
 import { meetingDueLabel, meetingLocalDay } from "./meeting-copy";
 import {
   suggestTaskOwner,
+  taskTitleFrom,
   type GuessableMember,
 } from "./task-suggestion-guess";
 
@@ -418,20 +418,8 @@ export interface ComingUpReviewRow {
     due_date: string | null;
     assignee_id: string | null;
   } | null;
-  /** Ticked to begin with: a task whose owner was named or guessed. */
+  /** Ticked to begin with: every task line, which the poster unticks. */
   checked: boolean;
-}
-
-/**
- * A date's words as a task's title: whole when they fit, else cut at a word
- * with an ellipsis (the whole line goes in the description), as a suggested
- * task's title is cut from its action item.
- */
-function taskTitleFrom(text: string): string {
-  if (text.length <= TASK_TITLE_MAX_LENGTH) return text;
-  const cut = text.slice(0, TASK_TITLE_MAX_LENGTH - 1);
-  const atWord = cut.replace(/\s+\S*$/u, "");
-  return `${(atWord.length > TASK_TITLE_MAX_LENGTH / 2 ? atWord : cut).trimEnd()}…`;
 }
 
 /** A waiting suggested task, as the review reads it. */
@@ -450,10 +438,10 @@ export interface ComingUpReviewSuggestion {
 /**
  * What the review offers once minutes are posted (#5672; Paul picked "Review
  * at Post", 2026-11-19): for each Coming up date still ahead that nothing
- * tracks yet, a task due that day, ticked when the minutes say whose it is.
- * Whose: the owner of the action item about the same thing (due that day or
- * undated), else a member the date's own words name, else the officer who
- * posted, unticked. When that action item already became a suggested task,
+ * tracks yet, a task due that day, ticked for the poster to untick. Whose:
+ * the owner of the action item about the same thing (due that day and
+ * sharing a word, or undated and sharing two), else a member the date's own
+ * words name, else the officer who posted; never someone not on the roster. When that action item already became a suggested task,
  * the line accepts it, so the date never makes a second task for one job.
  * A date already on the calendar is shown, with nothing to tick; a date
  * already a task is left out. Words, not a model, as the chips match them.
@@ -475,6 +463,9 @@ export function comingUpPostReview(input: {
 }): ComingUpReviewRow[] {
   const now = input.now ?? new Date();
   const taken = new Set<string>();
+  const memberIds = new Set(
+    input.members.flatMap((member) => (member.user_id ? [member.user_id] : [])),
+  );
   const rows: ComingUpReviewRow[] = [];
   input.dates.forEach(({ date, text }, index) => {
     const track = input.tracking[index];
@@ -500,6 +491,9 @@ export function comingUpPostReview(input: {
     for (const candidate of input.actionItems) {
       if (candidate.due_date !== null && candidate.due_date !== date) continue;
       const shared = sharedWords(about, aboutWords(candidate.text));
+      // An item due that day needs one word in common; an undated one, two,
+      // since a single shared word ("dues", "chapter") is often chance.
+      if (shared < (candidate.due_date === null ? 2 : 1)) continue;
       if (shared > best) {
         item = candidate;
         best = shared;
@@ -522,10 +516,13 @@ export function comingUpPostReview(input: {
     if (forGroup) return;
     if (suggestion) taken.add(suggestion.id);
     // The minutes' own owner first; a name in the date's words is a guess.
-    const owner =
+    // Only a current member: anyone else would read as the poster's task
+    // and be refused when made, so the line falls to the poster.
+    const named =
       suggestion?.task?.assignee_id ??
       item?.owner_user_id ??
       suggestTaskOwner(text, input.members);
+    const owner = named && memberIds.has(named) ? named : null;
     const title = suggestion?.task?.title ?? taskTitleFrom(base.text);
     rows.push({
       ...base,
@@ -540,7 +537,7 @@ export function comingUpPostReview(input: {
             assignee_id: suggestion.task.assignee_id,
           }
         : null,
-      checked: owner !== null,
+      checked: true,
     });
   });
   return rows;
