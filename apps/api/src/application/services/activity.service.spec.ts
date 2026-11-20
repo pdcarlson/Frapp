@@ -3203,6 +3203,104 @@ describe('ActivityService', () => {
     });
   });
 
+  describe('now (#5777)', () => {
+    const on = (overrides: Partial<Event> = {}) =>
+      event({
+        id: 'on',
+        start_time: iso(-HOUR / 2),
+        end_time: iso(HOUR / 2),
+        ...overrides,
+      });
+
+    it('reads only events whose check-in could have opened and that have not ended', async () => {
+      const { service, eventService } = build();
+
+      await service.getNow(CHAPTER, ME, null);
+
+      expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
+        endsAfter: iso(0),
+        startsBefore: iso(2 * HOUR),
+      });
+    });
+
+    it('keeps an event on after the caller checked in, which Activity counted as done', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findByChapter.mockResolvedValue([on()]);
+      attendanceRepo.findByEventAndUser.mockResolvedValue({ id: 'att-1' });
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events).toEqual([
+        expect.objectContaining({ id: 'on', checked_in: true }),
+      ]);
+    });
+
+    it('is on from when check-in opens, and off at the end', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue([
+        // Check-in opened 5 minutes ago (10 before a start 5 minutes ahead).
+        on({ id: 'opening', start_time: iso(HOUR / 12), end_time: iso(HOUR) }),
+        // Starts in 20 minutes: check-in hasn't opened.
+        on({ id: 'later', start_time: iso(HOUR / 3), end_time: iso(HOUR) }),
+        // Ended a minute ago, inside the check-in grace.
+        on({ id: 'ended', start_time: iso(-HOUR), end_time: iso(-HOUR / 60) }),
+      ]);
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events.map((row) => row.id)).toEqual(['opening']);
+    });
+
+    it('shows an optional event only to who checked in or made it', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findByChapter.mockResolvedValue([
+        on({ id: 'skipped', is_mandatory: false }),
+        on({ id: 'attended', is_mandatory: false }),
+        on({ id: 'mine', is_mandatory: false, created_by: ME }),
+      ]);
+      attendanceRepo.findByEventAndUser.mockImplementation((eventId: string) =>
+        Promise.resolve(eventId === 'attended' ? { id: 'att-1' } : null),
+      );
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events.map((row) => row.id).sort()).toEqual([
+        'attended',
+        'mine',
+      ]);
+    });
+
+    it('puts the one the caller checked in to first, then the latest start', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findByChapter.mockResolvedValue([
+        on({ id: 'early', start_time: iso(-HOUR) }),
+        on({ id: 'late', start_time: iso(-HOUR / 4) }),
+        on({ id: 'here', start_time: iso(-2 * HOUR) }),
+      ]);
+      attendanceRepo.findByEventAndUser.mockImplementation((eventId: string) =>
+        Promise.resolve(eventId === 'here' ? { id: 'att-1' } : null),
+      );
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events.map((row) => row.id)).toEqual([
+        'here',
+        'late',
+        'early',
+      ]);
+    });
+
+    it('reads nothing while the Events module is off', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue([on()]);
+
+      const now = await service.getNow(CHAPTER, ME, { events: false });
+
+      expect(eventService.findByChapter).not.toHaveBeenCalled();
+      expect(now.events).toEqual([]);
+    });
+  });
+
   describe('archive (#5127)', () => {
     it('serves events that invited the caller once their check-in has closed, newest first, with whether they checked in', async () => {
       const { service, eventService, attendanceRepo } = build();

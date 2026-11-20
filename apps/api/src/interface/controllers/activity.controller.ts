@@ -25,6 +25,7 @@ import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
 import type {
   ActivityArchive,
+  ActivityNow,
   ActivityView,
 } from '../../application/services/activity.service';
 import {
@@ -48,6 +49,7 @@ import {
   ActivityArchiveDto,
   ActivityDto,
   ActivityItemRefDto,
+  ActivityNowDto,
   ActivityRecapDto,
   ActivityRecapQueryDto,
   ActivityStandingDto,
@@ -117,6 +119,24 @@ export class ActivityController {
     // over a number at the top.
     return this.activityService.getActivity(chapterId, userId, enabledModules, {
       weekStart: query.week_start ? new Date(query.week_start) : undefined,
+      now: new Date(),
+    });
+  }
+
+  @Get('now')
+  @VerifySessionLocally()
+  @ApiOperation({
+    summary: 'Get the events on right now for the caller',
+    description:
+      'The Now card on Chat, Activity and the event (`spec/behavior/activity.md` § Now). An event is on from when its check-in opens until its end, whether or not the caller checked in. Listed when it invites the caller and requires them, they checked in to it, or they made it; the one they checked in to first, then the latest start, at most 5. Rows are the shape of `coming_up`. Its own small read, so a screen that shows only Now does not read the whole page. Empty while the chapter has Events off.',
+  })
+  @ApiOkResponse({ type: ActivityNowDto })
+  async getNow(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+  ): Promise<ActivityNow> {
+    return this.activityService.getNow(chapterId, userId, enabledModules, {
       now: new Date(),
     });
   }

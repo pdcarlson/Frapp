@@ -41,7 +41,10 @@ const {
 
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
 // stub the live hooks so the sheet renders without a query client / API.
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  // The event's Now pill (#5777) runs for real.
+  eventNowPill: (await importOriginal<typeof import("@repo/hooks")>())
+    .eventNowPill,
   useNow: () => Date.now(),
   useEvent: () => ({
     data: eventQueryState.data,

@@ -9,7 +9,10 @@ import {
   CHECK_IN_GRACE_MINUTES,
   can,
   checkInWindowBounds,
+  EVENTS_NOW_LIMIT,
+  eventOnAt,
   isModuleEnabled,
+  MAX_CHECK_IN_OPENS_MINUTES,
 } from '@repo/validation';
 import { ACTIVITY_ITEM_READ_REPOSITORY } from '#domain/repositories/activity-item-read.repository.interface';
 import type {
@@ -506,6 +509,16 @@ export type ArchiveSection = (typeof ARCHIVE_SECTIONS)[number];
  * What the member has finished, apart from the Activity page that lists what
  * is still live (`spec/behavior/activity.md` § Archive, #5127).
  */
+/** `GET /v1/activity/now` (`spec/behavior/activity.md` § Now, #5777). */
+export interface ActivityNow {
+  /**
+   * The events on right now that are the caller's to see as on: required of
+   * them, or checked in to, or made by them. The one they checked in to
+   * first, then the latest start.
+   */
+  events: ActivityEvent[];
+}
+
 export interface ActivityArchive {
   /**
    * Events that invited the caller whose check-in has closed, in the last 30
@@ -540,6 +553,7 @@ const COMING_UP_LIMIT = 10;
  */
 const MADE_EVENTS_SCAN_LIMIT = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
 /** How far back the Archive's events and tasks reach (#5127). */
 const ARCHIVE_WINDOW_MS = 30 * DAY_MS;
 /**
@@ -1480,6 +1494,70 @@ export class ActivityService {
       message: `Activity unread state failed for chapter ${chapterId}; serving every row as read`,
       error,
     });
+  }
+
+  /**
+   * What is on right now for the caller (`spec/behavior/activity.md` § Now,
+   * #5777): the Now card on Chat, Activity and the event, on both apps. Its
+   * own small read, so Chat home and web's chat pane, which show it, don't
+   * pay for the whole page's.
+   *
+   * An event is on from when its check-in opens until its end
+   * (`eventOnAt`), whether or not the caller checked in: checking in used to
+   * drop the event from Activity, which is how Paul sat in a meeting no
+   * screen showed (2026-11-19). It is read as the caller, so an event that
+   * leaves them out is never on for them, and it is theirs to see as on
+   * when it requires them, they checked in to it, or they made it. An
+   * optional event they skipped stays on the Calendar, not at the top of
+   * every screen.
+   */
+  async getNow(
+    chapterId: string,
+    userId: string,
+    enabledModules: EnabledModules,
+    options: { now?: Date } = {},
+  ): Promise<ActivityNow> {
+    if (!isModuleEnabled(enabledModules, 'events')) return { events: [] };
+    const now = (options.now ?? new Date()).getTime();
+    // On now means check-in has opened, so the start is at most the longest
+    // lead ahead, and the end is still to come.
+    const startsBefore = now + MAX_CHECK_IN_OPENS_MINUTES * MINUTE_MS;
+    const events = (
+      await this.eventService.findByChapter(chapterId, userId, {
+        endsAfter: new Date(now).toISOString(),
+        startsBefore: new Date(startsBefore).toISOString(),
+      })
+    ).filter((event) =>
+      eventOnAt(
+        event.start_time,
+        event.end_time,
+        event.check_in_opens_minutes,
+        now,
+      ),
+    );
+    if (events.length === 0) return { events: [] };
+    let viewerRead: Promise<EventViewer> | null = null;
+    const viewer = () =>
+      (viewerRead ??= this.readViewer(chapterId, userId, () =>
+        this.rbacService.getAlumniRoleId(chapterId),
+      ));
+    const rows = await this.toEventRows(userId, now, events, viewer, {
+      startsBefore,
+      limit: events.length,
+    });
+    const shown = rows
+      .filter(
+        (row) =>
+          row.attendance === 'required' ||
+          row.checked_in === true ||
+          (row.created_by !== null && row.created_by === userId),
+      )
+      .sort(
+        (a, b) =>
+          Number(b.checked_in === true) - Number(a.checked_in === true) ||
+          Date.parse(b.start_time) - Date.parse(a.start_time),
+      );
+    return { events: shown.slice(0, EVENTS_NOW_LIMIT) };
   }
 
   /**

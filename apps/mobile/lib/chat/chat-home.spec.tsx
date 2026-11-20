@@ -199,6 +199,8 @@ vi.mock("@repo/hooks", async () => {
     refetch,
   });
   return {
+    // The Now card's read (#5777): nothing on.
+    useEventsOnNow: () => ({ events: [], now: Date.now() }),
     canHideConversation: actual.canHideConversation,
     canSetChannelDisplayLock: actual.canSetChannelDisplayLock,
     useSetChannelDisplayLock: () => ({ mutateAsync: setDisplayLock }),
@@ -2293,7 +2295,9 @@ describe("Chat home opens the last channel on launch", () => {
     resetChatLaunchForTests(Date.now() - 60_000);
     answered();
     vi.mocked(AsyncStorage.getItem).mockImplementation(async (key) =>
-      key === WELCOME_DUE_STORAGE_KEY ? `${VIEWER}:chapter-1:${Date.now()}` : null,
+      key === WELCOME_DUE_STORAGE_KEY
+        ? `${VIEWER}:chapter-1:${Date.now()}`
+        : null,
     );
     render();
     await settle();

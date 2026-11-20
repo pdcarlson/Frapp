@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { NowCard } from "@/components/now-card";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -259,6 +260,9 @@ vi.mock("@/components/tasks/new-task-sheet", async () => {
   };
 });
 
+const eventsNow = vi.hoisted(() => ({
+  value: { events: [] as unknown[], now: Date.now() },
+}));
 const snoozeWrites = vi.hoisted(() => ({
   snooze: vi.fn(() => Promise.resolve()),
   unsnooze: vi.fn(() => Promise.resolve()),
@@ -282,6 +286,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
   }),
   useActivity: () => activity.value,
+  // The Now card's read (#5777): nothing on unless a test says so.
+  useEventsOnNow: () => eventsNow.value,
   useActivityStanding: () => standing.value,
   useActivityRecap: () => recap.value,
   useActivityArchive: (options: { enabled?: boolean }) => {
@@ -651,6 +657,30 @@ describe("Activity screen (#3897)", () => {
       expect(button.props.action.label).toBe("Check in");
       // The task it displaced is the list's now.
       expect(hasSection(tree, "To do")).toBe(true);
+    });
+
+    it("puts an event that's on in the Now card and leaves it out of the week card and To do (#5777)", () => {
+      const live = eventIn(-0.5, {
+        end_time: new Date(Date.now() + 1_800_000).toISOString(),
+        check_in_open: true,
+        checked_in: true,
+      });
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [live] }),
+      };
+      eventsNow.value = { events: [live], now: Date.now() };
+      try {
+        const tree = render();
+        const now = tree.root.findByType(NowCard);
+        expect(drawnText(now)).toContain("Chapter");
+        expect(drawnText(now)).toContain("Checked in");
+        const card = tree.root.findByType(WeekCard);
+        expect(card.props.next?.title).not.toBe("Chapter");
+        expect(drawnText(card)).not.toContain("Happening now");
+      } finally {
+        eventsNow.value = { events: [], now: Date.now() };
+      }
     });
 
     it("says nothing is due, with a quiet check and no zero", () => {

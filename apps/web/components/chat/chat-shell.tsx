@@ -230,6 +230,7 @@ import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { WelcomeCard } from "@/components/onboarding/welcome-card";
 import { SetupChecklistSection } from "./setup-checklist";
+import { NowCard } from "@/components/events/now-card";
 import { ChannelMenu } from "./channel-menu";
 import { AllThreadsPopover } from "./all-threads-popover";
 import {
@@ -3491,6 +3492,11 @@ export function ChatShell({
           The officer setup checklist, above the channels where Discord puts
           its server guide. Renders `null` for anyone with nothing to set up.
         */}
+          {/*
+            What's on right now, at the top of the rail (#5777), where the
+            phone puts it on Chat home and Discord shows a live voice channel.
+          */}
+          {channelsPaneState === "ready" ? <NowCard className="mb-2" /> : null}
           {channelsPaneState === "ready" && !directView ? (
             <SetupChecklistSection />
           ) : null}

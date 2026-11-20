@@ -1,5 +1,6 @@
 "use client";
 
+import { NowCard } from "@/components/events/now-card";
 import {
   Fragment,
   Suspense,
@@ -95,6 +96,8 @@ import {
   activityStandingKeys,
   useActiveChapterId,
   useActivity,
+  useEventsOnNow,
+  withoutEvents,
   useActivityArchive,
   useActivityRecap,
   useActivityStanding,
@@ -972,9 +975,18 @@ export function ActivityPage() {
   // page's own clock, so a snoozed row comes back within a tick of its time
   // (#4982). The week card counts from the whole read: snoozing something
   // doesn't finish it.
+  // An event on right now is the Now card's at the top (#5777), so To do and
+  // the week card's Next leave it out rather than say it twice.
+  const { events: onNow } = useEventsOnNow();
   const visible = useMemo(
-    () => (activity.data ? activityAwake(activity.data, now) : undefined),
-    [activity.data, now],
+    () =>
+      activity.data
+        ? withoutEvents(
+            activityAwake(activity.data, now),
+            onNow.map((event) => event.id),
+          )
+        : undefined,
+    [activity.data, now, onNow],
   );
   const snoozedRows = useMemo(
     () => (activity.data ? activitySnoozedRows(activity.data, now) : []),
@@ -1250,6 +1262,7 @@ export function ActivityPage() {
           />
         ) : (
           <div className="space-y-8">
+            <NowCard />
             {summary && agenda ? (
               <WeekCard
                 summary={summary}

@@ -44,6 +44,8 @@ import {
   activityRowTaskId,
   findActivityTaskRow,
   useActivity,
+  useEventsOnNow,
+  withoutEvents,
   useActivityArchive,
   useActivitySnoozeWake,
   useActivityRecap,
@@ -108,6 +110,7 @@ import {
 } from "@/components/activity/semester-strip";
 import { WeekCard, WeekCardSkeleton } from "@/components/activity/week-card";
 import { WeekStrip, WeekStripSkeleton } from "@/components/activity/week-strip";
+import { NowCard } from "@/components/now-card";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
 import { NavGlyph } from "@/components/nav-glyph";
@@ -298,9 +301,19 @@ export default function ActivityScreen() {
   // screen's own clock, so a snoozed row comes back within a tick of its
   // time (#4982). The week card counts from the whole read: snoozing
   // something doesn't finish it.
+  // An event on right now is the Now card's at the top (#5777), so To do,
+  // the week strip and the week card's Next leave it out rather than say it
+  // a second and third time.
+  const { events: onNow } = useEventsOnNow();
   const visible = useMemo(
-    () => (activity.data ? activityAwake(activity.data, now) : undefined),
-    [activity.data, now],
+    () =>
+      activity.data
+        ? withoutEvents(
+            activityAwake(activity.data, now),
+            onNow.map((event) => event.id),
+          )
+        : undefined,
+    [activity.data, now, onNow],
   );
   const snoozedRows = useMemo(
     () => (activity.data ? activitySnoozedRows(activity.data, now) : []),
@@ -786,6 +799,7 @@ export default function ActivityScreen() {
         }}
         style={styles.body}
       >
+        <NowCard />
         {strip ? (
           <WeekStrip
             days={strip}

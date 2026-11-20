@@ -64,6 +64,7 @@ export * from "./chat-sidebar";
 // The check-in QR as a link the phone camera opens. See ./check-in-link.
 export * from "./check-in-link";
 export * from "./check-in-window";
+export * from "./event-now";
 export * from "./check-in-zone-copy";
 // The request headers the SDK sets and the API reads (time zone, client version).
 export * from "./client-headers";

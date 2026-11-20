@@ -59,6 +59,7 @@ export * from "./task-views";
 export * from "./unset-features";
 export * from "./use-act";
 export * from "./use-activity";
+export * from "./use-events-now";
 export * from "./use-activity-feed";
 export * from "./use-activity-layout";
 export * from "./use-activity-links";

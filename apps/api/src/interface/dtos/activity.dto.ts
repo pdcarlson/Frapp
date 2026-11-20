@@ -47,6 +47,7 @@ import type {
 } from '../../application/services/activity-standing.service';
 import type {
   ActivityArchive,
+  ActivityNow,
   ActivityCard,
   ActivityEvent,
   ActivityHoursEntry,
@@ -1247,6 +1248,15 @@ export class ActivityRecapDto implements ActivityRecap {
       'Parts that could not be read this time. Each is served null; the others are unaffected.',
   })
   unavailable: RecapPart[];
+}
+
+export class ActivityNowDto implements ActivityNow {
+  @ApiProperty({
+    type: [ActivityEventDto],
+    description:
+      'Events on right now (from when check-in opens until the end, whether or not the caller checked in) that invite the caller and are theirs to see as on: required of them, checked in to, or made by them. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off.',
+  })
+  events: ActivityEventDto[];
 }
 
 export class ActivityArchiveDto implements ActivityArchive {

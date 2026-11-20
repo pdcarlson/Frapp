@@ -61,6 +61,9 @@ const mockLayout = vi.fn<
 const mockSaveLayout = vi.fn();
 const mockResetLayout = vi.fn();
 
+const eventsNow = vi.hoisted(() => ({
+  value: { events: [] as unknown[], now: Date.now() },
+}));
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
@@ -68,6 +71,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     // the groups and the gauges (`activity-agenda.ts`, `activity-rows.ts`,
     // `activity-standing.ts`). Only the reads are stood in for.
     ACTIVITY_GLYPH_NAV: actual.ACTIVITY_GLYPH_NAV,
+    // The Now card's read (#5777): nothing on unless a test says so.
+    useEventsOnNow: () => eventsNow.value,
+    withoutEvents: actual.withoutEvents,
+    eventNowState: actual.eventNowState,
     ACTIVITY_ARCHIVE_EMPTY: actual.ACTIVITY_ARCHIVE_EMPTY,
     ACTIVITY_ARCHIVE_SECTION_NAMES: actual.ACTIVITY_ARCHIVE_SECTION_NAMES,
     activityArchiveGroups: actual.activityArchiveGroups,
@@ -848,7 +855,9 @@ describe("ActivityPage", () => {
       const { unmount } = render(<ActivityPage />);
 
       const card = screen.getByRole("region", { name: "Last week" });
-      expect(within(card).getByText("November 8 – November 14")).toBeInTheDocument();
+      expect(
+        within(card).getByText("November 8 – November 14"),
+      ).toBeInTheDocument();
       expect(
         within(card)
           .getAllByRole("listitem")

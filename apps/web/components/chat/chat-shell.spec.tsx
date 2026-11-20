@@ -625,6 +625,8 @@ vi.mock("@/components/onboarding/welcome-card", () => ({
   WelcomeCard: () => null,
 }));
 vi.mock("@repo/hooks", async () => ({
+  // The Now card's read (#5777): nothing on.
+  useEventsOnNow: () => ({ events: [], now: Date.now() }),
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
     .importActual<typeof import("@repo/hooks")>("@repo/hooks")
