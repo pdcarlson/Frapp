@@ -93,8 +93,9 @@ export function MemberAssignments({
         heldRoleIds,
         reach: data.reach,
         canManageRoles,
+        userId,
       }),
-    [data.roles, data.tiers, heldRoleIds, data.reach, canManageRoles],
+    [data.roles, data.tiers, heldRoleIds, data.reach, canManageRoles, userId],
   );
   const groupChips = useMemo(
     () => memberGroupChips(groups, userId, canManageGroups && editable),

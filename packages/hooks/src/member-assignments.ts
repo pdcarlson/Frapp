@@ -2,8 +2,9 @@ import { isEveryoneRole, roleColorOrNull } from "@repo/validation";
 import { matchesWordStarts, normalizeWords } from "./fuzzy-match";
 import type { ChapterGroup } from "./use-groups";
 import {
+  assignsRole,
+  assignsToMember,
   isWildcardRole,
-  reachesRole,
   type Reach,
   type TierRow,
   type TieredRole,
@@ -33,6 +34,7 @@ export const ASSIGN_CAPTIONS = {
   presidency: "Changes with Transfer presidency",
   checking: "Checking what your role can give",
   ranksAbove: "Ranks at or above yours",
+  memberAbove: "They rank at or above you",
   noRoles: "Your role can't give roles",
   noGroups: "Your role can't change groups",
 } as const;
@@ -101,10 +103,29 @@ function roleReason(role: TieredRole, inputs: AssignmentInputs): string | null {
   if (isWildcardRole(role)) return ASSIGN_CAPTIONS.presidency;
   if (!inputs.canManageRoles) return ASSIGN_CAPTIONS.noRoles;
   if (!inputs.reach.known) return ASSIGN_CAPTIONS.checking;
-  if (!reachesRole(inputs.reach, role, inputs.tiers)) {
+  if (!memberReachable(inputs)) return ASSIGN_CAPTIONS.memberAbove;
+  if (!assignsRole(inputs.reach, role, inputs.tiers)) {
     return ASSIGN_CAPTIONS.ranksAbove;
   }
   return null;
+}
+
+/** Whether the rank rules let the viewer change this member's roles. */
+function memberReachable(inputs: {
+  reach: Reach;
+  roles: readonly TieredRole[];
+  tiers: readonly TierRow[];
+  heldRoleIds: readonly string[];
+  userId?: string;
+}): boolean {
+  // Without the member's id the API decides, as before.
+  if (inputs.userId === undefined) return true;
+  return assignsToMember(
+    inputs.reach,
+    { userId: inputs.userId, roleIds: inputs.heldRoleIds },
+    inputs.roles,
+    inputs.tiers,
+  );
 }
 
 /**
@@ -222,6 +243,8 @@ export function memberRoleChips(inputs: {
   heldRoleIds: readonly string[];
   reach: Reach;
   canManageRoles: boolean;
+  /** The member's `users.id`, so the rank rules can place them. */
+  userId?: string;
 }): AssignmentChip[] {
   const positions = new Map(
     inputs.tiers.map((tier) => [tier.id, tier.position]),
@@ -250,6 +273,7 @@ export function memberRoleChips(inputs: {
         inputs.canManageRoles &&
         inputs.reach.known &&
         !isWildcardRole(role) &&
-        reachesRole(inputs.reach, role, inputs.tiers),
+        memberReachable(inputs) &&
+        assignsRole(inputs.reach, role, inputs.tiers),
     }));
 }

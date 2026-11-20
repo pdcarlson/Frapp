@@ -1033,9 +1033,24 @@ describe('MemberService', () => {
   // President, exec officers, chairs and brothers.
   describe('updateRoles rank rules', () => {
     const roles = tieredChapterRoles();
-    const members = tieredChapterMembers();
+    // A second chair, so a chair has a peer.
+    const SOCIAL_CHAIR_MEMBER = 'member-social-chair';
+    const members = [
+      ...tieredChapterMembers(),
+      {
+        ...tieredChapterMembers()[0],
+        id: SOCIAL_CHAIR_MEMBER,
+        user_id: 'user-social-chair',
+        role_ids: [ROLE.socialChair, ROLE.brother],
+      },
+    ];
     const memberRow = (id: string) => members.find((m) => m.id === id)!;
-    const save = (memberId: string, roleIds: string[], actorUserId: string) => {
+    const save = (
+      memberId: string,
+      roleIds: string[],
+      actorUserId: string,
+      extraPermissions: string[] = [],
+    ) => {
       mockRepo.findById.mockResolvedValue(memberRow(memberId));
       mockRoleRepo.findByChapter.mockResolvedValue(roles);
       mockRepo.setRoleIds.mockImplementation(
@@ -1044,9 +1059,17 @@ describe('MemberService', () => {
           role_ids: ids,
         }),
       );
-      mockRbacService.getRankContext.mockResolvedValue(
-        tieredRankContext(actorUserId),
-      );
+      const context = tieredRankContext(actorUserId);
+      mockRbacService.getRankContext.mockResolvedValue({
+        ...context,
+        reach: {
+          ...context.reach,
+          permissions: new Set([
+            ...context.reach.permissions,
+            ...extraPermissions,
+          ]),
+        },
+      });
       return service.updateRoles(memberId, roleIds, CHAPTER_ID, actorUserId);
     };
 
@@ -1118,6 +1141,75 @@ describe('MemberService', () => {
         ),
       ).rejects.toThrow(/alumni:post/);
       expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
+    });
+
+    // #5725 (Paul, 2026-11-20): `roles:assign_own_level` reaches the
+    // caller's own rank too, for the roles and for the member.
+    describe('with roles:assign_own_level', () => {
+      const OWN = ['roles:assign_own_level'];
+
+      it('is off by default: a chair cannot give a fellow chair even a lower role', async () => {
+        await expect(
+          save(
+            SOCIAL_CHAIR_MEMBER,
+            [ROLE.socialChair, ROLE.brother, ROLE.pledge],
+            USER.riskChair,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
+      });
+
+      it('lets a chair give a fellow chair a lower role, and a chair-level role', async () => {
+        await save(
+          SOCIAL_CHAIR_MEMBER,
+          [ROLE.socialChair, ROLE.brother, ROLE.pledge],
+          USER.riskChair,
+          OWN,
+        );
+        await save(
+          TIERED_MEMBER.brother,
+          [ROLE.brother, ROLE.socialChair],
+          USER.riskChair,
+          OWN,
+        );
+        expect(mockRepo.setRoleIds).toHaveBeenCalledTimes(2);
+      });
+
+      it('lets a chair take a chair role away from a fellow chair', async () => {
+        await save(SOCIAL_CHAIR_MEMBER, [ROLE.brother], USER.riskChair, OWN);
+        expect(mockRepo.setRoleIds).toHaveBeenCalledTimes(1);
+      });
+
+      it('still stops a chair touching an officer ranked above them, or giving an officer role', async () => {
+        await expect(
+          save(
+            TIERED_MEMBER.vicePresident,
+            [ROLE.vicePresident],
+            USER.riskChair,
+            OWN,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(
+          save(
+            TIERED_MEMBER.brother,
+            [ROLE.brother, ROLE.vicePresident],
+            USER.riskChair,
+            OWN,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
+      });
+
+      it('still refuses a role carrying a permission the caller lacks', async () => {
+        await expect(
+          save(
+            SOCIAL_CHAIR_MEMBER,
+            [ROLE.socialChair, ROLE.brother, ROLE.treasuryAssistant],
+            USER.riskChair,
+            OWN,
+          ),
+        ).rejects.toThrow(/billing:view/);
+      });
     });
 
     it('lets an exec officer make a brother a chair, and the President do anything', async () => {
