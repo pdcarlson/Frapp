@@ -10,6 +10,11 @@
  */
 
 import { meetingDueLabel, meetingLocalDay } from "./meeting-copy";
+import {
+  suggestTaskOwner,
+  taskTitleFrom,
+  type GuessableMember,
+} from "./task-suggestion-guess";
 
 export interface ComingUpEventCandidate {
   id: string;
@@ -364,4 +369,176 @@ export function comingUpCopyText(
 ): string {
   const day = meetingDueLabel(item.date, now);
   return day ? `${day}: ${item.text}` : item.text;
+}
+
+/** The words of the review that follows Post (#5672 step 3), on both apps. */
+export const COMING_UP_REVIEW_COPY = {
+  title: "Track the dates from this meeting?",
+  description:
+    "Frapp guessed what each date needs. Uncheck anything you don't want.",
+  taskFor: (name: string | null) =>
+    name ? `Task for ${name}` : "Task for you",
+  due: (title: string, date: string) => {
+    const day = meetingDueLabel(date);
+    return day ? `${title} · due ${day}` : title;
+  },
+  onCalendar: "Already on the calendar",
+  onCalendarDetail: (name: string, date: string) => {
+    const day = meetingDueLabel(date);
+    return `${day ? `${name} · ${day}` : name}. Nothing to add.`;
+  },
+  skip: "Skip",
+  track: (count: number) => `Track ${count}`,
+  made: (count: number) =>
+    count === 1 ? "Made 1 task" : `Made ${count} tasks`,
+  failed: (count: number) =>
+    count === 1 ? "Couldn't make 1 task" : `Couldn't make ${count} tasks`,
+  failedDetail: "Make it from the date's ⋯ menu.",
+} as const;
+
+/** One line of the review: a task to make, or a date already on the calendar. */
+export interface ComingUpReviewRow {
+  /** The date's place in the minutes' Coming up, from 0. */
+  index: number;
+  date: string;
+  text: string;
+  kind: "task" | "calendar";
+  /** The task's title, or the event's name for a calendar line. */
+  title: string;
+  /** The whole line, when the title had to be cut to fit a task's. */
+  description: string | null;
+  /** Who the task is for; null for the officer who posted. */
+  assigneeId: string | null;
+  /**
+   * The suggested task the date's action item already became, which the
+   * review accepts instead of making a second task for the same thing.
+   */
+  suggestion: {
+    id: string;
+    due_date: string | null;
+    assignee_id: string | null;
+  } | null;
+  /** Ticked to begin with: every task line, which the poster unticks. */
+  checked: boolean;
+}
+
+/** A waiting suggested task, as the review reads it. */
+export interface ComingUpReviewSuggestion {
+  id: string;
+  quote: string | null;
+  task: {
+    title: string;
+    assignee_id: string | null;
+    assignee_ids?: readonly string[] | null;
+    audience?: string | null;
+    due_date: string | null;
+  } | null;
+}
+
+/**
+ * What the review offers once minutes are posted (#5672; Paul picked "Review
+ * at Post", 2026-11-19): for each Coming up date still ahead that nothing
+ * tracks yet, a task due that day, ticked for the poster to untick. Whose:
+ * the owner of the action item about the same thing (due that day and
+ * sharing a word, or undated and sharing two), else a member the date's own
+ * words name, else the officer who posted; never someone not on the roster. When that action item already became a suggested task,
+ * the line accepts it, so the date never makes a second task for one job.
+ * A date already on the calendar is shown, with nothing to tick; a date
+ * already a task is left out. Words, not a model, as the chips match them.
+ */
+export function comingUpPostReview(input: {
+  dates: readonly { date: string; text: string }[];
+  tracking: readonly ComingUpDateTracking<
+    ComingUpEventCandidate,
+    ComingUpTaskCandidate
+  >[];
+  actionItems: readonly {
+    text: string;
+    owner_user_id: string | null;
+    due_date: string | null;
+  }[];
+  suggestions: readonly ComingUpReviewSuggestion[];
+  members: readonly GuessableMember[];
+  now?: Date;
+}): ComingUpReviewRow[] {
+  const now = input.now ?? new Date();
+  const taken = new Set<string>();
+  const memberIds = new Set(
+    input.members.flatMap((member) => (member.user_id ? [member.user_id] : [])),
+  );
+  const rows: ComingUpReviewRow[] = [];
+  input.dates.forEach(({ date, text }, index) => {
+    const track = input.tracking[index];
+    if (!track || !comingUpIsAhead(date, now) || track.tasks.length > 0) {
+      return;
+    }
+    const base = { index, date, text: text.trim() };
+    if (track.event) {
+      rows.push({
+        ...base,
+        kind: "calendar",
+        title: track.event.name,
+        description: null,
+        assigneeId: null,
+        suggestion: null,
+        checked: false,
+      });
+      return;
+    }
+    const about = aboutWords(text);
+    let item: (typeof input.actionItems)[number] | null = null;
+    let best = 0;
+    for (const candidate of input.actionItems) {
+      if (candidate.due_date !== null && candidate.due_date !== date) continue;
+      const shared = sharedWords(about, aboutWords(candidate.text));
+      // An item due that day needs one word in common; an undated one, two,
+      // since a single shared word ("dues", "chapter") is often chance.
+      if (shared < (candidate.due_date === null ? 2 : 1)) continue;
+      if (shared > best) {
+        item = candidate;
+        best = shared;
+      }
+    }
+    const suggestion = item
+      ? input.suggestions.find(
+          (s) =>
+            s.task !== null &&
+            !taken.has(s.id) &&
+            s.quote?.trim() === item!.text.trim(),
+        )
+      : undefined;
+    // A suggestion for a group stays in Suggested tasks, where its Who is
+    // the officer's to set; the review only makes tasks for one person.
+    const forGroup =
+      !!suggestion?.task &&
+      (!!suggestion.task.audience ||
+        (suggestion.task.assignee_ids?.length ?? 0) > 1);
+    if (forGroup) return;
+    if (suggestion) taken.add(suggestion.id);
+    // The minutes' own owner first; a name in the date's words is a guess.
+    // Only a current member: anyone else would read as the poster's task
+    // and be refused when made, so the line falls to the poster.
+    const named =
+      suggestion?.task?.assignee_id ??
+      item?.owner_user_id ??
+      suggestTaskOwner(text, input.members);
+    const owner = named && memberIds.has(named) ? named : null;
+    const title = suggestion?.task?.title ?? taskTitleFrom(base.text);
+    rows.push({
+      ...base,
+      kind: "task",
+      title,
+      description: suggestion || title === base.text ? null : base.text,
+      assigneeId: owner,
+      suggestion: suggestion?.task
+        ? {
+            id: suggestion.id,
+            due_date: suggestion.task.due_date,
+            assignee_id: suggestion.task.assignee_id,
+          }
+        : null,
+      checked: true,
+    });
+  });
+  return rows;
 }
