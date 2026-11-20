@@ -483,7 +483,13 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
       throw error;
     }
 
-    await this.tellAttendees(chapterId, meeting, userId);
+    // Read again: minutes linked to a meeting while this upload was being
+    // confirmed skipped their notice then (`tellOnLink` leaves an uploading
+    // recording to this step), so it goes out here with the meeting.
+    const now = await this.meetings
+      .editableBy(chapterId, meetingId, userId)
+      .catch(() => meeting);
+    await this.tellAttendees(chapterId, now, userId);
     return this.stateFor(chapterId, userId, current);
   }
 

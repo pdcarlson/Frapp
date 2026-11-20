@@ -8681,7 +8681,7 @@
             "bearer": []
           }
         ],
-        "summary": "Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes",
+        "summary": "Link minutes that have no event (started with no meeting, or whose event was deleted) to one, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes",
         "tags": [
           "Meetings"
         ]

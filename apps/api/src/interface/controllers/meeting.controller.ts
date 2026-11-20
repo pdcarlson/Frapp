@@ -249,12 +249,15 @@ export class MeetingController {
     );
   }
 
+  // No permission of its own: whoever may edit the minutes links them (the
+  // author of minutes started with no meeting, or a `meetings:edit` holder),
+  // and the service decides (`editable`). A new_event also needs
+  // `meetings:record` or `events:create`, checked where it is made.
   @Post(':id/event')
   @HttpCode(HttpStatus.OK)
-  @RequirePermissions(SystemPermissions.MEETINGS_EDIT)
   @ApiOperation({
     summary:
-      'Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes',
+      'Link minutes that have no event (started with no meeting, or whose event was deleted) to one, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes',
   })
   @ApiOkResponse({ type: MeetingDto })
   async linkEvent(
@@ -268,6 +271,8 @@ export class MeetingController {
 
   @Put(':id/live-recording')
   @HttpCode(HttpStatus.NO_CONTENT)
+  // Whoever may record the minutes, as the recording routes ask.
+  @RequirePermissions(SystemPermissions.MEETINGS_RECORD)
   @ApiOperation({
     summary:
       'The caller’s phone is recording these minutes: sent when it starts and every minute while it records, so lists can say who is recording',

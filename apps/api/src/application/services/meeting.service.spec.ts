@@ -138,7 +138,7 @@ describe('MeetingService', () => {
   let recordedDrafts: Set<string>;
   // Drafts someone has written notes on, and who is recording which now.
   let notedDrafts: Set<string>;
-  let liveRecorders: Map<string, string>;
+  let liveRecorders: Map<string, { userId: string; seenAt: string }>;
 
   const has = (userId: string, permission: string) => {
     const held = PERMISSIONS[userId] ?? [];
@@ -160,6 +160,9 @@ describe('MeetingService', () => {
     liveRecorders = new Map();
     repo = {
       findById: jest.fn(async (_chapterId, id) => rows.get(id) ?? null),
+      findByIds: jest.fn(async (_chapterId: string, ids: readonly string[]) =>
+        ids.flatMap((id) => rows.get(id) ?? []),
+      ),
       findByEvent: jest.fn(
         async (_chapterId, eventId) =>
           [...rows.values()].find((row) => row.event_id === eventId) ?? null,
@@ -210,32 +213,37 @@ describe('MeetingService', () => {
         async (_chapterId: string, ids: readonly string[]) =>
           new Set(ids.filter((id) => notedDrafts.has(id))),
       ),
+      // Both honour the cutoff, as the Supabase repository's `seen_at >=`
+      // filter does, so a beat older than it reads as stopped.
       findLiveRecorders: jest.fn(
-        async (_chapterId: string, ids: readonly string[], _since: string) =>
-          new Map([...liveRecorders].filter(([id]) => ids.includes(id))),
+        async (_chapterId: string, ids: readonly string[], since: string) =>
+          new Map(
+            [...liveRecorders]
+              .filter(([id, row]) => ids.includes(id) && row.seenAt >= since)
+              .map(([id, row]) => [id, row.userId]),
+          ),
       ),
-      findLiveRecordings: jest.fn(async (_chapterId: string, _since: string) =>
-        [...liveRecorders].map(([meetingId, userId]) => ({
-          meeting_id: meetingId,
-          chapter_id: CHAPTER,
-          user_id: userId,
-          started_at: '2026-11-20T21:00:00.000Z',
-          seen_at: '2026-11-20T21:00:00.000Z',
-        })),
+      findLiveRecordings: jest.fn(async (_chapterId: string, since: string) =>
+        [...liveRecorders]
+          .filter(([, row]) => row.seenAt >= since)
+          .map(([meetingId, row]) => ({
+            meeting_id: meetingId,
+            chapter_id: CHAPTER,
+            user_id: row.userId,
+            started_at: row.seenAt,
+            seen_at: row.seenAt,
+          })),
       ),
       markLiveRecording: jest.fn(
-        async (
-          _chapterId: string,
-          id: string,
-          userId: string,
-          _now: string,
-        ) => {
-          liveRecorders.set(id, userId);
+        async (_chapterId: string, id: string, userId: string, now: string) => {
+          liveRecorders.set(id, { userId, seenAt: now });
         },
       ),
       clearLiveRecording: jest.fn(
         async (_chapterId: string, id: string, userId: string) => {
-          if (liveRecorders.get(id) === userId) liveRecorders.delete(id);
+          if (liveRecorders.get(id)?.userId === userId) {
+            liveRecorders.delete(id);
+          }
         },
       ),
       findTemplate: jest.fn().mockResolvedValue(null),
@@ -1335,6 +1343,8 @@ describe('MeetingService', () => {
         event_id: CHAPTER_EVENT.id,
       });
       expect(linked.meeting.event_name).toBe(CHAPTER_EVENT.name);
+      // Started as Other with no name, they are filed by the meeting's name.
+      expect(linked.meeting.meeting_type).toBe('chapter');
       const posted = await service.post(
         CHAPTER,
         id,
@@ -1396,6 +1406,29 @@ describe('MeetingService', () => {
       await service.clearLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
       ({ facts } = await service.listWithFacts(CHAPTER, PRESIDENT));
       expect(facts.get('mtg-1')?.recording_by).toBeNull();
+    });
+
+    it('reads a phone that stopped beating for three minutes as stopped', async () => {
+      jest.useFakeTimers({ now: new Date('2026-11-20T21:00:00.000Z') });
+      try {
+        rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+        await service.markLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+        jest.setSystemTime(new Date('2026-11-20T21:02:59.000Z'));
+        let { facts } = await service.listWithFacts(CHAPTER, PRESIDENT);
+        expect(facts.get('mtg-1')?.recording_by).toBe(SECRETARY);
+        expect(
+          await service.liveRecordingsVisibleTo(CHAPTER, JAKE),
+        ).toHaveLength(1);
+        // The phone died without saying so: no beat for over three minutes.
+        jest.setSystemTime(new Date('2026-11-20T21:03:01.000Z'));
+        ({ facts } = await service.listWithFacts(CHAPTER, PRESIDENT));
+        expect(facts.get('mtg-1')?.recording_by).toBeNull();
+        expect(await service.liveRecordingsVisibleTo(CHAPTER, JAKE)).toEqual(
+          [],
+        );
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('tells anyone the meeting invites who is recording it, but not someone it leaves out', async () => {

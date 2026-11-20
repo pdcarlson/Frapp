@@ -26,6 +26,8 @@ export type MeetingWrite = Partial<
 
 export interface IMeetingRepository {
   findById(chapterId: string, id: string): Promise<Meeting | null>;
+  /** The chapter's minutes among `ids`, in no order; missing ids are left out. */
+  findByIds(chapterId: string, ids: readonly string[]): Promise<Meeting[]>;
   findByEvent(chapterId: string, eventId: string): Promise<Meeting | null>;
   /** The chapter's minutes, newest meeting first, at most `limit`. */
   findByChapter(chapterId: string, limit: number): Promise<Meeting[]>;

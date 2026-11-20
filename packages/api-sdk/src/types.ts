@@ -2594,7 +2594,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
+        /** Link minutes that have no event (started with no meeting, or whose event was deleted) to one, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
         post: operations["MeetingController_linkEvent_v1"];
         delete?: never;
         options?: never;

@@ -10,10 +10,11 @@ import type {
   IMeetingRepository,
   MeetingWrite,
 } from '#domain/repositories/meeting.repository.interface';
-import type {
-  Meeting,
-  MeetingLiveRecording,
-  MeetingTemplate,
+import {
+  LIVE_RECORDING_STALE_MS,
+  type Meeting,
+  type MeetingLiveRecording,
+  type MeetingTemplate,
 } from '#domain/entities/meeting.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
@@ -34,6 +35,20 @@ export class SupabaseMeetingRepository implements IMeetingRepository {
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
     return data;
+  }
+
+  async findByIds(
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<Meeting[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('meetings')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .in('id', [...ids]);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
   }
 
   async findByEvent(
@@ -140,13 +155,25 @@ export class SupabaseMeetingRepository implements IMeetingRepository {
         { onConflict: 'meeting_id', ignoreDuplicates: true },
       );
     if (error) throw new SupabaseQueryError(error);
-    // A row already there (this phone's last beat, or another member's):
-    // the newest phone to say so is the one recording, and its start stays.
+    // A row left by a recording that ended without saying so (no beat for
+    // the stale window), or by another member's phone, is a new recording:
+    // it starts now. A row this phone is still beating keeps its start.
+    const cutoff = new Date(
+      Date.parse(now) - LIVE_RECORDING_STALE_MS,
+    ).toISOString();
+    const { error: restartError } = await this.supabase
+      .from('meeting_live_recordings')
+      .update({ user_id: userId, started_at: now, seen_at: now })
+      .eq('chapter_id', chapterId)
+      .eq('meeting_id', meetingId)
+      .or(`seen_at.lt.${cutoff},user_id.neq.${userId}`);
+    if (restartError) throw new SupabaseQueryError(restartError);
     const { error: refreshError } = await this.supabase
       .from('meeting_live_recordings')
-      .update({ user_id: userId, seen_at: now })
+      .update({ seen_at: now })
       .eq('chapter_id', chapterId)
-      .eq('meeting_id', meetingId);
+      .eq('meeting_id', meetingId)
+      .eq('user_id', userId);
     if (refreshError) throw new SupabaseQueryError(refreshError);
   }
 

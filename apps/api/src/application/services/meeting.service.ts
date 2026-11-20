@@ -19,6 +19,7 @@ import {
   eventSeriesKey,
   minutesGist,
   isMeetingContentEmpty,
+  guessMeetingType,
   MINUTES_WITHOUT_MEETING_NAME,
   readMeetingContent,
   type MeetingContent,
@@ -35,7 +36,10 @@ import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repositor
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
-import type { Meeting } from '#domain/entities/meeting.entity';
+import {
+  LIVE_RECORDING_STALE_MS,
+  type Meeting,
+} from '#domain/entities/meeting.entity';
 import type { Event } from '#domain/entities/event.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { EventService } from './event.service';
@@ -74,13 +78,6 @@ export type PostedMinutesListener = (
   meeting: Meeting,
   change: { reason: 'posted' | 'edited'; actorId: string },
 ) => Promise<void>;
-
-/**
- * How long a recording phone may go unheard before the list stops saying
- * it is recording: it beats every minute, so three missed beats (no signal,
- * the app killed) end the "is recording" line.
- */
-export const LIVE_RECORDING_STALE_MS = 3 * 60_000;
 
 /**
  * What a feature does when minutes are linked to a meeting: the recording
@@ -1014,8 +1011,8 @@ export class MeetingService {
 
   /**
    * The meetings being recorded right now whose events the viewer can see,
-   * for anyone the meeting invites (the Activity page's Now card, the event
-   * screen): who, since when, and which event. A recording is announced to
+   * for anyone the meeting invites (the event's Minutes row on web and
+   * phone): who, since when, and which event. A recording is announced to
    * the room before it starts (§ Recording notice), so saying who is
    * recording shows nothing of the draft itself, which stays its author's.
    * Minutes with no meeting have no audience and are left out.
@@ -1037,8 +1034,9 @@ export class MeetingService {
     );
     if (live.length === 0) return [];
     const meetings = (
-      await Promise.all(
-        live.map((row) => this.meetingRepo.findById(chapterId, row.meeting_id)),
+      await this.meetingRepo.findByIds(
+        chapterId,
+        live.map((row) => row.meeting_id),
       )
     ).filter(
       (row): row is Meeting =>
@@ -1117,6 +1115,11 @@ export class MeetingService {
         event_id: event.id,
         event_name: event.name,
         event_start_time: event.start_time,
+        // Minutes started with no meeting are filed as Other, unnamed: the
+        // meeting they join says what they are, as starting on it would.
+        ...(meeting.meeting_type === 'other' && !meeting.other_label
+          ? { meeting_type: guessMeetingType(event.name) }
+          : {}),
         updated_by: userId,
       });
     } catch (error) {
