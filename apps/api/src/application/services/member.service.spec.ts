@@ -1033,7 +1033,17 @@ describe('MemberService', () => {
   // President, exec officers, chairs and brothers.
   describe('updateRoles rank rules', () => {
     const roles = tieredChapterRoles();
-    const members = tieredChapterMembers();
+    // A second chair, so a chair has a peer to give a role to.
+    const SOCIAL_CHAIR_MEMBER = 'member-social-chair';
+    const members = [
+      ...tieredChapterMembers(),
+      {
+        ...tieredChapterMembers()[0],
+        id: SOCIAL_CHAIR_MEMBER,
+        user_id: 'user-social-chair',
+        role_ids: [ROLE.socialChair, ROLE.brother],
+      },
+    ];
     const memberRow = (id: string) => members.find((m) => m.id === id)!;
     const save = (memberId: string, roleIds: string[], actorUserId: string) => {
       mockRepo.findById.mockResolvedValue(memberRow(memberId));
@@ -1081,10 +1091,45 @@ describe('MemberService', () => {
       ).rejects.toThrow(/billing:view/);
     });
 
-    it('stops a chair taking a role away from an officer who outranks them', async () => {
+    // Paul, 2026-11-20: the rule ranks the roles that move, not the member,
+    // so a role you could give anyone you can give a peer or a superior.
+    it('lets a chair give a fellow chair a role below the chairs', async () => {
+      await save(
+        SOCIAL_CHAIR_MEMBER,
+        [ROLE.socialChair, ROLE.brother, ROLE.pledge],
+        USER.riskChair,
+      );
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        SOCIAL_CHAIR_MEMBER,
+        expect.any(Array),
+        [ROLE.socialChair, ROLE.brother, ROLE.pledge],
+      );
+    });
+
+    it('lets a chair give and take a role below the chairs on an officer who outranks them', async () => {
+      await save(
+        TIERED_MEMBER.vicePresident,
+        [ROLE.vicePresident, ROLE.brother, ROLE.pledge],
+        USER.riskChair,
+      );
+      await save(
+        TIERED_MEMBER.vicePresident,
+        [ROLE.vicePresident],
+        USER.riskChair,
+      );
+      expect(mockRepo.setRoleIds).toHaveBeenCalledTimes(2);
+    });
+
+    it("still stops a chair changing a fellow chair's or an officer's own roles", async () => {
+      // Taking the social chair's chair role away, and the VP's officer role.
       await expect(
-        save(TIERED_MEMBER.vicePresident, [ROLE.vicePresident], USER.riskChair),
+        save(SOCIAL_CHAIR_MEMBER, [ROLE.brother], USER.riskChair),
       ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        save(TIERED_MEMBER.vicePresident, [ROLE.brother], USER.riskChair),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('lets a chair give a brother a role below the chairs', async () => {
