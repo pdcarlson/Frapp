@@ -4,6 +4,8 @@ import {
   comingUpCopyText,
   comingUpEventTimes,
   comingUpMenu,
+  comingUpPostReview,
+  COMING_UP_REVIEW_COPY,
   comingUpIsAhead,
   comingUpReminderFor,
   comingUpReminderTime,
@@ -255,5 +257,168 @@ describe("Remind me", () => {
     expect(
       comingUpReminderFor(reminders, { date: "2026-12-04", text: "Formal" }),
     ).toBeNull();
+  });
+});
+
+describe("comingUpPostReview", () => {
+  const NOW = new Date("2026-11-20T15:00:00");
+  const dates = [
+    { date: "2026-11-21", text: "Dues due to the treasurer" },
+    { date: "2026-12-02", text: "Philanthropy committee reports back" },
+    { date: "2026-12-06", text: "Winter formal at the Hilton" },
+    { date: "2026-11-01", text: "Homecoming cleanup" },
+    { date: "2026-11-25", text: "Composite photo forms" },
+  ];
+  const untracked = { event: null, tasks: [] };
+  const tracking = [
+    untracked,
+    untracked,
+    {
+      event: {
+        id: "e1",
+        name: "Winter Formal",
+        start_time: noon("2026-12-06"),
+      },
+      tasks: [],
+    },
+    untracked,
+    { event: null, tasks: [{ ...task({ id: "t9" }), people: 1 }] },
+  ];
+  const members = [
+    { user_id: "marcus", display_name: "Marcus Hale" },
+    { user_id: "dana", display_name: "Dana Ruiz" },
+  ];
+  const base = {
+    dates,
+    tracking,
+    actionItems: [] as {
+      text: string;
+      owner_user_id: string | null;
+      due_date: string | null;
+    }[],
+    suggestions: [],
+    members,
+    now: NOW,
+  };
+
+  it("offers a task per untracked date still ahead, and shows the calendar's", () => {
+    const rows = comingUpPostReview(base);
+    expect(rows.map((row) => [row.index, row.kind, row.checked])).toEqual([
+      [0, "task", false],
+      [1, "task", false],
+      [2, "calendar", false],
+    ]);
+    expect(rows[0]).toMatchObject({
+      title: "Dues due to the treasurer",
+      assigneeId: null,
+      suggestion: null,
+    });
+    expect(rows[2]?.title).toBe("Winter Formal");
+  });
+
+  it("ticks a task whose owner the action items name, before a name in the date", () => {
+    const rows = comingUpPostReview({
+      ...base,
+      dates: [{ date: "2026-11-21", text: "Dana: dues due to the treasurer" }],
+      tracking: [untracked],
+      actionItems: [
+        { text: "Collect dues", owner_user_id: "marcus", due_date: null },
+      ],
+    });
+    expect(rows[0]).toMatchObject({ assigneeId: "marcus", checked: true });
+  });
+
+  it("guesses from the date's own words when no action item says", () => {
+    const rows = comingUpPostReview({
+      ...base,
+      dates: [{ date: "2026-11-21", text: "Marcus Hale hands in dues" }],
+      tracking: [untracked],
+      actionItems: [
+        // Due another day: not this date's.
+        { text: "Collect dues", owner_user_id: "dana", due_date: "2026-11-30" },
+      ],
+    });
+    expect(rows[0]).toMatchObject({ assigneeId: "marcus", checked: true });
+  });
+
+  it("accepts the suggested task the action item became, once", () => {
+    const suggestion = {
+      id: "s1",
+      quote: "Marcus collects dues from brothers",
+      task: {
+        title: "Collect dues from brothers",
+        assignee_id: "marcus",
+        due_date: null,
+      },
+    };
+    const rows = comingUpPostReview({
+      ...base,
+      dates: [
+        { date: "2026-11-21", text: "Dues due to the treasurer" },
+        { date: "2026-11-22", text: "Late dues" },
+      ],
+      tracking: [untracked, untracked],
+      actionItems: [
+        {
+          text: "Marcus collects dues from brothers ",
+          owner_user_id: "marcus",
+          due_date: null,
+        },
+      ],
+      suggestions: [suggestion],
+    });
+    expect(rows[0]).toMatchObject({
+      title: "Collect dues from brothers",
+      description: null,
+      assigneeId: "marcus",
+      suggestion: { id: "s1", due_date: null, assignee_id: "marcus" },
+      checked: true,
+    });
+    expect(rows[1]).toMatchObject({ suggestion: null });
+  });
+
+  it("leaves a date whose suggestion is for a group to Suggested tasks", () => {
+    const rows = comingUpPostReview({
+      ...base,
+      dates: [{ date: "2026-11-21", text: "Dues due" }],
+      tracking: [untracked],
+      actionItems: [
+        { text: "Everyone pays dues", owner_user_id: null, due_date: null },
+      ],
+      suggestions: [
+        {
+          id: "s2",
+          quote: "Everyone pays dues",
+          task: {
+            title: "Pay dues",
+            assignee_id: null,
+            audience: "everyone",
+            due_date: null,
+          },
+        },
+      ],
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it("cuts a long date to a task title, keeping the whole line", () => {
+    const long = `Formal ${"ticket money ".repeat(30)}`.trim();
+    const [row] = comingUpPostReview({
+      ...base,
+      dates: [{ date: "2026-11-21", text: long }],
+      tracking: [untracked],
+    });
+    expect(row?.title.length).toBeLessThanOrEqual(255);
+    expect(row?.title.endsWith("…")).toBe(true);
+    expect(row?.description).toBe(long);
+  });
+
+  it("words the lines", () => {
+    expect(COMING_UP_REVIEW_COPY.taskFor("Marcus Hale")).toBe(
+      "Task for Marcus Hale",
+    );
+    expect(COMING_UP_REVIEW_COPY.taskFor(null)).toBe("Task for you");
+    expect(COMING_UP_REVIEW_COPY.track(2)).toBe("Track 2");
+    expect(COMING_UP_REVIEW_COPY.made(1)).toBe("Made 1 task");
   });
 });

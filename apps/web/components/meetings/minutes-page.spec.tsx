@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeetingMinutes } from "@repo/hooks";
 
 const mocks = vi.hoisted(() => ({
+  datesReview: vi.fn(),
   meeting: { current: null as unknown },
   event: { current: undefined as unknown },
   actionItemTasks: { current: [] as unknown[] },
@@ -130,6 +131,14 @@ vi.mock("@/components/meetings/coming-up-dates", async () => {
   };
 });
 
+// The review after Post has its own spec; here only when the page starts it.
+vi.mock("@/components/meetings/coming-up-post-review", () => ({
+  ComingUpPostReview: (props: { meetingId: string }) => {
+    mocks.datesReview(props);
+    return null;
+  },
+}));
+
 vi.mock("@/components/ai/suggested-tasks", () => ({
   SuggestedTasks: ({ source }: { source: { type: string; id: string } }) => (
     <div data-testid="suggested-tasks">{`${source.type}:${source.id}`}</div>
@@ -253,6 +262,7 @@ function loaded(meeting: MeetingMinutes) {
 }
 
 beforeEach(() => {
+  mocks.datesReview.mockReset();
   mocks.notes.current = null;
   for (const fn of [
     mocks.saveNotes,
@@ -824,6 +834,10 @@ describe("MinutesPage", () => {
       id: "m-1",
       expectedUpdatedAt: "2026-11-10T01:00:00.000Z",
     });
+    // Then the Coming up review, once the minutes are posted (#5672).
+    expect(mocks.datesReview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ meetingId: "m-1" }),
+    );
   });
 
   it("saves typing that hasn't saved yet before posting, and posts that version", async () => {
@@ -1293,6 +1307,7 @@ describe("MinutesPage", () => {
           expect.objectContaining({ title: "Couldn't post the minutes" }),
         ),
       );
+      expect(mocks.datesReview).not.toHaveBeenCalled();
       expect(
         (
           screen.getByRole("textbox", {

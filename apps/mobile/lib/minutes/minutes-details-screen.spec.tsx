@@ -128,6 +128,13 @@ vi.mock("@/components/minutes/minutes-details-sheet", async () => {
   const { forwardRef } = await import("react");
   return { MinutesDetailsSheet: forwardRef(() => null) };
 });
+// The review after Post has its own spec; here only when the screen starts it.
+vi.mock("@/components/minutes/coming-up-post-review", () => ({
+  ComingUpPostReview: (props: { meetingId: string }) => {
+    datesReview(props);
+    return null;
+  },
+}));
 vi.mock("@/components/minutes/mark-attendance-sheet", async () => {
   const { forwardRef } = await import("react");
   return { MarkAttendanceSheet: forwardRef(() => null) };
@@ -253,6 +260,7 @@ vi.mock("@/components/ai/meet-frapp-ai", () => ({
   }),
 }));
 const confirm = vi.hoisted(() => vi.fn());
+const datesReview = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/minutes/meetings-on", () => ({ confirmAlert: confirm }));
 const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
 vi.mock("@repo/validation", async (importOriginal) => ({
@@ -320,6 +328,7 @@ const button = (tree: ReactTestRenderer, label: string) =>
   )[0];
 
 beforeEach(() => {
+  datesReview.mockReset();
   vi.clearAllMocks();
   state.meeting = meeting();
   state.isPending = false;
@@ -705,6 +714,10 @@ describe("Minutes on the phone", () => {
       id: "m1",
       expectedUpdatedAt: "v2",
     });
+    // Then the Coming up review, once the minutes are posted (#5672).
+    expect(datesReview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ meetingId: "m1" }),
+    );
   });
 
   it("says a post failed above the button", async () => {
@@ -712,6 +725,7 @@ describe("Minutes on the phone", () => {
     const tree = render();
     await act(async () => button(tree, MEETING_COPY.post).props.onPress());
     expect(screenText(tree)).toContain(MEETING_COPY.postFailed);
+    expect(datesReview).not.toHaveBeenCalled();
   });
 
   it("can't post while a draft is being written", () => {
