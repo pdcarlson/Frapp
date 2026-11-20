@@ -99,7 +99,7 @@ These cause most of the iterations, so they come first.
 - **Create forms are a borderless title plus property rows** (Type, When, Repeat, Location, Who's coming,
   Points, Description, Notes, Check-in for an event), each opening its menu in place, identical on web
   and phone. Create is small in the header. No "More options", no big Cancel/Create footer. (11-19)
-  Changed in #5742 by shawnatomklein-eng, 2026-11-20: on both apps the rows sit in three framed groups
+  Changed in #5748 by shawnatomklein-eng, 2026-11-20: on both apps the rows sit in three framed groups
   on the raised surface; on web every clickable value is a quiet chip with the control edge (a chevron on
   a menu), and the phone keeps its row chevrons
   ([`components.md` § Property rows](../../../spec/ui/design-system/components.md#property-rows)).
