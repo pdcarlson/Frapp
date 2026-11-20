@@ -63,6 +63,10 @@
 //   The read-receipts sentence in section 1 (2026-11-18, #5519, in the
 //   wording Paul approved) moved only the Privacy pin on those precedents,
 //   pending the owner's material-or-not ruling in its PR.
+//   The Terms' Eligibility section moving the minimum age to 17, with Frapp
+//   AI for 18 and older (2026-11-19, #5627, Paul's pick of both ages) moved
+//   only the Terms pin, pending the owner's material-or-not ruling in its PR:
+//   every member who accepted before it confirmed 18, which still covers AI.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -96,7 +100,7 @@ export const PINNED_PAGES = {
   terms: {
     path: "apps/landing/app/terms/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "3e73b4406a9956c2",
+    fingerprint: "3d5e3fc5be3e148b",
   },
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",

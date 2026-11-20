@@ -1,3 +1,4 @@
+import { AI_MINIMUM_AGE } from "./legal";
 /**
  * The words around Frapp AI, shared by web and mobile so the two never say
  * different things about it (`spec/behavior/ai.md` § Consent).
@@ -165,12 +166,14 @@ export const FRAPP_AI_COPY = {
   ] as readonly FrappAiPoint[],
   /**
    * The one line that makes Continue an explicit yes (Apple 5.1.2(i)): who
-   * it works with, and that Continue turns it on. It names only the
-   * member's account: the chapter's switches start on (#5294), so it no
-   * longer has a "for you and your chapter" form.
+   * it works with, and that Continue confirms you're 18 or older and turns
+   * it on (#5627: members may join at 17, AI
+   * stays 18, `AI_MINIMUM_AGE`). It names only the member's account: the
+   * chapter's switches start on (#5294), so it no longer has a "for you and
+   * your chapter" form.
    */
   disclosure: (providers: string) =>
-    `Frapp AI works with ${providers}. Continuing turns it on for your account.`,
+    `Frapp AI works with ${providers}. Continuing confirms you're ${AI_MINIMUM_AGE} or older and turns it on for your account.`,
   privacyLink: "Privacy policy",
   continue: "Continue",
   notNow: "Not now",

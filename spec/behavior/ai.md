@@ -172,7 +172,8 @@ Each governs a different thing.
 2. **The member turned Frapp AI on, once, on Meet Frapp AI.**
    This gate governs what is the member's to share: their own use of AI, and their own messages.
    Since #4790 (Paul, 2026-11-13: "make it one of those screens", "it's not forced... it should be encouraged during the signup process") the member answers on one onboarding screen, not on a separate sheet at the first AI feature.
-   The screen says what Frapp AI does in three short lines, names the companies it works with in one line that also says Continue turns it on, and links the privacy policy, which carries the kinds of data, what is kept, and what turning it off does ([`apps/landing/app/privacy/page.tsx`](../../apps/landing/app/privacy/page.tsx) § 4).
+   *Changed in #5627 by `pdcarlson`, 2026-11-19 (Paul's pick):* a member who joins a chapter meets it at their first use of AI (see "Where Meet Frapp AI appears" below); a founder's chapter setup keeps it as a step.
+   The screen says what Frapp AI does in three short lines, names the companies it works with in one line that also says Continue confirms the member is 18 or older and turns it on (#5627: members may join at 17, `AI_MINIMUM_AGE`; Google Cloud's terms bar generative AI for people under 18, ADR-28), and links the privacy policy, which carries the kinds of data, what is kept, and what turning it off does ([`apps/landing/app/privacy/page.tsx`](../../apps/landing/app/privacy/page.tsx) § 4).
    A prominent **Continue** is the yes; a quiet underlined **Not now** is a no.
    Paul's rule for the words: say no more about the process than the member needs.
    - Adding a provider makes a new version, and every member is asked again.

@@ -863,6 +863,11 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 > 2026-09-23: the Terms say 18 or older, which agrees with this target audience, and the
 > owner kept the iOS rating at 13+ (§ Age rating). Leave the three declarations as they
 > are.
+>
+> 2026-11-19 (#5627, owner's pick): the Terms now say 17 or older, with Frapp AI for 18
+> and older, so they no longer agree with this 18-and-over target audience. Whether to add
+> the 16–17 band is the owner's Play Console decision, filed as
+> [#5707](https://github.com/pdcarlson/Frapp/issues/5707); the declaration above is unchanged until then.
 
 ## Shipped builds and the API contract
 
