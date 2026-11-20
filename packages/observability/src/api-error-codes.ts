@@ -148,6 +148,10 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "ai.suggestion.decided",
   "ai.suggestion.accepting",
   "ai.suggestion.incomplete",
+  // Add to next meeting's agenda on a suggestion that isn't a task from
+  // minutes (#5790): the menu never offers it there, so only an old or
+  // hand-made request sends it.
+  "ai.suggestion.not_handled_here",
   // The acting agent (#718): a member without `ai:act`, a points proposal
   // for more members than the chapter's hourly limit leaves, and one whose
   // members have all left the chapter.
