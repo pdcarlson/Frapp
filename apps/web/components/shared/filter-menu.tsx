@@ -230,7 +230,7 @@ export function ActiveFilterChips({
             }}
             aria-label={`Remove filter ${filter.label}: ${current?.label ?? ""}`}
             className={cn(
-              "inline-flex h-6 items-center gap-1 rounded-full border border-border bg-secondary px-2.5 text-caption text-foreground transition hover:bg-card-hover",
+              "inline-flex h-6 items-center gap-1 rounded-full border border-border bg-card px-2.5 text-caption text-foreground transition hover:bg-card-hover",
               FOCUS_RING,
             )}
           >
