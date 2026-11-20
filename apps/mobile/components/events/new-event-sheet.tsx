@@ -878,8 +878,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                   style={styles.rowInput}
                 />
               </PropertyRow>
-              <RowDivider />
+            </View>
 
+            {/* Who's coming and points as their own group, as web's
+                form sets them (#5742). */}
+            <View style={styles.group}>
               <PropertyRow
                 glyph="attendance"
                 label={EVENT_FORM_ROW_LABELS.attendance}
@@ -924,8 +927,9 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                   ) : null}
                 </>
               ) : null}
-              <RowDivider />
+            </View>
 
+            <View style={styles.group}>
               {/* The agenda while the event is made (Paul 2026-11-19:
                   "where is the ability to add agenda items"). Only on
                   create: an event's agenda is edited on Event details and
@@ -1141,7 +1145,8 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     fieldError: {
       borderColor: tokens.color.semantic.destructive,
     },
-    // The rows as one grouped list, the way Calendar and Settings set them.
+    // A run of rows as one grouped list, the way Calendar and Settings set
+    // them: when and where, who and points, then the rest (#5742).
     group: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
