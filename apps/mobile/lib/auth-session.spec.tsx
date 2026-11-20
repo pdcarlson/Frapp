@@ -19,21 +19,6 @@ const mockState = vi.hoisted(() => ({
     access_token: string;
     user: { email: string; id?: string };
   } | null,
-  claims: null as Record<string, unknown> | null,
-  claimsError: null as { message: string } | null,
-  /**
-   * When closed, `getClaims` parks until the test releases it. Without this the
-   * mocked read settles inside the same `act()` that triggered it, so the
-   * in-flight window — the only place a gate-blocking regression is visible —
-   * cannot be observed at all.
-   *
-   * Waiters are a list rather than a single resolver because more than one read
-   * can be parked at once: a token change re-runs the claim effect while the
-   * mount read is still behind the gate. Holding one resolver overwrote the
-   * earlier one, stranding a promise that could then never settle.
-   */
-  claimsGateClosed: false,
-  claimsGateWaiters: [] as Array<() => void>,
   authChangeHandlers: [] as AuthChangeHandler[],
   signInWithPasswordResult: { error: null as { message: string } | null },
   signInWithOtpResult: { error: null as { message: string } | null },
@@ -138,16 +123,10 @@ vi.mock("./supabase", async () => {
           },
         };
       }),
+      // The chapter claim is decoded from the token (#5768); a call here is
+      // the launch round trip coming back.
       getClaims: vi.fn(async () => {
-        if (mockState.claimsGateClosed) {
-          await new Promise<void>((release) => {
-            mockState.claimsGateWaiters.push(release);
-          });
-        }
-        return {
-          data: mockState.claims ? { claims: mockState.claims } : null,
-          error: mockState.claimsError,
-        };
+        throw new Error("getClaims is not used: the claim is decoded locally");
       }),
       signInWithPassword: vi.fn(
         async (input: { email: string; password: string }) => {
@@ -226,102 +205,19 @@ function emitAuthChange(
   }
 }
 
-/** Hold every claim read issued from here on until `releaseClaimsGate()`. */
-function closeClaimsGate() {
-  mockState.claimsGateClosed = true;
+/** An unsigned JWT carrying `claims`: the app only ever decodes the payload. */
+function jwt(claims: Record<string, unknown>): string {
+  return `e30.${btoa(JSON.stringify(claims)).replace(/=+$/, "")}.sig`;
 }
 
-/**
- * Let every parked claim read finish, and settle the resulting renders here.
- *
- * Releasing after the test body returns lands those state updates in whatever
- * test runs next, where it lands on a provider Testing Library has already
- * unmounted — so it exercises nothing and this test's last third silently stops
- * asserting. Not a state leak across tests; the `act` is here to keep the
- * release and its renders inside the test that asked for them.
- */
-async function releaseClaimsGate() {
-  mockState.claimsGateClosed = false;
-  const waiters = mockState.claimsGateWaiters;
-  mockState.claimsGateWaiters = [];
-  await act(async () => {
-    for (const release of waiters) release();
-  });
-}
-
-/** The `getClaims` mock, for asserting on or awaiting the reads it recorded. */
-function claimsMock() {
-  const client = getSupabaseClient();
-  if (!client) {
-    throw new Error(
-      "claimsMock() needs a configured client; mockState.configured is false",
-    );
-  }
-  return vi.mocked(client.auth.getClaims).mock;
-}
-
-/** How many chapter-claim reads have been issued so far. */
-function claimReadCount(): number {
-  return claimsMock().results.length;
-}
-
-/**
- * Wait for the *first* chapter-claim read to have actually landed.
- *
- * Waiting on `isChapterResolving` alone does not do this. It is
- * `status === "authenticated" && !hasReadChapterClaim`
- * ([`auth-session.tsx`](./auth-session.tsx)), so it also reads false for the
- * whole `hydrating` window — before `getSession()` resolves and before any read
- * is issued. Pairing it with the authenticated state is what rules that window
- * out, and the pair is exactly equivalent to `hasReadChapterClaim === true`.
- *
- * Before shortening a product constant, note the other producer of that flag:
- * the bounded bail-out timer in the claim effect. What keeps it out of reach
- * here is `waitFor`'s own `asyncUtilTimeout` — 1000ms, Testing Library's
- * default, which nothing in `apps/mobile` overrides — not vitest's 5s
- * `testTimeout`. So the invariant is `CLAIM_READ_TIMEOUT_MS > 1000`, and it is
- * comfortably met at 8s. Drop it under a second, or raise `asyncUtilTimeout`
- * past it, and this helper goes back to proving nothing.
- */
-async function waitForFirstClaimRead(result: {
-  current: ReturnType<typeof useAuthSession>;
-}) {
-  await waitFor(() => {
-    expect(result.current.status).toBe("authenticated");
-    expect(result.current.isChapterResolving).toBe(false);
-  });
-}
-
-/**
- * Let every claim read issued so far settle, along with the renders it causes.
- *
- * Needed wherever a *later* read is the thing under test: after the first read
- * lands, `hasReadChapterClaim` stays true by design, so a re-read changes no
- * flag and there is nothing for `waitFor` to observe.
- *
- * The `act` is what makes this correct, not the `allSettled`. `allSettled`
- * registers on the mock's promise *after* the provider's own `.then`, and the
- * `.finally` that sets the flag is two links further down — so awaiting the
- * source promise alone can return before the chain and its renders have landed.
- * React's async `act` hops macrotasks until its queue drains, which flushes all
- * of it. Do not "simplify" this by dropping the `act`.
- *
- * Pair this with an open gate. A read parked by `closeClaimsGate()` is resolved
- * only by `releaseClaimsGate()`, so awaiting it here would hang until the test
- * timeout with nothing to point at the cause — hence the explicit guard.
- */
-async function settleClaimReads() {
-  if (mockState.claimsGateClosed) {
-    throw new Error(
-      "settleClaimReads() would hang: the claims gate is closed and parked " +
-        "reads can only be resolved by releaseClaimsGate().",
-    );
-  }
-  const pending = claimsMock().results.map((r) => r.value);
-  await act(async () => {
-    await Promise.allSettled(pending);
-  });
-}
+/** User 1 in chapter 1, then the same member's refreshed token. */
+const TOKEN_1 = jwt({ sub: "user-1", active_chapter_id: "chapter-uuid-1", n: 1 });
+const TOKEN_2 = jwt({ sub: "user-1", active_chapter_id: "chapter-uuid-1", n: 2 });
+/** Another account in the same chapter: a magic-link swap. */
+const TOKEN_2_OTHER_USER = jwt({
+  sub: "user-2",
+  active_chapter_id: "chapter-uuid-1",
+});
 
 const SESSION = {
   access_token: "access-token-1",
@@ -349,10 +245,6 @@ beforeEach(async () => {
 
   mockState.secureStore.clear();
   mockState.initialSession = null;
-  mockState.claims = null;
-  mockState.claimsError = null;
-  mockState.claimsGateClosed = false;
-  mockState.claimsGateWaiters = [];
   mockState.authChangeHandlers = [];
   mockState.signInWithPasswordResult = { error: null };
   mockState.signInWithOtpResult = { error: null };
@@ -493,134 +385,93 @@ describe("AuthSessionProvider — token persistence", () => {
 
 describe("AuthSessionProvider — chapter context", () => {
   it("resolves chapterId from the active_chapter_id claim", async () => {
-    mockState.initialSession = SESSION;
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+    mockState.initialSession = {
+      ...SESSION,
+      access_token: jwt({ active_chapter_id: "chapter-uuid-1", sub: "user-1" }),
+    };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
     await waitFor(() =>
       expect(result.current.chapterId).toBe("chapter-uuid-1"),
     );
+  });
+
+  it("reads the claim from the token without a round trip to Supabase Auth (#5768)", async () => {
+    // `getClaims` falls back to `getUser()` on Hermes: a network call every
+    // launch used to wait on before the first screen could mount.
+    mockState.initialSession = {
+      ...SESSION,
+      access_token: jwt({ active_chapter_id: "chapter-uuid-1", sub: "user-1" }),
+    };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+
+    // The chapter arrives on the same render as the session: the gate never
+    // sees an authenticated member whose chapter is still being read.
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    expect(result.current.isChapterResolving).toBe(false);
+    expect(result.current.chapterId).toBe("chapter-uuid-1");
+    expect(getSupabaseClient()?.auth.getClaims).not.toHaveBeenCalled();
   });
 
   it("resolves null when the claim is absent (multi-chapter, no selection)", async () => {
-    mockState.initialSession = SESSION;
-    mockState.claims = { sub: "user-1" };
+    mockState.initialSession = {
+      ...SESSION,
+      access_token: jwt({ sub: "user-1" }),
+    };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
-    await waitForFirstClaimRead(result);
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    expect(result.current.isChapterResolving).toBe(false);
     expect(result.current.chapterId).toBeNull();
   });
 
-  it("does not invent a chapter when the very first claim read errors", async () => {
-    mockState.initialSession = SESSION;
-    mockState.claims = { active_chapter_id: "chapter-uuid-1" };
-    mockState.claimsError = { message: "jwks unreachable" };
+  it("resolves null for a token it can't read, rather than inventing a chapter", async () => {
+    mockState.initialSession = { ...SESSION, access_token: "not-a-jwt" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
-    await waitForFirstClaimRead(result);
-    // Nothing to fall back to, so null — but note this is "retain what we had",
-    // not "null on error"; the next test is the half that distinguishes them.
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    expect(result.current.isChapterResolving).toBe(false);
     expect(result.current.chapterId).toBeNull();
   });
 
-  it("retains the resolved chapter when a later claim read fails", async () => {
-    mockState.initialSession = SESSION;
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+  it("follows a chapter switch's refreshed token without blocking the gate", async () => {
+    mockState.initialSession = {
+      ...SESSION,
+      access_token: jwt({ active_chapter_id: "chapter-uuid-1", sub: "user-1" }),
+      user: { ...SESSION.user, id: "user-1" },
+    };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
       expect(result.current.chapterId).toBe("chapter-uuid-1"),
     );
 
-    // `getClaims` is a real network round trip on this platform, and it re-runs
-    // on every token refresh and every foreground. Demoting to null on failure
-    // would make a flaky connection look like "this member has no chapter" —
-    // which the routing gate would act on.
-    mockState.claimsError = { message: "network down" };
+    // `lib/select-chapter.ts` activates server-side and refreshes the session;
+    // the new token's claim is the new chapter.
     await act(async () => {
-      emitAuthChange({ ...SESSION, access_token: "access-token-2" });
+      emitAuthChange({
+        access_token: jwt({
+          active_chapter_id: "chapter-uuid-2",
+          sub: "user-1",
+        }),
+        user: { email: "officer@university.edu", id: "user-1" },
+      });
     });
 
-    // Not `waitFor(isChapterResolving === false)`: the flag is already false
-    // here and stays that way by design, so that wait returns on its first
-    // synchronous sample without the failing re-read having gone anywhere.
-    //
-    // Pin the re-read itself. `settleClaimReads()` alone would not — it is
-    // satisfied by the already-settled mount read, so it stays green even if
-    // the token change stops triggering a read at all.
-    expect(claimReadCount()).toBe(2);
-    await settleClaimReads();
-    expect(result.current.chapterId).toBe("chapter-uuid-1");
-  });
-
-  it("does not re-block the gate when a later token refresh re-reads the claim", async () => {
-    // The regression this pins is an outage-shaped one. The routing gate renders
-    // nothing while the first claim read is pending, and the claim is re-read on
-    // every token change — the hourly auto-refresh and every foreground. If a
-    // re-read set the flag again, the whole tab navigator would unmount roughly
-    // once an hour, losing composer drafts and scroll position.
-    //
-    // Note the claim is deliberately ABSENT here: that is the empty-prod /
-    // incident-disable shape, and it is exactly the case where "we already
-    // have a chapter" cannot be what skips the wait.
-    mockState.initialSession = SESSION;
-    mockState.claims = { sub: "user-1" };
-
-    const { result } = renderHook(() => useAuthSession(), { wrapper });
-    // Waiting on `isChapterResolving` alone used to be enough to let this test
-    // start with the mount read still ahead of it — see the helper for why the
-    // flag is false during `hydrating` too. The mount read then either parked
-    // behind the gate closed below, or was already in flight and got cancelled
-    // by the token change; either way it never marked the claim read, and the
-    // assertion after the gate saw `true`. That was #976's flake.
-    //
-    // The race is inside this one test, not across the suite. `waitFor` samples
-    // synchronously in its own executor, so the first sample always lands in
-    // `hydrating` and always returns immediately; what varies is whether the
-    // mount read lands during the post-resolve drain Testing Library runs
-    // afterwards (an awaited `setTimeout(0)` racing React's scheduler). Load
-    // shifts the odds, which is why #976 reported it as suite-only — but the
-    // pre-fix test reproduces on its own too, measured 4 failures in 30
-    // file-alone runs against 1 in 15 for the full suite on the same box.
-    await waitForFirstClaimRead(result);
-
-    // Hold the next read open so the in-flight window is observable. If the
-    // flag tracked "a read is in flight" rather than "the first read is done",
-    // it would be true right here — and the gate would be rendering nothing.
-    closeClaimsGate();
-    await act(async () => {
-      emitAuthChange({ ...SESSION, access_token: "access-token-2" });
-    });
-
+    expect(result.current.chapterId).toBe("chapter-uuid-2");
     expect(result.current.isChapterResolving).toBe(false);
-
-    // Pin that the re-read actually happened and is still in flight, or the
-    // assertion above passes just as well when the effect stops re-reading at
-    // all: the gate then holds nothing, and the flag is trivially false because
-    // no read is outstanding. `lib/select-chapter.ts` is what depends on the
-    // re-read — activating a chapter writes no local state and relies entirely
-    // on the refreshed token re-running the claim effect — so that regression
-    // would leave the chapter picker doing nothing until a cold start, with the
-    // suite green.
-    //
-    // Exactly one read is parked, never two: the mount read has already
-    // finished, which is precisely what the two-part wait above guarantees.
-    // A second waiter here would mean that wait had gone back to returning
-    // early.
-    expect(mockState.claimsGateWaiters).toHaveLength(1);
-
-    await releaseClaimsGate();
   });
 
   it("drops the chapter when a different account signs in", async () => {
     mockState.initialSession = {
       ...SESSION,
+      access_token: TOKEN_1,
       user: { ...SESSION.user, id: "user-1" },
     };
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
@@ -628,13 +479,11 @@ describe("AuthSessionProvider — chapter context", () => {
     );
     expect(result.current.userId).toBe("user-1");
 
-    // A magic link can swap accounts with no sign-out in between. Retention is
-    // scoped to one user precisely so the next member does not inherit this
-    // chapter while their own claim read is still in flight or failing.
-    mockState.claimsError = { message: "network down" };
+    // A magic link can swap accounts with no sign-out in between. The next
+    // member's token names no chapter, so they must not inherit this one.
     await act(async () => {
       emitAuthChange({
-        access_token: "access-token-2",
+        access_token: jwt({ sub: "user-2" }),
         user: { email: "other@university.edu", id: "user-2" },
       });
     });
@@ -646,9 +495,9 @@ describe("AuthSessionProvider — chapter context", () => {
   it("exposes the new Bearer to child effects on the same turn as a swap", async () => {
     mockState.initialSession = {
       ...SESSION,
+      access_token: TOKEN_1,
       user: { ...SESSION.user, id: "user-1" },
     };
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
     const seen: Array<{ userId: string | null; token: string | null }> = [];
 
     function Probe() {
@@ -673,13 +522,13 @@ describe("AuthSessionProvider — chapter context", () => {
     await waitFor(() =>
       expect(seen).toContainEqual({
         userId: "user-1",
-        token: "access-token-1",
+        token: TOKEN_1,
       }),
     );
 
     await act(async () => {
       emitAuthChange({
-        access_token: "access-token-2",
+        access_token: TOKEN_2_OTHER_USER,
         user: { email: "other@university.edu", id: "user-2" },
       });
     });
@@ -687,15 +536,15 @@ describe("AuthSessionProvider — chapter context", () => {
     // Child effects run before the parent token-mirror effect. If the
     // Bearer were only written in that parent effect, this sample would
     // still be User A's token.
-    expect(seen).toContainEqual({ userId: "user-2", token: "access-token-2" });
+    expect(seen).toContainEqual({ userId: "user-2", token: TOKEN_2_OTHER_USER });
   });
 
   it("drops unscoped product cache after writing the new Bearer on a same-chapter swap", async () => {
     mockState.initialSession = {
       ...SESSION,
+      access_token: TOKEN_1,
       user: { ...SESSION.user, id: "user-1" },
     };
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
@@ -713,17 +562,16 @@ describe("AuthSessionProvider — chapter context", () => {
       realClear();
     };
 
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-2" };
     try {
       await act(async () => {
         emitAuthChange({
-          access_token: "access-token-2",
+          access_token: TOKEN_2_OTHER_USER,
           user: { email: "other@university.edu", id: "user-2" },
         });
       });
 
       expect(tokenWhenCleared).toBeDefined();
-      await expect(tokenWhenCleared).resolves.toBe("access-token-2");
+      await expect(tokenWhenCleared).resolves.toBe(TOKEN_2_OTHER_USER);
       expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
       expect(queryClient.getQueryData(USER_ME_KEY)).toBeUndefined();
       expect(queryClient.getQueryData(CHAPTER_KEY)).toBeUndefined();
@@ -740,9 +588,9 @@ describe("AuthSessionProvider — chapter context", () => {
   it("keeps the product cache when the same account refreshes its token", async () => {
     mockState.initialSession = {
       ...SESSION,
+      access_token: TOKEN_1,
       user: { ...SESSION.user, id: "user-1" },
     };
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
@@ -754,7 +602,7 @@ describe("AuthSessionProvider — chapter context", () => {
 
     await act(async () => {
       emitAuthChange({
-        access_token: "access-token-2",
+        access_token: TOKEN_2,
         user: { email: "officer@university.edu", id: "user-1" },
       });
     });
@@ -770,9 +618,9 @@ describe("AuthSessionProvider — chapter context", () => {
     // out with a lapsed token and each screen stayed on its error state.
     mockState.initialSession = {
       ...SESSION,
+      access_token: TOKEN_1,
       user: { ...SESSION.user, id: "user-1" },
     };
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
@@ -810,7 +658,7 @@ describe("AuthSessionProvider — chapter context", () => {
 
     await act(async () => {
       emitAuthChange({
-        access_token: "access-token-2",
+        access_token: TOKEN_2,
         user: { email: "officer@university.edu", id: "user-1" },
       });
     });
@@ -829,9 +677,9 @@ describe("AuthSessionProvider — chapter context", () => {
     // the refresh had landed, so the sweep on the token change missed it.
     mockState.initialSession = {
       ...SESSION,
+      access_token: TOKEN_1,
       user: { ...SESSION.user, id: "user-1" },
     };
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
@@ -862,7 +710,7 @@ describe("AuthSessionProvider — chapter context", () => {
 
     await act(async () => {
       emitAuthChange({
-        access_token: "access-token-2",
+        access_token: TOKEN_2,
         user: { email: "officer@university.edu", id: "user-1" },
       });
     });
@@ -878,9 +726,9 @@ describe("AuthSessionProvider — chapter context", () => {
   it("leaves a 401 alone when the same token is emitted again", async () => {
     mockState.initialSession = {
       ...SESSION,
+      access_token: TOKEN_1,
       user: { ...SESSION.user, id: "user-1" },
     };
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
@@ -902,6 +750,7 @@ describe("AuthSessionProvider — chapter context", () => {
     await act(async () => {
       emitAuthChange({
         ...SESSION,
+        access_token: TOKEN_1,
         user: { ...SESSION.user, id: "user-1" },
       });
     });
@@ -911,14 +760,11 @@ describe("AuthSessionProvider — chapter context", () => {
   });
 
   it("leaves a 401 to the chapter switch when the new token names another chapter", async () => {
-    const jwt = (claims: Record<string, unknown>) =>
-      `e30.${btoa(JSON.stringify(claims)).replace(/=+$/, "")}.sig`;
     mockState.initialSession = {
       ...SESSION,
-      access_token: jwt({ sub: "user-1", active_chapter_id: "chapter-uuid-1" }),
+      access_token: TOKEN_1,
       user: { ...SESSION.user, id: "user-1" },
     };
-    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() =>
