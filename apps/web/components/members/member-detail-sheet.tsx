@@ -468,9 +468,13 @@ export function MemberDetailSheet({
             <>
               {canMessage ? (
                 <Button
-                  // `shrink-0`: the body is a flex column that scrolls, and a
-                  // long role editor would otherwise squeeze the button.
-                  className="mt-5 w-full shrink-0"
+                  // Sized to its label under the name, not a full-width bar
+                  // (Paul, 2026-11-20: "not a big huge button guy"), as
+                  // Slack's and iOS Contacts' profiles draw their Message.
+                  // `shrink-0`: the body is a flex column that scrolls.
+                  variant="secondary"
+                  size="sm"
+                  className="mx-auto mt-4 shrink-0 gap-2"
                   onClick={handleMessage}
                   disabled={dmPending}
                 >

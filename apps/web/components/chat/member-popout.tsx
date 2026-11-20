@@ -186,7 +186,8 @@ export function MemberPopout({
           {canMessage ? (
             <Button
               size="sm"
-              className="flex-1"
+              variant="secondary"
+              className="gap-2"
               onClick={() => void startMessage()}
               disabled={isPending}
             >
@@ -201,7 +202,6 @@ export function MemberPopout({
           <Button
             size="sm"
             variant="secondary"
-            className="flex-1"
             onClick={() => {
               if (!userId) return;
               if (anchor?.contextElement.isConnected)

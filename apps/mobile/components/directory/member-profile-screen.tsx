@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Pressable,
@@ -51,7 +52,8 @@ import {
   SkeletonRegion,
   SkeletonText,
 } from "@/components/state-block";
-import { SheetPrimaryButton } from "@/components/sheet-scaffold";
+import { ChatGlyph } from "@/components/tab-glyphs";
+import { pageSurfaces } from "@/lib/surfaces";
 import { IconButton, ICON_BUTTON_SIZE } from "@/components/icon-button";
 import { OverflowGlyph } from "@/components/chat/overflow-glyph";
 import {
@@ -72,7 +74,6 @@ import {
   confirmUnblockMember,
   useBlockActions,
 } from "@/lib/chat/block-actions";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import { selectMemberDetail } from "@/lib/directory/member-detail";
 import { showPhoneActions } from "@/lib/directory/phone-actions";
@@ -126,7 +127,9 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * a More details row, folded on every visit (Shawn, 2026-11-09).
  *
  * **Message** (#2773) opens a 1:1 DM with the member, or the one you already
- * have: the screen's one accent button, under the header. Opened from that
+ * have: a small button sized to its label, under the header, never a
+ * full-width bar (Paul, 2026-11-20: "not a big huge button guy"; Slack's and
+ * iOS Contacts' profiles draw it the same size, as web's does). Opened from that
  * very DM, it goes back instead of stacking a second copy of the thread. Who
  * it is offered for is `spec/ui/mobile/screens.md` s13's rule, implemented in
  * `lib/directory/start-dm.ts`.
@@ -201,7 +204,6 @@ export function MemberProfile({
   const phoneReach = phoneReachMap?.byUserId.get(userId);
   // The same role-color resolution chat's name uses (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
-  const { accent } = useChapterBranding();
   const rolesQuery = useRoles();
   // Their dot and custom line (#3917), off chapter presence: nothing until it
   // has synced, never a stand-in Offline.
@@ -490,10 +492,8 @@ export function MemberProfile({
 
           {messageRow.kind !== "hidden" ? (
             <View style={styles.messageBlock}>
-              <SheetPrimaryButton
+              <MessageButton
                 label="Message"
-                accent={accent}
-                onAccent={tokens.color.gold.onHouse}
                 // Busy while the DM opens; disabled only while the block list
                 // can't vouch for a DM yet.
                 busy={messageRow.kind === "ready" && dmPending}
@@ -710,6 +710,59 @@ export function MemberProfile({
  * opening the one roles-and-groups sheet. Held while a DM with this member
  * opens, so the sheet never lands over the thread (#3790).
  */
+/**
+ * Message: a compact outlined button sized to its label, centered under the
+ * header, web's `secondary` `sm` button on the phone.
+ */
+function MessageButton({
+  label,
+  busy,
+  disabled,
+  accessibilityHint,
+  onPress,
+}: {
+  label: string;
+  busy: boolean;
+  disabled: boolean;
+  accessibilityHint?: string;
+  onPress: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const inert = disabled || busy;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ disabled: inert, busy }}
+      disabled={inert}
+      hitSlop={6}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.messageButton,
+        pressed ? styles.messageButtonPressed : null,
+        disabled ? styles.addChipDim : null,
+      ]}
+    >
+      {busy ? (
+        <ActivityIndicator
+          size="small"
+          color={tokens.color.text.mutedForeground}
+        />
+      ) : (
+        <ChatGlyph
+          focused={false}
+          accent={tokens.color.text.foreground}
+          muted={tokens.color.text.foreground}
+          size={16}
+        />
+      )}
+      <Text style={styles.messageButtonText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function AddChip({
   label,
   disabled,
@@ -823,6 +876,25 @@ function createStyles(tokens: SignetTokens) {
     },
     messageBlock: {
       gap: tokens.spacing.xs,
+      alignItems: "center",
+    },
+    messageButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+      minHeight: 36,
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.control,
+      backgroundColor: pageSurfaces(tokens).card,
+    },
+    messageButtonPressed: {
+      backgroundColor: pageSurfaces(tokens).raised,
+    },
+    messageButtonText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     messageNote: {
       ...typeRole(tokens.typography.role.caption),
