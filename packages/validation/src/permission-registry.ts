@@ -369,6 +369,25 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
   ),
 ];
 
+/**
+ * Permissions left off the role and tier pages, web and phone (through
+ * `isPermissionHidden` in `@repo/hooks`), and off a module page's "Who can"
+ * (`modulePermissions`), where both showed as switches captioned "No longer
+ * used" (#5728). They decide no channel's posters since #3722. The Discord
+ * import's read-gate picker, fed by the API catalog, still lists them.
+ *
+ * They stay in the registry, the API catalog and stored role data until
+ * #4286 retires them, because two readers remain: the Discord importer starts
+ * a read-only channel's posters from `announcements:post` holders, and the
+ * phone's Support the Chapter button shows to `alumni:post` holders. The
+ * seeded roles carry what those read. `alumni:post` also decides who may give
+ * the Alumni role, as any role's permissions do (#5729).
+ */
+export const RETIRED_PERMISSIONS: ReadonlySet<string> = new Set([
+  "alumni:post",
+  "announcements:post",
+]);
+
 const BY_PERMISSION: ReadonlyMap<string, PermissionDefinition> = new Map(
   PERMISSION_REGISTRY.map((entry) => [entry.permission, entry]),
 );

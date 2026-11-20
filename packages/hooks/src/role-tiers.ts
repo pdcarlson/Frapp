@@ -294,6 +294,18 @@ export type PermissionRow = {
 };
 
 /**
+ * How many switches a holder's page shows as on: its permissions less the
+ * wildcard and the hidden ones (`isPermissionHidden`), so a tier's count in
+ * the list matches its page (#5728).
+ */
+export function shownPermissionCount(
+  permissions: readonly string[],
+  isHidden: (permission: string) => boolean,
+): number {
+  return new Set(permissions.filter((p) => p !== "*" && !isHidden(p))).size;
+}
+
+/**
  * Every permission in the registry, plus any other string the holder carries
  * (a Discord import's per-channel read gate, say), so a page never hides
  * something a role actually holds. The wildcard is never a row: nobody

@@ -2247,7 +2247,7 @@ That is a real cross-tenant surface and it is contained by two things, both re-c
   _Since #3722 (2026-11-11) the importer still writes the old read-only switch and `channels:read:<name>` gates, and the database turns them into the channel's who-can-see and who-can-post lists as it is created, from what each role holds then (§ [Who can see and post](#who-can-see-and-post));
   the importer writing lists itself, which would close the gap below, is [#4286](https://github.com/pdcarlson/Frapp/issues/4286)._
   **Known gaps:** Discord answers per role and Frapp has only read-only or not, so the roles a read-only channel let talk in Discord can post in Frapp only if they hold `announcements:post`, which by default the two top tiers hold in a chapter created since #4071's second PR and only the President holds in an older one;
-  the admin grants it in Settings → Roles.
+  the admin widens it afterwards in the channel's who-can-post list, since the permission has had no switch in Settings → Roles since [#5728](https://github.com/pdcarlson/Frapp/issues/5728) (2026-11-20).
   A channel that denies `@everyone` and allows a member role is indistinguishable from `#announcements` with an exec allow, and comes out read-only until the admin turns it off.
   The reverse: on a server that lets nobody talk by default and allows members per channel, an `#announcements` that allows only exec took talking from nobody, and exec can still talk there, so it comes out postable until the admin turns the switch on.
 - **The bot reads only what its roles can see.**
