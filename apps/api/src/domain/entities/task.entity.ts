@@ -18,7 +18,12 @@ export interface Task {
   description: string | null;
   assignee_id: string;
   created_by: string;
-  due_date: string;
+  /**
+   * The calendar day the task is due (`YYYY-MM-DD`), or null for a task with
+   * no due date (#5761): never overdue, no due reminders, sorted after every
+   * dated task, and never repeating.
+   */
+  due_date: string | null;
   /**
    * The moment the task is due, when it has a time of day (#4003). Null for a
    * task due on `due_date` with no time. When set, `due_date` is still the

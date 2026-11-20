@@ -37,6 +37,7 @@ import {
   TASK_PROOF_REQUIRED_CODE,
   TASK_PROOF_REQUIRED_MESSAGE,
   TASK_RESUBMIT_NEEDS_CHANGE_CODE,
+  TASK_REPEAT_NEEDS_DUE_DATE,
   TASK_RESUBMIT_NEEDS_CHANGE_MESSAGE,
   TASK_SEND_BACK_REASON_MAX,
   TASK_SUBTASKS_MAX,
@@ -243,7 +244,8 @@ export interface CreateTaskInput {
    */
   followed_by?: string | null;
   created_by: string;
-  due_date: string;
+  /** The day it is due; omitted or null for a task with no due date (#5761). */
+  due_date?: string | null;
   /** The moment it is due, when it has a time of day. */
   due_at?: string | null;
   /** Subtask titles, in order (#4003). */
@@ -1183,8 +1185,8 @@ export class TaskService {
         'Everyone you pick must be an active member of the chapter',
       );
     }
-    checkedDueDate(input.due_date);
-    const dueAt = checkedDueAt(input.due_date, input.due_at);
+    const dueDate = checkedDueDate(input.due_date ?? null);
+    const dueAt = checkedDueAt(dueDate, input.due_at);
     const subtaskTitles = checkedSubtaskTitles(input.subtasks ?? []);
     const referencePhotos = await this.checkedPhotoPaths(
       input.chapter_id,
@@ -1200,7 +1202,7 @@ export class TaskService {
       throw new BadRequestException('Assignee must be a member of the chapter');
     }
 
-    const repeat = this.checkedRepeat(input, dueAt);
+    const repeat = this.checkedRepeat(input, dueDate, dueAt);
     const task = repeat
       ? await this.taskRepo.createSeries({
           chapter_id: input.chapter_id,
@@ -1213,7 +1215,8 @@ export class TaskService {
           subtask_titles: subtaskTitles,
           due_time: repeat.due_time,
           recurrence_rule: repeat.rule,
-          first_due_date: input.due_date.slice(0, 10),
+          // `checkedRepeat` refuses a repeat with no due date.
+          first_due_date: repeat.first_due_date,
           first_due_at: dueAt,
           latest_due_at: repeat.latest_due_at,
           next_due_date: repeat.next_due_date,
@@ -1224,7 +1227,7 @@ export class TaskService {
           description: input.description ?? null,
           assignee_id: assigneeId,
           created_by: input.created_by,
-          due_date: input.due_date,
+          due_date: dueDate,
           due_at: dueAt,
           status: TaskStatus.TODO,
           point_reward: input.point_reward ?? null,
@@ -1321,7 +1324,7 @@ export class TaskService {
     target: TaskAudienceTarget,
     followedBy: string | null,
   ): Promise<CreateTaskResult> {
-    checkedDueDate(input.due_date);
+    const dueDate = checkedDueDate(input.due_date ?? null);
     if (input.recurrence_rule != null) {
       throw new BadRequestException(TASK_AUDIENCE_COPY.noRepeat);
     }
@@ -1333,7 +1336,7 @@ export class TaskService {
         "A task for everyone can't be posted to chat yet",
       );
     }
-    const dueAt = checkedDueAt(input.due_date, input.due_at);
+    const dueAt = checkedDueAt(dueDate, input.due_at);
     const subtaskTitles = checkedSubtaskTitles(input.subtasks ?? []);
     const reader = await this.audiences.reader(input.chapter_id);
     const resolved = await reader.resolve(target);
@@ -1349,7 +1352,7 @@ export class TaskService {
       assignee_ids: resolved.userIds,
       title: input.title,
       description: input.description ?? null,
-      due_date: input.due_date,
+      due_date: dueDate,
       due_at: dueAt,
       point_reward: input.point_reward ?? null,
       proof_kind: input.proof_kind ?? 'none',
@@ -1556,18 +1559,31 @@ export class TaskService {
    * A new task's repeat (#5119): its rule, checked, and the schedule its
    * series starts with. Null for a task that doesn't repeat.
    */
-  private checkedRepeat(input: CreateTaskInput, dueAt: string | null) {
+  private checkedRepeat(
+    input: CreateTaskInput,
+    dueDate: string | null,
+    dueAt: string | null,
+  ) {
     // Null, like omitted, is a task that doesn't repeat.
     if (input.recurrence_rule == null) return null;
+    // A repeat counts from the task's day (#5761).
+    if (dueDate === null) {
+      throw new BadRequestException(TASK_REPEAT_NEEDS_DUE_DATE);
+    }
     const rule = readTaskRule(input.recurrence_rule);
     if (!rule) throw new BadRequestException("That repeat rule can't be read");
-    const start = planSeriesStart(rule, input.due_date.slice(0, 10), dueAt);
+    const firstDueDate = dueDate.slice(0, 10);
+    const start = planSeriesStart(rule, firstDueDate, dueAt);
     if (!start) {
       throw new BadRequestException(
         'The end date leaves no task after the first. Choose a later end date',
       );
     }
-    return { rule: input.recurrence_rule, ...start };
+    return {
+      rule: input.recurrence_rule,
+      first_due_date: firstDueDate,
+      ...start,
+    };
   }
 
   /**
@@ -1590,7 +1606,10 @@ export class TaskService {
     const body = (timeZone: string | null, labelZone: boolean) =>
       joinFacts(
         assigner ? `From ${assigner}` : 'Assigned to you',
-        `due ${formatTaskDue(task.due_date, task.due_at, { timeZone, labelZone })}`,
+        // A task with no due date (#5761) names no day.
+        task.due_date === null
+          ? null
+          : `due ${formatTaskDue(task.due_date, task.due_at, { timeZone, labelZone })}`,
         task.point_reward ? `${task.point_reward} points` : null,
       );
     await this.safeNotifyUser(
@@ -1709,17 +1728,29 @@ export class TaskService {
     }
 
     if (input.due_date !== undefined || input.due_at !== undefined) {
-      if (input.due_date === null) {
-        throw new BadRequestException('A task needs a due date');
+      // Null takes the due date off (#5761); a repeating copy keeps its day.
+      if (input.due_date === null && task.series_id !== null) {
+        throw new BadRequestException(TASK_REPEAT_NEEDS_DUE_DATE);
       }
-      const dueDate = (input.due_date ?? task.due_date).slice(0, 10);
-      checkedDueDate(dueDate);
+      const dueDate = checkedDueDate(
+        (input.due_date === undefined ? task.due_date : input.due_date)?.slice(
+          0,
+          10,
+        ) ?? null,
+      );
+      // A time needs a day, so taking the day off takes the time off too.
       const dueAt = checkedDueAt(
         dueDate,
-        input.due_at === undefined ? task.due_at : input.due_at,
+        input.due_at === undefined
+          ? dueDate === null
+            ? null
+            : task.due_at
+          : input.due_at,
       );
       const storedAt = task.due_at ? new Date(task.due_at).toISOString() : null;
-      if (dueDate !== task.due_date.slice(0, 10)) patch.due_date = dueDate;
+      if (dueDate !== (task.due_date?.slice(0, 10) ?? null)) {
+        patch.due_date = dueDate;
+      }
       if (dueAt !== storedAt) patch.due_at = dueAt;
     }
 
@@ -1931,7 +1962,10 @@ export class TaskService {
       created_at: task.created_at,
     };
 
-    const content = `Assigned "${task.title}" to ${assigneeName} (due ${task.due_date})`;
+    const content =
+      task.due_date === null
+        ? `Assigned "${task.title}" to ${assigneeName}`
+        : `Assigned "${task.title}" to ${assigneeName} (due ${task.due_date})`;
 
     await this.chatService.sendMessage({
       chapter_id: input.chapter_id,

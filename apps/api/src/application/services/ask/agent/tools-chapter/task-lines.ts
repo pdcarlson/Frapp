@@ -4,8 +4,8 @@ import { longDateTime, longDay } from './chapter-tool-kit';
 
 /** How a task's due day and state are read, by both task tools (#4901). */
 
-/** The day a task is due, as the asker sees it. */
-export function dueDay(task: TaskView, timeZone: string): string {
+/** The day a task is due, as the asker sees it; null when it has none (#5761). */
+export function dueDay(task: TaskView, timeZone: string): string | null {
   // `due_at` is an instant and `due_date` a calendar day, so the two are
   // never compared as strings: 8 PM Saturday in New York is already Sunday
   // in UTC.
@@ -20,7 +20,9 @@ export function dueDay(task: TaskView, timeZone: string): string {
  */
 export function dueFirst(timeZone: string) {
   return (a: TaskView, b: TaskView) =>
-    dueDay(a, timeZone).localeCompare(dueDay(b, timeZone)) ||
+    // A task with no due date goes after every dated one (`~` sorts after
+    // any digit).
+    (dueDay(a, timeZone) ?? '~').localeCompare(dueDay(b, timeZone) ?? '~') ||
     (a.due_at && b.due_at
       ? Date.parse(a.due_at) - Date.parse(b.due_at)
       : a.due_at
@@ -30,10 +32,12 @@ export function dueFirst(timeZone: string) {
           : 0);
 }
 
-export function whenDue(task: TaskView, timeZone: string): string {
-  return task.due_at
-    ? longDateTime(task.due_at, timeZone)
-    : longDay(task.due_date, timeZone);
+/** "due Friday, November 20" or, for a task with none (#5761), "no due date". */
+export function dueWords(task: TaskView, timeZone: string): string {
+  if (task.due_at) return `due ${longDateTime(task.due_at, timeZone)}`;
+  return task.due_date === null
+    ? 'no due date'
+    : `due ${longDay(task.due_date, timeZone)}`;
 }
 
 /** Marked done by its assignee and not yet confirmed by an officer. */

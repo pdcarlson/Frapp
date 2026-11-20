@@ -266,7 +266,9 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
       ...allTasks
         .filter(
           (task) =>
-            (task.due_date >= seenFrom && task.due_date <= seenTo) ||
+            (task.due_date !== null &&
+              task.due_date >= seenFrom &&
+              task.due_date <= seenTo) ||
             Date.parse(task.created_at) >= windows.thisYear.from.getTime(),
         )
         .map((task) => task.title),
@@ -300,15 +302,23 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
       now,
       lastYearEvents,
       tasks: mayManageTasks
-        ? allTasks.map((task) => ({
-            id: task.id,
-            title: task.title,
-            description: task.description,
-            due_date: task.due_date,
-            completed: task.stored_status === TaskStatus.COMPLETED,
-            // Read for the few that are raised, below.
-            subtasks: [],
-          }))
+        ? // Last year's record is read by due day, so a task with none
+          // (#5761) has no place on it.
+          allTasks.flatMap((task) =>
+            task.due_date === null
+              ? []
+              : [
+                  {
+                    id: task.id,
+                    title: task.title,
+                    description: task.description,
+                    due_date: task.due_date,
+                    completed: task.stored_status === TaskStatus.COMPLETED,
+                    // Read for the few that are raised, below.
+                    subtasks: [],
+                  },
+                ],
+          )
         : [],
       thisYearTitles,
     });

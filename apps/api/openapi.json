@@ -31105,11 +31105,12 @@
           },
           "due_date": {
             "type": "string",
-            "description": "Due date (YYYY-MM-DD)"
+            "nullable": true,
+            "description": "Due date (YYYY-MM-DD). Omit, or send null, for a task with no due date (#5761): it is never overdue, gets no due reminders and can't repeat."
           },
           "due_at": {
             "type": "string",
-            "description": "The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.",
+            "description": "The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it, so it needs a `due_date`. Omit for a task due on `due_date` with no time.",
             "format": "date-time"
           },
           "subtasks": {
@@ -31156,8 +31157,7 @@
           }
         },
         "required": [
-          "title",
-          "due_date"
+          "title"
         ]
       },
       "TaskPhotoDto": {
@@ -31239,7 +31239,9 @@
           },
           "due_date": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "nullable": true,
+            "description": "Null for a task with no due date (#5761)."
           },
           "due_at": {
             "type": "string",
@@ -31407,7 +31409,8 @@
           },
           "due_date": {
             "type": "string",
-            "description": "Due date (YYYY-MM-DD)"
+            "nullable": true,
+            "description": "Due date (YYYY-MM-DD), or null to take it off (#5761), which takes the time off too. A copy of a repeating task keeps its day."
           },
           "due_at": {
             "type": "string",
@@ -34889,7 +34892,9 @@
           "due_date": {
             "type": "string",
             "format": "date",
-            "example": "2026-11-20"
+            "nullable": true,
+            "example": "2026-11-20",
+            "description": "Null for a task with no due date (#5761)."
           },
           "due_at": {
             "type": "string",
@@ -35085,7 +35090,9 @@
           "due_date": {
             "type": "string",
             "format": "date",
-            "example": "2026-11-20"
+            "nullable": true,
+            "example": "2026-11-20",
+            "description": "Null for a task with no due date (#5761)."
           },
           "due_at": {
             "type": "string",

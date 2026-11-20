@@ -66,13 +66,16 @@ export const NUDGE_HISTORY_MS = 400 * DAY_MS;
 
 /**
  * The instant a task is due: its time when it has one, else the end of its
- * day (UTC), which is when `TaskService` starts calling it overdue.
+ * day (UTC), which is when `TaskService` starts calling it overdue. A task
+ * with no due date (#5761) is due at `Infinity`: never overdue, never due
+ * soon, and after every dated task in a sort.
  */
 export function taskDueInstant(
   task: Pick<Task, 'due_date' | 'due_at'>,
 ): number {
   const dueAt = task.due_at ? Date.parse(task.due_at) : Number.NaN;
   if (!Number.isNaN(dueAt)) return dueAt;
+  if (task.due_date === null) return Number.POSITIVE_INFINITY;
   return Date.parse(`${task.due_date}T00:00:00.000Z`) + DAY_MS;
 }
 

@@ -199,13 +199,19 @@ export class CreateTaskDto {
   @Matches(CHANNEL_ACCESS_ENTRY_PATTERN, { message: TASK_FOLLOWED_BY_MESSAGE })
   followed_by?: string;
 
-  @ApiProperty({ description: 'Due date (YYYY-MM-DD)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      "Due date (YYYY-MM-DD). Omit, or send null, for a task with no due date (#5761): it is never overdue, gets no due reminders and can't repeat.",
+  })
+  @IsOptional()
   @IsDateString()
-  due_date: string;
+  due_date?: string | null;
 
   @ApiPropertyOptional({
     description:
-      'The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it. Omit for a task due on `due_date` with no time.',
+      'The moment the task is due, when it has a time of day (ISO 8601 with an offset). `due_date` must be the calendar day of this moment as the creator sees it, so it needs a `due_date`. Omit for a task due on `due_date` with no time.',
     format: 'date-time',
   })
   @IsOptional()
@@ -359,8 +365,13 @@ export class CreateTaskResponseDto implements Task {
   @ApiProperty({ format: 'uuid' })
   created_by: string;
 
-  @ApiProperty({ format: 'date' })
-  due_date: string;
+  @ApiProperty({
+    type: String,
+    format: 'date',
+    nullable: true,
+    description: 'Null for a task with no due date (#5761).',
+  })
+  due_date: string | null;
 
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   due_at: string | null;
@@ -579,9 +590,9 @@ export class CreateTaskSubtaskDto {
 
 /**
  * An officer's edit of a task (#4296). Every field is optional and an omitted
- * one is left as it is. `null` clears `description`, `due_at` (the task is
- * then due by the end of `due_date`) and `point_reward`; the API refuses null
- * for the rest. Steps are edited through the subtask routes.
+ * one is left as it is. `null` clears `description`, `due_date` (#5761; the
+ * time goes with it), `due_at` (the task is then due by the end of
+ * `due_date`) and `point_reward`; the API refuses null for the rest. Steps are edited through the subtask routes.
  */
 export class UpdateTaskDto {
   @ApiPropertyOptional({ maxLength: TASK_TITLE_MAX_LENGTH })
@@ -603,10 +614,15 @@ export class UpdateTaskDto {
   @IsUUID()
   assignee_id?: string;
 
-  @ApiPropertyOptional({ description: 'Due date (YYYY-MM-DD)' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Due date (YYYY-MM-DD), or null to take it off (#5761), which takes the time off too. A copy of a repeating task keeps its day.',
+  })
   @IsOptional()
   @IsDateString()
-  due_date?: string;
+  due_date?: string | null;
 
   @ApiPropertyOptional({
     type: String,

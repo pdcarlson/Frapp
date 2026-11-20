@@ -349,7 +349,7 @@ export interface CreateTaskGroupInput {
   assignee_ids: string[];
   title: string;
   description: string | null;
-  due_date: string;
+  due_date: string | null;
   due_at: string | null;
   point_reward: number | null;
   proof_kind: TaskProofKind;

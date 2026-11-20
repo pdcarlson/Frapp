@@ -19,7 +19,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import type { CalendarFeed } from '#domain/entities/calendar-feed.entity';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import type { Event } from '#domain/entities/event.entity';
-import { TaskStatus, type Task } from '#domain/entities/task.entity';
+import { TaskStatus, type TaskView } from '#domain/entities/task.entity';
 import { EventService } from '../event.service';
 import { TaskService } from '../task.service';
 import { RbacService } from '../rbac.service';
@@ -327,7 +327,11 @@ export class CalendarFeedService implements OnApplicationBootstrap {
         ),
       ),
       ...tasks
-        .filter((task) => task.status !== TaskStatus.COMPLETED)
+        // A task with no due date has no day to sit on (#5761).
+        .filter(
+          (task): task is TaskView & { due_date: string } =>
+            task.status !== TaskStatus.COMPLETED && task.due_date !== null,
+        )
         .map((task) => this.taskItem(task)),
     ];
   }
@@ -351,7 +355,7 @@ export class CalendarFeedService implements OnApplicationBootstrap {
     };
   }
 
-  private taskItem(task: Task): IcsItem {
+  private taskItem(task: TaskView & { due_date: string }): IcsItem {
     const url = `${this.appOrigin}/tasks`;
     return {
       uid: `task-${task.id}@frapp.live`,

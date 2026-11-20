@@ -11,8 +11,9 @@ import {
  */
 
 /** `due_date` as a day that parses; 400 otherwise. */
-export function checkedDueDate(dueDate: string): string {
-  if (Number.isNaN(new Date(dueDate).getTime())) {
+export function checkedDueDate<T extends string | null>(dueDate: T): T {
+  // Null is a task with no due date (#5761).
+  if (dueDate !== null && Number.isNaN(new Date(dueDate).getTime())) {
     throw new BadRequestException('due_date must be a valid date');
   }
   return dueDate;
@@ -25,10 +26,14 @@ export function checkedDueDate(dueDate: string): string {
  * client bug, refused rather than stored as a task due on two days.
  */
 export function checkedDueAt(
-  dueDate: string,
+  dueDate: string | null,
   dueAt: string | null | undefined,
 ): string | null {
   if (!dueAt) return null;
+  // A time of day needs a day (#5761; `tasks_due_at_needs_due_date`).
+  if (dueDate === null) {
+    throw new BadRequestException('A due time needs a due date');
+  }
   const at = Date.parse(dueAt);
   if (Number.isNaN(at)) {
     throw new BadRequestException('due_at must be a valid date and time');

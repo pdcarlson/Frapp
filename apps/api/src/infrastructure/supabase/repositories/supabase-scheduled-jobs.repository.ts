@@ -284,7 +284,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     dueFrom: Date,
     dueTo: Date,
   ): Promise<SweepTaskRow[]> {
-    return this.fetchAllPages<SweepTaskRow>(
+    const rows = await this.fetchAllPages<UndatedSweepTaskRow>(
       'task',
       'timed task sweep: lookup failed',
       (from, to) =>
@@ -303,6 +303,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
           .order('id', { ascending: true })
           .range(from, to),
     );
+    return datedSweepRows(rows);
   }
 
   /** Not-yet-completed tasks with a `due_date` inside the window. */
@@ -310,7 +311,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     dueOnOrAfter: string,
     dueOnOrBefore: string,
   ): Promise<SweepTaskRow[]> {
-    return this.fetchAllPages<SweepTaskRow>(
+    const rows = await this.fetchAllPages<UndatedSweepTaskRow>(
       'task',
       'task sweep: lookup failed',
       (from, to) =>
@@ -333,6 +334,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
           .order('id', { ascending: true })
           .range(from, to),
     );
+    return datedSweepRows(rows);
   }
 
   /**
@@ -601,4 +603,19 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
       return [];
     }
   }
+}
+
+/** A sweep row as the column types it (#5761: `due_date` may be null). */
+type UndatedSweepTaskRow = Omit<SweepTaskRow, 'due_date'> & {
+  due_date: string | null;
+};
+
+/**
+ * The rows with a due date. A sweep filters on a window of due days or due
+ * times, so none should be undated; this keeps the type honest if one were.
+ */
+function datedSweepRows(rows: UndatedSweepTaskRow[]): SweepTaskRow[] {
+  return rows.flatMap(({ due_date, ...row }) =>
+    due_date === null ? [] : [{ ...row, due_date }],
+  );
 }

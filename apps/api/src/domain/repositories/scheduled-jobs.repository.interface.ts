@@ -47,6 +47,10 @@ export interface SweepTaskRow {
   assignee_id: string;
   created_by: string;
   title: string;
+  /**
+   * A sweep reads a window of due days or due times, so a task with no due
+   * date (#5761) never comes back from one.
+   */
   due_date: string;
   /** Set only on a task due at a time of day (#4003). */
   due_at?: string | null;

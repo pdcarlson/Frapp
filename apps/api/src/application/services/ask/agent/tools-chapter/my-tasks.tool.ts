@@ -26,7 +26,7 @@ import {
   dueFirst,
   isPastDue,
   latestFinishFirst,
-  whenDue,
+  dueWords,
 } from './task-lines';
 
 /** How many of the asker's tasks are read, and how many shown. */
@@ -131,7 +131,7 @@ export class MyTasksAgentTool implements AgentReadTool<Args> {
     const rows = [...open, ...waiting].map((task) => {
       const steps = task.subtasks ?? [];
       const parts = [
-        `${quoted(task.title)}: due ${whenDue(task, timeZone)}`,
+        `${quoted(task.title)}: ${dueWords(task, timeZone)}`,
         awaitsConfirm(task)
           ? 'You marked it done and it is waiting for an officer to confirm'
           : isPastDue(task)
@@ -160,7 +160,7 @@ export class MyTasksAgentTool implements AgentReadTool<Args> {
       // from a list of dates.
       ...(open.length > 1
         ? [
-            `The one due first is ${quoted(open[0].title)}, due ${whenDue(open[0], timeZone)}.`,
+            `The one due first is ${quoted(open[0].title)}, ${dueWords(open[0], timeZone)}.`,
           ]
         : []),
     ];

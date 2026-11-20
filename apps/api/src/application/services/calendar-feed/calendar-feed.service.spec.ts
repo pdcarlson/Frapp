@@ -370,6 +370,8 @@ describe('CalendarFeedService.fetch', () => {
       tasks: [
         task(),
         task({ id: 'done', status: TaskStatus.COMPLETED, title: 'Done one' }),
+        // No due date (#5761): no day to sit on.
+        task({ id: 'undated', title: 'Someday one', due_date: null }),
         task({
           id: 'timed',
           title: 'Turn in the form',
@@ -402,6 +404,7 @@ describe('CalendarFeedService.fetch', () => {
     // A moment with no length has no DTEND, which must follow DTSTART.
     expect(ics).not.toContain('DTEND:20261120T220000Z');
     expect(ics).not.toContain('Done one');
+    expect(ics).not.toContain('Someday one');
   });
 
   it('keeps points and meeting notes in Frapp', async () => {

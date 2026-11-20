@@ -400,6 +400,21 @@ describe('orderNudgeItems', () => {
     expect(tomorrow.meta).toBe('Due tomorrow 10:00 AM');
   });
 
+  it('thanks a member for a task with no due date without naming a day (#5761)', () => {
+    const undated = taskItem(
+      'task_praise',
+      { id: 'task-4', title: 'Plan the formal', due_date: null, due_at: null },
+      NOW,
+      TZ,
+      at(DAY),
+    );
+    expect(undated).toMatchObject({
+      meta: 'Finished on time',
+      chip: 'Done',
+      urgent: false,
+    });
+  });
+
   it('writes a task card the same way as every other', () => {
     expect(task).toMatchObject({
       headline: 'Dues report',

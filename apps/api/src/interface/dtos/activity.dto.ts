@@ -91,8 +91,14 @@ export class ActivityTaskDto implements ActivityTask {
   @ApiProperty()
   title: string;
 
-  @ApiProperty({ format: 'date', example: '2026-11-20' })
-  due_date: string;
+  @ApiProperty({
+    type: String,
+    format: 'date',
+    nullable: true,
+    example: '2026-11-20',
+    description: 'Null for a task with no due date (#5761).',
+  })
+  due_date: string | null;
 
   @ApiProperty({
     type: String,
@@ -214,8 +220,14 @@ export class ActivityTaskGroupDto
   @ApiProperty({ type: String, nullable: true })
   description: string | null;
 
-  @ApiProperty({ format: 'date', example: '2026-11-20' })
-  due_date: string;
+  @ApiProperty({
+    type: String,
+    format: 'date',
+    nullable: true,
+    example: '2026-11-20',
+    description: 'Null for a task with no due date (#5761).',
+  })
+  due_date: string | null;
 
   @ApiProperty({
     type: String,

@@ -14,7 +14,7 @@ import type { AgentToolContext } from './agent-tool';
 import { ASK_FROM_SOURCE_TITLE } from './ask-agent-prompt';
 import { quoted } from './tools-chapter/chapter-tool-kit';
 import { eventHeadline } from './tools-chapter/event-lines';
-import { whenDue } from './tools-chapter/task-lines';
+import { dueWords } from './tools-chapter/task-lines';
 import { ConversationScope } from './tools-conversations/conversation-scope';
 
 /** One thing the member had open, as the model reads it. */
@@ -183,7 +183,7 @@ export class AskFromService {
       source: {
         id: 'from:task',
         title: `${ASK_FROM_SOURCE_TITLE}: a task`,
-        text: `The member has this task open: ${quoted(task.title)}, due ${whenDue(task, context.timeZone)}. ${whose} "This task" means it.`,
+        text: `The member has this task open: ${quoted(task.title)}, ${dueWords(task, context.timeZone)}. ${whose} "This task" means it.`,
       },
       // A task is its assignee's and the officers', never the channel's.
       ref: { type: 'tool', name: 'from:task', reach: 'asker' },

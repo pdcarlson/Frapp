@@ -565,7 +565,7 @@ export interface Database {
           p_assignee_ids: string[];
           p_title: string;
           p_description: string | null;
-          p_due_date: string;
+          p_due_date: string | null;
           p_due_at: string | null;
           p_point_reward: number | null;
           p_proof_kind: string;

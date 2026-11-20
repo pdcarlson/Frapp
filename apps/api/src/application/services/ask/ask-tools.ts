@@ -2,13 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { eventAttendanceFor, eventLimitsAudience } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { TaskStatus } from '#domain/entities/task.entity';
-import { localDateIn } from '#domain/utils/zoned-time';
 import { EventService } from '../event.service';
 import { FinancialInvoiceService } from '../financial-invoice.service';
 import { MemberService } from '../member.service';
 import { PointsService } from '../points.service';
 import { RbacService } from '../rbac.service';
 import { TaskService } from '../task.service';
+import { dueFirst, dueWords } from './agent/tools-chapter/task-lines';
 import { nameInLine, oneLine } from './ask-lines';
 import type { AskTool, AskToolContext, AskToolResult } from './ask-tool';
 
@@ -413,42 +413,20 @@ export class MyTasksAskTool implements AskTool {
       confirmed: false,
       limit: MY_TASKS_READ,
     });
-    // By the day the asker sees, then by the time on that day, with a task
-    // that has no time after the timed ones (it is due by the end of the
-    // day). `due_at` is an instant and `due_date` a calendar day, so the two
-    // are never compared as strings: 8 PM Saturday in New York is already
-    // Sunday in UTC.
-    type Mine = (typeof mine)[number];
-    const dueDay = (task: Mine) =>
-      task.due_at
-        ? localDateIn(new Date(task.due_at), timeZone)
-        : task.due_date;
-    const dueFirst = (a: Mine, b: Mine) =>
-      dueDay(a).localeCompare(dueDay(b)) ||
-      (a.due_at && b.due_at
-        ? Date.parse(a.due_at) - Date.parse(b.due_at)
-        : a.due_at
-          ? -1
-          : b.due_at
-            ? 1
-            : 0);
+    // By the day the asker sees, then by time, undated last (`dueFirst`).
     const open = mine
       .filter((task) => task.stored_status !== TaskStatus.COMPLETED)
-      .sort(dueFirst);
+      .sort(dueFirst(timeZone));
     const waiting = mine.filter(
       (task) => task.stored_status === TaskStatus.COMPLETED,
     );
     const kept = [...open, ...waiting].slice(0, MY_TASKS_LIMIT);
     if (kept.length === 0) return null;
-    const whenDue = (task: (typeof mine)[number]) =>
-      task.due_at
-        ? longDateTime(task.due_at, timeZone)
-        : longDay(task.due_date, timeZone);
     const lines = kept.map((task) => {
       const done = task.stored_status === TaskStatus.COMPLETED;
       const steps = task.subtasks ?? [];
       const parts = [
-        `${oneLine(task.title)}: due ${whenDue(task)}`,
+        `${oneLine(task.title)}: ${dueWords(task, timeZone)}`,
         done
           ? 'You marked it done and it is waiting for an officer to confirm'
           : task.status === TaskStatus.OVERDUE
@@ -479,7 +457,7 @@ export class MyTasksAskTool implements AskTool {
       // from a list of dates.
       ...(open.length > 1
         ? [
-            `The one due first is ${oneLine(open[0].title)}, due ${whenDue(open[0])}.`,
+            `The one due first is ${oneLine(open[0].title)}, ${dueWords(open[0], timeZone)}.`,
           ]
         : []),
       ...lines,

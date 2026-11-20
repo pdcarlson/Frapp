@@ -567,22 +567,28 @@ export function taskItem(
   expiresAt: string,
 ): NudgeItem {
   const due = taskDueInstant(task);
-  const dayOnly = !task.due_at;
-  const dueDays =
-    (dayOnly
-      ? Math.round(Date.parse(`${task.due_date}T00:00:00.000Z`) / DAY_MS)
-      : zonedDayNumber(due, timeZone)) -
-    zonedDayNumber(now.getTime(), timeZone);
-  const dueWhen = dayOnly
-    ? dueDays === 0
-      ? 'today'
-      : dueDays === 1
-        ? 'tomorrow'
-        : weekday(Date.parse(`${task.due_date}T12:00:00.000Z`), 'UTC')
-    : relativeDayTime(due, now, timeZone).replace(
-        /^(Today|Tonight|Tomorrow)\b/,
-        (word) => word.toLowerCase(),
-      );
+  // A task with no due date (#5761) only ever gets the cards that don't
+  // name a day (thanks, sent back), so it has no day words to build.
+  const day = task.due_at ? null : task.due_date;
+  const undated = !task.due_at && day === null;
+  const dueDays = undated
+    ? Number.POSITIVE_INFINITY
+    : (day !== null
+        ? Math.round(Date.parse(`${day}T00:00:00.000Z`) / DAY_MS)
+        : zonedDayNumber(due, timeZone)) -
+      zonedDayNumber(now.getTime(), timeZone);
+  const dueWhen = undated
+    ? ''
+    : day !== null
+      ? dueDays === 0
+        ? 'today'
+        : dueDays === 1
+          ? 'tomorrow'
+          : weekday(Date.parse(`${day}T12:00:00.000Z`), 'UTC')
+      : relativeDayTime(due, now, timeZone).replace(
+          /^(Today|Tonight|Tomorrow)\b/,
+          (word) => word.toLowerCase(),
+        );
   const meta =
     kind === 'task_praise'
       ? 'Finished on time'
@@ -591,11 +597,13 @@ export function taskItem(
         : kind === 'task_overdue'
           ? `Was due ${dueWhen}`
           : `Due ${dueWhen}`;
-  const shortDue = dayOnly
-    ? dueDays === 0
-      ? 'Today'
-      : weekday(Date.parse(`${task.due_date}T12:00:00.000Z`), 'UTC', true)
-    : weekday(due, timeZone, true);
+  const shortDue = undated
+    ? ''
+    : day !== null
+      ? dueDays === 0
+        ? 'Today'
+        : weekday(Date.parse(`${day}T12:00:00.000Z`), 'UTC', true)
+      : weekday(due, timeZone, true);
   return {
     kind,
     subjectKey: task.id,
@@ -605,7 +613,7 @@ export function taskItem(
     headline: task.title.replace(/\s+/g, ' ').trim(),
     meta,
     urgent: kind !== 'task_praise' && dueDays <= 1,
-    chip: TASK_CHIP[kind] ?? `Due ${shortDue}`,
+    chip: TASK_CHIP[kind] ?? (undated ? 'No due date' : `Due ${shortDue}`),
     action: kind === 'task_praise' ? 'Thanks' : 'See the task',
     target: { type: 'task', id: task.id, channelId: null },
     rank: NUDGE_ITEM_RANK[kind as keyof typeof NUDGE_ITEM_RANK] ?? 99,

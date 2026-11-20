@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { TASK_REPEAT_NEEDS_DUE_DATE } from '@repo/validation';
 import { TaskService, type CreateTaskInput } from './task.service';
 import { TASK_REPOSITORY } from '#domain/repositories/task.repository.interface';
 import type { ITaskRepository } from '#domain/repositories/task.repository.interface';
@@ -1849,6 +1850,14 @@ describe('TaskService', () => {
       expect(mockTaskRepo.createSeries).not.toHaveBeenCalled();
     });
 
+    it('refuses a repeat with no due date, writing nothing (#5761)', async () => {
+      await expect(
+        create({ due_date: null, due_at: undefined }),
+      ).rejects.toThrow(TASK_REPEAT_NEEDS_DUE_DATE);
+      expect(mockTaskRepo.createSeries).not.toHaveBeenCalled();
+      expect(mockTaskRepo.create).not.toHaveBeenCalled();
+    });
+
     it('makes a plain task for a null rule', async () => {
       mockTaskRepo.create.mockResolvedValue(baseTask);
 
@@ -1952,6 +1961,64 @@ describe('TaskService', () => {
         confirmed_at: null,
       });
       expect(result).toEqual({ ...baseTask, photos: [] });
+    });
+
+    describe('with no due date (#5761)', () => {
+      const create = (extra: Partial<CreateTaskInput> = {}) =>
+        service.create({
+          chapter_id: 'ch-1',
+          title: 'Plan the formal',
+          assignee_id: 'user-1',
+          created_by: 'admin-1',
+          ...extra,
+        });
+
+      beforeEach(() => {
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        mockTaskRepo.create.mockResolvedValue({ ...baseTask, due_date: null });
+      });
+
+      it('stores a task with the due date omitted as undated', async () => {
+        await create();
+
+        expect(mockTaskRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ due_date: null, due_at: null }),
+        );
+      });
+
+      it('stores a task sent with a null due date as undated', async () => {
+        await create({ due_date: null });
+
+        expect(mockTaskRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ due_date: null, due_at: null }),
+        );
+      });
+
+      it('refuses a due time with no day, writing nothing', async () => {
+        await expect(
+          create({ due_at: '2099-03-15T21:00:00.000Z' }),
+        ).rejects.toThrow('A due time needs a due date');
+        expect(mockTaskRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('tells the assignee who it is from without naming a day', async () => {
+        mockTaskRepo.create.mockResolvedValue({
+          ...baseTask,
+          due_date: null,
+          point_reward: 10,
+        });
+        mockUserRepo.findByIds.mockResolvedValue([
+          userFixture({ id: 'admin-1', display_name: 'Paul Carlson' }),
+        ]);
+
+        await create({ point_reward: 10 });
+
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+          'user-1',
+          'ch-1',
+          expect.objectContaining({ body: 'From Paul Carlson · 10 points' }),
+        );
+      });
     });
 
     it('adds the subtasks in order after the task (#4003)', async () => {
@@ -3049,6 +3116,16 @@ describe('TaskService', () => {
       expect(result[0].status).toBe(TaskStatus.OVERDUE);
     });
 
+    it('is never overdue with no due date (#5761)', async () => {
+      mockTaskRepo.findByChapter.mockResolvedValue([
+        { ...baseTask, status: TaskStatus.TODO, due_date: null },
+      ]);
+
+      const result = await service.list('ch-1', 'user-1', true);
+
+      expect(result[0].status).toBe(TaskStatus.TODO);
+    });
+
     it('is overdue from the minute of a due time, not the day after (#4003)', async () => {
       const today = new Date().toISOString().slice(0, 10);
       const passed: Task = {
@@ -3240,6 +3317,57 @@ describe('TaskService', () => {
         'ch-1',
         { due_at: null },
       );
+    });
+
+    it('takes the due date off with null, and its time with it (#5761)', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        due_at: '2099-03-15T21:00:00.000Z',
+      });
+      mockTaskRepo.updateUnconfirmed.mockResolvedValue({
+        ...baseTask,
+        due_date: null,
+      });
+
+      await service.update('task-1', 'ch-1', 'admin-1', { due_date: null });
+
+      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        { due_date: null, due_at: null },
+      );
+      expect(mockTaskRepo.releaseReminderClaims).toHaveBeenCalledWith(
+        'ch-1',
+        'task-1',
+      );
+    });
+
+    it('gives an undated task a due date (#5761)', async () => {
+      mockTaskRepo.findById.mockResolvedValue({ ...baseTask, due_date: null });
+      mockTaskRepo.updateUnconfirmed.mockResolvedValue(baseTask);
+
+      await service.update('task-1', 'ch-1', 'admin-1', {
+        due_date: '2099-04-01',
+      });
+
+      expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+        'task-1',
+        'ch-1',
+        { due_date: '2099-04-01' },
+      );
+    });
+
+    it('keeps a repeating copy on its day: null is refused (#5761)', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        series_id: 'series-1',
+        occurrence_date: '2099-03-15',
+      });
+
+      await expect(
+        service.update('task-1', 'ch-1', 'admin-1', { due_date: null }),
+      ).rejects.toThrow(TASK_REPEAT_NEEDS_DUE_DATE);
+      expect(mockTaskRepo.updateUnconfirmed).not.toHaveBeenCalled();
     });
 
     it('refuses a time that does not fall on the due date', async () => {

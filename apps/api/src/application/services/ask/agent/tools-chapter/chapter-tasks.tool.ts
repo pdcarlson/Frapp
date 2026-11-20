@@ -31,7 +31,7 @@ import {
   dueFirst,
   isPastDue,
   latestFinishFirst,
-  whenDue,
+  dueWords,
 } from './task-lines';
 
 /** How many unfinished tasks are read; a chapter with more is told so. */
@@ -118,7 +118,11 @@ export class ChapterTasksAgentTool implements AgentReadTool<Args> {
       kept = kept.filter((task) => ids.has(task.assignee_id));
     }
     if (args.due_before) {
-      kept = kept.filter((task) => dueDay(task, timeZone) <= args.due_before);
+      kept = kept.filter((task) => {
+        // A task with no due date is never due before a day (#5761).
+        const day = dueDay(task, timeZone);
+        return day !== null && day <= args.due_before;
+      });
     }
     if (args.status === 'past_due') kept = kept.filter(isPastDue);
     if (args.status === 'waiting_for_confirmation') {
@@ -198,7 +202,7 @@ export class ChapterTasksAgentTool implements AgentReadTool<Args> {
       .sort((a, b) => order(a) - order(b) || byDue(a, b))
       .map((task) => {
         const parts = [
-          `${quoted(task.title)}: assigned to ${people.name(task.assignee_id)}, due ${whenDue(task, timeZone)}`,
+          `${quoted(task.title)}: assigned to ${people.name(task.assignee_id)}, ${dueWords(task, timeZone)}`,
           awaitsConfirm(task)
             ? `Marked done${task.completed_at ? ` on ${longDay(task.completed_at, timeZone)}` : ''} and waiting for an officer to confirm`
             : isPastDue(task)

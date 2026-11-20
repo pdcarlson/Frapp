@@ -1020,6 +1020,13 @@ export const TASK_SERIES_SCOPE_COPY = {
 } as const;
 
 /**
+ * Why a task with no due date can't repeat (#5761): a repeat counts from the
+ * task's day. The Repeat control says it in place of its options on both
+ * apps, and the API refuses with the same words.
+ */
+export const TASK_REPEAT_NEEDS_DUE_DATE = "Add a due date to repeat it";
+
+/**
  * An "All upcoming tasks" write (#5119), for both apps. The copy keeps its
  * day there, so only the time travels: the server reads the time of day
  * from `due_at` and refuses any `due_date` but the open copy's own.

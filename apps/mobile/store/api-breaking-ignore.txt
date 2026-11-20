@@ -53,3 +53,18 @@ GET /v1/tasks/{id}/photo-url api path removed without deprecation
 # `git grep 'useConfirmBackworkUpload\|backwork/upload-url\|/v1/backwork' <sha> -- apps/mobile`
 # finds nothing. So no binary sends this POST (the hook it bundles defines it, unused).
 POST /v1/backwork added the pattern '^[0-9a-f]{64}$' to the request property 'file_hash'
+
+# #5761 lets a task have no due date, so a task's `due_date` can be null. The shipped binaries do
+# read it, but none breaks on null. At the newest (0426149e, ios 0.13.0+28 / android 0.13.0+19),
+# the oldest (ea9bc12c) and a middle one (6928a014), every read of a task's due goes through a
+# narrowing first: `str()` in apps/mobile/lib/more/narrow.ts and packages/hooks/src/calendar-tasks.ts
+# returns null for a non-string; `parseInstant`, `formatDueLabel` and `formatDueOn` start with
+# `typeof value !== "string"`; `deriveDisplayStatus` checks `typeof dueDate === "string"`; the
+# chat card's `readTaskPayload` and `readEditableCardTask` refuse a non-string `due_date`. The one
+# unguarded comparator, `compareTasksByDue` (task-views.ts), has no mobile caller. So an undated
+# task shows on those builds under Later with no due line, with no Edit, and off the calendar.
+GET /v1/activity the response property 'made_by_you/tasks/items/due_date' became nullable for the status '200'
+GET /v1/activity the response property 'needs_you/task_confirmations/items/due_date' became nullable for the status '200'
+GET /v1/activity the response property 'needs_you/tasks/items/due_date' became nullable for the status '200'
+GET /v1/activity/archive the response property 'tasks/items/due_date' became nullable for the status '200'
+POST /v1/tasks the response property 'due_date' became nullable for the status '201'

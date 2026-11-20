@@ -86,6 +86,12 @@ describe('taskDueInstant', () => {
       }),
     ).toBe(Date.parse('2026-11-16T22:00:00.000Z'));
   });
+
+  it('is never for a task with no due date (#5761)', () => {
+    expect(taskDueInstant({ due_date: null, due_at: null })).toBe(
+      Number.POSITIVE_INFINITY,
+    );
+  });
 });
 
 describe('nudgeKindFor', () => {
@@ -115,6 +121,23 @@ describe('nudgeKindFor', () => {
       'task_overdue',
     );
     expect(nudgeKindFor(task({ due_date: '2026-11-12' }), NOW)).toBe(null);
+  });
+
+  it('never raises a task with no due date as due soon or overdue (#5761)', () => {
+    expect(nudgeKindFor(task({ due_date: null }), NOW)).toBe(null);
+  });
+
+  it('still thanks a member for finishing a task with no due date (#5761)', () => {
+    expect(
+      nudgeKindFor(
+        task({
+          due_date: null,
+          status: TaskStatus.COMPLETED,
+          completed_at: ago(HOUR),
+        }),
+        NOW,
+      ),
+    ).toBe('task_praise');
   });
 
   it('stops raising a task that has been past due for over a month', () => {
