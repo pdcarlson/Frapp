@@ -56,6 +56,8 @@ const ROLES = [
     system_key: "MEMBER",
     is_system: true,
   }),
+  role("r-floor", "Floor 2", "t-chairs", { display_order: 2 }),
+  role("r-tree", "Tree", "t-chairs", { display_order: 3 }),
 ];
 
 vi.mock("@/components/roles/use-roles-data", () => ({
@@ -80,6 +82,7 @@ vi.mock("@repo/hooks", async () => {
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
   return {
     ASSIGN_COPY: actual.ASSIGN_COPY,
+    cutChips: actual.cutChips,
     memberAssignmentSections: actual.memberAssignmentSections,
     memberGroupChips: actual.memberGroupChips,
     memberRoleChips: actual.memberRoleChips,
@@ -147,6 +150,54 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
     expect(roles).not.toHaveTextContent("Everyone");
     expect(groups).toHaveTextContent("In house");
     expect(groups).toHaveTextContent("Fall 2025");
+  });
+
+  it("shows the top three roles by rank, then +N more that opens the rest in place (#5783)", async () => {
+    const user = userEvent.setup();
+    renderIt([
+      "r-tree",
+      "r-rush",
+      "r-floor",
+      "r-sec",
+      "r-social",
+      "r-pres",
+      "r-everyone",
+    ]);
+    const roles = screen.getByRole("region", { name: "Roles" });
+    const chipNames = () =>
+      within(roles)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent?.trim())
+        .filter(
+          (text) =>
+            text &&
+            !text.startsWith("+") &&
+            !["Show less", "Add role"].includes(text),
+        );
+    expect(chipNames()).toEqual([
+      "President",
+      "Corresponding Secretary",
+      "Rush chair",
+    ]);
+    const more = within(roles).getByRole("button", { name: "+3 more" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await user.click(more);
+    expect(chipNames()).toEqual([
+      "President",
+      "Corresponding Secretary",
+      "Rush chair",
+      "Social chair",
+      "Floor 2",
+      "Tree",
+    ]);
+    // Opened, a hidden chip can be taken away too.
+    expect(
+      within(roles).getByRole("button", { name: "Remove Tree" }),
+    ).toBeInTheDocument();
+    const less = within(roles).getByRole("button", { name: "Show less" });
+    expect(less).toHaveAttribute("aria-expanded", "true");
+    await user.click(less);
+    expect(chipNames()).toHaveLength(3);
   });
 
   it("takes a group away from its chip at once, but never a followed one", async () => {

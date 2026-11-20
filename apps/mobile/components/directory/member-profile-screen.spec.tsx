@@ -1114,6 +1114,36 @@ describe("MemberProfile roles", () => {
     PROFILES[ADA] = profile(ADA, "Ada");
   });
 
+  it("shows the top three roles, then +N more that opens the rest in place (#5783)", () => {
+    const names = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"];
+    state.roles = names.map((name, i) => ({
+      id: `r-${name}`,
+      name,
+      color: null,
+      // Listed in reverse, so the chips must sort.
+      display_order: names.length - i,
+    }));
+    PROFILES[ADA] = {
+      ...profile(ADA, "Ada"),
+      role_ids: names.map((name) => `r-${name}`) as never[],
+    };
+    const tree = render(ADA);
+    const shown = () =>
+      tree.root
+        .findAllByType("Text" as never)
+        .map((node) => node.props.children)
+        .filter((child) => typeof child === "string" && names.includes(child));
+    expect(shown()).toEqual(["A8", "A7", "A6"]);
+    const more = editButton(tree, "+5 more roles");
+    expect(more.props.accessibilityState).toEqual({ expanded: false });
+    act(() => more.props.onPress());
+    expect(shown()).toEqual(["A8", "A7", "A6", "A5", "A4", "A3", "A2", "A1"]);
+    act(() => editButton(tree, "Show fewer roles").props.onPress());
+    expect(shown()).toHaveLength(3);
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+  });
+
   it("offers no Add to a viewer without roles:manage or groups:manage", () => {
     state.permissions = ["members:view"];
     state.groups = [];
