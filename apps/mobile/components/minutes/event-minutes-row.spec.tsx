@@ -54,6 +54,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   usePermissionList: () => state.permissions,
+  useViewerUserId: () => "u-viewer",
+  useMemberDisplayNames: () => ({
+    nameFor: (id: string) => (id === "u-winston" ? "Winston Hewitt" : null),
+  }),
   useStartMeeting: () => ({ mutateAsync: state.start, isPending: false }),
   useMeetingNoteTaking: () => ({
     data: state.taking ?? [],
@@ -123,7 +127,7 @@ describe("EventMinutesRow", () => {
 
   it.each([
     ["posted", MEETING_ENTRY_COPY.posted],
-    ["draft", MEETING_ENTRY_COPY.draft],
+    ["draft", "Drafting"],
   ])("opens %s minutes the viewer may read", (status, value) => {
     state.permissions = [];
     state.meetings = [{ id: "m1", status }];

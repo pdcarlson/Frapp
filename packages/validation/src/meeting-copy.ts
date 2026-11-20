@@ -108,7 +108,6 @@ export const MEETING_ENTRY_COPY = {
   label: "Minutes",
   checking: "Checking",
   none: "Nobody has written them yet",
-  draft: "A draft, not posted yet",
   posted: "Posted",
   open: "Open minutes",
   write: "Write minutes",
