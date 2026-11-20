@@ -56,6 +56,7 @@ import {
   meetingDayLabel,
   meetingTypeLabel,
   meetingWhenLabel,
+  minutesMetaHead,
   minutesDraftSource,
   minutesJumps,
   minutesReadSections,
@@ -877,7 +878,7 @@ function LoadedMinutes({
           shownContent,
         );
   const meta = [
-    `${type} meeting, ${meetingWhenLabel(meeting.event_start_time)}`,
+    minutesMetaHead(meeting, type),
     isDraft
       ? MEETING_COPY.draftBadge
       : MEETING_COPY.posted(meetingDayLabel(meeting.posted_at)),

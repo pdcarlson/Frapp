@@ -3,14 +3,14 @@ import { codeOf } from "@repo/api-sdk";
 import { useStartMeeting, type MeetingSummary } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
 import {
-  DEFAULT_MEETING_NAME,
   MEETING_COPY,
   MEETING_ENTRY_COPY,
+  MINUTES_START_COPY,
+  MINUTES_WITHOUT_MEETING_NAME,
   guessMeetingType,
   looksLikeHearing,
   meetingInTheRoom,
   meetingIsOn,
-  meetingStartingNow,
   meetingWhenLabel,
 } from "@repo/validation";
 import { selectAllEventRows, type EventRow } from "@/lib/events/select";
@@ -19,8 +19,8 @@ import { selectAllEventRows, type EventRow } from "@/lib/events/select";
  * Starting minutes on the phone: which meeting the +'s New minutes starts
  * on, for notes or a recording, (#5287; `spec/behavior/meetings.md` § Recording in the
  * app, § Writing minutes by hand), and the one start call they and the event
- * screen's Write minutes share. Every set of minutes belongs to an event
- * (#4935), one per event.
+ * screen's Write minutes share. Minutes belong to one event at most, or to
+ * none until one is linked (Paul, 2026-11-20: "No meeting · Link one later").
  */
 
 /** The event a set of minutes is for: its id and name are all a start needs. */
@@ -29,14 +29,16 @@ type MeetingEventRef = { id: string; name: string; start_time?: string };
 /** What the officer is starting minutes on. */
 export type MeetingChoice =
   | { kind: "event"; event: MeetingEventRef }
-  /** A meeting not on the calendar: the quiet event made when minutes start. */
-  | { kind: "new" };
+  /** No meeting yet: the minutes start unlinked, and are linked later. */
+  | { kind: "none" };
 
 /** One line the picker offers. */
 export type MeetingOption = {
   choice: MeetingChoice;
   title: string;
   detail: string;
+  /** Shown but not picked: someone else's minutes already hold it. */
+  disabled?: boolean;
 };
 
 /** How far back Change looks for the meeting, and how many it lists. */
@@ -46,15 +48,13 @@ const MAX_OPTIONS = 6;
 export const MEETING_START_COPY = {
   record: "Record",
   typeInstead: "Type notes instead",
-  forMeeting: "Meeting",
-  newHeading: "New minutes",
+  newHeading: MINUTES_START_COPY.heading,
   change: "Change",
-  pickHeading: "Which meeting?",
-  onNow: "On now",
-  newTitle: DEFAULT_MEETING_NAME,
-  newDetail: "Not on the calendar · today, starting now",
-  takenNote: (name: string) =>
-    `${name} already has minutes, so pick another meeting or take notes from the event.`,
+  pickHeading: MINUTES_START_COPY.pick,
+  onNow: MINUTES_START_COPY.onNow,
+  hasMinutes: MINUTES_START_COPY.hasMinutes,
+  noneTitle: MINUTES_START_COPY.noMeeting,
+  noneDetail: MINUTES_START_COPY.noMeetingDetail,
   readFailed:
     "Couldn't read the calendar, so Frapp can't tell which meeting this is. Check the connection and try again.",
   start: "Write minutes",
@@ -83,14 +83,16 @@ function ownDrafts(
 
 export type MeetingChoices = {
   /**
-   * What the + picks by itself: the meeting on now, a new one when nothing
-   * is on, or `null` when the meeting on now already has someone else's
-   * minutes (`taken`), so the officer picks rather than splitting it.
+   * What the + picks by itself: the meeting on now, or No meeting when
+   * nothing is on or the meeting on now already has someone else's minutes.
    */
-  picked: MeetingChoice | null;
+  picked: MeetingChoice;
   /** The meeting on now, when its minutes are someone else's (or posted). */
   taken: EventRow | null;
-  /** What Change lists: the meeting on now, the recent ones, a new one. */
+  /**
+   * What Change lists: the meeting on now (as Has minutes when `taken`),
+   * the recent ones, and No meeting.
+   */
   options: MeetingOption[];
   /** This member's own unposted minutes, by event id. */
   ownDraftFor: ReadonlyMap<string, string>;
@@ -136,9 +138,17 @@ export function meetingChoices(
   const listed = free
     ? [free, ...recent.filter((event) => event.id !== free.id)]
     : recent;
-  const options: MeetingOption[] = listed
-    .slice(0, MAX_OPTIONS)
-    .map((event) => ({
+  const options: MeetingOption[] = [];
+  if (inRoomTaken) {
+    options.push({
+      choice: { kind: "event", event: inRoomTaken },
+      title: inRoomTaken.name,
+      detail: `${MEETING_START_COPY.onNow} · ${MEETING_START_COPY.hasMinutes}`,
+      disabled: true,
+    });
+  }
+  options.push(
+    ...listed.slice(0, MAX_OPTIONS).map((event): MeetingOption => ({
       choice: { kind: "event", event },
       title: event.name,
       detail: [
@@ -149,18 +159,15 @@ export function meetingChoices(
       ]
         .filter(Boolean)
         .join(" · "),
-    }));
+    })),
+  );
   options.push({
-    choice: { kind: "new" },
-    title: MEETING_START_COPY.newTitle,
-    detail: MEETING_START_COPY.newDetail,
+    choice: { kind: "none" },
+    title: MEETING_START_COPY.noneTitle,
+    detail: MEETING_START_COPY.noneDetail,
   });
   return {
-    picked: inRoomTaken
-      ? null
-      : free
-        ? { kind: "event", event: free }
-        : { kind: "new" },
+    picked: free ? { kind: "event", event: free } : { kind: "none" },
     taken: inRoomTaken,
     options,
     ownDraftFor,
@@ -173,10 +180,10 @@ export function choiceLabel(
   now: Date,
   inRoomId: string | null,
 ): { title: string; detail: string } {
-  if (choice.kind === "new") {
+  if (choice.kind === "none") {
     return {
-      title: MEETING_START_COPY.newTitle,
-      detail: MEETING_START_COPY.newDetail,
+      title: MEETING_START_COPY.noneTitle,
+      detail: MEETING_START_COPY.noneDetail,
     };
   }
   return {
@@ -239,18 +246,14 @@ export function useStartMinutesFor(): {
                 event_id: choice.event.id,
                 meeting_type: guessMeetingType(choice.event.name),
               })
-            : await mutateAsync({
-                meeting_type: "chapter",
-                new_event: {
-                  name: DEFAULT_MEETING_NAME,
-                  ...meetingStartingNow(new Date()),
-                  role_ids: [],
-                },
-              });
+            : // Neither an event nor a new one: the minutes start unlinked.
+              await mutateAsync({ meeting_type: "other" });
         return {
           id: meeting.id,
           eventName:
-            choice.kind === "event" ? choice.event.name : DEFAULT_MEETING_NAME,
+            choice.kind === "event"
+              ? choice.event.name
+              : MINUTES_WITHOUT_MEETING_NAME,
           existing: false,
         };
       } catch (error) {
