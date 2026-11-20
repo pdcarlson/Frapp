@@ -77,8 +77,8 @@ export function TaskLinkPicker({
       <ul aria-label="Loading tasks" className="space-y-1">
         {[0, 1, 2, 3].map((row) => (
           <li key={row} className="space-y-1.5 px-2 py-1.5">
-            <div className="h-3.5 w-3/5 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-2/5 animate-pulse rounded bg-muted" />
+            <div className="h-3.5 w-3/5 animate-pulse rounded bg-surface-1 motion-reduce:animate-none" />
+            <div className="h-3 w-2/5 animate-pulse rounded bg-surface-1 motion-reduce:animate-none" />
           </li>
         ))}
       </ul>
