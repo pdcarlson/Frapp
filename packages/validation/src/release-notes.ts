@@ -128,6 +128,12 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "The app's dark surfaces are a softer near-black now, with gentler steps between the page, cards and menus.",
       "Each Coming up date in minutes now says when it's on the calendar or has a task, and its ⋯ menu adds it to the calendar, makes it a task or copies it.",
       "Officers can give someone a role or put them in a group right from their profile, Chapter settings keeps roles and groups on one Roles and groups page, and the Directory can filter by group.",
+      "You can join a chapter at 17, and Frapp AI asks you to confirm you're 18 the first time you use it.",
+      "Each Coming up date in minutes now has Remind me in its ⋯ menu, which sends you a notification the evening before, or that morning.",
+      "When someone joins, you hear about it once they've added their name, so the notice says who joined.",
+      "Right after you join a chapter you add your name and photo on one screen, and Frapp AI waits to introduce itself until you first use it.",
+      "A member's profile shows Message as a small button under their name instead of a wide bar.",
+      "Your first chapter channel now greets you with a welcome card showing the next two events and a quick way to finish your profile, in place of the old tour.",
     ],
     web: [
       "Rows show more at a glance: an event says when check-in is open, a task says how it repeats and how far along its checklist and photos are, and a study session says which zone it was in.",
