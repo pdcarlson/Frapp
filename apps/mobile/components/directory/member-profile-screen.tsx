@@ -711,8 +711,8 @@ export function MemberProfile({
  * opens, so the sheet never lands over the thread (#3790).
  */
 /**
- * Message: a compact outlined button sized to its label, centered under the
- * header, web's `secondary` `sm` button on the phone.
+ * Message: a compact outlined button sized to its label, under the header,
+ * web's `secondary` `sm` button on the phone.
  */
 function MessageButton({
   label,
@@ -874,9 +874,11 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
+    // At the header's start, under the name it belongs to: the phone's
+    // header is left-aligned where web's sheet centers its own.
     messageBlock: {
       gap: tokens.spacing.xs,
-      alignItems: "center",
+      alignItems: "flex-start",
     },
     messageButton: {
       flexDirection: "row",
@@ -899,7 +901,6 @@ function createStyles(tokens: SignetTokens) {
     messageNote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-      textAlign: "center",
     },
     chipBlock: {
       gap: tokens.spacing.sm,
