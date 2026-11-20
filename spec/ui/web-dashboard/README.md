@@ -810,7 +810,7 @@ Flushed last ([#2500](https://github.com/pdcarlson/Frapp/issues/2500)); the boar
   an open report, a failed read, or the notification's `#reported-messages` link shows it in full.
   A channel's own page lists no other channel; the chat rail's right-click Edit channel opens it, and so does a row in the chapter page's category tree.
   Until 2026-11-20 neither page listed every channel ("the chat rail is that list").
-  Changed in #5727 by shawnatomklein-eng, 2026-11-20: the chapter's page lists every channel inside its folded category.
+  Changed in #5733 by shawnatomklein-eng, 2026-11-20: the chapter's page lists every channel inside its folded category.
   The form has no type field because the update route takes none; the create panel, where the type is chosen, says it is final.
 - **The report queue keeps two lines of its own**: under its label, that each report shows the message as it read when reported and that who reported it is never shown; and on the Open tab, that Mark reviewed and Dismiss leave the message up.
   A row can show neither, and neither button's label says the second.
