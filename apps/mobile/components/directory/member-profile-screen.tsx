@@ -706,11 +706,6 @@ export function MemberProfile({
 }
 
 /**
- * "+ Add role" or "+ Add to group": a dashed chip beside the member's own,
- * opening the one roles-and-groups sheet. Held while a DM with this member
- * opens, so the sheet never lands over the thread (#3790).
- */
-/**
  * Message: a compact outlined button sized to its label, under the header,
  * web's `secondary` `sm` button on the phone.
  */
@@ -763,6 +758,11 @@ function MessageButton({
   );
 }
 
+/**
+ * "+ Add role" or "+ Add to group": a dashed chip beside the member's own,
+ * opening the one roles-and-groups sheet. Held while a DM with this member
+ * opens, so the sheet never lands over the thread (#3790).
+ */
 function AddChip({
   label,
   disabled,
