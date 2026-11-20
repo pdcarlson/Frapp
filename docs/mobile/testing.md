@@ -293,13 +293,14 @@ Then verify a single `node_modules/expo` at the expected version before trusting
 
 **A `waitFor` on a derived flag can be satisfied by the wrong state.**
 `useAuthSession` exposes `isChapterResolving` as
-`status === "authenticated" && !hasReadChapterClaim`
+`status === "authenticated" && !accessToken`
 ([`lib/auth-session.tsx`](../../apps/mobile/lib/auth-session.tsx)), so it reads
-`false` during `hydrating` just as it does once the first claim read has landed.
+`false` during `hydrating` just as it does once the session has arrived.
 `await waitFor(() => expect(result.current.isChapterResolving).toBe(false))`
-therefore _can_ return before `getSession()` has resolved and before any claim read
-has been issued — the wait passes for a reason the test did not intend, and
-whatever it was meant to sequence is still ahead of it. It does not fail every
+therefore _can_ return before `getSession()` has resolved — the wait passes for a
+reason the test did not intend, and whatever it was meant to sequence is still
+ahead of it. (Until #5768 the chapter claim was a network read, `getClaims`, and
+this is the trap #976 fell into; the claim is decoded from the token now.) It does not fail every
 time; see the drain below for what decides it. Assert `status === "authenticated"`
 in the same `waitFor` so the pre-authentication state cannot satisfy it.
 
@@ -317,9 +318,8 @@ the state you are trying to skip past. When the answer is the `act` above it, th
 wait is a readable assertion; when the answer is nothing, it is a bug.
 
 The corollary is that waiting on an _already-settled_ flag is a pure no-op. Where a
-later async operation is the thing under test and it changes no flag — a claim
-re-read, which deliberately leaves `hasReadChapterClaim` true — wait on the
-operation instead: await the mock's recorded promises inside `act`, and assert the
+later async operation is the thing under test and it changes no flag (#976's was a
+claim re-read) wait on the operation instead: await the mock's recorded promises inside `act`, and assert the
 call count so the wait cannot be satisfied by an earlier, unrelated call.
 
 This was the whole of #976. Two things about it are worth not repeating:
@@ -344,9 +344,9 @@ time the test continues. Machine load shifts those odds, which is why the rate i
 noisy and why a handful of green runs proves very little.
 
 **A test double that parks a call needs one resolver per parked call.** The same
-spec holds `getClaims` open to make the in-flight window observable. Storing a
-single resolver on the mock state looked sufficient, but the claim effect re-runs on
-every token change, so a token refresh parks a second read while the mount read is
+spec used to hold `getClaims` open to make the in-flight window observable. Storing a
+single resolver on the mock state looked sufficient, but the claim effect re-ran on
+every token change, so a token refresh parked a second read while the mount read was
 still behind the gate — and the second park overwrote the first resolver, stranding
 a promise that could then never settle. Keep a list of waiters and release all of
 them.

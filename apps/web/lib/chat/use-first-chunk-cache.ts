@@ -62,7 +62,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChatScope } from "./chat-scope";
-import { useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   useBlockedUserIds,
   useChannels,
@@ -70,6 +70,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import { emptyCache, mergeServerRows } from "@repo/chat-core/cache";
+import { hasServerRows, seedQuery } from "@repo/chat-core/first-chunk";
 import {
   chatMessagesKey,
   type ChannelCache,
@@ -241,75 +242,6 @@ function usePersistUnderScope(
     const timer = setTimeout(commit, timing.debounceMs);
     return () => clearTimeout(timer);
   }, [scope, key, dataUpdatedAt, write, timing]);
-}
-
-function seedQuery(
-  queryClient: QueryClient,
-  queryKey: QueryKey,
-  data: unknown,
-  cachedAt: number,
-): void {
-  /*
-    `updatedAt` is the row's own origin time, not now.
-
-    Two things follow from it. The persist path writes `dataUpdatedAt` back as
-    `cachedAt`, so re-seeding a row preserves its age instead of renewing it —
-    without this, a cache read would refresh the very rows it just read and
-    `FIRST_CHUNK_MAX_AGE_MS` could never expire anything. And the seeded query
-    is born as old as the data really is, which is what any staleness rule
-    downstream should be reasoning about.
-  */
-  queryClient.setQueryData(queryKey, data, { updatedAt: cachedAt });
-  /*
-    `cancelRefetch: false` — without it this seed makes the reconcile *slower*.
-
-    `invalidateQueries` forwards to `refetchQueries`, which defaults
-    `cancelRefetch` to `true`, and `Query.fetch` reads that as "abort the
-    in-flight request and start a new one" whenever `state.data` is defined —
-    which the `setQueryData` above has just made true. So the `GET` already
-    half-way to the server would be cancelled and reissued from zero, and the
-    authoritative list would land later than it would have with no cache at
-    all, having cost the server two requests. Passing `false` keeps the
-    in-flight fetch and simply marks the query for one if none is running.
-
-    `refetchType: "active"` (the default), not `"all"`. A seeded tail is a
-    query `setQueryData` just created, and until a `useQuery` mounts on it
-    the query has no `queryFn`: refetching it rejects with
-    `Missing queryFn: '<hash>'`, which the query-error reporter sends to
-    Sentry (FRAPP-WEB-3, #3905). Every cached channel the member is not
-    looking at is such a query. The invalidation alone is what this needs:
-    it marks the seed stale, so the observer that mounts on it later
-    refetches on mount, and one already mounted refetches now.
-  */
-  void queryClient.invalidateQueries(
-    { queryKey, exact: true },
-    // Second argument, not the first: `cancelRefetch` is an *option*, and
-    // `invalidateQueries` ignores it inside the filters object, where it reads
-    // as a silently-accepted no-op.
-    { cancelRefetch: false },
-  );
-}
-
-/**
- * Whether a real fetch has already populated this channel's message cache.
- *
- * Not `getQueryData(key) !== undefined`, which is what this used to ask and
- * which the **outbox** defeats: `useChatChannel`'s mount effect runs
- * `hydrateOutboxIntoCache`, and that does a `setQueryData` of
- * `emptyCache()` plus the member's queued rows the moment a channel id exists.
- * Mere presence therefore means "somebody wrote here", not "the server
- * answered" — and the member it misfires for is the one with unsent messages,
- * who is precisely the member this cache exists to serve. They would have got
- * their own pending row over a skeleton and nothing else.
- *
- * A confirmed row is the honest signal: only `mergeServerRows` produces one,
- * and only a backfill, a realtime echo or this seed calls it.
- */
-function hasServerRows(cache: ChannelCache | undefined): boolean {
-  if (!cache) return false;
-  return Object.values(cache.byId).some(
-    (message) => message._status === "confirmed",
-  );
 }
 
 /** Exported for the spec: the seed step on its own, with no IndexedDB in it. */

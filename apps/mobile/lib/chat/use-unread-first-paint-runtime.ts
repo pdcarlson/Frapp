@@ -38,8 +38,8 @@ const UNREAD_QUERY_HASH = hashKey(CHANNEL_UNREAD_COUNTS_KEY);
 export function useUnreadFirstPaintRuntime(): void {
   const queryClient = useQueryClient();
   const { status, userId, chapterId, isChapterResolving } = useAuthSession();
-  // No key until the chapter claim has been read: before that `null` means
-  // "not known yet", not "no chapter".
+  // No key until the chapter is settled (a token is in hand): before that
+  // `null` means "not known yet", not "no chapter".
   const memoryKey =
     status === "authenticated" && userId && !isChapterResolving
       ? unreadMemoryKey(userId, chapterId)

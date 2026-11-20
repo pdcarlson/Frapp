@@ -14,6 +14,7 @@ import { createReportingCaches } from "@/lib/sentry/query-errors";
 import { forgetDuesMemory } from "@/lib/dues/visit-memory";
 import { forgetCachedChatPhotos } from "@/lib/chat/photo-cache";
 import { forgetUnreadMemory } from "@/lib/chat/unread-memory";
+import { forgetFirstPaint } from "@/lib/launch/first-paint-cache";
 
 /**
  * `networkMode: "offlineFirst"` is load-bearing, not a tuning knob.
@@ -224,4 +225,6 @@ export function clearProductQueryCache(): void {
   forgetCachedChatPhotos();
   // And the unread counts saved for the next launch's first paint (#4006).
   forgetUnreadMemory();
+  // And what launch paints from before the network answers (#5768).
+  forgetFirstPaint();
 }

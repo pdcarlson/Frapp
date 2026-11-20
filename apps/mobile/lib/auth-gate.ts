@@ -211,13 +211,13 @@ export function resolveAuthGate({
     return "sign-in";
   }
 
-  // A known chapter wins over an in-flight *claim* read, and the order matters.
-  // The claim is re-read on every token change — the hourly auto-refresh, every
-  // foreground, and every chapter switch — and `hold` renders nothing, so
-  // holding whenever a read is in flight would unmount the entire tab navigator
-  // roughly once an hour, dumping the member back on the Chat tab and losing
-  // composer text and scroll position. Resolving only ever *confirms* or
-  // *changes* a chapter we already have; it is not a reason to blank the app.
+  // A known chapter wins over an unsettled chapter, and the order matters.
+  // `hold` renders nothing, so holding whenever the chapter was being settled
+  // would unmount the entire tab navigator, dumping the member back on the
+  // Chat tab and losing composer text and scroll position. Since #5768 the
+  // claim is decoded from the token in hand, so `isChapterResolving` is true
+  // only for a signed-in session with no token yet; the order still keeps a
+  // known chapter from ever blanking the app.
   if (!chapterId && isChapterResolving) {
     return "hold";
   }

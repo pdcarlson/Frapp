@@ -26,7 +26,8 @@
  * Mounting above the auth gate means this starts before anyone is routed. That
  * is handled rather than avoided: a cold-start target is **held pending** until
  * the session has restored, and dropped if the member signs out first. It waits
- * on the chapter claim having been *read*, never on it having a value — see the
+ * on the chapter having been settled (`isChapterResolving`), never on the
+ * claim having a value — see the
  * comment on the release effect, and `lib/auth-gate.ts` for why the difference
  * is the whole ballgame: a missing claim is a normal working state, not a
  * reason to hold a deep link forever (`lib/auth-gate.ts`).
@@ -283,7 +284,7 @@ export function usePushRuntime(): void {
       setPendingTap(null);
       return;
     }
-    // Wait on the claim *read*, never on the claim's value. `lib/auth-gate.ts`
+    // Wait on the chapter being settled, never on the claim's value. `lib/auth-gate.ts`
     // spells out why at length: a token with no `active_chapter_id` is a
     // normal working state (no membership yet, or the hook disabled as
     // incident mitigation), so `chapterId` can be `null` for a signed-in

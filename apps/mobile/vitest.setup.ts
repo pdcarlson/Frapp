@@ -48,6 +48,24 @@ vi.mock("expo-file-system/legacy", () => ({
   },
 }));
 
+// The keychain, in memory. `lib/query-client.ts` reaches it through
+// `clearProductQueryCache` (the first-paint copy's profile lives there,
+// #5768), so every spec that loads the query client would otherwise fail on
+// the native module. Empty at the start of every spec file; a spec that cares
+// what is in it mocks this module or `lib/supabase` itself.
+vi.mock("expo-secure-store", () => {
+  const items = new Map<string, string>();
+  return {
+    getItemAsync: vi.fn(async (key: string) => items.get(key) ?? null),
+    setItemAsync: vi.fn(async (key: string, value: string) => {
+      items.set(key, value);
+    }),
+    deleteItemAsync: vi.fn(async (key: string) => {
+      items.delete(key);
+    }),
+  };
+});
+
 // Default-denied on purpose: a spec that wants the happy path says so, and
 // nothing accidentally exercises a granted-library path it did not set up.
 vi.mock("expo-image-picker", () => ({
