@@ -58,7 +58,7 @@ import {
  * s02 — Join chapter (`spec/ui/design-system/reference/canvas-screens.dc.html`).
  *
  * s02's canvas draws a six-cell row for a shared chapter code; joining is by
- * single-use invite links instead, so the page takes s02's chrome and not its
+ * invite link instead (a personal one, or an officer's chapter link), so the page takes s02's chrome and not its
  * input (`spec/ui/web-dashboard/README.md` records the call). The field, behind
  * the invite card, takes a pasted raw token or a join link
  * (`extractInviteToken`); posting the link as the token is a 410.

@@ -38,9 +38,11 @@ function inviteSubject(params: SendInviteEmailParams): string {
 }
 
 /**
- * "Paul Carlson invited you to join as Pledge." The chapter is the heading
- * above it, so the line names who sent it and the role, leaving out either
- * when it is unknown or, for the Everyone role, not a role at all.
+ * "Paul Carlson invited you to join on Frapp as Pledge." The chapter is the
+ * heading above it, so the line names who sent it, the product and the role,
+ * leaving out the sender when unknown and the role for the Everyone role,
+ * which is not a role at all. Both bodies carry it, so even the plain-text
+ * part says what the invite is for (ADR-25).
  */
 function inviteLine(params: SendInviteEmailParams): string {
   const inviter = clipName(params.inviterName);
@@ -48,7 +50,7 @@ function inviteLine(params: SendInviteEmailParams): string {
   const who = inviter
     ? `${inviter} invited you to join`
     : "You've been invited to join";
-  return role ? `${who} as ${role}.` : `${who} on Frapp.`;
+  return role ? `${who} on Frapp as ${role}.` : `${who} on Frapp.`;
 }
 
 /** "The invite works once, for 7 days. If you weren't expecting it, …" */

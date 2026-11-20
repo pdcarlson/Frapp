@@ -13,9 +13,9 @@ import {
  * and the binary carries `applinks:app.frapp.live`. Android opens it when this
  * origin serves `/.well-known/assetlinks.json` with the SHA-256 of the key that
  * signs the installed app and the binary's intent filter is `autoVerify`. Both
- * halves are needed. The binary's half is `apps/mobile/app.json`, which store
- * builds carry from 0.11.0 (#4340). Production doesn't serve these files yet,
- * because its two values aren't set (#4336), so an invite link opens the web.
+ * halves are needed. The binary's half is `apps/mobile/app.json`; which builds
+ * carry it, and whether production serves these files yet, is in
+ * `spec/behavior/onboarding.md` (the rule on an invite link opened on a phone).
  *
  * The identifiers come from the environment, not the repo, which records
  * neither: `eas.json` names no `appleTeamId`, and the Play app-signing

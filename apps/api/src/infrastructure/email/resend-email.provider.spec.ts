@@ -40,7 +40,9 @@ describe('ResendEmailProvider', () => {
     expect(body.to).toBe(params.to);
     expect(body.subject).toBe("You're invited to join a chapter on Frapp");
     expect(body.html).toContain('Your chapter');
-    expect(body.text).toContain("You've been invited to join as Pledge.");
+    expect(body.text).toContain(
+      "You've been invited to join on Frapp as Pledge.",
+    );
     expect(body.subject).not.toContain('Signet');
     expect(body.text).toContain(`Open the invite: ${params.joinUrl}`);
   });
@@ -74,6 +76,25 @@ describe('ResendEmailProvider', () => {
     expect(html).toContain('>Open the invite</a>');
     expect(html).toContain('The invite works once, for 7 days.');
     expect(body.text).toMatch(/^Phi Gamma Delta Tau Nu\n/);
+  });
+
+  it.each([
+    [3, 'for 3 days'],
+    [1, 'for 1 day'],
+  ])('writes out %i day(s) as "%s"', async (validDays, words) => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    const provider = new ResendEmailProvider({
+      apiKey: 're_test',
+      fromAddress: 'Frapp <invites@mail.frapp.live>',
+    });
+
+    await provider.sendInviteEmail({ ...params, validDays });
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
+    expect(body.html).toContain(`The invite works once, ${words}.`);
+    expect(body.text).toContain(`The invite works once, ${words}.`);
   });
 
   it('names no role for an invite that grants only Everyone', async () => {
@@ -120,7 +141,7 @@ describe('ResendEmailProvider', () => {
     expect(body.html).toContain('Paul &lt;Carlson&gt; invited you');
     expect(body.html).not.toContain('<Carlson>');
     expect(body.text).toContain(
-      'Paul <Carlson> invited you to join as Pledge.',
+      'Paul <Carlson> invited you to join on Frapp as Pledge.',
     );
   });
 

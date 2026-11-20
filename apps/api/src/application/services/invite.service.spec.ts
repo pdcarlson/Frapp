@@ -626,6 +626,24 @@ describe('InviteService', () => {
       expect(result.failed).toEqual([]);
     });
 
+    it("names no role in the email for the chapter's Everyone role, whatever it is called (#5628)", async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-member',
+          name: 'Everyone',
+          system_key: SystemRoleKeys.MEMBER,
+        }),
+      ]);
+
+      await service.createWithEmails('ch-1', 'user-1', 'Everyone', [
+        'a@example.com',
+      ]);
+
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ role: null }),
+      );
+    });
+
     it('names a role the chapter gave the invite in the email (#5628)', async () => {
       mockRoleRepo.findByChapter.mockResolvedValue([
         roleFixture({

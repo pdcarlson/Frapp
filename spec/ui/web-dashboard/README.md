@@ -1397,7 +1397,7 @@ The **mark** is the exception, because [`../brand-identity.md`](../brand-identit
 The mirror half is `/profile`: it renders *inside* a chapter, so its s15 identity header takes the accent roles rather than the house family the board happens to draw it in.
 
 **The reference wins on visuals and not on the data model.** s02 draws a six-cell row for a shared chapter code;
-[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies single-use invite tokens that last 7 days, and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
+[`spec/behavior/onboarding.md`](../../behavior/onboarding.md) specifies invite links instead (a personal one used once, or an officer's chapter link for a role, each lasting 7 days), and [`../README.md`](../README.md)'s precedence rule puts behavior above UI on what the product does.
 So `/join` takes s02's chrome — the title ladder (the back affordance went with the 2026-11-05 split frame, whose header and footer links do that job), the primary, the `--surface-1` hint card — and not its input. Since #5625 the page leads with the invite card; its one token field, behind **Have a different invite?** or shown when there is no invite, accepts a pasted raw token or the join URL officers copy (`extractInviteToken` in `@repo/validation`). The phone has no field at all ([`../mobile/screens.md`](../mobile/screens.md)).
 
 The settings blocks this history describes on `/profile` (quiet hours, notifications, blocked members) moved to the personal Settings page on 2026-11-10 ([§ Two doors](#two-doors-chapter-settings-and-your-settings)); the rules they settled moved with them.
