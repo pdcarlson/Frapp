@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Plus, SlidersHorizontal } from "lucide-react";
+import { Plus, SlidersHorizontal, X } from "lucide-react";
 import { dueEntryFields } from "@repo/formatting";
 import type { CreateOpenTaskBody } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -103,13 +103,15 @@ type Missing = {
  * title rather than wrap ragged. A missing who or due is flagged and
  * focused on Enter, never while typing. More opens the rest of the task in
  * place: steps, notes, repeat, photos and proof. After a create the line
- * clears for the next one. Escape clears what was typed.
+ * clears for the next one. Escape clears what was typed, and on an empty
+ * line puts the line away (`onDismiss`), as its close does.
  */
 export function AddTaskRow({
   gate,
   pending,
   onCreate,
   expandSignal = 0,
+  onDismiss,
 }: {
   gate: SubscriptionGate;
   pending: boolean;
@@ -117,6 +119,11 @@ export function AddTaskRow({
   onCreate: (create: TaskCreate) => Promise<boolean>;
   /** Bumped by New task: open More and put the cursor in the title. */
   expandSignal?: number;
+  /**
+   * Put the line away (#5578): Escape on an empty line, or its close. A
+   * half-typed task is kept for the next New task, never asked about.
+   */
+  onDismiss?: () => void;
 }) {
   const ids = useId();
   const [draft, setDraft] = useState(EMPTY);
@@ -248,10 +255,15 @@ export function AddTaskRow({
       onKeyDown={(event) => {
         // An open picker (any Radix layer) handles its own Escape first and
         // marks it, so the line only clears when nothing above it took it.
-        if (event.key === "Escape" && !event.defaultPrevented && !busy && dirty) {
+        if (event.key !== "Escape" || event.defaultPrevented || busy) return;
+        if (dirty) {
           event.preventDefault();
           setDraft(EMPTY);
           setMissing({});
+        } else if (onDismiss) {
+          event.preventDefault();
+          setMore(false);
+          onDismiss();
         }
       }}
       onFocus={() => setFocused(true)}
@@ -363,6 +375,22 @@ export function AddTaskRow({
         >
           <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
+        {onDismiss ? (
+          <Button
+            type="button"
+            size="toolbar"
+            variant="ghost"
+            className="w-9 shrink-0 px-0"
+            aria-label="Close"
+            title="Close"
+            onClick={() => {
+              setMore(false);
+              onDismiss();
+            }}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        ) : null}
       </div>
       {missing.who || missing.due || missing.passed ? (
         <p id={`${ids}-missing`} role="alert" className="px-3 pb-2 text-caption text-destructive-text">

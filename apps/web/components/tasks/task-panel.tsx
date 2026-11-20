@@ -90,7 +90,7 @@ import {
   type CompletionProof,
 } from "./task-photo";
 import { WhoPicker } from "./who-picker";
-import type { RowPerson } from "./task-row";
+import { copyAudience, type RowPerson } from "./task-row";
 import { movesDayTo } from "./task-edit-form";
 
 /** What the panel shows: one task, or a group task's copies. */
@@ -358,6 +358,7 @@ function TaskPanelBody({
   const references = (task.photos ?? []).filter(
     (photo) => photo.kind === "reference",
   );
+  const copyOf = isGroup ? null : copyAudience(task);
   // Handed in (#5732): who marked it done and when, under the status, with
   // the proof under it, so a done task reads as one before its fields do.
   const handedIn = isGroup
@@ -453,6 +454,20 @@ function TaskPanelBody({
             </span>
           )}
         </FieldRow>
+        {copyOf ? (
+          // A copy of a group task (#5699): Who is this copy's person, and
+          // For says who else got the same task and how far they are, as
+          // the phone's task screen does.
+          <FieldRow label="For">
+            <span className="inline-flex items-center gap-1.5 px-2 py-1.5 text-sm">
+              <Users
+                className="h-4 w-4 text-muted-foreground"
+                aria-hidden="true"
+              />
+              {TASK_AUDIENCE_COPY.groupLine(copyOf.label, copyOf.done, copyOf.total)}
+            </span>
+          </FieldRow>
+        ) : null}
         <DueRow task={task} editable={editable} onSave={save} />
         <PointsRow
           task={task}

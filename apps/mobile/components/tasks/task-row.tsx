@@ -4,7 +4,11 @@ import {
   TASK_NEEDS_CHANGES_LABEL,
   taskStatusLabel,
 } from "@repo/hooks";
-import { TASK_FOLLOWER_COPY, taskRowFacts } from "@repo/validation";
+import {
+  TASK_AUDIENCE_COPY,
+  TASK_FOLLOWER_COPY,
+  taskRowFacts,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -31,6 +35,7 @@ import {
 } from "@/lib/tasks/format";
 import { rowIsSentBack, type TaskRowModel } from "@/lib/tasks/board";
 import { markDoneLabel } from "@/lib/tasks/task-photos";
+import { rowGroupLabel } from "@/lib/tasks/task-screen";
 
 /**
  * One row of the s08 board — `canvas-screens.dc.html:282-324`.
@@ -138,8 +143,24 @@ function taskFacts(row: TaskRowModel, now: Date) {
   const from = row.followedBy
     ? TASK_FOLLOWER_COPY.chip(row.followedByName)
     : null;
+  // A copy of a group task still says who got it, and how far they are
+  // (#5699): "Due Friday · Everyone · 14 of 20 done". Its checkbox is only
+  // this member's part, as web's My tasks row says.
+  const audience = row.group
+    ? TASK_AUDIENCE_COPY.groupLine(
+        rowGroupLabel(row),
+        row.group.done,
+        row.group.total,
+      )
+    : null;
   const lineOf = (extra: string | null) =>
-    [sentBack ? TASK_NEEDS_CHANGES_LABEL : null, statusLine, extra, from]
+    [
+      sentBack ? TASK_NEEDS_CHANGES_LABEL : null,
+      statusLine,
+      audience,
+      extra,
+      from,
+    ]
       .filter(Boolean)
       .join(" · ") || null;
   const subtitle = lineOf(facts.shown);

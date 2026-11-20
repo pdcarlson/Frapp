@@ -121,6 +121,14 @@ export const TASK_AUDIENCE_COPY = {
       : `One of ${count} members takes it. It goes on Up for grabs.`,
   /** A group tile's progress line: "14 of 20 done". */
   progress: (done: number, total: number) => `${done} of ${total} done`,
+  /**
+   * Who a group task went to and how far its copies are, on one line:
+   * "Everyone · 14 of 20 done" (#5699). A copy's row and panel on web and the
+   * phone's row and task screen all say it this way; `who` null gives the
+   * count alone.
+   */
+  groupLine: (who: string | null, done: number, total: number) =>
+    [who, `${done} of ${total} done`].filter(Boolean).join(" · "),
   /** Why a group task can't repeat or carry photos yet. */
   noRepeat: "A task for everyone can't repeat yet.",
   noPhotos: "A task for everyone can't carry photos yet.",
