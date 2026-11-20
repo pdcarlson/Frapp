@@ -3,12 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarCheck, ListChecks, MoreHorizontal } from "lucide-react";
+import { Bell, CalendarCheck, ListChecks, MoreHorizontal } from "lucide-react";
 import {
   useChapterRoster,
+  useClearMeetingDateReminder,
   useComingUpTracking,
   useCreateTask,
+  useMeetingDateReminders,
   useMemberDisplayNames,
+  useSetMeetingDateReminder,
 } from "@repo/hooks";
 import {
   COMING_UP_COPY,
@@ -17,6 +20,8 @@ import {
   comingUpEventTimes,
   comingUpIsAhead,
   comingUpMenu,
+  comingUpReminderFor,
+  comingUpReminderTime,
   suggestTaskOwner,
   type ComingUpMenuAction,
   type MeetingDateItem,
@@ -50,14 +55,19 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * its ⋯ turns it into one: Open the event (or Add to calendar, opening New
  * event on that day with the date's words), Make a task (the task form, due
  * that day, Who guessed from the words as suggested tasks guess it) and Copy
- * date. The way Apple Mail and Gmail turn a date in a message into an event
- * and Linear links an issue's chips. The phone's minutes draw the same chips
- * and menu, from the same `@repo/validation` words (`coming-up-tracking.ts`).
+ * date. Remind me, for every reader, pushes the date to them the evening
+ * before, and a "Reminder · December 3, 6 PM" chip says it is set. The way
+ * Apple Mail and Gmail turn a date in a message into an event, Slack's
+ * "Remind me about this", and Linear's linked chips. The phone's minutes draw
+ * the same chips and menu, from the same `@repo/validation` words
+ * (`coming-up-tracking.ts`).
  */
 export function ComingUpDates({
+  meetingId,
   dates,
   viewerId,
 }: {
+  meetingId: string;
   dates: readonly MeetingDateItem[];
   viewerId: string | null;
 }) {
@@ -68,6 +78,11 @@ export function ComingUpDates({
   const names = useMemberDisplayNames();
   const roster = useChapterRoster();
   const createTask = useCreateTask();
+  const reminders = useMeetingDateReminders(meetingId);
+  const setReminder = useSetMeetingDateReminder(meetingId);
+  const clearReminder = useClearMeetingDateReminder(meetingId);
+  const reminderOn = (item: MeetingDateItem) =>
+    comingUpReminderFor(reminders.data ?? [], item);
   const [eventFor, setEventFor] = useState<{
     item: MeetingDateItem;
     start: Date;
@@ -80,7 +95,36 @@ export function ComingUpDates({
     item: MeetingDateItem,
     index: number,
   ) {
-    if (action === "openEvent") {
+    if (action === "remindMe") {
+      const at = comingUpReminderTime(item.date);
+      if (!at) return;
+      try {
+        await setReminder.mutateAsync({
+          date: item.date,
+          text: item.text,
+          remindAt: at,
+        });
+        toast({ title: COMING_UP_COPY.reminderSet(at) });
+      } catch (error) {
+        toast({
+          title: COMING_UP_COPY.reminderSetFailed,
+          description: getErrorMessage(error, "Try again in a moment."),
+          variant: "destructive",
+        });
+      }
+    } else if (action === "cancelReminder") {
+      const reminder = reminderOn(item);
+      if (!reminder) return;
+      try {
+        await clearReminder.mutateAsync(reminder.id);
+        toast({ title: COMING_UP_COPY.reminderCanceled });
+      } catch {
+        toast({
+          title: COMING_UP_COPY.reminderCancelFailed,
+          variant: "destructive",
+        });
+      }
+    } else if (action === "openEvent") {
       const event = tracking[index]?.event;
       if (event) router.push(`/events?event=${event.id}`);
     } else if (action === "addToCalendar") {
@@ -106,10 +150,14 @@ export function ComingUpDates({
     <>
       <DatesView
         dates={dates}
-        below={(_, index) => {
-          const track = tracking[index];
-          if (!track) return null;
-          const chips = comingUpChips(track, names.nameFor, viewerId);
+        below={(item, index) => {
+          const track = tracking[index] ?? { event: null, tasks: [] };
+          const chips = comingUpChips(
+            track,
+            names.nameFor,
+            viewerId,
+            reminderOn(item),
+          );
           if (chips.length === 0) return null;
           return (
             <span className="mt-1.5 flex flex-wrap gap-1.5">
@@ -117,10 +165,15 @@ export function ComingUpDates({
                 const href =
                   chip.key === "event" && track.event
                     ? `/events?event=${track.event.id}`
-                    : track.tasks[0]
+                    : chip.key === "task" && track.tasks[0]
                       ? tasksTaskLink(track.tasks[0].id)
                       : null;
-                const Glyph = chip.key === "event" ? CalendarCheck : ListChecks;
+                const Glyph =
+                  chip.key === "event"
+                    ? CalendarCheck
+                    : chip.key === "task"
+                      ? ListChecks
+                      : Bell;
                 const body = (
                   <>
                     <Glyph className="h-3 w-3" aria-hidden="true" />
@@ -163,6 +216,8 @@ export function ComingUpDates({
                 upcoming: comingUpIsAhead(item.date),
                 canCreateEvents,
                 canManageTasks,
+                hasReminder: !!reminderOn(item),
+                canRemind: comingUpReminderTime(item.date) !== null,
               }).map((entry) => (
                 <DropdownMenuItem
                   key={entry.action}

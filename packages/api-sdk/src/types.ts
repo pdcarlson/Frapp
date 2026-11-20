@@ -6621,6 +6621,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings/{id}/date-reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller’s reminders still waiting on these minutes’ Coming up dates, soonest first */
+        get: operations["MeetingDateReminderController_list_v1"];
+        /**
+         * Remind the caller about one of the minutes’ Coming up dates, or move that reminder
+         * @description One reminder per member per date, named by its day and words. 404 when the caller can’t read the minutes, or the date is no longer in them.
+         */
+        put: operations["MeetingDateReminderController_set_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/date-reminders/{reminderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Cancel one of the caller’s date reminders (idempotent) */
+        delete: operations["MeetingDateReminderController_clear_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bootstrap": {
         parameters: {
             query?: never;
@@ -12979,6 +13017,32 @@ export interface components {
             requested: boolean;
             /** @description This ask sent a reminder. False when the daily guard held it back: whoever is writing them was already reminded within the day. */
             pinged: boolean;
+        };
+        MeetingDateReminderDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `YYYY-MM-DD`.
+             * @example 2026-12-04
+             */
+            date: string;
+            text: string;
+            /** Format: date-time */
+            remind_at: string;
+        };
+        SetMeetingDateReminderDto: {
+            /**
+             * @description The date’s day, as the minutes give it (`YYYY-MM-DD`).
+             * @example 2026-12-04
+             */
+            date: string;
+            /** @description The date’s words, as the minutes give them. Together with the day they name the date, which has to be in the minutes as they read now. */
+            text: string;
+            /**
+             * Format: date-time
+             * @description When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting it again for the same date moves it.
+             */
+            remind_at: string;
         };
         BootstrapDto: {
             /** @description As `GET /v1/users/me`. */
@@ -28034,6 +28098,99 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MinutesRequestSentDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDateReminderController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDateReminderDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDateReminderController_set_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMeetingDateReminderDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDateReminderDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDateReminderController_clear_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                reminderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

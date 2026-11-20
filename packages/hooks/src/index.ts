@@ -20,6 +20,7 @@ export * from "./chapter-scope";
 export * from "./chat-activity";
 export * from "./chat-record-writes";
 export * from "./coming-up-tracking";
+export * from "./use-meeting-date-reminders";
 export * from "./display-names";
 export * from "./dm-search";
 export * from "./document-download";
