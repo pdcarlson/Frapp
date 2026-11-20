@@ -1,5 +1,6 @@
 import {
   addedPermissions,
+  canAssignAt,
   canReach,
   effectivePermissions,
   holderRank,
@@ -81,6 +82,25 @@ describe('canReach', () => {
 
   it('lets a wildcard holder reach everything', () => {
     expect(canReach(actor(WILDCARD_RANK, ['*']), WILDCARD_RANK)).toBe(true);
+  });
+});
+
+describe('canAssignAt', () => {
+  it('reaches only below without roles:assign_own_level', () => {
+    expect(canAssignAt(actor(2), 3)).toBe(true);
+    expect(canAssignAt(actor(2), 2)).toBe(false);
+  });
+
+  it("reaches the actor's own rank too with it, never above (#5725)", () => {
+    const cabinet = actor(1, ['roles:assign_own_level']);
+    expect(canAssignAt(cabinet, 2)).toBe(true);
+    expect(canAssignAt(cabinet, 1)).toBe(true);
+    expect(canAssignAt(cabinet, WILDCARD_RANK)).toBe(false);
+  });
+
+  it('still reaches nothing from outside the tiers', () => {
+    const outside = actor(OUTSIDE_TIERS_RANK, ['roles:assign_own_level']);
+    expect(canAssignAt(outside, OUTSIDE_TIERS_RANK)).toBe(false);
   });
 });
 

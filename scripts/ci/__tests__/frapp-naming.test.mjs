@@ -508,7 +508,7 @@ export const PINS = [
     has: ["const DEFAULT_FROM_ADDRESS = 'Frapp <invites@mail.frapp.live>'", "RESEND_FROM_EMAIL"],
     lacks: [/const DEFAULT_FROM_ADDRESS = 'Signet /, /const DEFAULT_FROM_ADDRESS = '[^']*<invites@frapp\.live>'/, SIGNET],
   },
-  // The subject and the headline both bodies open with name the product; the
+  // The subject and the line both bodies carry name the product; the
   // chapter's own name fills "a chapter" when it is known.
   {
     file: "apps/api/src/infrastructure/email/resend-email.provider.ts",
@@ -519,9 +519,9 @@ export const PINS = [
   },
   {
     file: "apps/api/src/infrastructure/email/resend-email.provider.ts",
-    section: (source) => functionBody(source, "inviteHeadline"),
-    why: "invite email headline",
-    has: ["invited you to join ${chapter} on Frapp`", "You're invited to join ${chapter} on Frapp`"],
+    section: (source) => functionBody(source, "inviteLine"),
+    why: "invite email line",
+    has: ["`${who} on Frapp as ${role}.`", "`${who} on Frapp.`"],
     lacks: [SIGNET],
   },
   // HTML and text bodies are pinned apart, so one can't hide a leftover in the other.
@@ -529,7 +529,7 @@ export const PINS = [
     file: "apps/api/src/infrastructure/email/resend-email.provider.ts",
     section: (source) => functionBody(source, name),
     why: `${name} body`,
-    has: ["inviteHeadline(params)"],
+    has: ["inviteLine(params)"],
     lacks: [SIGNET],
   })),
 

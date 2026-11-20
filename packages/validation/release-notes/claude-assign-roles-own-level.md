@@ -1,0 +1,1 @@
+A chapter can now let its top officers give and take away roles at their own level, such as one officer making another Stewardship Chair, by turning on Give roles at your own level in Roles and groups.

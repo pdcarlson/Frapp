@@ -12,7 +12,7 @@
  * positions come from the chapter's rows, so a chapter that renames, adds or
  * reorders its tiers moves the ranks with them.
  */
-import { WILDCARD } from '#domain/constants/permissions';
+import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
 
 /** The rank of a role carrying `*`: above every tier. */
 export const WILDCARD_RANK = 0;
@@ -90,6 +90,23 @@ export interface ActorReach {
  */
 export function canReach(actor: ActorReach, targetRank: number): boolean {
   return actor.wildcard || !ranksAtOrAbove(targetRank, actor.rank);
+}
+
+/**
+ * Whether the actor may give or take away a role at `targetRank`, or change
+ * the roles of a member at `targetRank`: what {@link canReach} allows, plus
+ * their own rank when they hold `roles:assign_own_level` (Paul, 2026-11-20,
+ * #5725). A chapter turns that on for its cabinet so one officer can make
+ * another Stewardship Chair; nobody reaches anyone ranked above them. A
+ * caller outside the tiers reaches nothing either way.
+ */
+export function canAssignAt(actor: ActorReach, targetRank: number): boolean {
+  if (canReach(actor, targetRank)) return true;
+  return (
+    actor.permissions.has(SystemPermissions.ROLES_ASSIGN_OWN_LEVEL) &&
+    Number.isFinite(actor.rank) &&
+    targetRank === actor.rank
+  );
 }
 
 /**

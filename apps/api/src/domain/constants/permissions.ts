@@ -29,6 +29,9 @@ export const SystemPermissions = {
   POINTS_VIEW_ALL: 'points:view_all',
 
   ROLES_MANAGE: 'roles:manage',
+  // With `roles:manage`, reach your own rank as well as below it when giving
+  // and taking roles (Paul, 2026-11-20, #5725): `canAssignAt` in role-rank.ts.
+  ROLES_ASSIGN_OWN_LEVEL: 'roles:assign_own_level',
 
   // Groups (#4076): named sets of members with no permissions. Lighter than
   // `roles:manage`, so a chair can keep a group current without granting.

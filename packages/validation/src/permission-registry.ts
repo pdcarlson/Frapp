@@ -79,6 +79,15 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "Manage roles",
     "Create, edit and delete roles, give roles to members, edit pledge classes, and fix the names and graduation years of members ranked below them.",
   ),
+  // Paul, 2026-11-20 (#5725): a switch a chapter turns on for its top tier,
+  // so one cabinet officer can make another Stewardship Chair. Without it,
+  // the roles and the member must both rank below you (#4071).
+  chapterPermission(
+    "roles:assign_own_level",
+    "chapter",
+    "Give roles at your own level",
+    "With Manage roles, also give and take away roles for members at your own level, and roles at your own level, not only those below it. Nobody reaches anyone ranked above them.",
+  ),
   chapterPermission(
     "chapter-config:view",
     "chapter",

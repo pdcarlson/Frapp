@@ -1121,7 +1121,6 @@ export default function ChatHomeScreen() {
                   line || section.rows.length > 0 ? (
                     <View
                       key={`${section.key}:rows`}
-                      collapsable={false}
                       style={[styles.section, styles.sectionRows]}
                     >
                       {line}

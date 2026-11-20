@@ -75,8 +75,8 @@ export function useRolesDataFrom({
     [permissionsQuery.data],
   );
   const reach = useMemo(
-    () => callerReach(myRoleIds, myPermissions, roles, tiers),
-    [myRoleIds, myPermissions, roles, tiers],
+    () => callerReach(myRoleIds, myPermissions, roles, tiers, viewerUserId),
+    [myRoleIds, myPermissions, roles, tiers, viewerUserId],
   );
 
   return {

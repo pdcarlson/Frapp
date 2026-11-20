@@ -54,6 +54,13 @@ test("web: each UI rule fires", async () => {
     ['export const f = () => window.confirm("sure?");', "browser confirm"],
     ['export const f = () => globalThis.alert("x");', "browser confirm"],
     ['export const f = () => prompt("x");', "browser confirm"],
+    [
+      'export const A = () => <div className="z-50 max-h-[--radix-select-content-available-height]" />;',
+      "bare --variable",
+    ],
+    ['export const c = cn("p-1", "data-[x]:origin-[--o]");', "bare --variable"],
+    ["export const c = (x: string) => `${x} bg-[--accent]`;", "bare --variable"],
+    ['export const c = "bg-[color:--accent] w-[length:--w]";', "bare --variable"],
     ["export const A = () => <MoreHorizontal />;", "One action menu"],
     [
       'import { ContextMenu } from "@/components/ui/context-menu";\nexport const A = ContextMenu;',
@@ -72,6 +79,8 @@ test("web: what stays legal", async () => {
     'export const A = () => <input type="text" />;',
     // The local name callers give useConfirmDialog's function.
     "export const f = async (confirm: () => Promise<boolean>) => confirm();",
+    // Tailwind 4's spellings of a variable value.
+    'export const A = () => <div className="max-h-(--h) origin-[var(--o)] bg-[color:var(--a)] data-[state=open]:p-1" />;',
   ];
   for (const code of cases) {
     const hits = await uiHits("web", WEB_FILE, code);
@@ -79,7 +88,7 @@ test("web: what stays legal", async () => {
   }
 });
 
-test("web: a spec may hold members' emoji, and nothing else", async () => {
+test("web: a spec may hold members' emoji and quoted bare-variable classes, and nothing else", async () => {
   const spec = "components/zz-ui-rules-probe.spec.tsx";
   assert.deepEqual(
     await uiHits("web", spec, 'export const r = "\u{1F44D}";'),
@@ -90,6 +99,10 @@ test("web: a spec may hold members' emoji, and nothing else", async () => {
       await uiHits("web", spec, "export const A = () => <select />;"),
       "native <select>",
     ),
+  );
+  assert.deepEqual(
+    await uiHits("web", spec, 'export const bad = "bg-[--accent]";'),
+    [],
   );
 });
 
