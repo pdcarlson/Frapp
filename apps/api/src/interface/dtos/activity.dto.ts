@@ -528,6 +528,15 @@ export class ActivityEventDto implements ActivityEvent {
 
   @ApiProperty({
     type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the caller checked in, read with `checked_in`. Null otherwise, and when the attendance row has no time.',
+  })
+  checked_in_at: string | null;
+
+  @ApiProperty({
+    type: String,
     format: 'uuid',
     nullable: true,
     description:

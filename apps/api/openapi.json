@@ -35564,6 +35564,12 @@
             "nullable": true,
             "description": "Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed."
           },
+          "checked_in_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the caller checked in, read with `checked_in`. Null otherwise, and when the attendance row has no time."
+          },
           "created_by": {
             "type": "string",
             "format": "uuid",
@@ -35608,6 +35614,7 @@
           "check_in_needs_location",
           "check_in_needs_code",
           "checked_in",
+          "checked_in_at",
           "created_by",
           "progress",
           "created_at",

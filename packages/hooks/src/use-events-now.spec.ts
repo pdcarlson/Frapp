@@ -27,6 +27,7 @@ const row = (overrides: Partial<EventNow> = {}): EventNow =>
     check_in_needs_location: false,
     check_in_needs_code: false,
     checked_in: true,
+    checked_in_at: null,
     created_by: null,
     progress: null,
     created_at: start,
@@ -46,6 +47,11 @@ describe("eventsOnNow", () => {
 describe("eventNowState", () => {
   it("says checked in, else that check-in is open, else nothing", () => {
     expect(eventNowState(row())).toBe("Checked in");
+    expect(
+      eventNowState(
+        row({ checked_in_at: new Date(2026, 10, 19, 21, 24).toISOString() }),
+      ),
+    ).toMatch(/^Checked in 9:24/);
     expect(eventNowState(row({ checked_in: false }))).toBe("Check-in is open");
     expect(
       eventNowState(row({ checked_in: null, check_in_open: false })),

@@ -166,7 +166,9 @@ the sidebar. It is a separate, small read, so Chat home doesn't load the whole o
   default lead) until its end, not at the end and not in check-in's grace after it (`eventOnAt` in
   `@repo/validation`). Checking in doesn't end it.
 - **Which events**: those the member is invited to that are required for them, that they checked
-  in to, or that they made. An optional event they haven't touched stays in To do with its Check in.
+  in to, or that they made, and for a holder of `events:update` every event on, since they are the
+  ones asked where the meeting is. An optional event a member hasn't touched stays in To do with its
+  Check in.
 - **Order and size**: checked in first, then the latest start, at most 5
   (`EVENTS_NOW_LIMIT`). The card shows the first and says "+N more on now" under it.
 - **Each row is an Activity event row** (`ActivityEventDto`), read through the events module under
@@ -177,10 +179,12 @@ the sidebar. It is a separate, small read, so Chat home doesn't load the whole o
 - **No row twice**: while an event is on Now, Activity's To do, week strip and the week card's Next
   leave it out. The week ring still counts it.
 - **The card indicates rather than narrates**: "Now · until 10:25 PM", the name, then the member's
-  own state ("Checked in", or "Check-in is open") and where. It opens the event. With nothing on, it
+  own state ("Checked in 9:24 PM" from the row's `checked_in_at`, or "Check-in is open") and where. It opens the event. With nothing on, it
   draws nothing.
 - **The event's own page** carries the same words as a pill under its title: "Now · until 10:25 PM"
   while on, "Ended 10:25 PM" for the rest of that day (`eventNowPill` in `@repo/hooks`).
+  Its when line stops saying "Tonight" once the event has ended, and says "Today" instead
+  (`formatEventWindow` in `@repo/formatting`).
 
 ## Cards
 

@@ -30,7 +30,7 @@ export function NowCard({ className }: { className?: string }) {
     <section aria-label="On now" className={cn("grid gap-1", className)}>
       <Link
         href={`/events?event=${lead.id}`}
-        className="group flex items-center gap-3 rounded-lg border border-success/50 bg-surface-1 px-3 py-2.5 outline-none hover:bg-card focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2.5 outline-none hover:bg-card focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="grid min-w-0 flex-1 gap-0.5">
           <span className="flex items-center gap-2 text-caption font-semibold text-success">

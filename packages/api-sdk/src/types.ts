@@ -11444,6 +11444,11 @@ export interface components {
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
             /**
+             * Format: date-time
+             * @description When the caller checked in, read with `checked_in`. Null otherwise, and when the attendance row has no time.
+             */
+            checked_in_at: string | null;
+            /**
              * Format: uuid
              * @description Who made it. Null for an event made before makers were recorded (2026-11-11).
              */

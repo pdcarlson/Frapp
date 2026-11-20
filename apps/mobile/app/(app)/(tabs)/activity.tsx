@@ -455,11 +455,16 @@ export default function ActivityScreen() {
   const nudgeRead = useActivityNudge({
     enabled: !layout.isPending && shows("nudge"),
   });
-  // Never the week card's Next a second time: when the card's pick is the
-  // Next row, the tray's first takes its place.
+  // Never the week card's Next or the Now card's event a second time: when
+  // the card's pick is one of them, the tray's first takes its place.
   const nudge = useMemo(
-    () => withoutWeekNext(nudgeRead.data, agenda?.next?.key ?? null),
-    [nudgeRead.data, agenda?.next?.key],
+    () =>
+      withoutWeekNext(
+        nudgeRead.data,
+        agenda?.next?.key ?? null,
+        onNow.map((event) => event.id),
+      ),
+    [nudgeRead.data, agenda?.next?.key, onNow],
   );
   const nudgeActions = useActivityNudgeActions();
   const recheckNudge = nudgeActions.recheck;

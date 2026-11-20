@@ -3226,12 +3226,19 @@ describe('ActivityService', () => {
     it('keeps an event on after the caller checked in, which Activity counted as done', async () => {
       const { service, eventService, attendanceRepo } = build();
       eventService.findByChapter.mockResolvedValue([on()]);
-      attendanceRepo.findByEventAndUser.mockResolvedValue({ id: 'att-1' });
+      attendanceRepo.findByEventAndUser.mockResolvedValue({
+        id: 'att-1',
+        check_in_time: iso(-HOUR / 2),
+      });
 
       const now = await service.getNow(CHAPTER, ME, null);
 
       expect(now.events).toEqual([
-        expect.objectContaining({ id: 'on', checked_in: true }),
+        expect.objectContaining({
+          id: 'on',
+          checked_in: true,
+          checked_in_at: iso(-HOUR / 2),
+        }),
       ]);
     });
 
@@ -3268,6 +3275,20 @@ describe('ActivityService', () => {
         'attended',
         'mine',
       ]);
+    });
+
+    it('shows every event on to an officer who runs events', async () => {
+      const { service, eventService } = build([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.EVENTS_UPDATE,
+      ]);
+      eventService.findByChapter.mockResolvedValue([
+        on({ id: 'optional', is_mandatory: false }),
+      ]);
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events.map((row) => row.id)).toEqual(['optional']);
     });
 
     it('puts the one the caller checked in to first, then the latest start', async () => {

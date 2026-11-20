@@ -100,11 +100,16 @@ export function withoutEvents(
 
 /**
  * The member's own state on an event that is on, for the Now card on both
- * apps: checked in, or that check-in is open to them. Nothing for an event
- * check-in would refuse them (an alumnus the default alone invites).
+ * apps: checked in and when ("Checked in 9:24 PM"), or that check-in is
+ * open to them. Nothing for an event check-in would refuse them (an alumnus
+ * the default alone invites).
  */
 export function eventNowState(event: EventNow): string | null {
-  if (event.checked_in === true) return EVENT_NOW_COPY.checkedIn;
+  if (event.checked_in === true) {
+    return EVENT_NOW_COPY.checkedIn(
+      event.checked_in_at ? formatClockShort(event.checked_in_at) : null,
+    );
+  }
   if (event.check_in_open) return CHECK_IN_OPEN_LABEL;
   return null;
 }

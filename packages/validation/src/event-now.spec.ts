@@ -54,5 +54,7 @@ describe("EVENT_NOW_COPY", () => {
     expect(EVENT_NOW_COPY.until("10:25 PM")).toBe("Now · until 10:25 PM");
     expect(EVENT_NOW_COPY.ended("10:25 PM")).toBe("Ended 10:25 PM");
     expect(EVENT_NOW_COPY.more(1)).toBe("+1 more on now");
+    expect(EVENT_NOW_COPY.checkedIn("9:24 PM")).toBe("Checked in 9:24 PM");
+    expect(EVENT_NOW_COPY.checkedIn(null)).toBe("Checked in");
   });
 });

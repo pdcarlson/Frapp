@@ -38,7 +38,8 @@ export const EVENTS_NOW_LIMIT = 5;
 export const EVENT_NOW_COPY = {
   until: (clock: string) => `Now · until ${clock}`,
   ended: (clock: string) => `Ended ${clock}`,
-  checkedIn: "Checked in",
+  checkedIn: (clock?: string | null) =>
+    clock ? `Checked in ${clock}` : "Checked in",
   checkIn: "Check in",
   more: (count: number) => `+${count} more on now`,
 } as const;

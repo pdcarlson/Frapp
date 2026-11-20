@@ -356,6 +356,11 @@ export interface ActivityEvent {
    */
   checked_in: boolean | null;
   /**
+   * When the member checked in, read with `checked_in`; `null` otherwise and
+   * when the row has no time (#5777: the Now card's "Checked in 9:24 PM").
+   */
+  checked_in_at: string | null;
+  /**
    * Who made it; `null` for an event made before makers were recorded
    * (`spec/behavior/events.md` § Event Creation).
    */
@@ -753,6 +758,8 @@ function activityEventRow(
     needsCode: boolean;
     /** Whether the member checked in; `null` when it wasn't (or couldn't be) read. */
     checkedIn: boolean | null;
+    /** When they checked in, when that was read. */
+    checkedInAt?: string | null;
   },
 ): ActivityEvent {
   return {
@@ -768,6 +775,7 @@ function activityEventRow(
     check_in_needs_location: event.check_in_zone != null,
     check_in_needs_code: member.needsCode,
     checked_in: member.checkedIn,
+    checked_in_at: member.checkedInAt ?? null,
     created_by: event.created_by,
     progress: null,
     created_at: event.created_at,
@@ -1541,13 +1549,20 @@ export class ActivityService {
       (viewerRead ??= this.readViewer(chapterId, userId, () =>
         this.rbacService.getAlumniRoleId(chapterId),
       ));
-    const rows = await this.toEventRows(userId, now, events, viewer, {
-      startsBefore,
-      limit: events.length,
-    });
+    const [rows, permissions] = await Promise.all([
+      this.toEventRows(userId, now, events, viewer, {
+        startsBefore,
+        limit: events.length,
+      }),
+      this.rbacService.getEffectivePermissions(chapterId, userId),
+    ]);
+    // An officer who runs events sees every one on (#5777): they are the
+    // ones asked where the meeting is.
+    const runsEvents = can(SystemPermissions.EVENTS_UPDATE, permissions);
     const shown = rows
       .filter(
         (row) =>
+          runsEvents ||
           row.attendance === 'required' ||
           row.checked_in === true ||
           (row.created_by !== null && row.created_by === userId),
@@ -2617,9 +2632,9 @@ export class ActivityService {
         // answer is what decides whether it still needs them.
         // `check_in_needs_code`: whether an officer's screen now needs the
         // code (#4808); never fails the row.
-        const [checkedIn, needsCode] = checkInOpen
+        const [checkIn, needsCode] = checkInOpen
           ? await Promise.all([
-              this.hasCheckedIn(event.id, userId),
+              this.checkInOf(event.id, userId),
               this.eventService.checkInNeedsCode(event, userId, new Date(now)),
             ])
           : [null, false];
@@ -2630,7 +2645,8 @@ export class ActivityService {
               : 'optional',
           checkInOpen,
           needsCode,
-          checkedIn,
+          checkedIn: checkIn === null ? null : checkIn.checkedIn,
+          checkedInAt: checkIn?.at ?? null,
         });
       }),
     );
@@ -2654,13 +2670,14 @@ export class ActivityService {
   }
 
   /**
-   * `null` when the read fails: the event still lists, and it counts as
-   * needing the member, which a failed read cannot rule out.
+   * Whether the member checked in, and when. `null` when the read fails: the
+   * event still lists, and it counts as needing the member, which a failed
+   * read cannot rule out.
    */
-  private async hasCheckedIn(
+  private async checkInOf(
     eventId: string,
     userId: string,
-  ): Promise<boolean | null> {
+  ): Promise<{ checkedIn: boolean; at: string | null } | null> {
     try {
       // The row itself, not `AttendanceService.getMyAttendance`: that one
       // re-reads the event and its visibility, which the list read above has
@@ -2669,7 +2686,10 @@ export class ActivityService {
         eventId,
         userId,
       );
-      return attendance !== null;
+      return {
+        checkedIn: attendance !== null,
+        at: attendance?.check_in_time ?? null,
+      };
     } catch (error) {
       // Per event, and the event still lists: a best-effort step the page
       // absorbs, so `warning`.
