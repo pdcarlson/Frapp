@@ -1,4 +1,5 @@
 import type { components } from "@repo/api-sdk";
+import { formatPhone, normalizePhone } from "@repo/formatting";
 import {
   birthdayDraftProblem,
   type BirthdayDraftProblem,
@@ -56,7 +57,8 @@ const MAJOR_TOO_LONG_MESSAGE = `Keep your major under ${MAJOR_MAX_LENGTH} charac
 export function draftFromProfile(profile: ViewerProfile | null): ProfileDraft {
   return {
     displayName: profile?.displayName ?? "",
-    phone: profile?.phone ?? "",
+    // Shown formatted, as the field formats what is typed (#5798).
+    phone: formatPhone(profile?.phone),
     major: profile?.major ?? "",
     bio: profile?.bio ?? "",
     graduationYear:
@@ -127,8 +129,9 @@ export function profilePatch(
   }
   if (name !== original.displayName.trim()) patch.display_name = name;
 
-  const phone = draft.phone.trim();
-  if (phone !== original.phone.trim()) {
+  // Compared and sent normalized (#5798): the API stores E.164 either way.
+  const phone = normalizePhone(draft.phone);
+  if (phone !== normalizePhone(original.phone)) {
     if (phone.length > 0 && !isPhoneNumber(phone)) {
       return { ok: false, field: "phone", message: PHONE_INVALID_MESSAGE };
     }

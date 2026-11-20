@@ -329,18 +329,28 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
   });
 
   // #3711: the member's own phone, checked on Save, not per keystroke.
-  it("sends the phone the member typed", async () => {
+  // #5798: formatted as it is typed, sent normalized.
+  it("formats the phone as it is typed and sends it normalized", async () => {
     render(<ProfilePanel />);
 
-    await userEvent.type(screen.getByLabelText("Phone"), "(518) 555-0142");
+    const phone = screen.getByLabelText("Phone");
+    await userEvent.type(phone, "5185550142");
+    expect(phone).toHaveValue("(518) 555-0142");
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
 
     await waitFor(() => {
       expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
     });
     expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toMatchObject({
-      phone: "(518) 555-0142",
+      phone: "+15185550142",
     });
+  });
+
+  it("keeps a number starting with + in its country's format", async () => {
+    render(<ProfilePanel />);
+    const phone = screen.getByLabelText("Phone");
+    await userEvent.type(phone, "+442079460958");
+    expect(phone).toHaveValue("+44 20 7946 0958");
   });
 
   it("draws no share switch while there is no birthday (#5282)", () => {
@@ -440,7 +450,9 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
   it("refuses something that isn't a phone number, and says so", async () => {
     render(<ProfilePanel />);
 
-    await userEvent.type(screen.getByLabelText("Phone"), "call me");
+    // Letters never land in the field (#5798), so a number too short to dial
+    // is what it refuses.
+    await userEvent.type(screen.getByLabelText("Phone"), "55501");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
 

@@ -670,8 +670,18 @@ describe("MemberDetailSheet phone", () => {
   it("links the phone to a call", () => {
     renderProfile({ ...baseMember, phone: "+1 (518) 555-0142" });
     expect(
-      screen.getByRole("link", { name: "+1 (518) 555-0142" }),
+      screen.getByRole("link", { name: "(518) 555-0142" }),
     ).toHaveAttribute("href", "tel:+15185550142");
+  });
+
+  // #5798: stored normalized or as typed, it reads formatted.
+  it.each([
+    ["+15185550142", "(518) 555-0142"],
+    ["518.555.0142", "(518) 555-0142"],
+    ["+442079460958", "+44 20 7946 0958"],
+  ])("shows a stored %j as %j", (phone, shown) => {
+    renderProfile({ ...baseMember, phone });
+    expect(screen.getByRole("link", { name: shown })).toBeInTheDocument();
   });
 
   it("offers to text the same number", () => {

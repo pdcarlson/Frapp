@@ -3,6 +3,7 @@
  * a phone number in iOS Contacts does, through the system's own apps.
  */
 import { Linking } from "react-native";
+import { formatPhone } from "@repo/formatting";
 import { phoneHref } from "@repo/validation";
 import { showActionMenu } from "@/lib/action-menu";
 
@@ -14,7 +15,7 @@ export function showPhoneActions(name: string, phone: string): void {
     void Linking.openURL(href).catch(() => undefined);
   showActionMenu({
     title: name,
-    message: phone,
+    message: formatPhone(phone),
     rows: [
       { label: "Call", onPress: () => open(call) },
       { label: "Text", onPress: () => open(text) },

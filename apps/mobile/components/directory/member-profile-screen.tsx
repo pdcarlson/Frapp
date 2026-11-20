@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import { formatPhone } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   dmChannelIdOf,
@@ -582,7 +583,7 @@ export function MemberProfile({
               <ListRow
                 variant="detail"
                 label="Phone"
-                value={detail.phone}
+                value={formatPhone(detail.phone)}
                 accessibilityHint="Offers to call or text them"
                 onPress={() =>
                   showPhoneActions(detail.displayName, detail.phone ?? "")

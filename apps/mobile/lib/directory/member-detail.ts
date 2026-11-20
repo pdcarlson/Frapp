@@ -47,7 +47,7 @@ export interface MemberDetail {
   storedName: string;
   initials: string;
   email: string | null;
-  /** The member's own phone (#3711), as they typed it, or `null`. */
+  /** The member's own phone (#3711), as stored (E.164 since #5798, older ones as typed), or `null`; shown through `formatPhone`. */
   phone: string | null;
   /** "March 4" when they share their birthday with the chapter (#4959), else `null`. */
   birthday: string | null;

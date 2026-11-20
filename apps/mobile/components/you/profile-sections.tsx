@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { formatPhone } from "@repo/formatting";
 import {
   useCurrentUser,
   useMemberByUserId,
@@ -225,7 +226,7 @@ export function ProfileDetails({
         <ListRow
           variant="detail"
           label="Phone"
-          value={profile?.phone ?? "Not set"}
+          value={formatPhone(profile?.phone) || "Not set"}
           accessibilityHint={EDIT_HINT}
           onPress={() => onEdit("phone")}
         />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   profileIdentityLine,
@@ -12,6 +12,7 @@ import {
   usePermissionList,
   useUpdateUser,
 } from "@repo/hooks";
+import { formatPhone, formatPhoneInput } from "@repo/formatting";
 import {
   BIRTHDAY_VISIBILITY_DEFAULT,
   type BirthdayDraftProblem,
@@ -116,9 +117,25 @@ export function ProfilePanel() {
   // field the member edited from one they left alone.
   const seededFrom = useRef<CurrentUser | null>(null);
 
+  // Where the Phone field's caret goes once its formatted value renders.
+  const phoneInput = useRef<HTMLInputElement>(null);
+  const phoneCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const caret = phoneCaret.current;
+    if (caret === null || !phoneInput.current) return;
+    phoneCaret.current = null;
+    phoneInput.current.setSelectionRange(caret, caret);
+  }, [profileDraft.phone]);
+
   useEffect(() => {
     if (!userQuery.data) return;
-    const next = userQuery.data as CurrentUser;
+    const loaded = userQuery.data as CurrentUser;
+    // The Phone field shows the stored number formatted (#5798). Seeding it
+    // formatted, and comparing re-seeds the same way, keeps a stored
+    // `+15185550142` from reading as an edit the member made.
+    const next: CurrentUser = loaded.phone
+      ? { ...loaded, phone: formatPhone(loaded.phone) }
+      : loaded;
     const previous = seededFrom.current;
     seededFrom.current = next;
     setProfileDraft((draft) => {
@@ -402,6 +419,7 @@ export function ProfilePanel() {
             <div className="grid gap-2">
               <Label htmlFor="phone">{PROFILE_FIELD_COPY.phone.label}</Label>
               <Input
+                ref={phoneInput}
                 id="phone"
                 type="tel"
                 autoComplete="tel"
@@ -412,9 +430,17 @@ export function ProfilePanel() {
                 aria-describedby="phone-hint"
                 onChange={(event) => {
                   setPhoneError(false);
+                  // Formats as the member types (#5798), keeping the caret
+                  // among the same digits.
+                  const typed = formatPhoneInput(
+                    event.target.value,
+                    event.target.selectionStart ?? event.target.value.length,
+                    profile.phone ?? "",
+                  );
+                  phoneCaret.current = typed.caret;
                   setProfileDraft((prev) => ({
                     ...prev,
-                    phone: event.target.value,
+                    phone: typed.value,
                   }));
                 }}
                 placeholder={PROFILE_FIELD_COPY.phone.placeholder}

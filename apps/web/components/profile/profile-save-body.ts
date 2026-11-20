@@ -1,4 +1,5 @@
 import type { components } from "@repo/api-sdk";
+import { normalizePhone } from "@repo/formatting";
 import {
   BIRTHDAY_VISIBILITY_DEFAULT,
   type BirthdayVisibility,
@@ -61,9 +62,11 @@ export function profileSaveBody(
     if (next !== (saved[field] ?? "").trim()) body[field] = next;
   }
 
-  // Blank clears it; the API trims and stores null.
-  const phone = (draft.phone ?? "").trim();
-  if (phone !== (saved.phone ?? "").trim()) body.phone = phone;
+  // Blank clears it; the API trims and stores null. The field shows the number
+  // formatted and the API stores it normalized (#5798), so the two compare
+  // normalized: `(518) 555-0142` against a stored `+15185550142` is no change.
+  const phone = normalizePhone(draft.phone ?? "");
+  if (phone !== normalizePhone(saved.phone ?? "")) body.phone = phone;
 
   const year = draft.graduation_year ?? null;
   if (year !== (saved.graduation_year ?? null)) body.graduation_year = year;

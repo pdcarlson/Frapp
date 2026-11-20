@@ -6834,7 +6834,7 @@ export interface components {
             /** @description An empty string clears it. */
             current_company?: string;
             /**
-             * @description The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.
+             * @description The member's own phone number (#3711). Any common format is accepted; it is stored normalized to E.164 (`+15185550142`, a number without `+` read as US) when it reads as a whole number, else trimmed as typed (#5798). Members of their chapters see it on their profile. Null or an empty string clears it.
              * @example (518) 555-0142
              */
             phone?: string | null;
@@ -7342,7 +7342,7 @@ export interface components {
             current_city: string | null;
             current_company: string | null;
             email: string;
-            /** @description The member's own phone number (#3711), as they typed it, or null. Only they set it. */
+            /** @description The member's own phone number (#3711), stored E.164 when it reads as a whole number (#5798), else as typed, or null. Clients show it with `formatPhone` (`@repo/formatting`). Only they set it. */
             phone: string | null;
             /** @description The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none. */
             birthday_month: number | null;

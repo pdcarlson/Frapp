@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useFieldReveal, useUpdateUser } from "@repo/hooks";
+import { formatPhoneInput } from "@repo/formatting";
 import {
   BIRTHDAY_COPY,
   DISPLAY_NAME_MAX_LENGTH,
@@ -225,7 +226,13 @@ export const EditProfileSheet = forwardRef<
 
   const edit = (field: ProfileDraftField) => (value: string) => {
     setSubmitFailed(false);
-    setEdits((latest) => applyEdit(latest, original, field, value));
+    // The phone formats as it is typed (#5798); `onChangeText` reports no
+    // caret, so it is worked out from the text before.
+    const next =
+      field === "phone"
+        ? formatPhoneInput(value, undefined, shown.phone).value
+        : value;
+    setEdits((latest) => applyEdit(latest, original, field, next));
   };
 
   const resetReveal = reveal.reset;

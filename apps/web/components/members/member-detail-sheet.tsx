@@ -24,7 +24,7 @@ import {
   formatBirthday,
   phoneHref,
 } from "@repo/validation";
-import { formatDay } from "@repo/formatting";
+import { formatDay, formatPhone } from "@repo/formatting";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useMessageMember } from "@/lib/chat/use-message-member";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -510,10 +510,10 @@ export function MemberDetailSheet({
                           FOCUS_RING_OFFSET,
                         )}
                       >
-                        {phone}
+                        {formatPhone(phone)}
                       </a>
                     ) : (
-                      phone
+                      formatPhone(phone)
                     )}
                     {textLink ? (
                       <>

@@ -27,8 +27,16 @@ describe("profileSaveBody", () => {
     const longName = "N".repeat(DISPLAY_NAME_MAX_LENGTH + 20);
     const saved = { ...SAVED, display_name: longName };
     expect(profileSaveBody(saved, { ...saved, phone: "518 555 0199" })).toEqual(
-      { phone: "518 555 0199" },
+      { phone: "+15185550199" },
     );
+  });
+
+  // #5798: the field shows the stored number formatted; that is no change.
+  it("sends no phone when only its formatting differs from what is stored", () => {
+    const saved = { ...SAVED, phone: "+15185550142" };
+    expect(
+      profileSaveBody(saved, { ...saved, phone: "(518) 555-0142" }),
+    ).toEqual({});
   });
 
   it("sends a changed field trimmed, and a stray space is no change", () => {

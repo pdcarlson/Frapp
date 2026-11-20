@@ -260,10 +260,18 @@ describe("applyEdit and rebaseEdits (#3387)", () => {
 
 // #3711: the member's own phone.
 describe("profilePatch phone (#3711)", () => {
-  it("sends a phone number as typed, trimmed", () => {
+  // #5798: sent normalized, the shape the API stores.
+  it("sends a phone number normalized", () => {
     expect(
       profilePatch(ORIGINAL, edited({ phone: " (518) 555-0142 " })),
-    ).toEqual({ ok: true, patch: { phone: "(518) 555-0142" } });
+    ).toEqual({ ok: true, patch: { phone: "+15185550142" } });
+  });
+
+  it("sends no phone when only its formatting differs", () => {
+    const withPhone = { ...ORIGINAL, phone: "+15185550142" };
+    expect(
+      profilePatch(withPhone, { ...withPhone, phone: "(518) 555-0142" }),
+    ).toEqual({ ok: true, patch: {} });
   });
 
   it("clears it with null", () => {

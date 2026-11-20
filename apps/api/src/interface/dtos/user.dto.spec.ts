@@ -44,11 +44,22 @@ describe('UpdateUserDto', () => {
     },
   );
 
-  // #3711: the member's own phone, trimmed; blank clears it.
-  it('accepts a phone number as typed, trimmed', async () => {
+  // #3711: the member's own phone; blank clears it. #5798: stored as E.164,
+  // whatever format a web or shipped phone build sends.
+  it.each([
+    [' (518) 555-0142 ', '+15185550142'],
+    ['518.555.0142', '+15185550142'],
+    ['+44 20 7946 0958', '+442079460958'],
+  ])('stores phone %j normalized as %j', async (phone, stored) => {
+    await expect(transform(UpdateUserDto, { phone })).resolves.toEqual({
+      phone: stored,
+    });
+  });
+
+  it('keeps a short local number as typed, trimmed', async () => {
     await expect(
-      transform(UpdateUserDto, { phone: ' (518) 555-0142 ' }),
-    ).resolves.toEqual({ phone: '(518) 555-0142' });
+      transform(UpdateUserDto, { phone: ' 555-0142 ' }),
+    ).resolves.toEqual({ phone: '555-0142' });
   });
 
   it.each(['', '   ', null])('clears the phone for %j', async (phone) => {
