@@ -53,7 +53,7 @@ Everything on this page is **Proposed** unless a ruling is cited.
 | **Service hours** | Three figures, log, board, queue; a switch mid-page; the phone one number and a history | Standing. One figure, To review, your log, standings; the switch in the header. The same on the phone. *Drawn.* |
 | **Points** | Pills, a balance, then two columns each with search and selects; "#3" eleven times; no phone screen | Standing, the same skeleton as Service hours: one figure ("60 points · 2nd of 23"), your history, standings. A tie shows its rank once. |
 | **Study hours, Dues** | Their own arrangements | Standing, the same skeleton. Dues' figure is the amount due and its date. |
-| **An event, a task, a member** | An inner narrow column; a pencil and trash in the header; a next step in the body or missing; loose property lists; four buttons per attendance row | Record, filling the column. *The event is drawn.* An attendance row shows its status word and opens one picker. |
+| **An event, a task, a member** | An inner narrow column; a pencil and trash in the header; a next step in the body or missing; loose property lists; four buttons per attendance row; on web a member opens as a popover from Directory | Record, filling the column. *All three are drawn.* An attendance row shows its status word and opens one picker. A task's next step is Mark done on both apps; a member's is Message. |
 | **Documents** | Folders and files side by side inside the page | Browse. Folders are the aside when wide; otherwise the first group, or a Filter. |
 | **Directory** | Tabs, two rows of controls, a select-all row, then the table | Browse. Actives and Alumni are the view switch; everything else is one Filter. |
 | **Minutes** | Breadcrumb, a second header in the body, large boxes | Record while it is read; Form while it is drafted, with "Post minutes" as its commit. |
@@ -70,4 +70,4 @@ Everything on this page is **Proposed** unless a ruling is cited.
 
 ## What is not drawn yet
 
-Only Events, Service hours and an event record are redrawn in full. Points, Study hours, Dues, Documents, Directory, Minutes, a task and a member are assigned a type and described in the table above, not drawn. Chat and Ask are left as they are.
+Events, Service hours, an event, a task and a member are redrawn in full (the last two on 2026-11-20 evening, from fresh captures). Points, Study hours, Dues, Documents, Directory and Minutes are assigned a type and described in the table above, not drawn. Chat and Ask are left as they are.

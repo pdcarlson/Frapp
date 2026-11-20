@@ -4,7 +4,7 @@
 
 ## Where to look at it
 
-The system is published as a private Claude artifact, where the previews render: <https://claude.ai/artifact/2bzU8h8jCkLoCYajxXoSu9>. Only its owner can open that link until it is shared from the page's Share menu. This folder is a copy of that artifact's own files at its version 7, taken so the work survives the session that made it. The artifact is where it is edited; if the two differ, the artifact is newer.
+The system is published as a private Claude artifact, where the previews render: <https://claude.ai/artifact/J11EyEP7W1Kzf6r4wsv6FX>. Only its owner can open that link until it is shared from the page's Share menu. It was rebuilt there on 2026-11-20 from this folder, because the first copy (`claude.ai/artifact/2bzU8h8jCkLoCYajxXoSu9`, version 7) sits under an account the UI system thread can't open. This folder is a copy of the artifact's own files, kept so the work survives the session that made it. The artifact is where it is edited; if the two differ, the artifact is newer.
 
 ## What is here
 
@@ -19,7 +19,7 @@ Everything is under [`system/`](system/).
 | [`system/02-decisions.md`](system/02-decisions.md) | The 47 proposals and two questions for Paul, and the earlier rulings the system reverses |
 | [`system/03-drift.md`](system/03-drift.md) | Every place the code breaks the system, counted per rule, with the command behind each count |
 | [`system/tokens.json`](system/tokens.json) | The tokens, with a usage note and measured contrast on each. Values are copied from `packages/theme/src/signet.css` and `signet.ts` at `main@bb0805b` |
-| `system/components/<Name>/README.md` | Guidelines for 16 components and 6 screen templates: the web file, the phone file, the anatomy, the rules, which app's version the system keeps |
+| `system/components/<Name>/README.md` | Guidelines for 16 components, 6 screen templates and the task and member redrawn: the web file, the phone file, the anatomy, the rules, which app's version the system keeps |
 | `system/components/<Name>/preview.html` | The preview the artifact renders. Static markup styled by `system/components/bundle.css`; it is not the app's component |
 | `system/data/drift-web.json`, `drift-phone.json`, `drift-copy.json` | The full per-file lists and example lines behind `03-drift.md`: the baseline for checks that only let the counts go down |
 | [`system/design-system.json`](system/design-system.json) | The artifact's index |
@@ -27,7 +27,7 @@ Everything is under [`system/`](system/).
 ## What is not here
 
 - **Fonts and the emblem.** The artifact carries copies of `packages/theme/fonts/FigtreeVF.woff2` and of three files in `packages/brand-assets/assets/`. They are not copied back.
-- **The captures of today's screens.** They live in the artifact's asset store, and `screenshots/` is ignored by git. The previews that show them (`BrowsePage`, `StandingPage`, `RecordPage`) and the emblem in `PushNotification` point at `/_blob/<id>` addresses that resolve only inside the artifact.
+- **The captures of today's screens.** They live in the artifact's asset store, and `screenshots/` is ignored by git. The previews that show them (`BrowsePage`, `StandingPage`, `RecordPage`, `TaskRecord`, `MemberRecord`) and the emblem in `PushNotification` point at `/_blob/<id>` addresses that resolve only inside the artifact. They were retaken on the evening of 2026-11-20, so the ids differ from the first copy's.
 - **The pass's working files** (preview sources, the local render harness, the 145 captures). They were in a session scratchpad and are gone with it.
 - **The earlier proposal page** this pass was asked to read (`claude.ai/artifact/Vw5C7insv7ZsZxzibzUbKf`). It was not shared with the session, so the system was built without it.
 
