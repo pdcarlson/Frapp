@@ -1,1 +1,1 @@
-Tasks now opens on your own tasks, with everyone's, the grouping and the filters in one View menu, and the add row shows only once you press New task.
+Tasks now opens on your own tasks, with a My tasks / Everyone's switch and one Filter button beside New task, and the add row shows only once you press New task.

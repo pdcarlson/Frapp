@@ -190,7 +190,7 @@ export function TaskRow({
       ) : null}
       {audience ? (
         <>
-          <AudienceText label={audience.label} />
+          <AudienceText label={audience.label} glyphNarrow />
           <MiniProgress done={audience.done} total={audience.total} title={task.title} />
         </>
       ) : (
@@ -296,12 +296,29 @@ export function copyAudience(task: BoardTask): CopyAudience | null {
   };
 }
 
-/** "Everyone" with the people glyph; shown from `@lg`, read aloud always. */
-function AudienceText({ label }: { label: string }) {
+/**
+ * "Everyone" with the people glyph, the label from `@lg` up and read aloud
+ * always. `truncate` is restated at `@lg` because `not-sr-only` resets
+ * overflow and white-space, as `top-bar.tsx` notes. A group row draws nothing
+ * below `@lg`, as before; a copy's row keeps the glyph there (`glyphNarrow`),
+ * where it stands in for the person's face.
+ */
+function AudienceText({
+  label,
+  glyphNarrow = false,
+}: {
+  label: string;
+  glyphNarrow?: boolean;
+}) {
   return (
-    <span className="inline-flex min-w-0 max-w-[14rem] shrink items-center gap-1.5 text-caption text-muted-foreground">
+    <span
+      className={cn(
+        "min-w-0 max-w-[14rem] shrink items-center gap-1.5 text-caption text-muted-foreground",
+        glyphNarrow ? "inline-flex" : "hidden @lg:inline-flex",
+      )}
+    >
       <Users className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-      <span className="sr-only truncate @lg:not-sr-only">{label}</span>
+      <span className="sr-only @lg:not-sr-only @lg:truncate">{label}</span>
     </span>
   );
 }

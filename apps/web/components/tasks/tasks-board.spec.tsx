@@ -418,31 +418,51 @@ function liveStatus(): HTMLElement | null {
  * Picks in the toolbar's View menu (grouping and List / Grid), which closes
  * on the pick.
  */
-/** The View menu's trigger, named for the view it is on (#5578). */
-const viewTrigger = () =>
-  screen.getByRole("button", { name: /^(View|My tasks|Everyone's)$/ });
+/** The header's one Filter button (`FilterMenu`), named for its count. */
+const filterButton = () =>
+  screen.getByRole("button", { name: /^Filter tasks/ });
+
+/** The header's My tasks / Everyone's switch, or null without one. */
+const viewSwitch = () =>
+  screen.queryByRole("radiogroup", { name: "Whose tasks" });
+
+/** Which view the header's switch is on. */
+const viewOn = (name: "My tasks" | "Everyone's") =>
+  within(viewSwitch()!).getByRole("radio", { name }).getAttribute(
+    "aria-checked",
+  ) === "true";
 
 /**
  * An officer opens on My tasks (#5578); the chapter's board is Everyone's,
- * picked in View. Does nothing where the page has no such pick.
+ * picked in the header's switch. Does nothing where the page has none.
  */
 async function showEveryones() {
-  const mine = screen.queryByRole("button", { name: /^My tasks$/ });
-  if (!mine) return;
-  await userEvent.click(mine);
-  await userEvent.click(
-    await screen.findByRole("menuitemradio", { name: "Everyone's" }),
-  );
+  const radio = viewSwitch()
+    ? within(viewSwitch()!).getByRole("radio", { name: "Everyone's" })
+    : null;
+  if (!radio || radio.getAttribute("aria-checked") === "true") return;
+  await userEvent.click(radio);
 }
 
+/** The Filter menu row a Group or Layout pick sits under. */
+const rowOf = (name: string) =>
+  name === "List" || name === "Grid" ? "Layout" : "Group";
+
+/** Picks a Group or Layout value in the Filter menu, which closes on the pick. */
 async function pickView(name: string) {
-  await userEvent.click(viewTrigger());
+  await userEvent.click(filterButton());
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: new RegExp(`^${rowOf(name)}`) }),
+  );
   await userEvent.click(await screen.findByRole("menuitemradio", { name }));
 }
 
-/** Whether a View menu pick is the current one; the menu closes again. */
+/** Whether a Group or Layout value is the current one; the menu closes again. */
 async function viewChecked(name: string): Promise<boolean> {
-  await userEvent.click(viewTrigger());
+  await userEvent.click(filterButton());
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: new RegExp(`^${rowOf(name)}`) }),
+  );
   const item = await screen.findByRole("menuitemradio", { name });
   const checked = item.getAttribute("aria-checked") === "true";
   await userEvent.keyboard("{Escape}");
@@ -485,7 +505,12 @@ describe("TasksBoard suggested tasks (#4313)", () => {
       expect(
         screen.queryByRole("region", { name: "Suggested tasks" }),
       ).toBeNull();
-      expect(screen.queryByRole("form", { name: /add a task/i })).toBeNull();
+      // The skeleton stands in for the whole board: no header actions, no
+      // groups, until both reads have answered.
+      expect(
+        screen.queryByRole("button", { name: /^new task$/i }),
+      ).toBeNull();
+      expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
     } finally {
       suggestionsPending.current = false;
     }
@@ -614,7 +639,7 @@ describe("TasksBoard subscription gating", () => {
     ).toBeInTheDocument();
   });
 
-  it("hides Confirm while the viewer is unknown, rather than failing open", () => {
+  it("hides Confirm while the viewer is unknown, rather than failing open", async () => {
     // `myUserId` is "" until `useCurrentUser` resolves. If the gate keyed on
     // `isMine` alone, every row would read as someone else's during that window
     // and Confirm would come back on your own task.
@@ -622,6 +647,10 @@ describe("TasksBoard subscription gating", () => {
     currentUserRef.current = undefined;
     tasksRef.current = [{ ...TASKS[2], id: "task-mine", assignee_id: ME }];
     render(<TasksBoard />);
+    // Opens on My tasks, which waits on the account; the rows are on
+    // Everyone's, where the gate has to hold.
+    await showEveryones();
+    expect(screen.getByText(TASKS[2]!.title)).toBeInTheDocument();
 
     expect(
       screen.queryByRole("button", { name: /^confirm$/i }),
@@ -638,6 +667,8 @@ describe("TasksBoard subscription gating", () => {
     currentUserFailed.current = true;
     tasksRef.current = [TASKS[2]];
     render(<TasksBoard />);
+    // The chapter's board stays, with its rows, so the gate is tested on them.
+    expect(screen.getByText(TASKS[2]!.title)).toBeInTheDocument();
 
     expect(
       screen.queryByRole("button", { name: /^confirm$/i }),
@@ -1214,9 +1245,10 @@ describe("TasksBoard quick add (2026-11-18)", () => {
     expect(within(form).getByLabelText("Notes (optional)")).toBeInTheDocument();
     expect(titleField()).toHaveFocus();
 
-    // Escape on an empty line puts it away.
+    // Escape on an empty line puts it away, and focus goes back to New task.
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("form", { name: /add a task/i })).toBeNull();
+    await waitFor(() => expect(trigger()).toHaveFocus());
 
     // Its close keeps a half-typed task for the next New task.
     await userEvent.click(trigger());
@@ -1280,6 +1312,40 @@ describe("TasksBoard quick add (2026-11-18)", () => {
     await waitFor(() => expect(titleField()).toHaveValue(""));
     expect(titleField()).toHaveFocus();
     expect(screen.getByLabelText("Due date")).toHaveValue("");
+  });
+
+  it("offers Everyone's from the toast when a task made on My tasks is someone else's (#5578)", async () => {
+    tasksRef.current = [{ ...TASKS[0], id: "own", assignee_id: ME }];
+    render(<TasksBoard />);
+    expect(viewOn("My tasks")).toBe(true);
+    await pickWho(/Cole Martin/);
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "2026-12-01" },
+    });
+    await userEvent.type(titleField(), "Order pizza{Enter}");
+    await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
+    const created = toastSpy.mock.calls.find(
+      ([arg]) => (arg as { title?: string }).title === "Task created",
+    )![0] as { action?: React.ReactElement<{ onClick: () => void }> };
+    // It went where My tasks doesn't show, so the toast offers the board.
+    expect(created.action).toBeDefined();
+    act(() => created.action!.props.onClick());
+    expect(viewOn("Everyone's")).toBe(true);
+  });
+
+  it("offers nothing from the toast for a task the viewer gave themselves", async () => {
+    tasksRef.current = [{ ...TASKS[0], id: "own", assignee_id: ME }];
+    render(<TasksBoard />);
+    await pickWho(/Paul Carlson/);
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "2026-12-01" },
+    });
+    await userEvent.type(titleField(), "Order pizza{Enter}");
+    await waitFor(() => expect(createTaskMutate).toHaveBeenCalledTimes(1));
+    const created = toastSpy.mock.calls.find(
+      ([arg]) => (arg as { title?: string }).title === "Task created",
+    )![0] as { action?: unknown };
+    expect(created.action).toBeUndefined();
   });
 
   it("gives a role's members a copy each through the tasks endpoint", async () => {
@@ -1925,7 +1991,7 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     tasksRef.current = ROWS;
   });
 
-  it("groups a member's tasks as Today, This week and Later, then what waits on an officer", () => {
+  it("groups a member's tasks as Today, This week and Later, then what waits on an officer", async () => {
     permissionsRef.current = ["members:view"];
     // A member's read holds only their own rows.
     tasksRef.current = ROWS.filter((row) => row.assignee_id === ME);
@@ -1946,14 +2012,16 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     ).toHaveLength(1);
     // No status lane says it, so the tile does.
     expect(within(region("This week")).getByText("In progress")).toBeVisible();
-    // A member has nothing to switch or filter: View holds only Layout.
-    expect(viewTrigger()).toHaveAccessibleName("View");
-    expect(screen.queryByRole("button", { name: /^Assignee/ })).toBeNull();
+    // A member has nothing to switch, and Filter holds only Layout.
+    expect(viewSwitch()).toBeNull();
+    await userEvent.click(filterButton());
+    expect(screen.queryByRole("menuitem", { name: /^Assignee/ })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /^Layout/ })).toBeInTheDocument();
   });
 
-  /** Picks a filter's value in the View menu's side list (#5578). */
+  /** Picks a filter's value in the Filter menu (#5578). */
   async function pickFilter(label: string, value: string) {
-    await userEvent.click(viewTrigger());
+    await userEvent.click(filterButton());
     await userEvent.click(
       await screen.findByRole("menuitem", { name: new RegExp(`^${label}`) }),
     );
@@ -1964,7 +2032,7 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
 
   /** The values a filter's side list offers; the menu closes again. */
   async function filterValues(label: string): Promise<string[]> {
-    await userEvent.click(viewTrigger());
+    await userEvent.click(filterButton());
     await userEvent.click(
       await screen.findByRole("menuitem", { name: new RegExp(`^${label}`) }),
     );
@@ -1977,30 +2045,48 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
 
   it("opens an officer on My tasks, with no switch or chips over it, and Everyone's is the chapter's board (#5578)", async () => {
     render(<TasksBoard />);
-    // Their own first, named on View.
-    expect(viewTrigger()).toHaveAccessibleName("My tasks");
+    // Their own first; the switch in the header says so.
+    expect(viewOn("My tasks")).toBe(true);
     expect(titlesIn("This week")).toEqual(["Draft the rush calendar"]);
     expect(screen.queryByText("Order shirts")).toBeNull();
-    expect(screen.queryByRole("radiogroup")).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Assignee/ })).toBeNull();
     expect(screen.queryByRole("form", { name: /add a task/i })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Filters on" })).toBeNull();
 
     await showEveryones();
-    expect(viewTrigger()).toHaveAccessibleName("Everyone's");
+    expect(viewOn("Everyone's")).toBe(true);
     expect(region("To do")).toBeInTheDocument();
     expect(screen.getByText("Order shirts")).toBeInTheDocument();
     // Still nothing between the header and the first group at rest.
-    expect(screen.queryByRole("group", { name: "Filters" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Filters on" })).toBeNull();
   });
 
   it("opens an officer with nothing of their own on Everyone's", () => {
     tasksRef.current = ROWS.filter((row) => row.assignee_id !== ME);
     render(<TasksBoard />);
-    expect(viewTrigger()).toHaveAccessibleName("Everyone's");
+    expect(viewOn("Everyone's")).toBe(true);
     expect(screen.getByText("Order shirts")).toBeInTheDocument();
   });
 
-  it("filters the chapter's board by assignee, status and due date from View, and clears them", async () => {
+  it("keeps the opening view when the viewer's own tasks change, until they pick", async () => {
+    tasksRef.current = ROWS.filter((row) => row.assignee_id !== ME);
+    const { rerender } = render(<TasksBoard />);
+    expect(viewOn("Everyone's")).toBe(true);
+    // A task given to them later doesn't move the page under them.
+    tasksRef.current = ROWS;
+    rerender(<TasksBoard />);
+    expect(viewOn("Everyone's")).toBe(true);
+    expect(region("To do")).toBeInTheDocument();
+  });
+
+  it("opens an officer on the chapter's board when their account can't be read (#1346)", () => {
+    currentUserRef.current = undefined;
+    currentUserFailed.current = true;
+    render(<TasksBoard />);
+    expect(viewOn("Everyone's")).toBe(true);
+    expect(screen.getByText("Order shirts")).toBeInTheDocument();
+  });
+
+  it("filters the chapter's board by assignee, status and due date from Filter, and clears them", async () => {
     const user = userEvent.setup();
     render(<TasksBoard />);
     await showEveryones();
@@ -2008,24 +2094,25 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     await pickFilter("Assignee", "Cole Martin");
     expect(titlesIn("To do")).toEqual(["Order shirts"]);
     expect(screen.queryByText("Sweep the chapter room")).toBeNull();
-    // A set filter shows as one row of its chip, with Clear filters.
-    const filters = screen.getByRole("group", { name: "Filters" });
-    expect(
-      within(filters).getByRole("button", { name: "Assignee: Cole Martin" }),
-    ).toBeInTheDocument();
-
-    await user.click(within(filters).getByRole("button", { name: "Clear filters" }));
+    // A filter that is on shows as a removable chip, and Filter counts it.
+    expect(filterButton()).toHaveAccessibleName("Filter tasks, 1 on");
+    const filters = screen.getByRole("group", { name: "Filters on" });
+    await user.click(
+      within(filters).getByRole("button", {
+        name: "Remove filter Assignee: Cole Martin",
+      }),
+    );
     expect(screen.getByText("Sweep the chapter room")).toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "Filters" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Filters on" })).toBeNull();
 
     await pickFilter("Status", "In progress");
     // A status keeps its own lane alone.
     expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
     expect(titlesIn("In progress")).toEqual(["Draft the rush calendar"]);
 
-    // Clear filters is in View too.
-    await user.click(viewTrigger());
-    await user.click(await screen.findByRole("menuitem", { name: "Clear filters" }));
+    // Clear all is in the Filter menu too.
+    await user.click(filterButton());
+    await user.click(await screen.findByRole("menuitem", { name: "Clear all" }));
     await pickFilter("Due", "Due today");
     expect(titlesIn("To do")).toEqual(["Sweep the chapter room"]);
     expect(titlesIn("Overdue")).toEqual([]);
@@ -2057,7 +2144,7 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     tasksRef.current = ROWS.filter((row) => row.status !== "OVERDUE");
     rerender(<TasksBoard />);
     expect(
-      screen.getByRole("button", { name: "Status: Overdue" }),
+      screen.getByRole("button", { name: "Remove filter Status: Overdue" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText("No tasks match these filters."),
@@ -2096,13 +2183,11 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     expect(screen.getByText("Book the retreat")).toBeInTheDocument();
     expect(screen.getAllByText("From Exec board").length).toBeGreaterThan(0);
     // The chapter's filters and grouping stay an officer's.
-    await user.click(viewTrigger());
+    await user.click(filterButton());
     expect(
       screen.queryByRole("menuitem", { name: /^Assignee/ }),
     ).toBeNull();
-    expect(
-      screen.queryByRole("menuitemradio", { name: "By person" }),
-    ).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /^Group/ })).toBeNull();
   });
 
   it("opens a follower with nothing of their own on Everyone's, and keeps a role preview on My tasks (#5473)", () => {
@@ -2123,7 +2208,7 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     // View as a role keeps the officer's whole read: no follower switch.
     tasksRef.current = [...ROWS, followed];
     render(<TasksBoard />);
-    expect(viewTrigger()).toHaveAccessibleName("View");
+    expect(viewSwitch()).toBeNull();
     expect(screen.queryByText("Book the retreat")).toBeNull();
   });
 
@@ -2131,7 +2216,7 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     currentUserRef.current = undefined;
     render(<TasksBoard />);
     // It waits on My tasks rather than flash the chapter's board.
-    expect(viewTrigger()).toHaveAccessibleName("My tasks");
+    expect(viewOn("My tasks")).toBe(true);
     expect(screen.getByText("Loading your tasks…")).toBeInTheDocument();
   });
 
@@ -2397,7 +2482,7 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
       copy("own", ME, { title: "Return the projector", group_id: null }),
     ];
     render(<TasksBoard />);
-    expect(viewTrigger()).toHaveAccessibleName("My tasks");
+    expect(viewOn("My tasks")).toBe(true);
 
     const everyone = screen
       .getAllByRole("listitem")
@@ -2432,6 +2517,33 @@ describe("TasksBoard tasks for everyone (#4295 step 3)", () => {
       name: "Fill out the tabling form",
     });
     expect(within(panel).getByText("Everyone · 14 of 20 done")).toBeInTheDocument();
+  });
+
+  it("says who a copy went to on a My tasks Grid card too (#5699)", () => {
+    window.localStorage.setItem("frapp.tasks.layout.viewer-1", "grid");
+    resetListLayoutForTests();
+    tasksRef.current = GROUP.map((task) => ({
+      ...task,
+      group: { audience: "everyone", total: 20, done: 14, confirmed: 9 },
+    }));
+    render(<TasksBoard />);
+    expect(viewOn("My tasks")).toBe(true);
+    expect(screen.getByText("Everyone · 14 of 20 done")).toBeInTheDocument();
+  });
+
+  it("keeps each copy's person on Everyone's By person, where the group heading names them (#5699)", async () => {
+    window.localStorage.setItem("frapp.tasks.layout.viewer-1", "list");
+    resetListLayoutForTests();
+    tasksRef.current = GROUP.map((task) => ({
+      ...task,
+      group: { audience: "everyone", total: 20, done: 14, confirmed: 9 },
+    }));
+    render(<TasksBoard />);
+    await showEveryones();
+    await pickView("By person");
+    const cole = screen.getByRole("region", { name: "Cole Martin" });
+    expect(within(cole).getAllByText("Cole Martin").length).toBeGreaterThan(1);
+    expect(within(cole).queryByText("Everyone")).toBeNull();
   });
 
   it("counts the group as the API does, copies on other pages included", async () => {

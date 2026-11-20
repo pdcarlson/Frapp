@@ -26,9 +26,7 @@ export function GroupProgress({
   const { accentPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
   const share = total > 0 ? Math.min(1, done / total) : 0;
-  const words = [who, TASK_AUDIENCE_COPY.progress(done, total)]
-    .filter(Boolean)
-    .join(" · ");
+  const words = TASK_AUDIENCE_COPY.groupLine(who, done, total);
   return (
     <View style={styles.line} accessible accessibilityLabel={words}>
       <Text style={styles.words}>{words}</Text>

@@ -7,7 +7,6 @@ import {
 import {
   TASK_AUDIENCE_COPY,
   TASK_FOLLOWER_COPY,
-  taskGroupLabel,
   taskRowFacts,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
@@ -36,6 +35,7 @@ import {
 } from "@/lib/tasks/format";
 import { rowIsSentBack, type TaskRowModel } from "@/lib/tasks/board";
 import { markDoneLabel } from "@/lib/tasks/task-photos";
+import { rowGroupLabel } from "@/lib/tasks/task-screen";
 
 /**
  * One row of the s08 board — `canvas-screens.dc.html:282-324`.
@@ -147,11 +147,11 @@ function taskFacts(row: TaskRowModel, now: Date) {
   // (#5699): "Due Friday · Everyone · 14 of 20 done". Its checkbox is only
   // this member's part, as web's My tasks row says.
   const audience = row.group
-    ? `${taskGroupLabel({
-        audience: row.group.audience,
-        target_name: row.group.targetName,
-        total: row.group.total,
-      })} · ${TASK_AUDIENCE_COPY.progress(row.group.done, row.group.total)}`
+    ? TASK_AUDIENCE_COPY.groupLine(
+        rowGroupLabel(row),
+        row.group.done,
+        row.group.total,
+      )
     : null;
   const lineOf = (extra: string | null) =>
     [

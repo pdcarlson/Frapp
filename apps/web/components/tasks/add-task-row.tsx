@@ -103,7 +103,8 @@ type Missing = {
  * title rather than wrap ragged. A missing who or due is flagged and
  * focused on Enter, never while typing. More opens the rest of the task in
  * place: steps, notes, repeat, photos and proof. After a create the line
- * clears for the next one. Escape clears what was typed.
+ * clears for the next one. Escape clears what was typed, and on an empty
+ * line puts the line away (`onDismiss`), as its close does.
  */
 export function AddTaskRow({
   gate,

@@ -464,7 +464,7 @@ function TaskPanelBody({
                 className="h-4 w-4 text-muted-foreground"
                 aria-hidden="true"
               />
-              {`${copyOf.label} · ${TASK_AUDIENCE_COPY.progress(copyOf.done, copyOf.total)}`}
+              {TASK_AUDIENCE_COPY.groupLine(copyOf.label, copyOf.done, copyOf.total)}
             </span>
           </FieldRow>
         ) : null}
