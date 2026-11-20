@@ -618,6 +618,12 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
       },
     ],
   },
+  // A reminder the member set on a Coming up date in minutes (#5672): its
+  // push quotes the date's words, which an officer wrote in the minutes.
+  'application/workers/meeting-date-reminder-sweep.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
   // The weekly recap push (#4985): the member's own figures from last week,
   // under the chapter's name.
   'application/workers/activity-recap-push.service.ts': {
