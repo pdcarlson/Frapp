@@ -64,7 +64,6 @@ export * from "./chat-sidebar";
 // The check-in QR as a link the phone camera opens. See ./check-in-link.
 export * from "./check-in-link";
 export * from "./check-in-window";
-export * from "./event-now";
 export * from "./check-in-zone-copy";
 // The request headers the SDK sets and the API reads (time zone, client version).
 export * from "./client-headers";
@@ -98,6 +97,8 @@ export * from "./event-edit";
 export * from "./event-excuse";
 // The event form's rows: order, words and values both apps draw (#5561).
 export * from "./event-form-rows";
+// What is on right now, and the Now card's words (#5777).
+export * from "./event-now";
 // The chapter's Everyone role, the Member role renamed and hidden (#4191).
 export {
   EVERYONE_MEMBER_LIST_HEADING,
