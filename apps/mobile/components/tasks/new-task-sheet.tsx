@@ -883,7 +883,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             </View>
 
             <View style={styles.splitRow}>
-              <View style={[styles.field, styles.splitField]}>
+              <View style={[styles.field, styles.dueField]}>
                 <DueDateField
                   value={dueDate}
                   today={localIsoDate(at)}
@@ -1132,6 +1132,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     splitField: {
       flex: 1,
+    },
+    // The day ("Wednesday, November 25") and its clear need the room more
+    // than the points do, so the day reads on one line (#5761).
+    dueField: {
+      flex: 2,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),
