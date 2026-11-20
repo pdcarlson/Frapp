@@ -801,10 +801,15 @@ Flushed last ([#2500](https://github.com/pdcarlson/Frapp/issues/2500)); the boar
 - **Two pages on one route, scoped like Discord's channel settings** (Paul, 2026-11-11: "scope the chat admin panel to whatever channel you're editing"; "reported messages should be at the bottom"; "don't need a list of all the channels right here").
   `?channel=<id>` is that channel's page alone: a `<h2>` naming the channel with its type as a badge and an All chat settings link back, its settings with Delete channel beside Save, its pinned messages, then the reports filed in that channel last (`GET /v1/chat/reports?channel_id=`).
   It shows no other channel, no categories and no chapter background.
-  Without a channel the page is the chapter's: Channels (New channel, and an Edit a channel picker for when the chat rail isn't beside the page), Categories, the chapter's chat background, and the whole report queue last, the only place a report about a DM appears.
+  Without a channel the page is the chapter's: Channels (New channel), Categories, the chapter's chat background, and the whole report queue last, the only place a report about a DM appears.
+  **Categories fold out to their channels** ([#5727](https://github.com/frapplive/Frapp/issues/5727), Shawn, 2026-11-20), the way Discord's server settings list channels under their categories and Slack's sidebar sections fold: each category row is a toggle (a chevron that turns, the name, then its access summary and channel count), closed until clicked, and opens to its channels in the rail's order (`groupChannelsByCategory`, then `compareChannelOrder`), each row opening that channel's page.
+  Channels in no category get a last **No category** group with no row actions, open by default only when the chapter has no categories, since it is then the only way to a channel.
+  The categories keep the server's order, as the rail does.
+  This replaced the Edit a channel picker, which reached the same pages and ran off the screen at 20 or more channels ([#5724](https://github.com/frapplive/Frapp/issues/5724)).
   **Reports stay out of the way** (Paul, 2026-11-11: "it doesn't need to be staring you right in the face"): on either page the queue draws nothing while it loads and, with no open report, folds to one quiet Report history link that opens the tabs;
   an open report, a failed read, or the notification's `#reported-messages` link shows it in full.
   Neither page lists every channel: the chat rail is that list, and its right-click Edit channel opens a channel's page.
+  Changed by shawnatomklein-eng, 2026-11-20 (#5727): the chapter's page lists every channel inside its folded category, closed by default, so the list is a click away rather than on the page; a channel's own page still shows no other channel.
   The form has no type field because the update route takes none; the create panel, where the type is chosen, says it is final.
 - **The report queue keeps two lines of its own**: under its label, that each report shows the message as it read when reported and that who reported it is never shown; and on the Open tab, that Mark reviewed and Dismiss leave the message up.
   A row can show neither, and neither button's label says the second.

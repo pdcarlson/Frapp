@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  ChevronRight,
   Loader2,
   Pencil,
   PinOff,
@@ -16,6 +17,8 @@ import {
   Users,
 } from "lucide-react";
 import {
+  compareChannelOrder,
+  groupChannelsByCategory,
   useCategories,
   useChannelAccessOptions,
   useChannels,
@@ -48,6 +51,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { EYEBROW } from "@/components/ui/typography";
+import { FOCUS_RING } from "@/components/ui/focus";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
   Select,
@@ -70,6 +74,7 @@ import {
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "@/components/chat/use-delete-channel-flow";
+import { ChannelMark } from "@/components/chat/channel-start";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -122,6 +127,11 @@ interface AdminChannel {
    * form locks both.
    */
   is_audit_log?: boolean;
+  /**
+   * The chapter's order inside its category (#4178), set by dragging in the
+   * chat rail. The category tree sorts by it the way the rail does.
+   */
+  display_order?: number | null;
 }
 
 interface AdminCategory {
@@ -212,8 +222,9 @@ function categoryAccessSummary(
  *   its full-screen settings. Its settings first, then its pins, then the
  *   reports filed in it, and a way back to all chat settings.
  * - **No channel: the chapter's chat settings**, the body of the Chat page.
- *   New channel, a picker to open one channel's settings, categories, the
- *   chapter's chat background, and the whole report queue last (the only
+ *   New channel, the categories with every channel under its own (#5727;
+ *   a channel row opens that channel's settings), the chapter's chat
+ *   background, and the whole report queue last (the only
  *   place a report about a DM shows).
  *
  * It used to be its own route, `/chat-admin`, beside chat; that route only
@@ -325,6 +336,41 @@ function ChatAdminBody({
     [accessOptionsQuery.data],
   );
   const accessOptionsState = channelAccessOptionsState(accessOptionsQuery);
+
+  // ── Category tree (#5727) ───────────────────────────────────────────────
+  // Every channel under its category, in the order the chat rail draws them:
+  // the shared grouping (categories in the server's order, an unknown
+  // category falling back to none), then the chapter's drag order inside
+  // each, then A to Z. Channels in no category get their own group last.
+  const channelTree = useMemo(() => {
+    const grouped = groupChannelsByCategory(channels, categories);
+    const byOrder = compareChannelOrder<AdminChannel>((c) => c.name);
+    return {
+      categories: grouped.categories.map(({ category, channels: inIt }) => ({
+        category,
+        channels: [...inIt].sort(byOrder),
+      })),
+      uncategorized: [...grouped.uncategorized].sort(byOrder),
+    };
+  }, [channels, categories]);
+  // Which groups the officer opened or closed. Everything starts closed but
+  // the "No category" group of a chapter with no categories, which is then
+  // the only group and the only way to a channel.
+  const [toggledGroups, setToggledGroups] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  function isGroupOpen(key: string) {
+    const openByDefault = key === NO_CATEGORY && categories.length === 0;
+    return toggledGroups.has(key) !== openByDefault;
+  }
+  function toggleGroup(key: string) {
+    setToggledGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   // ── Category drafts ─────────────────────────────────────────────────────
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -1090,10 +1136,11 @@ function ChatAdminBody({
         <>
           {/*
         Flush, not carded (`1f` pin 2: "one toolbar row, no wrapper card, no
-        description paragraph"). The chapter's page lists no channels: the
-        chat rail beside it already does, and right-click > Edit channel there
-        opens one channel's own page. The picker is the way in from Settings,
-        where the rail is not beside it.
+        description paragraph"). The channels themselves are listed under
+        their categories below (#5727), each row opening that channel's own
+        page; the "Edit a channel" picker that stood here went with it, since
+        the tree reaches every channel and a 20-channel picker ran off the
+        page (#5724).
       */}
           <section aria-labelledby="ca-channels-label" className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -1108,26 +1155,6 @@ function ChatAdminBody({
                 Channels
               </SectionLabel>
               <div className="flex flex-wrap items-center gap-2">
-                {channels.length > 0 ? (
-                  <Select
-                    value=""
-                    onValueChange={(id) => router.push(channelSettingsPath(id))}
-                  >
-                    <SelectTrigger
-                      aria-label="Edit a channel"
-                      className="w-56 max-w-full"
-                    >
-                      <SelectValue placeholder="Edit a channel" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {channels.map((channel) => (
-                        <SelectItem key={channel.id} value={channel.id}>
-                          #{channel.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : null}
                 <CreateChannelSheet
                   open={createDialogOpen}
                   onOpenChange={setCreateDialogOpen}
@@ -1157,13 +1184,19 @@ function ChatAdminBody({
             </SectionLabel>
             {categories.length === 0 ? (
               <InlineNote>
-                No categories yet. Channels without one show as uncategorized.
+                No categories yet. Channels without one are listed under No
+                category.
               </InlineNote>
-            ) : (
+            ) : null}
+            {categories.length > 0 || channelTree.uncategorized.length > 0 ? (
               <ul className={denseListClassName}>
-                {[...categories]
-                  .sort((a, b) => a.display_order - b.display_order)
-                  .map((category) => (
+                {/*
+                  The server's order (display_order, then created_at), which
+                  is the order the chat rail draws; the re-sort that stood
+                  here was a second copy of that rule.
+                */}
+                {channelTree.categories.map(
+                  ({ category, channels: categoryChannels }) => (
                     <li key={category.id}>
                       <div className="flex min-h-11 items-center justify-between gap-2">
                         {editingCategoryId === category.id ? (
@@ -1197,19 +1230,17 @@ function ChatAdminBody({
                           </>
                         ) : (
                           <>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">
-                                {category.name}
-                              </p>
-                              {/*
-                              Both answers in one line, so an officer scanning
-                              the list sees which categories are private
-                              without opening each.
-                            */}
-                              <p className="truncate text-caption text-muted-foreground">
-                                {categoryAccessSummary(category, accessOptions)}
-                              </p>
-                            </div>
+                            <CategoryToggle
+                              groupKey={category.id}
+                              name={category.name}
+                              channelCount={categoryChannels.length}
+                              open={isGroupOpen(category.id)}
+                              onToggle={() => toggleGroup(category.id)}
+                              summary={categoryAccessSummary(
+                                category,
+                                accessOptions,
+                              )}
+                            />
                             <div className="flex shrink-0 gap-1">
                               <Button
                                 variant="ghost"
@@ -1264,10 +1295,36 @@ function ChatAdminBody({
                           onSave={() => void handleSaveCategoryAccess(category)}
                         />
                       ) : null}
+                      {isGroupOpen(category.id) ? (
+                        <CategoryChannelList
+                          groupKey={category.id}
+                          channels={categoryChannels}
+                        />
+                      ) : null}
                     </li>
-                  ))}
+                  ),
+                )}
+                {channelTree.uncategorized.length > 0 ? (
+                  <li>
+                    <div className="flex min-h-11 items-center gap-2">
+                      <CategoryToggle
+                        groupKey={NO_CATEGORY}
+                        name="No category"
+                        channelCount={channelTree.uncategorized.length}
+                        open={isGroupOpen(NO_CATEGORY)}
+                        onToggle={() => toggleGroup(NO_CATEGORY)}
+                      />
+                    </div>
+                    {isGroupOpen(NO_CATEGORY) ? (
+                      <CategoryChannelList
+                        groupKey={NO_CATEGORY}
+                        channels={channelTree.uncategorized}
+                      />
+                    ) : null}
+                  </li>
+                ) : null}
               </ul>
-            )}
+            ) : null}
             <form
               onSubmit={handleCreateCategory}
               className="flex items-end gap-2 pt-2"
@@ -1418,6 +1475,116 @@ function ChannelAccessSection({
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** The id the toggle's `aria-controls` names, for one group's channel list. */
+function categoryGroupListId(groupKey: string) {
+  return `ca-category-channels-${groupKey}`;
+}
+
+/**
+ * A category's name as the button that opens out its channels (#5727), the
+ * way Discord's server settings and Slack's sidebar sections fold: a chevron
+ * that turns, the name, and under it the access summary and how many
+ * channels are inside.
+ */
+function CategoryToggle({
+  groupKey,
+  name,
+  channelCount,
+  open,
+  onToggle,
+  summary,
+}: {
+  groupKey: string;
+  name: string;
+  channelCount: number;
+  open: boolean;
+  onToggle: () => void;
+  summary?: string;
+}) {
+  const count = `${channelCount} channel${channelCount === 1 ? "" : "s"}`;
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-controls={open ? categoryGroupListId(groupKey) : undefined}
+      onClick={onToggle}
+      className={cn(
+        "-ml-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 pr-2 text-left transition-colors hover:bg-card-hover",
+        FOCUS_RING,
+      )}
+    >
+      <ChevronRight
+        aria-hidden="true"
+        className={cn(
+          "h-4 w-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
+          open && "rotate-90",
+        )}
+      />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium">{name}</span>
+        {/*
+          The access answers in one line, so an officer scanning the list sees
+          which categories are private without opening each, then the count.
+        */}
+        <span className="flex min-w-0 text-caption text-muted-foreground">
+          {summary ? <span className="truncate">{summary}</span> : null}
+          <span className="shrink-0 whitespace-pre">
+            {summary ? ` · ${count}` : count}
+          </span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * One group's channels, opened out under its category row (#5727). Each row
+ * opens that channel's own settings page, the place the rail's right-click
+ * Edit channel goes.
+ */
+function CategoryChannelList({
+  groupKey,
+  channels,
+}: {
+  groupKey: string;
+  channels: readonly AdminChannel[];
+}) {
+  if (channels.length === 0) {
+    return (
+      <p
+        id={categoryGroupListId(groupKey)}
+        className="pb-2 pl-7 text-sm text-muted-foreground"
+      >
+        No channels in this category.
+      </p>
+    );
+  }
+  return (
+    <ul id={categoryGroupListId(groupKey)} className="pb-1.5 pl-5">
+      {channels.map((channel) => (
+        <li key={channel.id}>
+          <Link
+            href={channelSettingsPath(channel.id)}
+            className={cn(
+              "group flex min-h-9 items-center gap-2 rounded-md border border-transparent px-2 text-sm text-muted-foreground transition-colors hover:bg-card-hover hover:text-foreground pointer-coarse:min-h-11",
+              FOCUS_RING,
+            )}
+          >
+            <span className="flex w-4 shrink-0 justify-center">
+              <ChannelMark channel={channel} className="h-3.5 w-3.5" />
+            </span>
+            <span className="min-w-0 flex-1 truncate">{channel.name}</span>
+            <ChevronRight
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+            />
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 

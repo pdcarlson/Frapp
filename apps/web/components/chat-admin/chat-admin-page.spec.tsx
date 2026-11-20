@@ -53,6 +53,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   const mutation = () => ({ mutateAsync: vi.fn(), isPending: false });
   return {
     resolveAuthorLabel: actual.resolveAuthorLabel,
+    // The category tree (#5727) groups and orders like the chat rail.
+    groupChannelsByCategory: actual.groupChannelsByCategory,
+    compareChannelOrder: actual.compareChannelOrder,
     // Chat backgrounds (#3973): the default card is decoration on this page.
     errorCopy: actual.errorCopy,
     useChapterChatBackground: () => ({ data: undefined }),
@@ -222,11 +225,6 @@ describe("ChatAdminPage — on the page surface (#2500)", () => {
 // Paul, 2026-11-11: "scope the chat admin panel to whatever channel you're
 // editing", reports at the bottom, and no list of every channel.
 describe("ChatAdminPage — scoped to the channel being edited", () => {
-  it("lists no channels on either page: the chat rail is the list", () => {
-    render(<ChatAdminPage />);
-    expect(screen.queryByText("#general")).toBeNull();
-    expect(screen.queryByRole("button", { name: /^#/ })).toBeNull();
-  });
 
   it("shows only that channel on a channel's page: no other channel, no categories, no chapter background", () => {
     render(exec());
@@ -272,6 +270,120 @@ describe("ChatAdminPage — scoped to the channel being edited", () => {
     expect(
       screen.getByRole("button", { name: "Delete channel" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ChatAdminPage — the category tree (#5727)", () => {
+  const categoriesRegion = () =>
+    screen.getByRole("region", { name: "Categories" });
+  const toggle = (name: string) =>
+    within(categoriesRegion()).getByRole("button", {
+      name: new RegExp(`^${name}`),
+    });
+  // The row's text without its mark: the `#` is drawn, not read.
+  const channelName = (link: HTMLElement) =>
+    (link.textContent ?? "").replace(/^#/, "");
+
+  it("has no Edit a channel picker: the tree reaches every channel", () => {
+    render(<ChatAdminPage />);
+    expect(screen.queryByRole("combobox", { name: "Edit a channel" })).toBeNull();
+  });
+
+  it("opens a category out to its channels, each opening its settings, and folds it again", () => {
+    render(<ChatAdminPage />);
+    const chapter = toggle("Chapter");
+    expect(chapter).toHaveAttribute("aria-expanded", "false");
+    expect(chapter).toHaveTextContent("3 channels");
+    expect(screen.queryByRole("link", { name: "general" })).toBeNull();
+
+    fireEvent.click(chapter);
+    expect(chapter).toHaveAttribute("aria-expanded", "true");
+    const list = document.getElementById(
+      chapter.getAttribute("aria-controls") ?? "",
+    ) as HTMLElement;
+    const links = within(list).getAllByRole("link");
+    // No one has arranged them, so A to Z, as the rail draws them.
+    expect(links.map(channelName)).toEqual([
+      "exec",
+      "general",
+      "officers",
+    ]);
+    expect(within(list).getByRole("link", { name: "general" })).toHaveAttribute(
+      "href",
+      "/settings?tab=chat&channel=ch-1",
+    );
+
+    fireEvent.click(chapter);
+    expect(chapter).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "general" })).toBeNull();
+  });
+
+  it("orders a category's channels by the chapter's drag order first", () => {
+    reads.channels = settled([
+      { ...CHANNELS[0], display_order: 1 },
+      { ...CHANNELS[1], display_order: 0 },
+      CHANNELS[2],
+    ]);
+    render(<ChatAdminPage />);
+    fireEvent.click(toggle("Chapter"));
+    expect(
+      within(categoriesRegion())
+        .getAllByRole("link")
+        .map(channelName),
+    ).toEqual(["exec", "general", "officers"]);
+  });
+
+  it("keeps the categories in the server's order", () => {
+    reads.categories = settled([
+      { id: "cat-2", name: "Social", display_order: 5 },
+      { id: "cat-1", name: "Chapter", display_order: 0 },
+    ]);
+    render(<ChatAdminPage />);
+    expect(
+      toggle("Social").compareDocumentPosition(toggle("Chapter")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("says a category with no channels is empty when opened", () => {
+    reads.categories = settled([
+      ...CATEGORIES,
+      { id: "cat-2", name: "Social", display_order: 1 },
+    ]);
+    render(<ChatAdminPage />);
+    fireEvent.click(toggle("Social"));
+    expect(
+      screen.getByText("No channels in this category."),
+    ).toBeInTheDocument();
+  });
+
+  it("puts channels in no category, or a deleted one, in a last No category group", () => {
+    reads.channels = settled([
+      CHANNELS[0],
+      { ...CHANNELS[1], category_id: null },
+      { ...CHANNELS[2], category_id: "cat-gone" },
+    ]);
+    render(<ChatAdminPage />);
+    const none = toggle("No category");
+    expect(none).toHaveAttribute("aria-expanded", "false");
+    expect(none).toHaveTextContent("2 channels");
+    // No rename, access or delete on a group that isn't a category.
+    expect(
+      within(none.closest("li") as HTMLElement).getAllByRole("button"),
+    ).toHaveLength(1);
+    fireEvent.click(none);
+    expect(screen.getByRole("link", { name: "exec" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "officers" })).toBeInTheDocument();
+  });
+
+  it("opens the No category group by default when the chapter has no categories", () => {
+    reads.categories = settled([]);
+    render(<ChatAdminPage />);
+    expect(toggle("No category")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: "general" })).toHaveAttribute(
+      "href",
+      "/settings?tab=chat&channel=ch-1",
+    );
   });
 });
 
