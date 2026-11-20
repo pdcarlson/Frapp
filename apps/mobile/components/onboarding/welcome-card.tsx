@@ -1,14 +1,12 @@
-import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   landingChannelId,
   useActiveChapterId,
   useChannels,
   useCurrentUser,
   useEvents,
-  usePickableRoles,
 } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
 import {
@@ -18,25 +16,10 @@ import {
   welcomeCardTitle,
 } from "@repo/validation";
 import { CloseGlyph, ForwardGlyph } from "@/components/control-glyphs";
-import { ProfilePhoto } from "@/components/profile/profile-photo";
-import { PickRolesList } from "@/components/roles/pick-roles-list";
-import { ChatDensityOptions } from "@/components/settings/chat-density-sheet";
-import {
-  SHEET_STACK_BEHAVIOR,
-  SheetBackToClose,
-  SheetGrabber,
-  SheetScrim,
-  TallSheetHeader,
-  useSheetBackgroundStyle,
-  useSheetClose,
-  useTallSheetProps,
-} from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectChannels } from "@/lib/chat/channel-list";
-import { initialsFor } from "@/lib/more/narrow";
 import { selectViewerProfile } from "@/lib/more/profile";
 import { clearWelcomeDue, isWelcomeDue } from "@/lib/onboarding/welcome-due";
-import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 type EventRow = {
@@ -55,8 +38,8 @@ type EventRow = {
  *
  * "Welcome to <chapter>, <first name>", the chapter's next two events with
  * their days written out (each opens the event), and **Finish your profile**,
- * a sheet with the photo, the roles they can join and the chat display: what
- * s03 stopped asking up front. Closing it is for good, on this phone
+ * a screen of its own (`app/(app)/finish-profile.tsx`) with the photo, the
+ * roles they can join and the chat display: what s03 stopped asking up front. Closing it is for good, on this phone
  * (`lib/onboarding/welcome-due.ts`).
  */
 export function WelcomeCard({ channelId }: { channelId: string }) {
@@ -78,7 +61,6 @@ export function WelcomeCard({ channelId }: { channelId: string }) {
     () => landingChannelId(selectChannels(channels.data), null),
     [channels.data],
   );
-  const sheet = useRef<BottomSheetModal>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -153,7 +135,7 @@ export function WelcomeCard({ channelId }: { channelId: string }) {
         accessibilityRole="button"
         accessibilityLabel={WELCOME_CARD_COPY.finishProfile}
         accessibilityHint={WELCOME_CARD_COPY.finishProfileHint}
-        onPress={() => sheet.current?.present()}
+        onPress={() => router.push("/finish-profile")}
         style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}
       >
         <Text numberOfLines={1} style={[styles.rowName, styles.finish]}>
@@ -164,77 +146,9 @@ export function WelcomeCard({ channelId }: { channelId: string }) {
         </Text>
         <ForwardGlyph color={tokens.color.text.mutedForeground} />
       </Pressable>
-      <FinishProfileSheet
-        ref={sheet}
-        photoUrl={profile?.photoUrl ?? null}
-        fetchedAt={userQuery.dataUpdatedAt}
-        initials={initialsFor(profile?.displayName ?? null)}
-      />
     </View>
   );
 }
-
-/**
- * Finish your profile: the three things s03 no longer asks, each the control
- * its own place uses (Profile's photo, the Directory's Add roles, Settings'
- * Chat density), so a change here is the same change there.
- */
-const FinishProfileSheet = forwardRef<
-  BottomSheetModal,
-  { photoUrl: string | null; fetchedAt: number; initials: string }
->(function FinishProfileSheet({ photoUrl, fetchedAt, initials }, ref) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  const backgroundStyle = useSheetBackgroundStyle();
-  const tallSheet = useTallSheetProps();
-  const closeSheet = useSheetClose(ref);
-  const { roles } = usePickableRoles();
-  return (
-    <BottomSheetModal
-      ref={ref}
-      stackBehavior={SHEET_STACK_BEHAVIOR}
-      {...tallSheet}
-      backgroundStyle={backgroundStyle}
-      handleComponent={SheetGrabber}
-      backdropComponent={SheetScrim}
-    >
-      <SheetBackToClose onClose={closeSheet} />
-      <BottomSheetScrollView
-        onAccessibilityEscape={closeSheet}
-        contentContainerStyle={styles.sheetContent}
-      >
-        <TallSheetHeader
-          title={WELCOME_CARD_COPY.sheetTitle}
-          onClose={closeSheet}
-        />
-        <Text style={styles.lede}>{WELCOME_CARD_COPY.sheetLede}</Text>
-        <Text accessibilityRole="header" style={styles.section}>
-          {WELCOME_CARD_COPY.photo}
-        </Text>
-        <View style={styles.photo}>
-          <ProfilePhoto
-            photoUrl={photoUrl}
-            fetchedAt={fetchedAt}
-            initials={initials}
-          />
-        </View>
-        {roles.length > 0 ? (
-          <>
-            <Text accessibilityRole="header" style={styles.section}>
-              {WELCOME_CARD_COPY.roles}
-            </Text>
-            <PickRolesList roles={roles} />
-          </>
-        ) : null}
-        <Text accessibilityRole="header" style={styles.section}>
-          {WELCOME_CARD_COPY.display}
-        </Text>
-        <ChatDensityOptions />
-        <View style={styles.footer} />
-      </BottomSheetScrollView>
-    </BottomSheetModal>
-  );
-});
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
@@ -292,20 +206,5 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
     pressed: { opacity: 0.6 },
-    sheetContent: {
-      paddingHorizontal: tokens.spacing.lg,
-      gap: tokens.spacing.md,
-    },
-    lede: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    section: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-      marginTop: tokens.spacing.sm,
-    },
-    photo: { alignItems: "flex-start" },
-    footer: { height: tokens.spacing.xl },
   });
 }

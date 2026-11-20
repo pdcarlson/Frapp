@@ -950,7 +950,7 @@ Copy in `WELCOME_CARD_COPY` and its helpers (`packages/validation/src/welcome-ca
 | Event rows, the next two | The event's name, then its day written out: `Happening now` for one already under way, `Today, 7:00 PM`, `Tomorrow, 7:00 PM`, the weekday within a week (`Saturday, 7:00 PM`), else the date (`Saturday, November 28`, with the year when it isn't this year). Each opens the event. |
 | Last row | `Finish your profile`, then `2 minutes`, muted, and a chevron |
 | Close button | An X, read out as `Close the welcome card`. Closing is for good on that device. |
-| Finish your profile (web dialog, phone tall sheet) | Title `Finish your profile`, line `Your photo, the roles you're in and how chat looks to you.`, then the sections `Photo`, `Your roles` (only when there's a role to join) and `Chat display`, each the control from its own page. Web closes with `Done`. |
+| Finish your profile (web dialog, phone screen) | Title `Finish your profile`, line `Your photo, the roles you're in and how chat looks to you.`, then the sections `Photo`, `Your roles` (only when there's a role to join) and `Chat display`, each the control from its own page. Web closes with `Done`; the phone's is a pushed screen with `‹ Chat`, not a sheet (Paul, 2026-11-20: "not sure a sheet is the move here"). |
 
 The first-run tours it replaced, six stops over web Chat (#5080) and four over the phone's chat after s03, with Settings → Account's `Replay tour`, were removed in #5627 (2026-11-19).
 

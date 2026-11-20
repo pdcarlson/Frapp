@@ -18,9 +18,9 @@ export const WELCOME_CARD_COPY = {
   finishProfile: "Finish your profile",
   finishProfileHint: "2 minutes",
   close: "Close the welcome card",
-  /** The Finish your profile sheet or dialog. */
-  sheetTitle: "Finish your profile",
-  sheetLede: "Your photo, the roles you're in and how chat looks to you.",
+  /** Finish your profile: a screen on the phone, a dialog on the web. */
+  profileTitle: "Finish your profile",
+  profileLede: "Your photo, the roles you're in and how chat looks to you.",
   photo: "Photo",
   roles: "Your roles",
   display: "Chat display",

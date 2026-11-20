@@ -26,7 +26,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
       { id: "general", name: "general", type: "public", is_default: true },
     ],
   }),
-  usePickableRoles: () => ({ roles: [], isLoading: false }),
 }));
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ chapterName: "Beta Theta Omega" }),
@@ -34,12 +33,6 @@ vi.mock("@/lib/chapter-branding", () => ({
 vi.mock("@/lib/onboarding/welcome-due", () => ({
   isWelcomeDue: () => Promise.resolve(mocks.due),
   clearWelcomeDue: () => mocks.clear(),
-}));
-vi.mock("@/components/profile/profile-photo", () => ({
-  ProfilePhoto: () => null,
-}));
-vi.mock("@/components/settings/chat-density-sheet", () => ({
-  ChatDensityOptions: () => null,
 }));
 
 import { useRouter } from "expo-router";
@@ -106,6 +99,15 @@ describe("WelcomeCard (phone)", () => {
       pathname: "/event-details",
       params: { id: "e1" },
     });
+  });
+
+  // A screen of its own, not a sheet (Paul, 2026-11-20).
+  it("opens Finish your profile as its own screen", async () => {
+    const { root } = await render();
+
+    act(() => labelled(root, "Finish your profile")?.props.onPress());
+
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/finish-profile");
   });
 
   it("shows nothing when it isn't due", async () => {

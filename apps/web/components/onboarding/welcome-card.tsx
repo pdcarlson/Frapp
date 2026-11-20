@@ -192,8 +192,8 @@ function FinishProfileDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{WELCOME_CARD_COPY.sheetTitle}</DialogTitle>
-          <DialogDescription>{WELCOME_CARD_COPY.sheetLede}</DialogDescription>
+          <DialogTitle>{WELCOME_CARD_COPY.profileTitle}</DialogTitle>
+          <DialogDescription>{WELCOME_CARD_COPY.profileLede}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-6">
           <section aria-label={WELCOME_CARD_COPY.photo} className="grid gap-2">
