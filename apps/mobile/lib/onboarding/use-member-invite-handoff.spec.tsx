@@ -5,16 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   url: null as string | null,
   destination: "tabs" as string,
+  pathname: "/" as string,
   chapters: { isSuccess: true, data: [{ chapter_id: "a" }] as unknown[] },
-  opened: [] as string[],
+  pushed: [] as unknown[],
 }));
 vi.mock("expo-linking", () => ({ useURL: () => state.url }));
-vi.mock("expo-web-browser", () => ({
-  openBrowserAsync: async (href: string) => {
-    state.opened.push(href);
-    return { type: "opened" };
-  },
-  dismissBrowser: () => {},
+vi.mock("expo-router", () => ({
+  usePathname: () => state.pathname,
+  useRouter: () => ({ push: (href: unknown) => state.pushed.push(href) }),
 }));
 vi.mock("@repo/hooks", () => ({ useListChapters: () => state.chapters }));
 vi.mock("@/lib/auth-session", () => ({
@@ -33,8 +31,9 @@ const {
 
 let n = 0;
 beforeEach(() => {
-  state.opened = [];
+  state.pushed = [];
   state.destination = "tabs";
+  state.pathname = "/";
   state.chapters = { isSuccess: true, data: [{ chapter_id: "a" }] };
   consumeRememberedInviteToken();
   // A fresh link each test: the module marks a link handled once.
@@ -42,35 +41,47 @@ beforeEach(() => {
   state.url = `https://app.frapp.live/join?token=tok${n}`;
 });
 
-describe("useMemberInviteHandoff (#4002)", () => {
-  it("opens a member's invite link on web /join, once", async () => {
+describe("useMemberInviteHandoff (#4002, #4341)", () => {
+  it("opens a member's invite link on the second-chapter card, once", () => {
     const view = renderHook(() => useMemberInviteHandoff());
     view.rerender();
-    await Promise.resolve();
-    expect(state.opened).toEqual([
-      `https://app.frapp.live/join?token=tok${n}&web=1`,
+    expect(state.pushed).toEqual([
+      { pathname: "/join-another", params: { token: `tok${n}` } },
+    ]);
+    // Remembered until the card joins it or the member backs out.
+    expect(peekRememberedInviteToken()).toBe(`tok${n}`);
+  });
+
+  it("holds the invite while the Terms prompt or s03 is up, then opens it", () => {
+    state.destination = "terms";
+    const view = renderHook(() => useMemberInviteHandoff());
+    expect(state.pushed).toEqual([]);
+    expect(peekRememberedInviteToken()).toBe(`tok${n}`);
+    state.destination = "tabs";
+    view.rerender();
+    expect(state.pushed).toEqual([
+      { pathname: "/join-another", params: { token: `tok${n}` } },
     ]);
   });
 
-  it("covers a member held on the Terms prompt or s03 too", async () => {
-    state.destination = "terms";
+  it("leaves a link on /join to the (auth) layout, and the open card alone", () => {
+    state.pathname = "/join";
     renderHook(() => useMemberInviteHandoff());
-    await Promise.resolve();
-    expect(state.opened).toHaveLength(1);
+    state.pathname = "/join-another";
+    renderHook(() => useMemberInviteHandoff());
+    expect(state.pushed).toEqual([]);
   });
 
-  it("takes the invite remembered across sign-in when no link is new", async () => {
+  it("takes the invite remembered across sign-in when no link is new", () => {
     state.url = null;
     rememberInviteToken("remembered");
     renderHook(() => useMemberInviteHandoff());
-    await Promise.resolve();
-    expect(state.opened).toEqual([
-      "https://app.frapp.live/join?token=remembered&web=1",
+    expect(state.pushed).toEqual([
+      { pathname: "/join-another", params: { token: "remembered" } },
     ]);
-    expect(peekRememberedInviteToken()).toBeNull();
   });
 
-  it("leaves the invite to s02 for an account with no chapter, or an unread list", async () => {
+  it("leaves the invite to s02 for an account with no chapter, or an unread list", () => {
     state.chapters = { isSuccess: true, data: [] };
     renderHook(() => useMemberInviteHandoff());
     state.chapters = {
@@ -80,7 +91,7 @@ describe("useMemberInviteHandoff (#4002)", () => {
     renderHook(() => useMemberInviteHandoff());
     state.destination = "join";
     renderHook(() => useMemberInviteHandoff());
-    await Promise.resolve();
-    expect(state.opened).toEqual([]);
+    expect(state.pushed).toEqual([]);
+    expect(peekRememberedInviteToken()).toBeNull();
   });
 });

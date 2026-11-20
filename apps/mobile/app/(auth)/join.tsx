@@ -47,7 +47,8 @@ import { useAuthSession } from "@/lib/auth-session";
 import {
   consumeRememberedInviteToken,
   extractInviteToken,
-  extractInviteTokenFromQuery,
+  inviteFromParams,
+  type InviteParams,
   peekInviteTokenFromLink,
   peekRememberedInviteThen,
   peekRememberedInviteToken,
@@ -92,35 +93,6 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 type JoinView = "choose" | "confirm";
 
 export const JOIN_CHOICE_TITLE = INVITE_PASTE_COPY.title;
-
-type InviteParams = {
-  token?: string | string[];
-  invite?: string | string[];
-  code?: string | string[];
-};
-
-/** The invite a route param carries (`?token=`, `?invite=`, `?code=`), or null. */
-function inviteFromParams(params: InviteParams): string | null {
-  const paramValue = (value: string | string[] | undefined): string | null => {
-    if (typeof value === "string") return value;
-    if (Array.isArray(value) && typeof value[0] === "string") {
-      return value[0];
-    }
-    return null;
-  };
-  return extractInviteToken(
-    extractInviteTokenFromQuery((key) => {
-      switch (key) {
-        case "token":
-          return paramValue(params.token);
-        case "invite":
-          return paramValue(params.invite);
-        case "code":
-          return paramValue(params.code);
-      }
-    }),
-  );
-}
 
 export default function JoinChapter() {
   const { tokens } = useFrappTheme();

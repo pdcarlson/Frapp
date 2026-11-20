@@ -1,4 +1,13 @@
-import { Redirect, Stack, usePathname } from "expo-router";
+import {
+  Redirect,
+  Stack,
+  useGlobalSearchParams,
+  usePathname,
+} from "expo-router";
+import {
+  inviteFromParams,
+  type InviteParams,
+} from "@/lib/onboarding/invite-token";
 import { useAuthGateDestination } from "@/lib/onboarding/use-auth-gate";
 
 /**
@@ -36,12 +45,18 @@ export const unstable_settings = {
  * `DELIBERATE_AUTH_ROUTES`. Both spellings are kept and must stay in lockstep
  * so `/create-chapter` cannot drop off one of them.
  */
-const DELIBERATE_AUTH_ROUTES = ["/chapter-picker", "/create-chapter"];
+const DELIBERATE_AUTH_ROUTES = [
+  "/chapter-picker",
+  "/create-chapter",
+  // An invite to another chapter, for a member who has one (#4341).
+  "/join-another",
+];
 const PRE_CHAPTER_ROUTES = DELIBERATE_AUTH_ROUTES;
 
 export default function AuthLayout() {
   const pathname = usePathname();
   const destination = useAuthGateDestination();
+  const params = useGlobalSearchParams<InviteParams>();
 
   if (destination === "hold") {
     return null;
@@ -72,6 +87,18 @@ export default function AuthLayout() {
       return <Stack screenOptions={{ headerShown: false }} />;
     }
     return <Redirect href="/welcome" />;
+  }
+
+  // `tabs` and an invite link, which opens on `/join`: a member's goes to the
+  // second-chapter card instead of s02 (#4341). The link is marked handled by
+  // `useMemberInviteHandoff`, which takes it from the same URL.
+  const linkInvite = pathname === "/join" ? inviteFromParams(params) : null;
+  if (linkInvite) {
+    return (
+      <Redirect
+        href={{ pathname: "/join-another", params: { token: linkInvite } }}
+      />
+    );
   }
 
   // `tabs` — bounce out of this group unless the member opened a deliberate
