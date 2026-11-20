@@ -60,6 +60,7 @@ test("web: each UI rule fires", async () => {
     ],
     ['export const c = cn("p-1", "data-[x]:origin-[--o]");', "bare --variable"],
     ["export const c = (x: string) => `${x} bg-[--accent]`;", "bare --variable"],
+    ['export const c = "bg-[color:--accent] w-[length:--w]";', "bare --variable"],
   ];
   for (const [code, words] of cases) {
     const hits = await uiHits("web", WEB_FILE, code);
@@ -74,7 +75,7 @@ test("web: what stays legal", async () => {
     // The local name callers give useConfirmDialog's function.
     "export const f = async (confirm: () => Promise<boolean>) => confirm();",
     // Tailwind 4's spellings of a variable value.
-    'export const A = () => <div className="max-h-(--h) origin-[var(--o)] data-[state=open]:p-1" />;',
+    'export const A = () => <div className="max-h-(--h) origin-[var(--o)] bg-[color:var(--a)] data-[state=open]:p-1" />;',
   ];
   for (const code of cases) {
     const hits = await uiHits("web", WEB_FILE, code);
@@ -82,7 +83,7 @@ test("web: what stays legal", async () => {
   }
 });
 
-test("web: a spec may hold members' emoji, and nothing else", async () => {
+test("web: a spec may hold members' emoji and quoted bare-variable classes, and nothing else", async () => {
   const spec = "components/zz-ui-rules-probe.spec.tsx";
   assert.deepEqual(
     await uiHits("web", spec, 'export const r = "\u{1F44D}";'),
