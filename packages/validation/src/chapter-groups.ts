@@ -65,3 +65,60 @@ export function majorSuggestions(
     })
     .slice(0, limit);
 }
+
+/**
+ * The standings a class-year group also goes by (#5786), most senior first.
+ * `@Seniors` reaches the same members as the class year it stands for.
+ */
+export const CLASS_STANDINGS = [
+  "Seniors",
+  "Juniors",
+  "Sophomores",
+  "Freshmen",
+] as const;
+
+export type ClassStanding = (typeof CLASS_STANDINGS)[number];
+
+/**
+ * The month (0-based, UTC) the academic year turns over and every class
+ * moves up a standing (#5786): June 1, after spring graduations. A fixed
+ * date rather than the chapter's semester rollover, which an officer runs by
+ * hand twice a year and can't say which of the two ends the year.
+ */
+export const ACADEMIC_YEAR_ROLLOVER_MONTH = 5;
+
+/**
+ * The graduation year of this academic year's seniors: the calendar year
+ * the academic year ends in. 2027 from June 1, 2026 through May 31, 2027.
+ */
+export function seniorClassYear(now: Date = new Date()): number {
+  const year = now.getUTCFullYear();
+  return now.getUTCMonth() >= ACADEMIC_YEAR_ROLLOVER_MONTH ? year + 1 : year;
+}
+
+/**
+ * The standing a graduation year has now (#5786), or `null` for a year more
+ * than three out (not in college yet) or already past (alumni, or a
+ * fifth-year who hasn't moved their graduation year on). Those keep only
+ * their "Class of" group.
+ */
+export function classStanding(
+  classYear: number | null | undefined,
+  now: Date = new Date(),
+): ClassStanding | null {
+  if (classYear == null || !Number.isInteger(classYear)) return null;
+  return CLASS_STANDINGS[classYear - seniorClassYear(now)] ?? null;
+}
+
+/**
+ * A group's name as the Groups settings lists it: a class year with a
+ * standing reads "Sophomores · Class of 2028", anything else its own name.
+ */
+export function groupDisplayName(
+  group: { kind: string; name: string; class_year?: number | null },
+  now: Date = new Date(),
+): string {
+  if (group.kind !== "class_year") return group.name;
+  const standing = classStanding(group.class_year, now);
+  return standing ? `${standing} · ${group.name}` : group.name;
+}

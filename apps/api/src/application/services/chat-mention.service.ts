@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+  CLASS_STANDINGS,
+  classStanding,
   EVERYONE_MENTION_NAME,
   extractMentionTokens,
   foldMentionName,
@@ -586,39 +588,66 @@ function namesMajorsGiveWayTo(
   return new Set(names.map(foldMentionName).filter((name) => name.length > 0));
 }
 
+/** The class standings (#5786), folded as a mention folds a name. */
+const STANDING_NAMES: ReadonlySet<string> = new Set(
+  CLASS_STANDINGS.map(foldMentionName),
+);
+
 /**
  * Each group as a mention (#4076): it reaches the group's members now, as
  * `chapter_group_memberships` reads them, with the group's own switch.
  * Manual groups first, then pledge classes, class years and majors. A major
  * named like a role, tier, other group or member is left out
  * ({@link namesMajorsGiveWayTo}).
+ *
+ * A class year with a standing also goes by it (#5786): `@Sophomores`,
+ * listed just before `@Class of 2028`, reaching the same members with the
+ * same switch and the same id. The standing gives way as a major does: while
+ * the chapter has a role, tier, other group or member by that name, the name
+ * is theirs alone, so a chapter's own "Sophomores" role keeps meaning what it
+ * did until an officer deletes it.
  */
 function mentionGroupViews(
   groups: readonly ChapterGroup[],
   memberships: readonly ChapterGroupMembership[],
   taken: ReadonlySet<string> = new Set(),
+  now: Date = new Date(),
 ): MentionRoleView[] {
   return (
     withMembers(
       groups.filter(
         (group) =>
           nameIsFree(group.name) &&
-          !(group.kind === 'major' && taken.has(foldMentionName(group.name))),
+          !(
+            group.kind === 'major' &&
+            (taken.has(foldMentionName(group.name)) ||
+              // A major named "Seniors" must not join `@Seniors` (#5786).
+              STANDING_NAMES.has(foldMentionName(group.name)))
+          ),
       ),
       memberships,
     )
       // An automatic group nobody is in (a class not yet given members) is
       // left out, as the Groups page leaves it out.
       .filter((group) => group.kind === 'manual' || group.member_ids.length > 0)
-      .map((group) => ({
-        role_id: group.id,
-        kind: 'group' as const,
-        name: group.name,
-        color: group.color,
-        member_ids: group.member_ids,
-        open_to_all: group.mentionable !== false,
-        mentionable: false,
-      }))
+      .flatMap((group) => {
+        const view = {
+          role_id: group.id,
+          kind: 'group' as const,
+          name: group.name,
+          color: group.color,
+          member_ids: group.member_ids,
+          open_to_all: group.mentionable !== false,
+          mentionable: false,
+        };
+        const standing =
+          group.kind === 'class_year'
+            ? classStanding(group.class_year, now)
+            : null;
+        return standing && !taken.has(foldMentionName(standing))
+          ? [{ ...view, name: standing }, view]
+          : [view];
+      })
   );
 }
 

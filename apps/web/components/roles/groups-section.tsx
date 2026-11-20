@@ -18,6 +18,7 @@ import {
   GROUP_MEMBERS_MAX,
   GROUP_NAME_MAX_LENGTH,
   GROUPS_MAX,
+  groupDisplayName,
   roleColorOrNull,
   type RoleColorHex,
 } from "@repo/validation";
@@ -150,8 +151,8 @@ export function GroupsSection({ canManage }: { canManage: boolean }) {
           <div className="space-y-1">
             {automatic.length === 0 ? (
               <InlineNote>
-                None yet. One appears for each pledge class, graduation year
-                and major someone has.
+                None yet. One appears for each pledge class, graduation year and
+                major someone has.
               </InlineNote>
             ) : (
               automatic.map((group) => (
@@ -263,7 +264,9 @@ function GroupRow({
     <div className="flex flex-wrap items-center gap-x-2 rounded-md px-1 py-1.5">
       <ColorDot color={group.color} />
       <div className="min-w-[8rem] flex-1">
-        <p className="break-words text-sm font-semibold">{group.name}</p>
+        <p className="break-words text-sm font-semibold">
+          {groupDisplayName(group)}
+        </p>
         <p className="text-caption text-muted-foreground">
           {details.join(" · ")}
         </p>
