@@ -810,10 +810,12 @@ One run at a time: while a run is in flight, GitHub keeps only the newest waitin
 an older waiting one, so dispatch again if a run you asked a named platform from shows as cancelled.
 
 It runs by itself after every successful staging deploy, for the commit that deploy shipped: it
-publishes the update, and builds iOS when the runtime has no uploaded binary. An automatic run
-never builds Android until Play has taken the app's first bundle by hand (#4917); until then,
-build Android by running the workflow from `main` in GitHub Actions. A run by hand takes these
-choices:
+publishes the update, and builds each platform whose runtime has no uploaded binary: iOS to
+TestFlight, Android to the Play internal track. Play took the app's first bundle by hand in Play
+Console on 2026-11-20 (a new app's first bundle can't go through the API); every later one is
+uploaded by the workflow. Android push works only when EAS's `preview` environment has a
+`GOOGLE_SERVICES_JSON` File variable that lists `live.frapp.mobile.staging`; without one the build
+ships with push off and its summary says so. A run by hand takes these choices:
 
 - **`build: auto`** (the default) publishes the commit as an update to the `staging` channel, and
   builds a binary for a platform only when no uploaded binary carries this commit's runtime, which
@@ -822,9 +824,6 @@ choices:
 - **`ios`**, **`android`**, **`all`** build that platform whatever the record says. Use one after
   an upload failed.
 - **`none`** publishes the update only.
-- **`save_android_bundle`** is for the first Android run only. Google Play takes a new app's first
-  bundle through Play Console, not the API, so that run keeps the `.aab` as a one-day artifact
-  (`frapp-staging-first-upload`) to upload by hand and skips the store upload.
 
 Binaries are compiled on GitHub's runners with `eas build --local` (Paul, 2026-11-13, after the
 spike in #4877), so they cost no Expo build. They are signed with the credentials EAS holds for
