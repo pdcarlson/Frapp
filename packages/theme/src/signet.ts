@@ -190,8 +190,8 @@ const SIGNET_DARK: SignetTokens = {
       popover: "#2A2830",
     },
     border: {
-      hairline: "rgba(255,255,255,0.12)",
-      input: "rgba(255,255,255,0.14)",
+      hairline: "rgba(255,255,255,0.18)",
+      input: "rgba(255,255,255,0.20)",
       control: "rgba(255,255,255,0.40)",
     },
     text: {

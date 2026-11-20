@@ -855,7 +855,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   *(Changed in [#5560](https://github.com/pdcarlson/Frapp/issues/5560) by pdcarlson, 2026-11-19: it is the agenda's loudest row and the word `Required` in the events hue, above; what it means is unchanged.)*
   The toolbar is `PageActions` like every route's: the List and Calendar toggle leads as the page's primary control, a segmented control ([`components.md`](../design-system/components.md) § Segmented control;
   it was underlined tabs until #3822), and the page opens on whichever view this person last used on this browser;
-  then search and one **Filter** button, whose popover holds Time, Attendance and Cadence as segmented controls and Clear, and which shows a count while any is off its default (Time only on the list, the one view it applies to).
+  then search and one **Filter** button (`FilterMenu`, [`components.md`](../design-system/components.md) § 13 Filter bar), whose menu has a row each for Time, Attendance and Cadence and Clear all, and which shows a count while any is off its default; the filters that are on show as removable chips under the header (2026-11-20, #5739) (Time only on the list, the one view it applies to).
   New event holds the trailing edge.
   On a phone search and Filter take `order-last`, so the view toggle and New event keep the first line.
   The calendar is a radius-14 hairline frame on `--background`, not a card.

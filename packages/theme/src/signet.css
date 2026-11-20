@@ -57,8 +57,12 @@
     /* ── Borders & hairlines (foundations §3) ─────────────────────
      * Low-opacity white only, so a hairline tracks whatever surface
      * it sits on. Fixed-hex border colors are banned. */
-    --border: rgba(255,255,255,0.12);
-    --input: rgba(255,255,255,0.14);
+    /* 18% and 20% since 2026-11-20 (Paul: "more hairlines. I cant tell
+     * surfaces apart"): at 12% the line between the sidebar, the page and
+     * chat, and between a page's sections, read at 1.33:1 over the page and
+     * the panes blended. 18% paints about 1.65:1. */
+    --border: rgba(255,255,255,0.18);
+    --input: rgba(255,255,255,0.20);
     /* The edge that identifies a control (a field, a select, a Secondary
      * button, a switch's track, a segmented control): the lowest alpha at
      * which a field's edge clears WCAG 1.4.11's 3:1 on every seat (#4389),

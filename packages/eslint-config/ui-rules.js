@@ -119,6 +119,23 @@ const webUiRules = {
   ],
 };
 
+// One component per job (owner, 2026-11-20: "12 different ways of doing
+// dropdowns and menus and settings ... every screen you go to is a different
+// fucking system"). Rulebook § 9 and `spec/ui/design-system/components.md`.
+const MORE_MENU_MESSAGE =
+  "One action menu (owner ruling 2026-11-20). A row's ⋯ is RowMenu, a header's ⋯ is ActionMenuButton, both from @/components/shared/row-menu, so right-click, hover ⋯ and header ⋯ show the same list.";
+webUiRules.moreMenu = [
+  {
+    selector:
+      "JSXOpeningElement[name.name=/^(MoreHorizontal|MoreVertical|Ellipsis|EllipsisVertical)$/]",
+    message: MORE_MENU_MESSAGE,
+  },
+  {
+    selector: "ImportDeclaration[source.value='@/components/ui/context-menu']",
+    message: MORE_MENU_MESSAGE,
+  },
+];
+
 /**
  * Every web UI rule except the named ones, for a grandfathered file.
  *
@@ -136,14 +153,41 @@ export function webUiSyntaxExcept(except) {
 /** @type {Array<{selector: string, message: string}>} */
 export const webUiSyntax = webUiSyntaxExcept([]);
 
+const PHONE_MENU_MESSAGE =
+  "One action menu on the phone (owner ruling 2026-11-20): the glass menu, through useItemMenu / ItemActionsMenu from components/item-actions-menu (long-press and every ⋯), and OptionSheet to pick a value. Never the system action sheet or an Alert with a list of choices.";
+
+/** The phone's rulings, by name, as `webUiRules`. */
+const mobileUiRules = {
+  emoji,
+  systemMenu: [
+    {
+      selector: "ImportSpecifier[imported.name='ActionSheetIOS']",
+      message: PHONE_MENU_MESSAGE,
+    },
+    {
+      selector: "ImportDeclaration[source.value=/(^|\\/)action-menu$/]",
+      message: PHONE_MENU_MESSAGE,
+    },
+    // An Alert is a notice or a yes/no confirm: two buttons at most. Three or
+    // more is a menu drawn by the system.
+    {
+      selector:
+        "CallExpression[callee.object.name='Alert'][callee.property.name='alert'] > ArrayExpression[elements.length>2]",
+      message: PHONE_MENU_MESSAGE,
+    },
+  ],
+};
+
 /**
- * The phone's rules, by the same names.
+ * Every phone UI rule except the named ones.
  *
- * @param {Array<"emoji">} except
+ * @param {Array<keyof typeof mobileUiRules>} except
  * @returns {Array<{selector: string, message: string}>}
  */
 export function mobileUiSyntaxExcept(except) {
-  return except.includes("emoji") ? [] : [...emoji];
+  return Object.entries(mobileUiRules)
+    .filter(([name]) => !except.includes(name))
+    .flatMap(([, entries]) => entries);
 }
 
 /**

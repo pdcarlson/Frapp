@@ -100,7 +100,8 @@ describe("the fix that would itself have been a defect", () => {
     // Since #2541 the engine lifts a dark fill until it clears 3:1 on every
     // ladder surface (and since #2586 until its hover does too), so no seed's
     // fill sits at the wash's luminance any more: the worst case is
-    // 2.73:1 on the 2026-11-19 ladder with engine v4 (`#4B1A7E`'s `#9B70D9` at 2.65:1 on the
+    // 2.22:1 since the quiet edge went to 20% on 2026-11-20 (#5739), 2.73:1 at
+    // 14% on the 2026-11-19 ladder with engine v4 (`#4B1A7E`'s `#9B70D9` at 2.65:1 on the
     // 2026-11-12 ladder, #3826;
     // `#BF0A30`'s `#D83144` at 2.52:1 on the 2026-11-05 ladder, `#800000`'s
     // `#F42F22` at 2.68:1 before it). The collision is gone, but `bg-input` is
@@ -110,7 +111,7 @@ describe("the fix that would itself have been a defect", () => {
     const worst = Math.min(
       ...SEEDS.map((seed) => ratio(fillFor(seed), inputTrack)),
     );
-    expect(worst).toBeCloseTo(2.727, 2);
+    expect(worst).toBeCloseTo(2.217, 2);
     expect(worst).toBeLessThan(
       Math.min(...SEEDS.map((seed) => ratio(fillFor(seed), TRACK))),
     );

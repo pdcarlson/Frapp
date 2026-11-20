@@ -61,6 +61,11 @@ test("web: each UI rule fires", async () => {
     ['export const c = cn("p-1", "data-[x]:origin-[--o]");', "bare --variable"],
     ["export const c = (x: string) => `${x} bg-[--accent]`;", "bare --variable"],
     ['export const c = "bg-[color:--accent] w-[length:--w]";', "bare --variable"],
+    ["export const A = () => <MoreHorizontal />;", "One action menu"],
+    [
+      'import { ContextMenu } from "@/components/ui/context-menu";\nexport const A = ContextMenu;',
+      "One action menu",
+    ],
   ];
   for (const [code, words] of cases) {
     const hits = await uiHits("web", WEB_FILE, code);
@@ -133,4 +138,68 @@ test("mobile: the native-module guard still fires beside the UI rules", async ()
       file,
     );
   }
+});
+
+test("web: the action menu's home draws its own ⋯", async () => {
+  assert.deepEqual(
+    await uiHits(
+      "web",
+      "components/shared/row-menu.tsx",
+      "export const A = () => <MoreHorizontal />;",
+    ),
+    [],
+  );
+});
+
+test("mobile: one action menu, never the system's", async () => {
+  const cases = [
+    'import { ActionSheetIOS } from "react-native";\nexport const a = ActionSheetIOS;',
+    'import { showActionMenu } from "@/lib/action-menu";\nexport const a = showActionMenu;',
+    'import { Alert } from "react-native";\nexport const f = () => Alert.alert("Pick", "", [{ text: "A" }, { text: "B" }, { text: "Cancel" }]);',
+  ];
+  for (const code of cases) {
+    assert.ok(
+      has(await uiHits("mobile", MOBILE_FILE, code), "One action menu"),
+      code,
+    );
+  }
+  // A notice or a yes/no confirm stays legal.
+  assert.deepEqual(
+    await uiHits(
+      "mobile",
+      MOBILE_FILE,
+      'import { Alert } from "react-native";\nexport const f = () => Alert.alert("Delete?", "", [{ text: "Cancel" }, { text: "Delete" }]);',
+    ),
+    [],
+  );
+  // A grandfathered file (#5739) keeps the native-module guard.
+  assert.ok(
+    has(
+      await uiHits(
+        "mobile",
+        "lib/action-menu.ts",
+        'export const load = () => import("expo-audio");',
+      ),
+      "non-Expo-Go native module",
+    ),
+  ); // and is excused from the system-menu rule only: emoji still fires there.
+  const grandfathered = "lib/action-menu.ts";
+  assert.deepEqual(
+    await uiHits(
+      "mobile",
+      grandfathered,
+      'import { ActionSheetIOS } from "react-native";\nexport const a = ActionSheetIOS;',
+    ),
+    [],
+  );
+  assert.ok(
+    has(
+      await uiHits(
+        "mobile",
+        grandfathered,
+        'export const label = "Live \u{26A1}";',
+      ),
+      "No emoji",
+    ),
+  );
 });
