@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   ROLE_COLOR_HEXES,
   ROLE_COLOR_PALETTE,
-  resolveRoleChips,
   roleColor,
   roleColorOrNull,
   topRoleColor,
@@ -73,57 +72,5 @@ describe("topRoleColor", () => {
     ];
     expect(topRoleColor(tied, ["a", "b"])).toBe("#F47FA4");
     expect(topRoleColor([...tied].reverse(), ["a", "b"])).toBe("#F47FA4");
-  });
-});
-
-describe("resolveRoleChips", () => {
-  const roles = [
-    { id: "r-1", name: "President", color: "#F2994A", display_order: 1 },
-    { id: "r-2", name: "Treasurer", color: null, display_order: 3 },
-    { id: "r-3", name: "Brothers", color: "#123456", display_order: 9 },
-  ];
-
-  it("orders chips by the chapter's role rank, not by the member's list", () => {
-    expect(resolveRoleChips(roles, ["r-2", "r-1"]).map((c) => c.name)).toEqual([
-      "President",
-      "Treasurer",
-    ]);
-  });
-
-  it("keeps a palette color and drops one the palette doesn't hold", () => {
-    expect(resolveRoleChips(roles, ["r-1", "r-3"])).toEqual([
-      { id: "r-1", name: "President", color: "#F2994A" },
-      { id: "r-3", name: "Brothers", color: null },
-    ]);
-  });
-
-  it("drops an id with no match rather than rendering a raw id", () => {
-    expect(
-      resolveRoleChips(roles, ["r-1", "r-deleted"]).map((c) => c.id),
-    ).toEqual(["r-1"]);
-  });
-
-  it("returns nothing while the roles list hasn't loaded", () => {
-    expect(resolveRoleChips(undefined, ["r-1"])).toEqual([]);
-  });
-
-  it("draws a duplicated role id once", () => {
-    expect(resolveRoleChips(roles, ["r-1", "r-1"])).toHaveLength(1);
-  });
-
-  it("draws no chip for the Everyone role (#4191)", () => {
-    const withEveryone = [
-      ...roles,
-      {
-        id: "r-e",
-        name: "Everyone",
-        color: null,
-        display_order: 5,
-        system_key: "MEMBER",
-      },
-    ];
-    expect(
-      resolveRoleChips(withEveryone, ["r-e", "r-3"]).map((c) => c.id),
-    ).toEqual(["r-3"]);
   });
 });

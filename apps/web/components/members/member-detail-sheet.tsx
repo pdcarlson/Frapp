@@ -16,19 +16,13 @@ import {
   useMemberDisplayNames,
   useMyPermissions,
   useRemoveMember,
-  useRoles,
-  useUpdateMemberRoles,
 } from "@repo/hooks";
 import {
   BIRTHDAY_COPY,
   can,
   CORRECTION_MENU_LABEL,
   formatBirthday,
-  memberAccessRoleIds,
   phoneHref,
-  removesMemberAccess,
-  resolveRoleChips,
-  rolesAfterSave,
 } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -48,13 +42,11 @@ import {
   Panel,
   PanelBody,
   PanelContent,
-  PanelFooter,
   PanelHeader,
   PanelTitle,
   type PanelDocking,
 } from "@/components/shared/panel";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
-import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage, initials } from "@/lib/utils";
 import { memberLabel } from "@repo/hooks/display-names";
 import { useMemberPhoneReach } from "@repo/hooks";
@@ -69,17 +61,15 @@ import {
   REMOVE_FROM_CHAPTER_LABEL,
   removeConfirmTitle,
 } from "@repo/hooks/member-removal-copy";
-import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import {
   DETAIL_LIST,
   DetailRow,
   metaLine,
-  RoleChip,
   stringField,
   stringIds,
   type MemberRecord,
 } from "@/components/members/member-detail-rows";
-import { MemberGroupsSection } from "@/components/members/member-groups-section";
+import { MemberAssignments } from "@/components/members/member-assignments";
 import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
 import { MemberCorrectionDialog } from "@/components/members/member-correction-dialog";
 
@@ -174,62 +164,6 @@ type MemberDetailSheetProps = {
 };
 
 /**
- * One role the officer can tick. The row is the role's name alone: its id and
- * key are the system's words, never the chapter's (principles.md P2.2).
- */
-/** Mobile's words for a locked row (`apps/mobile/lib/directory/role-editor.ts`). */
-const ROLES_LOCKED_CAPTION = "Changes with Transfer presidency";
-
-function RoleChecklistItem({
-  title,
-  caption,
-  checked,
-  disabled,
-  onChange,
-}: {
-  title: string;
-  caption?: string;
-  checked: boolean;
-  disabled: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label
-      className={cn(
-        "flex items-center justify-between gap-3 rounded-md border border-border p-3 transition-colors",
-        disabled ? "cursor-default" : "cursor-pointer hover:bg-card-hover",
-      )}
-    >
-      <div className="min-w-0">
-        <p className="text-sm font-semibold">{title}</p>
-        {caption ? (
-          <p className="text-caption text-muted-foreground">{caption}</p>
-        ) : null}
-      </div>
-      <input
-        type="checkbox"
-        className={dashboardTableCheckboxClassName}
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-    </label>
-  );
-}
-
-function toggleSelection(
-  setter: React.Dispatch<React.SetStateAction<string[]>>,
-  roleId: string,
-  isChecked: boolean,
-) {
-  setter((previous) =>
-    isChecked
-      ? [...new Set([...previous, roleId])]
-      : previous.filter((id) => id !== roleId),
-  );
-}
-
-/**
  * A member's profile: one sheet for every door on web (#3726), keyed by
  * `users.id`, so a member sees the same card wherever they click a name. The
  * directory's Actives and Alumni rows open it directly. In chat a sender's
@@ -258,11 +192,10 @@ function toggleSelection(
  * surface's title (`PanelTitle`: the sheet's `SheetTitle`, or the docked
  * region's heading), so it is still announced by it.
  *
- * **Roles** are read-only chips for everyone. A viewer holding `roles:manage`
- * (the gate on `PATCH /v1/members/{id}/roles`) also gets Edit, which swaps the
- * chips for the checklists and puts Save and Cancel in the footer; this is how
- * an officer changes a member's roles from chat without leaving it (tester
- * report on #3726).
+ * **Roles and groups** (Paul, 2026-11-19) sit right under Message as two
+ * rows of chips, `MemberAssignments`: a viewer who may change them takes one
+ * away with its x and gives one from a single "+ Add" list of roles and
+ * groups, each saving at once. There is no Edit mode and no Save footer.
  *
  * **Remove from chapter** sits behind the `⋯` beside the close, never on the
  * face of the profile (Paul, 2026-11-11: nobody opens a profile to remove
@@ -298,28 +231,14 @@ export function MemberDetailSheet({
   const { reach: phoneReachMap } = useMemberPhoneReach();
   const phoneReach = userId ? phoneReachMap?.byUserId.get(userId) : undefined;
   const phoneLastOpened = phoneReach ? phoneReachLastOpened(phoneReach) : null;
-  const rolesQuery = useRoles();
   // The same role-color resolution chat's name uses (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
   const myPermissionsQuery = useMyPermissions();
   const myPermissions = myPermissionsQuery.data?.permissions;
-  const updateRolesMutation = useUpdateMemberRoles();
   const removeMemberMutation = useRemoveMember();
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
-  const rolesHeadingId = useId();
-  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
-  // Whose roles are being edited. Keyed by member rather than a boolean, so
-  // the editor never carries over to the next member the sheet opens on.
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  // Closing drops the editor and its unsaved picks, however the sheet closed
-  // (Escape, the overlay, the X, or the parent). Reopening the same member
-  // shows the chips again, never a checklist seeded from roles that may have
-  // changed since. Adjusted during render, not in an effect, so no frame draws
-  // the stale editor.
-  if (!open && editingUserId !== null) setEditingUserId(null);
-  const editingRoles = open && userId !== null && editingUserId === userId;
-  // Whose More details are open, keyed by member like the role editor, so the
+  // Whose More details are open, keyed by member, so the
   // custom fields start folded on every member and every opening.
   const [detailsUserId, setDetailsUserId] = useState<string | null>(null);
   if (!open && detailsUserId !== null) setDetailsUserId(null);
@@ -343,32 +262,6 @@ export function MemberDetailSheet({
     () => stringIds(member?.role_ids),
     [member?.role_ids],
   );
-  const roleChips = useMemo(
-    () => resolveRoleChips(rolesQuery.data, memberRoleIds),
-    [rolesQuery.data, memberRoleIds],
-  );
-  // Distinct from "no role": while the read is in flight an empty list would
-  // flash a wrong "No roles".
-  const rolesLoading = rolesQuery.isPending;
-  // A failed roles read resolves no chip, which must not read as a member
-  // with no roles: say it failed and offer the read again.
-  const rolesFailed =
-    rolesQuery.isError &&
-    rolesQuery.data === undefined &&
-    memberRoleIds.length > 0;
-
-  const roles = useMemo(
-    () => parseChapterRoles(rolesQuery.data),
-    [rolesQuery.data],
-  );
-  // The Everyone role (#4191) is no row. A locked role (one holding `*`,
-  // President above all) is a row nobody ticks here: the API refuses to move
-  // it, so it changes hands only through Transfer presidency, as on mobile.
-  const roleOptions = useMemo(
-    () => roles.filter((role) => !role.everyone),
-    [roles],
-  );
-
   // `memberLabel`, the helper the directory row uses: this sheet opens from
   // that row, so the two must not name an unnamed member two different ways.
   const seedIdentity = !member && userId ? identity : null;
@@ -407,17 +300,6 @@ export function MemberDetailSheet({
     isPending: dmPending,
   } = useMessageMember(dmTargetUserId, () => onOpenChange(false));
 
-  // The writes' own gates, mirrored so a viewer who holds only
-  // `members:view` isn't offered controls that can only 403. Disabled while
-  // the permission read is pending, the same as a failed read. Editing waits
-  // for the roles list: until it loads, the member-access check can't tell
-  // which roles grant access, so a lockout would save without the question
-  // (#3670).
-  const canEditRoles =
-    !!memberId &&
-    !memberQuery.isError &&
-    rolesQuery.isSuccess &&
-    can("roles:manage", myPermissions);
   // The API's answer, read from the profile itself (never the directory row
   // that seeded the sheet, which carries none): it applies the rank rules the
   // removal does, which the client can't see (#4071).
@@ -435,56 +317,6 @@ export function MemberDetailSheet({
     dmTargetUserId !== currentUserId;
   const graduationYear =
     typeof member?.graduation_year === "number" ? member.graduation_year : null;
-
-  function startEditingRoles() {
-    setSelectedRoleIds(memberRoleIds);
-    setEditingUserId(userId);
-  }
-
-  async function handleSaveRoles() {
-    if (!memberId) return;
-    // Taking away the last role with member access locks the member out of
-    // chat, the roster and events, the way the 2026-11-07 testers were
-    // (#3670). The API allows it, so ask first, as mobile's editor does.
-    // Asked of the roles the save ends with, Everyone settled as the API
-    // settles it (#4191): with no other role giving access they keep it.
-    if (
-      removesMemberAccess(
-        memberRoleIds,
-        rolesAfterSave(selectedRoleIds, memberRoleIds, roles),
-        memberAccessRoleIds(roles),
-      )
-    ) {
-      const confirmed = await confirm({
-        title: `Take away ${displayName}'s access?`,
-        description: `With none of these roles, ${displayName} can't open chat, the member list or events.`,
-        confirmLabel: "Take away access",
-        tone: "destructive",
-      });
-      if (!confirmed) return;
-    }
-    try {
-      await updateRolesMutation.mutateAsync({
-        id: memberId,
-        role_ids: selectedRoleIds,
-      });
-      toast({
-        title: "Roles updated",
-        description: `${displayName}'s roles were saved.`,
-      });
-      setEditingUserId(null);
-      await memberQuery.refetch();
-    } catch (error) {
-      toast({
-        title: "Could not update roles",
-        description: getErrorMessage(
-          error,
-          "Something went wrong. Please retry.",
-        ),
-        variant: "destructive",
-      });
-    }
-  }
 
   async function handleRemoveMember() {
     if (!memberId) return;
@@ -651,6 +483,18 @@ export function MemberDetailSheet({
                 </Button>
               ) : null}
 
+              {userId ? (
+                <MemberAssignments
+                  memberId={memberId}
+                  userId={userId}
+                  roleIds={memberRoleIds}
+                  displayName={displayName}
+                  // Waits for the profile read: a write from the directory
+                  // row that seeded the sheet could drop a role it lacks.
+                  editable={fetched !== null && !memberQuery.isError}
+                />
+              ) : null}
+
               <dl className={cn("mt-6", DETAIL_LIST)}>
                 {phone ? (
                   <DetailRow label="Phone">
@@ -725,82 +569,6 @@ export function MemberDetailSheet({
                 ) : null}
               </dl>
 
-              <section
-                className="mt-6 space-y-2"
-                aria-labelledby={rolesHeadingId}
-              >
-                <div className="flex items-center justify-between">
-                  <h3
-                    id={rolesHeadingId}
-                    className="text-label font-semibold text-muted-foreground"
-                  >
-                    Roles
-                  </h3>
-                  {canEditRoles && !editingRoles ? (
-                    <button
-                      type="button"
-                      onClick={startEditingRoles}
-                      aria-label={`Edit ${displayName}'s roles`}
-                      className={cn(
-                        "rounded-sm text-label font-semibold text-accent-text hover:underline",
-                        FOCUS_RING_OFFSET,
-                      )}
-                    >
-                      Edit
-                    </button>
-                  ) : null}
-                </div>
-                {editingRoles ? (
-                  <div className="space-y-2">
-                    {roleOptions.map((role) => (
-                      <RoleChecklistItem
-                        key={role.id}
-                        title={role.name}
-                        caption={role.locked ? ROLES_LOCKED_CAPTION : undefined}
-                        checked={selectedRoleIds.includes(role.id)}
-                        disabled={updateRolesMutation.isPending || role.locked}
-                        onChange={(isChecked) =>
-                          toggleSelection(
-                            setSelectedRoleIds,
-                            role.id,
-                            isChecked,
-                          )
-                        }
-                      />
-                    ))}
-                  </div>
-                ) : rolesLoading ? (
-                  <p className="text-caption text-muted-foreground">
-                    Loading roles
-                  </p>
-                ) : rolesFailed ? (
-                  <div className="flex items-center gap-2 text-caption text-muted-foreground">
-                    <span>Couldn&apos;t load roles.</span>
-                    <button
-                      type="button"
-                      onClick={() => void rolesQuery.refetch()}
-                      className={cn(
-                        "rounded-sm font-semibold text-foreground underline-offset-2 hover:underline",
-                        FOCUS_RING_OFFSET,
-                      )}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                ) : roleChips.length > 0 ? (
-                  <ul className="flex flex-wrap gap-1.5">
-                    {roleChips.map((chip) => (
-                      <RoleChip key={chip.id} chip={chip} />
-                    ))}
-                  </ul>
-                ) : (
-                  // A plain member holds only Everyone, which draws no chip
-                  // (#4191): "No roles", as Discord shows a member with only
-                  // @everyone, not "yet", which read as an unfinished join.
-                  <p className="text-caption text-muted-foreground">No roles</p>
-                )}
-              </section>
-
               <MemberPledgeClassSection
                 // Keyed by member, so an open editor never carries over to
                 // the next member the sheet shows.
@@ -824,8 +592,6 @@ export function MemberDetailSheet({
                   can("roles:manage", myPermissions)
                 }
               />
-
-              <MemberGroupsSection userId={userId} open={open} />
 
               {customFields.length > 0 ? (
                 <section className="mt-6 space-y-2">
@@ -871,26 +637,6 @@ export function MemberDetailSheet({
           ) : null}
         </PanelBody>
 
-        {editingRoles ? (
-          <PanelFooter>
-            <Button
-              variant="secondary"
-              onClick={() => setEditingUserId(null)}
-              disabled={updateRolesMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveRoles}
-              disabled={updateRolesMutation.isPending}
-            >
-              {updateRolesMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : null}
-              Save roles
-            </Button>
-          </PanelFooter>
-        ) : null}
         {/*
           Inside `SheetContent` so the confirmation renders above the sheet that
           opened it rather than behind its overlay. Focus on close is

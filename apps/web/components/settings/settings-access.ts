@@ -109,7 +109,8 @@ const CHAPTER_CONFIG_VIEW = "chapter-config:view";
  * its own.
  */
 const TAB_EXTRA_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
-  roles: ["roles:manage"],
+  // Roles and groups: `groups:manage` alone opens it for its groups.
+  roles: ["roles:manage", "groups:manage"],
   semester: ["semester:rollover"],
 };
 
@@ -121,9 +122,6 @@ const TAB_EXTRA_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
  */
 const TAB_ONLY_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
   classes: ["roles:manage"],
-  // Groups (#4076) read `GET /v1/groups` and write with `groups:manage`; no
-  // chapter config.
-  groups: ["groups:manage"],
   /*
    * Plan and billing (#3827) reads `GET /v1/billing/status` and the invoice
    * list, both `billing:view`, and no chapter config. It is the gate the

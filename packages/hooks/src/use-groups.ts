@@ -41,15 +41,6 @@ export function useGroups(options?: { enabled?: boolean }) {
   });
 }
 
-/** The groups one member is in, in the list's order. */
-export function groupsOfMember(
-  groups: readonly ChapterGroup[] | undefined,
-  userId: string | null | undefined,
-): ChapterGroup[] {
-  if (!groups || !userId) return [];
-  return groups.filter((group) => group.member_ids.includes(userId));
-}
-
 function useInvalidateAfterGroupWrite() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
@@ -122,6 +113,52 @@ export function useSetGroupMembers() {
       return data;
     },
     onSuccess: invalidate,
+  });
+}
+
+/**
+ * Put one member in a manual group, or take them out (`in: false`), from
+ * their profile. Needs `groups:manage`, and `channels:manage` too when a
+ * channel list names the group. The groups list is written from the answer
+ * at once, so the chip lands without waiting for the re-read.
+ */
+export function useSetGroupMembership() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  const invalidate = useInvalidateAfterGroupWrite();
+  return useMutation({
+    mutationKey: ["groups", "membership"],
+    mutationFn: async ({
+      groupId,
+      userId,
+      in: inGroup,
+    }: {
+      groupId: string;
+      userId: string;
+      in: boolean;
+    }) => {
+      const params = { path: { id: groupId, userId } };
+      const { data, error } = inGroup
+        ? await client.POST("/v1/groups/{id}/members/{userId}", { params })
+        : await client.DELETE("/v1/groups/{id}/members/{userId}", { params });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (group) => {
+      if (group) {
+        queryClient.setQueryData<ChapterGroup[]>(
+          groupsKey(chapterId),
+          (groups) =>
+            groups?.map((row) =>
+              row.id === group.id
+                ? { ...row, member_ids: group.member_ids }
+                : row,
+            ),
+        );
+      }
+      return invalidate();
+    },
   });
 }
 

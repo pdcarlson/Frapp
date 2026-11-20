@@ -29,4 +29,12 @@ describe("chapterSettingsAccess", () => {
     });
     expect(chapterSettingsAccess(["*"]).any).toBe(true);
   });
+
+  it("opens Roles and groups to a groups:manage holder alone", () => {
+    expect(chapterSettingsAccess(["groups:manage"])).toEqual({
+      chapter: false,
+      roles: true,
+      any: true,
+    });
+  });
 });

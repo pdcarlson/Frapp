@@ -28,7 +28,7 @@ vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: false }),
 }));
 
-import { SettingsGroupsTab } from "./settings-groups-tab";
+import { GroupsSection } from "./groups-section";
 
 const group = (
   id: string,
@@ -76,7 +76,7 @@ function loaded(data: unknown) {
   };
 }
 
-describe("SettingsGroupsTab (#4076)", () => {
+describe("GroupsSection (#4076)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGroups.mockReturnValue(loaded(GROUPS));
@@ -84,7 +84,7 @@ describe("SettingsGroupsTab (#4076)", () => {
   });
 
   it("lists manual groups apart from pledge classes and class years, marking the automatic ones", () => {
-    render(<SettingsGroupsTab canManage />);
+    render(<GroupsSection canManage />);
     expect(screen.getByText("Third floor")).toBeTruthy();
     expect(screen.getByText("1 member")).toBeTruthy();
     expect(
@@ -100,7 +100,7 @@ describe("SettingsGroupsTab (#4076)", () => {
   });
 
   it("offers no writes without groups:manage", () => {
-    render(<SettingsGroupsTab canManage={false} />);
+    render(<GroupsSection canManage={false} />);
     expect(screen.queryByRole("button", { name: /Edit/ })).toBeNull();
     expect(screen.queryByLabelText("Name")).toBeNull();
     expect(
@@ -114,7 +114,7 @@ describe("SettingsGroupsTab (#4076)", () => {
     mockGroups.mockReturnValue(
       loaded([...GROUPS, group("g-new", "Live-ins", "manual", [])]),
     );
-    render(<SettingsGroupsTab canManage />);
+    render(<GroupsSection canManage />);
     await user.type(screen.getByLabelText("Name"), "  Live-ins ");
     await user.click(screen.getByRole("button", { name: "Create" }));
     expect(mockCreate).toHaveBeenCalledWith({ name: "Live-ins" });
@@ -125,7 +125,7 @@ describe("SettingsGroupsTab (#4076)", () => {
 
   it("saves a manual group's new members as one whole list", async () => {
     const user = userEvent.setup();
-    render(<SettingsGroupsTab canManage />);
+    render(<GroupsSection canManage />);
     await user.click(screen.getByRole("button", { name: "Edit Third floor" }));
     await user.type(screen.getByLabelText("Add a member"), "ben");
     await user.click(screen.getByRole("button", { name: "Add Ben Park" }));
@@ -142,7 +142,7 @@ describe("SettingsGroupsTab (#4076)", () => {
 
   it("lets an automatic group's ping switch change, and not its name or members", async () => {
     const user = userEvent.setup();
-    render(<SettingsGroupsTab canManage />);
+    render(<GroupsSection canManage />);
     await user.click(screen.getByRole("button", { name: "Edit Alpha" }));
     const dialog = screen.getByRole("dialog");
     expect(

@@ -70,7 +70,7 @@ export const SCREEN_TITLES = {
   "suggested-tasks": "Suggested",
   "arrange-channels": "Arrange channels",
   "chapter-settings": "Chapter settings",
-  "chapter-roles": "Roles",
+  "chapter-roles": "Roles and groups",
   // A tier's and a role's pages are titled by their own name, which a
   // capsule has no room for, so both read as the list they belong to.
   "role-tier": "Roles",

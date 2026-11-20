@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
+  groupFollowsLabel,
   useCreateGroup,
   useDeleteGroup,
   useGroups,
@@ -54,15 +55,10 @@ function memberCountLabel(count: number): string {
   return count === 1 ? "1 member" : `${count} members`;
 }
 
-/** What an automatic group follows, said on its row and in its editor. */
-function followsLabel(group: ChapterGroup): string | null {
-  if (group.kind === "pledge_class") return "Follows pledge class";
-  if (group.kind === "class_year") return "Follows graduation year";
-  return null;
-}
-
 /**
- * Settings → People → Groups (#4076): named sets of members, such as Third
+ * The Groups part of Settings → Roles and groups (#4076; one page with the
+ * roles since Paul's 2026-11-19 call: "Why would we keep roles and groups in
+ * 2 DIFFERENT PLACES?"): named sets of members, such as Third
  * floor or Live-ins, that carry no permissions. A group can be `@`-mentioned
  * and picked in a channel's who-can-see and who-can-post lists. Modeled on
  * Slack's user groups (a name, a handle, its members, nothing else) rather
@@ -74,10 +70,11 @@ function followsLabel(group: ChapterGroup): string | null {
  * data; only their color and ping switch can change, so they are listed
  * apart and marked.
  *
- * Every write needs `groups:manage`, which is also what shows the tab
- * (`settings-access.ts`).
+ * Every write needs `groups:manage`, which also shows the Roles and groups
+ * tab to a holder without `roles:manage` (`settings-access.ts`). A member's
+ * groups are also set from their profile (`MemberAssignments`).
  */
-export function SettingsGroupsTab({ canManage }: { canManage: boolean }) {
+export function GroupsSection({ canManage }: { canManage: boolean }) {
   const groupsQuery = useGroups();
   const membersQuery = useMembers();
   const { isOffline } = useNetwork();
@@ -234,7 +231,7 @@ function GroupRow({
 }) {
   const { toast } = useToast();
   const remove = useDeleteGroup();
-  const follows = followsLabel(group);
+  const follows = groupFollowsLabel(group);
   const details = [
     memberCountLabel(group.member_ids.length),
     follows,

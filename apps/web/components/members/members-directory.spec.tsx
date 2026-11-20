@@ -102,6 +102,13 @@ vi.mock("@/components/meetings/live-meeting-card", () => ({
   LiveMeetingCard: () => null,
 }));
 
+const groupsRead = vi.hoisted(() => ({
+  data: [
+    { id: "g-house", name: "In house", kind: "manual", member_ids: ["u-1"] },
+    { id: "g-empty", name: "Nobody yet", kind: "manual", member_ids: [] },
+  ] as Array<{ id: string; name: string; kind: string; member_ids: string[] }>,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => {
   // The fraternal-order sort is the real one: it is what this screen promises.
   const actual = await importOriginal<typeof import("@repo/hooks")>();
@@ -115,6 +122,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useMembers: () => membersRead,
     useMemberSearch: (q: string) => (q ? searchRead : membersRead),
     useRoles: () => rolesRead,
+    useGroups: () => groupsRead,
     useLeaderboard: () => leaderboardRead,
     useMemberPhoneReach: () => ({ reach: phoneReachRead.value }),
     // The member view, which every member can read. The config read refuses
@@ -159,6 +167,35 @@ vi.mock("@/components/members/invite-member-dialog", () => ({
   InviteMemberDialog: ({ trigger }: { trigger: React.ReactNode }) => (
     <div data-testid="invite-trigger">{trigger}</div>
   ),
+}));
+
+// The row opens the member's card (Paul, 2026-11-19), which has its own
+// spec; here it only has to open for the right member and hand on View
+// profile.
+vi.mock("@/components/chat/member-popout", () => ({
+  anchorFor: (element: HTMLElement) => ({
+    contextElement: element,
+    getBoundingClientRect: () => element.getBoundingClientRect(),
+  }),
+  MemberPopout: ({
+    open,
+    userId,
+    identity,
+    onViewProfile,
+  }: {
+    open: boolean;
+    userId: string | null;
+    identity: { name: string | null } | null;
+    onViewProfile: (userId: string) => void;
+  }) =>
+    open && userId ? (
+      <div data-testid="member-card" data-user-id={userId}>
+        {identity?.name}
+        <button type="button" onClick={() => onViewProfile(userId)}>
+          View profile
+        </button>
+      </div>
+    ) : null,
 }));
 
 vi.mock("@/components/members/member-detail-sheet", () => ({
@@ -244,6 +281,20 @@ describe("Directory on the greenfield shell", () => {
     }
   });
 
+  it("filters by group, offering only groups with someone in them (2026-11-19)", async () => {
+    const user = userEvent.setup();
+    render(<MembersDirectory />);
+    await user.click(screen.getByRole("button", { name: /^Group/ }));
+    expect(
+      (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
+    ).toEqual(["Any group", "In house"]);
+    await user.click(screen.getByRole("menuitem", { name: "In house" }));
+    expect(
+      screen.getByRole("button", { name: /^Ada Lovelace,/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Grace Hopper,/ })).toBeNull();
+  });
+
   it("makes the row itself the control that opens a member", async () => {
     const user = userEvent.setup();
     render(<MembersDirectory />);
@@ -252,7 +303,12 @@ describe("Directory on the greenfield shell", () => {
     // member and everything the row shows.
     expect(screen.queryByRole("button", { name: /view details/i })).toBeNull();
 
+    // A row opens the member's card beside it, not the profile over the
+    // Directory (Paul, 2026-11-19); View profile opens the full record.
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
+    expect(screen.getByTestId("member-card")).toHaveTextContent("Ada Lovelace");
+    expect(screen.queryByTestId("detail-sheet")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "View profile" }));
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
       "Ada Lovelace",
     );
@@ -480,6 +536,7 @@ describe("Directory on the greenfield shell", () => {
     const { rerender } = render(<MembersDirectory />);
 
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
+    await user.click(screen.getByRole("button", { name: "View profile" }));
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
       "Ada Lovelace",
     );
@@ -774,6 +831,11 @@ describe("Directory as a grid (#4175)", () => {
     expect(tile.getAttribute("aria-label")).toContain("ada@example.test");
 
     await user.click(tile);
+    expect(screen.getByTestId("member-card")).toHaveAttribute(
+      "data-user-id",
+      "u-1",
+    );
+    await user.click(screen.getByRole("button", { name: "View profile" }));
     expect(screen.getByTestId("detail-sheet")).toHaveAttribute(
       "data-user-id",
       "u-1",
@@ -1070,6 +1132,7 @@ describe("Actives on a chapter with alumni", () => {
     const { rerender } = render(<MembersDirectory />);
 
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
+    await user.click(screen.getByRole("button", { name: "View profile" }));
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
       "Ada Lovelace",
     );

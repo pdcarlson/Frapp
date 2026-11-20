@@ -1,4 +1,3 @@
-import { isEveryoneRole } from "./everyone-role";
 /**
  * The fixed set of colors a chapter role can wear (#3485).
  *
@@ -108,62 +107,4 @@ export function topRoleColor(
     }
   }
   return best?.hex ?? null;
-}
-
-/** One role as a member's profile draws it: a chip with its color dot. */
-export interface MemberRoleChip {
-  id: string;
-  name: string;
-  /** The role's palette color, or `null` for a plain chip. */
-  color: RoleColorHex | null;
-}
-
-function roleRows(data: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(data)) return [];
-  return data.filter(
-    (row): row is Record<string, unknown> =>
-      typeof row === "object" && row !== null && !Array.isArray(row),
-  );
-}
-
-/**
- * `role_ids` → role chips, resolved off `GET /v1/roles` and ordered the way
- * the chapter ranks its roles (`display_order`, then name), so the member's
- * top role leads, the same rank that picks their name color (#3485, #3710).
- * Both clients' member profiles draw from it (web's sheet since #3726).
- *
- * That endpoint declares no response schema (`openapi-typescript` infers
- * `never`), so it is read defensively rather than cast. A role id with no
- * match (a since-deleted role, or the list still loading) is dropped rather
- * than rendered as a raw id, and a duplicate id (the API does not dedupe
- * `role_ids`) contributes its chip only once. The Everyone role has no chip.
- */
-export function resolveRoleChips(
-  rolesData: unknown,
-  roleIds: readonly string[],
-): MemberRoleChip[] {
-  if (roleIds.length === 0) return [];
-  const held = new Set(roleIds);
-  const chips: Array<MemberRoleChip & { order: number }> = [];
-  for (const row of roleRows(rolesData)) {
-    const id = typeof row.id === "string" ? row.id : null;
-    const name = typeof row.name === "string" && row.name ? row.name : null;
-    if (!id || !name || !held.has(id)) continue;
-    held.delete(id);
-    // The Everyone role (#4191) is nobody's chip: every list leaves it out.
-    if (isEveryoneRole(row)) continue;
-    chips.push({
-      id,
-      name,
-      color: roleColorOrNull(row.color),
-      order:
-        typeof row.display_order === "number" &&
-        Number.isFinite(row.display_order)
-          ? row.display_order
-          : Number.MAX_SAFE_INTEGER,
-    });
-  }
-  return chips
-    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
-    .map(({ id, name, color }) => ({ id, name, color }));
 }

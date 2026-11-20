@@ -56,6 +56,8 @@ export interface ActivesFilterSheetProps {
   filter: ActivesFilter;
   onChange: (next: ActivesFilter) => void;
   roles: readonly FilterRole[];
+  /** The chapter's groups with anyone in them; empty hides the section. */
+  groups?: readonly { id: string; name: string }[];
   /** Newest first. */
   years: readonly number[];
   /** The chapter's classes in its own order; empty hides the section. */
@@ -86,6 +88,7 @@ export const ActivesFilterSheet = forwardRef<
     filter,
     onChange,
     roles,
+    groups = [],
     years,
     classes,
     classWord,
@@ -253,6 +256,23 @@ export const ActivesFilterSheet = forwardRef<
                   chips={[
                     { value: ANY, label: "Any" },
                     ...classes.map((c) => ({ value: c.id, label: c.name })),
+                  ]}
+                />
+              </View>
+            ) : null}
+
+            {groups.length > 0 ? (
+              <View style={styles.section}>
+                <SectionHeader>Group</SectionHeader>
+                <FilterChips
+                  accessibilityLabel="Group"
+                  selected={filter.groupId ?? ANY}
+                  onSelect={(value) =>
+                    set({ groupId: value === ANY ? null : value })
+                  }
+                  chips={[
+                    { value: ANY, label: "Any" },
+                    ...groups.map((g) => ({ value: g.id, label: g.name })),
                   ]}
                 />
               </View>

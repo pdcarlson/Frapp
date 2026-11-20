@@ -9,7 +9,6 @@ import {
   useCurrentChapter,
   useGeofences,
   usePermissionList,
-  useRoles,
   useUpdateAiChapterSettings,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -58,8 +57,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *   `chapter-config:view`, as web's tab is.
  *   Inline switches, as iOS Settings draws a short list of them, rather than
  *   a page of their own. Drawn only where the server has AI.
- * - **People**: Roles, the chapter's tiers and their roles
- *   (`app/(app)/chapter-roles.tsx`).
+ * - **People**: Roles and groups, the chapter's tiers and their roles, then
+ *   its groups (`app/(app)/chapter-roles.tsx`).
  *
  * Web's other pages (Plan and billing, the module pages, vocabulary, member
  * fields) stay on web for now: they are setup an officer does once, at a desk.
@@ -105,12 +104,6 @@ export default function ChapterSettingsScreen() {
   const geofencesQuery = useGeofences({ enabled: geofencesEnabled });
   const zones = geofencesQuery.data as unknown;
   const zoneCount = Array.isArray(zones) ? zones.length : null;
-
-  // Every member may read the roles (`members:view`); this shares the Roles
-  // screen's cache entry, so opening this warms that.
-  // `GET /v1/roles` declares no response schema, so read through `unknown`.
-  const roles = useRoles().data as unknown;
-  const roleCount = Array.isArray(roles) ? roles.length : null;
 
   // The consent read says whether the server has AI at all (null when it
   // doesn't), as every AI entry on the phone asks before drawing.
@@ -280,9 +273,8 @@ export default function ChapterSettingsScreen() {
                 <SectionHeader>People</SectionHeader>
                 <ListSection>
                   <ListRow
-                    label="Roles"
-                    value={roleCount === null ? null : String(roleCount)}
-                    accessibilityHint="Opens the chapter's tiers and roles, and what each can do."
+                    label="Roles and groups"
+                    accessibilityHint="Opens the chapter's tiers, roles and groups."
                     onPress={() => router.push("/chapter-roles")}
                   />
                 </ListSection>

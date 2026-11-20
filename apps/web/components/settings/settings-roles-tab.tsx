@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import { useInvitableRoleIds, useMyPermissions, useRoles } from "@repo/hooks";
+import { can, canAny } from "@repo/validation";
 import {
   PresidencyClaimBanner,
   TransferPresidencySection,
@@ -20,6 +21,7 @@ import {
 import { RolesOverview } from "@/components/roles/roles-overview";
 import { TierPermissionsPage } from "@/components/roles/tier-permissions-page";
 import { RolePage } from "@/components/roles/role-page";
+import { GroupsSection } from "@/components/roles/groups-section";
 
 type Props = {
   /** Whether the caller holds `chapter-config:manage`. */
@@ -38,13 +40,13 @@ type Props = {
 };
 
 /**
- * Chapter settings → Roles (#3990).
+ * Chapter settings → Roles and groups (#3990; groups joined it 2026-11-19).
  *
  * Three pages in one tab, addressed by the URL so Back and a shared link work:
  *
  * | URL | Page |
  * | --- | ---- |
- * | `?tab=roles` | The tiers in order with their roles, then roles outside the tiers (`RolesOverview`) |
+ * | `?tab=roles` | The tiers in order with their roles, then roles outside the tiers (`RolesOverview`), then the chapter's groups (`GroupsSection`) |
  * | `?tab=roles&tier=<id>` | One tier's permissions, a page of switches by module (`TierPermissionsPage`) |
  * | `?tab=roles&role=<id>` | One role: details, tier, and its own switches (`RolePage`) |
  *
@@ -66,6 +68,13 @@ export function SettingsRolesTab({
   const searchParams = useSearchParams();
   const router = useRouter();
   const { data: permissionsPayload } = useMyPermissions();
+  const permissions = permissionsPayload?.permissions;
+  // A `groups:manage` holder without `roles:manage` or config access reaches
+  // this tab for its groups only (`settings-access.ts`).
+  const canSeeRoles = canAny(
+    ["roles:manage", "chapter-config:view"],
+    permissions,
+  );
   const tierId = searchParams.get("tier");
   const roleId = searchParams.get("role");
 
@@ -97,10 +106,16 @@ export function SettingsRolesTab({
         `roles:manage` by default.
       */}
       <PresidencyClaimBanner />
-      <RolesOverview onOpenTier={openTier} onOpenRole={openRole} />
-      {permissionsPayload?.permissions?.includes("*") ? (
-        <TransferPresidencySection />
+      {canSeeRoles ? (
+        <RolesOverview onOpenTier={openTier} onOpenRole={openRole} />
       ) : null}
+      {/*
+        Groups on the same page as the roles (Paul, 2026-11-19): one place
+        for who is what, roles for what someone can do, groups for who they
+        belong with.
+      */}
+      <GroupsSection canManage={can("groups:manage", permissions)} />
+      {permissions?.includes("*") ? <TransferPresidencySection /> : null}
       {configUnavailable ? null : (
         <DefaultInviteRoleCard
           canManage={canManage}

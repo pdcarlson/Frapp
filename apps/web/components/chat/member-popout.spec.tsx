@@ -9,6 +9,7 @@ const {
   mockCurrentUserId,
   mockRouterPush,
   mockToast,
+  assignmentProps,
 } = vi.hoisted(() => ({
   dmMutateAsync: vi.fn(),
   memberState: {
@@ -18,6 +19,7 @@ const {
   mockCurrentUserId: { current: "viewer" as string | null },
   mockRouterPush: vi.fn(),
   mockToast: vi.fn(),
+  assignmentProps: { current: null as Record<string, unknown> | null },
 }));
 
 vi.mock("@repo/hooks", async () => ({
@@ -25,12 +27,6 @@ vi.mock("@repo/hooks", async () => ({
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
   ).dmChannelIdOf,
   useMemberByUserId: () => memberState,
-  useRoles: () => ({
-    data: [
-      { id: "r-pres", name: "President", color: null, rank: 1 },
-      { id: "r-rush", name: "Rush Chair", color: null, rank: 2 },
-    ],
-  }),
   useMemberDisplayNames: () => ({
     avatarTintFor: () => null,
     roleColorFor: () => null,
@@ -48,6 +44,21 @@ vi.mock("@/lib/auth/use-frapp-user", () => ({
 
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
+}));
+
+// Roles and groups on the card have their own spec
+// (`member-assignments.spec.tsx`); here they only have to get the member.
+vi.mock("@/components/members/member-assignments", () => ({
+  MemberAssignments: (props: { roleIds: string[] }) => {
+    assignmentProps.current = props;
+    return (
+      <ul aria-label="Roles">
+        {props.roleIds.map((id) => (
+          <li key={id}>{id}</li>
+        ))}
+      </ul>
+    );
+  },
 }));
 
 import { anchorFor, MemberPopout } from "./member-popout";
@@ -85,6 +96,7 @@ function renderPopout(
 }
 
 beforeEach(() => {
+  assignmentProps.current = null;
   memberState.data = MEMBER;
   memberState.isPending = false;
   mockCurrentUserId.current = "viewer";
@@ -105,8 +117,26 @@ describe("MemberPopout", () => {
     expect(card).toHaveTextContent("Jane Smith");
     expect(card).toHaveTextContent("Economics · '27");
     expect(screen.getByRole("list", { name: "Roles" })).toHaveTextContent(
-      "PresidentRush Chair",
+      "r-presr-rush",
     );
+  });
+
+  it("hands the card's roles and groups the member, editable once read", () => {
+    renderPopout();
+    expect(assignmentProps.current).toMatchObject({
+      memberId: "m1",
+      userId: "u1",
+      roleIds: ["r-pres", "r-rush"],
+      editable: true,
+      compact: true,
+    });
+  });
+
+  it("draws no roles and groups until the profile read lands", () => {
+    memberState.data = undefined;
+    memberState.isPending = true;
+    renderPopout();
+    expect(assignmentProps.current).toBeNull();
   });
 
   it("draws the roster's name until the profile read lands", () => {

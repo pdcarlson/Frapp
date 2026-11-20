@@ -7,6 +7,7 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useAlumni,
+  useGroups,
   useMemberDisplayNames,
   useMemberPhoneReach,
   useMemberSearch,
@@ -151,7 +152,7 @@ import { ScreenReady } from "@/lib/sentry/screen-ready";
  *
  * The Actives tab's chip row carries a Filters chip, before the sort, that
  * opens `ActivesFilterSheet`: Status, Graduation year, the chapter's pledge
- * class and Role, web's four Directory filters by web's rules
+ * class, Group and Role, web's Directory filters by web's rules
  * (`lib/directory/actives-filter.ts`). The Alumni tab keeps its own Filters
  * chip and fields, since `GET /v1/alumni` filters server-side by different
  * fields. Like the alumni filters, these stay set across a tab switch and
@@ -264,21 +265,50 @@ export default function DirectoryScreen() {
   // can invite members or manage roles, and the filter is offered only then.
   const { reach: phoneReach } = useMemberPhoneReach();
   const showsPhoneReach = phoneReach?.scope === "chapter";
+  // The chapter's groups with anyone in them, as web's Group chip offers.
+  const groupsQuery = useGroups({ enabled: true });
+  const filterGroups = useMemo(
+    () =>
+      (groupsQuery.data ?? [])
+        .filter((group) => group.member_ids.length > 0)
+        .map((group) => ({ id: group.id, name: group.name })),
+    [groupsQuery.data],
+  );
   // A pick that no longer exists reads as unpicked (see `effectiveActivesFilter`).
   const activesFilter = useMemo(
     () =>
       effectiveActivesFilter(activesFilterPicks, {
         roleIds: new Set(filterRoles.map((role) => role.id)),
+        groupIds: new Set(filterGroups.map((group) => group.id)),
         years: yearOptions,
         classIds: new Set(classNames.keys()),
         phoneReach: showsPhoneReach,
       }),
-    [activesFilterPicks, filterRoles, yearOptions, classNames, showsPhoneReach],
+    [
+      activesFilterPicks,
+      filterRoles,
+      filterGroups,
+      yearOptions,
+      classNames,
+      showsPhoneReach,
+    ],
   );
   const activesFilterCount = countActivesFilters(activesFilter);
+  const groupMemberIds = useMemo(() => {
+    const group = (groupsQuery.data ?? []).find(
+      (g) => g.id === activesFilter.groupId,
+    );
+    return group ? new Set(group.member_ids) : undefined;
+  }, [groupsQuery.data, activesFilter.groupId]);
   const filteredActives = useMemo(
-    () => filterActives(actives, activesFilter, phoneReach?.byUserId),
-    [actives, activesFilter, phoneReach],
+    () =>
+      filterActives(
+        actives,
+        activesFilter,
+        phoneReach?.byUserId,
+        groupMemberIds,
+      ),
+    [actives, activesFilter, phoneReach, groupMemberIds],
   );
   // The member's reach on their row, only while the Phone app filter is set
   // on the Actives tab, so the everyday list stays as it was.
@@ -626,6 +656,7 @@ export default function DirectoryScreen() {
           filter={activesFilter}
           onChange={setActivesFilterPicks}
           roles={filterRoles}
+          groups={filterGroups}
           years={yearOptions}
           classes={pledgeClasses ?? []}
           classWord={classTerm}
