@@ -2,7 +2,6 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
-  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -14,11 +13,9 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   PERMISSION_MODULES,
-  ROLE_COLOR_HEXES,
   ROLE_NAME_MAX_LENGTH,
   ROLE_TIER_NAME_MAX_LENGTH,
   type PermissionModuleKey,
@@ -29,16 +26,11 @@ import {
   ROLE_TIER_POSITION_MAX,
 } from '#domain/constants/field-limits';
 
+import {
+  IsRoleColor,
+  ROLE_COLOR_API_DESCRIPTION,
+} from '../decorators/is-role-color.decorator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
-
-/**
- * Upper-cases a role color string before `@IsIn` checks it, so `#f2994a` is
- * the palette's `#F2994A` and is stored in the palette's spelling (#3485).
- * Anything else passes through for the validators to judge.
- */
-function normalizeRoleColorInput(value: unknown): unknown {
-  return typeof value === 'string' ? value.trim().toUpperCase() : value;
-}
 
 export class CreateRoleDto {
   @ApiProperty({
@@ -65,15 +57,10 @@ export class CreateRoleDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    enum: ROLE_COLOR_HEXES,
-    description:
-      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.',
+    description: ROLE_COLOR_API_DESCRIPTION,
   })
   @IsOptional()
-  @Transform(({ value }) => normalizeRoleColorInput(value))
-  @IsIn(ROLE_COLOR_HEXES, {
-    message: 'color must be one of the role palette colors',
-  })
+  @IsRoleColor()
   color?: string | null;
   @ApiPropertyOptional({
     type: Boolean,
@@ -137,15 +124,10 @@ export class UpdateRoleDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    enum: ROLE_COLOR_HEXES,
-    description:
-      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.',
+    description: ROLE_COLOR_API_DESCRIPTION,
   })
   @IsOptional()
-  @Transform(({ value }) => normalizeRoleColorInput(value))
-  @IsIn(ROLE_COLOR_HEXES, {
-    message: 'color must be one of the role palette colors',
-  })
+  @IsRoleColor()
   color?: string | null;
   @ApiPropertyOptional({
     type: Boolean,

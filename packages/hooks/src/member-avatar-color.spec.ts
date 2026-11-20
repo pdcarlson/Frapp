@@ -1,5 +1,5 @@
 import { contrastRatio, parseHex } from "@repo/color";
-import { ROLE_COLOR_PALETTE } from "@repo/validation";
+import { ROLE_COLOR_PALETTE, roleColorForHue } from "@repo/validation";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -106,6 +106,19 @@ describe("memberAvatarTint contrast", () => {
       expect(ratio(tint.text, tint.fill)).toBeGreaterThanOrEqual(AA_TEXT);
     },
   );
+
+  // A custom role hue (#5784) reaches an avatar the same way; every slider
+  // position is checked, one every 2 degrees.
+  it("keeps every custom role hue's initials at AA on their tint", () => {
+    for (let hue = 0; hue < 360; hue += 2) {
+      const hex = roleColorForHue(hue).hex;
+      const tint = memberAvatarTint(hex);
+      expect(
+        ratio(tint.text, tint.fill),
+        `${hue}° ${hex}`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
 
   it("reproduces the #3860 measurements, re-seated for the #3826 ladder", () => {
     // #3860 measured 18% over the old `--popover`: Orange `#443426` at 5.34:1,

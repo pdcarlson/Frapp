@@ -2,27 +2,19 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsArray,
-  IsIn,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   MaxLength,
-  ValidateIf,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { GROUP_MEMBERS_MAX, GROUP_NAME_MAX_LENGTH } from '@repo/validation';
 import {
-  GROUP_MEMBERS_MAX,
-  GROUP_NAME_MAX_LENGTH,
-  ROLE_COLOR_HEXES,
-} from '@repo/validation';
+  IsRoleColor,
+  ROLE_COLOR_API_DESCRIPTION,
+} from '../decorators/is-role-color.decorator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
-
-/** A palette color in any case, stored in the palette's spelling, as a role's is. */
-function normalizeColor(value: unknown): unknown {
-  return typeof value === 'string' ? value.trim().toUpperCase() : value;
-}
 
 /** One of a chapter's groups (`GET /v1/groups`, #4076). */
 export class ChapterGroupDto {
@@ -102,15 +94,10 @@ export class CreateChapterGroupDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    enum: ROLE_COLOR_HEXES,
-    description: 'One of the role palette colors, in any letter case.',
+    description: ROLE_COLOR_API_DESCRIPTION,
   })
   @IsOptional()
-  @Transform(({ value }) => normalizeColor(value))
-  @ValidateIf((_, value) => value !== null)
-  @IsIn(ROLE_COLOR_HEXES, {
-    message: 'color must be one of the role palette colors',
-  })
+  @IsRoleColor()
   color?: string | null;
 
   @ApiPropertyOptional({
@@ -151,16 +138,10 @@ export class UpdateChapterGroupDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    enum: ROLE_COLOR_HEXES,
-    description:
-      'One of the role palette colors, in any letter case. Null clears it.',
+    description: ROLE_COLOR_API_DESCRIPTION,
   })
   @IsOptional()
-  @Transform(({ value }) => normalizeColor(value))
-  @ValidateIf((_, value) => value !== null)
-  @IsIn(ROLE_COLOR_HEXES, {
-    message: 'color must be one of the role palette colors',
-  })
+  @IsRoleColor()
   color?: string | null;
 
   @ApiPropertyOptional({

@@ -1,5 +1,9 @@
 import { mixHex } from "@repo/color";
-import { ROLE_COLOR_PALETTE } from "@repo/validation";
+import {
+  ROLE_COLOR_PALETTE,
+  ROLE_COLOR_SURFACES,
+  roleColorForHue,
+} from "@repo/validation";
 import { describe, expect, it } from "vitest";
 
 import { AA_TEXT, CARD_HOVER, ratio, SURFACE } from "@/tests/signet-contrast";
@@ -57,4 +61,43 @@ describe("role color palette contrast", () => {
       expect(ratio(painted, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
     });
   }
+});
+
+/**
+ * A custom hue (#5784) is checked inside `@repo/validation` against
+ * `ROLE_COLOR_SURFACES`, which that package restates because the API can't
+ * import the theme. This pins the restatement to the token source, so a
+ * Signet change re-measures custom hues instead of passing against stale
+ * copies.
+ */
+describe("custom role colors", () => {
+  it("measure against the surfaces the app ships", () => {
+    expect(ROLE_COLOR_SURFACES).toEqual({
+      background: SURFACE.background,
+      surface1: SURFACE.surface1,
+      card: SURFACE.card,
+      popover: SURFACE.popover,
+      cardHover: CARD_HOVER,
+    });
+  });
+
+  it("read at AA on every surface, at rest and lifted on a hovered row", () => {
+    for (let hue = 0; hue < 360; hue += 3) {
+      const { hex } = roleColorForHue(hue);
+      for (const [name, surface] of Object.entries(RESTING_SURFACES)) {
+        expect(
+          ratio(hex, surface),
+          `${hue}° on ${name}`,
+        ).toBeGreaterThanOrEqual(AA_TEXT);
+      }
+      expect(ratio(hex, CARD_HOVER), `${hue}° hovered`).toBeGreaterThanOrEqual(
+        AA_TEXT,
+      );
+      const lifted = mixHex(hex, "#FFFFFF", HOVER_LIFT);
+      expect(
+        ratio(lifted, CARD_HOVER),
+        `${hue}° lifted`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
 });

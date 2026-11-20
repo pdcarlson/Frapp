@@ -19,7 +19,6 @@ import {
   GROUP_NAME_MAX_LENGTH,
   GROUPS_MAX,
   roleColorOrNull,
-  type RoleColorHex,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -27,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { RoleColorSwatches } from "@/components/roles/role-color-swatches";
+import { RoleColorPicker } from "@/components/roles/role-color-picker";
 import {
   ErrorState,
   OfflineState,
@@ -392,7 +391,7 @@ function GroupEditor({
   // under the officer when a background read lands.
   const [members] = useState(liveMembers);
   const [name, setName] = useState(group.name);
-  const [color, setColor] = useState<RoleColorHex | null>(
+  const [color, setColor] = useState<string | null>(
     roleColorOrNull(group.color),
   );
   const [mentionable, setMentionable] = useState(group.mentionable);
@@ -489,7 +488,7 @@ function GroupEditor({
 
         <div className="grid gap-1">
           <Label id="group-edit-color-label">Color</Label>
-          <RoleColorSwatches
+          <RoleColorPicker
             labelId="group-edit-color-label"
             value={color}
             onChange={setColor}
