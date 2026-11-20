@@ -5,12 +5,10 @@ import { useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, MoreHorizontal, Undo2, Users } from "lucide-react";
 import {
   TASK_ACTION_LABELS,
-  TASK_CONFIRMED_LABEL,
-  TASK_NEEDS_CHANGES_LABEL,
-  TASK_STATUS_LABELS,
   actionStatus,
   canReopenOwnTask,
   isSentBack,
+  taskStatusLabel,
   taskHandedInLine,
   useMeeting,
   useReleaseTask,
@@ -235,7 +233,6 @@ function TaskPanelBody({
   const task = isGroup ? target.tile.sample : target.task;
   const viewerUnknown = myUserId === "";
   const isMine = !viewerUnknown && !isGroup && task.assignee_id === myUserId;
-  const status = actionStatus(task);
   const sentBack = isSentBack(task);
   const editable = canManage && !task.points_awarded;
   const repeats = taskSeriesLive(task.series);
@@ -355,11 +352,7 @@ function TaskPanelBody({
     await save({ reference_photo_paths: [...keptPaths, ...uploaded] });
   }
 
-  const statusWord = sentBack
-    ? TASK_NEEDS_CHANGES_LABEL
-    : status === "COMPLETED" && task.points_awarded
-      ? TASK_CONFIRMED_LABEL
-      : TASK_STATUS_LABELS[task.status];
+  const statusWord = taskStatusLabel(task);
 
   const assignee = personOf(task.assignee_id);
   const references = (task.photos ?? []).filter(
@@ -1330,11 +1323,7 @@ function GroupProgress({
                     : "text-muted-foreground",
                 )}
               >
-                {isSentBack(copy)
-                  ? TASK_NEEDS_CHANGES_LABEL
-                  : copy.status === "COMPLETED" && copy.points_awarded
-                    ? TASK_CONFIRMED_LABEL
-                    : TASK_STATUS_LABELS[copy.status]}
+                {taskStatusLabel(copy)}
               </span>
             </li>
           );
