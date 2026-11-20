@@ -1,9 +1,4 @@
-import {
-  isEveryoneRole,
-  roleColorOrNull,
-  sortRolesByRank,
-  tierPositionsOf,
-} from "@repo/validation";
+import { isEveryoneRole, roleColorOrNull } from "@repo/validation";
 import { matchesWordStarts, normalizeWords } from "./fuzzy-match";
 import type { ChapterGroup } from "./use-groups";
 import {
@@ -228,19 +223,33 @@ export function memberRoleChips(inputs: {
   reach: Reach;
   canManageRoles: boolean;
 }): AssignmentChip[] {
+  const positions = new Map(
+    inputs.tiers.map((tier) => [tier.id, tier.position]),
+  );
+  const rank = (role: TieredRole) =>
+    isWildcardRole(role)
+      ? -1
+      : role.tier_id === null
+        ? Number.POSITIVE_INFINITY
+        : (positions.get(role.tier_id) ?? Number.POSITIVE_INFINITY);
   const held = new Set(inputs.heldRoleIds);
-  return sortRolesByRank(
-    inputs.roles.filter((role) => held.has(role.id) && !isEveryoneRole(role)),
-    tierPositionsOf(inputs.tiers),
-  ).map((role) => ({
-    kind: "role",
-    id: role.id,
-    name: role.name,
-    color: roleColorOrNull(role.color),
-    removable:
-      inputs.canManageRoles &&
-      inputs.reach.known &&
-      !isWildcardRole(role) &&
-      reachesRole(inputs.reach, role, inputs.tiers),
-  }));
+  return inputs.roles
+    .filter((role) => held.has(role.id) && !isEveryoneRole(role))
+    .sort(
+      (a, b) =>
+        rank(a) - rank(b) ||
+        a.display_order - b.display_order ||
+        a.name.localeCompare(b.name),
+    )
+    .map((role) => ({
+      kind: "role",
+      id: role.id,
+      name: role.name,
+      color: roleColorOrNull(role.color),
+      removable:
+        inputs.canManageRoles &&
+        inputs.reach.known &&
+        !isWildcardRole(role) &&
+        reachesRole(inputs.reach, role, inputs.tiers),
+    }));
 }
