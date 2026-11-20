@@ -179,6 +179,36 @@ export function minutesStateWho(
   return nameFor(about) ?? null;
 }
 
+/**
+ * New minutes, the same on web and phone (Paul, 2026-11-20: the sheet "says
+ * meeting like 13 times, and it's narrating instead of indicating"): one
+ * list of meetings, each row saying where it stands, and No meeting to
+ * write or record now and link one later.
+ */
+export const MINUTES_START_COPY = {
+  heading: "New minutes",
+  pick: "Which meeting?",
+  onNow: "On now",
+  /** A meeting someone else already has minutes for, shown but not picked. */
+  hasMinutes: "Has minutes",
+  noMeeting: "No meeting",
+  noMeetingDetail: "Link one later",
+} as const;
+
+/**
+ * The minutes page's first meta line: "Chapter meeting, Tuesday, November
+ * 10 at 11:21 PM", or "No meeting, ..." for minutes not yet linked to one.
+ */
+export function minutesMetaHead(
+  minutes: { event_id: string | null; event_start_time: string },
+  typeLabel: string,
+): string {
+  const when = meetingWhenLabel(minutes.event_start_time);
+  return minutes.event_id
+    ? `${typeLabel} meeting, ${when}`
+    : `${MINUTES_START_COPY.noMeeting}, ${when}`;
+}
+
 /** The longest the event card's gist runs before it is cut. */
 const MINUTES_GIST_MAX = 140;
 
@@ -563,15 +593,17 @@ export const MEETING_NOTE_TAKERS_COPY = {
       : from === "Recording"
         ? "From the recording"
         : `From ${from}'s notes`,
-  /** Linking an event (#4935). */
-  noEvent:
-    "These minutes aren't linked to an event, so nobody but editors can read them.",
-  linkEvent: "Link an event",
-  linkTitle: "Link these minutes to an event",
-  linkHint:
-    "The event decides who reads the minutes. Pick the meeting's event, or make one for it.",
+  /**
+   * Linking a meeting (#4935; Paul, 2026-11-20: minutes can start with no
+   * meeting and be linked later). A state, not an explanation: the minutes
+   * say they have no meeting and offer the link; Post is dimmed until then.
+   */
+  noEvent: "No meeting",
+  linkEvent: "Link a meeting",
   linkPick: "Which meeting?",
-  linkNone: "No recent events without minutes.",
-  linkMake: "It isn't on the calendar",
-  linkFailed: "Couldn't link the event. Try again.",
+  linkNone: "No recent meetings without minutes.",
+  linkMake: "Add it to the calendar",
+  linkFailed: "Couldn't link the meeting. Try again.",
+  /** Why Post is dimmed on minutes with no meeting. */
+  postNeedsMeeting: "Link a meeting first",
 } as const;
