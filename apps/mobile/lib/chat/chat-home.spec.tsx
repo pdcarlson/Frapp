@@ -2293,7 +2293,7 @@ describe("Chat home opens the last channel on launch", () => {
     resetChatLaunchForTests(Date.now() - 60_000);
     answered();
     vi.mocked(AsyncStorage.getItem).mockImplementation(async (key) =>
-      key === WELCOME_DUE_STORAGE_KEY ? `${VIEWER}:chapter-1` : null,
+      key === WELCOME_DUE_STORAGE_KEY ? `${VIEWER}:chapter-1:${Date.now()}` : null,
     );
     render();
     await settle();

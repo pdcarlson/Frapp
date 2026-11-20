@@ -1277,7 +1277,15 @@ export class InviteService {
     // which the new member also found waiting as their first DM. A
     // notification is where "your invite was used" belongs; saying hi is the
     // inviter's own choice, from the member's profile.
-    const inviterId = invite.created_by !== userId ? invite.created_by : null;
+    // Only while they're still in the chapter: removing a member leaves the
+    // invites they sent working, and the notice names the new member.
+    const inviterStillIn =
+      invite.created_by !== userId &&
+      (await this.memberRepo
+        .findByUserAndChapter(invite.created_by, chapterId)
+        .then(Boolean)
+        .catch(() => false));
+    const inviterId = inviterStillIn ? invite.created_by : null;
     const sends: Promise<void>[] = [];
     if (inviterId) {
       sends.push(

@@ -1563,12 +1563,24 @@ describe('InviteService', () => {
    * The join notices go out when the new member first finishes onboarding
    * (#5627), not at redeem: redeem, then finish, as the clients do.
    */
-  async function redeemThenFinish(token = 'test-uuid', userId = 'user-2') {
+  async function redeemThenFinish(
+    token = 'test-uuid',
+    userId = 'user-2',
+    inviterLeft = false,
+  ) {
     const result = await service.redeem(token, userId);
     const used = (await mockInviteRepo.findByToken.mock.results.at(-1)
       ?.value) as Invite;
     expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
     mockInviteRepo.findById.mockResolvedValue(used);
+    // The inviter is still in the chapter unless a test says otherwise.
+    if (!inviterLeft) {
+      mockMemberRepo.findByUserAndChapter.mockImplementation(async (uid) =>
+        uid === used.created_by ? memberFixture({ user_id: uid }) : null,
+      );
+    } else {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    }
     await service.announceJoin({
       user_id: userId,
       chapter_id: used.chapter_id,
@@ -1626,6 +1638,16 @@ describe('InviteService', () => {
           category: 'members',
           data: { target: { screen: 'members' }, memberUserId: 'user-2' },
         },
+      );
+    });
+
+    it('tells no inviter who has left the chapter since', async () => {
+      await redeemThenFinish('test-uuid', 'user-2', true);
+
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalledWith(
+        'ch-1',
+        ['user-1'],
+        expect.anything(),
       );
     });
 

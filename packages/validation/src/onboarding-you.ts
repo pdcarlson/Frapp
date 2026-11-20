@@ -12,8 +12,12 @@
  * empty instead.
  */
 
-/** The API's stand-in when sign-in carried no name at all. */
-const PLACEHOLDER_DISPLAY_NAME = "Member";
+/**
+ * The API's stand-in when sign-in carried no name at all
+ * (`PLACEHOLDER_DISPLAY_NAME` in the API's `auth.service.ts`). One home in
+ * this package: Ask's greeting reads it too.
+ */
+export const PLACEHOLDER_DISPLAY_NAME = "Member";
 
 export const ONBOARDING_YOU_COPY = {
   title: "How the chapter sees you",
@@ -29,8 +33,10 @@ export const ONBOARDING_YOU_COPY = {
 } as const;
 
 /**
- * No real name: none at all, the API's `Member`, or the email's local part
- * the API stored for an email sign-up.
+ * A stored name that isn't a real one: none at all, the API's `Member`, or
+ * the email's local part the API stored for an email sign-up. For what sign-in
+ * left behind only; what the member types is checked by `typedNameMissing`,
+ * since "Evan" typed by evan@example.com is their name.
  */
 export function needsName(
   displayName: string | null | undefined,
@@ -40,6 +46,12 @@ export function needsName(
   if (trimmed.length === 0 || trimmed === PLACEHOLDER_DISPLAY_NAME) return true;
   const local = (email ?? "").split("@")[0]?.trim() ?? "";
   return local.length > 0 && trimmed.toLowerCase() === local.toLowerCase();
+}
+
+/** What the member typed is no name: empty, or the API's stand-in. */
+export function typedNameMissing(typed: string | null | undefined): boolean {
+  const trimmed = (typed ?? "").trim();
+  return trimmed.length === 0 || trimmed === PLACEHOLDER_DISPLAY_NAME;
 }
 
 /** The name field's first value: the real name, or empty. */

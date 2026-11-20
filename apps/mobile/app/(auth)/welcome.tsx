@@ -15,6 +15,7 @@ import {
   ONBOARDING_YOU_COPY,
   initialNameField,
   needsName,
+  typedNameMissing,
   onboardingProfileAnsweredProperties,
 } from "@repo/validation";
 import {
@@ -46,8 +47,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * 1. **How the chapter sees you**, always: the name, pre-filled when sign-in
  *    carried a real one (Apple or Google), and an optional photo. A name that
- *    is only the API's `Member` or the email before the `@` starts empty and
- *    is required (`needsName` in `@repo/validation`). Web shows the same
+ *    is only the API's `Member` or the email before the `@` starts empty
+ *    (`needsName` in `@repo/validation`); a typed name is required
+ *    (`typedNameMissing`). Web shows the same
  *    screen after a join (`apps/web/app/(auth)/welcome`).
  * 2. **Turn on notifications**, when this build can push and push isn't on
  *    yet (`shouldOfferPrimer`, #2299). Either answer goes to chat; a "Not
@@ -113,7 +115,15 @@ export default function Welcome() {
     }
     // The welcome card in the default channel shows once, for the member who
     // just came through here (#5627).
-    const userId = (userQuery.data as { id?: string } | undefined)?.id;
+    // A profile read that never landed is asked once more here, so a slow
+    // read can't cost the member the landing and the card.
+    const idOf = (data: unknown) => (data as { id?: string } | undefined)?.id;
+    const userId =
+      idOf(userQuery.data) ??
+      (await userQuery
+        .refetch()
+        .then((result) => idOf(result.data))
+        .catch(() => undefined));
     if (userId) await markWelcomeDue(userId, chapterId);
     await queryClient.invalidateQueries({ queryKey: ["chapters"] });
     router.replace("/");
@@ -144,7 +154,7 @@ export default function Welcome() {
   async function leaveYou() {
     if (savingName || leaving) return;
     const name = nameValue.trim();
-    if (needsName(name, profile?.email ?? null)) {
+    if (typedNameMissing(name)) {
       setNameError(ONBOARDING_YOU_COPY.nameRequired);
       return;
     }

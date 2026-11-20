@@ -13,8 +13,11 @@ export const MINIMUM_AGE = 17;
 /**
  * The youngest anyone may use Frapp AI: Google Cloud's terms bar generative
  * AI in services for people under 18 (ADR-28). Meet Frapp AI's Continue
- * confirms it (`FRAPP_AI_COPY.disclosure`), and no AI call runs without that
- * yes (`spec/behavior/ai.md` § Consent).
+ * confirms it (`FRAPP_AI_COPY.disclosure`), and nothing the member asks or
+ * writes reaches a model without that yes (gate 2 of `spec/behavior/ai.md`
+ * § Consent; the chapter's own records stand behind the president's switch,
+ * gate 1). The words are the client's: a phone build from before #5627 shows
+ * Continue without the age line until it is replaced.
  */
 export const AI_MINIMUM_AGE = 18;
 

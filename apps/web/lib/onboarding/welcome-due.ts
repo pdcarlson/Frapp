@@ -6,20 +6,20 @@
  * out while it is due.
  *
  * Kept in this browser, per member and chapter, as the phone keeps its own
- * (`apps/mobile/lib/onboarding/welcome-due.ts`). Storage that throws (a
- * private window, blocked site data) means no card, never a broken page.
+ * (`apps/mobile/lib/onboarding/welcome-due.ts`), and lapses after
+ * `WELCOME_CARD_DAYS` (`welcomeDueMark` in `@repo/validation`). Storage that
+ * throws (a private window, blocked site data) means no card, never a broken
+ * page.
  */
-export const WELCOME_DUE_STORAGE_KEY = "frapp.welcome-due";
+import { readWelcomeDueMark, welcomeDueMark } from "@repo/validation";
 
-function value(userId: string, chapterId: string): string {
-  return `${userId}:${chapterId}`;
-}
+export const WELCOME_DUE_STORAGE_KEY = "frapp.welcome-due";
 
 export function markWelcomeDue(userId: string, chapterId: string): void {
   try {
     window.localStorage.setItem(
       WELCOME_DUE_STORAGE_KEY,
-      value(userId, chapterId),
+      welcomeDueMark(userId, chapterId),
     );
   } catch {
     // No card is the failure; the member still reaches chat.
@@ -32,10 +32,10 @@ export function isWelcomeDue(
 ): boolean {
   if (!userId || !chapterId) return false;
   try {
-    return (
-      window.localStorage.getItem(WELCOME_DUE_STORAGE_KEY) ===
-      value(userId, chapterId)
+    const mark = readWelcomeDueMark(
+      window.localStorage.getItem(WELCOME_DUE_STORAGE_KEY),
     );
+    return mark?.userId === userId && mark.chapterKey === chapterId;
   } catch {
     return false;
   }

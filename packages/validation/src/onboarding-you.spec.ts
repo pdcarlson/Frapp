@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   initialNameField,
   needsName,
+  typedNameMissing,
   onboardingProfileAnsweredProperties,
 } from "./onboarding-you";
 
@@ -51,5 +52,19 @@ describe("onboardingProfileAnsweredProperties", () => {
         nameChanged: false,
       }),
     ).toEqual({ photo: "had", name_step: "kept" });
+  });
+});
+
+describe("typedNameMissing", () => {
+  it("takes any typed name, even the email's own local part", () => {
+    // evan@example.com is stored as "evan"; "Evan" typed is their name.
+    expect(typedNameMissing("Evan")).toBe(false);
+    expect(typedNameMissing(" evan ")).toBe(false);
+  });
+
+  it("refuses nothing typed and the stand-in", () => {
+    expect(typedNameMissing("   ")).toBe(true);
+    expect(typedNameMissing(null)).toBe(true);
+    expect(typedNameMissing("Member")).toBe(true);
   });
 });

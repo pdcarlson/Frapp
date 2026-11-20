@@ -23883,7 +23883,8 @@
         "type": "object",
         "properties": {
           "has_completed_onboarding": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "true marks onboarding done; the first time it does, the inviter and the officers are told who joined. Finishing is one-way: false is accepted and changes nothing (#5627)."
           }
         },
         "required": [

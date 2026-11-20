@@ -54,7 +54,7 @@ describe("WelcomeCard", () => {
       { id: "e1", name: "Chapter meeting", start_time: soon(2) },
       { id: "e2", name: "Car wash", start_time: soon(9) },
     ];
-    render(<WelcomeCard channelOpen />);
+    render(<WelcomeCard inDefaultChannel />);
 
     expect(
       screen.getByRole("heading", {
@@ -69,19 +69,19 @@ describe("WelcomeCard", () => {
     expect(screen.queryByText("Formal")).toBeNull();
   });
 
-  it("shows nothing when it isn't due, or no channel is open", () => {
+  it("shows nothing when it isn't due, or outside the default channel", () => {
     mocks.due = false;
-    const notDue = render(<WelcomeCard channelOpen />);
+    const notDue = render(<WelcomeCard inDefaultChannel />);
     expect(notDue.container.textContent).toBe("");
     notDue.unmount();
 
     mocks.due = true;
-    const noChannel = render(<WelcomeCard channelOpen={false} />);
-    expect(noChannel.container.textContent).toBe("");
+    const elsewhere = render(<WelcomeCard inDefaultChannel={false} />);
+    expect(elsewhere.container.textContent).toBe("");
   });
 
   it("closes for good", () => {
-    render(<WelcomeCard channelOpen />);
+    render(<WelcomeCard inDefaultChannel />);
 
     fireEvent.click(
       screen.getByRole("button", { name: "Close the welcome card" }),
@@ -93,7 +93,7 @@ describe("WelcomeCard", () => {
 
   it("opens Finish your profile with the photo, the roles and the display", () => {
     mocks.roles = [{ id: "r-1", name: "Rush committee", picked: false }];
-    render(<WelcomeCard channelOpen />);
+    render(<WelcomeCard inDefaultChannel />);
 
     fireEvent.click(
       screen.getByRole("button", { name: /Finish your profile/ }),

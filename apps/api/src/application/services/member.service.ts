@@ -530,6 +530,11 @@ export class MemberService {
   /**
    * `firstFinish` is true for the one request that turned the flag on (#5627),
    * which is when the chapter is told who joined (`InviteService.announceJoin`).
+   *
+   * Finishing is one-way since #5627. `false` used to restart the first-run
+   * tour (web's Replay tour, its only caller, went with the tours); now it
+   * changes nothing, because a reset would let the next `true` announce the
+   * join again to the inviter and every officer.
    */
   async updateOnboarding(
     memberId: string,
@@ -540,9 +545,8 @@ export class MemberService {
         await this.memberRepo.completeOnboarding(memberId);
       return { member, firstFinish: changed };
     }
-    const member = await this.memberRepo.update(memberId, {
-      has_completed_onboarding: false,
-    });
+    const member = await this.memberRepo.findById(memberId);
+    if (!member) throw new NotFoundException('Member not found');
     return { member, firstFinish: false };
   }
 

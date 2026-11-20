@@ -13,7 +13,7 @@ import {
   DISPLAY_NAME_MAX_LENGTH,
   ONBOARDING_YOU_COPY,
   initialNameField,
-  needsName,
+  typedNameMissing,
 } from "@repo/validation";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
@@ -47,7 +47,7 @@ type Me = {
  *
  * The name is pre-filled when sign-in carried a real one (Apple or Google). A
  * name that is only the API's `Member` or the email before the `@` starts
- * empty and is required (`needsName` in `@repo/validation`), because every
+ * empty (`needsName` in `@repo/validation`), and a typed name is required (`typedNameMissing`), because every
  * message the member sends carries it. The photo is optional and saves on its
  * own, as it does on Profile.
  *
@@ -113,7 +113,7 @@ export function WelcomeYou() {
     event.preventDefault();
     if (leaving) return;
     const name = nameValue.trim();
-    if (needsName(name, me?.email ?? null)) {
+    if (typedNameMissing(name)) {
       setNameError(ONBOARDING_YOU_COPY.nameRequired);
       return;
     }

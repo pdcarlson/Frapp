@@ -86,7 +86,9 @@ describe("WelcomeYou", () => {
       has_completed_onboarding: true,
     });
     // The welcome card waits in the default channel.
-    expect(window.localStorage.getItem("frapp.welcome-due")).toBe("u-1:ch-1");
+    expect(window.localStorage.getItem("frapp.welcome-due")).toMatch(
+      /^u-1:ch-1:\d+$/,
+    );
   });
 
   it("starts empty for the email before the @, and needs a name first", async () => {
@@ -136,8 +138,29 @@ describe("WelcomeYou", () => {
       ),
     ).toBeTruthy();
     expect(mocks.replace).not.toHaveBeenCalled();
+    // The join notices go out on that PATCH (#5627), so never before the
+    // name is saved.
+    expect(mocks.completeOnboarding).not.toHaveBeenCalled();
     expect(field().value).toBe("Ada King");
     expect((goToChat() as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("saves the name before finishing, so the notices carry it", async () => {
+    const order: string[] = [];
+    mocks.updateUser.mockImplementation(async () => order.push("name"));
+    mocks.completeOnboarding.mockImplementation(async () =>
+      order.push("finish"),
+    );
+    mocks.user = { ...ADA, display_name: "evan", email: "evan@example.com" };
+    render(<WelcomeYou />);
+
+    // Typed by evan@example.com, "Evan" is their name, not the email.
+    fireEvent.change(field(), { target: { value: "Evan" } });
+    fireEvent.click(goToChat());
+
+    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/chat"));
+    expect(mocks.updateUser).toHaveBeenCalledWith({ display_name: "Evan" });
+    expect(order).toEqual(["name", "finish"]);
   });
 
   it("offers a retry when the profile can't be read", () => {

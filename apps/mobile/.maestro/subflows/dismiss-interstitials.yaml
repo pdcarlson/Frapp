@@ -1,13 +1,14 @@
-# Clears what can stand between launch and Chat home: the first-run tour, the
-# push step and its later reminder, What's new opening by itself, and the
-# launch jump into the last channel opened (lib/chat/last-channel.ts).
+# Clears what can stand between launch and Chat home: a new member's welcome
+# card (#5627, which replaced the first-run tour), the push step and its
+# later reminder, What's new opening by itself, and the launch jump into the
+# last channel opened (lib/chat/last-channel.ts).
 appId: live.frapp.mobile
 ---
 - runFlow:
     when:
-      visible: "Skip the tour"
+      visible: "Close the welcome card"
     commands:
-      - tapOn: "Skip the tour"
+      - tapOn: "Close the welcome card"
 - runFlow:
     when:
       visible: "Not now"

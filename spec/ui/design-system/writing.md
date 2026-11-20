@@ -941,13 +941,13 @@ Strings in `@repo/chat-core/density`.
 
 ### Welcome card
 
-Once, at the top of the chapter's default channel, the first channel a member opens after joining (#5627; Paul's pick 2026-11-19, "welcome card, no tour").
+At the top of the chapter's default channel only, where a member lands after joining, until they close it or a week passes (#5627; Paul's pick 2026-11-19, "welcome card, no tour").
 Copy in `WELCOME_CARD_COPY` and its helpers (`packages/validation/src/welcome-card.ts`), shared by web and the phone; behavior in [`onboarding.md` § After joining](../../behavior/onboarding.md#after-joining).
 
 | Where | Copy |
 |---|---|
-| Title | `Welcome to <chapter>, <first name>` (`Welcome to <chapter>` with no name; `your chapter` when the chapter isn't loaded) |
-| Event rows, the next two | The event's name, then its day written out: `Today, 7:00 PM`, `Tomorrow, 7:00 PM`, the weekday within a week (`Saturday, 7:00 PM`), else the date (`Saturday, November 28`, with the year when it isn't this year). Each opens the event. |
+| Title | `Welcome to <chapter>, <first name>` (`Welcome to <chapter>` with no real name, by Ask's greeting rule: `Member`, or one made from an email such as `jlee42`; `your chapter` when the chapter isn't loaded) |
+| Event rows, the next two | The event's name, then its day written out: `Happening now` for one already under way, `Today, 7:00 PM`, `Tomorrow, 7:00 PM`, the weekday within a week (`Saturday, 7:00 PM`), else the date (`Saturday, November 28`, with the year when it isn't this year). Each opens the event. |
 | Last row | `Finish your profile`, then `2 minutes`, muted, and a chevron |
 | Close button | An X, read out as `Close the welcome card`. Closing is for good on that device. |
 | Finish your profile (web dialog, phone tall sheet) | Title `Finish your profile`, line `Your photo, the roles you're in and how chat looks to you.`, then the sections `Photo`, `Your roles` (only when there's a role to join) and `Chat display`, each the control from its own page. Web closes with `Done`. |

@@ -134,7 +134,7 @@ describe("WhatsNewHost", () => {
   it("never shows on a launch the welcome card is due", async () => {
     bootKeys = ["chat:lastSeen:channel-1"];
     values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
-    values.set(WELCOME_DUE_STORAGE_KEY, `${USER}:chapter-1`);
+    values.set(WELCOME_DUE_STORAGE_KEY, `${USER}:chapter-1:${Date.now()}`);
     const tree = await mount();
     expect(present).not.toHaveBeenCalled();
     expect(shown(tree)).toEqual([]);

@@ -91,7 +91,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useChannels: () => ({ isPending: false, isError: false, data: [] }),
   useCurrentChapter: () => ({ data: undefined }),
   useUpdateOnboarding: () => ({ mutateAsync: completeOnboarding }),
-  useCurrentUser: () => ({ data: currentUser, dataUpdatedAt: 1 }),
+  useCurrentUser: () => ({
+    data: currentUser,
+    dataUpdatedAt: 1,
+    refetch: () => Promise.resolve({ data: currentUser }),
+  }),
   useUpdateUser: () => ({ mutateAsync: updateUser }),
 }));
 
@@ -453,7 +457,7 @@ describe("s03 welcome, the name screen", () => {
     });
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
       WELCOME_DUE_STORAGE_KEY,
-      "u-1:ch-1",
+      expect.stringMatching(/^u-1:ch-1:\d+$/),
     );
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
     expect(profileEvents()).toEqual([

@@ -1017,6 +1017,18 @@ describe('MemberService', () => {
     });
   });
 
+  it('never resets onboarding, so a join is announced only once (#5627)', async () => {
+    const member = memberFixture({ has_completed_onboarding: true });
+    mockRepo.findById.mockResolvedValue(member);
+
+    await expect(service.updateOnboarding('member-1', false)).resolves.toEqual({
+      member,
+      firstFinish: false,
+    });
+    expect(mockRepo.update).not.toHaveBeenCalled();
+    expect(mockRepo.completeOnboarding).not.toHaveBeenCalled();
+  });
+
   // #4071: the rank rules on giving and taking roles, over a chapter with a
   // President, exec officers, chairs and brothers.
   describe('updateRoles rank rules', () => {

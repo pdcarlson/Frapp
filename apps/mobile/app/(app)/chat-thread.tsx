@@ -1935,11 +1935,11 @@ function ChannelThreadScreen() {
           ) : null}
 
           {/*
-            A new member's welcome card, once, in the first channel they open
-            after s03: the chapter's default channel (#5627).
+            A new member's welcome card (#5627), in the chapter's default
+            channel only, where chat home lands them after s03.
           */}
           {openChannel && !isDirectChannel(openChannel.channel) ? (
-            <WelcomeCard />
+            <WelcomeCard channelId={openChannel.channel.id} />
           ) : null}
 
           {channelId && important.total > 0 && nextImportant ? (

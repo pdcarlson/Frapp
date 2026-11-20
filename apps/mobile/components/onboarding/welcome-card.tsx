@@ -3,7 +3,9 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  landingChannelId,
   useActiveChapterId,
+  useChannels,
   useCurrentUser,
   useEvents,
   usePickableRoles,
@@ -30,6 +32,7 @@ import {
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { selectChannels } from "@/lib/chat/channel-list";
 import { initialsFor } from "@/lib/more/narrow";
 import { selectViewerProfile } from "@/lib/more/profile";
 import { clearWelcomeDue, isWelcomeDue } from "@/lib/onboarding/welcome-due";
@@ -45,9 +48,9 @@ type EventRow = {
 
 /**
  * The welcome card (#5627; Paul's pick 2026-11-19, "welcome card, no tour"):
- * once, under the header of the first channel a new member opens after s03,
- * which is the chapter's default channel (chat home opens it on arrival,
- * `landingChannelId`). It replaced the first-run tour. Web draws the same
+ * under the header of the chapter's default channel only, where chat home
+ * lands a new member after s03 (`landingChannelId`), never every channel
+ * they open. It replaced the first-run tour. Web draws the same
  * card (`apps/web/components/onboarding/welcome-card.tsx`).
  *
  * "Welcome to <chapter>, <first name>", the chapter's next two events with
@@ -56,7 +59,7 @@ type EventRow = {
  * s03 stopped asking up front. Closing it is for good, on this phone
  * (`lib/onboarding/welcome-due.ts`).
  */
-export function WelcomeCard() {
+export function WelcomeCard({ channelId }: { channelId: string }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
@@ -69,6 +72,12 @@ export function WelcomeCard() {
   );
   const userId = (userQuery.data as { id?: string } | undefined)?.id ?? null;
   const [due, setDue] = useState(false);
+  // The list is already cached for chat home; read only while due.
+  const channels = useChannels({ enabled: due });
+  const defaultChannelId = useMemo(
+    () => landingChannelId(selectChannels(channels.data), null),
+    [channels.data],
+  );
   const sheet = useRef<BottomSheetModal>(null);
 
   useEffect(() => {
@@ -93,7 +102,7 @@ export function WelcomeCard() {
   );
 
   // Drawn once the events have answered, so the rows never push it taller.
-  if (!due || events.isPending) return null;
+  if (!due || events.isPending || channelId !== defaultChannelId) return null;
 
   const close = () => {
     setDue(false);

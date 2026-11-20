@@ -110,6 +110,12 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    > **Paul, 2026-11-17 (#5294):** "I would like more AI stuff on by default." The chapter's
    > three switches now start on and stay on until the president turns one off; the president's
    > Continue no longer touches them. The member's own yes is unchanged and still explicit.
+   >
+   > *Changed in #5627 by pdcarlson, 2026-11-19 (Paul's pick on the onboarding overhaul, epic
+   > #5624):* a member who joins a chapter now meets Meet Frapp AI at their first use of AI, not
+   > during onboarding; a founder's chapter setup keeps it as a step. Members may join at 17, so
+   > the Continue line also confirms the member is 18 or older (`AI_MINIMUM_AGE`), which keeps
+   > this record's Google bar on people under 18.
 
    The president also turns chat on as a source for the chapter, separately from the other AI
    features. All of it is in [`spec/behavior/ai.md` § Chat as a source](../../behavior/ai.md#chat-as-a-source)

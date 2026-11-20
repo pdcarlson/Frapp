@@ -65,8 +65,9 @@
 //   pending the owner's material-or-not ruling in its PR.
 //   The Terms' Eligibility section moving the minimum age to 17, with Frapp
 //   AI for 18 and older (2026-11-19, #5627, Paul's pick of both ages) moved
-//   only the Terms pin, pending the owner's material-or-not ruling in its PR:
-//   every member who accepted before it confirmed 18, which still covers AI.
+//   only the Terms pin: ruled non-material by the owner on his decision card
+//   (2026-11-20), since every member who accepted before it confirmed 18,
+//   which covers both ages.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't

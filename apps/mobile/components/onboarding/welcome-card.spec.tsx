@@ -20,6 +20,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     dataUpdatedAt: 1,
   }),
   useEvents: () => ({ data: mocks.events, isPending: false }),
+  useChannels: () => ({
+    data: [
+      { id: "random", name: "random", type: "public" },
+      { id: "general", name: "general", type: "public", is_default: true },
+    ],
+  }),
   usePickableRoles: () => ({ roles: [], isLoading: false }),
 }));
 vi.mock("@/lib/chapter-branding", () => ({
@@ -44,12 +50,12 @@ type Node = ReactTestRenderer["root"];
 const soon = (days: number) =>
   new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 
-async function render(): Promise<ReactTestRenderer> {
+async function render(channelId = "general"): Promise<ReactTestRenderer> {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <WelcomeCard />
+        <WelcomeCard channelId={channelId} />
       </FrappThemeProvider>,
     );
   });
@@ -105,6 +111,12 @@ describe("WelcomeCard (phone)", () => {
   it("shows nothing when it isn't due", async () => {
     mocks.due = false;
     const { root } = await render();
+
+    expect(root.findAllByProps({ testID: "welcome-card" })).toHaveLength(0);
+  });
+
+  it("shows only in the chapter's default channel", async () => {
+    const { root } = await render("random");
 
     expect(root.findAllByProps({ testID: "welcome-card" })).toHaveLength(0);
   });

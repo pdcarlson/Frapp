@@ -672,6 +672,15 @@ export function ChatShell({
       })),
     [channelsQuery.data, levelByChannelId],
   );
+  // The channel a new member lands in, where the welcome card shows (#5627).
+  const defaultChannelId = useMemo(
+    () =>
+      landingChannelId(
+        channels.filter((ch) => !isDirectChannel(ch)),
+        null,
+      ),
+    [channels],
+  );
   // The rail's half of the list (#3774): channels, or direct and group
   // messages. Everything that resolves a channel by id (links, search,
   // bookmarks, mentions) still reads the whole list.
@@ -4012,10 +4021,16 @@ export function ChatShell({
         */}
         <OpsSetupNudge />
         {/*
-          A new member's welcome card, once, over the first channel they open
-          (#5627): the chapter's default channel on arrival.
+          A new member's welcome card (#5627), over the chapter's default
+          channel only, where they land: never every channel they open.
         */}
-        <WelcomeCard channelOpen={!!activeChannelId && !directView} />
+        <WelcomeCard
+          inDefaultChannel={
+            !!activeChannelId &&
+            !directView &&
+            activeChannelId === defaultChannelId
+          }
+        />
         {/*
           The four states that used to replace the whole route now render inside
           this column, so the channels column beside them stays usable: a member

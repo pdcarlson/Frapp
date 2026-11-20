@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { readWelcomeDueMark, welcomeDueMark } from "@repo/validation";
 
 /**
  * The welcome card is due (#5627; Paul's pick 2026-11-19, "welcome card, no
@@ -11,6 +12,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  * Kept on the phone, per member and chapter, as the first-run tour's mark was
  * (`frapp.mobile.tour-due` until #5627): it is this phone's first minute in
  * the chapter. Web keeps its own (`apps/web/lib/onboarding/welcome-due.ts`).
+ * It lapses after `WELCOME_CARD_DAYS` (`welcomeDueMark` in
+ * `@repo/validation`), so What's new isn't held for good.
  */
 export const WELCOME_DUE_STORAGE_KEY = "frapp.mobile.welcome-due";
 
@@ -21,8 +24,8 @@ type Storage = Pick<typeof AsyncStorage, "getItem" | "setItem" | "removeItem">;
  * membership resolved server-side), so a missing chapter still gets a stable
  * mark, as `lib/chat/last-channel.ts` keys it.
  */
-function value(userId: string, chapterId: string | null): string {
-  return `${userId}:${chapterId ?? "sole"}`;
+function chapterKey(chapterId: string | null): string {
+  return chapterId ?? "sole";
 }
 
 export async function markWelcomeDue(
@@ -31,7 +34,10 @@ export async function markWelcomeDue(
   storage: Storage = AsyncStorage,
 ): Promise<void> {
   try {
-    await storage.setItem(WELCOME_DUE_STORAGE_KEY, value(userId, chapterId));
+    await storage.setItem(
+      WELCOME_DUE_STORAGE_KEY,
+      welcomeDueMark(userId, chapterKey(chapterId)),
+    );
   } catch {
     // No card is the failure; the member still reaches chat.
   }
@@ -43,10 +49,10 @@ export async function isWelcomeDue(
   storage: Storage = AsyncStorage,
 ): Promise<boolean> {
   try {
-    return (
-      (await storage.getItem(WELCOME_DUE_STORAGE_KEY)) ===
-      value(userId, chapterId)
+    const mark = readWelcomeDueMark(
+      await storage.getItem(WELCOME_DUE_STORAGE_KEY),
     );
+    return mark?.userId === userId && mark.chapterKey === chapterKey(chapterId);
   } catch {
     return false;
   }
@@ -58,8 +64,10 @@ export async function isWelcomeDueForMember(
   storage: Storage = AsyncStorage,
 ): Promise<boolean> {
   try {
-    const due = await storage.getItem(WELCOME_DUE_STORAGE_KEY);
-    return due?.startsWith(`${userId}:`) ?? false;
+    const mark = readWelcomeDueMark(
+      await storage.getItem(WELCOME_DUE_STORAGE_KEY),
+    );
+    return mark?.userId === userId;
   } catch {
     return false;
   }
@@ -88,7 +96,7 @@ export function claimWelcomeLanding(
   userId: string,
   chapterId: string | null,
 ): boolean {
-  const mark = value(userId, chapterId);
+  const mark = `${userId}:${chapterKey(chapterId)}`;
   if (landed.has(mark)) return false;
   landed.add(mark);
   return true;

@@ -515,12 +515,15 @@ export function useUpdateOnboarding() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
-      // The mobile first-run gate reads this flag off `GET /v1/chapters`. Leaving that cache standing would re-send a member
-      // who just finished s03 back to s03.
-      queryClient.invalidateQueries({ queryKey: ["chapters"] });
-    },
+    // Returned, so `mutateAsync` resolves once both are fresh: the phone's
+    // s03 gate and web's welcome gate (#5627) read this flag off
+    // `GET /v1/chapters`, and a standing cache would send a member who just
+    // finished straight back.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["members", chapterId] }),
+        queryClient.invalidateQueries({ queryKey: ["chapters"] }),
+      ]),
   });
 }
 

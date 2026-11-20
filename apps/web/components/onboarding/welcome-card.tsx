@@ -62,16 +62,20 @@ type EventRow = {
  * Between the channel header and the timeline, as the ops-setup nudge sits,
  * so it is never a row the virtualized log can unmount.
  */
-export function WelcomeCard({ channelOpen }: { channelOpen: boolean }) {
+export function WelcomeCard({
+  inDefaultChannel,
+}: {
+  inDefaultChannel: boolean;
+}) {
   const chapterId = useChapterStore((s) => s.activeChapterId);
   const userQuery = useCurrentUser();
   const me = userQuery.data as Me | undefined;
-  // Read once per mount: the mark only changes when this card clears it.
-  const [due, setDue] = useState<boolean | null>(null);
-  if (due === null && me?.id && chapterId) {
-    setDue(isWelcomeDue(me.id, chapterId));
-  }
-  const show = !!due && channelOpen;
+  // Read for the chapter on screen, so a chapter switch reads that chapter's
+  // mark; closed here, it stays closed for this visit without a re-read.
+  const [closed, setClosed] = useState(false);
+  const due =
+    !closed && !!me?.id && !!chapterId && isWelcomeDue(me.id, chapterId);
+  const show = due && inDefaultChannel;
   const chapter = useCurrentChapter({ chapterId, enabled: show });
   const events = useEvents({ enabled: show });
   const [finishOpen, setFinishOpen] = useState(false);
@@ -92,7 +96,7 @@ export function WelcomeCard({ channelOpen }: { channelOpen: boolean }) {
 
   function close() {
     clearWelcomeDue();
-    setDue(false);
+    setClosed(true);
   }
 
   return (

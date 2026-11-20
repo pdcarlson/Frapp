@@ -190,6 +190,10 @@ vi.mock("@/components/onboarding/chapter-wizard-gate", () => ({
 vi.mock("@/components/auth/terms-prompt", () => ({
   TermsPromptGate: () => null,
 }));
+// The welcome gate (#5627) has its own spec.
+vi.mock("@/components/onboarding/welcome-gate", () => ({
+  WelcomeGate: () => null,
+}));
 // Whether this member has Ask (`ask-host.tsx`); null, as for one without it,
 // unless a test says otherwise.
 const askEntry = vi.hoisted(() => ({
