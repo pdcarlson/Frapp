@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
+import { SELF_ASSIGNABLE_SECTION_CAPTION } from "@repo/validation";
 
 /**
  * Chapter settings and its Roles screens on the phone (#4074), rendered. They
@@ -104,6 +105,19 @@ vi.mock("@/components/settings/chat-background-sheet", async () => {
       ref: React.Ref<{ present: () => void }>,
     ) {
       React.useImperativeHandle(ref, () => ({ present: h.backgroundPresent }));
+      return null;
+    }),
+  };
+});
+
+vi.mock("@/components/roles/new-pickable-role-sheet", async () => {
+  const React = await import("react");
+  return {
+    NewPickableRoleSheet: React.forwardRef(function NewPickableRoleSheet(
+      _props: object,
+      ref: React.Ref<{ present: () => void }>,
+    ) {
+      React.useImperativeHandle(ref, () => ({ present: vi.fn() }));
       return null;
     }),
   };
@@ -736,10 +750,12 @@ describe("Non-chapter business on the phone (#4958)", () => {
     );
   });
 
-  it("tells a roles manager how to fill an empty Non-chapter business", () => {
-    expect(screenText(render(<ChapterRolesScreen />))).toContain(
-      "Turn it on from a role outside the tiers.",
-    );
+  it("offers a roles manager Add role in Non-chapter business (#5736)", () => {
+    const text = screenText(render(<ChapterRolesScreen />));
+    const business = text.indexOf("Non-chapter business");
+    expect(text).toContain(SELF_ASSIGNABLE_SECTION_CAPTION);
+    expect(text).not.toContain("Turn it on from");
+    expect(text.indexOf("Add role", business)).toBeGreaterThan(business);
   });
 });
 

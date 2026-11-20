@@ -7178,6 +7178,8 @@ export interface components {
              * @description The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.
              */
             tier_id?: string | null;
+            /** @description Create the role already marked for members to join and leave themselves (#4958, #5736). It must be safe to pick, as `PATCH` checks: outside the tiers (`tier_id` null or absent) and holding no permission beyond `channels:read:<slug>` (400 `role.self_assignable_tiered` or `role.self_assignable_permissions`). Defaults to false. */
+            self_assignable?: boolean;
         };
         UpdateRoleDto: {
             /** @description Must contain something besides whitespace. */

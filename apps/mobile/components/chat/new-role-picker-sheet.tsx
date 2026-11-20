@@ -33,9 +33,9 @@ import { Toggle } from "@/components/toggle";
 import { successHaptic } from "@/lib/haptics";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
-/** With no role marked Non-chapter business, where the officer turns one on. */
+/** With no role marked Non-chapter business, where the officer adds one. */
 export const NO_PICKABLE_ROLES_LINE =
-  "No roles are open to join yet. Turn on Non-chapter business on a role's page in Chapter settings → Roles.";
+  "No roles are open to join yet. Add one under Non-chapter business in Chapter settings → Roles and groups.";
 
 /**
  * The New role picker sheet (#4958), opened from the composer's + by an

@@ -106,6 +106,27 @@ export interface RoleChanges {
 export const RANK_REFUSAL =
   'You can only change roles and tiers ranked below your own.';
 
+/**
+ * Refuse (400) a role marked self-assignable that isn't safe to pick (#4958):
+ * on a save that marks or keeps it marked, and on a create that marks it.
+ */
+function assertSafeToPick(role: {
+  system_key: string | null;
+  tier_id: string | null;
+  permissions: readonly string[];
+}): void {
+  const refusal = selfAssignableRefusal(role);
+  if (refusal) {
+    throw new BadRequestException({
+      // SELF_ASSIGNABLE_KEYED_CODE, SELF_ASSIGNABLE_TIERED_CODE or
+      // SELF_ASSIGNABLE_PERMISSIONS_CODE, named so the error-code
+      // classification spec sees all three.
+      code: refusal,
+      message: SELF_ASSIGNABLE_REFUSAL_COPY[refusal],
+    });
+  }
+}
+
 /** Refusal when a write would grant what the caller does not hold (#4071). */
 function grantRefusal(missing: readonly string[]): string {
   return `You can't give a role or tier a permission you don't have yourself: ${missing.join(', ')}.`;
@@ -211,14 +232,22 @@ export class RbacService {
    * `POST /v1/roles` for a member: {@link create} behind the rank rules. The
    * role may only go into a tier ranked below the caller, or outside the
    * tiers (below every tier, so refused to a caller who ranks there too),
-   * and may only hold permissions the caller holds.
+   * and may only hold permissions the caller holds. `self_assignable: true`
+   * creates it already marked (#5736), under the same rule as marking it
+   * after (`assertSelfAssignableSave`): it must be safe to pick, and the
+   * caller already holds what it carries.
    */
   async createAsMember(
     chapterId: string,
     actorUserId: string,
     data: Pick<
       RoleChanges,
-      'name' | 'permissions' | 'display_order' | 'color' | 'mentionable'
+      | 'name'
+      | 'permissions'
+      | 'display_order'
+      | 'color'
+      | 'mentionable'
+      | 'self_assignable'
     > & { tier_id?: string | null },
   ): Promise<Role> {
     const context = await this.getRankContext(chapterId, actorUserId);
@@ -240,6 +269,13 @@ export class RbacService {
     const listed = data.permissions ?? [];
     const holds = listed.length > 0 ? listed : tierPermissions;
     assertPermissionsHeld(context.reach, holds);
+    if (data.self_assignable === true) {
+      assertSafeToPick({
+        system_key: null,
+        tier_id: tierId,
+        permissions: holds,
+      });
+    }
     return this.create(chapterId, actorUserId, { ...data, tier_id: tierId });
   }
 
@@ -367,20 +403,11 @@ export class RbacService {
   ): void {
     const marked = data.self_assignable ?? role.self_assignable === true;
     if (!marked) return;
-    const refusal = selfAssignableRefusal({
+    assertSafeToPick({
       system_key: role.system_key,
       tier_id: tierId,
       permissions: after,
     });
-    if (refusal) {
-      throw new BadRequestException({
-        // SELF_ASSIGNABLE_KEYED_CODE, SELF_ASSIGNABLE_TIERED_CODE or
-        // SELF_ASSIGNABLE_PERMISSIONS_CODE, named so the error-code
-        // classification spec sees all three.
-        code: refusal,
-        message: SELF_ASSIGNABLE_REFUSAL_COPY[refusal],
-      });
-    }
     if (data.self_assignable === true && role.self_assignable !== true) {
       assertPermissionsHeld(context.reach, after);
     }

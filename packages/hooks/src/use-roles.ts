@@ -52,10 +52,15 @@ export function useCreateRole() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["roles", "create-role"],
-    mutationFn: async (body: CreateRoleBody) => {
+    // Answers the new role's id, so a caller can open its page (#5736). The
+    // contract leaves `POST /v1/roles`' body untyped, so it is read here once.
+    mutationFn: async (
+      body: CreateRoleBody,
+    ): Promise<{ id: string | null }> => {
       const { data, error } = await client.POST("/v1/roles", { body });
       if (error) throw error;
-      return data;
+      const id = (data as { id?: unknown } | undefined)?.id;
+      return { id: typeof id === "string" ? id : null };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });

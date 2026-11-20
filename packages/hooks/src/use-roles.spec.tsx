@@ -150,7 +150,7 @@ describe("useCreateRole", () => {
     };
 
     const promise = result.current.mutateAsync(payload);
-    await expect(promise).resolves.toEqual(mockRole);
+    await expect(promise).resolves.toEqual({ id: "role-3" });
 
     expect(mockPost).toHaveBeenCalledWith("/v1/roles", { body: payload });
     expect(mockPost).toHaveBeenCalledTimes(1);
@@ -221,7 +221,7 @@ describe("useCreateRole", () => {
     };
 
     const promise = result.current.mutateAsync(payload);
-    await expect(promise).resolves.toEqual(mockRole);
+    await expect(promise).resolves.toEqual({ id: "role-4" });
 
     expect(mockPost).toHaveBeenCalledWith("/v1/roles", { body: payload });
     expect(mockPost).toHaveBeenCalledTimes(1);

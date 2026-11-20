@@ -194,6 +194,62 @@ describe('RbacService self-assignable roles (#4958)', () => {
     });
   });
 
+  // #5736: the Roles overview's Non-chapter business section creates a role
+  // already marked, in one request, under the same rule as marking it after.
+  describe('creating a role already marked (POST /v1/roles self_assignable)', () => {
+    it('creates it outside the tiers, holding nothing, marked', async () => {
+      const created = await service.createAsMember(CHAPTER_ID, USER.riskChair, {
+        name: 'Intramural soccer',
+        permissions: [],
+        tier_id: null,
+        self_assignable: true,
+      });
+      expect(roleRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Intramural soccer',
+          tier_id: null,
+          self_assignable: true,
+          system_key: null,
+        }),
+      );
+      expect(created.self_assignable).toBe(true);
+    });
+
+    it('refuses one in a tier', async () => {
+      expect(
+        await codeOf(
+          service.createAsMember(CHAPTER_ID, USER.president, {
+            name: 'Intramural soccer',
+            permissions: [],
+            tier_id: TIER.pledges,
+            self_assignable: true,
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_tiered',
+      });
+      expect(roleRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses one holding a permission beyond channels:read', async () => {
+      expect(
+        await codeOf(
+          service.createAsMember(CHAPTER_ID, USER.president, {
+            name: 'Intramural soccer',
+            permissions: ['members:view'],
+            tier_id: null,
+            self_assignable: true,
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_permissions',
+      });
+      expect(roleRepo.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('editing a role members already pick', () => {
     it('refuses granting it a permission unless the save also unmarks it', async () => {
       expect(
