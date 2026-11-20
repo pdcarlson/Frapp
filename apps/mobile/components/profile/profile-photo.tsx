@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type GestureResponderEvent,
 } from "react-native";
 import {
   useActiveChapterId,
@@ -21,7 +22,7 @@ import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { usePressFeedback } from "@/components/list-section";
 import { CameraGlyph } from "@/components/service-hours/camera-glyph";
-import { showActionMenu } from "@/lib/action-menu";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import {
   useChapterBranding,
   type ChapterBranding,
@@ -46,9 +47,8 @@ const NO_CHAPTER_PHOTO_NOTE =
  * it (#732).
  *
  * Canvas draws the avatar and no control for it. The avatar is the control:
- * tapping it picks a photo, or, once there is one, offers the platform's own
- * choice of Choose photo or Remove photo (iOS's action sheet, an alert on
- * Android). A small camera badge in the accent marks it as tappable. It used
+ * tapping it picks a photo, or, once there is one, offers Choose photo or
+ * Remove photo in the glass menu (`openItemMenu`). A small camera badge in the accent marks it as tappable. It used
  * to be a line of text buttons ("Change photo", "Remove") between the avatar
  * and the name, which split the identity block the board draws as one, and
  * Remove deleted the photo on the spot.
@@ -154,7 +154,7 @@ export function ProfilePhoto({
     ]);
   }
 
-  function openChoices() {
+  function openChoices(event?: GestureResponderEvent) {
     if (busy) return;
     // With nothing to remove there is nothing to choose between.
     if (!photoUrl) {
@@ -164,24 +164,25 @@ export function ProfilePhoto({
     // Without a chapter there is only Remove, and the choice says why.
     const canChoose = !!chapterId;
     const message = canChoose ? undefined : NO_CHAPTER_PHOTO_NOTE;
-    const choose = { label: CHOOSE_PHOTO, onPress: () => void change() };
-    const remove = {
-      label: REMOVE_PHOTO,
-      style: "destructive" as const,
-      onPress: confirmRemove,
+    const choose = {
+      key: "choose",
+      label: CHOOSE_PHOTO,
+      run: () => void change(),
     };
-    // Android's dialog has a title, an explicit Cancel and its own order:
-    // Cancel, Remove photo, Choose photo.
-    showActionMenu({
-      message,
-      rows: canChoose ? [choose, remove] : [remove],
-      userInterfaceStyle: "dark",
-      android: {
+    const remove = {
+      key: "remove",
+      label: REMOVE_PHOTO,
+      destructive: true,
+      run: confirmRemove,
+    };
+    openItemMenu(
+      {
         title: "Profile photo",
-        rows: canChoose ? [remove, choose] : [remove],
-        cancelButton: true,
+        message,
+        actions: canChoose ? [choose, remove] : [remove],
       },
-    });
+      pressAt(event),
+    );
   }
 
   // Something to do: a photo to add needs a chapter, a photo to remove

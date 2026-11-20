@@ -1,5 +1,11 @@
 import { useRef, useState } from "react";
-import { Share, StyleSheet, Text, View } from "react-native";
+import {
+  type GestureResponderEvent,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   CHAPTER_LINK_HINT,
@@ -15,7 +21,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { OptionSheet } from "@/components/option-sheet";
-import { showActionMenu } from "@/lib/action-menu";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import {
   inviteShareContent,
   inviteShareOptions,
@@ -127,30 +133,40 @@ export function ChapterLinkSection({
     );
   }
 
-  function openMenu(invite: InviteListItem) {
+  function openMenu(invite: InviteListItem, event?: GestureResponderEvent) {
     if (running.current) return;
-    showActionMenu({
-      title: `${label(invite.role)} link`,
-      rows: [
-        ...(chapterName && invite.status === "pending"
-          ? [{ label: SHARE_CHAPTER_LINK, onPress: () => void share(invite) }]
-          : []),
-        ...(canRemake(invite.role)
-          ? [
-              {
-                label: MAKE_NEW_LINK,
-                onPress: () => makeLink(invite.id, invite.role),
-              },
-            ]
-          : []),
-        {
-          label: TURN_OFF_LINK,
-          style: "destructive" as const,
-          onPress: () => turnOff(invite),
-        },
-      ],
-      userInterfaceStyle: "dark",
-    });
+    openItemMenu(
+      {
+        title: `${label(invite.role)} link`,
+        actions: [
+          ...(chapterName && invite.status === "pending"
+            ? [
+                {
+                  key: "share",
+                  label: SHARE_CHAPTER_LINK,
+                  run: () => void share(invite),
+                },
+              ]
+            : []),
+          ...(canRemake(invite.role)
+            ? [
+                {
+                  key: "remake",
+                  label: MAKE_NEW_LINK,
+                  run: () => makeLink(invite.id, invite.role),
+                },
+              ]
+            : []),
+          {
+            key: "turn-off",
+            label: TURN_OFF_LINK,
+            destructive: true,
+            run: () => turnOff(invite),
+          },
+        ],
+      },
+      pressAt(event),
+    );
   }
 
   return (
@@ -174,7 +190,7 @@ export function ChapterLinkSection({
             action
             busy={busy === link.id}
             accessibilityHint={`Opens what you can do with the ${label(link.role)} link.`}
-            onPress={() => openMenu(link)}
+            onPress={(event) => openMenu(link, event)}
           />
         ))}
         {roles.choices.length > 0 && newRole ? (

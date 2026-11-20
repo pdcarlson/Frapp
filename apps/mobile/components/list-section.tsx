@@ -11,6 +11,7 @@ import {
   Text,
   View,
   type ViewStyle,
+  type GestureResponderEvent,
 } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { SkeletonText } from "@/components/state-block";
@@ -403,7 +404,8 @@ export type ListRowProps = {
   descriptionTone?: "default" | "destructive";
   /** Trailing control (a switch, a swatch) instead of, or beside, `value`. */
   trailing?: ReactNode;
-  onPress?: () => void;
+  /** Gets the press, so a menu it opens can sit beside it. */
+  onPress?: (event?: GestureResponderEvent) => void;
   /**
    * A secondary action behind a long press (Documents' Delete, #3938), as
    * chat's channel rows put theirs. A screen reader reaches it as a named

@@ -16,7 +16,8 @@ import {
   REMOVE_FROM_CHAPTER_LABEL,
   removeConfirmTitle,
 } from "@repo/hooks/member-removal-copy";
-import { showActionMenu } from "@/lib/action-menu";
+import { openItemMenu } from "@/components/item-actions-menu";
+import type { FocusReturn } from "@/lib/overlay";
 
 export type MemberMenuAction = "edit" | "block" | "unblock" | "remove";
 
@@ -59,24 +60,29 @@ function memberMenuLabel(action: MemberMenuAction, name: string): string {
 const DESTRUCTIVE: ReadonlySet<MemberMenuAction> = new Set(["block", "remove"]);
 
 /**
- * Opens the menu (`lib/action-menu.ts`): the iOS action sheet, or Android's
- * dialog, whose Cancel is a tap outside or back.
+ * Opens the menu: the glass menu (`openItemMenu`), closed by a tap outside
+ * or back.
  */
 export function showMemberMenu(
   name: string,
   actions: readonly MemberMenuAction[],
   onPick: (action: MemberMenuAction) => void,
+  /** The ⋯'s press, so the menu opens under it. */
+  at?: { pageY?: number; trigger?: FocusReturn | null },
 ): void {
   if (actions.length === 0) return;
-  showActionMenu({
-    title: name,
-    rows: actions.map((action) => ({
-      label: memberMenuLabel(action, name),
-      style: DESTRUCTIVE.has(action) ? "destructive" : "default",
-      onPress: () => onPick(action),
-    })),
-    userInterfaceStyle: "dark",
-  });
+  openItemMenu(
+    {
+      title: name,
+      actions: actions.map((action) => ({
+        key: action,
+        label: memberMenuLabel(action, name),
+        destructive: DESTRUCTIVE.has(action),
+        run: () => onPick(action),
+      })),
+    },
+    at,
+  );
 }
 
 /**
