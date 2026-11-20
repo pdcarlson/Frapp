@@ -4,6 +4,7 @@ import {
   parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
 import type { TaskStatus } from "./use-tasks";
+import { TASK_NO_DUE_DATE_LABEL } from "@repo/validation";
 
 /**
  * Where a task's due date falls from today (#4295 step 5, "Views"): the
@@ -24,9 +25,14 @@ import type { TaskStatus } from "./use-tasks";
  * - `earlier`: a finished task whose day has passed. It isn't overdue, and
  *   no filter but "Any time" asks for it.
  *
+ * - `none`: a task with no due date (#5761). It is never overdue, so it
+ *   stays here whatever the day; it comes after Later, as Todoist and Things
+ *   list undated work after everything with a date.
+ *
  * A task due at a time (`due_at`) is placed by that moment's local day.
  */
-export type TaskDueBucket = "overdue" | "today" | "week" | "later" | "earlier";
+export type TaskDueBucket =
+  "overdue" | "today" | "week" | "later" | "none" | "earlier";
 
 /**
  * Days from today that still count as This week: today plus the next six.
@@ -39,6 +45,7 @@ export const TASK_DUE_BUCKET_LABELS: Record<TaskDueBucket, string> = {
   today: "Today",
   week: "This week",
   later: "Later",
+  none: TASK_NO_DUE_DATE_LABEL,
   earlier: "Earlier",
 };
 
@@ -48,6 +55,7 @@ export const TASK_DUE_FILTERS: readonly Exclude<TaskDueBucket, "earlier">[] = [
   "today",
   "week",
   "later",
+  "none",
 ];
 
 export function taskDueBucket(
@@ -59,6 +67,7 @@ export function taskDueBucket(
   now: Date = new Date(),
 ): TaskDueBucket {
   if (task.status === "OVERDUE") return "overdue";
+  if (!task.due_date && !task.due_at) return "none";
   // An unreadable time falls back to the day rather than hiding it.
   const timed = task.due_at ? parseInstantOrBareLocalNoon(task.due_at) : null;
   const raw = timed ? task.due_at : task.due_date;
@@ -76,27 +85,35 @@ export function taskDueBucket(
  * My tasks' three groups, in order (#4295: "My tasks grouped as Today, This
  * week and Later"). Overdue leads Today rather than taking a group of its
  * own, as Todoist's Today view lists it: it is the first thing to do today,
- * and its due line already says it is late, in the warning hue.
+ * and its due line already says it is late, in the warning hue. No due date
+ * (#5761) follows Later.
  */
-export type MyTasksGroup = "today" | "week" | "later";
+export type MyTasksGroup = "today" | "week" | "later" | "none";
 
 export const MY_TASKS_GROUPS: readonly MyTasksGroup[] = [
   "today",
   "week",
   "later",
+  "none",
 ];
 
 export const MY_TASKS_GROUP_LABELS: Record<MyTasksGroup, string> = {
   today: "Today",
   week: "This week",
   later: "Later",
+  none: TASK_NO_DUE_DATE_LABEL,
 };
 
-/** The quiet line under a My tasks group with nothing in it. */
-export const MY_TASKS_GROUP_EMPTY: Record<MyTasksGroup, string> = {
+/**
+ * The quiet line under a My tasks group with nothing in it. No due date has
+ * none: it is drawn only when it holds a task, so a member who dates
+ * everything never sees it.
+ */
+export const MY_TASKS_GROUP_EMPTY: Record<MyTasksGroup, string | null> = {
   today: "Nothing due today",
   week: "Nothing else this week",
   later: "Nothing later",
+  none: null,
 };
 
 export function myTasksGroup(
@@ -110,17 +127,18 @@ export function myTasksGroup(
 /**
  * Order inside a group: overdue first, then by due day, then by time within
  * the day with a task that has no time last (it is due by the end of the
- * day), then by title so the order holds between renders.
+ * day), then a task with no due date (#5761), then by title so the order
+ * holds between renders.
  */
 export function compareTasksByDue(
   a: {
-    due_date: string;
+    due_date: string | null;
     due_at?: string | null;
     title: string;
     status: TaskStatus;
   },
   b: {
-    due_date: string;
+    due_date: string | null;
     due_at?: string | null;
     title: string;
     status: TaskStatus;
@@ -129,7 +147,8 @@ export function compareTasksByDue(
   const aLate = a.status === "OVERDUE" ? 0 : 1;
   const bLate = b.status === "OVERDUE" ? 0 : 1;
   if (aLate !== bLate) return aLate - bLate;
-  const byDay = a.due_date.localeCompare(b.due_date);
+  if (!a.due_date !== !b.due_date) return a.due_date ? -1 : 1;
+  const byDay = (a.due_date ?? "").localeCompare(b.due_date ?? "");
   if (byDay !== 0) return byDay;
   const aMs = timeOf(a.due_at);
   const bMs = timeOf(b.due_at);

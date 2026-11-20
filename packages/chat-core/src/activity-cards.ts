@@ -27,7 +27,8 @@ import {
 export interface ActivityTaskRow {
   id: string;
   title: string;
-  due_date: string;
+  /** Null for a task with no due date (#5761). */
+  due_date: string | null;
   /** Set when the task is due at a time of day (#4003). */
   due_at?: string | null;
   assignee_id: string;

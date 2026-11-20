@@ -105,8 +105,8 @@ export interface TaskPayload {
   /** Member the task is assigned to. */
   assignee_user_id: string;
   assignee_name: string;
-  /** `tasks.due_date` (YYYY-MM-DD). */
-  due_date: string;
+  /** `tasks.due_date` (YYYY-MM-DD), or null for a task with no due date (#5761). */
+  due_date: string | null;
   /**
    * `tasks.due_at`: the moment it is due when it has a time of day (#4003).
    * Absent on a card posted before times existed, and null without one.

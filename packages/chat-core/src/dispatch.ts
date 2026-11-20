@@ -914,8 +914,8 @@ export interface TaskInput {
   title: string;
   description?: string;
   assignee_id: string;
-  /** `YYYY-MM-DD`. */
-  due_date: string;
+  /** `YYYY-MM-DD`, or null (or omitted) for no due date (#5761). */
+  due_date?: string | null;
   /** The moment it is due, when it has a time of day (#4003). */
   due_at?: string;
   /** Subtask titles, in order (#4003). */

@@ -8,6 +8,7 @@ import {
   canReadCardTask,
   isSentBack,
   readEditableCardTask,
+  cardTaskDue,
   readLiveTask,
   taskCardControls,
   TASK_ACTION_LABELS,
@@ -145,11 +146,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   const statusLabel = live ? taskStatusLabel(live) : null;
   // The due line (#4135): the live due date once read, since an edit can move
   // it after this card was posted, counting down against a ticking clock.
-  const due = taskDueLine(
-    live?.due ?? payload.due_at ?? payload.due_date,
-    status,
-    new Date(now),
-  );
+  const due = taskDueLine(cardTaskDue(live, payload), status, new Date(now));
   // No control until the live task is read (#2065): acting on the snapshot
   // offered Start on tasks already in progress or done.
   // The controls follow whom the task is assigned to now (#4296): an edit

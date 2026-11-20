@@ -51,7 +51,7 @@ interface CachedTask {
   id?: string;
   status?: string;
   stored_status?: string;
-  due_date?: string;
+  due_date?: string | null;
   due_at?: string | null;
   completed_at?: string | null;
   /** Who marked it done (#5732). */
@@ -482,7 +482,8 @@ export function useCreateTask() {
       audience_role_id?: string;
       /** With `audience`: only this chapter group's active members. */
       audience_group_id?: string;
-      due_date: string;
+      /** Omitted, or null, for a task with no due date (#5761). */
+      due_date?: string | null;
       /** The moment it is due, when it has a time of day (#4003). */
       due_at?: string;
       /** Subtask titles, in order (#4003). */
@@ -632,7 +633,7 @@ export function useUpdateTaskStatus() {
       const patch: TaskPatch = {
         status: deriveDisplayStatus(
           body.status,
-          row?.due_date,
+          row?.due_date ?? undefined,
           todayUtc(),
           row?.due_at,
         ),
@@ -842,7 +843,7 @@ export function useRejectTask() {
           : {}),
         status: deriveDisplayStatus(
           "IN_PROGRESS",
-          row?.due_date,
+          row?.due_date ?? undefined,
           todayUtc(),
           row?.due_at,
         ),

@@ -155,9 +155,10 @@ export interface LiveTask {
   /**
    * When the task is due now: its `due_at` when it has a time of day, else
    * its `due_date`. An edit can move it after a card was posted, so a card's
-   * countdown reads this rather than the snapshot's date (#4135).
+   * countdown reads this rather than the snapshot's date (#4135). `null` when
+   * the task has no due date (#5761); `undefined` when the read didn't say.
    */
-  due: string | undefined;
+  due: string | null | undefined;
   point_reward: number | null;
   /** What Mark done needs (#4635). */
   proof_kind: TaskProofKind;
@@ -183,6 +184,18 @@ export interface LiveTaskPhoto {
   id: string;
   kind: "reference" | "proof";
   storage_path: string;
+}
+
+/**
+ * What a task card's due line reads (#5761): the live task's due once it is
+ * read, which may be none, else the due the card was posted with.
+ */
+export function cardTaskDue(
+  live: Pick<LiveTask, "due"> | null | undefined,
+  payload: { due_date: string | null; due_at?: string | null },
+): string | null {
+  if (live && live.due !== undefined) return live.due;
+  return payload.due_at ?? payload.due_date;
 }
 
 /**
@@ -259,7 +272,9 @@ export function readLiveTask(data: unknown): LiveTask | null {
         ? r.due_at
         : typeof r.due_date === "string" && r.due_date !== ""
           ? r.due_date
-          : undefined,
+          : r.due_date === null
+            ? null
+            : undefined,
     point_reward: typeof r.point_reward === "number" ? r.point_reward : null,
     proof_kind:
       r.proof_kind === "photo" || r.proof_kind === "link"
@@ -435,7 +450,8 @@ export interface EditableCardTask {
   title: string;
   description: string | null;
   assignee_id: string;
-  due_date: string;
+  /** Null for a task with no due date (#5761). */
+  due_date: string | null;
   due_at: string | null;
   point_reward: number | null;
   status: TaskStatus;
@@ -485,8 +501,9 @@ export function readEditableCardTask(data: unknown): EditableCardTask | null {
     typeof r.title !== "string" ||
     typeof r.assignee_id !== "string" ||
     r.assignee_id === "" ||
-    typeof r.due_date !== "string" ||
-    r.due_date === ""
+    // Null is a task with no due date (#5761); anything else is unreadable.
+    (r.due_date !== null &&
+      (typeof r.due_date !== "string" || r.due_date === ""))
   ) {
     return null;
   }
@@ -495,7 +512,7 @@ export function readEditableCardTask(data: unknown): EditableCardTask | null {
     title: r.title,
     description: typeof r.description === "string" ? r.description : null,
     assignee_id: r.assignee_id,
-    due_date: r.due_date,
+    due_date: typeof r.due_date === "string" ? r.due_date : null,
     due_at: typeof r.due_at === "string" && r.due_at !== "" ? r.due_at : null,
     point_reward: typeof r.point_reward === "number" ? r.point_reward : null,
     status: live.status,

@@ -97,7 +97,7 @@ function presentRoleFields(
 
 /**
  * A `kind:"task"` payload, or `null` without the id, title, both names and the
- * due date. `status` is always the creation-time `"TODO"` (`TaskPayload`): a
+ * due date (a string, or null for a task with none). `status` is always the creation-time `"TODO"` (`TaskPayload`): a
  * card must take the live status from the task query, never from this.
  */
 export function readTaskPayload(message: ChatMessage): TaskPayload | null {
@@ -108,7 +108,8 @@ export function readTaskPayload(message: ChatMessage): TaskPayload | null {
     typeof r.title !== "string" ||
     typeof r.assignee_name !== "string" ||
     typeof r.assigner_name !== "string" ||
-    typeof r.due_date !== "string"
+    // Null is a task with no due date (#5761).
+    (typeof r.due_date !== "string" && r.due_date !== null)
   ) {
     return null;
   }
