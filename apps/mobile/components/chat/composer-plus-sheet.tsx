@@ -1,8 +1,12 @@
 import { forwardRef, useCallback, useRef, type ComponentType } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
-import { Path, Rect, Text as SvgText } from "react-native-svg";
-import type { PlusMenuCommand, PlusMenuModel } from "@repo/chat-core/plus-menu";
+import { Rect, Text as SvgText } from "react-native-svg";
+import type {
+  PlusMenuCommand,
+  PlusMenuModel,
+  PlusMenuRowCommand,
+} from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
@@ -25,23 +29,20 @@ import {
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
 import { STROKE_WIDTH } from "@/components/glyph-recipe";
-import { RolePickerGlyph, ServiceHoursGlyph } from "./card-glyphs";
 
 /**
- * The composer's **+** on the phone (#3865): Photo, then a row per form the
- * member can open here (Poll, Sign-up sheet, Event, Task, Service hours,
- * Role picker), in web's + menu
- * order. What it offers, greys and explains is `plusMenuModel` in
- * `@repo/chat-core/plus-menu`, web's own rule, so the two can't drift:
+ * The composer's **+** on the phone (#3865): Photo and GIF, then Poll, Event
+ * and Task (#5772, Paul's cut on 2026-11-20), in web's + menu order. What it
+ * offers, greys and explains is `plusMenuModel` in `@repo/chat-core/plus-menu`,
+ * web's own rule, so the two can't drift:
  *
  * - a row the role can't use, or whose module the chapter turned off, is left
  *   out, and a line at the bottom says why;
  * - a row that can't work this second (offline, a photo or a reply staged) is
- *   greyed with the reason beside it. A poll and a sign-up sheet queue like
- *   a message, so offline doesn't grey them.
+ *   greyed with the reason beside it. A poll queues like a message, so
+ *   offline doesn't grey it.
  *
- * It always opens, even with Photo alone, so that line can show. Points has no
- * phone form yet, so the host doesn't list it.
+ * It always opens, even with Photo alone, so that line can show.
  *
  * A row's action runs once this sheet has finished closing, not on the tap:
  * presenting the photo library or another sheet while this one animates out
@@ -66,15 +67,10 @@ export interface ComposerPlusSheetProps {
   onOpenForm: (command: PlusMenuCommand) => void;
 }
 
-const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<TabGlyphProps>> = {
+const ROW_GLYPH: Record<PlusMenuRowCommand, ComponentType<TabGlyphProps>> = {
   poll: PollGlyph,
-  signup: SignupGlyph,
-  form: FormGlyph,
   event: EventsGlyph,
   task: TasksGlyph,
-  hours: ServiceHoursGlyph,
-  points: PointsRowGlyph,
-  roles: RolePickerGlyph,
 };
 
 export const ComposerPlusSheet = forwardRef<
@@ -238,67 +234,8 @@ function GifRowGlyph(props: TabGlyphProps) {
   );
 }
 
-/**
- * Sign-up sheet (#3926): web's `SignupGlyph` path data, a clipboard, its
- * board filled, the clip and a ticked line stroke-only.
- */
-function SignupGlyph(props: TabGlyphProps) {
-  const { stroke, fill } = glyphPaint(props);
-  return (
-    <GlyphFrame size={props.size}>
-      <Path
-        d="M6.6 5h10.8a1.6 1.6 0 011.6 1.6v12.8a1.6 1.6 0 01-1.6 1.6H6.6A1.6 1.6 0 015 19.4V6.6A1.6 1.6 0 016.6 5z"
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M9.4 3.4h5.2v3.2H9.4zM8.8 12.2l1.6 1.6 3-3M8.8 16.8h6.4"
-        fill="none"
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </GlyphFrame>
-  );
-}
-
-/**
- * Form (#3926 step 3): web's `FormGlyph` path data, a sheet with two
- * answered lines and a blank one, its sheet filled, the lines stroke-only.
- */
-function FormGlyph(props: TabGlyphProps) {
-  const { stroke, fill } = glyphPaint(props);
-  return (
-    <GlyphFrame size={props.size}>
-      <Path
-        d="M6.6 3.5h10.8a1.6 1.6 0 011.6 1.6v13.8a1.6 1.6 0 01-1.6 1.6H6.6A1.6 1.6 0 015 18.9V5.1a1.6 1.6 0 011.6-1.6z"
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M8.4 8.6a.9.9 0 101.8 0 .9.9 0 10-1.8 0M12 8.6h3.6M8.4 12.6a.9.9 0 101.8 0 .9.9 0 10-1.8 0M12 12.6h3.6M8.6 16.6h6.8"
-        fill="none"
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </GlyphFrame>
-  );
-}
-
 function PollGlyph(props: TabGlyphProps) {
   return <TabGlyph name="polls" {...props} />;
-}
-
-// Points isn't offered on the phone yet (no form); the map stays total.
-function PointsRowGlyph(props: TabGlyphProps) {
-  return <TabGlyph name="points" {...props} />;
 }
 
 function createStyles(tokens: SignetTokens) {

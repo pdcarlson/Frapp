@@ -141,16 +141,16 @@ vi.mock("@repo/chat-core/chat-client", () => ({
   setMessagePinned: mocks.setMessagePinned,
 }));
 
-// The + sheet's Task and Service hours posts (#3865): chat-core's own calls,
-// stubbed here so a spec can see what the hook binds and refreshes.
+// The + sheet's Task posts (#3865, #5772): chat-core's own calls, stubbed
+// here so a spec can see what the hook binds and refreshes.
 const dispatchMocks = vi.hoisted(() => ({
   postTask: vi.fn(),
-  postHours: vi.fn(),
+  linkTask: vi.fn(),
 }));
 vi.mock("@repo/chat-core/dispatch", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/chat-core/dispatch")>()),
   postTask: dispatchMocks.postTask,
-  postHours: dispatchMocks.postHours,
+  linkTask: dispatchMocks.linkTask,
 }));
 
 vi.mock("@repo/chat-core/realtime-manager", () => ({
@@ -2023,21 +2023,28 @@ describe("sendPoll() (#3701)", () => {
   });
 });
 
-describe("postTask() / postHours() from the + sheet (#3865)", () => {
+describe("postTask() / linkTask() from the + sheet (#3865, #5772)", () => {
   const task = {
     title: "Sweep the porch",
     assignee_id: "user-1",
     due_date: "2026-11-12",
   };
-  const hours = {
-    date: "2026-11-09",
-    duration_minutes: 90,
-    description: "Food bank",
-  };
+  it("links a task into this channel", async () => {
+    dispatchMocks.linkTask.mockResolvedValue({ ok: true });
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      await result.current.linkTask({ id: "t1", title: "Fix the door" });
+    });
+    expect(dispatchMocks.linkTask).toHaveBeenCalledWith(
+      mocks.runtime.ctx,
+      CHANNEL,
+      { id: "t1", title: "Fix the door" },
+    );
+  });
 
-  it("posts into this channel, and refreshes the board or the Service page", async () => {
-    dispatchMocks.postTask.mockResolvedValue({ ok: true });
-    dispatchMocks.postHours.mockResolvedValue({
+  it("posts into this channel, and refreshes the board", async () => {
+    dispatchMocks.postTask.mockResolvedValue({
       ok: true,
       unconfirmed: true,
       warning: "Couldn't confirm.",
@@ -2048,7 +2055,6 @@ describe("postTask() / postHours() from the + sheet (#3865)", () => {
 
     await act(async () => {
       await result.current.postTask(task);
-      await result.current.postHours(hours);
     });
 
     expect(dispatchMocks.postTask).toHaveBeenCalledWith(
@@ -2056,14 +2062,8 @@ describe("postTask() / postHours() from the + sheet (#3865)", () => {
       CHANNEL,
       task,
     );
-    expect(dispatchMocks.postHours).toHaveBeenCalledWith(
-      mocks.runtime.ctx,
-      CHANNEL,
-      hours,
-    );
     // A lost answer refreshes too: the entry may exist.
     expect(invalidate).toHaveBeenCalledWith({ queryKey: taskKeys.all });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["service-entries"] });
   });
 
   it("refreshes nothing after a refusal", async () => {
