@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { describe, expect, it } from "vitest";
 
 /**
  * Every pushed screen has a visible way back (rulebook § 8, Paul 2026-11-20:
