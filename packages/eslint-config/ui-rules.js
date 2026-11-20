@@ -52,11 +52,30 @@ const BROWSER_DIALOG_MESSAGE =
   "No browser confirm/alert/prompt. Use useConfirmDialog from @/components/shared/confirm-dialog for a destructive step, and keep a form's draft instead of asking (owner rulings 2026-11-06, 2026-11-13).";
 
 /**
+ * Tailwind 3 wrapped a bare `--var` in an arbitrary value in `var()`; Tailwind
+ * 4 doesn't, so `max-h-[--x]` compiles to `max-height: --x`, which the browser
+ * drops without a word. That left every web Select with no height cap, running
+ * off the window with no scroll (#5724). v4 spells it `max-h-(--x)`, or
+ * `max-h-[var(--x)]`. Matches any `-[--` in a string, which is how such a
+ * class reads wherever it sits (a className, `cn(...)`, a constant).
+ */
+const TAILWIND_BARE_VAR = "/-\\[--/";
+const TAILWIND_BARE_VAR_MESSAGE =
+  "Tailwind 4 doesn't wrap a bare --variable in [...] in var(), so this class compiles to nothing the browser keeps (#5724). Write it as max-h-(--x) or max-h-[var(--x)].";
+
+/**
  * Web-only rulings, by name, so an app config can grandfather one file from
  * one rule without dropping the others (`webUiSyntaxExcept`).
  */
 const webUiRules = {
   emoji,
+  tailwindBareVar: [
+    { selector: `Literal[value=${TAILWIND_BARE_VAR}]`, message: TAILWIND_BARE_VAR_MESSAGE },
+    {
+      selector: `TemplateElement[value.cooked=${TAILWIND_BARE_VAR}]`,
+      message: TAILWIND_BARE_VAR_MESSAGE,
+    },
+  ],
   // Owner, 2026-11-16 and 2026-11-19: "time picker is horrid", no native time
   // input anywhere. The year-less DateField is the 2026-11-12 ruling. `Input`
   // too: the ShadCN wrapper passes `type` straight to the browser.
