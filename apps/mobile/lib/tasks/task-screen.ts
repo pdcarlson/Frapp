@@ -162,7 +162,7 @@ export function taskScreenControls({
   const awaitsReview =
     !toggleRefused && taskAwaitsReview(reviewed, { viewerId, canManage });
   // The screen's edit in place (#5514): a confirmed task can't change, and
-  // the fields need an assignee and a day.
+  // the fields need an assignee (an undated task is editable, #5761).
   const edit = taskEditable(editFactsOfRow(row), canManage);
   return {
     // A status this build doesn't know has no sequence to send, so no Mark

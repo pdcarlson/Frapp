@@ -26,6 +26,7 @@ import { WhoPickerSheet } from "@/components/tasks/who-picker-sheet";
 import { FollowerField } from "@/components/tasks/task-follower";
 import type { TaskRowModel } from "@/lib/tasks/board";
 import {
+  dueClearable,
   dueDraftOf,
   referencePhotos,
   repeatDraftOf,
@@ -92,7 +93,9 @@ export function TaskEditForm({
   const storedRepeat = repeatDraftOf(row);
   const repeat = edit.drafts.repeat ?? storedRepeat;
 
-  const due = edit.drafts.due ?? dueDraftOf(row);
+  // The due as picked, else the task's; `null` is No due date (#5761).
+  const picked = edit.drafts.due;
+  const due = picked === "none" ? null : (picked ?? dueDraftOf(row));
   const shown = {
     title: edit.drafts.title ?? row.title,
     description: edit.drafts.description ?? row.description ?? "",
@@ -138,23 +141,23 @@ export function TaskEditForm({
         />
       </View>
 
-      {due ? (
-        <View style={styles.splitRow}>
-          <View style={[styles.box, styles.split]}>
-            <DueDateField
-              value={due.date}
-              today={localIsoDate(openedAt)}
-              disabled={false}
-              onChange={(date) => edit.pickDue({ ...due, date })}
-            />
-          </View>
-          <PointsField
-            {...textProps("points")}
-            focused={focused === "points"}
-            style={styles.split}
+      <View style={styles.splitRow}>
+        <View style={[styles.box, styles.split]}>
+          <DueDateField
+            value={due?.date ?? null}
+            today={localIsoDate(openedAt)}
+            disabled={false}
+            onChange={(date) => edit.pickDue({ date, time: due?.time ?? null })}
+            // A copy of a repeating task keeps its day: its series needs one.
+            onClear={dueClearable(row) ? () => edit.pickDue("none") : undefined}
           />
         </View>
-      ) : null}
+        <PointsField
+          {...textProps("points")}
+          focused={focused === "points"}
+          style={styles.split}
+        />
+      </View>
 
       {due ? (
         <View style={styles.box}>

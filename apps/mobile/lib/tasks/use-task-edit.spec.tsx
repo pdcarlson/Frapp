@@ -546,3 +546,30 @@ describe("leaving the screen", () => {
     act(() => tree.unmount());
   });
 });
+
+describe("No due date (#5761)", () => {
+  it("takes the due off with due_date null, and gives an undated task a day", async () => {
+    const tree = mount(row({ due_at: "2099-09-30T21:00:00.000Z" }));
+    act(() => hook.edit!.pickDue("none"));
+    expect(hook.edit!.drafts.due).toBe("none");
+    await act(async () => {
+      await hook.edit!.commit("due");
+    });
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { due_date: null, due_at: null },
+    });
+    act(() => tree.unmount());
+
+    const undated = mount(row({ due_date: null }));
+    act(() => hook.edit!.pickDue({ date: "2099-10-02", time: null }));
+    await act(async () => {
+      await hook.edit!.commit("due");
+    });
+    expect(updateTask).toHaveBeenLastCalledWith({
+      id: "t1",
+      body: { due_date: "2099-10-02", due_at: null },
+    });
+    act(() => undated.unmount());
+  });
+});

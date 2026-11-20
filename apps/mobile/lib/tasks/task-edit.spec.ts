@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { pickRepeatPreset, TASK_SERIES_SCOPE_COPY } from "@repo/validation";
+import {
+  pickRepeatPreset,
+  TASK_REPEAT_NEEDS_DUE_DATE,
+  TASK_SERIES_SCOPE_COPY,
+} from "@repo/validation";
 import type { LiveTask, LiveTaskPhoto } from "@repo/hooks";
 import { toTaskRow, type TaskRowModel } from "./board";
 import {
   assigneeSave,
   descriptionSave,
+  dueClearable,
   dueDraftOf,
   dueSave,
   editFactsOfLive,
@@ -170,6 +175,55 @@ describe("the due", () => {
   });
 });
 
+describe("no due date (#5761)", () => {
+  const series = {
+    recurrence_rule: "FREQ=WEEKLY;BYDAY=WE",
+    next_due_date: "2026-10-07",
+    ended: false,
+  };
+
+  it("opens an undated task with no draft, and gives it a day", () => {
+    const undated = row({ due_date: null, due_at: null });
+    expect(dueDraftOf(undated)).toBeNull();
+    expect(dueSave(undated, { date: "2026-10-02", time: null }, NOW)).toEqual({
+      kind: "save",
+      body: { due_date: "2026-10-02", due_at: null },
+    });
+  });
+
+  it("takes the due off with due_date null, the time going with it", () => {
+    const at = new Date(2026, 8, 30, 17, 0).toISOString();
+    expect(dueSave(row({ due_at: at }), "none", NOW)).toEqual({
+      kind: "save",
+      body: { due_date: null, due_at: null },
+    });
+    expect(dueSave(row(), "none", NOW)).toEqual({
+      kind: "save",
+      body: { due_date: null, due_at: null },
+    });
+    // Already undated: nothing to send.
+    expect(dueSave(row({ due_date: null }), "none", NOW)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("keeps a copy of a repeating task's day", () => {
+    const copy = row({ series });
+    expect(dueClearable(copy)).toBe(false);
+    expect(dueClearable(row())).toBe(true);
+    expect(dueSave(copy, "none", NOW)).toEqual({
+      kind: "problem",
+      message: TASK_REPEAT_NEEDS_DUE_DATE,
+    });
+  });
+
+  it("reads the cleared due back onto the row", () => {
+    const after = rowAfter(row(), { due_date: null, due_at: null });
+    expect(after.dueDay).toBeNull();
+    expect(after.dueAt).toBeNull();
+  });
+});
+
 describe("proof, photos and who", () => {
   it("sends a changed proof kind", () => {
     expect(proofSave(row(), "photo")).toEqual({
@@ -296,8 +350,9 @@ describe("who may edit, and how far it reaches", () => {
     expect(can({}, false)).toBe(false);
     expect(can({ points_awarded: true })).toBe(false);
     expect(can({ confirmed_at: "2026-09-29T10:00:00.000Z" })).toBe(false);
-    // The fields need a day and an assignee.
-    expect(can({ due_date: null })).toBe(false);
+    // The fields need an assignee; a task with no due date (#5761) is
+    // editable, and its Due field can give it one.
+    expect(can({ due_date: null })).toBe(true);
     expect(can({ assignee_id: null })).toBe(false);
   });
 
@@ -320,9 +375,9 @@ describe("who may edit, and how far it reaches", () => {
         true,
       ),
     ).toBe(false);
-    expect(
-      taskEditable(editFactsOfLive({ ...live, due: undefined }), true),
-    ).toBe(false);
+    expect(taskEditable(editFactsOfLive({ ...live, due: null }), true)).toBe(
+      true,
+    );
   });
 });
 

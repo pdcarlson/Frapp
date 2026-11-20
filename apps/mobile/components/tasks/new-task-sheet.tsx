@@ -14,6 +14,7 @@ import {
   TASK_TITLE_MAX_LENGTH,
   aiSuggestionRefusalLine,
   noTaskRepeatDraft,
+  TASK_REPEAT_NEEDS_DUE_DATE,
   taskFirstDue,
   taskRepeatRuleOf,
   taskRepeatSummary,
@@ -73,6 +74,7 @@ import {
 } from "@repo/formatting";
 import {
   DEFAULT_DUE_CHOICE,
+  NO_DUE_CHOICE,
   TASK_FORM_COPY,
   createRequestOf,
   storedDueOf,
@@ -110,7 +112,11 @@ import { whoOfLegacyAssignee } from "@/lib/tasks/who-rows";
  *
  * The drawn free date field, as the platform's picker (`due-date-field.tsx`,
  * #3597), with the preset chips under it kept as quick picks: most tasks are
- * due today, tomorrow or this week, and a chip is one tap.
+ * due today, tomorrow or this week, and a chip is one tap. The field's clear
+ * makes it No due date (#5761): no day or time is sent, the time and any
+ * Repeat go with it, and a chip or a tap on the field gives it a day again.
+ * A task up for grabs always has a day (`CreateOpenTaskDto`), so it isn't
+ * offered there.
  *
  * ## One deviation from the drawing, forced
  *
@@ -465,7 +471,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               : "Member"));
 
     // See the header: a relative chip re-reads today, a held date stays put.
-    const { date: dueDate, chipId: dueChipId } = resolveDue(due, at);
+    // A task up for grabs needs a day, so No due date reads as Today there.
+    const heldDue =
+      upForGrabs && due.kind === "none" ? DEFAULT_DUE_CHOICE : due;
+    const { date: dueDate, chipId: dueChipId } = resolveDue(heldDue, at);
     const pending =
       createTask.isPending || createOpenTask.isPending || posting || uploading;
 
@@ -484,10 +493,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     // card, and a suggestion is one task from one meeting.
     const repeatOffered = !suggestion && !postToChannel;
     const showRepeat = repeatOffered && !forGroup && !upForGrabs;
-    const firstDue = taskFirstDue(
-      dueTime ? `${dueDate}T${dueTime}` : dueDate,
-      repeat.timeZone,
-    );
+    // No due date can't repeat (#5761): with no first day there is no rule.
+    const firstDue = dueDate
+      ? taskFirstDue(
+          dueTime ? `${dueDate}T${dueTime}` : dueDate,
+          repeat.timeZone,
+        )
+      : null;
     const repeatRule =
       showRepeat && firstDue ? taskRepeatRuleOf(repeat, firstDue) : null;
     // From (#5473), for a task made from the Tasks screen or the quick
@@ -511,7 +523,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       withRepeat(validateNewTask(draft, at), repeatRule),
       sentFollower,
     );
-    const timePassed = dueTimePassed(draft, at);
+    const timePassed =
+      dueDate !== null && dueTimePassed({ dueDate, dueTime }, at);
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
     const canSubmit =
       body !== null && repeatRule?.ok !== false && !pending && refusal === null;
@@ -876,6 +889,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                   today={localIsoDate(at)}
                   disabled={pending}
                   onChange={(date) => setDue({ kind: "date", date })}
+                  onClear={
+                    upForGrabs
+                      ? undefined
+                      : () => {
+                          setDue(NO_DUE_CHOICE);
+                          setDueTime(null);
+                          setRepeat(noTaskRepeatDraft());
+                          setRepeatOpen(false);
+                        }
+                  }
                 />
               </View>
 
@@ -903,14 +926,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               accessibilityLabel="Due date"
             />
 
-            <View style={styles.field}>
-              <DueTimeField
-                value={dueTime}
-                suggested={suggestedDueTime(dueDate, at)}
-                disabled={pending}
-                onChange={setDueTime}
-              />
-            </View>
+            {dueDate ? (
+              <View style={styles.field}>
+                <DueTimeField
+                  value={dueTime}
+                  suggested={suggestedDueTime(dueDate, at)}
+                  disabled={pending}
+                  onChange={setDueTime}
+                />
+              </View>
+            ) : null}
 
             {showRepeat ? (
               <TaskRepeatField
@@ -928,6 +953,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 fieldStyle={styles.field}
                 input={BottomSheetTextInput}
                 error={repeatRule && !repeatRule.ok ? repeatRule.error : null}
+                unavailable={dueDate ? null : TASK_REPEAT_NEEDS_DUE_DATE}
               />
             ) : repeatOffered && repeat.preset !== "NONE" ? (
               <Text style={styles.note}>

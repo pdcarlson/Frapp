@@ -199,7 +199,8 @@ function toSubtasks(value: unknown): TaskRowSubtask[] {
 
 /**
  * The board by My tasks' groups (#4295 step 5): Today (overdue first), This
- * week, Later, by the rule web's My tasks uses (`myTasksGroup`).
+ * week, Later, then No due date (#5761), by the rule web's My tasks uses
+ * (`myTasksGroup`).
  */
 export interface TaskBoard {
   groups: Record<MyTasksGroup, TaskRowModel[]>;
@@ -208,7 +209,7 @@ export interface TaskBoard {
 }
 
 const EMPTY_BOARD: TaskBoard = {
-  groups: { today: [], week: [], later: [] },
+  groups: { today: [], week: [], later: [], none: [] },
   total: 0,
 };
 
@@ -267,11 +268,9 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
 }
 
 /**
- * Days until this row is due, or `null` when the date is missing or unreadable.
- *
- * `due_date` is `NOT NULL` in `task.entity.ts`, so `null` here is defensive
- * only — but the row is still kept and sorted last rather than dropped, because
- * hiding a task the member owes is the worse failure.
+ * Days until this row is due, or `null` when it has no due date (#5761) or an
+ * unreadable one. The row is still kept and sorted last rather than dropped,
+ * because hiding a task the member owes is the worse failure.
  */
 function dueInDays(row: TaskRowModel, now: Date): number | null {
   if (!row.dueDate) return null;
@@ -333,6 +332,7 @@ export function selectTaskRows(
     today: [],
     week: [],
     later: [],
+    none: [],
   };
 
   for (const raw of records(data)) {
@@ -384,7 +384,12 @@ export function selectTaskRows(
       today: sorted(groups.today),
       week: sorted(groups.week),
       later: sorted(groups.later),
+      none: sorted(groups.none),
     },
-    total: groups.today.length + groups.week.length + groups.later.length,
+    total:
+      groups.today.length +
+      groups.week.length +
+      groups.later.length +
+      groups.none.length,
   };
 }

@@ -567,8 +567,9 @@ export default function TasksScreen() {
         {/* Up for grabs leads, when anything is open: what a member could
             pick up, before their own list. */}
         {renderUpForGrabs()}
-        {/* Today, This week, Later (#4295 step 5), each only when it has a
-            task: on a phone an empty heading is a scroll for nothing. */}
+        {/* Today, This week, Later and No due date (#4295 step 5, #5761),
+            each only when it has a task: on a phone an empty heading is a
+            scroll for nothing. */}
         {MY_TASKS_GROUPS.map((group) =>
           board.groups[group].length > 0 ? (
             <Fragment key={group}>

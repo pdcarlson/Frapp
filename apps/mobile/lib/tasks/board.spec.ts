@@ -35,7 +35,7 @@ describe("selectTaskRows — identity", () => {
     // Not "no tasks" — /v1/users/me has not answered. The screen renders this
     // as still-loading, or every cold start flashes an empty state.
     expect(selectTaskRows([task()], null, NOW)).toEqual({
-      groups: { today: [], week: [], later: [] },
+      groups: { today: [], week: [], later: [], none: [] },
       total: 0,
     });
   });
@@ -231,18 +231,51 @@ describe("selectTaskRows — grouping", () => {
     expect(titles(board.groups.today)).toEqual(["Latest", "Late", "Today"]);
   });
 
-  it("keeps an undateable row in LATER rather than dropping it", () => {
+  it("keeps an unreadable row in LATER rather than dropping it", () => {
     const board = selectTaskRows(
       [
         task({ id: "a", title: "Dated", due_date: "2026-09-01" }),
-        task({ id: "b", title: "Blank", due_date: "" }),
         task({ id: "c", title: "Garbage", due_date: "not-a-date" }),
       ],
       ME,
       NOW,
     );
     // Hiding a task the member owes is worse than an odd-looking row.
-    expect(titles(board.groups.later)).toEqual(["Dated", "Blank", "Garbage"]);
+    expect(titles(board.groups.later)).toEqual(["Dated", "Garbage"]);
+  });
+
+  it("puts a task with no due date in its own group, after Later (#5761)", () => {
+    const board = selectTaskRows(
+      [
+        task({ id: "a", title: "Later", due_date: "2026-09-30" }),
+        task({ id: "b", title: "Whenever", due_date: null, due_at: null }),
+        task({ id: "c", title: "Blank", due_date: "" }),
+        task({ id: "d", title: "Today", due_date: "2026-08-17" }),
+        task({
+          id: "e",
+          title: "Archive photos",
+          due_date: null,
+          status: "COMPLETED",
+          stored_status: "COMPLETED",
+          completed_at: "2026-08-16T10:00:00Z",
+        }),
+      ],
+      ME,
+      NOW,
+    );
+    expect(titles(board.groups.later)).toEqual(["Later"]);
+    expect(titles(board.groups.today)).toEqual(["Today"]);
+    // Open ones by title, then the finished one.
+    expect(titles(board.groups.none)).toEqual([
+      "Blank",
+      "Whenever",
+      "Archive photos",
+    ]);
+    expect(board.total).toBe(5);
+    const undated = board.groups.none.find((row) => row.id === "b")!;
+    expect(undated.dueDate).toBeNull();
+    expect(undated.dueDay).toBeNull();
+    expect(undated.isOverdue).toBe(false);
   });
 
   it("orders same-day rows stably by title", () => {

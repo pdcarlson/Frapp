@@ -129,7 +129,7 @@ export function TaskCard({
   // An officer's Edit (#4512): the task screen's own rule (`taskEditable`),
   // read off the live task, so the card never opens an edit the screen
   // won't draw: a tasks:manage holder until the task is confirmed, on a task
-  // with an assignee and a day (not one up for grabs). It pushes the task's
+  // with an assignee (not one up for grabs). It pushes the task's
   // screen in its edit mode (#5514), where each field saves as it is left.
   const editable =
     !tasksOff &&

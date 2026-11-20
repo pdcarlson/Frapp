@@ -8,7 +8,12 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
-import { TASK_AUDIENCE_COPY, moduleDisabledMessage } from "@repo/validation";
+import {
+  TASK_AUDIENCE_COPY,
+  TASK_NO_DUE_DATE_LABEL,
+  TASK_REPEAT_NEEDS_DUE_DATE,
+  moduleDisabledMessage,
+} from "@repo/validation";
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 
 /**
@@ -1566,6 +1571,63 @@ describe("New task's Repeat (#5119)", () => {
     const tree = render();
     submitTask(tree);
     expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("recurrence_rule");
+    act(() => tree.unmount());
+  });
+});
+
+describe("New task with No due date (#5761)", () => {
+  const press = (tree: ReactTestRenderer, label: string) => {
+    const [node] = tree.root.findAll(
+      (each) =>
+        each.props.accessibilityLabel === label &&
+        each.props.accessibilityRole === "button" &&
+        typeof each.props.onPress === "function",
+    );
+    act(() => node!.props.onPress());
+  };
+
+  it("opens on Today, and clears to No due date, sending no day or time", () => {
+    failure = FAILED;
+    const tree = render();
+    expect(screenText(tree)).not.toContain(TASK_NO_DUE_DATE_LABEL);
+    press(tree, "Add a time");
+    press(tree, TASK_NO_DUE_DATE_LABEL);
+    expect(screenText(tree)).toContain(TASK_NO_DUE_DATE_LABEL);
+    // The time goes with the day, and Repeat says why it can't.
+    expect(screenText(tree)).not.toContain("Add a time");
+    expect(screenText(tree)).toContain(TASK_REPEAT_NEEDS_DUE_DATE);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === "Repeat" &&
+          node.props.accessibilityRole === "button",
+      ),
+    ).toHaveLength(0);
+    submitTask(tree);
+    const body = mutate.mock.calls.at(-1)![0];
+    expect(body).not.toHaveProperty("due_date");
+    expect(body).not.toHaveProperty("due_at");
+    act(() => tree.unmount());
+  });
+
+  it("turns a repeat off when the day is taken off", () => {
+    failure = FAILED;
+    const tree = render();
+    press(tree, "Repeat");
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            typeof node.props.onSelect === "function",
+        )
+        .props.onSelect("WEEKLY"),
+    );
+    press(tree, TASK_NO_DUE_DATE_LABEL);
+    submitTask(tree);
+    const body = mutate.mock.calls.at(-1)![0];
+    expect(body).not.toHaveProperty("recurrence_rule");
+    expect(body).not.toHaveProperty("due_date");
     act(() => tree.unmount());
   });
 });

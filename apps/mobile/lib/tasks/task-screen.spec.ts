@@ -573,6 +573,12 @@ describe("taskDuplicateOf (#5492)", () => {
     ).toEqual(DEFAULT_DUE_CHOICE);
   });
 
+  it("keeps a task with no due date undated (#5761)", () => {
+    const prefill = taskDuplicateOf(row({ due_date: null }), [], NOW);
+    expect(prefill.due).toEqual({ kind: "none" });
+    expect(prefill.dueTime).toBeNull();
+  });
+
   it("keeps today but drops a time already passed, so New task opens ready to create", () => {
     // NOW is noon on Nov 18; due at 9 that morning, and at 6 that evening.
     const at = (hour: number) => new Date(2026, 10, 18, hour, 0).toISOString();

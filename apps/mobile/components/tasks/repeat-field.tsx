@@ -18,7 +18,8 @@ import { RepeatOptions } from "@/components/repeat-options";
  * one more end, Never (`RepeatOptions` with `forTasks`). Closed, the row
  * says how the task repeats ("Every Monday"), or "Repeat" while it doesn't.
  * The New task sheet and the task screen's edit both draw it; what the pick
- * makes and when it saves is theirs.
+ * makes and when it saves is theirs. While it can't repeat (no due date,
+ * #5761) the row says why in its place and doesn't open.
  */
 export function TaskRepeatField({
   draft,
@@ -31,6 +32,7 @@ export function TaskRepeatField({
   fieldStyle,
   input,
   error,
+  unavailable = null,
 }: {
   draft: RepeatDraft;
   /** The task's due, which the control's defaults and caption read. */
@@ -50,10 +52,30 @@ export function TaskRepeatField({
    * while it is closed, so a disabled Create always says why.
    */
   error?: string | null;
+  /**
+   * Why it can't repeat, said on the row in place of "Repeat" (#5761: "Add
+   * a due date to repeat it"); the row is off and its options stay shut.
+   */
+  unavailable?: string | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const muted = tokens.color.text.mutedForeground;
+  if (unavailable) {
+    return (
+      <View
+        accessible
+        accessibilityLabel={unavailable}
+        accessibilityState={{ disabled: true }}
+        style={fieldStyle}
+      >
+        <RepeatGlyph color={muted} />
+        <Text style={styles.placeholder} numberOfLines={1}>
+          {unavailable}
+        </Text>
+      </View>
+    );
+  }
   const label = summary ?? "Repeat";
   return (
     <>

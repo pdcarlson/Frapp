@@ -37,7 +37,7 @@ import {
   seriesScopeOf,
   TASK_EDIT_COPY,
   titleSave,
-  type TaskDueDraft,
+  type TaskDuePick,
   type TaskFieldSave,
 } from "@/lib/tasks/task-edit";
 import {
@@ -52,7 +52,8 @@ interface TaskEditDrafts {
   title: string | null;
   description: string | null;
   points: string | null;
-  due: TaskDueDraft | null;
+  /** A day and time, or "none" once the due is taken off (#5761). */
+  due: TaskDuePick | null;
   /** The Repeat as picked, on a copy of a live series (#5119). */
   repeat: RepeatDraft | null;
 }
@@ -152,8 +153,11 @@ export interface TaskEditing {
   drafts: TaskEditDrafts;
   /** A text field as typed; saved by `commit` (on blur or Return). */
   type: (key: "title" | "description" | "points", text: string) => void;
-  /** A picked day or time, saved a moment later (`DUE_SAVE_DELAY_MS`). */
-  pickDue: (next: TaskDueDraft) => void;
+  /**
+   * A picked day or time, or "none" for No due date (#5761), saved a moment
+   * later (`DUE_SAVE_DELAY_MS`).
+   */
+  pickDue: (next: TaskDuePick) => void;
   /**
    * The Repeat as picked (#5119), saved with Done or as the screen goes:
    * its chips and numbers change a step at a time, and only the last of
@@ -466,7 +470,7 @@ export function useTaskEdit(row: TaskRowModel): TaskEditing {
   );
 
   const pickDue = useCallback(
-    (next: TaskDueDraft) => {
+    (next: TaskDuePick) => {
       setFailure("due", null);
       setDraft("due", next);
       if (dueTimer.current) clearTimeout(dueTimer.current);

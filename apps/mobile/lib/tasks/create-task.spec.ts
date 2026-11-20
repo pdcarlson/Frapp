@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { TaskWho } from "@repo/validation";
 import {
   createRequestOf,
+  DEFAULT_DUE_CHOICE,
+  NO_DUE_CHOICE,
   duePresets,
+  resolveDue,
   formatDueFieldLabel,
   parsePointReward,
   taskCreatedLine,
@@ -247,6 +250,43 @@ describe("validateNewTask", () => {
     expect(whoTakesPhotos({ kind: "person", userId: "a" })).toBe(true);
   });
 
+  it("sends no due_date or due_at for No due date (#5761)", () => {
+    const body = validateNewTask(
+      { ...draft, dueDate: null, dueTime: "17:00" },
+      at(2026, 8, 17),
+    );
+    expect(body).toEqual({
+      title: "Collect ride-share forms",
+      who: { kind: "person", userId: "member-1" },
+      point_reward: 5,
+    });
+    const request = createRequestOf(body!);
+    expect(request.route).toBe("task");
+    expect(request.body).not.toHaveProperty("due_date");
+    expect(request.body).not.toHaveProperty("due_at");
+    // A task for everyone can be undated too.
+    const group = validateNewTask({
+      ...draft,
+      dueDate: null,
+      who: { kind: "each", target: { kind: "chapter" } },
+    });
+    expect(createRequestOf(group!).body).toEqual({
+      title: "Collect ride-share forms",
+      audience: "everyone",
+      point_reward: 5,
+    });
+  });
+
+  it("never posts a task up for grabs with no due date (#5761)", () => {
+    expect(
+      validateNewTask({
+        ...draft,
+        dueDate: null,
+        who: { kind: "someone", target: { kind: "chapter" } },
+      }),
+    ).toBeNull();
+  });
+
   it("omits point_reward when no points are offered", () => {
     const body = validateNewTask({ ...draft, pointsInput: "" });
     expect(body).not.toBeNull();
@@ -312,5 +352,19 @@ describe("validateNewTask proof kind (#4635)", () => {
         proof_kind: "photo",
       },
     );
+  });
+});
+
+describe("resolveDue — No due date (#5761)", () => {
+  it("stays none, with no chip, and a new draft still opens on Today", () => {
+    const now = at(2026, 8, 17);
+    expect(resolveDue(NO_DUE_CHOICE, now)).toEqual({
+      date: null,
+      chipId: null,
+    });
+    expect(resolveDue(DEFAULT_DUE_CHOICE, now)).toEqual({
+      date: "2026-08-17",
+      chipId: "today",
+    });
   });
 });

@@ -149,10 +149,12 @@ function taskFacts(row: TaskRowModel, now: Date) {
   // reserves the mention red for direct address, and an overdue task is not
   // someone speaking to you.
   // Red once overdue (#4133): past the local due day, or already OVERDUE by
-  // the server's clock, which the task screen and web also read.
+  // the server's clock, which the task screen and web also read. A task
+  // with no due date (#5761) is never late.
   const urgent =
     !row.isDone &&
-    (row.isOverdue || (!!row.dueDate && isDueUrgent(row.dueDate, now)));
+    !!row.dueDate &&
+    (row.isOverdue || isDueUrgent(row.dueDate, now));
 
   const toggleLabel = row.isDone
     ? TASK_ACTION_LABELS.reopen
