@@ -206,6 +206,11 @@ These cause most of the iterations, so they come first.
   button guy." (11-20, #5708)
 - **Near-black neutral surfaces**, no warm yellow. On the phone every card sits one surface step down;
   tinted tiles only on You. (11-05, 11-11, 11-13)
+- **Every pane and every section has a hairline edge.** The sidebar, the page and chat each meet at a
+  full-height `border` line; a page's sections (a summary card, then To do, then a list) are split by a
+  hairline or sit in a bordered group, never by a heading and a gap alone. The fill steps stay soft; the
+  line does the separating, at `--border` (18% white since 11-20). Phone alike: a section is a
+  `ListSection` or a card, each edged. "more hairlines. I cant tell surfaces apart" (11-20)
 - **The accent goes only where `foundations.md` § Where the accent goes allows it.** Scrollbars, mention
   chips, hover fills and icons blend in. (11-05, 11-06)
 - **Mobile chrome is floating glass** (the Bevel direction): glass tab pill, round glass "+", glass back
