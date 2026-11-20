@@ -1,6 +1,6 @@
 "use client";
 
-import { isBetaOffModule } from "@repo/validation";
+import { isBetaOffModule, RETIRED_PERMISSIONS } from "@repo/validation";
 import { useCallback } from "react";
 import { aiAvailableFrom, useAiConsent } from "./use-ai";
 
@@ -12,7 +12,9 @@ import { aiAvailableFrom, useAiConsent } from "./use-ai";
  * the AI ones out the same way (`RbacService.getPermissionsCatalog`); the
  * screens draw from the shared registry, so they need the same answer. An
  * officer can't use a switch for something nobody can open, and seeing one
- * reads as a feature that exists.
+ * reads as a feature that exists. The retired permissions
+ * (`RETIRED_PERMISSIONS`, #5728) are left out everywhere: their switches
+ * change nothing.
  *
  * One rule for web and the phone (#4504): each used to keep its own copy.
  */
@@ -21,6 +23,7 @@ export function isPermissionHidden(
   aiAvailable: boolean | undefined,
 ): boolean {
   return (
+    RETIRED_PERMISSIONS.has(permission) ||
     (permission.startsWith("ai:") && aiAvailable !== true) ||
     (permission.startsWith("meetings:") && isBetaOffModule("meetings"))
   );

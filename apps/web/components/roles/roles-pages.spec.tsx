@@ -580,6 +580,28 @@ describe("a role's page", () => {
     });
   });
 
+  it("leaves out the retired permissions a role holds, and keeps them on save (#5728)", async () => {
+    const user = userEvent.setup();
+    h.roles = h.roles.map((r) =>
+      r.id === "alum" ? { ...r, permissions: ["alumni:post"] } : r,
+    );
+    render(<RolePage roleId="alum" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(
+      screen.queryByRole("switch", { name: /post in the alumni channel/i }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("switch", { name: /post announcements/i }),
+    ).toBeNull();
+    expect(screen.queryByText(/no longer used/i)).toBeNull();
+    await user.click(
+      screen.getByRole("switch", { name: /create events for alumni/i }),
+    );
+    expect(h.updateRole).toHaveBeenCalledWith({
+      id: "alum",
+      body: { permissions: ["alumni:post", "events:create"] },
+    });
+  });
+
   it("views the app as the role, then comes back to its page", async () => {
     const user = userEvent.setup();
     render(<RolePage roleId="brother" onBack={vi.fn()} onOpenTier={vi.fn()} />);
