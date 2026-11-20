@@ -142,6 +142,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "The members list beside a channel now runs tier by tier, President first, with each officer's title under their name.",
       "A finished task now says who marked it done and when at the top, with their proof under it, and its history shows it too.",
       "Meetings now read in date order with the next meeting on top, and an officer can mark a past meeting as having no minutes.",
+      "A channel deleted while you have it open now says it's no longer available, instead of trying to reconnect forever.",
+      "Chapter settings → Roles and groups has an Add role button under Non-chapter business, so an officer can make a role members pick themselves, like an intramurals team, in one step.",
+      "A task given to everyone, or to a role or group, still says who it went to and how many have finished it when it shows in your own tasks, and marking it done still finishes only your part.",
     ],
     web: [
       "Rows show more at a glance: an event says when check-in is open, a task says how it repeats and how far along its checklist and photos are, and a study session says which zone it was in.",
@@ -152,6 +155,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Setting up a pledge class is quicker: the member search lists everyone as soon as you click it, and you set the order by dragging names instead of typing numbers.",
       "A member's card in the Directory now opens under their row, fully on screen, and the roles and groups list stays open so you can give several in one go.",
       "Events filters open from one Filter menu, and the filters you've turned on show as chips under the header so you can remove one with a click.",
+      "Tasks now opens on your own tasks, with a My tasks / Everyone's switch and one Filter button beside New task, and the add row shows only once you press New task.",
     ],
     phone: [
       "Documents now say when they take effect, and study sessions show the date and time the same way the web does.",
