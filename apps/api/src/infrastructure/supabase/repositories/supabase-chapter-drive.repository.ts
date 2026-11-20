@@ -128,6 +128,21 @@ export class SupabaseChapterDriveRepository implements IChapterDriveRepository {
     return (data ?? []).length > 0;
   }
 
+  async restoreAccess(chapterId: string, now: Date): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chapter_drive_connections')
+      .update({
+        status: 'active',
+        last_error: null,
+        sync_due_at: now.toISOString(),
+      })
+      .eq('chapter_id', chapterId)
+      .eq('status', 'no_access')
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
+  }
+
   async disconnect(chapterId: string, now: Date): Promise<boolean> {
     const { data, error } = await this.supabase
       .from('chapter_drive_connections')

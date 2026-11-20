@@ -12,6 +12,8 @@ import {
 import { CROCKFORD } from '#domain/utils/check-in-token';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+/** What a member's own access token is for (#5583). */
+const TOKEN_INFO_URL = 'https://oauth2.googleapis.com/tokeninfo';
 /** The runtime identity's own token, from Cloud Run's metadata server. */
 const METADATA_TOKEN_URL =
   'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token';
@@ -151,17 +153,113 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
     );
   }
 
+  async userTokenInfo(
+    accessToken: string,
+  ): Promise<{ clientId: string; scopes: string[] } | null> {
+    // POSTed, so the token is never in a URL a proxy or log could keep.
+    const response = await this.send(
+      TOKEN_INFO_URL,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ access_token: accessToken }).toString(),
+      },
+      TIMEOUT_MS,
+    );
+    // Google answers 400 for a token that is expired, revoked or made up.
+    if (response.status === 400) return null;
+    if (!response.ok) throw await apiError(response);
+    const body = (await response.json()) as Record<string, unknown>;
+    const clientId =
+      typeof body.azp === 'string'
+        ? body.azp
+        : typeof body.aud === 'string'
+          ? body.aud
+          : null;
+    if (!clientId) return null;
+    const scopes =
+      typeof body.scope === 'string'
+        ? body.scope.split(' ').filter(Boolean)
+        : [];
+    return { clientId, scopes };
+  }
+
+  async getItemAs(accessToken: string, id: string): Promise<GoogleDriveItem> {
+    const body = await this.json(
+      `/files/${encodeURIComponent(id)}?${new URLSearchParams({
+        fields: `${GET_ITEM_FIELDS},capabilities/canEdit`,
+        supportsAllDrives: 'true',
+      }).toString()}`,
+      {},
+      { token: accessToken },
+    );
+    return toItem(body);
+  }
+
+  async shareWithServiceAccount(
+    accessToken: string,
+    id: string,
+  ): Promise<string> {
+    const email = this.serviceAccountEmail();
+    if (!email) throw new GoogleDriveApiError('failed', null, 'unconfigured');
+    const body = await this.json(
+      `/files/${encodeURIComponent(id)}/permissions?${new URLSearchParams({
+        sendNotificationEmail: 'false',
+        supportsAllDrives: 'true',
+        fields: 'id',
+      }).toString()}`,
+      { 'Content-Type': 'application/json' },
+      {
+        token: accessToken,
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'user',
+          role: 'reader',
+          emailAddress: email,
+        }),
+      },
+    );
+    const permissionId = (body as { id?: unknown }).id;
+    if (typeof permissionId !== 'string' || permissionId === '') {
+      throw new GoogleDriveApiError('failed', null, 'no_permission_id');
+    }
+    return permissionId;
+  }
+
+  async unshare(
+    accessToken: string,
+    id: string,
+    permissionId: string,
+  ): Promise<void> {
+    const response = await this.send(
+      `${DRIVE_API}/files/${encodeURIComponent(id)}/permissions/${encodeURIComponent(permissionId)}?supportsAllDrives=true`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      TIMEOUT_MS,
+    );
+    if (!response.ok) throw await apiError(response);
+  }
+
+  /**
+   * One Drive call that answers JSON: as the service account, or with
+   * `as.token`, as the member whose own sign-in it is (#5583).
+   */
   private async json(
     path: string,
     extra: Record<string, string> = {},
+    as: { token?: string; method?: string; body?: string } = {},
   ): Promise<unknown> {
     const response = await this.send(
       `${DRIVE_API}${path}`,
       {
+        method: as.method ?? 'GET',
         headers: {
           ...extra,
-          Authorization: `Bearer ${await this.accessToken()}`,
+          Authorization: `Bearer ${as.token ?? (await this.accessToken())}`,
         },
+        ...(as.body !== undefined ? { body: as.body } : {}),
       },
       TIMEOUT_MS,
     );
@@ -424,6 +522,9 @@ function toItem(raw: unknown): GoogleDriveItem {
       ? file.parents.filter((id): id is string => typeof id === 'string')
       : [],
     trashed: file.trashed === true,
+    ...(isRecord(file.capabilities)
+      ? { canEdit: file.capabilities.canEdit === true }
+      : {}),
     resourceKey:
       typeof file.resourceKey === 'string' && file.resourceKey !== ''
         ? file.resourceKey
@@ -432,6 +533,10 @@ function toItem(raw: unknown): GoogleDriveItem {
       ? file.permissionIds.filter((id): id is string => typeof id === 'string')
       : [],
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 /** Google's error, by kind, with its short reason and nothing else. */

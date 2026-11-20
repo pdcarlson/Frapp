@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { FILE_WHO_CAN_SEE, WhoCanSee } from './chapter-document.dto';
 
 /** A chapter's connected Google Drive folder (#5157). */
@@ -45,6 +51,24 @@ export class GoogleDriveConnectionDto {
   who_can_see: string[] | null;
 }
 
+/** Google's folder picker, as this server sets it up (#5583). */
+export class GoogleDrivePickerDto {
+  @ApiProperty({
+    description:
+      "The Web OAuth client the picker's Google sign-in uses (this environment's Google Calendar client)",
+  })
+  client_id: string;
+  @ApiProperty({
+    description:
+      'The browser API key the picker loads with: public, restricted to the Picker API and the web app',
+  })
+  api_key: string;
+  @ApiProperty({
+    description: "The Google Cloud project's number, the picker's app id",
+  })
+  app_id: string;
+}
+
 export class GoogleDriveStatusDto {
   @ApiProperty({
     description:
@@ -57,8 +81,39 @@ export class GoogleDriveStatusDto {
     description: 'The address a chapter shares its folder with',
   })
   service_account_email: string | null;
+  @ApiProperty({
+    type: GoogleDrivePickerDto,
+    nullable: true,
+    description:
+      "Google's folder picker, when this server offers it: the officer signs in with Google and picks the folder, and Frapp shares it with itself. Null, the folder is connected by its link.",
+  })
+  picker: GoogleDrivePickerDto | null;
   @ApiProperty({ type: GoogleDriveConnectionDto, nullable: true })
   connection: GoogleDriveConnectionDto | null;
+}
+
+export class ConnectPickedGoogleDriveDto {
+  @ApiProperty({
+    description: "The picked folder's Drive id",
+    example: '1AbCdEfGhIjKlMnOp',
+  })
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{10,200}$/)
+  folder_id: string;
+
+  @ApiProperty({
+    description:
+      "The access token the officer's Google sign-in gave the picker (drive.file). Used once to share the folder with Frapp, never stored.",
+  })
+  @IsString()
+  @MinLength(20)
+  @MaxLength(4096)
+  access_token: string;
+
+  @WhoCanSee(
+    'Who sees what the folder brings in (#5220), as when connecting by link. Ignored when the folder is the one already connected, picked again to share it with Frapp again.',
+  )
+  who_can_see?: string[] | null;
 }
 
 export class ConnectGoogleDriveDto {
