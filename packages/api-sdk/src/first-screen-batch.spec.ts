@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { INBOX_FIRST_PAGE_SIZE } from "@repo/validation";
-import { createFrappClient, REQUEST_ID_HEADER } from "./client";
+import {
+  createFrappClient,
+  REQUEST_ID_HEADER,
+  REQUEST_TIMEOUT_MS,
+} from "./client";
 import {
   bootstrapSectionFor,
   FIRST_SCREEN_BATCH_TIMEOUT_MS,
@@ -425,6 +429,10 @@ describe("first-screen batching", () => {
     expect(urlsOf(fetchMock).at(-1)).toBe("/v1/documents");
   });
 
+  it("waits for the bootstrap as long as a read waits for its route", () => {
+    expect(FIRST_SCREEN_BATCH_TIMEOUT_MS).toBe(REQUEST_TIMEOUT_MS.read);
+  });
+
   it("waits for a slow bootstrap instead of re-sending its reads", async () => {
     vi.useFakeTimers();
     try {
@@ -434,13 +442,18 @@ describe("first-screen batching", () => {
             input instanceof Request ? input : new Request(String(input), init);
           const url = new URL(request.url);
           if (url.pathname === "/v1/bootstrap") {
-            // A database stall: the answer comes, but late.
-            return new Promise<Response>((resolve) =>
-              setTimeout(
+            // A database stall: the answer comes, but late. Like a real
+            // fetch, it fails if the batch gives up first.
+            return new Promise<Response>((resolve, reject) => {
+              const timer = setTimeout(
                 () => resolve(json({ user: { id: "me" }, settings: {} })),
                 10_000,
-              ),
-            );
+              );
+              init?.signal?.addEventListener("abort", () => {
+                clearTimeout(timer);
+                reject(new DOMException("aborted", "AbortError"));
+              });
+            });
           }
           return Promise.resolve(json({ route: url.pathname }));
         },
@@ -460,6 +473,50 @@ describe("first-screen batching", () => {
         "/v1/bootstrap",
       ]);
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a cancelled read leave a stalled batch at once", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+          const request =
+            input instanceof Request ? input : new Request(String(input), init);
+          const signal = init?.signal ?? request.signal;
+          // Everything stalls; only an abort ends a call.
+          return new Promise<Response>((_, reject) => {
+            if (signal.aborted) {
+              reject(new DOMException("aborted", "AbortError"));
+              return;
+            }
+            signal.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")),
+            );
+          });
+        }),
+      );
+      const api = client({ token: "token-cancel" });
+      const controller = new AbortController();
+
+      const cancelled = api
+        .GET("/v1/users/me", { signal: controller.signal })
+        .then(
+          () => "answered",
+          () => "failed",
+        );
+      void api.GET("/v1/settings").catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(1_000);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(50);
+
+      await expect(
+        Promise.race([cancelled, Promise.resolve("still waiting")]),
+      ).resolves.toBe("failed");
+    } finally {
+      await vi.advanceTimersByTimeAsync(40_000);
       vi.useRealTimers();
     }
   });

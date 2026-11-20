@@ -138,8 +138,14 @@ export const FIRST_SCREEN_COMPANION_TTL_MS = 3_000;
  * up. Re-sending its dozen sections as their own requests then ran a dozen
  * more guard chains onto the jammed pool and made the stall longer for
  * everyone (staging, 2026-11-20: the Events page sat on its skeleton for
- * about 10 s). Waiting as long as the reads themselves would costs a stalled
- * open nothing it wouldn't have waited anyway.
+ * about 10 s). A bootstrap that answers within the limit now answers the
+ * screen; one that stalls past it still falls back, as before.
+ *
+ * The cost: a bootstrap that never answers (a lost request, a half-open
+ * socket) holds the first screen 15 s instead of 5 s before its reads go out,
+ * and each of those then has its own 15 s, so the slowest path to an error is
+ * about 30 s. Sentry saw 18 bootstraps reach the old 5 s cap in the week
+ * before this change, across staging and production, during database stalls.
  */
 export const FIRST_SCREEN_BATCH_TIMEOUT_MS = 15_000;
 
@@ -345,6 +351,13 @@ export function createFirstScreenBatchMiddleware(options?: {
       const stashed = takeStashed(stashKey(session, chapter, section), now);
       if (stashed !== undefined) return jsonResponse(stashed);
       return new Promise<Response | undefined>((resolve) => {
+        // A read its caller cancels leaves the batch at once: it goes on to
+        // its own route, which sees the aborted signal and fails there,
+        // instead of waiting out a slow bootstrap. Its section still rides
+        // the batch; resolving twice is a no-op.
+        request.signal?.addEventListener("abort", () => resolve(undefined), {
+          once: true,
+        });
         const batches = openBatches.get(session) ?? [];
         const joined = batchFor(batches, chapter, section);
         if (joined) {
