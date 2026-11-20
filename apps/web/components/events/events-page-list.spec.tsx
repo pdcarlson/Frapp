@@ -197,11 +197,12 @@ async function pick(
   group: string,
   option: string,
 ) {
-  await user.click(
-    within(screen.getByRole("radiogroup", { name: group })).getByRole("radio", {
-      name: option,
-    }),
-  );
+  // Choosing an option closes the whole menu, so each pick opens it again.
+  if (!screen.queryByRole("menu")) await openFilters(user);
+  const row = screen.getByRole("menuitem", { name: new RegExp(`^${group}`) });
+  row.focus();
+  await user.keyboard("{ArrowRight}");
+  await user.click(await screen.findByRole("menuitemradio", { name: option }));
 }
 
 beforeEach(() => {
@@ -291,11 +292,10 @@ describe("EventsPage list", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
-  it("holds Time, Attendance and Cadence in the Filter popover, counts what's on, and clears it", async () => {
+  it("holds Time, Attendance and Cadence in the Filter menu, counts what's on, shows it as chips, and clears it", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
 
-    await openFilters(user);
     await pick(user, "Time", "All");
     await pick(user, "Attendance", "Mandatory");
 
@@ -307,7 +307,13 @@ describe("EventsPage list", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("1 event")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Clear" }));
+    // The filters that are on show as chips under the header (Baymard).
+    expect(
+      screen.getByRole("button", {
+        name: "Remove filter Attendance: Mandatory",
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear all" }));
     expect(
       screen.getByRole("button", { name: "Filter events" }),
     ).toBeInTheDocument();
@@ -584,9 +590,7 @@ describe("EventsPage list", () => {
     }));
     render(<EventsPage />);
 
-    await openFilters(user);
     await pick(user, "Time", "Past");
-    await user.keyboard("{Escape}");
     await user.click(screen.getAllByRole("button", { name: /^chapter/i })[0]!);
     expect(detailSheetProps).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -600,9 +604,7 @@ describe("EventsPage list", () => {
     const user = userEvent.setup();
     render(<EventsPage />);
 
-    await openFilters(user);
     await pick(user, "Time", "Past");
-    await user.keyboard("{Escape}");
     expect(
       screen.getByRole("button", { name: "Filter events, 1 on" }),
     ).toBeInTheDocument();
@@ -689,9 +691,7 @@ describe("EventsPage empty states", () => {
     const user = userEvent.setup();
     render(<EventsPage />);
 
-    await openFilters(user);
     await pick(user, "Time", "Past");
-    await user.keyboard("{Escape}");
 
     // The section and its count stay; one line sits where the rows were.
     expect(screen.getByRole("region", { name: "Past" })).toBeInTheDocument();
@@ -1113,9 +1113,7 @@ describe("EventsPage agenda kinds, navigator and key (#5560)", () => {
       { ...EVENTS[1], id: "old", name: "Retreat", start_time: daysOut(-60) },
     ];
     render(<EventsPage />);
-    await openFilters(user);
     await pick(user, "Time", "Past");
-    await user.keyboard("{Escape}");
 
     expect(
       screen.getByRole("button", { name: /^retreat/i }),
@@ -1126,9 +1124,7 @@ describe("EventsPage agenda kinds, navigator and key (#5560)", () => {
   it("heads Past with a picked day, saying when it's empty", async () => {
     const user = userEvent.setup();
     render(<EventsPage />);
-    await openFilters(user);
     await pick(user, "Time", "Past");
-    await user.keyboard("{Escape}");
 
     await pickInNavigator(user, fromToday(-1));
     expect(screen.getAllByRole("heading", { level: 3 })[0]).toHaveTextContent(

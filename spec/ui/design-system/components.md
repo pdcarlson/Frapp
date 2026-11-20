@@ -711,3 +711,66 @@ The bar behind a tally — a poll's per-option share, a progress figure. Track a
 - **The fill is the chapter accent and that is sanctioned.** The reference draws both its meters in `accent-9`, and a tally is an accent-worthy _stat_ under §5, not a status — so "a status badge is never the chapter accent" does not reach it.
 - **A ring is the meter bent round** ([#4766](https://github.com/pdcarlson/Frapp/issues/4766), 2026-11-13; `apps/mobile/components/activity/progress-ring.tsx`, and on web `apps/web/components/shared/progress-ring.tsx`): Activity's week ring (88pt with a 9pt stroke on the phone, 96px with a 10px stroke on web) and its semester gauges (36 with a 5 stroke on both). The same two paints, a `--background` groove and the chapter accent as the fill, drawn clockwise from twelve o'clock with a round cap, always on a card so the groove recedes. Nothing is drawn at zero, so an empty ring is only its groove. A ring that has closed (everything due is done, a goal is met) takes the success hue: there it is a status, and §5's rule that a status is never the chapter accent applies. The figure is text inside or beside it and the ring is hidden from a screen reader, as the bar is. A ring is drawn only for a number with a real end (done of total, a goal); a number without one stands alone.
 - Measured in [`apps/web/components/shared/meter-contrast.spec.ts`](../../../apps/web/components/shared/meter-contrast.spec.ts), including the rejected candidates, so a later "simplify to the surface ladder" fails loudly rather than reintroducing an invisible track.
+
+## 13. One component per job
+
+_Added 2026-11-20 (#5739), after an inventory found 57 patterns on web and 44 on the phone for the five jobs below. Paul approved one component per job per app that day; the owner's rulings are in the UI rulebook (`.claude/skills/ui-development/rulebook.md` § 9). This section owns the anatomy, the variants and the guideline each rests on. Nielsen Norman Group, Baymard and Material pages were read through their published summaries (the session's network blocks those hosts) and are cited as such; Apple's guidelines were read in full._
+
+### Picker (choose one value)
+
+|           | Web                                                                                                                | Phone         |
+| --------- | ------------------------------------------------------------------------------------------------------------------ | ------------- |
+| Component | `Select`; `SearchablePicker` for a long or searchable list                                                         | `OptionSheet` |
+| Shows     | The current value on the field or property row, so the list is predictable before it opens (Apple, pop-up buttons) | Same          |
+| Search    | Past 8 options. 8 is Frapp's number; NN/g finds lists past about 15 hard to scan                                   | Same          |
+| Commit    | The tap is the choice: no Save, no Cancel, no title                                                                | Same          |
+
+- **Segmented** (`SegmentedChoice`, `Segmented`) only for 2 to 4 short choices that should all stay visible. Apple caps segments at about 5 on iPhone, and never puts an action on a segment.
+- **Swatches** only where the choice is a look: accent colour, chat background, density.
+- A picker never opens a sheet over a sheet (NN/g, bottom sheets).
+- Not allowed: a hand-drawn radio group or radio-card list, filter chips used as a form picker, the system action sheet used to pick.
+
+### Action menu
+
+|                  | Web                                                                              | Phone                                                       |
+| ---------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| On a row         | `RowMenu`: right-click, touch long-press and the row's ⋯ show one `entries` list | `useItemMenu` / `ItemActionsMenu`: long-press with a haptic |
+| In a header      | `ActionMenuButton`, the same entries, always visible                             | The same glass menu from the header's ⋯                     |
+| Labelled trigger | `ExportMenu`-style "Label ▾" uses the same menu content                          | Not used                                                    |
+
+- Most used first, at most three groups, one level of submenu at most. Labels start with a verb. Delete is red, last and confirmed (Apple, menus and context menus).
+- Hidden menus are shortcuts. Every entry is one visible ⋯ away, shown on hover, keyboard focus and always on touch (Apple: "always make context menu items available in the main interface, too"; NN/g, contextual menus and kebab icons).
+- The screen's main action is a visible button. A menu of one or two items becomes buttons (Apple, pull-down buttons and toolbars).
+- Exception: a chat message's long-press keeps its sheet with the reaction row.
+- Lint (`packages/eslint-config/ui-rules.js`, `moreMenu` and `systemMenu`) fails a hand-built ⋯ or context menu on web, and the system action sheet, `lib/action-menu`, or an `Alert` with three or more buttons on the phone.
+
+### Settings rows
+
+|       | Web                                         | Phone                                                |
+| ----- | ------------------------------------------- | ---------------------------------------------------- |
+| Group | `SettingsGroup`: one bordered, divided list | `ListSection`                                        |
+| Row   | `SettingsRow`                               | `ListRow` with a trailing `Toggle`, value or chevron |
+
+- A row is a label, at most one short muted line, and one trailing thing: a switch, a current value that opens the picker, or a chevron to a page.
+- Switches only in rows (Apple, toggles); on or off is never colour alone.
+- **Saving:** a switch or a pick saves the moment it changes (NN/g toggle guidelines; GitHub Primer: switches are instant-save). Typed text saves on Enter or on leaving the field, then shows a quiet "Saved"; Escape restores the old text. No Save button on a settings page (Paul, 2026-11-20).
+
+### Filter bar
+
+|          | Web                                                                                        | Phone                                          |
+| -------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| Header   | Search field, `FilterMenu` (one Filter button with its count), the view switch             | Search field under the title, one Filters chip |
+| Rows     | One menu row per filter, each opening its options; Sort is a row; Clear all last           | A sheet with the same rows in the same order   |
+| Applied  | `ActiveFilterChips` under the header, removable, with Clear all; nothing while none are on | Chips under the search field                   |
+| Applying | Live; the list never jumps to the top                                                      | The sheet ends in "Show 23 members"            |
+
+- Applied filters stay visible: Baymard's testing found people lose track when they hide behind the button, worse on phones. The count on the button alone is not enough.
+- A list that splits into two or three named sets people switch between all day (Actives / Alumni, All / Unread) uses a segmented view switch in the header, not a filter.
+
+### Create and edit
+
+- **Form:** a borderless title plus property rows (§ 9 Property rows), each opening the picker in place. Editing is the same rows on the record, saved per row.
+- **Phone commit:** the floating glass action bar (`TaskActionBar`, `apps/mobile/components/tasks/task-action-bar.tsx`): one labelled pill with its glyph and verb, plus icon buttons for related options. One primary per screen (Apple toolbars; Material extended FAB). An unlabelled icon only for a glyph everyone reads the same (NN/g, icon usability); anything else carries its word or goes in the ⋯. Chosen because it is always visible and the same on every screen; thumb-reach studies (Hoober; NN/g, bottom sheets) find the middle of the screen, not its bottom edge, easiest to reach, so reach is not the reason.
+- **Web commit:** one small labelled button at the header's trailing edge naming the thing ("Create event"), dimmed while it can't be pressed with the reason on hover and to a screen reader. A long page form also ends with the same button.
+- **Short question:** a centred dialog with compact buttons on the right, in one order everywhere (Carbon, citing Nielsen: the order matters less than keeping one).
+- Leaving keeps the draft (rulebook § 4).

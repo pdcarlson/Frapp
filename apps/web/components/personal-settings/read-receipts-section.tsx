@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { READ_RECEIPTS_COPY, useReadReceiptsSetting } from "@repo/hooks";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { SettingsSwitchCard } from "@/components/personal-settings/settings-switch-card";
+import { SettingsGroup, SettingsRow } from "@/components/shared/settings-row";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 
@@ -33,13 +33,16 @@ export function ReadReceiptsSection() {
 
   return (
     <ProfileSection id="read-receipts" title={READ_RECEIPTS_COPY.label}>
-      <SettingsSwitchCard
-        label={READ_RECEIPTS_COPY.label}
-        caption={READ_RECEIPTS_COPY.description}
-        checked={setting.enabled}
-        disabled={isOffline || setting.pending}
-        onCheckedChange={setting.setEnabled}
-      />
+      <SettingsGroup>
+        {" "}
+        <SettingsRow
+          label={READ_RECEIPTS_COPY.label}
+          description={READ_RECEIPTS_COPY.description}
+          checked={setting.enabled}
+          disabled={isOffline || setting.pending}
+          onCheckedChange={setting.setEnabled}
+        />{" "}
+      </SettingsGroup>
     </ProfileSection>
   );
 }

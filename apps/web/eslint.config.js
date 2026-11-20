@@ -55,6 +55,29 @@ export default [
     groupByFile({
       // Not grandfathered: the emoji picker's own data is members' content.
       emoji: ["lib/chat/drawable-emoji.ts"],
+      // Not grandfathered: the home of the one action menu (RowMenu,
+      // ActionMenuButton) draws its own ⋯ and context menu.
+      moreMenu: [
+        "components/shared/row-menu.tsx",
+        // #5739: hand-built ⋯ dropdowns and context menus onto RowMenu /
+        // ActionMenuButton.
+        "components/ai/suggested-tasks.tsx",
+        "components/ask/ask-proposal.tsx",
+        "components/backwork/backwork-page.tsx",
+        "components/chat/channel-menu.tsx",
+        "components/chat/channel-row-menu.tsx",
+        "components/chat/message-item.tsx",
+        "components/documents/document-row.tsx",
+        "components/linked-apps/discord-row.tsx",
+        "components/linked-apps/google-calendar-row.tsx",
+        "components/meetings/coming-up-dates.tsx",
+        "components/meetings/minutes-page.tsx",
+        "components/members/member-detail-sheet.tsx",
+        "components/personal-settings/calendar-section.tsx",
+        "components/tasks/task-panel.tsx",
+        "components/tasks/task-review.tsx",
+        "components/tasks/up-for-grabs.tsx",
+      ],
       // #5682: native date and time inputs onto DateField / TimeField.
       nativeDateTime: [
         "components/tasks/due-time-control.tsx",

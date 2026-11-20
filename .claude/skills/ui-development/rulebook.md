@@ -1,6 +1,6 @@
 # The owner's UI rulebook
 
-Every UI ruling Paul has given, from 2026-11-04 to 2026-11-19, as rules you follow without being told
+Every UI ruling Paul has given, from 2026-11-04 to 2026-11-20, as rules you follow without being told
 again. He has said most of these more than once, and the reason this file exists is his message of
 2026-11-19: "I'M SO SO TIRED OF TELLING YOU THE SAME STUFF EVERY FUCKING TIME AND ITERATING ON EVERY
 FUCKING UI CHANGE … it's like a never ending loop of fix one problem and find 4 more that you fix to a
@@ -140,7 +140,7 @@ These cause most of the iterations, so they come first.
   chips. Times are not locked to 5-minute steps; an event's end keeps its length when the start moves.
   (11-06, 11-12, 11-16, 11-19)
 - **lint** **No native `<select>` on web.** Use `Select` or a `DropdownMenu` that shows its state and
-  sticks. (11-06)
+  sticks. (11-06) Which picker for which job: § 9.
 - **lint** **No browser `confirm`, `alert` or `prompt`** (`window.`, `globalThis.`, or bare `alert` and
   `prompt`; a bare `confirm` is the usual local name for `useConfirmDialog`'s function, so check that one
   yourself). A destructive step uses `useConfirmDialog`.
@@ -224,3 +224,46 @@ These cause most of the iterations, so they come first.
   a back row, on the page background ("not sure a sheet is the move here", on Finish your profile). (11-20)
 - **Standard affordances everywhere:** right-click, long-press, share sheet, pull to refresh, drag a file
   onto chat. As obvious as Discord or iMessage on day one. (11-06, P7)
+
+## 9. One component per job
+
+Paul, 2026-11-20: "there's like 12 different ways of doing dropdowns and menus and settings across the
+app … every screen you go to is a different fucking system", and "it's overwhelming to me". The count
+that day was 57 patterns on web and 44 on the phone for five jobs. Each job now has one component per
+app; build with it, and never draw a sixth way. The anatomy, the variants and the research behind each
+are canonical in [`components.md` § 13](../../../spec/ui/design-system/components.md#13-one-component-per-job);
+the plan and the screens still to migrate are #5739. A site not yet migrated is debt, not precedent.
+
+- **Picking a value:** web `Select` (or `SearchablePicker` for a long list), phone `OptionSheet`. The
+  field shows its current value; search appears past 8 options; no Save or Cancel. `SegmentedChoice` /
+  `Segmented` only for 2 to 4 short choices that stay visible; swatches only for a look (accent,
+  background, density). Never a hand-drawn radio list, and never filter chips used as a form picker.
+- **lint** **Acting on a thing:** one action menu. Web: `RowMenu` (right-click plus the row's ⋯) and
+  `ActionMenuButton` (a header's ⋯), the same entries. Phone: the glass menu through `useItemMenu`, from
+  long-press and every ⋯. Most used first, at most three groups, Delete red and last and confirmed.
+  Right-click and long-press are shortcuts, never the only way in; the screen's main action is a visible
+  button, and a menu of one or two items becomes buttons. Never the iOS system action sheet, an Alert
+  with three or more buttons, or a bottom sheet of actions. A chat message's long-press sheet with its
+  reaction row is the one exception.
+- **Settings:** web `SettingsGroup` and `SettingsRow` (`components/shared/settings-row.tsx`), phone
+  `ListSection` and `ListRow`. A row is a label, at most one muted line, and one trailing thing: a switch,
+  a value that opens the picker, or a chevron. **Settings save on their own** (Paul's pick, 11-20): a
+  switch or a pick the moment it changes; typed text on Enter or leaving the field, with a quiet "Saved",
+  and Escape puts the old text back. No Save button on a settings page.
+- **Filtering a list:** web `FilterMenu` and `ActiveFilterChips` (`components/shared/filter-menu.tsx`):
+  search, one Filter button with its count, and the view switch, in the page header; the filters that are
+  on show as removable chips under the header, with Clear all. Sort is a row in the menu. Phone: the
+  search field, one Filters chip, and a sheet with the same rows in the same order ending in "Show 23
+  members". A list that splits into two or three named sets people switch between all day (Actives /
+  Alumni, All / Unread) is a segmented view switch, not a filter.
+- **Creating and editing:** a borderless title plus property rows (§ 2), on the record itself when
+  editing, saved per row. **Phone commit is the floating glass action bar** from task approval
+  (`TaskActionBar`; Paul, 11-20: "i like the one for the task approval a lot and how it has options
+  embedded"): one labelled pill with its glyph and verb, plus icon buttons for related options, each a
+  glyph everyone reads the same or else in the ⋯. **Web commit is one small labelled button at the
+  header's trailing edge** that names the thing ("Create event", never "Create") and, while it can't be
+  pressed, is dimmed and says why ("Add a title first"); a long page form also ends with it. A short
+  question (rename, report, confirm) is a centred dialog with compact buttons on the right.
+- **Ground a new pattern in research, not only in other apps** (Paul, 11-20: "PLEASE REVIEW GOOD UI
+  DESIGN RESEARCH BEFORE DOING ANYTHING WITH THE STANDARDS. NOT JUST OTHER UIs"): Apple's Human Interface
+  Guidelines, Nielsen Norman Group, Baymard, Material. Name the guideline in the PR beside the apps.
