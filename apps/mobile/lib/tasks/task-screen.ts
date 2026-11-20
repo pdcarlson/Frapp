@@ -29,6 +29,7 @@ import {
   isTaskStatus,
   TASK_ACTION_LABELS,
   taskAwaitsReview,
+  taskCompletedBy,
   taskConfirmLabel,
   taskSendBackOpen,
   type TaskStatus,
@@ -373,7 +374,10 @@ export function taskHistory(
   // (#5473), the words web's review header takes
   // (`TASK_FOLLOWER_COPY.submittedTo`).
   if (row.isDone) {
-    const doneBy = row.completedBy ?? row.assigneeId;
+    const doneBy = taskCompletedBy({
+      completed_by: row.completedBy,
+      assignee_id: row.assigneeId,
+    });
     add(
       "done",
       doneBy ? `Marked done by ${nameOf(doneBy)}` : "Marked done",

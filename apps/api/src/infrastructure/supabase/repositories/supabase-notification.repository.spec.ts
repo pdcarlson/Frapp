@@ -229,7 +229,6 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
   });
 
   describe('deleteTaskCompletionRows (#5732)', () => {
-    const SINCE = '2026-01-01T00:01:00.000Z';
     const rows = [
       {
         id: 'review',
@@ -259,6 +258,12 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
         created_at: '2026-01-01T00:00:30.000Z',
       },
       {
+        id: 'due-reminder',
+        user_id: 'assignee',
+        data: { target: { screen: 'tasks', taskId: 't-1' } },
+        created_at: '2026-01-01T00:02:00.000Z',
+      },
+      {
         id: 'other-task',
         user_id: 'officer',
         data: { target: { screen: 'tasks', taskId: 't-2', view: 'review' } },
@@ -285,20 +290,20 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
       repo = new SupabaseNotificationRepository(harness.client);
     });
 
-    it("deletes this completion's review and follower rows, not the assignment, an earlier completion's or another task's", async () => {
+    it("deletes every round's review and follower rows, not the task's other rows or another task's", async () => {
       const cleared = await harness.expectTenantScoped(CHAPTER_B, () =>
-        repo.deleteTaskCompletionRows(CHAPTER_B, 't-1', SINCE),
+        repo.deleteTaskCompletionRows(CHAPTER_B, 't-1'),
       );
 
-      expect(cleared).toBe(2);
+      expect(cleared).toBe(3);
       expect(
         harness
           .rows('notifications')
           .map((n) => n.id as string)
           .filter((id) => id.startsWith('b-'))
           .sort(),
-      ).toEqual(['b-assigned', 'b-earlier-review', 'b-other-task']);
-      expect(harness.rows('notifications')).toHaveLength(8);
+      ).toEqual(['b-assigned', 'b-due-reminder', 'b-other-task']);
+      expect(harness.rows('notifications')).toHaveLength(9);
     });
   });
 

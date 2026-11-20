@@ -155,6 +155,18 @@ export function withReasonChip(reason: string, chip: string): string {
 }
 
 /**
+ * Who marked a task done (#5732): `completed_by`, since an officer can mark
+ * a member's task done for them, else the assignee, on a completion from
+ * before the API kept it. Null when neither is known.
+ */
+export function taskCompletedBy(task: {
+  completed_by?: string | null;
+  assignee_id?: string | null;
+}): string | null {
+  return task.completed_by ?? task.assignee_id ?? null;
+}
+
+/**
  * Who handed a task in, and when (#5732): the line both apps' task screens
  * draw under the title while it stands done, so the state is the first thing
  * read. "Moiz Steenhuis marked it done today at 12:05 AM", or "… marked it
@@ -179,7 +191,7 @@ export function taskHandedInLine(
 ): string | null {
   const stored = task.stored_status ?? task.status;
   if (stored !== "COMPLETED" || !task.completed_at) return null;
-  const who = task.completed_by ?? task.assignee_id ?? null;
+  const who = taskCompletedBy(task);
   const name = who ? nameOf(who) : "Someone";
   // It opens the line: "you" from an in-sentence `nameOf` reads "You".
   const subject = name.charAt(0).toUpperCase() + name.slice(1);

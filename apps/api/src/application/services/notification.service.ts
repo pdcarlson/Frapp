@@ -968,23 +968,18 @@ export class NotificationService {
   }
 
   /**
-   * Take back what a task's Mark done told members (#5732): its assignee
-   * marked it not done again, so the review row its creator got and the
-   * "finished" rows its followers got go from their lists. A push already
-   * on a lock screen can't be recalled; the row it opens can. Never throws:
-   * the take-back it follows has already landed.
+   * Take back what a task's Mark done told members (#5732): the completion
+   * was reopened (taken back, sent back, or handed to someone else), so the
+   * review row its creator got and the "finished" rows its followers got go
+   * from their lists. A push already on a lock screen can't be recalled; the
+   * row it opens can. Never throws: the write it follows has already landed.
    */
   async retractTaskCompletion(
     chapterId: string,
     taskId: string,
-    completedAt: string,
   ): Promise<void> {
     try {
-      await this.notificationRepo.deleteTaskCompletionRows(
-        chapterId,
-        taskId,
-        completedAt,
-      );
+      await this.notificationRepo.deleteTaskCompletionRows(chapterId, taskId);
     } catch (error) {
       reportCaughtFailure(this.logger, {
         level: 'warning',

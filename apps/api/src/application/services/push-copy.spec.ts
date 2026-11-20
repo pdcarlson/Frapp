@@ -201,7 +201,7 @@ describe('taskSubmittedCopy (a task marked done, to its officer)', () => {
     ).toBe('Link attached');
   });
 
-  it('says finished, with an empty body, for a task that needed no sign-off', () => {
+  it('says finished, and Done, for a task that needed no sign-off', () => {
     expect(
       taskSubmittedCopy(
         'Sam Ortiz',
@@ -210,7 +210,7 @@ describe('taskSubmittedCopy (a task marked done, to its officer)', () => {
       ),
     ).toEqual({
       title: 'Sam Ortiz finished: Clean his room',
-      body: '',
+      body: 'Done',
     });
   });
 

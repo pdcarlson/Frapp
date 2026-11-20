@@ -1,3 +1,4 @@
+import { formatPoints } from '@repo/formatting';
 import {
   describeRepeatPattern,
   ordinal,
@@ -252,8 +253,8 @@ export function taskFollowedFinishedCopy(
  * narrating like directions"): the verb already says whether it waits on
  * them, "submitted" for one that does and "finished" for one that was Done
  * as marked, so the body names no next step. A send-back's second try
- * "resubmitted" and quotes the reply, the thing that changed. With nothing
- * to add, the body is empty and the title stands alone.
+ * "resubmitted" and quotes the reply, the thing that changed. A finished one
+ * ends in "Done", its state, so the body is never blank (#3846).
  */
 export function taskSubmittedCopy(
   name: string,
@@ -294,7 +295,10 @@ export function taskSubmittedCopy(
       submitted.photoCount > 0 &&
         `${submitted.photoCount} ${submitted.photoCount === 1 ? 'photo' : 'photos'}`,
       task.proof_link && 'Link attached',
-      points > 0 && `${points} ${points === 1 ? 'point' : 'points'}`,
+      points > 0 && formatPoints(points),
+      // A completion with nothing else to say still says its state: the
+      // push never goes out blank (#3846).
+      !needsSignOff && 'Done',
     ),
   };
 }

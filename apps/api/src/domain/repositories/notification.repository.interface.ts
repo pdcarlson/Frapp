@@ -79,18 +79,14 @@ export interface INotificationRepository {
     ids: readonly string[],
   ): Promise<number>;
   /**
-   * Delete the rows that told members task `taskId` was marked done, written
-   * at or after `since` (the completion's own time): the officer's review row
-   * (`data.target.view` is `review`) and a follower's "finished" row
-   * (`data.about` is `task-completed`). A take-back calls it, so Activity
-   * never says a task was finished once it is open again. Answers how many
-   * went.
+   * Delete every row that told members task `taskId` was marked done: the
+   * officer's review row (`data.target.view` is `review`) and a follower's
+   * "finished" row (`data.about` is `task-completed`), from this completion
+   * and any before it. Whatever reopens a completion (a take-back, a
+   * send-back, a reassign) calls it, so Activity never says a task was
+   * finished once it is open again. Answers how many went.
    */
-  deleteTaskCompletionRows(
-    chapterId: string,
-    taskId: string,
-    since: string,
-  ): Promise<number>;
+  deleteTaskCompletionRows(chapterId: string, taskId: string): Promise<number>;
   /**
    * Delete every chat row `userId` has in `chapterId` for one conversation
    * (#3948): channel `channelId`'s own rows, or with `threadRootId` that

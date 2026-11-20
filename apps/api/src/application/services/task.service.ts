@@ -1776,6 +1776,12 @@ export class TaskService {
       }
     }
 
+    // A completed task handed to someone else starts over at To do: its
+    // "finished" rows in Activity are no longer so (#5732).
+    if (reassigned && task.status === TaskStatus.COMPLETED) {
+      await this.notificationService.retractTaskCompletion(chapterId, id);
+    }
+
     // The removed reference photos, and on a hand-over the old proof.
     await this.dropPhotos(chapterId, id, [
       ...dropReference,
@@ -2082,13 +2088,7 @@ export class TaskService {
     await this.dropPhotos(chapterId, task.id, proof);
     // What Mark done told the officer and the followers isn't so any more:
     // Activity drops the "finished" rows (#5732).
-    if (task.completed_at) {
-      await this.notificationService.retractTaskCompletion(
-        chapterId,
-        task.id,
-        task.completed_at,
-      );
-    }
+    await this.notificationService.retractTaskCompletion(chapterId, task.id);
     return this.viewWithPhotos(chapterId, updated);
   }
 
@@ -2419,6 +2419,8 @@ export class TaskService {
       );
     }
     await this.dropPhotos(chapterId, id, proof);
+    // Open again: the "finished" rows in Activity are no longer so (#5732).
+    await this.notificationService.retractTaskCompletion(chapterId, id);
 
     const sender =
       (options.actorUserId &&

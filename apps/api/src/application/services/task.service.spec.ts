@@ -506,7 +506,11 @@ describe('TaskService', () => {
       expect(to('exec-2')).toMatchObject({
         title: 'Sam finished: Test Task',
         body: 'From Exec board · Waiting on an officer',
-        data: { target: { screen: 'tasks', taskId: 'task-1' } },
+        // Marked, so reopening the completion clears it (#5732).
+        data: {
+          about: 'task-completed',
+          target: { screen: 'tasks', taskId: 'task-1' },
+        },
       });
       // The assignee hears nothing about their own task.
       expect(pushes.filter(([id]) => id === 'user-1')).toHaveLength(0);
@@ -2330,7 +2334,7 @@ describe('TaskService', () => {
         // Activity no longer says it was finished (#5732).
         expect(
           mockNotificationService.retractTaskCompletion,
-        ).toHaveBeenCalledWith('ch-1', 'task-1', '2026-02-26T18:30:00.000Z');
+        ).toHaveBeenCalledWith('ch-1', 'task-1');
       });
 
       it('refuses once an officer has confirmed it', async () => {
@@ -2697,6 +2701,10 @@ describe('TaskService', () => {
           body: '"Needs more work"',
         }),
       );
+      // Open again, so Activity stops saying it was finished (#5732).
+      expect(
+        mockNotificationService.retractTaskCompletion,
+      ).toHaveBeenCalledWith('ch-1', 'task-1');
     });
 
     it('names the officer who sent it back', async () => {
@@ -3175,6 +3183,10 @@ describe('TaskService', () => {
           completion_note: null,
         },
       );
+      // The completion it held is gone from Activity (#5732).
+      expect(
+        mockNotificationService.retractTaskCompletion,
+      ).toHaveBeenCalledWith('ch-1', 'task-1');
       expect(mockTaskRepo.releaseReminderClaims).toHaveBeenCalled();
       expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
         'user-2',
@@ -4089,7 +4101,7 @@ describe('TaskService', () => {
         expect(result.points_awarded).toBe(true);
         const push = mockNotificationService.notifyUser.mock.calls[0][2];
         expect(push.title).toBe('A member finished: Test Task');
-        expect(push.body).toBe('');
+        expect(push.body).toBe('Done');
       });
 
       it('compare-and-sets on the status, points and proof kind it judged', async () => {
