@@ -137,8 +137,18 @@ const navIconClassName = "h-[18px] w-[18px]";
  * that once kept routes of their own under Chapter settings now open inside
  * it (#3837), so no row stands for another route any more.
  */
-function currentFor(item: NavItem, pathname: string): "page" | undefined {
-  return item.href === pathname ? "page" : undefined;
+/**
+ * The row's `aria-current`: "page" on its own page, "true" on a page under it
+ * (a meeting's minutes under Meetings, Bulk upload under Backwork), so the
+ * sidebar always says where you are (rulebook § 8). Only "page" makes the row
+ * close the page it opened; under it, the row goes back to its list.
+ */
+export function currentFor(
+  item: Pick<NavItem, "href">,
+  pathname: string,
+): "page" | "true" | undefined {
+  if (item.href === pathname) return "page";
+  return pathname.startsWith(`${item.href}/`) ? "true" : undefined;
 }
 
 export function AppNav({

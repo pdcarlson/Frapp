@@ -218,6 +218,14 @@ These cause most of the iterations, so they come first.
 
 - **Swipe back on every pushed screen**; Android back closes the top sheet; Escape closes the top layer on
   web. (11-06, P7)
+- **Every page has a visible way back, and the sidebar says where you are.** A web page draws its title
+  and its X in the page header; a page under a section (a meeting's minutes under Meetings, Bulk upload
+  under Backwork) lights that section's sidebar row, and the row then goes back to its list. A phone
+  screen draws its back row or a close, never only the swipe. "I'm in a minutes tab under meetings but
+  there's no way for me to x out or to go back, nor is meetings selected on the side bar … what is
+  allowing stuff like this to slip through?" (11-20). Checked on every route by
+  `apps/web/components/layout/every-page-has-a-way-back.spec.ts` and
+  `apps/mobile/lib/every-screen-has-a-way-back.spec.ts`: a new page fails there until it has both.
 - **Opening a notification doesn't stack the screen on itself.** (11-07)
 - **Several sections to fill in is a pushed screen on the phone, not a sheet.** A sheet is for one short
   pick or action over what's under it; a profile or settings page with sections opens as its own screen with
