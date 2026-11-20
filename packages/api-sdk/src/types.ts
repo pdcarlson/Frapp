@@ -6752,7 +6752,7 @@ export interface components {
             required: boolean;
         };
         AcceptLegalTermsDto: {
-            /** @description The user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
+            /** @description The user ticked "I'm 17 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
             accept_terms_privacy: boolean;
         };
         WhatsNewSeenDto: {
@@ -7370,6 +7370,7 @@ export interface components {
             graduation_year?: number | null;
         };
         UpdateOnboardingDto: {
+            /** @description true marks onboarding done; the first time it does, the inviter and the officers are told who joined. Finishing is one-way: false is accepted and changes nothing (#5627). */
             has_completed_onboarding: boolean;
         };
         DismissOpsNudgeDto: {

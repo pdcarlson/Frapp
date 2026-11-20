@@ -218,7 +218,7 @@ This section holds only what is the web's own.
   Entries from before 2026-11-12 are one list.
 - **The latest deploy's lines stand out**, in the dialog and on the page, as on the phone ([`mobile/screens.md` s16](../mobile/screens.md) states the rule; Paul, 2026-11-16).
   The browser keeps its own memory of the last deploy's newest entry ([`lib/whats-new-fresh.ts`](../../../apps/web/lib/whats-new-fresh.ts)), worked out on every page load by the host so a deploy counts even when the notes aren't opened on it.
-- **A dialog, not a sheet**, mounted in the dashboard shell beside the first-run tour ([`whats-new-host.tsx`](../../../apps/web/components/whats-new/whats-new-host.tsx)).
+- **A dialog, not a sheet**, mounted in the dashboard shell ([`whats-new-host.tsx`](../../../apps/web/components/whats-new/whats-new-host.tsx)).
   It holds the entries this browser hasn't shown, drawn as the What's new page draws them, and scrolls inside itself when they run long.
   Esc, the X and a click outside close it.
   It has no Got it button, which would be a second close ([`components.md` § Chrome weight](../design-system/components.md#chrome-weight)); its one action is See all updates, to `/whats-new`.
@@ -227,13 +227,13 @@ This section holds only what is the web's own.
   [`mobile/screens.md` s16](../mobile/screens.md) states the rule for both.
   Before #4043 nothing on the account recorded it, so an entry read on the phone showed once more on the web, and once more in each new browser.
   - Changed in #4043 by shawnatomklein-eng, 2026-11-11: once per account, with a quiet mark on the other devices, where #3943 kept it once per browser.
-- **A new member is whoever's account is no older than the newest entry**, or whose first-run tour is due.
+- **A new member is whoever's account is no older than the newest entry**, or whose welcome card is due in this browser (#5627; the first-run tour's mark until then).
   A browser holds nothing that tells an old install from a fresh one, which is what the phone goes by, so the account's age stands in.
   For them the entry is recorded without being shown.
-  The stand-in has a known gap: someone whose account is older than the newest entry but who reaches the dashboard for the first time without the tour (a founder who signed up days before finishing the chapter wizard, or a member who onboarded on the phone) is shown the newest entry once.
+  The stand-in has a known gap: someone whose account is older than the newest entry but who reaches the dashboard for the first time without the welcome card (a founder who signed up days before finishing the chapter wizard, or a member who onboarded on the phone) is shown the newest entry once.
 - **It never covers a flow in progress.**
   Nothing is decided until the member has a chapter, so the chapter wizard is never interrupted; join links and sign-in are outside the shell.
-  When it is time to open, it stands down if a dialog or menu is already up (the Terms prompt, an invite, anything the member opened), on Chapter settings (Plan and billing there is a checkout landing, and the shell reads only the pathname, so the whole route stands down, as the tour does;
+  When it is time to open, it stands down if a dialog or menu is already up (the Terms prompt, an invite, anything the member opened), on Chapter settings (Plan and billing there is a checkout landing, and the shell reads only the pathname, so the whole route stands down, as the first-run tour did until #5627;
   `CHECKOUT_LANDING_PATHNAMES` in `billing-paths.ts`) and on `/whats-new` itself.
   A stood-down entry stays unread and the next navigation tries again.
 - **The account menu's What's new row carries a dot while an entry is unread**: the neutral `--foreground` dot every unread mark uses.
@@ -945,7 +945,7 @@ The personal page has a rail of links, one address per section (`?section=`, the
 | My account | Appearance and chat | `appearance` | Chat density, kept on the browser, and the Read receipts switch, an account setting (#5519; [`chat/README.md` § Shown to the sender](../../behavior/chat/README.md#shown-to-the-sender)). No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
 | My account | Linked apps | `apps` | One row per connected app, each marked with a green check when connected, greyed when not and red once expired (#5407): Google Calendar and Discord for the active chapter, then the ways the account signs in (email, Google, Apple, read from Supabase Auth). `?section=discord` opens it. The API's Discord link handshake and Google's sign-in return here |
 | My account | Calendar | `calendar` | The Google Calendar row again, with the subscription link (Copy link, made only on that tap, and the Apple, Outlook and Reset menu) |
-| My account | Account | `account` | Replay the tour, sign out, delete account |
+| My account | Account | `account` | Sign out, delete account (Replay the tour went with the tour, #5627) |
 | My account | AI | `ai` | One Frapp AI switch: on opens Meet Frapp AI, off turns it off ([`ai.md` § Consent](../../behavior/ai.md#consent); #4790). Listed only while the server has AI; the rail waits for that answer |
 | In _chapter name_ | Chapter alerts | `alerts` | Chat messages (All messages / Mentions and DMs only, [#4124](https://github.com/pdcarlson/Frapp/issues/4124)), then the active chapter's notification categories |
 | In _chapter name_ | Blocked members | `blocked` | The active chapter's block list |

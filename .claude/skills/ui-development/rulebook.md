@@ -214,5 +214,8 @@ These cause most of the iterations, so they come first.
 - **Swipe back on every pushed screen**; Android back closes the top sheet; Escape closes the top layer on
   web. (11-06, P7)
 - **Opening a notification doesn't stack the screen on itself.** (11-07)
+- **Several sections to fill in is a pushed screen on the phone, not a sheet.** A sheet is for one short
+  pick or action over what's under it; a profile or settings page with sections opens as its own screen with
+  a back row, on the page background ("not sure a sheet is the move here", on Finish your profile). (11-20)
 - **Standard affordances everywhere:** right-click, long-press, share sheet, pull to refresh, drag a file
   onto chat. As obvious as Discord or iMessage on day one. (11-06, P7)

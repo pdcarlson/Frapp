@@ -171,6 +171,7 @@ describe('ChapterService', () => {
     };
 
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUser: jest.fn(),
       findByUserAndChapter: jest.fn(),
@@ -258,6 +259,7 @@ describe('ChapterService', () => {
       has_completed_onboarding: true,
       pledge_class_id: null,
       order_number: null,
+      joined_via_invite_id: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };

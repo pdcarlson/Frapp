@@ -15,6 +15,9 @@ import { SupabaseStorageService } from '../../infrastructure/storage/supabase-st
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
 import { ProfilePhotoModule } from '../profile-photo/profile-photo.module';
+// InviteModule → InviteService: the "<name> joined" notices go out when a
+// member first finishes onboarding (#5627).
+import { InviteModule } from '../invite/invite.module';
 
 @Module({
   imports: [
@@ -25,6 +28,7 @@ import { ProfilePhotoModule } from '../profile-photo/profile-photo.module';
     // `MemberService.remove` evicts the channels it prunes (#1302).
     ChannelCacheModule,
     ProfilePhotoModule,
+    InviteModule,
   ],
   controllers: [MemberController, AlumniController],
   providers: [

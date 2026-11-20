@@ -1174,6 +1174,7 @@ export class InviteService {
         user_id: userId,
         chapter_id: invite.chapter_id,
         role_ids: roleIds,
+        joined_via_invite_id: invite.id,
       });
     } catch (error) {
       // The claim is not redemption yet: spec/behavior/onboarding.md sets
@@ -1222,6 +1223,43 @@ export class InviteService {
       'activation-first-invite-redeemed',
     );
 
+    // The "<name> joined" notices wait for the name (#5627): the member's
+    // first finish of onboarding sends them (`announceJoin`), so nobody is
+    // told "welcome.email joined" or "A new member joined".
+
+    return { chapterId: invite.chapter_id, memberId: member.id };
+  }
+
+  /**
+   * Tell the chapter who joined (#5627; Paul, 2026-11-19: the notice goes out
+   * after the name step saves). Called once, when a member who came in by an
+   * invite first finishes onboarding (`MemberService.updateOnboarding`), so
+   * the push carries the name they just gave. It used to go out at redeem,
+   * before the member had named themselves. A member who never finishes
+   * onboarding is never announced; their membership is no different.
+   *
+   * Never throws: a failure costs the notice, not the member's finish.
+   */
+  async announceJoin(member: {
+    user_id: string;
+    chapter_id: string;
+    joined_via_invite_id: string | null;
+  }): Promise<void> {
+    if (!member.joined_via_invite_id) return;
+    const userId = member.user_id;
+    const chapterId = member.chapter_id;
+    const invite = await this.inviteRepo
+      .findById(member.joined_via_invite_id)
+      .catch((error: unknown) => {
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'invite-redeem-new-member-notify-failed',
+          message: `Failed to read the invite for the member-joined notification (chapter ${chapterId})`,
+          error,
+        });
+        return null;
+      });
+    if (!invite || invite.chapter_id !== chapterId) return;
     // The name is a nicety: a failed read costs the name, not the push.
     const joiner = await this.userRepo
       .findByIds([userId])
@@ -1239,11 +1277,19 @@ export class InviteService {
     // which the new member also found waiting as their first DM. A
     // notification is where "your invite was used" belongs; saying hi is the
     // inviter's own choice, from the member's profile.
-    const inviterId = invite.created_by !== userId ? invite.created_by : null;
+    // Only while they're still in the chapter: removing a member leaves the
+    // invites they sent working, and the notice names the new member.
+    const inviterStillIn =
+      invite.created_by !== userId &&
+      (await this.memberRepo
+        .findByUserAndChapter(invite.created_by, chapterId)
+        .then(Boolean)
+        .catch(() => false));
+    const inviterId = inviterStillIn ? invite.created_by : null;
     const sends: Promise<void>[] = [];
     if (inviterId) {
       sends.push(
-        this.notificationService.notifyMembers(invite.chapter_id, [inviterId], {
+        this.notificationService.notifyMembers(chapterId, [inviterId], {
           title: inviterNoticeTitle(name, invite.reusable),
           body: 'Say hi from their profile in Members.',
           priority: 'NORMAL',
@@ -1261,24 +1307,20 @@ export class InviteService {
     sends.push(
       (async () => {
         const holders = await this.rbac.findUserIdsWithAnyPermissions(
-          invite.chapter_id,
+          chapterId,
           MEMBER_JOINED_AUDIENCE,
         );
         const recipients = holders.filter(
           (id) => id !== userId && id !== inviterId,
         );
         if (recipients.length === 0) return;
-        await this.notificationService.notifyMembers(
-          invite.chapter_id,
-          recipients,
-          {
-            title: name ? `${name} joined` : 'A new member joined',
-            body: 'New member of the chapter',
-            priority: 'NORMAL',
-            category: 'members',
-            data,
-          },
-        );
+        await this.notificationService.notifyMembers(chapterId, recipients, {
+          title: name ? `${name} joined` : 'A new member joined',
+          body: 'New member of the chapter',
+          priority: 'NORMAL',
+          category: 'members',
+          data,
+        });
       })(),
     );
     // Settled, not raced: each failure is reported on its own, and one never
@@ -1288,13 +1330,11 @@ export class InviteService {
         reportCaughtFailure(this.logger, {
           level: 'error',
           site: 'invite-redeem-new-member-notify-failed',
-          message: `Failed to send the member-joined notification (chapter ${invite.chapter_id})`,
+          message: `Failed to send the member-joined notification (chapter ${chapterId})`,
           error: result.reason,
         });
       }
     }
-
-    return { chapterId: invite.chapter_id, memberId: member.id };
   }
 
   /**

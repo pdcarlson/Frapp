@@ -10,12 +10,8 @@
  * starter is our copy, never a model's, so it needs no AI consent and is
  * never sent as an earlier turn (`spec/behavior/ai.md` § What Ask opens with).
  */
+import { PLACEHOLDER_DISPLAY_NAME } from "./onboarding-you";
 
-/**
- * The name the API stores when sign-in carried none
- * (`displayNameForSync` in `apps/api/src/application/services/auth.service.ts`).
- */
-const PLACEHOLDER_NAME = "Member";
 
 /**
  * A member's first name: the first word of their display name. `null` when
@@ -25,7 +21,7 @@ const PLACEHOLDER_NAME = "Member";
  */
 export function askFirstName(displayName: string | null | undefined): string | null {
   const name = displayName?.trim() ?? "";
-  if (name.length === 0 || name === PLACEHOLDER_NAME) return null;
+  if (name.length === 0 || name === PLACEHOLDER_DISPLAY_NAME) return null;
   const first = name.split(/\s+/)[0] ?? name;
   if (!name.includes(" ") && /[.@_\d]/.test(first)) return null;
   return first;

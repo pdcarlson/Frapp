@@ -106,6 +106,7 @@ import {
 import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ImportantStrip } from "@/components/chat/important-strip";
+import { WelcomeCard } from "@/components/onboarding/welcome-card";
 import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { arrivalUnread } from "@/lib/chat/catch-up-arrival";
@@ -1931,6 +1932,14 @@ function ChannelThreadScreen() {
               isRetrying={blockList.isRetrying}
               isPaused={blockList.isPaused}
             />
+          ) : null}
+
+          {/*
+            A new member's welcome card (#5627), in the chapter's default
+            channel only, where chat home lands them after s03.
+          */}
+          {openChannel && !isDirectChannel(openChannel.channel) ? (
+            <WelcomeCard channelId={openChannel.channel.id} />
           ) : null}
 
           {channelId && important.total > 0 && nextImportant ? (

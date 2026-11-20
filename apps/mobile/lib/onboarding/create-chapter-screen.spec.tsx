@@ -437,7 +437,7 @@ describe("chapter setup — step order", () => {
           .map((text) => drawnText(text))
           .join("\n"),
       ).toContain(
-        "Frapp AI works with Anthropic and Google. Continuing turns it on for your account.",
+        "Frapp AI works with Anthropic and Google. Continuing confirms you're 18 or older and turns it on for your account.",
       );
       await press(root, "Continue");
       expect(aiChoice.turnOn).toHaveBeenCalledTimes(1);

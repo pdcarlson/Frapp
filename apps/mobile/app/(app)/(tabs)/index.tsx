@@ -34,6 +34,7 @@ import {
   useCategories,
   useChannelLatestMessages,
   useChannelNotificationPreferences,
+  landingChannelId,
   lastChannelLandingId,
   useActiveChapterId,
   useChannels,
@@ -80,7 +81,6 @@ import { ChapterMenu, chapterMenuAnchor } from "@/components/chat/chapter-menu";
 import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
-import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { selectFromChapterLevel } from "@/components/chat/notification-level-control";
 import {
@@ -145,6 +145,10 @@ import {
   readLastChannel,
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
+import {
+  claimWelcomeLanding,
+  isWelcomeDue,
+} from "@/lib/onboarding/welcome-due";
 import { useShownUnreadCounts } from "@/lib/chat/unread-first-paint";
 import { saveChatBackgroundPick } from "@/lib/chat/chat-background-photo";
 import {
@@ -207,10 +211,6 @@ export default function ChatHomeScreen() {
   useEffect(() => {
     if (channelsQuery.isError) reportChannelsRefused(channelsQuery.error);
   }, [channelsQuery.isError, channelsQuery.error]);
-  // The first-run tour waits for the list, so its first spot lands on rows
-  // (`components/onboarding/tour.tsx`).
-  useTourReady(!channelsQuery.isPending, chapterName);
-  const channelsAnchor = useTourAnchor("channels");
   const categoriesQuery = useCategories();
   // The server's counts, with what the phone already holds laid over until
   // they answer (`lib/chat/unread-first-paint.ts`, #4006).
@@ -588,14 +588,25 @@ export default function ChatHomeScreen() {
     }
     // No cancellation on cleanup: the claim is spent either way, and a
     // cancelled read would lose the jump for good (Strict Mode re-runs this).
-    if (!claimChatLaunch()) {
+    // A new member fresh from s03 lands in the chapter's default channel,
+    // where the welcome card waits (#5627), whenever chat home first shows.
+    const launching = claimChatLaunch();
+    const welcoming = claimWelcomeLanding(viewerId, chapterId);
+    if (!launching && !welcoming) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- the launch claim is a one-shot module flag outside React; nothing to hold for once it is spent
       setHoldingForLaunch(false);
       return;
     }
-    void readLastChannel(viewerId, chapterId)
-      .then((stored) => {
-        const target = lastChannelLandingId(allChannels, stored);
+    void Promise.all([
+      readLastChannel(viewerId, chapterId),
+      welcoming ? isWelcomeDue(viewerId, chapterId) : Promise.resolve(false),
+    ])
+      .then(([stored, welcomeDue]) => {
+        const target = welcomeDue
+          ? landingChannelId(allChannels, stored)
+          : launching
+            ? lastChannelLandingId(allChannels, stored)
+            : null;
         if (target) openChannel(target, { landing: true });
       })
       .finally(() => {
@@ -1110,8 +1121,6 @@ export default function ChatHomeScreen() {
                   line || section.rows.length > 0 ? (
                     <View
                       key={`${section.key}:rows`}
-                      // The first-run tour's first stop: the top section.
-                      ref={index === 0 ? channelsAnchor : undefined}
                       collapsable={false}
                       style={[styles.section, styles.sectionRows]}
                     >

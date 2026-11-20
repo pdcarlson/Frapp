@@ -75,7 +75,10 @@ export class UpdateMemberRolesDto {
 }
 
 export class UpdateOnboardingDto {
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'true marks onboarding done; the first time it does, the inviter and the officers are told who joined. Finishing is one-way: false is accepted and changes nothing (#5627).',
+  })
   @IsStrictBoolean()
   has_completed_onboarding: boolean;
 }

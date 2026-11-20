@@ -22407,7 +22407,7 @@
         "properties": {
           "accept_terms_privacy": {
             "type": "boolean",
-            "description": "The user ticked \"I'm 18 or older and agree to the Terms of Service and Privacy Policy.\" Must be true. The timestamp and version are recorded server-side, never from this payload."
+            "description": "The user ticked \"I'm 17 or older and agree to the Terms of Service and Privacy Policy.\" Must be true. The timestamp and version are recorded server-side, never from this payload."
           }
         },
         "required": [
@@ -24140,7 +24140,8 @@
         "type": "object",
         "properties": {
           "has_completed_onboarding": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "true marks onboarding done; the first time it does, the inviter and the officers are told who joined. Finishing is one-way: false is accepted and changes nothing (#5627)."
           }
         },
         "required": [

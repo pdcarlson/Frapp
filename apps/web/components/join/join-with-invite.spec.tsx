@@ -224,7 +224,7 @@ describe("the invite card, signed out (#5625)", () => {
         accept_terms_privacy: true,
       }),
     );
-    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/chat"));
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/welcome"));
     expect(h.selectChapter).toHaveBeenCalledWith(CHAPTER_ID);
   });
 
@@ -281,7 +281,7 @@ describe("the invite card, signed in (#5625)", () => {
         accept_terms_privacy: true,
       }),
     );
-    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/chat"));
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/welcome"));
     expect(screen.getByText(/By joining you agree to the/)).toBeTruthy();
   });
 
@@ -292,7 +292,7 @@ describe("the invite card, signed in (#5625)", () => {
 
     await waitFor(() => expect(h.redeem).toHaveBeenCalledTimes(1));
     expect(h.replace).toHaveBeenCalledWith("/join?token=tok-1");
-    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/chat"));
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/welcome"));
   });
 
   it("never joins on a crafted then=join link this browser never started", async () => {
@@ -491,7 +491,7 @@ describe("the invite card funnel (#5663)", () => {
       await screen.findByRole("button", { name: "Join chapter" }),
     );
 
-    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/chat"));
+    await waitFor(() => expect(h.replace).toHaveBeenCalledWith("/welcome"));
     expect(steps()).toContainEqual({ step: "joined" });
   });
 

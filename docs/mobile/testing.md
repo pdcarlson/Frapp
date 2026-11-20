@@ -131,7 +131,7 @@ device run, check:
 device pass a script can see. What they check, and what they leave to a phone in hand, is listed
 once, in [`device-pass.md` § What the automated flows cover](device-pass.md#what-the-automated-flows-cover).
 They select by what a member reads (labels, placeholders, accessibility labels) plus a few test
-IDs (the tab bar's `tab-<route>` and the +'s `tab-plus`), so renaming a You row, a tour button or
+IDs (the tab bar's `tab-<route>` and the +'s `tab-plus`), so renaming a You row, the welcome card's close or
 the composer's placeholder means updating them.
 
 They run in Expo Workflows, on an Android emulator and an iOS simulator, against staging. The

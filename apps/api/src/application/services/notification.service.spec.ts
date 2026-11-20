@@ -96,6 +96,7 @@ describe('NotificationService', () => {
       setTimeZone: jest.fn(),
     };
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findByChapter: jest.fn(),

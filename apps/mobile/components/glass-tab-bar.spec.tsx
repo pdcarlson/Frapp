@@ -43,19 +43,6 @@ vi.mock("@/lib/chat/unread-conversations", async (importOriginal) => ({
   useUnreadConversationCount: () => unreadConversations.count,
 }));
 
-// The tour's spots are measured off the refs its anchors hand out; each stop's
-// ref is a spy here, so a spec can see which control it landed on.
-const tourAnchors = vi.hoisted(
-  () => new Map<string, ReturnType<typeof vi.fn>>(),
-);
-vi.mock("@/components/onboarding/tour", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/components/onboarding/tour")>()),
-  useTourAnchor: (key: string) => {
-    if (!tourAnchors.has(key)) tourAnchors.set(key, vi.fn());
-    return tourAnchors.get(key);
-  },
-}));
-
 // The You tab's avatar has its own spec (`you-tab-avatar.spec.tsx`); the bar
 // only reads the picked status to name it.
 const ownStatus = vi.hoisted(() => ({
@@ -345,24 +332,6 @@ describe("the bar (#3344)", () => {
     } finally {
       unreadConversations.count = 0;
     }
-  });
-
-  // The first-run tour's Messages stop spots the Messages tab (#5310).
-  it("hands the tour's messages stop the Messages tab", () => {
-    tourAnchors.get("messages")?.mockClear();
-    let tree!: ReactTestRenderer;
-    act(() => {
-      tree = create(element("index"), {
-        createNodeMock: (node) => ({
-          label: (node.props as { accessibilityLabel?: string })
-            .accessibilityLabel,
-        }),
-      });
-    });
-    expect(tourAnchors.get("messages")).toHaveBeenCalledWith({
-      label: "Messages",
-    });
-    act(() => tree.unmount());
   });
 
   it("holds the badge's count fresh, leaving Activity's own re-read to it", () => {

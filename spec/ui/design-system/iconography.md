@@ -742,9 +742,9 @@ The #920 Profile & pre-auth slice — the onboarding wizard and the routes
 outside `(dashboard)`. Family file:
 [`apps/web/components/profile/profile-glyphs.tsx`](../../../apps/web/components/profile/profile-glyphs.tsx);
 §6.2.3's rule applies, so importing across a directory is fine and redrawing
-is not. The first-run tour (#5080) draws no glyph: it lights the real controls,
-so `ProfileGlyph` and the tutorial slides' nav re-exports went with the
-slideshow that was their one consumer.
+is not. `ProfileGlyph` and the tutorial slides' nav re-exports went with the
+slideshow that was their one consumer; the first-run tour that replaced it
+(#5080) drew no glyph, and #5627 removed it too.
 
 | Semantic intent | Glyph |
 |---|---|

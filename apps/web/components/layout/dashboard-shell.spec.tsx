@@ -190,12 +190,9 @@ vi.mock("@/components/onboarding/chapter-wizard-gate", () => ({
 vi.mock("@/components/auth/terms-prompt", () => ({
   TermsPromptGate: () => null,
 }));
-vi.mock("@/components/onboarding/onboarding-tour", () => ({
-  OnboardingTour: () => null,
-}));
-// Meet Frapp AI's host has its own spec (`meet-frapp-ai-host.spec.tsx`).
-vi.mock("@/components/ai/meet-frapp-ai-host", () => ({
-  MeetFrappAiHost: () => null,
+// The welcome gate (#5627) has its own spec.
+vi.mock("@/components/onboarding/welcome-gate", () => ({
+  WelcomeGate: () => null,
 }));
 // Whether this member has Ask (`ask-host.tsx`); null, as for one without it,
 // unless a test says otherwise.

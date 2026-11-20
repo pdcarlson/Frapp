@@ -6,8 +6,8 @@ import { Toggle } from "@/components/toggle";
 
 /**
  * One switch per pickable role (#4958), each saved on the tap; a failed save
- * says why under its row. The Add roles sheet and s03's `Pick your roles`
- * beat both draw it.
+ * says why under its row. The Add roles sheet and the welcome card's Finish
+ * your profile sheet both draw it.
  */
 export function PickRolesList({ roles }: { roles: readonly PickableRole[] }) {
   const setPicked = useSetPickedRole();

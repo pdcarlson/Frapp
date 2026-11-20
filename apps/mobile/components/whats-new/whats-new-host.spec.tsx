@@ -8,8 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RELEASE_NOTES, releaseNoteVersion } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
-import { TOUR_DUE_STORAGE_KEY } from "@/lib/onboarding/tour";
-import { resetStartupSheetsForTests } from "@/lib/startup-sheets";
+import { WELCOME_DUE_STORAGE_KEY } from "@/lib/onboarding/welcome-due";
 import {
   WHATS_NEW_QUIET_STORAGE_KEY,
   WHATS_NEW_SEEN_STORAGE_KEY,
@@ -49,7 +48,6 @@ let present: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  resetStartupSheetsForTests();
   resetWhatsNewBootReadForTests();
   resetWhatsNewQuietForTests();
   account.state = { settled: true, seen: null };
@@ -133,10 +131,10 @@ describe("WhatsNewHost", () => {
     expect(values.get(WHATS_NEW_SEEN_STORAGE_KEY)).toBe(NEWEST_ID);
   });
 
-  it("never shows on a launch the first-run tour is due", async () => {
+  it("never shows on a launch the welcome card is due", async () => {
     bootKeys = ["chat:lastSeen:channel-1"];
     values.set(WHATS_NEW_SEEN_STORAGE_KEY, "2000-01-01#1");
-    values.set(TOUR_DUE_STORAGE_KEY, USER);
+    values.set(WELCOME_DUE_STORAGE_KEY, `${USER}:chapter-1:${Date.now()}`);
     const tree = await mount();
     expect(present).not.toHaveBeenCalled();
     expect(shown(tree)).toEqual([]);

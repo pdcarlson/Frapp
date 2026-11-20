@@ -99,7 +99,7 @@ describe("Meet Frapp AI at an AI entry point", () => {
     expect(dialog).toHaveTextContent("Meet Frapp AI");
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
     expect(dialog).toHaveTextContent(
-      "Frapp AI works with Anthropic and Google. Continuing turns it on for your account.",
+      "Frapp AI works with Anthropic and Google. Continuing confirms you're 18 or older and turns it on for your account.",
     );
     expect(
       screen.getByRole("link", { name: "Privacy policy" }),

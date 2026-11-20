@@ -25,6 +25,10 @@ import {
 vi.mock("@/components/chat/chat-background", () => ({
   ChatBackground: () => null,
 }));
+// The welcome card (#5627) reads events and its own mark; it has its own spec.
+vi.mock("@/components/onboarding/welcome-card", () => ({
+  WelcomeCard: () => null,
+}));
 
 vi.mock("@/lib/chapter-branding", async () => {
   const { chapterBrandingMock, PURPLE_BRANDING } =

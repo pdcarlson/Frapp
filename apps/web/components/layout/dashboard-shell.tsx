@@ -56,9 +56,8 @@ import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
 import { NoAccessRedirect } from "@/components/layout/no-access-redirect";
 import { TermsPromptGate } from "@/components/auth/terms-prompt";
-import { OnboardingTour } from "@/components/onboarding/onboarding-tour";
+import { WelcomeGate } from "@/components/onboarding/welcome-gate";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
-import { MeetFrappAiHost } from "@/components/ai/meet-frapp-ai-host";
 import { GetTheAppCard } from "@/components/layout/get-the-app-card";
 import { AskBar } from "@/components/ask/ask-bar";
 import { useAskEntry } from "@/components/ask/ask-host";
@@ -496,11 +495,10 @@ export function DashboardShell({
       <NoAccessRedirect />
       {/* A member who hasn't accepted the current Terms (#2302). */}
       <TermsPromptGate />
-      <OnboardingTour />
+      {/* Back to the name and photo for a member who hasn't finished joining (#5627). */}
+      <WelcomeGate />
       {/* What's new, by itself once after an update (#3943). */}
       <WhatsNewHost />
-      {/* Meet Frapp AI, once, for an account that never answered it (#4790). */}
-      <MeetFrappAiHost />
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         {/*

@@ -60,6 +60,7 @@ export const SCREEN_TITLES = {
   "check-in": "Check in",
   "host-check-in": "Host check-in",
   "whats-new": "What's new",
+  "finish-profile": "Finish your profile",
   minutes: "Minutes",
   // One meeting's minutes: the capsule over it says where back goes.
   "minutes-details": "Minutes",

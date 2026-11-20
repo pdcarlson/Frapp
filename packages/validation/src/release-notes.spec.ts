@@ -211,7 +211,7 @@ const decide = (
   decideWhatsNew({
     notes: NOTES,
     seen: null,
-    tourDue: false,
+    welcomeDue: false,
     existingInstall: true,
     ...overrides,
   });
@@ -291,12 +291,12 @@ describe("decideWhatsNew", () => {
     });
   });
 
-  it("records without showing while the first-run tour is due, marker or not", () => {
-    expect(decide({ seen: null, tourDue: true })).toEqual({
+  it("records without showing while the welcome card is due, marker or not", () => {
+    expect(decide({ seen: null, welcomeDue: true })).toEqual({
       show: [],
       record: ID[0],
     });
-    expect(decide({ seen: ID[1]!, tourDue: true })).toEqual({
+    expect(decide({ seen: ID[1]!, welcomeDue: true })).toEqual({
       show: [],
       record: ID[0],
     });

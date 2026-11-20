@@ -73,6 +73,7 @@ export function memberFixture(overrides: Partial<Member> = {}): Member {
     dismissed_ops_nudges: [],
     pledge_class_id: null,
     order_number: null,
+    joined_via_invite_id: null,
     created_at: CREATED_AT,
     updated_at: CREATED_AT,
     ...overrides,
