@@ -24,7 +24,7 @@ import {
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import { ReleaseNoteCard } from "@/components/whats-new/release-note-card";
-import { isTourDue } from "@/lib/onboarding/tour";
+import { isWelcomeDueForMember } from "@/lib/onboarding/welcome-due";
 import { useFrappTheme } from "@/lib/theme";
 import {
   clearWhatsNewQuiet,
@@ -39,9 +39,9 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 /**
  * Opens What's new by itself, once, after an update brings a new entry or new
  * lines in the newest one (`decideWhatsNew` in `@repo/validation` is the rule). Mounted in the
- * tab layout beside the first-run tour's host, so it never runs during
- * onboarding, which lives in the auth group, and it sits out any launch the
- * tour is due on.
+ * tab layout, so it never runs during onboarding, which lives in the auth
+ * group, and it sits out any launch the welcome card is due on
+ * (`lib/onboarding/welcome-due.ts`).
  *
  * A tall sheet over whatever is on screen (the chat home, or the channel the
  * launch jumped into): its body scrolls and grows with every update a member
@@ -93,10 +93,10 @@ export function WhatsNewHost() {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
-      const [existingInstall, seen, tourDue] = await Promise.all([
+      const [existingInstall, seen, welcomeDue] = await Promise.all([
         startWhatsNewBootRead(),
         readWhatsNewSeen(),
-        isTourDue(userId),
+        isWelcomeDueForMember(userId),
       ]);
       // A known account that hasn't seen the newest entry backs no quiet mark
       // (another account's, on a shared phone).
@@ -109,7 +109,7 @@ export function WhatsNewHost() {
       const decision = decideWhatsNew({
         notes: RELEASE_NOTES,
         seen,
-        tourDue,
+        welcomeDue,
         existingInstall,
       });
       if (decision.show.length === 0) {

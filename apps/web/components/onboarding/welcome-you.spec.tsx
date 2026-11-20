@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   isError: false,
   offline: false,
   updateUser: vi.fn(),
+  completeOnboarding: vi.fn(),
   replace: vi.fn(),
   refetch: vi.fn(),
 }));
@@ -22,6 +23,8 @@ vi.mock("@repo/hooks", () => ({
     refetch: mocks.refetch,
   }),
   useUpdateUser: () => ({ mutateAsync: mocks.updateUser }),
+  useUpdateOnboarding: () => ({ mutateAsync: mocks.completeOnboarding }),
+  useActiveChapterId: () => "ch-1",
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mocks.replace }),
@@ -55,6 +58,8 @@ describe("WelcomeYou", () => {
     mocks.isError = false;
     mocks.offline = false;
     mocks.updateUser.mockResolvedValue({});
+    mocks.completeOnboarding.mockResolvedValue({});
+    window.localStorage.clear();
   });
 
   it("says the phone's words, with a real name pre-filled and a photo to add", () => {
@@ -77,6 +82,11 @@ describe("WelcomeYou", () => {
 
     await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/chat"));
     expect(mocks.updateUser).not.toHaveBeenCalled();
+    expect(mocks.completeOnboarding).toHaveBeenCalledWith({
+      has_completed_onboarding: true,
+    });
+    // The welcome card waits in the default channel.
+    expect(window.localStorage.getItem("frapp.welcome-due")).toBe("u-1:ch-1");
   });
 
   it("starts empty for the email before the @, and needs a name first", async () => {

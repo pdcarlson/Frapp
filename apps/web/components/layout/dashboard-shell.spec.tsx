@@ -190,9 +190,6 @@ vi.mock("@/components/onboarding/chapter-wizard-gate", () => ({
 vi.mock("@/components/auth/terms-prompt", () => ({
   TermsPromptGate: () => null,
 }));
-vi.mock("@/components/onboarding/onboarding-tour", () => ({
-  OnboardingTour: () => null,
-}));
 // Whether this member has Ask (`ask-host.tsx`); null, as for one without it,
 // unless a test says otherwise.
 const askEntry = vi.hoisted(() => ({

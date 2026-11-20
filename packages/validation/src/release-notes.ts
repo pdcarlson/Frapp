@@ -775,7 +775,7 @@ export interface WhatsNewDecision {
  * Whether What's new opens by itself, and with which entries: the one rule
  * behind the phone's sheet (`apps/mobile/lib/whats-new.ts`) and the web
  * dashboard's dialog (`apps/web/lib/whats-new.ts`). Each surface keeps its own
- * marker and says what `tourDue` and `existingInstall` mean there.
+ * marker and says what `welcomeDue` and `existingInstall` mean there.
  *
  * `notes` is {@link RELEASE_NOTES} (newest first); dates are `YYYY-MM-DD`, so
  * they compare as strings. `seen` is a stored {@link releaseNoteVersion}, or
@@ -784,9 +784,10 @@ export interface WhatsNewDecision {
  * - A marker at or past the newest entry shows nothing and records nothing.
  *   That covers a rollback too, to an earlier day or to a shorter version of
  *   the same day's entry.
- * - `tourDue` (a first-run tour owns this visit), or no marker on a device or
- *   account that wasn't here before the newest entry (`existingInstall`
- *   false), records the newest entry without showing it: old news to them.
+ * - `welcomeDue` (a new member's welcome card owns this visit), or no marker
+ *   on a device or account that wasn't here before the newest entry
+ *   (`existingInstall` false), records the newest entry without showing it:
+ *   old news to them.
  * - No marker but `existingInstall` shows the newest entry only; what they
  *   saw before is unknown.
  * - Otherwise it shows every entry newer than the marker, and that day's
@@ -795,10 +796,10 @@ export interface WhatsNewDecision {
 export function decideWhatsNew(input: {
   notes: readonly ReleaseNote[];
   seen: string | null;
-  tourDue: boolean;
+  welcomeDue: boolean;
   existingInstall: boolean;
 }): WhatsNewDecision {
-  const { notes, seen, tourDue, existingInstall } = input;
+  const { notes, seen, welcomeDue, existingInstall } = input;
   const newest = notes[0];
   if (!newest) return { show: [], record: null };
   const newestVersion = releaseNoteVersion(newest);
@@ -810,7 +811,7 @@ export function decideWhatsNew(input: {
   if (marker !== null && !isNewerReleaseNoteVersion(versionOf(newest), marker)) {
     return { show: [], record: null };
   }
-  if (tourDue || (marker === null && !existingInstall)) {
+  if (welcomeDue || (marker === null && !existingInstall)) {
     return { show: [], record: newestVersion };
   }
   const show =

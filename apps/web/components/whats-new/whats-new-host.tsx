@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ReleaseNoteEntry } from "@/components/whats-new/release-note-entry";
+import { isWelcomeDue } from "@/lib/onboarding/welcome-due";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import {
   accountPredatesNote,
@@ -44,15 +45,15 @@ import { startWhatsNewFresh } from "@/lib/whats-new-fresh";
  * Opens What's new by itself, once, after an update brings a new entry or new
  * lines in the newest one (#3943). The rule is `decideWhatsNew` in
  * `@repo/validation`, the phone's too; `lib/whats-new.ts` says what the
- * browser feeds it. Mounted in the dashboard shell beside the first-run tour.
+ * browser feeds it. Mounted in the dashboard shell.
  *
  * A dialog holding just the entries this browser hasn't shown, closed by Esc,
  * the X or a click outside. The full list stays at `/whats-new`.
  *
  * It waits its turn. Nothing is decided until the member's account and
  * chapter are known, so a member with no chapter (the chapter wizard) is
- * never checked. A visit the first-run tour owns records the entry without
- * showing it. And when it is time to open, it stands down if another dialog
+ * never checked. A visit a new member's welcome card owns
+ * (`lib/onboarding/welcome-due.ts`) records the entry without showing it. And when it is time to open, it stands down if another dialog
  * or menu is up (the Terms prompt, an invite, anything the member opened) or
  * the route is one it must not cover: the entry stays unread, the account
  * menu's What's new row carries a mark, and the next navigation tries again.
@@ -71,8 +72,8 @@ export const WHATS_NEW_OPEN_DELAY_MS = 800;
 
 /**
  * Routes it never opens over: the checkout landings
- * (`CHECKOUT_LANDING_PATHNAMES`; the tour stands down there too), and
- * `/whats-new`, which is the notes themselves.
+ * (`CHECKOUT_LANDING_PATHNAMES`), and `/whats-new`, which is the notes
+ * themselves.
  */
 const SUPPRESSED_PREFIXES = [
   ...CHECKOUT_LANDING_PATHNAMES,
@@ -83,14 +84,15 @@ const SUPPRESSED_PREFIXES = [
 const BLOCKING_LAYER =
   '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
-type Membership = { chapter_id: string; has_completed_onboarding: boolean };
+type Membership = { chapter_id: string };
 
 export function WhatsNewHost() {
   const pathname = usePathname();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const chaptersQuery = useAccessibleChapters();
   const userQuery = useCurrentUser();
-  const user = userQuery.data as { created_at?: string | null } | undefined;
+  const user = userQuery.data as
+    { id?: string; created_at?: string | null } | undefined;
   const account = useAccountWhatsNewSeen({ enabled: Boolean(user) });
   const { mutate: recordOnAccount } = useRecordWhatsNewSeen();
 
@@ -132,7 +134,7 @@ export function WhatsNewHost() {
     const decision = decideWhatsNew({
       notes: RELEASE_NOTES,
       seen: readWhatsNewSeen(),
-      tourDue: membership.has_completed_onboarding === false,
+      welcomeDue: isWelcomeDue(user.id ?? null, membership.chapter_id),
       existingInstall,
     });
     if (decision.show.length === 0) {
@@ -162,7 +164,7 @@ export function WhatsNewHost() {
       const decision = decideWhatsNew({
         notes: RELEASE_NOTES,
         seen: readWhatsNewSeen(),
-        tourDue: false,
+        welcomeDue: false,
         existingInstall: pending.existingInstall,
       });
       if (decision.show.length === 0) {

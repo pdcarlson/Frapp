@@ -23,10 +23,6 @@ Object.defineProperty(window, "location", {
 const { mockOffline } = vi.hoisted(() => ({ mockOffline: { value: false } }));
 
 const mocks = vi.hoisted(() => {
-  const noopMutation = {
-    mutateAsync: () => Promise.resolve({}),
-    isPending: false,
-  };
   return {
     settingsData: undefined as Record<string, unknown> | undefined,
     updateSettingsMutateAsync: vi.fn(),
@@ -53,7 +49,6 @@ const mocks = vi.hoisted(() => {
       fetchStatus: "idle" as string,
       refetch: vi.fn(),
     },
-    noopMutation,
     updateUser: {
       mutateAsync: vi.fn<(body: Record<string, unknown>) => Promise<unknown>>(
         () => Promise.resolve({}),
@@ -112,8 +107,6 @@ vi.mock("@repo/hooks", () => ({
   useUserSettings: () => mocks.settingsQuery,
   useUpdateUser: () => mocks.updateUser,
   useUpdateUserSettings: () => mocks.updateSettings,
-  useUpdateOnboarding: () => mocks.noopMutation,
-  useViewerUserId: () => "user-1",
   useDeleteAccount: () => mocks.deleteAccount,
   useActiveChapterId: () => mocks.chapterId,
   usePermissionList: () => mocks.permissions,

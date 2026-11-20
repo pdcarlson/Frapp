@@ -249,7 +249,6 @@ export function ProtectedNavItem({
       <button
         type="button"
         onClick={onSelect}
-        data-nav-item={item.id}
         aria-current={current}
         aria-pressed={pressed}
         aria-label={collapsed ? railLabel : undefined}
@@ -265,7 +264,6 @@ export function ProtectedNavItem({
     <Link
       href={item.href}
       onClick={onNavigate}
-      data-nav-item={item.id}
       aria-current={current}
       // In the rail the label has nowhere to render, so the accessible name
       // has to come from somewhere other than the text content.

@@ -228,6 +228,7 @@ import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import { emptyFormDraft, type FormDraft } from "@repo/chat-core/form-draft";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
+import { WelcomeCard } from "@/components/onboarding/welcome-card";
 import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
 import { AllThreadsPopover } from "./all-threads-popover";
@@ -4010,6 +4011,11 @@ export function ChatShell({
           costs the common case one early return.
         */}
         <OpsSetupNudge />
+        {/*
+          A new member's welcome card, once, over the first channel they open
+          (#5627): the chapter's default channel on arrival.
+        */}
+        <WelcomeCard channelOpen={!!activeChannelId && !directView} />
         {/*
           The four states that used to replace the whole route now render inside
           this column, so the channels column beside them stays usable: a member

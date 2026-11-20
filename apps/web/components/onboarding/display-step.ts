@@ -1,8 +1,8 @@
 /**
  * The chat display pick while setting up (#3787, Winston's decision: each
- * member picks how chat looks when setting up). Shared by the first-run tour a
- * joining member sees and the chapter wizard a founder sees (#4056), which
- * skips the tour. Copy: `spec/ui/design-system/writing.md` § Display step.
+ * member picks how chat looks when setting up), in the chapter wizard a
+ * founder sees (#4056). Copy: `spec/ui/design-system/writing.md` § Display
+ * step.
  */
 export const DISPLAY_STEP_TITLE = "Pick your chat display";
 export const DISPLAY_STEP_DESCRIPTION =

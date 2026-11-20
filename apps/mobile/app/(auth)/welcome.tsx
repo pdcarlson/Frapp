@@ -35,7 +35,7 @@ import {
 import { useAuthSession } from "@/lib/auth-session";
 import { initialsFor } from "@/lib/more/narrow";
 import { selectViewerProfile } from "@/lib/more/profile";
-import { TOUR_DUE_ANYONE, markTourDue } from "@/lib/onboarding/tour";
+import { markWelcomeDue } from "@/lib/onboarding/welcome-due";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { useLatestTrack } from "@/lib/use-latest-track";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -74,7 +74,7 @@ export default function Welcome() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { status } = useAuthSession();
+  const { status, chapterId } = useAuthSession();
   const queryClient = useQueryClient();
   const updateOnboarding = useUpdateOnboarding();
   const primer = usePushPrimer();
@@ -111,9 +111,10 @@ export default function Welcome() {
     } catch {
       // Non-fatal — the next session re-offers s03 if the write never landed.
     }
-    // The tour over chat runs once, for the member who just came through here.
+    // The welcome card in the default channel shows once, for the member who
+    // just came through here (#5627).
     const userId = (userQuery.data as { id?: string } | undefined)?.id;
-    await markTourDue(userId ?? TOUR_DUE_ANYONE);
+    if (userId) await markWelcomeDue(userId, chapterId);
     await queryClient.invalidateQueries({ queryKey: ["chapters"] });
     router.replace("/");
   }

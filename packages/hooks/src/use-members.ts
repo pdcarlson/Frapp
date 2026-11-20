@@ -517,8 +517,7 @@ export function useUpdateOnboarding() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
-      // The mobile first-run gate (and the web first-run tour) read this flag off
-      // `GET /v1/chapters`. Leaving that cache standing would re-send a member
+      // The mobile first-run gate reads this flag off `GET /v1/chapters`. Leaving that cache standing would re-send a member
       // who just finished s03 back to s03.
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
     },

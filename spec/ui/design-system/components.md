@@ -505,7 +505,7 @@ Everything else on the row (body type, reactions, trailing markers, delivery sta
 
 **Where it is set.** Web: Profile, a **Chat density** section of three radio cards (cozy, compact, bubbles; added 2026-11-10), each a drawing of the thread in shapes (no made-up names or text), saving on the click. Mobile: Settings, a **Chat** section with one **Chat density** row whose value names the current choice and opens a sheet of the same three cards; a tap saves and closes. The thread redraws at once on both.
 
-**Onboarding and Always formal** (2026-11-10, #3787). A new member also picks from the same cards while setting up (the web first-run tour as one segmented control, mobile s03, and both chapter setups for a founder). A channel set to Always formal draws cozy for everyone, which is the "formal" display: [`chat/README.md` § Always formal](../../behavior/chat/README.md#always-formal).
+**Onboarding and Always formal** (2026-11-10, #3787). A founder also picks from the same cards in both chapter setups, and a member who joined finds them under the welcome card's Finish your profile (#5627, which removed the web tour's segmented control and mobile s03's display step). A channel set to Always formal draws cozy for everyone, which is the "formal" display: [`chat/README.md` § Always formal](../../behavior/chat/README.md#always-formal).
 
 **Per device, not per account.** Both controls say so ("Applies on this browser", "Applies on this phone"); the rule and its reason are the [chat README's](../../behavior/chat/README.md#chat-density) § Chat density.
 

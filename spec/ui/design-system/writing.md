@@ -909,23 +909,22 @@ It was s03's first beat, shown only when the photo or the name was missing, unti
 
 ### Display step (onboarding)
 
-The chat display pick while setting up (#3787): the web tour's second stop and, for a founder, the step after create in each setup (#4056). It was also mobile s03's second beat until #5627.
+The chat display pick while setting up (#3787): for a founder, the step after create in each setup (#4056). It was also mobile s03's second beat and the web tour's second stop until #5627; a member who joined now finds it under the welcome card's Finish your profile ([§ Welcome card](#welcome-card)).
 Copy in `apps/mobile/lib/onboarding/display-step.ts` and `apps/web/components/onboarding/display-step.ts`.
 
 | Surface | Title | Copy |
 |---|---|---|
-| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in Settings.` In the tour, then `Cozy`, `Compact` and `Bubbles` as one segmented control over the real messages. In the setup wizard, the three Chat density cards from Settings → Appearance and chat, then `Continue`. (It said "in your profile" until #5080; the control has lived in Settings since #3856.) |
+| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in Settings.` In the setup wizard, the three Chat density cards from Settings → Appearance and chat, then `Continue`. (It said "in your profile" until #5080; the control has lived in Settings since #3856.) |
 | Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards and a gold `Continue`, in chapter setup. |
 
 ### Pick your roles
 
-Self-assignable roles (#4958): the web tour's stop, shown when there's a role to join, and the pickers (web Profile's **Your roles**, the phone's **Add roles** sheet). It was also a beat of mobile s03 until #5627.
+Self-assignable roles (#4958): the pickers (web Profile's **Your roles**, the phone's **Add roles** sheet, and the welcome card's Finish your profile when there's a role to join). It was also a beat of mobile s03 and a stop of the web tour until #5627, which removed their `Pick your roles` title.
 Copy in `PICK_ROLES_COPY` (`packages/validation/src/self-assignable-roles.ts`), shared by both platforms.
 
 | Where | Copy |
 |---|---|
-| Onboarding title | `Pick your roles` |
-| Onboarding line, and the pickers' hint | `Pick what you're into. Each role adds its channels to Chat, and you can leave it here while it's offered.` (Was `…and you can leave any time.` until #5650: a role an officer stopped offering stays until an officer takes it off.) |
+| The pickers' hint | `Pick what you're into. Each role adds its channels to Chat, and you can leave it here while it's offered.` (Was `…and you can leave any time.` until #5650: a role an officer stopped offering stays until an officer takes it off.) |
 | Under a marked role an alum holds, which they can leave but not join again | `Alumni don't join roles. You can leave this one.` |
 
 ### Always formal
@@ -940,39 +939,20 @@ Strings in `@repo/chat-core/density`.
 | Chat settings create form (web) | `Always formal (everyone sees it in the formal display)` |
 | Save failed | Web toast `Couldn't change Always formal` / `Try again in a moment.`; mobile alert `Couldn't change Always formal` / `Nothing changed. Check your connection and try again.` |
 
-### First-run tour (web)
+### Welcome card
 
-The six stops over the real Chat screen (#5080; `apps/web/components/onboarding/tour.ts`).
-One line each in a coach mark beside the lit control; only the two stops that carry a pick have a title.
+Once, at the top of the chapter's default channel, the first channel a member opens after joining (#5627; Paul's pick 2026-11-19, "welcome card, no tour").
+Copy in `WELCOME_CARD_COPY` and its helpers (`packages/validation/src/welcome-card.ts`), shared by web and the phone; behavior in [`onboarding.md` § After joining](../../behavior/onboarding.md#after-joining).
 
-| Stop | Line |
+| Where | Copy |
 |---|---|
-| The channel list | `You're in <chapter>. These are the chapter's channels. Click one to start talking.` (`your chapter` when the name isn't loaded). On the back-to-channels button below the side-by-side width: `You're in <chapter>. The chapter's channels are one tap back, here.` |
-| The messages | Title `Pick your chat display`, then [§ Display step](#display-step-onboarding)'s web line and the segmented control |
-| The Committees group, the channel list, or the back-to-channels button below the side-by-side width | Title and line from [§ Pick your roles](#pick-your-roles), then the switches |
-| The sidebar's Chapter group | `Events, points, study hours and the rest of the chapter are here, under Chapter.` On the menu button below `lg`: `Events, points, study hours and the rest of the chapter are in this menu, under Chapter.` |
-| The Direct messages row | `Direct messages are here.` On the menu button below `lg`: `Direct messages are in this menu too.` |
-| The avatar | `Your profile and settings are here. Replay this tour anytime from Settings → Account.` |
+| Title | `Welcome to <chapter>, <first name>` (`Welcome to <chapter>` with no name; `your chapter` when the chapter isn't loaded) |
+| Event rows, the next two | The event's name, then its day written out: `Today, 7:00 PM`, `Tomorrow, 7:00 PM`, the weekday within a week (`Saturday, 7:00 PM`), else the date (`Saturday, November 28`, with the year when it isn't this year). Each opens the event. |
+| Last row | `Finish your profile`, then `2 minutes`, muted, and a chevron |
+| Close button | An X, read out as `Close the welcome card`. Closing is for good on that device. |
+| Finish your profile (web dialog, phone tall sheet) | Title `Finish your profile`, line `Your photo, the roles you're in and how chat looks to you.`, then the sections `Photo`, `Your roles` (only when there's a role to join) and `Chat display`, each the control from its own page. Web closes with `Done`. |
 
-Above each line: the count, `1 of 6`, muted. Under it: `Skip tour` on the left; `Back` (from the second stop shown) and `Next` on the right, `Done` on the last stop.
-Skip shows the toast `Tour skipped` / `Replay it anytime from Settings → Account.`
-Settings → Account's row: `Tour`, `The first-run tour starts again the next time you open Chat.`, button `Replay tour`; it confirms with the toast `Tour queued` / `The tour will start the next time you open Chat.`
-
-### First-run tour (mobile)
-
-The four stops over chat after s03 (`apps/mobile/lib/onboarding/tour.ts`).
-One line each, in a popover card beside the lit spot, with the count and the action under it.
-No title: the lit control is the subject.
-
-| Stop | Line |
-|---|---|
-| Top channel section | `You're in <chapter>. Tap a channel to start talking.` (`your chapter` when the name isn't loaded) |
-| The Messages tab | `Direct messages have their own tab.` (#5310; `Direct messages are here. Swiping left opens them too.` on the door, #4610 step 3, until then) |
-| The tab bar's + | `Shortcuts live under the +. Hold it to pick your own.` |
-| The You tab | `Your profile, the directory and settings are under You.` (the More tab's line until #3839) |
-
-Under each line: the count, `1 of 4`, muted, and `Next` in the chapter accent (`Done` on the last stop).
-`Skip` in the top corner, white on the dim, read out as `Skip the tour`.
+The first-run tours it replaced, six stops over web Chat (#5080) and four over the phone's chat after s03, with Settings → Account's `Replay tour`, were removed in #5627 (2026-11-19).
 
 ### Push opt-in (mobile)
 
@@ -1262,7 +1242,7 @@ It had no states at all until the Profile & pre-auth slice, so a failed fetch re
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `Frapp couldn't be reached to confirm you're signed in. Try again in a moment.` |
-| Redeemed | `Chapter joined` | No line under it since #5627 (it was `You're in. Opening chat.`). From the invite card (#5625), web toasts `Welcome to <chapter>` instead. Web then opens [§ Name and photo (after a join)](#name-and-photo-after-a-join), then chat. Mobile goes to s03, the same name and photo screen, then notifications only when push is off, and then goes to chat, where the first-run tour's first stop says `You're in <chapter>.` ([§ First-run tour (mobile)](#first-run-tour-mobile)). |
+| Redeemed | `Chapter joined` | No line under it since #5627 (it was `You're in. Opening chat.`). From the invite card (#5625), web toasts `Welcome to <chapter>` instead. Web then opens [§ Name and photo (after a join)](#name-and-photo-after-a-join), then chat. Mobile goes to s03, the same name and photo screen, then notifications only when push is off, and then goes to chat. Both open the chapter's default channel with the [§ Welcome card](#welcome-card) at its top. |
 | Mobile s02, the question (#3350; Paste since #5626) | `Joining a chapter?` | `If you tapped an invite link before installing Frapp, paste it here.` (`Have a different invite link? Paste it here.` when an emailed invite is offered above it), then Paste, pinned, and the quiet line `Starting a chapter?` `Create a chapter` (web's words). Paste is the system button on iOS 16 and later, whose word and mark Apple fixes. A paste with no invite in it replaces the line with `That isn't a Frapp invite. Copy the whole link, then tap Paste.`; an empty clipboard with `Nothing to paste yet. Copy the invite link, then tap Paste.` (`INVITE_PASTE_COPY` in `@repo/validation`). No field: the rows above are web `/join`'s. |
 | Mobile s01, Joining a chapter? strip (#5626) | `Joining a chapter?` | The question's line and Paste, in a quiet row above the ways in, with the same two answers to a paste that holds no invite, in the line's place. |
 | Mobile s02 invite for this account (#3782) | `You've been invited to <chapter>` | The same title and ` · `-joined line as web's (school, `from <inviter>`, role), on a row with the chapter mark, one per invite, above Paste. A tap opens the invite card on that invite, whose `‹ Back` returns to the question. Not shown when an invite link opened the screen. |

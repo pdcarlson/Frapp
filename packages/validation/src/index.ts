@@ -282,5 +282,6 @@ export {
   normalizeExtension,
   type UploadKind,
 } from "./upload-allowlists";
+export * from "./welcome-card";
 // Point-in-polygon, shared by the API's geofence check and the phone's s10 screen.
 export * from "./zone-geometry";

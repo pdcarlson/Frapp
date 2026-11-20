@@ -15,7 +15,8 @@
  *   last channel through the scope's cached `users.id`);
  * - mobile's chat home, which opens this channel on launch when the member
  *   was last in one (`lastChannelLandingId`, no fallback there: with no last
- *   channel the phone stays on the list).
+ *   channel the phone stays on the list), and opens it in full for a new
+ *   member fresh from s03, whose welcome card waits there (#5627).
  *
  * The last channel is remembered on the device, per member and chapter
  * (`lastChannelStorageKey`), not on the server: it is where this device was,

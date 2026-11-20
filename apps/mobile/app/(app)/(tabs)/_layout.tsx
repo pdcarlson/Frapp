@@ -9,7 +9,6 @@ import {
 import { YouTabAvatar } from "@/components/you-tab-avatar";
 import { AppErrorScreen } from "@/components/route-error";
 import { GlassTabBar } from "@/components/glass-tab-bar";
-import { TourHost } from "@/components/onboarding/tour";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
 import { SCREEN_TITLES } from "@/lib/back-target";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -67,9 +66,7 @@ export default function TabLayout() {
   });
 
   return (
-    // The first-run tour's host wraps the navigator, so its dim covers the
-    // screens and the floating bar both (`components/onboarding/tour.tsx`).
-    <TourHost>
+    <>
       <Tabs
         // On a tab, Android's back button returns to the tab the member came
         // from rather than straight to Chat (the default, "firstRoute").
@@ -128,9 +125,10 @@ export default function TabLayout() {
         />
       </Tabs>
       {/* What's new opens by itself once after an update brings a new entry
-          or new lines, never on a launch the tour is due (`lib/whats-new.ts`). */}
+          or new lines, never on a launch the welcome card is due
+          (`lib/whats-new.ts`). */}
       <WhatsNewHost />
-    </TourHost>
+    </>
   );
 }
 

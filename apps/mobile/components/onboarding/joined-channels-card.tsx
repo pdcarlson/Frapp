@@ -17,7 +17,8 @@ import { pageSurfaces } from "@/lib/surfaces";
  * role-gated, so only the public ones are named (`selectJoinedPublicChannels`).
  *
  * s03 showed it to a member who just joined, marked "joined", until the
- * first-run tour replaced that card (2026-11-07, `lib/onboarding/tour.ts`).
+ * first-run tour replaced that card (2026-11-07). The welcome card in the
+ * chapter's default channel does that job now (#5627).
  */
 export function JoinedChannelsCard() {
   const trailing = "ready";

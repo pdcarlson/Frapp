@@ -619,6 +619,11 @@ vi.mock("./all-threads-popover", () => ({
   ),
 }));
 
+// The welcome card above the timeline has its own spec
+// (`components/onboarding/welcome-card.spec.tsx`).
+vi.mock("@/components/onboarding/welcome-card", () => ({
+  WelcomeCard: () => null,
+}));
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi

@@ -217,6 +217,7 @@ vi.mock("@repo/hooks", async () => {
       dataUpdatedAt: Date.now(),
     }),
     lastChannelLandingId: actual.lastChannelLandingId,
+    landingChannelId: actual.landingChannelId,
     lastChannelStorageKey: actual.lastChannelStorageKey,
     useActiveChapterId: () => "chapter-1",
     groupChannelsByCategory: actual.groupChannelsByCategory,
@@ -381,6 +382,10 @@ import {
   resetChatLaunchForTests,
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
+import {
+  WELCOME_DUE_STORAGE_KEY,
+  resetWelcomeLandingForTests,
+} from "@/lib/onboarding/welcome-due";
 import {
   ChannelListSkeleton,
   ChannelRow,
@@ -2195,7 +2200,10 @@ describe("Chat home opens the last channel on launch", () => {
   const answered = () => {
     channelsState.value = { ...channelsState.value, isSuccess: true };
   };
-  beforeEach(() => resetChatLaunchForTests());
+  beforeEach(() => {
+    resetChatLaunchForTests();
+    resetWelcomeLandingForTests();
+  });
 
   async function settle() {
     await act(async () => {
@@ -2276,6 +2284,26 @@ describe("Chat home opens the last channel on launch", () => {
     render();
     await settle();
     act(() => __refocus());
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("lands a new member fresh from s03 in the chapter's channel, once (#5627)", async () => {
+    // s03 ends long after the launch window, with nothing remembered yet.
+    resetChatLaunchForTests(Date.now() - 60_000);
+    answered();
+    vi.mocked(AsyncStorage.getItem).mockImplementation(async (key) =>
+      key === WELCOME_DUE_STORAGE_KEY ? `${VIEWER}:chapter-1` : null,
+    );
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "c-general", landing: "1" },
+    });
+
+    vi.mocked(vi.mocked(useRouter)().push).mockClear();
+    render();
     await settle();
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
   });

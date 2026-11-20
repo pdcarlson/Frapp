@@ -587,11 +587,11 @@ it (2026-11-07).
   sends nothing, since the member stays on the screen. Web's `/welcome` sends
   none: the web client captures no product events of its own (they are
   recorded by the API), so web's step 2 is not counted.
-- **`onboarding-tour-finished`** is sent once when the first-run tour over chat
-  ends (`apps/mobile/lib/onboarding/tour.ts`): `outcome` is `done` (the last
-  stop) or `skipped`, `stop` is the 1-based stop it ended on, and `stops` how
-  many this member was shown (a stop whose control wasn't on screen is left
-  out). Not a funnel step: a tour that ran is read off it on its own.
+- `onboarding-tour-finished` was sent when the phone's first-run tour ended;
+  it went with the tour in #5627 (2026-11-19).
+- **Step 4** is the request that sets `has_completed_onboarding`: the end of
+  s03 on the phone, and leaving `/welcome` on web (#5627; the web tour's end
+  until then).
 - Steps 2 and 3 are optional, so the funnel in PostHog marks them optional.
   Break it down by `sign_in_method` (on step 1) and `app`.
 

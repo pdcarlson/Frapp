@@ -3,7 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { useCurrentUser, useUpdateUser } from "@repo/hooks";
+import {
+  useActiveChapterId,
+  useCurrentUser,
+  useUpdateOnboarding,
+  useUpdateUser,
+} from "@repo/hooks";
 import {
   DISPLAY_NAME_MAX_LENGTH,
   ONBOARDING_YOU_COPY,
@@ -21,10 +26,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { markWelcomeDue } from "@/lib/onboarding/welcome-due";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { initials } from "@/lib/utils";
 
 type Me = {
+  id?: string;
   display_name?: string | null;
   email?: string | null;
   avatar_url?: string | null;
@@ -44,15 +51,18 @@ type Me = {
  * message the member sends carries it. The photo is optional and saves on its
  * own, as it does on Profile.
  *
- * Leaving does not mark onboarding done: the phone's first run reads that
- * flag to ask about notifications, which a member who joined here still needs
- * when they install the app.
+ * Leaving marks onboarding done (`has_completed_onboarding`), as the phone's
+ * s03 does, so the Directory stops listing the member as pending. The phone
+ * then skips s03 for them, and its chat home asks about notifications once
+ * instead (`usePushReminder`, which offers to a member never asked).
  */
 export function WelcomeYou() {
   const router = useRouter();
   const { isOffline } = useNetwork();
   const userQuery = useCurrentUser();
   const updateUser = useUpdateUser();
+  const updateOnboarding = useUpdateOnboarding();
+  const chapterId = useActiveChapterId();
   const me = userQuery.data as Me | undefined;
   // `null` until typed in: the field shows the loaded name until then.
   const [nameDraft, setNameDraft] = useState<string | null>(null);
@@ -117,6 +127,13 @@ export function WelcomeYou() {
         return;
       }
     }
+    try {
+      await updateOnboarding.mutateAsync({ has_completed_onboarding: true });
+    } catch {
+      // Non-fatal: the member is in, and the Directory says pending a while.
+    }
+    // The welcome card in the default channel shows once (#5627).
+    if (me?.id && chapterId) markWelcomeDue(me.id, chapterId);
     // Stays busy: the page is on its way to chat.
     router.replace("/chat");
   }

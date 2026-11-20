@@ -53,7 +53,7 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("@/lib/auth-session", () => ({
-  useAuthSession: () => ({ status: "authenticated", chapterId: null }),
+  useAuthSession: () => ({ status: "authenticated", chapterId: "ch-1" }),
 }));
 
 const completeOnboarding = vi.fn().mockResolvedValue(undefined);
@@ -103,7 +103,7 @@ import {
   PUSH_PRIMER_DECLINED_AT_KEY,
   PUSH_PRIMER_STORAGE_KEY,
 } from "@/lib/notifications/primer";
-import { TOUR_DUE_STORAGE_KEY } from "@/lib/onboarding/tour";
+import { WELCOME_DUE_STORAGE_KEY } from "@/lib/onboarding/welcome-due";
 
 type Node = ReactTestRenderer["root"];
 
@@ -216,7 +216,7 @@ describe("s03 welcome, notifications step", () => {
     permission = OFF;
     const { root } = await render();
 
-    // No "You're in." card first: the tour over chat says that now.
+    // No "You're in." card first: the welcome card in the channel says it.
     expect(texts(root).some((t) => t.includes("in."))).toBe(false);
     // Its own title, both answers pinned under the scroll.
     expect(texts(root).some((t) => t.includes("Turn on notifications"))).toBe(
@@ -452,8 +452,8 @@ describe("s03 welcome, the name screen", () => {
       has_completed_onboarding: true,
     });
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      TOUR_DUE_STORAGE_KEY,
-      "u-1",
+      WELCOME_DUE_STORAGE_KEY,
+      "u-1:ch-1",
     );
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
     expect(profileEvents()).toEqual([
