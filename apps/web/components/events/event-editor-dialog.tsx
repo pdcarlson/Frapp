@@ -80,6 +80,7 @@ import {
   agendaWithPending,
   EVENT_LENGTH_CHOICES,
   eventLengthLabel,
+  eventTypeFromForm,
   type EventAgendaItem,
   type EventAttendanceDraft,
   type EventEditScope,
@@ -1612,6 +1613,13 @@ export function EventEditorDialog({
               onPick={handlePickType}
               canManage={canManageTypes && !usingPreviewData}
               showSets={canSetRequirements}
+              typeFromForm={(typeName) =>
+                eventTypeFromForm(
+                  typeName,
+                  canSetRequirements ? parseGuardedInt(pointValue) : 0,
+                  canSetRequirements && attendance.everyone === "required",
+                )
+              }
               disabled={usingPreviewData}
             />
 

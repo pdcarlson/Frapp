@@ -68,6 +68,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateEvent: () => ({ mutate, mutateAsync, isPending: false }),
   useUpdateEvent: () => ({ mutate: updateMutate, isPending: false }),
   useDeleteEvent: () => ({ mutate: deleteMutate, isPending: false }),
+  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePermissionList: () => permissions,
   useEventTypes: () => ({
     data: [
@@ -499,6 +500,18 @@ describe("New event", () => {
     act(() => tree.unmount());
   });
 
+  it("makes a type in place from the form's points and attendance (Paul 2026-11-20)", () => {
+    const tree = render();
+    act(() => byLabel(tree, "Points for attending").props.onChangeText("15"));
+    const sheet = tree.root.findByType(EventTypeSheet);
+    expect(sheet.props.typeFromForm("Work party")).toEqual({
+      name: "Work party",
+      point_value: 15,
+      is_mandatory: false,
+    });
+    act(() => tree.unmount());
+  });
+
   // #3709: every member can create an event; points and "required" are for
   // the officers who hold events:update.
   it("gives a member who can't edit events no points and no required default", () => {
@@ -511,6 +524,9 @@ describe("New event", () => {
         "Who's coming: Optional for everyone",
       );
       expect(drawn(tree, "Points for attending")).toBe(false);
+      expect(
+        tree.root.findByType(EventTypeSheet).props.typeFromForm,
+      ).toBeUndefined();
       expect(screenText(tree)).toContain(
         "Events you make carry no points and require nobody.",
       );
@@ -722,7 +738,9 @@ describe("the When row on Android", () => {
         typeof node.props.onPress === "function",
     );
     // The pill says its day: it used to be blank, the label too.
-    expect(dayPill!.props.accessibilityLabel).toBe("Ends day, Saturday, November 7");
+    expect(dayPill!.props.accessibilityLabel).toBe(
+      "Ends day, Saturday, November 7",
+    );
     expect(screenText(tree)).toContain("Saturday, November 7");
     act(() => dayPill!.props.onPress());
 
@@ -794,8 +812,7 @@ describe("Edit event", () => {
     });
     return tree;
   }
-  const saveButton = (tree: ReactTestRenderer) =>
-    byLabel(tree, "Save changes");
+  const saveButton = (tree: ReactTestRenderer) => byLabel(tree, "Save changes");
 
   it("opens filled in from the event", () => {
     const tree = renderEdit(single);
