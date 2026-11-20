@@ -13559,7 +13559,7 @@
             "bearer": []
           }
         ],
-        "summary": "List the chapter's groups with their members: manual ones, then pledge classes and class years that have members",
+        "summary": "List the chapter's groups with their members: manual ones, then pledge classes, class years and majors that have members",
         "tags": [
           "Groups"
         ]
@@ -31095,7 +31095,7 @@
           "audience_group_id": {
             "type": "string",
             "format": "uuid",
-            "description": "With `audience: \"everyone\"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`."
+            "description": "With `audience: \"everyone\"` only (2026-11-18): just the active members of this chapter group (manual, pledge class, class year or major) get a copy. An empty group is a 400. Not with `audience_role_id`."
           },
           "audience_tier_id": {
             "type": "string",
@@ -31819,7 +31819,7 @@
           "group_id": {
             "type": "string",
             "format": "uuid",
-            "description": "Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400."
+            "description": "Only this chapter group’s active members (manual, pledge class, class year or major) may claim it. An empty group is a 400."
           },
           "tier_id": {
             "type": "string",

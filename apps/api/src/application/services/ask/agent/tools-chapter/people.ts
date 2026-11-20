@@ -50,8 +50,21 @@ const GROUP_KIND_WORDS: Record<ChapterGroupView['kind'], string> = {
   manual: 'group',
   pledge_class: 'class',
   class_year: 'class year',
+  // Never shown: `askableGroups` keeps majors away from the model.
   major: 'major',
 };
+
+/**
+ * The groups Ask may name to the model: every kind but a major's (#5778). A
+ * member's major is a profile field Ask has never sent (`ProfileForAsk`
+ * leaves it out), and the AI consent sheet and Privacy Policy don't list it,
+ * so a major's group, which would say who has which major, stays out too.
+ */
+export function askableGroups<T extends Pick<ChapterGroupView, 'kind'>>(
+  groups: readonly T[],
+): T[] {
+  return groups.filter((group) => group.kind !== 'major');
+}
 
 /** "Fall 2024 (class)": a group's name with what kind of group it is. */
 export function groupLabel(group: ChapterGroupView): string {

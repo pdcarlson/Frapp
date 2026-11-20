@@ -4033,7 +4033,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the chapter's groups with their members: manual ones, then pledge classes and class years that have members */
+        /** List the chapter's groups with their members: manual ones, then pledge classes, class years and majors that have members */
         get: operations["ChapterGroupController_list_v1"];
         put?: never;
         /** Make a group and, optionally, pick its members */
@@ -9762,7 +9762,7 @@ export interface components {
             audience_role_id?: string;
             /**
              * Format: uuid
-             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`.
+             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class, class year or major) get a copy. An empty group is a 400. Not with `audience_role_id`.
              */
             audience_group_id?: string;
             /**
@@ -10053,7 +10053,7 @@ export interface components {
             role_id?: string;
             /**
              * Format: uuid
-             * @description Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400.
+             * @description Only this chapter group’s active members (manual, pledge class, class year or major) may claim it. An empty group is a 400.
              */
             group_id?: string;
             /**

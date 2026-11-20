@@ -174,7 +174,7 @@ export class CreateTaskDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description:
-      'With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`.',
+      'With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class, class year or major) get a copy. An empty group is a 400. Not with `audience_role_id`.',
   })
   @IsOptional()
   @IsUUID()

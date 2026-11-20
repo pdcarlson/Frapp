@@ -2,14 +2,14 @@
 
 import { useMemo } from "react";
 import { Eye } from "lucide-react";
-import { useGroups } from "@repo/hooks";
-import { allRoles } from "@repo/hooks/task-who-picker";
+import { useGroups, useRoles } from "@repo/hooks";
 import {
-  TASK_FOLLOWER_COPY,
-  groupKindOpensChannels,
-  taskFollowerEntry,
-  type TaskFollowerKind,
-} from "@repo/validation";
+  FOLLOWER_HEADINGS,
+  followerChoices,
+  listedFollowers,
+  type FollowerChoice,
+} from "@repo/hooks/task-follower-choices";
+import { TASK_FOLLOWER_COPY } from "@repo/validation";
 import {
   Select,
   SelectContent,
@@ -23,20 +23,7 @@ import {
 import { useWhoDirectory } from "@/components/tasks/who-picker";
 import { cn } from "@/lib/utils";
 
-/** One tier, role or group a task can be from (#5473). */
-export interface FollowerChoice {
-  entry: string;
-  kind: TaskFollowerKind;
-  name: string;
-  /** How many active members it reaches now. */
-  count: number;
-}
-
-const HEADINGS: Record<TaskFollowerKind, string> = {
-  tier: "Tiers",
-  role: "Roles",
-  group: "Groups",
-};
+export type { FollowerChoice };
 
 /** The Select's value for "Just you": a Select item can't hold "". */
 const JUST_YOU = "none";
@@ -44,8 +31,9 @@ const JUST_YOU = "none";
 /**
  * The tiers, roles and groups the viewer is in, which a task they make or
  * edit can be from (#5473): the API takes only one its sender is in, so "From
- * Exec board" is true. Not a class year or a major, which open nothing
- * either.
+ * Exec board" is true. The phone's From sheet lists the same, from the same
+ * `followerChoices` (`@repo/hooks/task-follower-choices`): not the tier
+ * holding the Everyone role, nor a class year or a major, which open nothing.
  */
 export function useFollowerChoices(
   options: { enabled?: boolean } = {},
@@ -53,47 +41,17 @@ export function useFollowerChoices(
   // Read only where From can be changed: a read-only task panel needs none.
   const enabled = options.enabled ?? true;
   const { directory } = useWhoDirectory({ enabled });
+  // The same reads the directory was built from, so these are cache hits.
+  const roles = useRoles({ enabled });
   const groups = useGroups({ enabled });
-  return useMemo(() => {
-    const viewer = directory.people.find((person) => person.isViewer)?.userId;
-    if (!viewer) return [];
-    const selfSet = new Set(
-      (groups.data ?? [])
-        .filter((group) => !groupKindOpensChannels(group.kind))
-        .map((group) => group.id),
-    );
-    const choices: FollowerChoice[] = [];
-    const add = (
-      kind: TaskFollowerKind,
-      id: string,
-      name: string,
-      ids: string[],
-    ) => {
-      if (!ids.includes(viewer)) return;
-      choices.push({
-        entry: taskFollowerEntry(kind, id),
-        kind,
-        name,
-        count: ids.length,
-      });
-    };
-    for (const tier of directory.tiers) {
-      // The tier holding the Everyone role is the chapter, which the API
-      // refuses as a follower, as it does the Everyone role.
-      if (tier.set && !tier.holdsEveryone) {
-        add("tier", tier.set.id, tier.set.name, tier.set.memberIds);
-      }
-    }
-    for (const role of allRoles(directory)) {
-      add("role", role.id, role.name, role.memberIds);
-    }
-    for (const group of directory.groups) {
-      if (!selfSet.has(group.id)) {
-        add("group", group.id, group.name, group.memberIds);
-      }
-    }
-    return choices;
-  }, [directory, groups.data]);
+  return useMemo(
+    () =>
+      followerChoices(directory, {
+        roles: roles.data,
+        groups: groups.data ?? null,
+      }),
+    [directory, roles.data, groups.data],
+  );
 }
 
 /**
@@ -119,18 +77,7 @@ export function FollowerSelect({
   disabled?: boolean;
   className?: string;
 }) {
-  const listed =
-    value && !choices.some((choice) => choice.entry === value)
-      ? [
-          ...choices,
-          {
-            entry: value,
-            kind: value.split(":")[0] as TaskFollowerKind,
-            name: currentName?.trim() || TASK_FOLLOWER_COPY.deleted,
-            count: 0,
-          },
-        ]
-      : choices;
+  const listed = listedFollowers(choices, value, currentName ?? null);
   const kinds = (["tier", "role", "group"] as const).filter((kind) =>
     listed.some((choice) => choice.kind === kind),
   );
@@ -152,7 +99,7 @@ export function FollowerSelect({
         {kinds.map((kind) => (
           <SelectGroup key={kind}>
             <SelectSeparator />
-            <SelectLabel>{HEADINGS[kind]}</SelectLabel>
+            <SelectLabel>{FOLLOWER_HEADINGS[kind]}</SelectLabel>
             {listed
               .filter((choice) => choice.kind === kind)
               .map((choice) => (

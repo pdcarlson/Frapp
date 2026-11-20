@@ -43,20 +43,13 @@
 -- 1. The column, the kind, and the rules a row of it keeps.
 -- ---------------------------------------------------------------------------
 
--- The folded form majors match on: trimmed, each run of whitespace one
--- space, lower case. Null for no major (null, empty or only spaces).
-create or replace function public.chapter_major_key(p_major text)
-returns text
-language sql
-immutable
-security invoker
-set search_path = public, pg_temp
-as $$
-  select nullif(lower(btrim(regexp_replace(p_major, '\s+', ' ', 'g'))), '');
-$$;
-
 -- How a member's major reads as a group's name: trimmed, each run of
--- whitespace one space, their own capitalization kept.
+-- whitespace one space, their own capitalization kept. Null for no major
+-- (null, empty or only whitespace). "Whitespace" is spelled out rather than
+-- `\s`, whose reach depends on the database's locale: it is the set
+-- JavaScript's `\s` matches, which `majorGroupKey` folds on the client and
+-- `chapter_groups_name_not_blank` (20261113161332) calls blank, so no major
+-- the database groups can yield a name that check refuses.
 create or replace function public.chapter_major_spelling(p_major text)
 returns text
 language sql
@@ -64,7 +57,28 @@ immutable
 security invoker
 set search_path = public, pg_temp
 as $$
-  select nullif(btrim(regexp_replace(p_major, '\s+', ' ', 'g')), '');
+  select nullif(
+    btrim(
+      regexp_replace(
+        p_major,
+        '[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+',
+        ' ',
+        'g'
+      )
+    ),
+    ''
+  );
+$$;
+
+-- The folded form majors match on: the spelling above, lower case.
+create or replace function public.chapter_major_key(p_major text)
+returns text
+language sql
+immutable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select lower(public.chapter_major_spelling(p_major));
 $$;
 
 alter table public.chapter_groups

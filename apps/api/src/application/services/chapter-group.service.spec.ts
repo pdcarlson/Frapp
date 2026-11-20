@@ -159,6 +159,17 @@ describe('ChapterGroupService (#4076)', () => {
       },
     );
 
+    it("takes a name a major's group has: the major gives way in mentions (#5778)", async () => {
+      repo.findByChapter.mockResolvedValue([
+        group('m', 'Rush Chairs', { kind: 'major', major_key: 'rush chairs' }),
+      ]);
+      repo.create.mockResolvedValue(group('new', 'Rush Chairs'));
+
+      await expect(
+        service.create(CHAPTER, ACTOR, { name: 'Rush Chairs' }),
+      ).resolves.toMatchObject({ id: 'new' });
+    });
+
     it.each(['everyone', '@Here', '---'])(
       'refuses %s, which is no name a mention can reach on its own',
       async (name) => {

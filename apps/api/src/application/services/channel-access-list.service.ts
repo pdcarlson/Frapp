@@ -85,7 +85,8 @@ const LISTED_TYPES: ReadonlySet<ChannelType> = new Set([
  * hold (#3722), and the check every write of one goes through.
  *
  * The options are tiers first (highest first), then roles in the chapter's
- * role order, then groups (#4076): manual ones, pledge classes, class years.
+ * role order, then groups (#4076): manual ones and pledge classes (class
+ * years and majors never go on a list).
  * The editor groups by `kind`.
  */
 @Injectable()
@@ -307,8 +308,8 @@ export class ChannelAccessListService {
           hidden: role.system_key === SystemRoleKeys.MEMBER,
         };
       });
-    // A class year never goes on a list: members set their own graduation
-    // year (`groupKindOpensChannels`).
+    // A class year or a major never goes on a list: members set their own
+    // (`groupKindOpensChannels`).
     const groupOptions: ChannelAccessOption[] = withMembers(
       groups.filter(
         (group) =>

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { db, miss } from "../harness.mjs";
 import { setAuth } from "../probe.mjs";
 
@@ -14,7 +17,11 @@ import { setAuth } from "../probe.mjs";
 //     changes, the first member with a new major makes its group, the last
 //     one to leave empties it (the row stays), and a chapter's group holds
 //     only that chapter's members;
-//   - a major on a channel list admits nobody, its own members included.
+//   - a major on a channel list admits nobody, its own members included;
+//   - whitespace is what JavaScript's `\s` calls whitespace, so a major of
+//     only a byte-order mark saves and makes no group, and a no-break space
+//     joins the spaced spelling's group;
+//   - the backfill rebuilds the rows for majors members already have.
 //
 // Everything runs inside one transaction and is rolled back.
 console.log("\n=== Functional: a group per major (20261120215726) ===");
@@ -28,6 +35,10 @@ console.log("\n=== Functional: a group per major (20261120215726) ===");
   const U = (n) => `a5778000-0000-4000-8000-0000000000a${n}`;
   const A = (n) => `a5778000-0000-4000-8000-0000000000b${n}`;
   const CHAN = "a5778000-0000-4000-8000-0000000c0001";
+  const sql = readFileSync(
+    join(process.cwd(), "supabase/migrations/20261120215726_major_groups.sql"),
+    "utf8",
+  );
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok, detail });
   const rows = async (text, params = []) => (await db.query(text, params)).rows;
@@ -105,9 +116,10 @@ console.log("\n=== Functional: a group per major (20261120215726) ===");
     );
 
     // The first member with a new major makes its group.
-    await db.query(`update users set major = 'Industrial Systems' where id = $1`, [
-      U(4),
-    ]);
+    await db.query(
+      `update users set major = 'Industrial Systems' where id = $1`,
+      [U(4)],
+    );
     const isys = await groupId("industrial systems");
     check(
       "the first member to save a new major makes its group, with them in it",
@@ -171,6 +183,39 @@ console.log("\n=== Functional: a group per major (20261120215726) ===");
       "a major on a channel list admits nobody, its own members included",
       read === false,
       { read },
+    );
+
+    // Unicode whitespace: a blank-looking major saves and makes no group; a
+    // no-break space is a space.
+    const before = (await majors()).length;
+    await db.query(`update users set major = $2 where id = $1`, [
+      U(2),
+      "\uFEFF\u00A0",
+    ]);
+    const afterBlank = (await majors()).length;
+    await db.query(`update users set major = $2 where id = $1`, [
+      U(2),
+      "Mechanical\u00A0Engineering\uFEFF",
+    ]);
+    check(
+      "a major of only invisible spaces saves and makes no group; a no-break space is a space",
+      afterBlank === before &&
+        same(await membersOf(mech), [U(1), U(2)]) &&
+        (await majors()).length === before,
+      { before, afterBlank, members: await membersOf(mech) },
+    );
+
+    // The backfill: drop the rows and run the file again over the members.
+    await db.query(`delete from chapter_groups where kind = 'major'`);
+    await db.exec(sql);
+    check(
+      "the backfill makes a group for each major members already have",
+      same(
+        (await majors()).map((g) => g.major_key),
+        // Nobody has Industrial Systems any more, so the backfill makes none.
+        ["mechanical engineering", "music"],
+      ) && same(await majors(CH2), [{ name: "Music", major_key: "music" }]),
+      { here: await majors(), there: await majors(CH2) },
     );
   } catch (e) {
     check("the tier ran to the end", false, {

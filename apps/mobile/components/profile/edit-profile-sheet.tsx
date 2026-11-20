@@ -178,17 +178,20 @@ export const EditProfileSheet = forwardRef<
   const styles = createStyles(tokens, accent);
   const backgroundStyle = useSheetBackgroundStyle();
   const updateUser = useUpdateUser();
-  // The chapter's majors, offered under Major while it has focus (#5778), so
-  // a member picks the spelling the chapter already pings. The groups read
-  // needs `members:view`, as on web.
-  const chapterMajors = useChapterMajors({
-    enabled: can("members:view", usePermissionList()),
-  });
+  const canViewMembers = can("members:view", usePermissionList());
 
   const original = useMemo(() => draftFromProfile(profile), [profile]);
   const [edits, setEdits] = useState<ProfileEdits | null>(null);
   const [submitFailed, setSubmitFailed] = useState(false);
   const [focused, setFocused] = useState<ProfileDraftField | null>(null);
+  // The chapter's majors, offered under Major while it has focus (#5778), so
+  // a member picks the spelling the chapter already pings. Read only then:
+  // the sheet stays mounted under the You tab, and the groups read (which
+  // needs `members:view`, as on web) is the whole chapter's. Once read it
+  // stays cached for the next focus.
+  const chapterMajors = useChapterMajors({
+    enabled: canViewMembers && focused === "major",
+  });
   // When a refusal shows: once the member leaves the field or presses Save,
   // never on the keystroke that is still on its way to a valid value
   // (`useFieldReveal`, components.md § Text input, "When an error shows").

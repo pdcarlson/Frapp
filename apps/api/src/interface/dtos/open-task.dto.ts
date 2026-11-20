@@ -105,7 +105,7 @@ export class CreateOpenTaskDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description:
-      'Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400.',
+      'Only this chapter group’s active members (manual, pledge class, class year or major) may claim it. An empty group is a 400.',
   })
   @IsOptional()
   @IsUUID()

@@ -141,6 +141,32 @@ describe('SupabaseChapterGroupRepository — tenant scope', () => {
     expect([named, other]).toEqual([true, false]);
   });
 
+  it('findGroupIdsForUser leaves out a class year and a major, which open no channel (#5778)', async () => {
+    harness = createTenantHarness({
+      tables: {
+        ...seed(),
+        chapter_group_memberships: [
+          ...seed().chapter_group_memberships,
+          ...(['class_year', 'major', 'pledge_class'] as const).flatMap(
+            (kind) =>
+              [inA, inB].map((inChapter, i) =>
+                inChapter({
+                  id: `membership-${kind}-${i}`,
+                  group_id: `group-${kind}`,
+                  user_id: USER,
+                  kind,
+                }),
+              ),
+          ),
+        ],
+      },
+    });
+    repo = new SupabaseChapterGroupRepository(harness.client);
+
+    const ids = await repo.findGroupIdsForUser(CHAPTER_B, USER);
+    expect([...ids].sort()).toEqual([GROUP_B, 'group-pledge_class'].sort());
+  });
+
   it("findGroupIdsForUser returns only the caller chapter's groups", async () => {
     const ids = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findGroupIdsForUser(CHAPTER_B, USER),

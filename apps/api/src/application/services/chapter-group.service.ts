@@ -419,7 +419,14 @@ export class ChapterGroupService {
     const names = [
       ...roles.filter((r) => r.chapter_id === chapterId).map((r) => r.name),
       ...tiers.filter((t) => t.chapter_id === chapterId).map((t) => t.name),
-      ...groups.filter((g) => g.id !== selfId).map((g) => g.name),
+      // Not a major's group (#5778): members type their own major, so one
+      // must not lock an officer out of a name (the row of a major nobody has
+      // any more is hidden and can't be deleted). A major gives way instead:
+      // one named like another set isn't a mention target
+      // (`namesMajorsGiveWayTo` in chat-mention.service.ts).
+      ...groups
+        .filter((g) => g.id !== selfId && g.kind !== 'major')
+        .map((g) => g.name),
     ];
     if (names.some((other) => foldMentionName(other) === folded)) {
       throw new ConflictException(NAME_TAKEN);
