@@ -1,4 +1,4 @@
-# 20261120005145_chapter_link_per_role.sql
+# 20261120021816_chapter_link_per_role.sql
 
 <!-- One page per migration: its promotion entry and its rollback recipe.
      check:migration-safety reads the two headings below. Shared procedure
