@@ -11,6 +11,7 @@ import {
   actionStatus,
   canReopenOwnTask,
   isSentBack,
+  taskHandedInLine,
   useMeeting,
   useReleaseTask,
   useUpdateTask,
@@ -364,6 +365,27 @@ function TaskPanelBody({
   const references = (task.photos ?? []).filter(
     (photo) => photo.kind === "reference",
   );
+  // Handed in (#5732): who marked it done and when, under the status, with
+  // the proof under it, so a done task reads as one before its fields do.
+  const handedIn = isGroup
+    ? null
+    : taskHandedInLine(task, (userId) =>
+        userId === myUserId ? "You" : personOf(userId).name,
+      );
+  const proof = isGroup ? null : (
+    <TaskProof
+      task={
+        editable
+          ? {
+              ...task,
+              photos: (task.photos ?? []).filter((p) => p.kind !== "reference"),
+            }
+          : task
+      }
+      showProof={isMine || canManage}
+      sentBack={sentBack}
+    />
+  );
   const groupLabel = isGroup
     ? taskGroupLabel({
         audience: task.group?.audience ?? "everyone",
@@ -397,6 +419,12 @@ function TaskPanelBody({
           }
         />
       )}
+      {handedIn ? (
+        <div className="grid gap-3">
+          <p className="text-body text-foreground">{handedIn}</p>
+          {proof}
+        </div>
+      ) : null}
       <dl className="grid gap-1">
         <FieldRow label="Who">
           {isGroup ? (
@@ -536,21 +564,8 @@ function TaskPanelBody({
           copies={target.copies}
           personOf={personOf}
         />
-      ) : (
-        <TaskProof
-          task={
-            editable
-              ? {
-                  ...task,
-                  photos: (task.photos ?? []).filter(
-                    (p) => p.kind !== "reference",
-                  ),
-                }
-              : task
-          }
-          showProof={isMine || canManage}
-          sentBack={sentBack}
-        />
+      ) : handedIn ? null : (
+        proof
       )}
       {editable ? (
         // One line held at its height, so "Saving…" never moves anything.

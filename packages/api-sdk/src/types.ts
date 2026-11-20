@@ -9808,6 +9808,11 @@ export interface components {
             completion_note: string | null;
             /**
              * Format: uuid
+             * @description Who marked it done (#5732): the assignee, or an officer marking it done for them. Null while it is open, and on a completion from before this was kept.
+             */
+            completed_by: string | null;
+            /**
+             * Format: uuid
              * @description The repeating series this task is a copy of (#5119), or null for a task that doesn’t repeat.
              */
             series_id: string | null;

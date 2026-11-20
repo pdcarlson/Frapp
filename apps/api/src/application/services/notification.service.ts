@@ -968,6 +968,34 @@ export class NotificationService {
   }
 
   /**
+   * Take back what a task's Mark done told members (#5732): its assignee
+   * marked it not done again, so the review row its creator got and the
+   * "finished" rows its followers got go from their lists. A push already
+   * on a lock screen can't be recalled; the row it opens can. Never throws:
+   * the take-back it follows has already landed.
+   */
+  async retractTaskCompletion(
+    chapterId: string,
+    taskId: string,
+    completedAt: string,
+  ): Promise<void> {
+    try {
+      await this.notificationRepo.deleteTaskCompletionRows(
+        chapterId,
+        taskId,
+        completedAt,
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-completion-retract',
+        message: `could not clear the completion rows for task ${taskId}`,
+        error,
+      });
+    }
+  }
+
+  /**
    * Clear notifications from the member's list (#3948): the rows named, if
    * they are the caller's in this chapter, and with `conversation` the rest
    * of that conversation's rows up to now too, so a cleared entry doesn't

@@ -187,6 +187,13 @@ These cause most of the iterations, so they come first.
   posts included. (11-04)
 - **Push copy works from the lock screen:** who did what, and when, like a calendar invite; never just
   "New event". (11-06)
+- **State facts, never narrate directions.** A push, Activity row or status line says what happened and
+  what came with it ("Moiz finished: Book the venue", "1 photo · 10 points"), never what to do about it
+  ("send it back if something's off", "Confirm to award 10 points"). The screen's own controls are the
+  next step. Paul: "Please stop narrating like directions." (11-20, #5732)
+- **A record says its state first.** A task, request or submission that someone acted on shows who did it
+  and when right under its title ("Moiz Steenhuis marked it done today at 12:05 AM"), with what they sent
+  under that, before its fields. History names the actor too. (11-20, #5732)
 - **The same moment has the same words on both apps.** Shared strings live in a shared package. (P6.5)
 - **Don't invent labels Paul won't use** ("Needs you" was rejected). Use the chapter's words. (11-13)
 

@@ -49,7 +49,10 @@ describe('TaskService', () => {
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockUserRepo: jest.Mocked<Pick<IUserRepository, 'findByIds'>>;
   let mockNotificationService: jest.Mocked<
-    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+    Pick<
+      NotificationService,
+      'notifyUser' | 'notifyChapter' | 'retractTaskCompletion'
+    >
   >;
   let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
   let mockRbac: jest.Mocked<
@@ -96,6 +99,7 @@ describe('TaskService', () => {
     point_reward: 10,
     points_awarded: false,
     completed_at: null,
+    completed_by: null,
     confirmed_at: null,
     sent_back_at: null,
     proof_kind: 'none',
@@ -211,6 +215,7 @@ describe('TaskService', () => {
     mockNotificationService = {
       notifyUser: jest.fn().mockResolvedValue(undefined),
       notifyChapter: jest.fn().mockResolvedValue(undefined),
+      retractTaskCompletion: jest.fn().mockResolvedValue(undefined),
     };
 
     mockStorage = {
@@ -500,7 +505,7 @@ describe('TaskService', () => {
       });
       expect(to('exec-2')).toMatchObject({
         title: 'Sam finished: Test Task',
-        body: 'From Exec board · An officer confirms it',
+        body: 'From Exec board · Waiting on an officer',
         data: { target: { screen: 'tasks', taskId: 'task-1' } },
       });
       // The assignee hears nothing about their own task.
@@ -2281,6 +2286,8 @@ describe('TaskService', () => {
         expect.objectContaining({
           status: TaskStatus.COMPLETED,
           completed_at: expect.any(String),
+          // Who marked it done (#5732).
+          completed_by: 'user-1',
         }),
       );
       expect(result.status).toBe(TaskStatus.COMPLETED);
@@ -2320,6 +2327,10 @@ describe('TaskService', () => {
         expect(mockTaskRepo.update).not.toHaveBeenCalled();
         expect(result.status).toBe(TaskStatus.IN_PROGRESS);
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+        // Activity no longer says it was finished (#5732).
+        expect(
+          mockNotificationService.retractTaskCompletion,
+        ).toHaveBeenCalledWith('ch-1', 'task-1', '2026-02-26T18:30:00.000Z');
       });
 
       it('refuses once an officer has confirmed it', async () => {
@@ -3157,6 +3168,7 @@ describe('TaskService', () => {
           assignee_id: 'user-2',
           status: TaskStatus.TODO,
           completed_at: null,
+          completed_by: null,
           sent_back_at: null,
           sent_back_reason: null,
           proof_link: null,
@@ -3398,7 +3410,7 @@ describe('TaskService', () => {
           'ch-1',
           expect.objectContaining({
             title: 'A member submitted: Test Task',
-            body: 'Confirm to award 10 points',
+            body: '10 points',
             priority: 'NORMAL',
             category: 'tasks',
             threadId: 'tasks:review',
@@ -4034,7 +4046,7 @@ describe('TaskService', () => {
           'ch-1',
           expect.objectContaining({
             title: 'Shawn Klein resubmitted: Test Task',
-            body: 'Replied "Fixed the corner" · 1 photo · Confirm to award 10 points',
+            body: 'Replied "Fixed the corner" · 1 photo · 10 points',
             threadId: 'tasks:review',
           }),
         );
@@ -4056,7 +4068,7 @@ describe('TaskService', () => {
           'admin-1',
           'ch-1',
           expect.objectContaining({
-            body: 'Confirm to award 10 points',
+            body: '10 points',
           }),
         );
       });
@@ -4077,7 +4089,7 @@ describe('TaskService', () => {
         expect(result.points_awarded).toBe(true);
         const push = mockNotificationService.notifyUser.mock.calls[0][2];
         expect(push.title).toBe('A member finished: Test Task');
-        expect(push.body).toBe("Done · send it back if something's off");
+        expect(push.body).toBe('');
       });
 
       it('compare-and-sets on the status, points and proof kind it judged', async () => {

@@ -267,6 +267,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .update({
         status: TaskStatus.IN_PROGRESS,
         completed_at: null,
+        completed_by: null,
         // A completion's link and reply go with it (#4635); its photo rows
         // are the caller's to delete.
         proof_link: null,

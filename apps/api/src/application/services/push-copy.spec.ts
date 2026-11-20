@@ -160,7 +160,7 @@ describe('taskSubmittedCopy (a task marked done, to its officer)', () => {
     completion_note: null,
   };
 
-  it('leads with who and the action, then what came with it and the ask', () => {
+  it('leads with who and the action, then what came with it, and asks nothing (#5732)', () => {
     expect(
       taskSubmittedCopy('Shawn Klein', task, {
         photoCount: 1,
@@ -168,7 +168,7 @@ describe('taskSubmittedCopy (a task marked done, to its officer)', () => {
       }),
     ).toEqual({
       title: 'Shawn Klein submitted: Clean his room',
-      body: '1 photo · Confirm to award 10 points',
+      body: '1 photo · 10 points',
     });
   });
 
@@ -181,11 +181,11 @@ describe('taskSubmittedCopy (a task marked done, to its officer)', () => {
       ),
     ).toEqual({
       title: 'Shawn Klein resubmitted: Clean his room',
-      body: 'Replied "Did the closet too" · 2 photos · Confirm to award 10 points',
+      body: 'Replied "Did the closet too" · 2 photos · 10 points',
     });
   });
 
-  it('names a link, and asks for a check when there are no points', () => {
+  it('names a link, and nothing more when there are no points', () => {
     expect(
       taskSubmittedCopy(
         'Marcus Hill',
@@ -198,10 +198,10 @@ describe('taskSubmittedCopy (a task marked done, to its officer)', () => {
         },
         { photoCount: 0, resubmitted: false },
       ).body,
-    ).toBe('Link attached · Check it and confirm');
+    ).toBe('Link attached');
   });
 
-  it('says finished, asking nothing, for a task that needed no sign-off', () => {
+  it('says finished, with an empty body, for a task that needed no sign-off', () => {
     expect(
       taskSubmittedCopy(
         'Sam Ortiz',
@@ -210,7 +210,7 @@ describe('taskSubmittedCopy (a task marked done, to its officer)', () => {
       ),
     ).toEqual({
       title: 'Sam Ortiz finished: Clean his room',
-      body: "Done · send it back if something's off",
+      body: '',
     });
   });
 

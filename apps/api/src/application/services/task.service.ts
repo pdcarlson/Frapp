@@ -1722,6 +1722,7 @@ export class TaskService {
       patch.assignee_id = input.assignee_id;
       patch.status = TaskStatus.TODO;
       patch.completed_at = null;
+      patch.completed_by = null;
       patch.sent_back_at = null;
       // The old assignee's proof, link, reply and send-back aren't the new
       // one's (#4635).
@@ -2019,6 +2020,7 @@ export class TaskService {
         {
           status: TaskStatus.COMPLETED,
           completed_at: now,
+          completed_by: userId,
           proof_link: proofLink,
           completion_note: note,
           // Decision C (#4635): nothing to award and nothing to check, so it
@@ -2078,6 +2080,15 @@ export class TaskService {
     // The reopen cleared the link and reply; the photos it read go too, and
     // the next Mark done sends its own.
     await this.dropPhotos(chapterId, task.id, proof);
+    // What Mark done told the officer and the followers isn't so any more:
+    // Activity drops the "finished" rows (#5732).
+    if (task.completed_at) {
+      await this.notificationService.retractTaskCompletion(
+        chapterId,
+        task.id,
+        task.completed_at,
+      );
+    }
     return this.viewWithPhotos(chapterId, updated);
   }
 
@@ -2213,7 +2224,11 @@ export class TaskService {
                   // A group task's copies finish one by one: they stack in
                   // one pile on iOS, as the review pushes do.
                   threadId: `task-follow-${task.group_id ?? task.id}`,
-                  data: { target: { screen: 'tasks', taskId: task.id } },
+                  // Marked, so a take-back can clear it (#5732).
+                  data: {
+                    about: 'task-completed',
+                    target: { screen: 'tasks', taskId: task.id },
+                  },
                 },
             task.id,
             'completion-follower',

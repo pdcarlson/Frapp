@@ -59,9 +59,35 @@ describe("taskHistory", () => {
     );
     expect(lines.map((line) => line.title)).toEqual([
       "Assigned by Name officer",
-      "Marked done",
+      "Marked done by you",
       "Confirmed",
     ]);
+  });
+
+  it("names who marked it done, an officer doing it for them too (#5732)", () => {
+    const done = taskHistory(
+      row({
+        assignee_id: "moiz",
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        completed_at: new Date(2026, 10, 17, 10, 0).toISOString(),
+        completed_by: "officer",
+      }),
+      nameOf,
+      NOW,
+    );
+    expect(done.at(-1)!.title).toBe("Marked done by Name officer");
+    const older = taskHistory(
+      row({
+        assignee_id: "moiz",
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        completed_at: new Date(2026, 10, 17, 10, 0).toISOString(),
+      }),
+      nameOf,
+      NOW,
+    );
+    expect(older.at(-1)!.title).toBe("Marked done by Name moiz");
   });
 
   it("gives a send-back its reason, and a task that needed no sign-off no Confirmed", () => {

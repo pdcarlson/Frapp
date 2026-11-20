@@ -98,6 +98,7 @@ function task(overrides: Partial<TaskView> = {}): TaskView {
     point_reward: 5,
     points_awarded: false,
     completed_at: null,
+    completed_by: null,
     confirmed_at: null,
     sent_back_at: null,
     proof_kind: 'none',

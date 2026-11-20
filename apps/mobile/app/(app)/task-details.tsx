@@ -12,6 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   TASK_ACTION_LABELS,
+  taskHandedInLine,
   taskStatusLabel,
   useDeleteTask,
   useMemberDisplayNames,
@@ -617,6 +618,39 @@ function TaskScreen({
     () => taskHistory(row, nameInLine, new Date()),
     [row, nameInLine],
   );
+  // Handed in (#5732): who marked it done and when, under the title, with
+  // the proof under it, so a done task reads as one before its facts do.
+  const handedIn = taskHandedInLine(
+    {
+      status: row.displayStatus,
+      stored_status: row.storedStatus,
+      completed_at: row.completedAt,
+      completed_by: row.completedBy,
+      assignee_id: row.assigneeId,
+      sent_back_at: row.sentBackAt,
+    },
+    nameInLine,
+  );
+  const proofFirst = !editing && handedIn !== null;
+  // Photos, the reason it was sent back, and the proof sent with Mark done
+  // (#4635). Only the assignee and officers can read a task, so the proof is
+  // the viewer's to see.
+  const proof = (
+    <TaskProof
+      task={{
+        id: row.id,
+        // In edit mode the reference photos are the picker's, above.
+        photos: editing
+          ? row.photos.filter((photo) => photo.kind !== "reference")
+          : row.photos,
+        proofLink: row.proofLink,
+        sentBackReason: row.sentBackReason,
+        completionNote: row.completionNote,
+      }}
+      showProof
+      sentBack={rowIsSentBack(row)}
+    />
+  );
   const notice = editing
     ? edit.failure
     : (toggles.refusal ??
@@ -657,6 +691,13 @@ function TaskScreen({
             hue={taskStatusHue(status, tokens)}
           />
         </View>
+
+        {proofFirst ? (
+          <>
+            <Text style={styles.handedIn}>{handedIn}</Text>
+            {proof}
+          </>
+        ) : null}
 
         {editing ? (
           <TaskEditForm
@@ -737,23 +778,7 @@ function TaskScreen({
           />
         ) : null}
 
-        {/* Photos, the reason it was sent back, and the proof sent with Mark
-            done (#4635). Only the assignee and officers can read a task, so
-            the proof is the viewer's to see. */}
-        <TaskProof
-          task={{
-            id: row.id,
-            // In edit mode the reference photos are the picker's, above.
-            photos: editing
-              ? row.photos.filter((photo) => photo.kind !== "reference")
-              : row.photos,
-            proofLink: row.proofLink,
-            sentBackReason: row.sentBackReason,
-            completionNote: row.completionNote,
-          }}
-          showProof
-          sentBack={rowIsSentBack(row)}
-        />
+        {proofFirst ? null : proof}
 
         {showPeople ? (
           <WhoHasIt
@@ -914,6 +939,11 @@ function createStyles(tokens: SignetTokens) {
       gap: tokens.spacing.xs,
     },
     description: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    // Who handed it in and when, the first line under the status (#5732).
+    handedIn: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },

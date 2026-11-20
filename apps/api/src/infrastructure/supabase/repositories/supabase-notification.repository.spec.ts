@@ -228,6 +228,80 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
     });
   });
 
+  describe('deleteTaskCompletionRows (#5732)', () => {
+    const SINCE = '2026-01-01T00:01:00.000Z';
+    const rows = [
+      {
+        id: 'review',
+        user_id: 'officer',
+        data: { target: { screen: 'tasks', taskId: 't-1', view: 'review' } },
+        created_at: '2026-01-01T00:01:02.000Z',
+      },
+      {
+        id: 'follower',
+        user_id: 'follower',
+        data: {
+          about: 'task-completed',
+          target: { screen: 'tasks', taskId: 't-1' },
+        },
+        created_at: '2026-01-01T00:01:02.000Z',
+      },
+      {
+        id: 'assigned',
+        user_id: 'assignee',
+        data: { target: { screen: 'tasks', taskId: 't-1' } },
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'earlier-review',
+        user_id: 'officer',
+        data: { target: { screen: 'tasks', taskId: 't-1', view: 'review' } },
+        created_at: '2026-01-01T00:00:30.000Z',
+      },
+      {
+        id: 'other-task',
+        user_id: 'officer',
+        data: { target: { screen: 'tasks', taskId: 't-2', view: 'review' } },
+        created_at: '2026-01-01T00:01:02.000Z',
+      },
+    ];
+
+    beforeEach(() => {
+      const row = (r: (typeof rows)[number], prefix: string) => ({
+        ...r,
+        id: `${prefix}-${r.id}`,
+        title: 'Moiz finished: Sweep',
+        body: '',
+        read_at: null,
+      });
+      harness = createTenantHarness({
+        tables: {
+          notifications: [
+            ...rows.map((r) => inA(row(r, 'a'))),
+            ...rows.map((r) => inB(row(r, 'b'))),
+          ],
+        },
+      });
+      repo = new SupabaseNotificationRepository(harness.client);
+    });
+
+    it("deletes this completion's review and follower rows, not the assignment, an earlier completion's or another task's", async () => {
+      const cleared = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.deleteTaskCompletionRows(CHAPTER_B, 't-1', SINCE),
+      );
+
+      expect(cleared).toBe(2);
+      expect(
+        harness
+          .rows('notifications')
+          .map((n) => n.id as string)
+          .filter((id) => id.startsWith('b-'))
+          .sort(),
+      ).toEqual(['b-assigned', 'b-earlier-review', 'b-other-task']);
+      expect(harness.rows('notifications')).toHaveLength(8);
+    });
+  });
+
   describe('deleteConversation (#3948)', () => {
     const chat = (target: Record<string, unknown>, extra = {}) => ({
       target: { screen: 'chat', channelId: 'c-1', ...target },
