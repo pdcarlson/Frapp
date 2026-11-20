@@ -53,7 +53,9 @@ describe("useRoles", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(mockGet).toHaveBeenCalledWith("/v1/roles", { signal: expect.any(AbortSignal) });
+    expect(mockGet).toHaveBeenCalledWith("/v1/roles", {
+      signal: expect.any(AbortSignal),
+    });
     expect(mockGet).toHaveBeenCalledTimes(1);
     expect(result.current.data).toEqual(mockRoles);
   });
@@ -73,7 +75,9 @@ describe("useRoles", () => {
       expect(result.current.isError).toBe(true);
     });
 
-    expect(mockGet).toHaveBeenCalledWith("/v1/roles", { signal: expect.any(AbortSignal) });
+    expect(mockGet).toHaveBeenCalledWith("/v1/roles", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.error).toEqual(mockError);
   });
 
@@ -112,7 +116,9 @@ describe("useMentionRoles", () => {
       wrapper: createWrapper(queryClient, { GET: mockGet }),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockGet).toHaveBeenCalledWith("/v1/channels/mention-roles", { signal: expect.any(AbortSignal) });
+    expect(mockGet).toHaveBeenCalledWith("/v1/channels/mention-roles", {
+      signal: expect.any(AbortSignal),
+    });
     expect(
       result.current.data?.map(({ name, mentionable }) => [name, mentionable]),
     ).toEqual([
@@ -132,7 +138,11 @@ describe("useCreateRole", () => {
   });
 
   it("creates a role and invalidates queries on success", async () => {
-    const mockRole = { id: "role-3", name: "Secretary", permissions: ["members.read"] };
+    const mockRole = {
+      id: "role-3",
+      name: "Secretary",
+      permissions: ["members.read"],
+    };
     const mockPost = vi.fn().mockResolvedValue({
       data: mockRole,
       error: null,
@@ -150,7 +160,7 @@ describe("useCreateRole", () => {
     };
 
     const promise = result.current.mutateAsync(payload);
-    await expect(promise).resolves.toEqual(mockRole);
+    await expect(promise).resolves.toEqual({ id: "role-3" });
 
     expect(mockPost).toHaveBeenCalledWith("/v1/roles", { body: payload });
     expect(mockPost).toHaveBeenCalledTimes(1);
@@ -190,9 +200,10 @@ describe("useCreateRole", () => {
         .filter((query) => query.queryKey[0] === "roles");
     expect(cachedRoleQueries()).toHaveLength(2);
 
-    // Stop the refetch so the invalidated flag stays observable.
+    // Stop the refetch so the invalidated flag stays observable. The create
+    // waits for that refetch (#5736), so it is left running, not awaited.
     mockGet.mockReturnValue(new Promise(() => {}));
-    await result.current.create.mutateAsync({
+    void result.current.create.mutateAsync({
       name: "Secretary",
       permissions: [],
     });
@@ -221,7 +232,7 @@ describe("useCreateRole", () => {
     };
 
     const promise = result.current.mutateAsync(payload);
-    await expect(promise).resolves.toEqual(mockRole);
+    await expect(promise).resolves.toEqual({ id: "role-4" });
 
     expect(mockPost).toHaveBeenCalledWith("/v1/roles", { body: payload });
     expect(mockPost).toHaveBeenCalledTimes(1);

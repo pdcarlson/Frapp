@@ -237,6 +237,61 @@ describe("the tier list", () => {
     ).toBeInTheDocument();
   });
 
+  // #5736: the section adds its own role, already pickable, and opens it.
+  it("adds a Non-chapter business role already pickable, then opens it", async () => {
+    h.createRole.mockResolvedValue({ id: "new-im" });
+    const user = userEvent.setup();
+    const onOpenRole = vi.fn();
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={onOpenRole} />);
+    const business = screen.getByRole("region", {
+      name: "Non-chapter business",
+    });
+    expect(business).toHaveTextContent("No roles here yet.");
+    expect(business).not.toHaveTextContent("Turn it on from");
+    await user.click(
+      within(business).getByRole("button", { name: "Add role" }),
+    );
+    await user.type(
+      within(business).getByRole("textbox", {
+        name: "New Non-chapter business role",
+      }),
+      "Intramural soccer{Enter}",
+    );
+    expect(h.createRole).toHaveBeenCalledWith({
+      name: "Intramural soccer",
+      permissions: [],
+      tier_id: null,
+      self_assignable: true,
+    });
+    expect(onOpenRole).toHaveBeenCalledWith("new-im");
+  });
+
+  it("offers no Add role under Non-chapter business to a roles manager outside the tiers", () => {
+    h.members = [{ user_id: "me", role_ids: ["alum"] }];
+    h.mine = ["roles:manage", "members:view"];
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    const business = screen.getByRole("region", {
+      name: "Non-chapter business",
+    });
+    expect(
+      within(business).queryByRole("button", { name: "Add role" }),
+    ).toBeNull();
+  });
+
+  it("keeps Add role under Non-chapter business once it has roles", () => {
+    h.roles = [
+      ...h.roles,
+      role("im", "Intramurals", null, [], { self_assignable: true }),
+    ];
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    const business = screen.getByRole("region", {
+      name: "Non-chapter business",
+    });
+    expect(
+      within(business).getByRole("button", { name: "Add role" }),
+    ).toBeInTheDocument();
+  });
+
   it("hides an empty Non-chapter business from a member who can't manage roles", () => {
     h.members = [{ user_id: "me", role_ids: ["brother"] }];
     h.mine = MEMBERS.permissions;

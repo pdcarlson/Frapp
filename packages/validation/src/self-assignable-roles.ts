@@ -104,11 +104,25 @@ export const SELF_ASSIGNABLE_SWITCH_DESCRIPTION =
 
 /**
  * What the Roles overview says about its Non-chapter business section, on web
- * and the phone. `tierPlural` is the chapter's word for tiers.
+ * and the phone. It points at the section's own Add role (#5736), not at
+ * another page.
  */
-export function selfAssignableSectionCaption(tierPlural: string): string {
-  return `Members add and remove these themselves, like intramurals or a study group. Each opens its channels, and any event that lists it counts them in. Turn it on from a role outside the ${tierPlural}.`;
-}
+export const SELF_ASSIGNABLE_SECTION_CAPTION =
+  "Members add and remove these themselves, like intramurals or a study group. Each opens the channels that list it, and any event that lists it counts them in.";
+
+/**
+ * The section's Add role (#5736), on web and the phone: it creates a role
+ * already outside the tiers, holding nothing, and marked for members to pick
+ * (`POST /v1/roles` with `self_assignable: true`), then opens its page.
+ */
+export const NEW_PICKABLE_ROLE_COPY = {
+  add: "Add role",
+  title: "New Non-chapter business role",
+  placeholder: "Intramural soccer",
+  hint: "Members can join it as soon as it's added. To open a channel to it, edit the channel and add this role to who can see it.",
+  failed: "Couldn't add the role",
+  failedBody: "Check the name isn't already used, then try again.",
+} as const;
 
 /**
  * A role picker in chat (`kind: "role_picker"`, #4958): a card an officer

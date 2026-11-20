@@ -23,6 +23,9 @@
  */
 export const ROLE_NAME_MAX_LENGTH = 100;
 
+/** A tier's name (`role_tiers_name_len`, migration `20261111140000`). */
+export const ROLE_TIER_NAME_MAX_LENGTH = 80;
+
 /**
  * Points magnitude for a single ledger write, applied symmetrically. The
  * service only *flags* large adjustments against the anomaly threshold — it

@@ -20,6 +20,7 @@ import {
   PERMISSION_MODULES,
   ROLE_COLOR_HEXES,
   ROLE_NAME_MAX_LENGTH,
+  ROLE_TIER_NAME_MAX_LENGTH,
   type PermissionModuleKey,
   type PermissionScope,
 } from '@repo/validation';
@@ -28,8 +29,6 @@ import {
   ROLE_TIER_POSITION_MAX,
 } from '#domain/constants/field-limits';
 
-/** `role_tiers_name_len` (migration `20261111140000`). */
-const ROLE_TIER_NAME_MAX_LENGTH = 80;
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
 /**
@@ -98,6 +97,16 @@ export class CreateRoleDto {
   @ValidateIf((_object, value) => value !== null)
   @IsUUID()
   tier_id?: string | null;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Create the role already marked for members to join and leave themselves (#4958, #5736). It must be safe to pick, as `PATCH` checks: outside the tiers (`tier_id` null or absent) and holding no permission beyond `channels:read:<slug>` (400 `role.self_assignable_tiered` or `role.self_assignable_permissions`). Defaults to false.',
+  })
+  // Not `@IsOptional()`, which lets `null` through to a not-null column.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  self_assignable?: boolean;
 }
 
 export class UpdateRoleDto {

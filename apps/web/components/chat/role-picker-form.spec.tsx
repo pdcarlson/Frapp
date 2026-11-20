@@ -95,14 +95,13 @@ describe("RolePickerForm (#4958)", () => {
     );
   });
 
-  it("points to Roles when no role is marked", () => {
+  it("points to Roles and groups when no role is marked", () => {
     h.roles = [role("r-pres", "President", false)];
     renderForm();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Roles" })).toHaveAttribute(
-      "href",
-      "/roles",
-    );
+    expect(
+      screen.getByRole("link", { name: "Roles and groups" }),
+    ).toHaveAttribute("href", "/roles");
     expect(
       screen.getByRole("button", { name: "Post role picker" }),
     ).toBeDisabled();

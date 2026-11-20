@@ -1,6 +1,7 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   groupFollowsLabel,
   useGroups,
@@ -12,14 +13,16 @@ import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import {
   byDisplayOrder,
   isWildcardRole,
+  reachesOutside,
   shownPermissionCount,
   type TieredRole,
 } from "@repo/hooks/role-tiers";
 import {
   canAny,
   isEveryoneRole,
+  NEW_PICKABLE_ROLE_COPY,
   roleColorOrNull,
-  selfAssignableSectionCaption,
+  SELF_ASSIGNABLE_SECTION_CAPTION,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -31,7 +34,9 @@ import {
   SectionHeader,
 } from "@/components/list-section";
 import { SearchField } from "@/components/filter-chips";
+import { NewPickableRoleSheet } from "@/components/roles/new-pickable-role-sheet";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
+import { PlusGlyph } from "@/components/control-glyphs";
 import { useRolesData } from "@/lib/roles/use-roles-data";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -49,11 +54,15 @@ const SEARCH_FROM = 8;
  * Built for a chapter with a hundred roles, not five: the tiers carry the
  * permissions, so an officer changes five tiers rather than a hundred roles,
  * and a search field narrows the list once it passes eight roles. Making,
- * reordering and deleting tiers and roles stay on web, where a chapter sets
- * its structure up once; the phone changes what they can do.
+ * reordering and deleting tiers and roles stay on web (all but the one
+ * exception below), where a chapter sets its structure up once; the phone
+ * changes what they can do.
  *
  * Roles members pick themselves (Non-chapter business, #4958) get their own
- * section after the roles outside the tiers, as on web.
+ * section after the roles outside the tiers, as on web, and the one place the
+ * phone adds a role (#5736): an intramurals team or a study group is made
+ * during the season, not at setup, so its Add role opens a name sheet that
+ * creates it already pickable, as web's does.
  *
  * Tier names, and the word for a tier, are the chapter's own
  * (`tierWords(vocab("tier"))`), never a constant.
@@ -80,7 +89,10 @@ export default function ChapterRolesScreen() {
     memberCounts,
     words,
     canManage,
+    reach,
   } = data;
+  const newPickableRef = useRef<BottomSheetModal>(null);
+  const canAddPickable = canManage && reach.known && reachesOutside(reach);
   const [query, setQuery] = useState("");
   const filtering = normalizeWords(query).length > 0;
   const permissions = usePermissionList();
@@ -228,7 +240,7 @@ export default function ChapterRolesScreen() {
               {section.pickable && section.roles.length === 0 ? (
                 <ListRow
                   label="None yet"
-                  description={selfAssignableSectionCaption(words.plural)}
+                  description={SELF_ASSIGNABLE_SECTION_CAPTION}
                   variant="detail"
                 />
               ) : null}
@@ -269,6 +281,16 @@ export default function ChapterRolesScreen() {
                   />
                 );
               })}
+              {section.pickable && canAddPickable && !filtering ? (
+                <ListRow
+                  label={NEW_PICKABLE_ROLE_COPY.add}
+                  leading={
+                    <PlusGlyph color={tokens.color.text.mutedForeground} />
+                  }
+                  accessibilityHint="Adds a role members can join themselves."
+                  onPress={() => newPickableRef.current?.present()}
+                />
+              ) : null}
             </ListSection>
           </Fragment>
         ))}
@@ -311,8 +333,18 @@ export default function ChapterRolesScreen() {
         ) : null}
         <Text style={styles.note}>
           Add, rename and reorder {words.plural}, roles and groups on the web
-          dashboard. Put someone in a group from their profile.
+          dashboard
+          {canAddPickable && canSeeRoles
+            ? "; roles members pick themselves can be added here too"
+            : ""}
+          . Put someone in a group from their profile.
         </Text>
+        <NewPickableRoleSheet
+          ref={newPickableRef}
+          onCreated={(roleId) =>
+            router.push({ pathname: "/role", params: { roleId } })
+          }
+        />
       </>
     );
   }

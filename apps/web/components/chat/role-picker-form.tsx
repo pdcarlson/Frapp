@@ -26,7 +26,6 @@ import {
 } from "@/components/shared/table-controls";
 import type { RolePickerDraft } from "./role-picker-draft";
 
-
 export interface RolePickerFormProps {
   initialDraft: RolePickerDraft;
   onDraftChange?: (draft: RolePickerDraft) => void;
@@ -132,10 +131,10 @@ export function RolePickerForm({
   } else if (marked.length === 0) {
     roleList = (
       <p className="text-sm text-muted-foreground">
-        No roles are open for members to pick yet. Turn on Non-chapter business
-        on a role&apos;s page under{" "}
+        No roles are open for members to pick yet. Add one under Non-chapter
+        business in{" "}
         <Link href="/roles" className="text-foreground underline">
-          Roles
+          Roles and groups
         </Link>
         .
       </p>
