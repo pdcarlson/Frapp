@@ -677,6 +677,13 @@ export class InviteService {
       this.userRepo.findById(createdBy).catch(() => null),
     ]);
 
+    // Joining with only the Everyone role joins as nobody in particular, so
+    // the email names no role, as the invite card doesn't (#5628).
+    const emailedRole =
+      namedRole(context, role)?.system_key === SystemRoleKeys.MEMBER
+        ? null
+        : role;
+
     // Correlate by token rather than by array position: each token was
     // generated here, before the insert, so it is a stable key regardless of
     // what order the repository happens to return rows in — `createEmailed`'s
@@ -700,7 +707,8 @@ export class InviteService {
           .sendInviteEmail({
             to,
             joinUrl: buildJoinUrl(invite.token, origin),
-            role,
+            role: emailedRole,
+            validDays: INVITE_DAYS,
             chapterName: chapter?.name ?? null,
             inviterName: inviter?.display_name ?? null,
           })

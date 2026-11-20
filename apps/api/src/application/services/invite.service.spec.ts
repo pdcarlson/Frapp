@@ -598,14 +598,18 @@ describe('InviteService', () => {
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith({
         to: 'a@example.com',
         joinUrl: `https://app.frapp.live/join?token=${inviteData[0].token}`,
-        role: 'Member',
+        // Member is the chapter's Everyone role here, which the email
+        // doesn't name (#5628).
+        role: null,
+        validDays: 7,
         chapterName: 'Phi Gamma Delta Tau Nu',
         inviterName: 'Paul Carlson',
       });
       expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith({
         to: 'b@example.com',
         joinUrl: `https://app.frapp.live/join?token=${inviteData[1].token}`,
-        role: 'Member',
+        role: null,
+        validDays: 7,
         chapterName: 'Phi Gamma Delta Tau Nu',
         inviterName: 'Paul Carlson',
       });
@@ -620,6 +624,31 @@ describe('InviteService', () => {
         'b@example.com',
       ]);
       expect(result.failed).toEqual([]);
+    });
+
+    it('names a role the chapter gave the invite in the email (#5628)', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'r-member',
+          name: 'Everyone',
+          system_key: SystemRoleKeys.MEMBER,
+        }),
+        roleFixture({
+          id: 'r-pledge',
+          name: 'Pledge',
+          system_key: null,
+          is_system: false,
+          permissions: ['members:view'],
+        }),
+      ]);
+
+      await service.createWithEmails('ch-1', 'user-1', 'Pledge', [
+        'a@example.com',
+      ]);
+
+      expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ role: 'Pledge', validDays: 7 }),
+      );
     });
 
     it('still sends when the chapter or inviter read fails, without their names', async () => {

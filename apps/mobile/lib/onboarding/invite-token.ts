@@ -5,11 +5,6 @@
  * Extraction lives in `@repo/validation` so web `/join` and this screen cannot
  * drift. The remembered invite is mobile-only: it waits through the sign-in
  * on the invite card, and a relaunch, until it is joined or declined.
- *
- * The drawn s02 six-cell code is a Canvas shorthand. Joining is single-use
- * invite tokens (`spec/behavior/onboarding.md`), not a shared 6-character
- * chapter code — `screens.md` already omits the drawn "Join code" row for the
- * same reason.
  */
 
 import { useEffect, useSyncExternalStore } from "react";
