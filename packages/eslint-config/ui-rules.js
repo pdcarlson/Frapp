@@ -154,7 +154,7 @@ export function webUiSyntaxExcept(except) {
 export const webUiSyntax = webUiSyntaxExcept([]);
 
 const PHONE_MENU_MESSAGE =
-  "One action menu on the phone (owner ruling 2026-11-20): the glass menu, through useItemMenu / ItemActionsMenu from components/item-actions-menu (long-press and every ⋯), and OptionSheet to pick a value. Never the system action sheet or an Alert with a list of choices.";
+  "One action menu on the phone (owner ruling 2026-11-20): the glass menu, from components/item-actions-menu: openItemMenu from any press (a ⋯, a value row, a question), useItemMenu for a row's long-press, and OptionSheet to pick a value. Never the system action sheet or an Alert with a list of choices.";
 
 /** The phone's rulings, by name, as `webUiRules`. */
 const mobileUiRules = {

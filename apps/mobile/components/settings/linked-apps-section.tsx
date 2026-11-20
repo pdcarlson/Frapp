@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import {
   Alert,
+  type GestureResponderEvent,
   Linking,
   StyleSheet,
   View,
@@ -22,7 +23,7 @@ import {
 import type { SignetTokens } from "@repo/theme/signet";
 import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { CalendarSubscribeSheet } from "@/components/events/calendar-subscribe-sheet";
-import { openItemMenu } from "@/components/item-actions-menu";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
   GOOGLE_CALENDAR_WEB,
@@ -72,7 +73,7 @@ export function LinkedAppsSection() {
   const calendarSheetRef = useRef<BottomSheetModal>(null);
   const [calendarSheetOpen, setCalendarSheetOpen] = useState(false);
 
-  function pressGoogle(state: LinkedAppState) {
+  function pressGoogle(state: LinkedAppState, event?: GestureResponderEvent) {
     if (state.tone === "off") {
       void google.connect();
       return;
@@ -105,6 +106,7 @@ export function LinkedAppsSection() {
           disconnect,
         ],
       },
+      pressAt(event),
     );
   }
 
@@ -142,7 +144,7 @@ export function LinkedAppsSection() {
             }
             busy={google.connecting || google.disconnecting}
             action
-            onPress={() => pressGoogle(googleState)}
+            onPress={(event) => pressGoogle(googleState, event)}
           />
         ) : null}
         <ListRow

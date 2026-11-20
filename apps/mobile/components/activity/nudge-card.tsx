@@ -10,10 +10,9 @@ import type { ActivityNudge } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { isMemberNudgePraise } from "@repo/validation";
-import { openItemMenu } from "@/components/item-actions-menu";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
 import { NavGlyph } from "@/components/nav-glyph";
-import { focusReturnOf } from "@/lib/overlay";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -124,7 +123,7 @@ export function NudgeCard({
           },
         ],
       },
-      { pageY: event?.nativeEvent?.pageY, trigger: focusReturnOf(event) },
+      pressAt(event),
     );
 
   return (

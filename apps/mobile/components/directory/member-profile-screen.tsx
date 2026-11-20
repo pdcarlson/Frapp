@@ -57,7 +57,7 @@ import { ChatGlyph } from "@/components/tab-glyphs";
 import { pageSurfaces } from "@/lib/surfaces";
 import { IconButton, ICON_BUTTON_SIZE } from "@/components/icon-button";
 import { OverflowGlyph } from "@/components/chat/overflow-glyph";
-import { focusReturnOf } from "@/lib/overlay";
+import { pressAt } from "@/components/item-actions-menu";
 import {
   MemberRolesSheet,
   type MemberRolesSession,
@@ -316,10 +316,7 @@ export function MemberProfile({
   function openMenu(event?: GestureResponderEvent) {
     if (!detail) return;
     const target = detail;
-    const at = {
-      pageY: event?.nativeEvent?.pageY,
-      trigger: focusReturnOf(event),
-    };
+    const at = pressAt(event);
     showMemberMenu(
       target.displayName,
       menuActions,
@@ -595,8 +592,12 @@ export function MemberProfile({
                 label="Phone"
                 value={detail.phone}
                 accessibilityHint="Offers to call or text them"
-                onPress={() =>
-                  showPhoneActions(detail.displayName, detail.phone ?? "")
+                onPress={(event) =>
+                  showPhoneActions(
+                    detail.displayName,
+                    detail.phone ?? "",
+                    event,
+                  )
                 }
               />
             ) : null}

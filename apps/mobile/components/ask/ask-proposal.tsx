@@ -62,8 +62,7 @@ import {
 import type { useAiReport } from "@/components/ai/report-ai-sheet";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { OverflowGlyph } from "@/components/chat/overflow-glyph";
-import { openItemMenu } from "@/components/item-actions-menu";
-import { focusReturnOf } from "@/lib/overlay";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import { AskCardGlyph, type AskCardGlyphName } from "./ask-card-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 import {
@@ -487,7 +486,7 @@ function openCardMenu(
           : []),
       ],
     },
-    { pageY: event?.nativeEvent?.pageY, trigger: focusReturnOf(event) },
+    pressAt(event),
   );
 }
 

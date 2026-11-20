@@ -5,20 +5,28 @@
  */
 import { Linking } from "react-native";
 import { phoneHref } from "@repo/validation";
-import { openItemMenu } from "@/components/item-actions-menu";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
+import type { GestureResponderEvent } from "react-native";
 
-export function showPhoneActions(name: string, phone: string): void {
+export function showPhoneActions(
+  name: string,
+  phone: string,
+  event?: GestureResponderEvent,
+): void {
   const call = phoneHref(phone, "call");
   const text = phoneHref(phone, "text");
   if (!call || !text) return;
   const open = (href: string) =>
     void Linking.openURL(href).catch(() => undefined);
-  openItemMenu({
-    title: name,
-    message: phone,
-    actions: [
-      { key: "call", label: "Call", run: () => open(call) },
-      { key: "text", label: "Text", run: () => open(text) },
-    ],
-  });
+  openItemMenu(
+    {
+      title: name,
+      message: phone,
+      actions: [
+        { key: "call", label: "Call", run: () => open(call) },
+        { key: "text", label: "Text", run: () => open(text) },
+      ],
+    },
+    pressAt(event),
+  );
 }

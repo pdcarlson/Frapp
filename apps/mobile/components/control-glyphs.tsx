@@ -235,7 +235,7 @@ export function TrashGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
 }
 
 /**
- * More: a screen's other actions in the system menu (the task screen, #5492).
+ * More: a screen's other actions in the glass menu (the task screen, #5492).
  * Web draws Lucide's `Ellipsis` for the same intent; three dots, filled, as
  * iOS's own More draws them.
  */

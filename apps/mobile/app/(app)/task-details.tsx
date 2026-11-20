@@ -64,8 +64,7 @@ import {
 } from "@/components/tasks/task-facts";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
-import { openItemMenu } from "@/components/item-actions-menu";
-import { focusReturnOf } from "@/lib/overlay";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import { goBackTo } from "@/lib/href";
 import { leaveScreen } from "@/lib/back-target";
 import { rowIsSentBack, toTaskRow, type TaskRowModel } from "@/lib/tasks/board";
@@ -139,7 +138,7 @@ const FOLLOWER_DELETED =
  * A floating glass bar under the thumb, as Things 3 keeps a to-do's controls
  * (`TaskActionBar`). Mark done is the one thing to do and the only control in
  * the chapter accent, a pill with its verb; Edit, Remove people and More are
- * 44pt rounds. More opens the system menu: Mark not done, Give it back, Delete
+ * 44pt rounds. More opens the glass menu: Mark not done, Give it back, Delete
  * and, on a group task, Delete for everyone. Each shows only to a viewer the
  * API lets use it (`taskScreenControls`).
  *
@@ -598,7 +597,7 @@ function TaskScreen({
           run: moreRow.onPress,
         })),
       },
-      { pageY: event?.nativeEvent?.pageY, trigger: focusReturnOf(event) },
+      pressAt(event),
     );
 
   const status = rowStatus(row);

@@ -186,6 +186,14 @@ export function openItemMenu(
   replaced?.onDismiss?.();
 }
 
+/** Where a press landed, for `openItemMenu`: its point and its control. */
+export function pressAt(event?: GestureResponderEvent): {
+  pageY?: number;
+  trigger: FocusReturn | null;
+} {
+  return { pageY: event?.nativeEvent?.pageY, trigger: focusReturnOf(event) };
+}
+
 type HostedMenu = ItemMenu & {
   pageY: number;
   key: number;
@@ -219,19 +227,7 @@ export function ItemMenuHost() {
   );
   const dismiss = useCallback(() => closeHosted(false), []);
   const picked = useCallback(() => closeHosted(true), []);
-  return (
-    <GlassMenu
-      visible={target !== null}
-      pageY={target?.pageY ?? 0}
-      onClose={dismiss}
-      returnFocusTo={target?.trigger}
-      backdropTestID="item-actions-backdrop"
-    >
-      {target ? (
-        <MenuBody key={target.key} menu={target} onClose={picked} />
-      ) : null}
-    </GlassMenu>
-  );
+  return <ItemActionsMenu target={target} onClose={dismiss} onPick={picked} />;
 }
 
 /** The menu `openItemMenu` has up, or `null`; for specs. */
@@ -255,6 +251,7 @@ export function dismissItemMenu(): void {
 export function ItemActionsMenu({
   target,
   onClose,
+  onPick,
 }: {
   target:
     | (ItemMenu & {
@@ -264,6 +261,8 @@ export function ItemActionsMenu({
       })
     | null;
   onClose: () => void;
+  /** Closes on a pick, when that differs from a dismiss. */
+  onPick?: () => void;
 }) {
   return (
     <GlassMenu
@@ -274,7 +273,7 @@ export function ItemActionsMenu({
       backdropTestID="item-actions-backdrop"
     >
       {target ? (
-        <MenuBody key={target.key} menu={target} onClose={onClose} />
+        <MenuBody key={target.key} menu={target} onClose={onPick ?? onClose} />
       ) : null}
     </GlassMenu>
   );
@@ -293,11 +292,7 @@ function MenuBody({ menu, onClose }: { menu: ItemMenu; onClose: () => void }) {
       <Text ref={titleRef} numberOfLines={1} style={styles.caption}>
         {menu.title}
       </Text>
-      {menu.message ? (
-        <Text numberOfLines={2} style={styles.message}>
-          {menu.message}
-        </Text>
-      ) : null}
+      {menu.message ? <Text style={styles.message}>{menu.message}</Text> : null}
       {actions.map((action, index) => {
         const color = action.destructive
           ? tokens.color.semantic.destructiveText

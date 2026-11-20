@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type GestureResponderEvent,
 } from "react-native";
 import {
   useActiveChapterId,
@@ -21,7 +22,7 @@ import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { usePressFeedback } from "@/components/list-section";
 import { CameraGlyph } from "@/components/service-hours/camera-glyph";
-import { openItemMenu } from "@/components/item-actions-menu";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import {
   useChapterBranding,
   type ChapterBranding,
@@ -153,7 +154,7 @@ export function ProfilePhoto({
     ]);
   }
 
-  function openChoices() {
+  function openChoices(event?: GestureResponderEvent) {
     if (busy) return;
     // With nothing to remove there is nothing to choose between.
     if (!photoUrl) {
@@ -174,11 +175,14 @@ export function ProfilePhoto({
       destructive: true,
       run: confirmRemove,
     };
-    openItemMenu({
-      title: "Profile photo",
-      message,
-      actions: canChoose ? [choose, remove] : [remove],
-    });
+    openItemMenu(
+      {
+        title: "Profile photo",
+        message,
+        actions: canChoose ? [choose, remove] : [remove],
+      },
+      pressAt(event),
+    );
   }
 
   // Something to do: a photo to add needs a chapter, a photo to remove

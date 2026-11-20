@@ -1,5 +1,11 @@
 import { useRef, useState } from "react";
-import { Share, StyleSheet, Text, View } from "react-native";
+import {
+  type GestureResponderEvent,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import {
   INVITE_STATUS_LABEL,
   inviteMenuActions,
@@ -13,7 +19,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { formatSentLabel } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { openItemMenu } from "@/components/item-actions-menu";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import {
   inviteShareContent,
   inviteShareOptions,
@@ -56,7 +62,7 @@ export function inviteActions(
  * address, a shared link as Invite link; each says when it was sent and where
  * it stands.
  *
- * Tapping a row opens its menu, the platform's action sheet: Share link opens
+ * Tapping a row opens its menu, the glass menu (`openItemMenu`): Share link opens
  * the share sheet with the same message Share invite sends, Send again emails
  * the address a fresh link through the same `POST /v1/invites/email` (the
  * server retires the older invite once the new one is delivered), and Revoke
@@ -196,19 +202,22 @@ export function InvitedList({
     }
   }
 
-  function openMenu(invite: InviteListItem) {
+  function openMenu(invite: InviteListItem, event?: GestureResponderEvent) {
     if (running.current) return;
     const actions = inviteActions(invite, !!chapterName);
     const title = invite.email ?? "Invite link";
-    openItemMenu({
-      title,
-      actions: actions.map((action) => ({
-        key: action,
-        label: action,
-        destructive: action === REVOKE_INVITE,
-        run: () => void run(invite, action),
-      })),
-    });
+    openItemMenu(
+      {
+        title,
+        actions: actions.map((action) => ({
+          key: action,
+          label: action,
+          destructive: action === REVOKE_INVITE,
+          run: () => void run(invite, action),
+        })),
+      },
+      pressAt(event),
+    );
   }
 
   return (
@@ -236,7 +245,9 @@ export function InvitedList({
                 busy={busyId === invite.id}
                 accessibilityHint="Opens what you can do with this invite."
                 onPress={
-                  actions.length > 0 ? () => openMenu(invite) : undefined
+                  actions.length > 0
+                    ? (event) => openMenu(invite, event)
+                    : undefined
                 }
               />
             );
