@@ -133,7 +133,7 @@ export const RowValueButton = React.forwardRef<
       className={cn(
         ROW_VALUE,
         QUIET_FIELD,
-        "w-fit max-w-full justify-between gap-2 text-left",
+        "w-fit max-w-full justify-between gap-2 text-left [&:disabled_svg]:text-disabled",
         empty ? "text-muted-foreground" : "text-foreground",
         invalid && "text-destructive-text",
         className,
@@ -205,11 +205,13 @@ export const RowTextarea = React.forwardRef<
 /**
  * A value you click to change, drawn as a quiet chip at rest (#5742): the
  * card step on the group's surface, lit on hover, as Linear's issue
- * properties read. Exported for the When row's day and times and the points
- * box, which are the same kind of value.
+ * properties read, with the control edge (foundations §3), since a fill one
+ * step off its seat doesn't tell a member where to click on its own.
+ * Exported for the When row's day and times and the points box, which are
+ * the same kind of value.
  */
 export const QUIET_FIELD =
-  "border border-transparent bg-card hover:bg-card-hover";
+  "border border-control-edge bg-card hover:bg-card-hover disabled:border-border";
 
 /**
  * The Small step (foundations.md §9): 36 to a mouse, 44 to a finger, the
