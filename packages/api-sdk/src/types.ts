@@ -3872,6 +3872,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/suggestions/{id}/next-agenda": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). It goes onto the next upcoming meeting with the minutes’ audience and type when the caller may edit it; otherwise that meeting offers it under Suggested; with no such meeting yet, it waits for one to be created (30 days at most). */
+        post: operations["AiSuggestionController_sendToNextAgenda_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/next-agenda/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Add to next meeting’s agenda: takes the item back off and puts the suggestion back as it was (#5790). */
+        post: operations["AiSuggestionController_undoSendToNextAgenda_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/suggestions/decide": {
         parameters: {
             query?: never;
@@ -10450,6 +10484,26 @@ export interface components {
              */
             reason?: "already_doing";
         };
+        NextAgendaMeetingDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            start_time: string;
+        };
+        SendToNextAgendaResponseDto: {
+            /**
+             * @description `placed`: on `meeting`’s agenda. `offered`: under Suggested on `meeting` (the caller can’t edit it, or its agenda is full). `waiting`: no such meeting yet; it goes onto the next one created, for 30 days.
+             * @enum {string}
+             */
+            outcome: "placed" | "offered" | "waiting";
+            /** @description Where it went; null while it waits. */
+            meeting: components["schemas"]["NextAgendaMeetingDto"] | null;
+            /** @description The name of the minutes’ own meeting, for “the next Chapter Meeting”. */
+            source_name: string;
+            /** @description The words, as the agenda holds them. */
+            text: string;
+        };
         AiSuggestionDecideItemDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
@@ -12970,18 +13024,29 @@ export interface components {
              */
             user_id: string;
         };
+        AgendaSuggestionFromMinutesDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /**
+             * Format: date-time
+             * @description When that meeting started.
+             */
+            start_time: string;
+        };
         AgendaSuggestionDto: {
             /** Format: uuid */
             id: string;
             /**
-             * @description `tabled`: a matter earlier minutes of a meeting with the same audience tabled. `ai`: an item the model suggested.
+             * @description `tabled`: a matter earlier minutes of a meeting with the same audience tabled. `minutes`: an action item those minutes sent to the next meeting’s agenda instead of making it a task. `ai`: an item the model suggested.
              * @enum {string}
              */
-            kind: "tabled" | "ai";
+            kind: "tabled" | "minutes" | "ai";
             /** @description The item as it would go on the agenda. */
             text: string;
-            /** @description Where a tabled matter was first tabled; null for `ai`. */
+            /** @description Where a tabled matter was first tabled; null for any other kind. */
             tabled_from: components["schemas"]["EventAgendaTabledFromDto"] | null;
+            /** @description The minutes a `minutes` item was sent from, for “From the minutes of {day}”; null for any other kind. */
+            from_minutes: components["schemas"]["AgendaSuggestionFromMinutesDto"] | null;
             /**
              * Format: uuid
              * @description The posted minutes it was drawn from (for a tabled matter, the minutes that tabled it most recently), for the link under it.
@@ -22009,6 +22074,64 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AiSuggestionDecisionDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_sendToNextAgenda_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendToNextAgendaResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_undoSendToNextAgenda_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

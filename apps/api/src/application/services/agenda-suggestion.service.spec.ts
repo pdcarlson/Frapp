@@ -181,6 +181,8 @@ function setup(options: {
   aiAllowed?: boolean;
   modelItems?: { text: string; reason: string; minutes?: string }[];
   eventsOff?: boolean;
+  /** Action items earlier minutes sent to the next meeting's agenda (#5790). */
+  sent?: { id: string; meeting_id: string; text: string }[];
 }) {
   process.env.AI_ENABLED = 'true';
   const repo = new FakeRepo();
@@ -227,6 +229,11 @@ function setup(options: {
     { findByChapter: jest.fn(async () => []) } as never,
     { findById: jest.fn(async () => null) } as never,
     {
+      listOffered: jest.fn(async (_c: string, ids: readonly string[]) =>
+        (options.sent ?? []).filter((item) => ids.includes(item.meeting_id)),
+      ),
+    } as never,
+    {
       findById: jest.fn(async () => ({
         id: CHAPTER,
         enabled_modules: options.eventsOff ? { events: false } : {},
@@ -270,6 +277,115 @@ describe('AgendaSuggestionService', () => {
         },
       }),
     ]);
+  });
+
+  it('offers what earlier minutes sent to the next meeting’s agenda, after the tabled ones, and adds it as a plain item (#5790)', async () => {
+    const { service, repo } = setup({
+      events: [event('evt-next'), event('evt-last')],
+      earlier: [
+        minutes('m-last', 'evt-last', '2026-11-18', [
+          { text: 'Formal budget' },
+        ]),
+      ],
+      sent: [
+        {
+          id: 'sent-1',
+          meeting_id: 'm-last',
+          text: 'Plan backup activities for rush',
+        },
+      ],
+      aiAllowed: false,
+    });
+    const list = await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW });
+    expect(list.suggestions.map((row) => [row.kind, row.text])).toEqual([
+      ['tabled', 'Formal budget'],
+      ['minutes', 'Plan backup activities for rush'],
+    ]);
+    const sent = list.suggestions[1];
+    expect(sent).toEqual(
+      expect.objectContaining({
+        tabled_from: null,
+        source_meeting_id: 'm-last',
+        from_minutes: {
+          meeting_id: 'm-last',
+          start_time: '2026-11-18T00:00:00.000Z',
+        },
+      }),
+    );
+    const { agenda } = await service.add(
+      CHAPTER,
+      'evt-next',
+      sent.id,
+      OFFICER,
+      {
+        now: NOW,
+      },
+    );
+    expect(agenda).toEqual([
+      {
+        id: agendaItemIdOf(sent.id),
+        text: 'Plan backup activities for rush',
+        done: false,
+      },
+    ]);
+    expect(repo.rows.find((row) => row.id === sent.id)?.status).toBe('added');
+  });
+
+  it('stops offering a sent item on every meeting once one agenda adds it (#5790)', async () => {
+    const { service } = setup({
+      events: [
+        event('evt-next'),
+        event('evt-after', {
+          start_time: '2026-12-02T00:00:00.000Z',
+          end_time: '2026-12-02T02:00:00.000Z',
+        }),
+        event('evt-last'),
+      ],
+      earlier: [minutes('m-last', 'evt-last', '2026-11-18', [])],
+      sent: [{ id: 'sent-1', meeting_id: 'm-last', text: 'Rush backups' }],
+    });
+    const after = await service.list(CHAPTER, 'evt-after', OFFICER, {
+      now: NOW,
+    });
+    expect(after.suggestions.map((row) => row.text)).toEqual(['Rush backups']);
+    const [next] = (
+      await service.list(CHAPTER, 'evt-next', OFFICER, { now: NOW })
+    ).suggestions;
+    await service.add(CHAPTER, 'evt-next', next.id, OFFICER, { now: NOW });
+    const again = await service.list(CHAPTER, 'evt-after', OFFICER, {
+      now: NOW,
+    });
+    expect(again.suggestions).toEqual([]);
+  });
+
+  it('offers a sent item only on the same kind of meeting as its minutes (#5790)', async () => {
+    const { service } = setup({
+      events: [event('evt-mixer', { name: 'Mixer' }), event('evt-last')],
+      earlier: [minutes('m-last', 'evt-last', '2026-11-18', [])],
+      sent: [{ id: 'sent-1', meeting_id: 'm-last', text: 'Rush backups' }],
+    });
+    const list = await service.list(CHAPTER, 'evt-mixer', OFFICER, {
+      now: NOW,
+    });
+    expect(list.suggestions).toEqual([]);
+  });
+
+  it('never offers a sent item on a meeting with another audience (#5790)', async () => {
+    const { service } = setup({
+      events: [
+        event('evt-chapter'),
+        event('evt-exec', {
+          required_role_ids: [EXEC_ROLE],
+          others_invited: false,
+        }),
+      ],
+      earlier: [minutes('m-exec', 'evt-exec', '2026-11-18', [])],
+      sent: [{ id: 'sent-1', meeting_id: 'm-exec', text: 'Discipline' }],
+    });
+    const list = await service.list(CHAPTER, 'evt-chapter', OFFICER, {
+      now: NOW,
+    });
+    expect(list.suggestions).toEqual([]);
   });
 
   it('never offers an exec-only meeting’s tabled item on a chapter-wide meeting', async () => {

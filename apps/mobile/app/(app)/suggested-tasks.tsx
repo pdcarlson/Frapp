@@ -18,6 +18,9 @@ import {
   useFrappClient,
   useMeetings,
   useMemberDisplayNames,
+  useCurrentChapter,
+  useSendAiSuggestionToNextAgenda,
+  useUndoAiSuggestionNextAgenda,
   existingTaskLine,
   useSimilarTasks,
   type AiSuggestion,
@@ -35,7 +38,9 @@ import {
   SIMILAR_TASK_COPY,
   aiSuggestionRefusalLine,
   lastYearEventLine,
+  isModuleEnabled,
   lastYearTaskLine,
+  nextAgendaOutcomeLines,
 } from "@repo/validation";
 import {
   useAiReport,
@@ -47,6 +52,7 @@ import {
   CloseGlyph,
   FlagGlyph,
   ForwardGlyph,
+  ListGlyph,
   MoreGlyph,
   PencilGlyph,
   PersonGlyph,
@@ -209,6 +215,14 @@ function SuggestedTasks() {
   const { directory } = useWhoDirectory();
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
+  const toNextAgenda = useSendAiSuggestionToNextAgenda();
+  const undoNextAgenda = useUndoAiSuggestionNextAgenda();
+  // The next meeting's Suggested list lives on events (#5790): offered only
+  // once the chapter is read and has Events on.
+  const chapterQuery = useCurrentChapter();
+  const eventsOn =
+    chapterQuery.data !== undefined &&
+    isModuleEnabled(chapterQuery.data?.enabled_modules, "events");
   const refresh = useRefetchAll([suggestionsQuery]);
   const reporting = useAiReport();
   const itemMenu = useItemMenu();
@@ -237,6 +251,13 @@ function SuggestedTasks() {
   }, [planFor]);
   // Said once an event was added from a suggestion, where the row was.
   const [added, setAdded] = useState(false);
+  // Said once a suggestion went to the next meeting's agenda (#5790): where
+  // it went, with Undo.
+  const [sentOn, setSentOn] = useState<{
+    id: string;
+    line: string;
+    meetingId: string | null;
+  } | null>(null);
   // The open task each suggestion reads like, from the tasks this officer
   // can see (#5562).
   const similar = useSimilarTasks(tasks);
@@ -314,12 +335,72 @@ function SuggestedTasks() {
     }
   }
 
+  /**
+   * Add to next meeting's agenda (#5790; Shawn, 2026-11-20): the action item
+   * goes onto the next meeting with the same people, or under Suggested there
+   * when the officer can't edit it, or waits for that meeting to be created.
+   * The note above the list says which, with Undo and the meeting to open.
+   */
+  async function sendToNextAgenda(item: Waiting) {
+    setGone(null);
+    setAdded(false);
+    setSentOn(null);
+    setBusy({ id: item.id, doing: "dismiss" });
+    try {
+      const outcome = await toNextAgenda.mutateAsync(item.id);
+      const lines = nextAgendaOutcomeLines(outcome);
+      setSentOn({
+        id: item.id,
+        line: lines.body ? `${lines.title}. ${lines.body}` : `${lines.title}.`,
+        meetingId: outcome.meeting?.id ?? null,
+      });
+    } catch (error) {
+      fail(item, error);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** The note's links after a send: the meeting it went to, then Undo. */
+  function sentActions(sent: { id: string; meetingId: string | null }) {
+    const undo = {
+      label: AI_SUGGESTION_COPY.undo,
+      onPress: () => {
+        setSentOn(null);
+        undoNextAgenda
+          .mutateAsync(sent.id)
+          .catch((error: unknown) =>
+            setGone(
+              `${AI_SUGGESTION_COPY.undoFailed}: ${
+                aiSuggestionRefusalLine(codeOf(error)) ??
+                AI_SUGGESTION_COPY.tryAgain
+              }`,
+            ),
+          );
+      },
+    };
+    const { meetingId } = sent;
+    if (!meetingId) return [undo];
+    return [
+      {
+        label: AI_SUGGESTION_COPY.toAgendaOpen,
+        onPress: () =>
+          router.push({
+            pathname: "/event-details",
+            params: { id: meetingId },
+          }),
+      },
+      undo,
+    ];
+  }
+
   async function dismissRow(
     item: Waiting | WaitingEvent,
     reason?: AiSuggestionDismissReason,
   ) {
     setGone(null);
     setAdded(false);
+    setSentOn(null);
     setBusy({ id: item.id, doing: reason ? "already" : "dismiss" });
     try {
       await dismiss.mutateAsync({ id: item.id, reason });
@@ -395,8 +476,9 @@ function SuggestedTasks() {
   }
 
   /**
-   * A card's ⋯ menu, worded as web's is: Change before creating (a card that
-   * isn't asking about a twin), Dismiss, and Report this until it is sent.
+   * A card's ⋯ menu, worded as web's is: Change before creating and, for one
+   * from minutes, Add to next meeting's agenda (a card that isn't asking
+   * about a twin), Dismiss, and Report this until it is sent.
    */
   function menuFor(item: Waiting, twin: boolean): ItemMenuHandle | null {
     const report = reportFor(item, reporting);
@@ -407,6 +489,20 @@ function SuggestedTasks() {
         label: AI_SUGGESTION_COPY.change,
         glyph: (color) => <PencilGlyph color={color} />,
         run: () => setFormFor(item),
+      });
+    }
+    // As on web, not while the card asks whether it is an existing task.
+    if (
+      !twin &&
+      eventsOn &&
+      item.source.type === "meeting" &&
+      !isFromLastYear(item)
+    ) {
+      actions.push({
+        key: "next-agenda",
+        label: AI_SUGGESTION_COPY.toAgenda,
+        glyph: (color) => <ListGlyph color={color} />,
+        run: () => void sendToNextAgenda(item),
       });
     }
     actions.push({
@@ -463,6 +559,9 @@ function SuggestedTasks() {
       >
         {gone ? <InlineNote tone="warning">{gone}</InlineNote> : null}
         {added ? <InlineNote>{LAST_YEAR_COPY.eventAdded}</InlineNote> : null}
+        {sentOn ? (
+          <InlineNote action={sentActions(sentOn)}>{sentOn.line}</InlineNote>
+        ) : null}
         {suggestionsQuery.isPending ? (
           <SuggestionsSkeleton />
         ) : suggestionsQuery.isError && !suggestionsQuery.data ? (
