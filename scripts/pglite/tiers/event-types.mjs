@@ -5,10 +5,8 @@ import { db, miss } from "../harness.mjs";
 // `event_types` is reached from the API only through mocked repositories, and
 // its seeding lives in a trigger, so this is the one place that SQL runs.
 // What each check pins, and the edit it catches:
-// - a new chapter starts with the seven default types, in order (the trigger
-//   fires, and `seed_default_event_types`'s `on conflict` names the real
-//   unique index rather than failing every chapter insert with 42P10);
-// - seeding again adds nothing (the backfill is safe to re-run);
+// - a new chapter starts with no types: the seeding trigger is gone
+//   (20261120220934_stop_seeding_event_types.sql, #5776);
 // - a name is unique per chapter ignoring case and outer spaces;
 // - an event can't point at another chapter's type (composite foreign key);
 // - deleting a type clears only `event_type_id` on its events.
@@ -45,26 +43,16 @@ try {
     ).rows[0]?.id;
   const checks = [];
 
-  const seeded = await names(CH_A);
   checks.push([
-    JSON.stringify(seeded) ===
-      JSON.stringify([
-        "Chapter meeting",
-        "Committee meeting",
-        "Philanthropy",
-        "Community service",
-        "Brotherhood",
-        "Work party",
-        "Social",
-      ]),
-    "a new chapter starts with the seven default types, in order",
+    (await names(CH_A)).length === 0,
+    "a new chapter starts with no types (#5776)",
   ]);
 
-  await db.query(`select public.seed_default_event_types($1)`, [CH_A]);
-  checks.push([
-    (await names(CH_A)).length === 7,
-    "seeding a chapter again adds nothing",
-  ]);
+  await db.exec(`
+    insert into event_types (chapter_id, name, point_value, position) values
+      ('${CH_A}', 'Brotherhood', 5, 1), ('${CH_A}', 'Social', 0, 2),
+      ('${CH_B}', 'Brotherhood', 5, 1);
+  `);
 
   checks.push([
     await rejects(

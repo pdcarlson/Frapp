@@ -1,3 +1,4 @@
+import { EVENT_TYPES } from "@/tests/events-page";
 import { formatDateEntry, parseDateEntry } from "@repo/formatting";
 import type React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -19,8 +20,11 @@ const {
   mockPermissions,
   useEventMock,
   useEventsMock,
+  createTypeMutate,
 } = vi.hoisted(() => ({
   createMutate: vi.fn(),
+  // A type made in place from the Type menu (Paul 2026-11-20).
+  createTypeMutate: vi.fn(),
   updateMutate: vi.fn(),
   mockCurrentChapter: vi.fn(),
   mockToast: vi.fn(),
@@ -49,6 +53,10 @@ vi.mock("@repo/hooks", async () => ({
   useUpdateEvent: () => ({ mutateAsync: updateMutate, isPending: false }),
   // The two chapter types the type picker and its Edit types list read.
   ...(await import("@/tests/events-page")).eventTypeHooks(),
+  useCreateEventType: () => ({
+    mutateAsync: createTypeMutate,
+    isPending: false,
+  }),
   useRoles: () => ({
     data: [
       { id: "r1", name: "Exec" },
@@ -90,7 +98,9 @@ const chapter = chapterSubscription(mockCurrentChapter);
  * Open a row's menu (#5561): its trigger reads "<Row>: <value>". Safe to call
  * when it is already open.
  */
-function openRow(row: "When" | "Repeat" | "Who's coming" | "Check-in" | "Type") {
+function openRow(
+  row: "When" | "Repeat" | "Who's coming" | "Check-in" | "Type",
+) {
   // When's fields sit in the row itself, Google Calendar's way: no menu.
   if (row === "When") return;
   const trigger = screen.getByRole("button", {
@@ -104,9 +114,7 @@ function openRow(row: "When" | "Repeat" | "Who's coming" | "Check-in" | "Type") 
 /** Pick a type from the Type row's menu, or "No type" to let it go. */
 function pickType(name: string) {
   openRow("Type");
-  fireEvent.click(
-    screen.getByRole("option", { name: new RegExp(`^${name}`) }),
-  );
+  fireEvent.click(screen.getByRole("option", { name: new RegExp(`^${name}`) }));
 }
 
 /** Open the Check-in row's menu, which holds the zone. */
@@ -185,9 +193,9 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     expect(
       screen.getByRole("button", { name: /^Who's coming: / }),
     ).toHaveTextContent("Optional for everyone");
-    expect(
-      screen.getByRole("button", { name: /^Repeat: / }),
-    ).toHaveTextContent("Doesn't repeat");
+    expect(screen.getByRole("button", { name: /^Repeat: / })).toHaveTextContent(
+      "Doesn't repeat",
+    );
     expect(
       screen.getByRole("button", { name: /^Check-in: / }),
     ).toHaveTextContent("Opens 10 minutes early");
@@ -380,7 +388,9 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
     openRow("Repeat");
     fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
-    expect(screen.getByText(/13 meetings, the last on September 23\./)).toBeTruthy();
+    expect(
+      screen.getByText(/13 meetings, the last on September 23\./),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
@@ -543,7 +553,9 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
         target: { value: "6" },
       });
-      expect(screen.getByText(/^6 meetings, the last on August 9/)).toBeTruthy();
+      expect(
+        screen.getByText(/^6 meetings, the last on August 9/),
+      ).toBeTruthy();
       const body = await saved();
       expect(body).toMatchObject({
         recurrence_rule: RULE.replace("COUNT=10", "COUNT=6"),
@@ -795,13 +807,17 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       renderEdit();
       expect(useEventsMock).toHaveBeenCalledWith({ enabled: true });
       shorten();
-      expect(screen.getByText(/^3 meetings, the last on October 7/)).toBeTruthy();
+      expect(
+        screen.getByText(/^3 meetings, the last on October 7/),
+      ).toBeTruthy();
     });
 
     it("counts from the rule's pattern when the events can't be read", () => {
       renderEdit();
       shorten();
-      expect(screen.getByText(/^3 meetings, the last on October 5/)).toBeTruthy();
+      expect(
+        screen.getByText(/^3 meetings, the last on October 5/),
+      ).toBeTruthy();
     });
 
     it("holds Repeat and Save while the events load", () => {
@@ -1670,9 +1686,9 @@ describe("EventEditorDialog event types (#3730)", () => {
 
   it("opens with no type held", () => {
     renderCreate();
-    expect(screen.getByRole("button", { name: "Type: none" })).toHaveTextContent(
-      "None",
-    );
+    expect(
+      screen.getByRole("button", { name: "Type: none" }),
+    ).toHaveTextContent("None");
   });
 
   it("fills the name, points and attendance from the type and sends it", async () => {
@@ -1697,6 +1713,61 @@ describe("EventEditorDialog event types (#3730)", () => {
       point_value: 10,
       is_mandatory: true,
     });
+  });
+
+  async function createType(name: string) {
+    openRow("Type");
+    fireEvent.change(screen.getByPlaceholderText("Find or add a type"), {
+      target: { value: name },
+    });
+    fireEvent.click(
+      screen.getByRole("option", { name: `Create \u201c${name}\u201d` }),
+    );
+    await waitFor(() => expect(createTypeMutate).toHaveBeenCalledTimes(1));
+  }
+
+  it("makes a type in place from the form's points and attendance, and holds it", async () => {
+    createTypeMutate.mockReset().mockResolvedValue({
+      ...EVENT_TYPES[1]!,
+      id: "type-work",
+      name: "Work party",
+      point_value: 25,
+    });
+    renderCreate();
+    fireEvent.change(screen.getByLabelText("Points for attending"), {
+      target: { value: "25" },
+    });
+    await createType("Work party");
+    expect(createTypeMutate).toHaveBeenCalledWith({
+      name: "Work party",
+      point_value: 25,
+      is_mandatory: false,
+    });
+    // The list re-reads before the create settles, so the row then names
+    // the type; this stub list doesn't, so the name stands in for it.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Event name")).toHaveValue("Work party"),
+    );
+    expect(screen.getByLabelText("Event name")).toHaveValue("Work party");
+    expect(screen.getByLabelText("Points for attending")).toHaveValue(25);
+  });
+
+  it("makes a required type while everyone is required", async () => {
+    createTypeMutate.mockReset().mockResolvedValue({
+      ...EVENT_TYPES[0]!,
+      id: "type-rush",
+      name: "Rush",
+    });
+    renderCreate();
+    pickType("Chapter meeting");
+    await createType("Rush");
+    expect(createTypeMutate).toHaveBeenCalledWith({
+      name: "Rush",
+      point_value: 10,
+      is_mandatory: true,
+    });
+    // The name the officer's earlier pick wrote stays: only a blank one fills.
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
   });
 
   it("keeps what was changed when the held type is picked again", () => {
