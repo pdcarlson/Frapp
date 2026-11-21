@@ -3,6 +3,7 @@
 > **Status: Proposed. Paul reviewed it on 2026-11-11 and made the calls in [§ Decisions](#decisions-for-paul). Nothing here is built, and no build date is set.**
 >
 > Part of [#4192](https://github.com/pdcarlson/Frapp/issues/4192). Asked by: Winston (`whewitt-frapp`), 2026-11-11.
+> GitHub hides that account's issues and PRs (#4192, epic #4226 and its sub-issues) since 2026-11-11; the visible record is [#5833](https://github.com/frapplive/Frapp/issues/5833) (2026-11-21, Winston as `gampheadband`).
 >
 > **Not scheduled.** Recruitment is behind the beta (Paul, 2026-11-05: rush is not a beta priority; 2026-11-10: baseline first). No build issues are filed from this file until Paul sets a date. Until then:
 > - [`rush.md`](rush.md) and the code own what recruitment does today, and nothing here overrides them.
