@@ -346,8 +346,8 @@ export function MembersDirectory() {
   // since been cleared) reads as "any" rather than filtering on something the
   // chip no longer lists.
   // Whoever can give roles also gets "No base role" first (#5802): the
-  // members who joined with Everyone alone and wait for New Member, Actives
-  // or Alumni, as the dashed chip on their profile says.
+  // members holding none of New Member, Actives and Alumni, as the dashed
+  // chip on their profile says. Only in a chapter that has base roles.
   const myPermissions = useMyPermissions();
   const canGiveRoles = can("roles:manage", myPermissions.data?.permissions);
   const offersNoBaseRole = canGiveRoles && allRoles.some(isBaseRole);

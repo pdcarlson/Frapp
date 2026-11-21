@@ -135,9 +135,11 @@ describe("ActivesFilterSheet (#3971)", () => {
       ...NO_ACTIVES_FILTER,
       roleId: "no-base-role",
     });
-    // A search hides it with Any role.
+    // Typed for like a role, as web's chip finds it by its label.
     search(tree, "rush");
     expect(shown(tree)).toEqual(["r-rush"]);
+    search(tree, "base");
+    expect(shown(tree)).toEqual(["no-base-role"]);
   });
 
   it("types the role list down by word starts, Any role stepping aside", () => {

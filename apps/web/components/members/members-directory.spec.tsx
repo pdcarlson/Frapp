@@ -601,7 +601,34 @@ describe("Directory on the greenfield shell", () => {
     ).not.toBeInTheDocument();
     unmount();
 
+    // A chapter with no base roles has nothing to be missing.
     permissionsRead.data = { permissions: ["roles:manage"] };
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+      ]),
+    );
+    const second = render(<MembersDirectory />);
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    expect(
+      screen.queryByRole("menuitem", { name: "No base role" }),
+    ).not.toBeInTheDocument();
+    second.unmount();
+
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+        {
+          id: "r-act",
+          name: "Actives",
+          is_system: true,
+          system_key: "MEMBER",
+          permissions: [],
+        },
+      ]),
+    );
     Object.assign(
       membersRead,
       read([{ ...MEMBERS[0], role_ids: ["r-act"] }, MEMBERS[1]]),

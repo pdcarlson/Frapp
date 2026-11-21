@@ -1615,7 +1615,7 @@ describe('InviteService', () => {
     token = 'test-uuid',
     userId = 'user-2',
     inviterLeft = false,
-    roleIds?: string[],
+    roleIds: string[] = [],
   ) {
     const result = await service.redeem(token, userId);
     const used = (await mockInviteRepo.findByToken.mock.results.at(-1)
@@ -1668,6 +1668,7 @@ describe('InviteService', () => {
         user_id: 'user-2',
         chapter_id: 'ch-1',
         joined_via_invite_id: null,
+        role_ids: [],
       });
 
       expect(mockInviteRepo.findById).not.toHaveBeenCalled();
@@ -2074,6 +2075,12 @@ describe('InviteService', () => {
       expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
         'ch-1',
         ['user-officer'],
+        expect.objectContaining({ body: NO_BASE_ROLE_JOIN_BODY }),
+      );
+      // The inviter, often the one officer who gives roles, hears it too.
+      expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['user-1'],
         expect.objectContaining({ body: NO_BASE_ROLE_JOIN_BODY }),
       );
 

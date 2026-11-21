@@ -570,6 +570,7 @@ describe("s13's Actives filters (#3971)", () => {
       classes: { id: string; name: string }[];
       classWord: string;
       rolesStatus: string;
+      offerNoBaseRole?: boolean;
     };
   }
 
@@ -580,6 +581,39 @@ describe("s13's Actives filters (#3971)", () => {
   beforeEach(() => {
     state.roles = ROLES;
     state.members = ACTIVES;
+  });
+
+  it("offers No base role to whoever can give roles, in a chapter with base roles (#5802)", () => {
+    state.permissions = [];
+    expect(sheet(render()).offerNoBaseRole).toBe(false);
+
+    state.permissions = ["roles:manage"];
+    // No base roles in the chapter: nothing to be missing.
+    state.roles = [
+      { id: "r-member", name: "Member", color: null },
+      { id: "r-rush", name: "Rush Chair", color: "#ff0000" },
+    ];
+    expect(sheet(render()).offerNoBaseRole).toBe(false);
+
+    state.roles = [
+      {
+        id: "r-member",
+        name: "Actives",
+        color: null,
+        system_key: "MEMBER",
+      } as (typeof ROLES)[number],
+      ...ROLES.slice(1),
+    ];
+    state.members = [
+      { ...MARCUS, role_ids: ["r-member", "r-rush"] },
+      { ...ANDRE, role_ids: ["r-rush"] },
+    ];
+    const tree = render();
+    expect(sheet(tree).offerNoBaseRole).toBe(true);
+    pick(tree, { roleId: "no-base-role" });
+    // Marcus holds Actives; Andre holds Rush Chair alone.
+    expect(listed(tree)).toEqual(["Andre Silva"]);
+    state.permissions = [];
   });
 
   it("hands the sheet the actives' roles (not Alumni) and years, newest first", () => {

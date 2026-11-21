@@ -60,8 +60,8 @@ import {
   chapterTextMark,
   dedupeEmails,
   EVERYONE_ROLE_NAME,
-  isBaseRole,
   MEMBER_JOINED_AUDIENCE,
+  needsBaseRole,
 } from '@repo/validation';
 import { orgHidingGreekLettersIn } from '@repo/org-archetypes';
 
@@ -1279,7 +1279,7 @@ export class InviteService {
     chapter_id: string;
     joined_via_invite_id: string | null;
     /** Their roles at the finish, to say when they hold no base role. */
-    role_ids?: readonly string[];
+    role_ids: readonly string[];
   }): Promise<void> {
     if (!member.joined_via_invite_id) return;
     const userId = member.user_id;
@@ -1307,6 +1307,22 @@ export class InviteService {
     // means a chat sender, and a block withholds rows by it. Not `memberId`,
     // which means a `members.id`.
     const data = { target: { screen: 'members' }, memberUserId: userId };
+    // A joiner holding none of New Member, Actives and Alumni waits on an
+    // officer for one (#5802), so both notices say so: the inviter's too,
+    // since the inviter is often the one officer who gives roles. A failed
+    // roles read keeps the plain lines rather than costing the pushes.
+    const needsBase = await this.roleRepo
+      .findByChapter(chapterId)
+      .then((roles) => needsBaseRole(roles, member.role_ids))
+      .catch((error: unknown) => {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'invite-member-joined-base-role-read',
+          message: `Could not read roles for the member-joined notice (chapter ${chapterId})`,
+          error,
+        });
+        return false;
+      });
     // Whoever sent the invite hears it as theirs (#5625, Paul 2026-11-19: "not
     // the biggest fan of these DMs"). It used to arrive as a Frapp message
     // inside a DM with the new member, a conversation neither had started,
@@ -1327,7 +1343,9 @@ export class InviteService {
       sends.push(
         this.notificationService.notifyMembers(chapterId, [inviterId], {
           title: inviterNoticeTitle(name, invite.reusable),
-          body: 'Say hi from their profile in Members.',
+          body: needsBase
+            ? NO_BASE_ROLE_JOIN_BODY
+            : 'Say hi from their profile in Members.',
           priority: 'NORMAL',
           category: 'members',
           data,
@@ -1350,14 +1368,6 @@ export class InviteService {
           (id) => id !== userId && id !== inviterId,
         );
         if (recipients.length === 0) return;
-        // A joiner with no base role sees only what the whole chapter may
-        // until an officer gives them New Member, Actives or Alumni (#5802),
-        // so the officers' notice says so. A failed roles read keeps the
-        // plain line rather than costing the push.
-        const needsBase = await this.holdsNoBaseRole(
-          chapterId,
-          member.role_ids ?? [],
-        ).catch(() => false);
         await this.notificationService.notifyMembers(chapterId, recipients, {
           title: name ? `${name} joined` : 'A new member joined',
           body: needsBase
@@ -1381,23 +1391,6 @@ export class InviteService {
         });
       }
     }
-  }
-
-  /**
-   * Whether a member holds none of the chapter's base roles (New Member,
-   * Actives, Alumni), as `needsBaseRole` in `@repo/hooks` judges it for the
-   * profile's "No base role" chip. A chapter with no base roles never asks.
-   */
-  private async holdsNoBaseRole(
-    chapterId: string,
-    roleIds: readonly string[],
-  ): Promise<boolean> {
-    const base = (await this.roleRepo.findByChapter(chapterId)).filter(
-      isBaseRole,
-    );
-    if (base.length === 0) return false;
-    const held = new Set(roleIds.map((id) => id.toLowerCase()));
-    return !base.some((role) => held.has(role.id.toLowerCase()));
   }
 
   /**

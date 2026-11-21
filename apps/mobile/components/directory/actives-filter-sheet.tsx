@@ -34,6 +34,7 @@ import {
   NO_BASE_ROLE_FILTER,
   NO_BASE_ROLE_LABEL,
 } from "@repo/hooks/member-assignments";
+import { matchesWordStarts } from "@repo/hooks/fuzzy-match";
 import {
   PHONE_REACH_FILTER_OPTIONS,
   PHONE_REACH_LABEL,
@@ -82,8 +83,8 @@ export interface ActivesFilterSheetProps {
   showPhoneReach?: boolean;
   /**
    * Whether to offer "No base role" under "Any role" (#5802): the members
-   * who joined with Everyone alone, for whoever can give roles, as web's
-   * Role chip offers it.
+   * holding none of New Member, Actives and Alumni, for whoever can give
+   * roles, as web's Role chip offers it.
    */
   offerNoBaseRole?: boolean;
 }
@@ -129,10 +130,13 @@ export const ActivesFilterSheet = forwardRef<
   // web's searchable chip does.
   // No rows at all until the list has answered: the status line under the
   // search stands in for them.
+  // Typed for like any role, as web's chip filters it by its label.
+  const offerNoBaseMatch =
+    offerNoBaseRole && matchesWordStarts(NO_BASE_ROLE_LABEL, search);
   const rows: readonly RoleRow[] = !rolesReady
     ? []
     : searching
-      ? visibleRoles
+      ? [...(offerNoBaseMatch ? [NO_BASE] : []), ...visibleRoles]
       : [ANY, ...(offerNoBaseRole ? [NO_BASE] : []), ...visibleRoles];
   const setCount = countActivesFilters(filter);
 
