@@ -620,7 +620,7 @@ describe("Suggested agenda items (#5534)", () => {
         lists={{ agenda: [], attachments: [] }}
         canEdit
         upcoming
-        checkOffOpen
+        checkOffOpen={false}
         documentsOn
       />,
     );
