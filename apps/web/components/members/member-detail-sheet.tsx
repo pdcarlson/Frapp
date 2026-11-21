@@ -5,7 +5,6 @@ import {
   ChevronDown,
   Loader2,
   MessageSquare,
-  MoreHorizontal,
   Pencil,
   UserMinus,
 } from "lucide-react";
@@ -30,13 +29,7 @@ import { useMessageMember } from "@/lib/chat/use-message-member";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { IconButton } from "@/components/ui/icon-button";
+import { ActionMenuButton } from "@/components/shared/row-menu";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
   Panel,
@@ -374,38 +367,35 @@ export function MemberDetailSheet({
         <PanelHeader
           actions={
             canRemove || canCorrect ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <IconButton
-                    label={memberMenuButtonLabel(displayName)}
-                    className="text-muted-foreground"
-                    disabled={removeMemberMutation.isPending}
-                  >
-                    {removeMemberMutation.isPending ? (
-                      <Loader2 className="animate-spin" aria-hidden="true" />
-                    ) : (
-                      <MoreHorizontal aria-hidden="true" />
-                    )}
-                  </IconButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[220px]">
-                  {canCorrect ? (
-                    <DropdownMenuItem onSelect={() => setCorrecting(true)}>
-                      <Pencil aria-hidden="true" />
-                      {CORRECTION_MENU_LABEL}
-                    </DropdownMenuItem>
-                  ) : null}
-                  {canRemove ? (
-                    <DropdownMenuItem
-                      onSelect={() => void handleRemoveMember()}
-                      className="text-destructive-text focus:bg-destructive-tint focus:text-destructive-text"
-                    >
-                      <UserMinus aria-hidden="true" />
-                      {REMOVE_FROM_CHAPTER_LABEL}
-                    </DropdownMenuItem>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <ActionMenuButton
+                label={memberMenuButtonLabel(displayName)}
+                busy={removeMemberMutation.isPending}
+                entries={[
+                  ...(canCorrect
+                    ? [
+                        {
+                          type: "item" as const,
+                          key: "correct",
+                          label: CORRECTION_MENU_LABEL,
+                          icon: Pencil,
+                          onSelect: () => setCorrecting(true),
+                        },
+                      ]
+                    : []),
+                  ...(canRemove
+                    ? [
+                        {
+                          type: "item" as const,
+                          key: "remove",
+                          label: REMOVE_FROM_CHAPTER_LABEL,
+                          icon: UserMinus,
+                          destructive: true,
+                          onSelect: () => void handleRemoveMember(),
+                        },
+                      ]
+                    : []),
+                ]}
+              />
             ) : undefined
           }
         />

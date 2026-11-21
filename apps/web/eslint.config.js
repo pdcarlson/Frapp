@@ -67,21 +67,18 @@ export default [
         // #5739: hand-built ⋯ dropdowns and context menus onto RowMenu /
         // ActionMenuButton.
         "components/ai/suggested-tasks.tsx",
-        "components/ask/ask-proposal.tsx",
-        "components/backwork/backwork-page.tsx",
-        "components/chat/channel-menu.tsx",
-        "components/chat/channel-row-menu.tsx",
-        "components/chat/message-item.tsx",
-        "components/documents/document-row.tsx",
-        "components/linked-apps/discord-row.tsx",
-        "components/linked-apps/google-calendar-row.tsx",
-        "components/meetings/coming-up-dates.tsx",
         "components/meetings/minutes-page.tsx",
-        "components/members/member-detail-sheet.tsx",
-        "components/personal-settings/calendar-section.tsx",
-        "components/tasks/task-panel.tsx",
-        "components/tasks/task-review.tsx",
-        "components/tasks/up-for-grabs.tsx",
+        // Not a list of actions: the header's ⋯ is one popover whose content
+        // swaps to Search, Pinned, Saved and Notifications panels in place.
+        "components/chat/channel-menu.tsx",
+        // The rail row's right-click menu holds a Notifications submenu of
+        // radio levels, and the owner took the row's own controls away
+        // (2026-11-06), so it has no ⋯ for RowMenu to draw.
+        "components/chat/channel-row-menu.tsx",
+        // The chat message exception, as on the phone: this ⋯ is one button
+        // of the message's hover action bar, beside its reaction row and its
+        // Flag and Remind menus, styled and non-modal like them.
+        "components/chat/message-item.tsx",
       ],
       // #5682: native date and time inputs onto DateField / TimeField.
       nativeDateTime: [

@@ -2412,16 +2412,27 @@ describe("DocumentsPage wiring across its split components (#3273)", () => {
     expect(controls.className).toContain("pointer-fine:group-hover/row:opacity-100");
     expect(controls.className).toContain("pointer-fine:group-focus-within/row:opacity-100");
     expect(controls.className).toContain("pointer-coarse:hidden");
-    const more = screen.getByRole("button", { name: "Actions for Chapter bylaws" });
-    expect(more.className).toContain("pointer-coarse:inline-flex");
-    expect(more.className).toMatch(/(^|\s)hidden(\s|$)/);
+    const more = screen.getByRole("button", { name: "More for Chapter bylaws" });
+    const slot = more.parentElement!;
+    expect(slot.className).toContain("pointer-coarse:inline-flex");
+    expect(slot.className).toMatch(/(^|\s)hidden(\s|$)/);
   });
 
   it("offers the row's actions from the touch More menu (#5576)", async () => {
     const user = userEvent.setup();
     render(<DocumentsPage />);
     await user.click(
-      screen.getByRole("button", { name: "Actions for Chapter bylaws" }),
+      screen.getByRole("button", { name: "More for Chapter bylaws" }),
+    );
+    expect(
+      (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
+    ).toEqual(expect.arrayContaining(["Star", "Download"]));
+  });
+
+  it("opens the same actions on a right-click on the row", async () => {
+    render(<DocumentsPage />);
+    fireEvent.contextMenu(
+      screen.getByRole("button", { name: /^Chapter bylaws/ }),
     );
     expect(
       (await screen.findAllByRole("menuitem")).map((item) => item.textContent),

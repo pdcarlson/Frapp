@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Download,
@@ -17,7 +16,6 @@ import {
   Filter,
   Loader2,
   Merge,
-  MoreHorizontal,
   Pencil,
   Trash2,
   Upload,
@@ -39,16 +37,14 @@ import { Button } from "@/components/ui/button";
 import { PageActions } from "@/components/layout/page-actions";
 import { IconButton } from "@/components/ui/icon-button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   NestedError,
   NestedOffline,
 } from "@/components/shared/nested-states";
-import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
+import {
+  ActionMenuButton,
+  RowMenu,
+  type RowMenuEntry,
+} from "@/components/shared/row-menu";
 import { FilterChip } from "@/components/shared/filter-chip";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Can } from "@/components/shared/can";
@@ -677,40 +673,35 @@ export function BackworkPage() {
       */}
       <PageActions>
         {isAdmin || canUpload ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="secondary"
-                size="toolbar"
-                className="w-9 px-0 pointer-coarse:w-11"
-                aria-label="More backwork options"
-                title="More"
-              >
-                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[260px]">
-              {canUpload ? (
-                <DropdownMenuItem asChild>
-                  <Link href="/backwork/upload">
-                    <FolderUp aria-hidden="true" />
-                    Bulk upload
-                  </Link>
-                </DropdownMenuItem>
-              ) : null}
-              {isAdmin ? (
-                <DropdownMenuItem
-                  disabled={!gate.allowed}
-                  aria-describedby={gate.controlProps()["aria-describedby"]}
-                  onSelect={() => setCleanupOpen(true)}
-                >
-                  <Pencil aria-hidden="true" />
-                  Clean up professors and departments
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ActionMenuButton
+            label="More backwork options"
+            entries={[
+              ...(canUpload
+                ? [
+                    {
+                      type: "item" as const,
+                      key: "bulk-upload",
+                      label: "Bulk upload",
+                      icon: FolderUp,
+                      href: "/backwork/upload",
+                    },
+                  ]
+                : []),
+              ...(isAdmin
+                ? [
+                    {
+                      type: "item" as const,
+                      key: "clean-up",
+                      label: "Clean up professors and departments",
+                      icon: Pencil,
+                      disabled: !gate.allowed,
+                      describedBy: gate.controlProps()["aria-describedby"],
+                      onSelect: () => setCleanupOpen(true),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         ) : null}
         <Can permission="backwork:admin">
           {/* Portaled, so it can live beside the menu that opens it. */}
