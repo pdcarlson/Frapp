@@ -694,7 +694,8 @@ How Frapp finds out whether an answer was any good, without keeping anyone's wor
 
 ### Dictation
 
-A member can speak a question into Ask's field instead of typing it (#5276).
+A member can speak a question into Ask's field instead of typing it (#5276), and, on the phone, a message into any chat composer: a channel, a DM or a thread (#5772, Paul 2026-11-21; web has no mic in either).
+Chat uses the same recogniser, the same cleanup route and the same rules below; one go there holds what the cleanup takes (1,000 characters), and its `full` line reads "That's all one dictation can hold."
 
 - **The phone hears it.**
   The phone's own speech recogniser turns the speech into words: on the device where the phone can, otherwise Apple's or Google's recogniser.

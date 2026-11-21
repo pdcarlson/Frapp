@@ -6,7 +6,7 @@ import {
   type ReactTestInstance,
   type ReactTestRenderer,
 } from "react-test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StyleSheet } from "react-native";
 
 // These screens paint with the chapter accent (`useChapterBranding`), which
@@ -14,6 +14,39 @@ import { StyleSheet } from "react-native";
 // mount. A purple chapter's values, deliberately not house gold, so a control
 // that slips back to a `gold.*` token shows up in an assertion; the hook
 // itself has its own spec.
+// Dictation's cleanup (#5772) needs the API client: the words come back as
+// heard. The dictation suite below swaps in its own.
+const { cleanDictation } = vi.hoisted(() => ({
+  cleanDictation: {
+    current: (async () => null) as (text: string) => Promise<string | null>,
+  },
+}));
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useCleanDictation: () => (text: string) => cleanDictation.current(text),
+}));
+
+// The phone's recogniser, faked; off unless the dictation suite turns it on.
+const speech = vi.hoisted(() => ({
+  available: false,
+  handlers: null as null | {
+    onWords: (text: string) => void;
+    onLevel: (level: number) => void;
+    onEnd: (text: string) => void;
+    onFailure: (failure: string) => void;
+  },
+  finish: vi.fn(),
+  cancel: vi.fn(),
+}));
+vi.mock("@/lib/dictation/speech", () => ({
+  isDictationAvailable: () => speech.available,
+  requestDictationPermission: async () => true,
+  startDictation: (handlers: typeof speech.handlers) => {
+    speech.handlers = handlers;
+    return { finish: speech.finish, cancel: speech.cancel };
+  },
+}));
+
 vi.mock("@/lib/chapter-branding", async () => {
   const { chapterBrandingMock, PURPLE_BRANDING } =
     await import("@/test/chapter-branding");
@@ -1059,5 +1092,112 @@ describe("ChatComposer clears the box on send", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("ChatComposer dictation (#5772)", () => {
+  beforeEach(() => {
+    speech.available = true;
+    speech.handlers = null;
+    speech.finish.mockReset();
+    speech.cancel.mockReset();
+    cleanDictation.current = async (text) =>
+      text.replace(/^so um /, "").replace(/^./, (c) => c.toUpperCase()) + ".";
+  });
+  afterEach(() => {
+    speech.available = false;
+    cleanDictation.current = async () => null;
+  });
+
+  /** The composer as a channel holds it: the box's words are the parent's. */
+  function renderLive(initial = "", onSend = vi.fn()) {
+    function Live() {
+      const [value, setValue] = React.useState(initial);
+      return (
+        <ChatComposer
+          value={value}
+          onChangeText={setValue}
+          onSend={onSend}
+          canSend
+          placeholder="Message"
+        />
+      );
+    }
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <Live />
+        </FrappThemeProvider>,
+      );
+    });
+    return { tree, onSend };
+  }
+  const input = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        node.props?.accessibilityLabel === "Message" &&
+        typeof node.props?.onChangeText === "function",
+    )[0]!;
+
+  async function dictate(tree: ReactTestRenderer, heard: string) {
+    await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+    act(() => speech.handlers!.onWords(heard));
+    act(() => byLabel(tree, "Done")!.props.onPress());
+    await act(async () => speech.handlers!.onEnd(heard));
+  }
+
+  it("draws no mic where the phone can't dictate", () => {
+    speech.available = false;
+    const { tree } = renderLive();
+    expect(byLabel(tree, "Dictate")).toBeUndefined();
+  });
+
+  it("listens in the box with Done in Send's place, then lands the tidied words without sending", async () => {
+    const { tree, onSend } = renderLive();
+    await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+    expect(byLabel(tree, "Cancel dictation")).toBeDefined();
+    expect(byLabel(tree, "Send message")).toBeUndefined();
+
+    act(() => speech.handlers!.onWords("so um running late"));
+    act(() => byLabel(tree, "Done")!.props.onPress());
+    expect(speech.finish).toHaveBeenCalled();
+    await act(async () => speech.handlers!.onEnd("so um running late"));
+
+    expect(input(tree).props.value).toBe("Running late.");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(byLabel(tree, "Send message")!.props.accessibilityState).toEqual({
+      disabled: false,
+    });
+  });
+
+  it("adds to words already typed, and the Original chip puts back what was said", async () => {
+    const { tree } = renderLive("Heads up:");
+    await dictate(tree, "so um running late");
+    expect(input(tree).props.value).toBe("Heads up: Running late.");
+
+    act(() => byLabel(tree, "Original")!.props.onPress());
+    expect(input(tree).props.value).toBe("Heads up: so um running late");
+    expect(byLabel(tree, "Original")).toBeUndefined();
+  });
+
+  it("drops the Original chip once the member types or sends", async () => {
+    const { tree } = renderLive();
+    await dictate(tree, "so um running late");
+    act(() => input(tree).props.onChangeText("Running late!"));
+    expect(byLabel(tree, "Original")).toBeUndefined();
+
+    await dictate(tree, "so um on my way");
+    expect(byLabel(tree, "Original")).toBeDefined();
+    act(() => byLabel(tree, "Send message")!.props.onPress());
+    expect(byLabel(tree, "Original")).toBeUndefined();
+  });
+
+  it("keeps the words as heard when the cleanup has nothing", async () => {
+    cleanDictation.current = async () => null;
+    const { tree } = renderLive();
+    await dictate(tree, "so um running late");
+    expect(input(tree).props.value).toBe("so um running late");
+    expect(byLabel(tree, "Original")).toBeUndefined();
   });
 });

@@ -463,6 +463,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   const { useQuery } = await import("@tanstack/react-query");
   return {
     ...actual,
+    // Dictation's cleanup needs the API client; nothing here dictates.
+    useCleanDictation: () => async () => null,
     // The real hook's shape, minus the API client this spec doesn't provide:
     // one query under the shared key, always with its fetch (#4885).
     useChannelUnreadCounts: (options?: { enabled?: boolean }) =>

@@ -47,7 +47,8 @@ import {
   DictationNotice,
   DictationOriginal,
   DictationTidying,
-} from "@/components/ask/ask-dictation";
+  joinDictated,
+} from "@/components/dictation/dictation-controls";
 import { AskOpening } from "@/components/ask/ask-opening";
 import { AskTurn } from "@/components/ask/ask-turn";
 import {
@@ -70,12 +71,7 @@ import {
 import { useActActions, useMayAct } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useDictation } from "@/lib/dictation/use-dictation";
-import {
-  fontFamilyFor,
-  tint,
-  typeRole,
-  useFrappTheme,
-} from "@/lib/theme";
+import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
 
@@ -305,7 +301,8 @@ export const AskSheet = forwardRef<
   const dictation = useDictation({
     clean: cleanDictation,
     // What the field has left, with a space before the new words.
-    room: ASK_QUESTION_MAX_LENGTH - (draft.trim() ? draft.trimEnd().length + 1 : 0),
+    room:
+      ASK_QUESTION_MAX_LENGTH - (draft.trim() ? draft.trimEnd().length + 1 : 0),
     onText: (text, heard) => {
       const before = draftRef.current;
       const tidied = joinDraft(before, text);
@@ -646,11 +643,8 @@ const FIELD_LINE_HEIGHT = 20;
 const FIELD_MAX_LINES = 5;
 const FIELD_BORDER = 1;
 
-/** Typed or tidied words after what is already in the field. */
 function joinDraft(before: string, added: string): string {
-  const head = before.trimEnd();
-  const next = head ? `${head} ${added.trim()}` : added.trim();
-  return next.slice(0, ASK_QUESTION_MAX_LENGTH);
+  return joinDictated(before, added, ASK_QUESTION_MAX_LENGTH);
 }
 
 function createStyles(tokens: SignetTokens) {

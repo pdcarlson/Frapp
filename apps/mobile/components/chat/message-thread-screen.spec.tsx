@@ -219,6 +219,8 @@ vi.mock("@/lib/chat/message-reminder", async (importOriginal) => ({
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // Dictation's cleanup needs the API client; nothing here dictates.
+  useCleanDictation: () => async () => null,
   // The roster catch-up has its own spec in `@repo/hooks`.
   useRosterCatchUp: rosterCatchUp,
   useGifAvailability: () => gifs,

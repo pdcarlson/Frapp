@@ -19,15 +19,29 @@ import {
 } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
-import type { MemberAvatarTint } from "@repo/hooks";
+import { useCleanDictation, type MemberAvatarTint } from "@repo/hooks";
 import {
   ASK_COPY,
+  ASK_DICTATION_MAX_LENGTH,
+  CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   type MentionCandidate,
   type MentionPick,
   withoutObjectReplacement,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { useDictation } from "@/lib/dictation/use-dictation";
+import {
+  DICTATION_COPY,
+  DictationDone,
+  DictationHeard,
+  DictationListening,
+  DictationMic,
+  DictationNotice,
+  DictationOriginal,
+  DictationTidying,
+  joinDictated,
+} from "@/components/dictation/dictation-controls";
 import { CloseGlyph, RetryGlyph } from "@/components/control-glyphs";
 import {
   MentionPicker,
@@ -262,6 +276,47 @@ export function ChatComposer({
     if (isEditing) endSendWindow();
   }, [isEditing, endSendWindow]);
 
+  // Dictation (#5772, Ask's own from #5276): talk, tap Done, and the tidied
+  // words land in the box to read and send. `valueRef` is the box as it is
+  // when they land, not as it was when listening began.
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+  // Tidied words just landed: what the Original chip puts back, until the
+  // member types or sends.
+  const [original, setOriginal] = useState<{
+    tidied: string;
+    restore: string;
+  } | null>(null);
+  const cleanDictation = useCleanDictation();
+  const roomLeft =
+    CHAT_MESSAGE_CONTENT_MAX_LENGTH -
+    (value.trim() ? value.trimEnd().length + 1 : 0);
+  const dictation = useDictation({
+    clean: cleanDictation,
+    // One go is capped by what the cleanup takes, as well as by the message.
+    room: Math.min(ASK_DICTATION_MAX_LENGTH, roomLeft),
+    onText: (text, heard) => {
+      const before = valueRef.current;
+      const tidied = joinDictated(
+        before,
+        text,
+        CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+      );
+      const restore = joinDictated(
+        before,
+        heard,
+        CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+      );
+      onChangeText(tidied);
+      setOriginal(tidied === restore ? null : { tidied, restore });
+    },
+  });
+  const listening = dictation.phase === "listening";
+  const tidying = dictation.phase === "cleaning";
+  const canDictate = dictation.available && canSend && roomLeft > 0;
+
   // An empty or whitespace-only body is not a send — unless a photo is
   // staged. A photo-only message is a real message, uploaded or still
   // uploading, and gating it on the text alone would strand it with the send
@@ -270,6 +325,7 @@ export function ChatComposer({
   // empty too: the server saves it as spaces and refuses it (#4346).
   const isSendable =
     canSend &&
+    !tidying &&
     (withoutObjectReplacement(value).trim().length > 0 || photos.length > 0);
 
   // The sheet greys what can't work this second and says why, so the + itself
@@ -425,6 +481,23 @@ export function ChatComposer({
         />
       ) : null}
 
+      {listening ? <DictationHeard live={dictation.live} /> : null}
+      {dictation.notice !== null && dictation.phase === "idle" ? (
+        <DictationNotice
+          failure={dictation.notice}
+          onDismiss={dictation.dismiss}
+          fullText={DICTATION_COPY.notice.fullMessage}
+        />
+      ) : null}
+      {original !== null && dictation.phase === "idle" ? (
+        <DictationOriginal
+          onPress={() => {
+            onChangeText(original.restore);
+            setOriginal(null);
+          }}
+        />
+      ) : null}
+
       <View style={styles.row}>
         {onOpenPlus ? (
           <Pressable
@@ -451,83 +524,136 @@ export function ChatComposer({
           </Pressable>
         ) : null}
 
-        <TextInput
-          ref={inputRef}
-          accessibilityLabel={placeholder}
-          editable={canSend}
-          multiline
-          onChangeText={(next) => {
-            if (sendClear.isStaleEcho(next)) return;
-            mention.onChangeText(next);
-          }}
-          onSelectionChange={mention.onSelectionChange}
-          onFocus={mention.onFocus}
-          onBlur={mention.onBlur}
-          placeholder={placeholder}
-          placeholderTextColor={tokens.color.text.muted}
-          style={
-            isEditing
-              ? [
-                  styles.input,
-                  styles.inputEditing,
-                  // Never more than a third of the screen, so the message
-                  // list and the strip stay in view above the keyboard.
-                  {
-                    maxHeight: Math.min(
-                      editMaxHeight(tokens),
-                      windowHeight / 3,
-                    ),
-                  },
-                ]
-              : styles.input
-          }
-          value={value}
-        />
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            context?.kind === "edit"
-              ? "Save edit"
-              : ask?.naming
-                ? ASK_COPY.name
-                : "Send message"
-          }
-          accessibilityHint={
-            ask?.naming && context?.kind !== "edit"
-              ? ASK_COPY.only_you_hint
-              : undefined
-          }
-          accessibilityState={{ disabled: !isSendable }}
-          accessibilityActions={
-            canSchedule
-              ? [{ name: "schedule", label: "Schedule message" }]
-              : undefined
-          }
-          onAccessibilityAction={(event) => {
-            if (event.nativeEvent.actionName === "schedule") onSchedule?.();
-          }}
-          disabled={!isSendable}
-          onLongPress={canSchedule ? onSchedule : undefined}
-          onPress={() => {
-            sendClear.markSent();
-            onSend();
-          }}
-          style={({ pressed }) => [
-            styles.send,
-            !isSendable ? styles.sendDisabled : null,
-            pressed ? styles.pressed : null,
-          ]}
-        >
-          <Text
+        {listening || tidying ? (
+          <View
             style={[
-              styles.sendGlyph,
-              !isSendable ? styles.sendGlyphDisabled : null,
+              styles.input,
+              styles.dictating,
+              listening
+                ? {
+                    borderColor: brand.accent,
+                    backgroundColor: tint(brand.accent),
+                  }
+                : null,
             ]}
           >
-            ↑
-          </Text>
-        </Pressable>
+            {listening ? (
+              <DictationListening
+                live={dictation.live}
+                onCancel={dictation.cancel}
+                accent={brand.accent}
+              />
+            ) : (
+              <DictationTidying live={dictation.live} />
+            )}
+          </View>
+        ) : (
+          <View style={styles.field}>
+            <TextInput
+              ref={inputRef}
+              accessibilityLabel={placeholder}
+              editable={canSend}
+              multiline
+              onChangeText={(next) => {
+                if (sendClear.isStaleEcho(next)) return;
+                if (original !== null && next !== original.tidied) {
+                  setOriginal(null);
+                }
+                mention.onChangeText(next);
+              }}
+              onSelectionChange={mention.onSelectionChange}
+              onFocus={mention.onFocus}
+              onBlur={mention.onBlur}
+              placeholder={placeholder}
+              placeholderTextColor={tokens.color.text.muted}
+              style={
+                isEditing
+                  ? [
+                      styles.input,
+                      styles.inputEditing,
+                      canDictate ? styles.inputWithMic : null,
+                      // Never more than a third of the screen, so the message
+                      // list and the strip stay in view above the keyboard.
+                      {
+                        maxHeight: Math.min(
+                          editMaxHeight(tokens),
+                          windowHeight / 3,
+                        ),
+                      },
+                    ]
+                  : canDictate
+                    ? [styles.input, styles.inputWithMic]
+                    : styles.input
+              }
+              value={value}
+            />
+            {canDictate ? (
+              <View style={styles.mic}>
+                <DictationMic
+                  onPress={() => {
+                    setOriginal(null);
+                    dictation.start();
+                  }}
+                />
+              </View>
+            ) : null}
+          </View>
+        )}
+
+        {listening ? (
+          <DictationDone
+            onPress={dictation.finish}
+            fill={brand.accentPrimary}
+            color={brand.accentOnPrimary}
+          />
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              context?.kind === "edit"
+                ? "Save edit"
+                : ask?.naming
+                  ? ASK_COPY.name
+                  : "Send message"
+            }
+            accessibilityHint={
+              ask?.naming && context?.kind !== "edit"
+                ? ASK_COPY.only_you_hint
+                : undefined
+            }
+            accessibilityState={{ disabled: !isSendable }}
+            accessibilityActions={
+              canSchedule
+                ? [{ name: "schedule", label: "Schedule message" }]
+                : undefined
+            }
+            onAccessibilityAction={(event) => {
+              if (event.nativeEvent.actionName === "schedule") onSchedule?.();
+            }}
+            disabled={!isSendable}
+            onLongPress={canSchedule ? onSchedule : undefined}
+            onPress={() => {
+              sendClear.markSent();
+              setOriginal(null);
+              dictation.dismiss();
+              onSend();
+            }}
+            style={({ pressed }) => [
+              styles.send,
+              !isSendable ? styles.sendDisabled : null,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text
+              style={[
+                styles.sendGlyph,
+                !isSendable ? styles.sendGlyphDisabled : null,
+              ]}
+            >
+              ↑
+            </Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -784,6 +910,8 @@ function useClearedOnSend(
  */
 const INPUT_LINE_HEIGHT = 20;
 const INPUT_BORDER = 1;
+/** The dictation mic's size (`DictationMic`). */
+const DICTATION_MIC = 32;
 /** Lines an edit shows before it scrolls; a draft stops at `maxHeight: 120`. */
 const EDIT_MAX_LINES = 10;
 
@@ -955,6 +1083,26 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     // An edit is typed at the message's own line height; the padding keeps
     // one line at the 44pt floor, so the box only grows with the text.
+    // The box holds the input and, at its right end, the dictation mic.
+    field: {
+      flex: 1,
+    },
+    // Room for the 32pt mic inside the box's right end.
+    inputWithMic: {
+      paddingRight: DICTATION_MIC + tokens.spacing.sm,
+    },
+    // 32pt centred in the one-line 44pt box, pinned to its foot as it grows.
+    mic: {
+      position: "absolute",
+      right: (tokens.touch.minimum - DICTATION_MIC) / 2,
+      bottom: (tokens.touch.minimum - DICTATION_MIC) / 2,
+    },
+    // The waveform or the pulsing words, in the box's own frame.
+    dictating: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingLeft: tokens.spacing.sm,
+    },
     inputEditing: {
       paddingTop: editPaddingY,
       paddingBottom: editPaddingY,

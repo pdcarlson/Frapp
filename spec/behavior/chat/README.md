@@ -1189,6 +1189,15 @@ Picking a hit selects its channel if it is not already open and then jumps, reus
   Landing directly on a hit past the bound needs a window around the message rather than every page between —
   #2785.
 
+### Dictation
+
+On the phone, every chat composer (a channel, a DM, a thread reply, an edit) has Ask's dictation (#5772, Paul 2026-11-21): a mic inside the box's right end; while it listens the box becomes the voice's waveform in the chapter's colour with cancel at its left, the words heard run faint above it, and Send becomes a Done check.
+On Done the words are tidied by Frapp's AI and land in the box after anything already typed, to read, edit and send; nothing is sent by speaking.
+An Original chip above the box puts back the words as spoken until the member types or sends.
+Without Frapp AI, or when the cleanup has no answer, the words land as heard.
+The rules, limits and notices are Ask's: [`../ai.md` § Dictation](../ai.md#dictation).
+Web has no mic in chat (Paul 2026-11-21: phone only for now), as web's Ask has none.
+
 ### GIFs
 
 A member can send a GIF (#4631, Paul picked KLIPY on 2026-11-12).
