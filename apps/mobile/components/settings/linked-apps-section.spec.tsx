@@ -3,7 +3,7 @@ import { act } from "react";
 import { Alert } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   google: undefined as Record<string, unknown> | undefined,
@@ -65,6 +65,11 @@ vi.mock("@/lib/supabase", () => ({
   }),
 }));
 
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 import { FrappThemeProvider } from "@/lib/theme";
 import { LinkedAppsSection } from "./linked-apps-section";
 
@@ -98,6 +103,10 @@ function row(tree: ReactTestRenderer, label: string) {
 }
 
 describe("Phone Settings → Linked apps (#5407)", () => {
+  afterEach(() => {
+    dismissItemMenu();
+  });
+
   beforeEach(() => {
     state.google = OFF;
     state.googleError = false;
@@ -132,13 +141,21 @@ describe("Phone Settings → Linked apps (#5407)", () => {
       "Expired",
     );
     act(() => row(tree, "Google Calendar").props.onPress());
-    const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
-    expect(buttons.map((b) => b.text)).toEqual([
-      "Reconnect",
-      "Disconnect",
-      "Cancel",
+    const menu = currentItemMenu()!;
+    expect(menu.title).toBe("Google Calendar");
+    expect(
+      menu.actions.map((action) => [action.label, !!action.destructive]),
+    ).toEqual([
+      ["Reconnect", false],
+      ["Disconnect", true],
     ]);
     expect(state.start).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pickItemMenuAction("Reconnect");
+    });
+    expect(state.start).toHaveBeenCalledTimes(1);
+    expect(currentItemMenu()).toBeNull();
   });
 
   it("says a failed read and retries on a tap, rather than hiding the row", async () => {

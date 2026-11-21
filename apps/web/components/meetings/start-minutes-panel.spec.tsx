@@ -33,99 +33,74 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 
 const { StartMinutesPanel } = await import("./start-minutes-panel");
 
-/**
- * Fills in a meeting that never made it onto the calendar. With nothing on
- * the calendar the panel opens on its name already (#5219).
- */
-function fillNewMeeting(day: string, times = true) {
-  fireEvent.change(screen.getByLabelText("What was the meeting called?"), {
-    target: { value: "Exec meeting" },
-  });
-  const date = screen.getByLabelText("When did it meet?");
-  fireEvent.focus(date);
-  fireEvent.change(date, { target: { value: day } });
-  fireEvent.blur(date);
-  if (!times) return;
-  fireEvent.click(screen.getByRole("button", { name: /Add times/ }));
-  fireEvent.change(screen.getByLabelText("Started"), {
-    target: { value: "7pm" },
-  });
+const hour = 3_600_000;
+
+/** A meeting from yesterday: on the list, and picked when the panel opens. */
+function yesterdaysMeeting() {
+  const now = Date.now();
+  return {
+    id: "e-1",
+    name: "Exec meeting",
+    start_time: new Date(now - 24 * hour).toISOString(),
+    end_time: new Date(now - 23 * hour).toISOString(),
+  };
+}
+
+/** Picks No meeting and files the minutes as Committee: a form worth keeping. */
+function pickNoMeeting() {
+  fireEvent.click(screen.getByRole("button", { name: /No meeting/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Change" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Committee" }));
 }
 
 /**
- * The day of a meeting that isn't on the calendar is typed the way the rest
- * of the app takes a date ("yesterday", "Nov 4"), not with the browser's
- * own date input (#4504).
+ * Minutes with no meeting (Paul, 2026-11-20): written or recorded now, and
+ * linked to their meeting later. One row in the list, never a second form.
  */
-describe("StartMinutesPanel, a meeting not on the calendar", () => {
+describe("StartMinutesPanel, no meeting", () => {
   beforeEach(() => {
     mocks.start.mockReset().mockResolvedValue({ id: "m-1" });
     mocks.push.mockReset();
-    mocks.permissions.current = ["events:create"];
+    mocks.permissions.current = ["meetings:record"];
     mocks.events.current = [];
     mocks.meetings.current = [];
+    localStorage.clear();
   });
 
-  it("offers it to an officer who can start minutes but not create events (#4935)", () => {
-    mocks.permissions.current = ["meetings:record"];
+  it("opens on No meeting when nothing is on the calendar, and starts unlinked", async () => {
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
     expect(
-      screen.getByLabelText("What was the meeting called?"),
+      screen.getByRole("button", { name: /No meeting/, pressed: true }),
     ).toBeInTheDocument();
-  });
-
-  it("offers it to nobody who can do neither", () => {
-    mocks.permissions.current = [];
-    render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    expect(screen.queryByLabelText("What was the meeting called?")).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: "It isn't on the calendar" }),
-    ).toBeNull();
-  });
-
-  it("takes the day in words and starts the minutes for it", async () => {
-    render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    fillNewMeeting("yesterday");
+    expect(screen.getByText("Link one later")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     const sent = mocks.start.mock.calls[0]![0];
-    expect(sent.new_event.name).toBe("Exec meeting");
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const started = new Date(sent.new_event.start_time);
-    expect(started.getDate()).toBe(yesterday.getDate());
-    expect(started.getHours()).toBe(19);
-    // No end typed: it runs an hour.
-    expect(Date.parse(sent.new_event.end_time) - started.getTime()).toBe(
-      3_600_000,
+    expect(sent).toEqual({ meeting_type: "other", other_label: null });
+    await vi.waitFor(() =>
+      expect(mocks.push).toHaveBeenCalledWith("/meetings/m-1"),
     );
-    expect(sent.meeting_type).toBe("exec");
   });
 
-  it("needs no times: an earlier day starts at 7 PM and runs an hour", async () => {
+  it("is a row under the calendar's meetings, picked by a press", async () => {
+    mocks.events.current = [yesterdaysMeeting()];
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    fireEvent.change(screen.getByLabelText("What was the meeting called?"), {
-      target: { value: "" },
-    });
-    const date = screen.getByLabelText("When did it meet?");
-    fireEvent.change(date, { target: { value: "yesterday" } });
+    expect(
+      screen.getByRole("button", { name: /Exec meeting/, pressed: true }),
+    ).toBeInTheDocument();
+    pickNoMeeting();
     fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
-    const sent = mocks.start.mock.calls[0]![0];
-    expect(sent.new_event.name).toBe("Chapter meeting");
-    expect(new Date(sent.new_event.start_time).getHours()).toBe(19);
-    expect(sent.meeting_type).toBe("chapter");
+    expect(mocks.start.mock.calls[0]![0]).toEqual({
+      meeting_type: "committee",
+      other_label: null,
+    });
   });
 
-  it("asks for the day, not the time, when the day can't be read", () => {
+  it("never asks for a meeting's name or day", () => {
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    fillNewMeeting("soonish");
-    fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
-    expect(
-      screen.getByText("Add the day it met, like Tuesday or Nov 4."),
-    ).toBeInTheDocument();
-
-    expect(mocks.start).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByText(/isn.t on the calendar/)).toBeNull();
   });
 });
 
@@ -154,21 +129,22 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
   beforeEach(() => {
     mocks.start.mockReset().mockResolvedValue({ id: "m-1" });
     mocks.push.mockReset();
-    mocks.events.current = [];
+    mocks.events.current = [yesterdaysMeeting()];
     mocks.meetings.current = [];
+    localStorage.clear();
   });
 
   it("opens on what was typed after the page was left, and says so", () => {
     const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
     expect(screen.queryByText("Draft restored")).toBeNull();
-    fillNewMeeting("yesterday");
+    pickNoMeeting();
     first.unmount();
 
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    expect(screen.getByLabelText("What was the meeting called?")).toHaveValue(
-      "Exec meeting",
-    );
-    expect(screen.getByLabelText("Started")).toHaveValue("7 PM");
+    expect(
+      screen.getByRole("button", { name: /No meeting/, pressed: true }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Type: Committee/)).toBeInTheDocument();
     expect(screen.getByText("Draft restored")).toBeInTheDocument();
   });
 
@@ -181,14 +157,14 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
 
   it("starts over on Discard", () => {
     const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    fillNewMeeting("yesterday");
+    pickNoMeeting();
     first.unmount();
     const second = render(<StartMinutesPanel open onOpenChange={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     expect(screen.queryByText("Draft restored")).toBeNull();
-    expect(screen.getByLabelText("What was the meeting called?")).toHaveValue(
-      "",
-    );
+    expect(
+      screen.getByRole("button", { name: /Exec meeting/, pressed: true }),
+    ).toBeInTheDocument();
     second.unmount();
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
     expect(screen.queryByText("Draft restored")).toBeNull();
@@ -196,7 +172,7 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
 
   it("drops the draft on Cancel", () => {
     const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    fillNewMeeting("yesterday");
+    pickNoMeeting();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     first.unmount();
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
@@ -205,7 +181,7 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
 
   it("drops the draft once the minutes start", async () => {
     const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    fillNewMeeting("yesterday");
+    pickNoMeeting();
     fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(1));
     first.unmount();
@@ -224,7 +200,7 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
     const first = render(
       <StartMinutesPanel open onOpenChange={onOpenChange} />,
     );
-    fillNewMeeting("yesterday");
+    pickNoMeeting();
     fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     first.unmount();
@@ -241,6 +217,12 @@ describe("StartMinutesPanel keeps its draft (#4593)", () => {
 });
 
 describe("StartMinutesPanel keeps a draft whose start failed (#4593)", () => {
+  beforeEach(() => {
+    mocks.events.current = [yesterdaysMeeting()];
+    mocks.meetings.current = [];
+    localStorage.clear();
+  });
+
   it("puts the draft back when the start fails after the page was left", async () => {
     let fail: (error: Error) => void = () => {};
     mocks.start.mockReset().mockReturnValue(
@@ -249,7 +231,7 @@ describe("StartMinutesPanel keeps a draft whose start failed (#4593)", () => {
       }),
     );
     const first = render(<StartMinutesPanel open onOpenChange={() => {}} />);
-    fillNewMeeting("yesterday");
+    pickNoMeeting();
     fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     first.unmount();
@@ -265,7 +247,6 @@ describe("StartMinutesPanel keeps a draft whose start failed (#4593)", () => {
 
 /** One question at a time (#5219): the likely meeting comes picked. */
 describe("StartMinutesPanel picks the meeting", () => {
-  const hour = 3_600_000;
   beforeEach(() => {
     mocks.start.mockReset().mockResolvedValue({ id: "m-1" });
     mocks.push.mockReset();
@@ -294,7 +275,7 @@ describe("StartMinutesPanel picks the meeting", () => {
     expect(
       screen.getByRole("button", { name: /Chapter meeting/, pressed: true }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Filed as Chapter/)).toBeInTheDocument();
+    expect(screen.getByText(/Type: Chapter/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Write minutes" }));
     await vi.waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     expect(mocks.start.mock.calls[0]![0]).toMatchObject({
@@ -324,10 +305,10 @@ describe("StartMinutesPanel picks the meeting", () => {
     expect(
       screen.getByRole("button", { name: /Exec meeting/, pressed: true }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Filed as Exec/)).toBeInTheDocument();
+    expect(screen.getByText(/Type: Exec/)).toBeInTheDocument();
   });
 
-  it("shows five meetings, and the rest behind Show older meetings", () => {
+  it("shows five meetings, and the rest behind Show older", () => {
     const now = Date.now();
     mocks.events.current = Array.from({ length: 8 }, (_, i) => ({
       id: `e-${i}`,
@@ -338,9 +319,7 @@ describe("StartMinutesPanel picks the meeting", () => {
     mocks.meetings.current = [];
     render(<StartMinutesPanel open onOpenChange={() => {}} />);
     expect(screen.queryByRole("button", { name: /Meeting 7/ })).toBeNull();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Show older meetings" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
     expect(
       screen.getByRole("button", { name: /Meeting 7/ }),
     ).toBeInTheDocument();
@@ -386,9 +365,7 @@ describe("StartMinutesPanel picks the meeting", () => {
       screen.getByRole("button", { name: /Meeting 5\D/ }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Meeting 100/ })).toBeNull();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Show older meetings" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
     expect(
       screen.getByRole("button", { name: /Meeting 100/ }),
     ).toBeInTheDocument();

@@ -8310,7 +8310,47 @@
             "bearer": []
           }
         ],
-        "summary": "Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist",
+        "summary": "Start minutes for a meeting’s event, for a meeting not on the calendar (new_event), or with no meeting yet (neither). 409 `meeting.already_started` names the minutes that exist",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/live-recordings": {
+      "get": {
+        "operationId": "MeetingController_liveRecordings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingLiveRecordingDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Meetings a phone is recording right now, whose events the caller can see: who is recording, since when, and the event",
         "tags": [
           "Meetings"
         ]
@@ -8641,7 +8681,83 @@
             "bearer": []
           }
         ],
-        "summary": "Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes",
+        "summary": "Link minutes that have no event (started with no meeting, or whose event was deleted) to one, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
+    "/v1/meetings/{id}/live-recording": {
+      "put": {
+        "operationId": "MeetingController_markLiveRecording_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller’s phone is recording these minutes: sent when it starts and every minute while it records, so lists can say who is recording",
+        "tags": [
+          "Meetings"
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingController_clearLiveRecording_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller’s phone stopped recording these minutes",
         "tags": [
           "Meetings"
         ]
@@ -11948,6 +12064,63 @@
         ]
       }
     },
+    "/v1/tasks/{id}/share": {
+      "post": {
+        "description": "The chat + sheet's Task row (#5772). Any member who can read the task (its assignee, a `tasks:manage` holder, or a follower) may link it; the card is sent as them, and channel access is checked as for any message.",
+        "operationId": "TaskController_share_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareTaskToChatDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareTaskToChatResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post an existing task's card into a chat channel",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
     "/v1/tasks/{id}/status": {
       "patch": {
         "operationId": "TaskController_updateStatus_v1",
@@ -12798,6 +12971,91 @@
         ]
       }
     },
+    "/v1/ai/suggestions/{id}/next-agenda": {
+      "post": {
+        "operationId": "AiSuggestionController_sendToNextAgenda_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendToNextAgendaResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). It goes onto the next upcoming meeting with the minutes’ audience and type when the caller may edit it; otherwise that meeting offers it under Suggested; with no such meeting yet, it waits for one to be created (30 days at most).",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
+    "/v1/ai/suggestions/{id}/next-agenda/undo": {
+      "post": {
+        "operationId": "AiSuggestionController_undoSendToNextAgenda_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Undo Add to next meeting’s agenda: takes the item back off and puts the suggestion back as it was (#5790).",
+        "tags": [
+          "AI suggestions"
+        ]
+      }
+    },
     "/v1/ai/suggestions/decide": {
       "post": {
         "operationId": "AiSuggestionController_decide_v1",
@@ -13559,7 +13817,7 @@
             "bearer": []
           }
         ],
-        "summary": "List the chapter's groups with their members: manual ones, then pledge classes and class years that have members",
+        "summary": "List the chapter's groups with their members: manual ones, then pledge classes, class years and majors that have members",
         "tags": [
           "Groups"
         ]
@@ -17045,6 +17303,44 @@
           }
         ],
         "summary": "Get what needs the caller and what they made",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
+    "/v1/activity/now": {
+      "get": {
+        "description": "The Now card on Chat, Activity and the event (`spec/behavior/activity.md` § Now). An event is on from when its check-in opens until its end, whether or not the caller checked in. Listed when it invites the caller and requires them, they checked in to it, or they made it, and every event on for a holder of `events:update`; never one the caller is excused from. The one they checked in to first, then the latest start, at most 5. Rows are the shape of `coming_up`. Its own small read, so a screen that shows only Now does not read the whole page. Empty while the chapter has Events off.",
+        "operationId": "ActivityController_getNow_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityNowDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the events on right now for the caller",
         "tags": [
           "Activity"
         ]
@@ -28968,6 +29264,16 @@
             "type": "string",
             "nullable": true,
             "description": "The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR."
+          },
+          "started": {
+            "type": "boolean",
+            "description": "Anything is in the minutes yet: a written section, someone’s notes, or a recording. Always true once posted."
+          },
+          "recording_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who is recording the meeting on their phone right now (heard from in the last few minutes). Null when nobody is."
           }
         },
         "required": [
@@ -28986,7 +29292,37 @@
           "decision_count",
           "action_item_count",
           "recorded",
-          "gist"
+          "gist",
+          "started",
+          "recording_by"
+        ]
+      },
+      "MeetingLiveRecordingDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Who is recording."
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "meeting_id",
+          "event_id",
+          "user_id",
+          "started_at"
         ]
       },
       "MeetingTemplateDto": {
@@ -29437,7 +29773,7 @@
           "event_id": {
             "type": "string",
             "format": "uuid",
-            "description": "The meeting’s event. Send this or new_event."
+            "description": "The meeting’s event. Send this, new_event, or neither: with neither the minutes start with no meeting, readable by their author alone, and are linked to one (POST /v1/meetings/{id}/event) before they can be posted."
           },
           "new_event": {
             "description": "Make an event for a meeting that has none: nobody required, no points, and no new-event push.",
@@ -31142,7 +31478,7 @@
           "audience_group_id": {
             "type": "string",
             "format": "uuid",
-            "description": "With `audience: \"everyone\"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`."
+            "description": "With `audience: \"everyone\"` only (2026-11-18): just the active members of this chapter group (manual, pledge class, class year or major) get a copy. An empty group is a 400. Not with `audience_role_id`."
           },
           "audience_tier_id": {
             "type": "string",
@@ -31439,6 +31775,37 @@
           "followed_by",
           "created_at",
           "photos"
+        ]
+      },
+      "ShareTaskToChatDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel to post the card in."
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-generated idempotency key, reconciling the optimistic placeholder."
+          }
+        },
+        "required": [
+          "channel_id",
+          "client_message_id"
+        ]
+      },
+      "ShareTaskToChatResponseDto": {
+        "type": "object",
+        "properties": {
+          "card_posted": {
+            "type": "boolean",
+            "description": "True once the card is in the channel. The route answers 4xx instead of `false` when it could not post."
+          }
+        },
+        "required": [
+          "card_posted"
         ]
       },
       "UpdateTaskDto": {
@@ -31866,7 +32233,7 @@
           "group_id": {
             "type": "string",
             "format": "uuid",
-            "description": "Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400."
+            "description": "Only this chapter group’s active members (manual, pledge class, class year or major) may claim it. An empty group is a 400."
           },
           "tier_id": {
             "type": "string",
@@ -32572,6 +32939,65 @@
           }
         }
       },
+      "NextAgendaMeetingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "start_time"
+        ]
+      },
+      "SendToNextAgendaResponseDto": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "placed",
+              "offered",
+              "waiting"
+            ],
+            "description": "`placed`: on `meeting`’s agenda. `offered`: under Suggested on `meeting` (the caller can’t edit it, or its agenda is full). `waiting`: no such meeting yet; it goes onto the next one created, for 30 days."
+          },
+          "meeting": {
+            "nullable": true,
+            "description": "Where it went; null while it waits.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NextAgendaMeetingDto"
+              }
+            ]
+          },
+          "source_name": {
+            "type": "string",
+            "description": "The name of the minutes’ own meeting, for “the next Chapter Meeting”."
+          },
+          "text": {
+            "type": "string",
+            "description": "The words, as the agenda holds them."
+          }
+        },
+        "required": [
+          "outcome",
+          "meeting",
+          "source_name",
+          "text"
+        ]
+      },
       "AiSuggestionDecideItemDto": {
         "type": "object",
         "properties": {
@@ -33219,13 +33645,14 @@
             "enum": [
               "manual",
               "pledge_class",
-              "class_year"
+              "class_year",
+              "major"
             ],
-            "description": "`manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change."
+            "description": "`manual`: an officer picks its members. `pledge_class`, `class_year` and `major`: Frapp keeps one per pledge class, per graduation year and per major (matched ignoring case and spacing), and its members follow the members’ own data; only its color and ping switch can change. A `class_year` or `major` group can’t go on a channel list or be what a task is from: members set their own."
           },
           "name": {
             "type": "string",
-            "description": "The group's name, which `@` mentions it. An automatic group's is its pledge class's, or \"Class of\" and the year."
+            "description": "The group's name, which `@` mentions it. An automatic group's is its pledge class's, \"Class of\" and the year, or the major as most of its members write it."
           },
           "color": {
             "type": "string",
@@ -33246,6 +33673,11 @@
             "type": "number",
             "nullable": true,
             "description": "The graduation year a `class_year` group follows."
+          },
+          "major_key": {
+            "type": "string",
+            "nullable": true,
+            "description": "The major a `major` group follows, folded: trimmed, spacing collapsed, lower case."
           },
           "member_ids": {
             "description": "The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers.",
@@ -33273,6 +33705,7 @@
           "mentionable",
           "pledge_class_id",
           "class_year",
+          "major_key",
           "member_ids",
           "created_at",
           "updated_at"
@@ -33327,7 +33760,7 @@
           "name": {
             "type": "string",
             "maxLength": 80,
-            "description": "A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here."
+            "description": "A manual group's new name, under the same rules as a new one. An automatic group's name follows its class, year or major and is refused here."
           },
           "color": {
             "type": "string",
@@ -35573,6 +36006,12 @@
             "nullable": true,
             "description": "Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed."
           },
+          "checked_in_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the caller checked in, read with `checked_in`. Null when they have not, when it was not read, and when the attendance row has no time."
+          },
           "created_by": {
             "type": "string",
             "format": "uuid",
@@ -35617,6 +36056,7 @@
           "check_in_needs_location",
           "check_in_needs_code",
           "checked_in",
+          "checked_in_at",
           "created_by",
           "progress",
           "created_at",
@@ -36064,6 +36504,21 @@
           "unavailable",
           "week",
           "unread_since"
+        ]
+      },
+      "ActivityNowDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "description": "Events on right now (from when check-in opens until the end, whether or not the caller checked in) that are the caller’s to see as on: invited and required of them, checked in to, or made by them, and every event on for a holder of `events:update`; never one the caller is excused from. `checked_in` and `checked_in_at` come from their attendance row: present or late counts as checked in. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEventDto"
+            }
+          }
+        },
+        "required": [
+          "events"
         ]
       },
       "ActivityArchiveDto": {
@@ -39385,6 +39840,24 @@
           "user_id"
         ]
       },
+      "AgendaSuggestionFromMinutesDto": {
+        "type": "object",
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When that meeting started."
+          }
+        },
+        "required": [
+          "meeting_id",
+          "start_time"
+        ]
+      },
       "AgendaSuggestionDto": {
         "type": "object",
         "properties": {
@@ -39396,9 +39869,10 @@
             "type": "string",
             "enum": [
               "tabled",
+              "minutes",
               "ai"
             ],
-            "description": "`tabled`: a matter earlier minutes of a meeting with the same audience tabled. `ai`: an item the model suggested."
+            "description": "`tabled`: a matter earlier minutes of a meeting with the same audience tabled. `minutes`: an action item those minutes sent to the next meeting’s agenda instead of making it a task. `ai`: an item the model suggested."
           },
           "text": {
             "type": "string",
@@ -39406,11 +39880,21 @@
           },
           "tabled_from": {
             "nullable": true,
-            "description": "Where a tabled matter was first tabled; null for `ai`.",
+            "description": "Where a tabled matter was first tabled; null for any other kind.",
             "type": "object",
             "allOf": [
               {
                 "$ref": "#/components/schemas/EventAgendaTabledFromDto"
+              }
+            ]
+          },
+          "from_minutes": {
+            "nullable": true,
+            "description": "The minutes a `minutes` item was sent from, for “From the minutes of {day}”; null for any other kind.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AgendaSuggestionFromMinutesDto"
               }
             ]
           },
@@ -39431,6 +39915,7 @@
           "kind",
           "text",
           "tabled_from",
+          "from_minutes",
           "source_meeting_id",
           "reason"
         ]

@@ -42,6 +42,11 @@ import {
   useKeptDraftKeys,
 } from "@repo/hooks/kept-drafts";
 import { drawnText, screenText } from "@/test/screen-text";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 
 /**
  * s06, rendered: the Calendar's month (`app/(app)/events.tsx`) and the Day
@@ -298,6 +303,7 @@ afterEach(() => {
   act(() => {
     for (const tree of mounted.splice(0)) tree.unmount();
   });
+  dismissItemMenu();
   vi.useRealTimers();
 });
 
@@ -979,18 +985,40 @@ describe("Calendar long-press menus", () => {
     );
   });
 
-  it("asks a repeating event's Delete this one or all upcoming", () => {
+  it("asks a repeating event's Delete this one or all upcoming", async () => {
     permissions = ["*"];
     events = [{ ...EVENT, recurrence_rule: "WEEKLY", parent_event_id: null }];
     const tree = render();
     openMenu(eventRow(tree));
     pick(tree, "Delete");
-    const [, , buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
-    expect((buttons as AlertButton[]).map((button) => button.text)).toEqual([
-      SERIES_SCOPE_COPY.thisEvent,
-      SERIES_SCOPE_COPY.allUpcoming,
-      "Cancel",
+    expect(Alert.alert).not.toHaveBeenCalled();
+    const menu = currentItemMenu()!;
+    expect(menu.title).toBe(SERIES_SCOPE_COPY.deleteTitle);
+    expect(menu.message).toBe(SERIES_SCOPE_COPY.deleteMessage);
+    // Only the every-upcoming answer is red.
+    expect(
+      menu.actions.map((action) => [action.label, !!action.destructive]),
+    ).toEqual([
+      [SERIES_SCOPE_COPY.thisEvent, false],
+      [SERIES_SCOPE_COPY.allUpcoming, true],
     ]);
+    expect(deleteEvent).not.toHaveBeenCalled();
+    await act(async () => pickItemMenuAction(SERIES_SCOPE_COPY.allUpcoming));
+    expect(deleteEvent).toHaveBeenCalledWith(
+      { id: "evt-1", scope: "series" },
+      expect.any(Object),
+    );
+  });
+
+  it("deletes nothing when a repeating event's question is dismissed", async () => {
+    permissions = ["*"];
+    events = [{ ...EVENT, recurrence_rule: "WEEKLY", parent_event_id: null }];
+    const tree = render();
+    openMenu(eventRow(tree));
+    pick(tree, "Delete");
+    await act(async () => dismissItemMenu());
+    expect(currentItemMenu()).toBeNull();
+    expect(deleteEvent).not.toHaveBeenCalled();
   });
 
   it("offers a member their own task's Mark done, and an officer's two separate tasks none", () => {

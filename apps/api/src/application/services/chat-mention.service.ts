@@ -487,7 +487,11 @@ export function mentionRoleViews(
     });
   views.push(
     ...mentionTierViews(sets.tiers ?? [], roles, holders),
-    ...mentionGroupViews(sets.groups ?? [], sets.memberships ?? []),
+    ...mentionGroupViews(
+      sets.groups ?? [],
+      sets.memberships ?? [],
+      namesMajorsGiveWayTo(roles, members, sets),
+    ),
   );
   if (roles.length === 0) return views;
   const everyone = roles.find(isEveryoneRole);
@@ -555,17 +559,52 @@ function mentionTierViews(
 }
 
 /**
+ * The names, folded as a mention folds them, that a major's group gives way
+ * to (#5778): every role, tier and other kind of group of the chapter, and
+ * every member's name and first name. A member types their own major, so
+ * without this anyone could join an officer role's pings by saving its name
+ * ("Exec Board"), or take a hand-typed `@Art` from a member named Art. A
+ * major named like one of these isn't a mention target; its group still
+ * lists, and the other set keeps the name.
+ */
+function namesMajorsGiveWayTo(
+  roles: readonly Role[],
+  members: readonly ChapterMemberIdentity[],
+  sets: Partial<MentionSets>,
+): ReadonlySet<string> {
+  const names = [
+    ...roles.map((role) => role.name),
+    ...(sets.tiers ?? []).map((tier) => tier.name),
+    ...(sets.groups ?? [])
+      .filter((group) => group.kind !== 'major')
+      .map((group) => group.name),
+    ...members.flatMap((member) => {
+      const name = member.display_name;
+      return [name, name.trim().split(/\s+/)[0] ?? ''];
+    }),
+  ];
+  return new Set(names.map(foldMentionName).filter((name) => name.length > 0));
+}
+
+/**
  * Each group as a mention (#4076): it reaches the group's members now, as
  * `chapter_group_memberships` reads them, with the group's own switch.
- * Manual groups first, then pledge classes and class years.
+ * Manual groups first, then pledge classes, class years and majors. A major
+ * named like a role, tier, other group or member is left out
+ * ({@link namesMajorsGiveWayTo}).
  */
 function mentionGroupViews(
   groups: readonly ChapterGroup[],
   memberships: readonly ChapterGroupMembership[],
+  taken: ReadonlySet<string> = new Set(),
 ): MentionRoleView[] {
   return (
     withMembers(
-      groups.filter((group) => nameIsFree(group.name)),
+      groups.filter(
+        (group) =>
+          nameIsFree(group.name) &&
+          !(group.kind === 'major' && taken.has(foldMentionName(group.name))),
+      ),
       memberships,
     )
       // An automatic group nobody is in (a class not yet given members) is

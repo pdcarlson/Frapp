@@ -172,7 +172,7 @@ Paul and Shawn, 2026-11-11 (#4076): a tier's name is a mention. `@<tier name>` r
 
 ### Groups are not roles
 
-A group ([`members.md` § Groups](members.md#groups)) is a named set of members with no permissions, kept apart from roles in its own table so that nothing granting access can be attached to one. `groups:manage` manages them. A group can stand on a channel's who-can-see and who-can-post lists (`group:<id>`), which is the one thing it opens; so once a list names one, changing its members or deleting it also needs `channels:manage`. A class year's group can't stand on a list, since members set their own graduation year.
+A group ([`members.md` § Groups](members.md#groups)) is a named set of members with no permissions, kept apart from roles in its own table so that nothing granting access can be attached to one. `groups:manage` manages them. A group can stand on a channel's who-can-see and who-can-post lists (`group:<id>`), which is the one thing it opens; so once a list names one, changing its members or deleting it also needs `channels:manage`. A class year's or a major's group can't stand on a list, since members set their own graduation year and major (#5778).
 
 ## Rank
 

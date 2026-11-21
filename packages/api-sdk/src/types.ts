@@ -2506,8 +2506,25 @@ export interface paths {
         /** Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts */
         get: operations["MeetingController_list_v1"];
         put?: never;
-        /** Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist */
+        /** Start minutes for a meeting’s event, for a meeting not on the calendar (new_event), or with no meeting yet (neither). 409 `meeting.already_started` names the minutes that exist */
         post: operations["MeetingController_start_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/live-recordings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Meetings a phone is recording right now, whose events the caller can see: who is recording, since when, and the event */
+        get: operations["MeetingController_liveRecordings_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2577,9 +2594,27 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
+        /** Link minutes that have no event (started with no meeting, or whose event was deleted) to one, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
         post: operations["MeetingController_linkEvent_v1"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/live-recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** The caller’s phone is recording these minutes: sent when it starts and every minute while it records, so lists can say who is recording */
+        put: operations["MeetingController_markLiveRecording_v1"];
+        post?: never;
+        /** The caller’s phone stopped recording these minutes */
+        delete: operations["MeetingController_clearLiveRecording_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3561,6 +3596,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tasks/{id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post an existing task's card into a chat channel
+         * @description The chat + sheet's Task row (#5772). Any member who can read the task (its assignee, a `tasks:manage` holder, or a follower) may link it; the card is sent as them, and channel access is checked as for any message.
+         */
+        post: operations["TaskController_share_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tasks/{id}/status": {
         parameters: {
             query?: never;
@@ -3817,6 +3872,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/suggestions/{id}/next-agenda": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). It goes onto the next upcoming meeting with the minutes’ audience and type when the caller may edit it; otherwise that meeting offers it under Suggested; with no such meeting yet, it waits for one to be created (30 days at most). */
+        post: operations["AiSuggestionController_sendToNextAgenda_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/next-agenda/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Add to next meeting’s agenda: takes the item back off and puts the suggestion back as it was (#5790). */
+        post: operations["AiSuggestionController_undoSendToNextAgenda_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/suggestions/decide": {
         parameters: {
             query?: never;
@@ -4033,7 +4122,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the chapter's groups with their members: manual ones, then pledge classes and class years that have members */
+        /** List the chapter's groups with their members: manual ones, then pledge classes, class years and majors that have members */
         get: operations["ChapterGroupController_list_v1"];
         put?: never;
         /** Make a group and, optionally, pick its members */
@@ -5004,6 +5093,26 @@ export interface paths {
          * @description The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned (`task_items` counts a task for everyone once; `tasks` is each copy, for older builds); a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the events on right now for the caller
+         * @description The Now card on Chat, Activity and the event (`spec/behavior/activity.md` § Now). An event is on from when its check-in opens until its end, whether or not the caller checked in. Listed when it invites the caller and requires them, they checked in to it, or they made it, and every event on for a holder of `events:update`; never one the caller is excused from. The one they checked in to first, then the latest start, at most 5. Rows are the shape of `coming_up`. Its own small read, so a screen that shows only Now does not read the whole page. Empty while the chapter has Events off.
+         */
+        get: operations["ActivityController_getNow_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9068,6 +9177,26 @@ export interface components {
             recorded: boolean;
             /** @description The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR. */
             gist: string | null;
+            /** @description Anything is in the minutes yet: a written section, someone’s notes, or a recording. Always true once posted. */
+            started: boolean;
+            /**
+             * Format: uuid
+             * @description Who is recording the meeting on their phone right now (heard from in the last few minutes). Null when nobody is.
+             */
+            recording_by: string | null;
+        };
+        MeetingLiveRecordingDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /**
+             * Format: uuid
+             * @description Who is recording.
+             */
+            user_id: string;
+            /** Format: date-time */
+            started_at: string;
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
@@ -9198,7 +9327,7 @@ export interface components {
             other_label?: string | null;
             /**
              * Format: uuid
-             * @description The meeting’s event. Send this or new_event.
+             * @description The meeting’s event. Send this, new_event, or neither: with neither the minutes start with no meeting, readable by their author alone, and are linked to one (POST /v1/meetings/{id}/event) before they can be posted.
              */
             event_id?: string;
             /** @description Make an event for a meeting that has none: nobody required, no points, and no new-event push. */
@@ -9779,7 +9908,7 @@ export interface components {
             audience_role_id?: string;
             /**
              * Format: uuid
-             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`.
+             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class, class year or major) get a copy. An empty group is a 400. Not with `audience_role_id`.
              */
             audience_group_id?: string;
             /**
@@ -9906,6 +10035,22 @@ export interface components {
             photos: components["schemas"]["TaskPhotoDto"][];
             /** @description On a task for everyone: its group, as task reads carry it (#4295 step 3). */
             group?: components["schemas"]["TaskGroupSummaryDto"];
+        };
+        ShareTaskToChatDto: {
+            /**
+             * Format: uuid
+             * @description The channel to post the card in.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Client-generated idempotency key, reconciling the optimistic placeholder.
+             */
+            client_message_id: string;
+        };
+        ShareTaskToChatResponseDto: {
+            /** @description True once the card is in the channel. The route answers 4xx instead of `false` when it could not post. */
+            card_posted: boolean;
         };
         UpdateTaskDto: {
             title?: string;
@@ -10070,7 +10215,7 @@ export interface components {
             role_id?: string;
             /**
              * Format: uuid
-             * @description Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400.
+             * @description Only this chapter group’s active members (manual, pledge class, class year or major) may claim it. An empty group is a 400.
              */
             group_id?: string;
             /**
@@ -10339,6 +10484,26 @@ export interface components {
              */
             reason?: "already_doing";
         };
+        NextAgendaMeetingDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            start_time: string;
+        };
+        SendToNextAgendaResponseDto: {
+            /**
+             * @description `placed`: on `meeting`’s agenda. `offered`: under Suggested on `meeting` (the caller can’t edit it, or its agenda is full). `waiting`: no such meeting yet; it goes onto the next one created, for 30 days.
+             * @enum {string}
+             */
+            outcome: "placed" | "offered" | "waiting";
+            /** @description Where it went; null while it waits. */
+            meeting: components["schemas"]["NextAgendaMeetingDto"] | null;
+            /** @description The name of the minutes’ own meeting, for “the next Chapter Meeting”. */
+            source_name: string;
+            /** @description The words, as the agenda holds them. */
+            text: string;
+        };
         AiSuggestionDecideItemDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
@@ -10561,11 +10726,11 @@ export interface components {
             /** Format: uuid */
             chapter_id: string;
             /**
-             * @description `manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change.
+             * @description `manual`: an officer picks its members. `pledge_class`, `class_year` and `major`: Frapp keeps one per pledge class, per graduation year and per major (matched ignoring case and spacing), and its members follow the members’ own data; only its color and ping switch can change. A `class_year` or `major` group can’t go on a channel list or be what a task is from: members set their own.
              * @enum {string}
              */
-            kind: "manual" | "pledge_class" | "class_year";
-            /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, or "Class of" and the year. */
+            kind: "manual" | "pledge_class" | "class_year" | "major";
+            /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, "Class of" and the year, or the major as most of its members write it. */
             name: string;
             /** @description One of the role palette colors, or null. */
             color: string | null;
@@ -10578,6 +10743,8 @@ export interface components {
             pledge_class_id: string | null;
             /** @description The graduation year a `class_year` group follows. */
             class_year: number | null;
+            /** @description The major a `major` group follows, folded: trimmed, spacing collapsed, lower case. */
+            major_key: string | null;
             /** @description The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers. */
             member_ids: string[];
             /** Format: date-time */
@@ -10599,7 +10766,7 @@ export interface components {
             member_ids?: string[];
         };
         UpdateChapterGroupDto: {
-            /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here. */
+            /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class, year or major and is refused here. */
             name?: string;
             /**
              * @description One of the role palette colors, in any letter case. Null clears it.
@@ -11441,6 +11608,11 @@ export interface components {
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
             /**
+             * Format: date-time
+             * @description When the caller checked in, read with `checked_in`. Null when they have not, when it was not read, and when the attendance row has no time.
+             */
+            checked_in_at: string | null;
+            /**
              * Format: uuid
              * @description Who made it. Null for an event made before makers were recorded (2026-11-11).
              */
@@ -11617,6 +11789,10 @@ export interface components {
              * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
              */
             unread_since: string | null;
+        };
+        ActivityNowDto: {
+            /** @description Events on right now (from when check-in opens until the end, whether or not the caller checked in) that are the caller’s to see as on: invited and required of them, checked in to, or made by them, and every event on for a holder of `events:update`; never one the caller is excused from. `checked_in` and `checked_in_at` come from their attendance row: present or late counts as checked in. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off. */
+            events: components["schemas"]["ActivityEventDto"][];
         };
         ActivityArchiveDto: {
             /** @description Events that invited the caller whose check-in has closed (15 minutes after the end), ending in the last 30 days and starting after the caller joined, newest first, at most 25. Each meeting of a series is its own row. `checked_in` says whether the caller was marked present or late; `check_in_open` is always false. */
@@ -12848,18 +13024,29 @@ export interface components {
              */
             user_id: string;
         };
+        AgendaSuggestionFromMinutesDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /**
+             * Format: date-time
+             * @description When that meeting started.
+             */
+            start_time: string;
+        };
         AgendaSuggestionDto: {
             /** Format: uuid */
             id: string;
             /**
-             * @description `tabled`: a matter earlier minutes of a meeting with the same audience tabled. `ai`: an item the model suggested.
+             * @description `tabled`: a matter earlier minutes of a meeting with the same audience tabled. `minutes`: an action item those minutes sent to the next meeting’s agenda instead of making it a task. `ai`: an item the model suggested.
              * @enum {string}
              */
-            kind: "tabled" | "ai";
+            kind: "tabled" | "minutes" | "ai";
             /** @description The item as it would go on the agenda. */
             text: string;
-            /** @description Where a tabled matter was first tabled; null for `ai`. */
+            /** @description Where a tabled matter was first tabled; null for any other kind. */
             tabled_from: components["schemas"]["EventAgendaTabledFromDto"] | null;
+            /** @description The minutes a `minutes` item was sent from, for “From the minutes of {day}”; null for any other kind. */
+            from_minutes: components["schemas"]["AgendaSuggestionFromMinutesDto"] | null;
             /**
              * Format: uuid
              * @description The posted minutes it was drawn from (for a tabled matter, the minutes that tabled it most recently), for the link under it.
@@ -18881,6 +19068,34 @@ export interface operations {
             };
         };
     };
+    MeetingController_liveRecordings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingLiveRecordingDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     MeetingController_getTemplate_v1: {
         parameters: {
             query?: never;
@@ -19089,6 +19304,62 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MeetingDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_markLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_clearLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -21245,6 +21516,40 @@ export interface operations {
             };
         };
     };
+    TaskController_share_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareTaskToChatDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareTaskToChatResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     TaskController_updateStatus_v1: {
         parameters: {
             query?: never;
@@ -21769,6 +22074,64 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AiSuggestionDecisionDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_sendToNextAgenda_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendToNextAgendaResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_undoSendToNextAgenda_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -24593,6 +24956,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityNowDto"];
+                };
             };
             /** @description Error */
             default: {

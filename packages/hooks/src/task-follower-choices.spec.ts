@@ -43,6 +43,12 @@ const groups = [
     kind: "class_year",
     member_ids: ["u-viewer"],
   },
+  {
+    id: "g-music",
+    name: "Music",
+    kind: "major",
+    member_ids: ["u-viewer"],
+  },
 ];
 const directory = buildWhoDirectory({
   members: [

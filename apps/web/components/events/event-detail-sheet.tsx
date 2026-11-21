@@ -1,5 +1,6 @@
 "use client";
 
+import { EventNowPill } from "./now-card";
 import {
   agendaCheckOffOpen,
   can,
@@ -245,8 +246,7 @@ export function EventDetailSheet({
     const from = Date.parse(String(resolvedEvent?.start_time ?? ""));
     return (
       series.find(
-        (occurrence) =>
-          Date.parse(String(occurrence.start_time ?? "")) > from,
+        (occurrence) => Date.parse(String(occurrence.start_time ?? "")) > from,
       ) ?? null
     );
   }, [series, eventId, resolvedEvent?.start_time]);
@@ -444,6 +444,12 @@ export function EventDetailSheet({
         </PanelHeader>
         {/* `gap-0`: the blocks below carry their own top margins. */}
         <PanelBody className="gap-0">
+          {/* Where it stands, first (#5777): on now, or ended today. */}
+          {resolvedEvent ? (
+            <div className="mt-4 flex">
+              <EventNowPill event={resolvedEvent} now={now} />
+            </div>
+          ) : null}
           {usingPreviewData ? (
             <div className="mt-5 flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -497,7 +503,10 @@ export function EventDetailSheet({
                     */}
                     {nextOccurrence && onSelectOccurrence ? (
                       <>
-                        <span aria-hidden="true" className="text-muted-foreground">
+                        <span
+                          aria-hidden="true"
+                          className="text-muted-foreground"
+                        >
                           {" · "}
                         </span>
                         <button
@@ -534,7 +543,10 @@ export function EventDetailSheet({
                   )}
                 </DetailRow>
                 {points ? (
-                  <DetailRow glyph="points" label={EVENT_FORM_ROW_LABELS.points}>
+                  <DetailRow
+                    glyph="points"
+                    label={EVENT_FORM_ROW_LABELS.points}
+                  >
                     {points}
                   </DetailRow>
                 ) : null}
@@ -609,7 +621,9 @@ export function EventDetailSheet({
                   start={resolvedEvent?.start_time}
                   end={resolvedEvent?.end_time}
                   opensMinutes={resolvedEvent?.check_in_opens_minutes}
-                  writeAsk={excuseAsk?.eventId === eventId ? excuseAsk.count : 0}
+                  writeAsk={
+                    excuseAsk?.eventId === eventId ? excuseAsk.count : 0
+                  }
                 />
               ) : null}
             </section>
@@ -731,10 +745,7 @@ function DetailRow({
     >
       <EventFormGlyph
         name={glyph}
-        className={cn(
-          "text-muted-foreground",
-          align === "start" && "mt-0.5",
-        )}
+        className={cn("text-muted-foreground", align === "start" && "mt-0.5")}
       />
       <dt className="truncate text-sm text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-sm text-foreground">{children}</dd>

@@ -61,12 +61,29 @@ export const TWO_LINE_ROW_WEIGHT = 4 / 3;
 export function fitsContent(options: readonly SheetOption[]): boolean {
   const height = options.reduce(
     (sum, option) =>
-      sum + (option.detail ? TWO_LINE_ROW_WEIGHT : 1) + (option.heading ? 1 : 0),
+      sum +
+      (option.detail ? TWO_LINE_ROW_WEIGHT : 1) +
+      (option.heading ? 1 : 0),
     0,
   );
   return height <= MAX_ROWS_SIZED_TO_CONTENT + 1e-9;
 }
 const LONG_LIST_SNAP_POINTS = ["70%"];
+
+/**
+ * The sheet props for a list that {@link fitsContent} sized: dynamic sizing
+ * for one that fits, else the fixed {@link LONG_LIST_SNAP_POINTS} detent with
+ * a scroller inside. Shared by every pick-one sheet (the event form's Type
+ * sheet too), so they all stop growing at the same height.
+ */
+export function pickSheetSizing(fits: boolean) {
+  return fits
+    ? ({ enableDynamicSizing: true } as const)
+    : ({
+        enableDynamicSizing: false,
+        snapPoints: LONG_LIST_SNAP_POINTS,
+      } as const);
+}
 
 /**
  * One pick from a short list, in a sheet sized to it (#5278): a titled list
@@ -151,9 +168,7 @@ export const OptionSheet = forwardRef<
     <BottomSheetModal
       ref={ref}
       stackBehavior={SHEET_STACK_BEHAVIOR}
-      {...(fits
-        ? { enableDynamicSizing: true }
-        : { enableDynamicSizing: false, snapPoints: LONG_LIST_SNAP_POINTS })}
+      {...pickSheetSizing(fits)}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}

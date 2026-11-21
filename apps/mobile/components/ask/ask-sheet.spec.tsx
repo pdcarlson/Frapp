@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { ActionSheetIOS } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRouter } from "expo-router";
@@ -167,6 +166,14 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import { FrappCrest } from "@/components/frapp-crest";
 import { AskSheet } from "./ask-sheet";
+import {
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
+
+afterEach(() => {
+  dismissItemMenu();
+});
 
 const modal = { present: vi.fn(), dismiss: vi.fn() };
 
@@ -747,18 +754,13 @@ describe("AskSheet", () => {
       expect(text).toContain("Came to chapter");
       expect(text).toContain("Ana Ruiz");
       // Dismiss lives in the card's ··· menu (#5148).
-      const sheetSpy = vi
-        .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-        .mockImplementation(() => undefined);
       const more = tree.root.findAll(
         (node) =>
           typeof node.type === "string" &&
           String(node.props.accessibilityLabel ?? "").startsWith("More: "),
       )[0]!;
       act(() => more.props.onPress());
-      const [options, pick] = sheetSpy.mock.calls.at(-1)!;
-      sheetSpy.mockRestore();
-      await act(async () => pick(options.options.indexOf(ACT_COPY.dismiss)));
+      await act(async () => pickItemMenuAction(ACT_COPY.dismiss));
       expect(hooks.resolveProposal).toHaveBeenCalledWith(
         "turn-3",
         expect.objectContaining({ kind: "cancelled" }),
@@ -1094,8 +1096,9 @@ describe("dictation (#5276)", () => {
     dictating.finish.mockReset();
     dictating.cancel.mockReset();
     dictating.clean.mockReset();
-    dictating.clean.mockImplementation(async (text: string) =>
-      text.replace(/^so um /, "").replace(/^./, (c) => c.toUpperCase()) + "?",
+    dictating.clean.mockImplementation(
+      async (text: string) =>
+        text.replace(/^so um /, "").replace(/^./, (c) => c.toUpperCase()) + "?",
     );
   });
   afterEach(() => {

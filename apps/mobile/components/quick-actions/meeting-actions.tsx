@@ -287,10 +287,11 @@ export function useMeetingQuickActions({
       value={choice}
       label={choice ? choiceLabel(choice, new Date(), inRoomId) : null}
       options={choices.options}
-      note={
-        choices.taken ? MEETING_START_COPY.takenNote(choices.taken.name) : null
-      }
       onChange={setChanged}
+      onOpen={(id) => {
+        minutesRef.current?.dismiss();
+        router.push({ pathname: "/minutes-details", params: { id } });
+      }}
     />
   ) : null;
 
@@ -383,9 +384,6 @@ const StartMinutesSheet = forwardRef<
         </Text>
         {/* The meeting comes first, so it is plain what a recording or
             notes attach to (Paul, 2026-11-17). */}
-        {pick ? (
-          <Text style={styles.label}>{MEETING_START_COPY.forMeeting}</Text>
-        ) : null}
         {pick}
         {problem ? (
           <Text accessibilityLiveRegion="polite" style={styles.problem}>
@@ -441,11 +439,6 @@ function createStyles(tokens: SignetTokens) {
     title: {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
-    },
-    label: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      marginBottom: -tokens.spacing.xs,
     },
     quiet: {
       alignItems: "center",

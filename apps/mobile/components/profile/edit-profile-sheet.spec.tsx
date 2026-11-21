@@ -20,6 +20,8 @@ let isPending = false;
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useUpdateUser: () => ({ mutate, isPending }),
+  usePermissionList: () => ["members:view"],
+  useChapterMajors: () => ["Mechanical Engineering", "Music"],
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -963,5 +965,55 @@ describe("EditProfileSheet opens at a field (#5280)", () => {
     const tree = renderAt("phone");
     settleOpen(tree);
     expect(focus.get("Phone")).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditProfileSheet — Major suggests the chapter's majors (#5778)", () => {
+  const suggestions = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.accessibilityLabel === "Majors in your chapter",
+    );
+
+  it("lists matching majors while Major has focus, and a tap takes one", () => {
+    const tree = render();
+    expect(suggestions(tree)).toHaveLength(0);
+    act(() => {
+      input(tree, "Major").props.onFocus();
+    });
+    type(tree, "Major", "mech");
+    const [list] = suggestions(tree);
+    expect(list).toBeDefined();
+    expect(screenText({ root: list } as unknown as ReactTestRenderer)).toContain(
+      "Mechanical Engineering",
+    );
+    expect(
+      screenText({ root: list } as unknown as ReactTestRenderer),
+    ).not.toContain("Music");
+    const row = list!.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        screenText({ root: node } as unknown as ReactTestRenderer) ===
+          "Mechanical Engineering",
+    );
+    act(() => {
+      row.props.onPress();
+    });
+    expect(input(tree, "Major").props.value).toBe("Mechanical Engineering");
+    // Now an exact match: nothing left to suggest.
+    expect(suggestions(tree)).toHaveLength(0);
+  });
+
+  it("hides the list when Major loses focus", () => {
+    const tree = render();
+    act(() => {
+      input(tree, "Major").props.onFocus();
+    });
+    expect(suggestions(tree)).toHaveLength(1);
+    act(() => {
+      input(tree, "Major").props.onBlur();
+    });
+    expect(suggestions(tree)).toHaveLength(0);
   });
 });

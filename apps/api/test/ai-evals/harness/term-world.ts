@@ -342,6 +342,7 @@ export function createTermWorld(
     mentionable: true,
     pledge_class_id: null,
     class_year: null,
+    major_key: null,
     created_at: stamp,
     updated_at: stamp,
     member_ids: ids.map(termId),

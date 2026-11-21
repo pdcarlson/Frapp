@@ -174,7 +174,7 @@ export class CreateTaskDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description:
-      'With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`.',
+      'With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class, class year or major) get a copy. An empty group is a 400. Not with `audience_role_id`.',
   })
   @IsOptional()
   @IsUUID()
@@ -858,3 +858,34 @@ export type CreateTaskResponseDtoExtraFields = AssertNever<
     keyof Task | 'card_posted' | 'photos' | 'group'
   >
 >;
+
+/**
+ * Post an existing task's card into a chat channel (#5772): the + sheet's
+ * Task row links a task the member can already read, the way Linear and
+ * GitHub unfurl an issue pasted into Slack.
+ */
+export class ShareTaskToChatDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The channel to post the card in.',
+  })
+  @IsUUID()
+  channel_id: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'Client-generated idempotency key, reconciling the optimistic placeholder.',
+  })
+  @IsUUID()
+  client_message_id: string;
+}
+
+/** Whether the linked task's card posted. */
+export class ShareTaskToChatResponseDto {
+  @ApiProperty({
+    description:
+      'True once the card is in the channel. The route answers 4xx instead of `false` when it could not post.',
+  })
+  card_posted: boolean;
+}

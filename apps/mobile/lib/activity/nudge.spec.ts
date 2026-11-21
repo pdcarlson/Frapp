@@ -48,6 +48,12 @@ describe("withoutWeekNext", () => {
     ).toEqual({ card: queue, tray: [] });
   });
 
+  it("leaves out an event the Now card holds (#5777)", () => {
+    expect(
+      withoutWeekNext({ card: event, tray: [queue] }, null, ["event-1"]),
+    ).toEqual({ card: queue, tray: [] });
+  });
+
   it("is nothing when there is no card", () => {
     expect(withoutWeekNext({ card: null, tray: [] }, null)).toBeNull();
     expect(withoutWeekNext(undefined, null)).toBeNull();

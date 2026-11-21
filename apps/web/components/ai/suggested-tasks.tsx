@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Flag,
+  ListPlus,
   MoreHorizontal,
   Pencil,
   X,
@@ -26,6 +27,8 @@ import {
   useMeetings,
   useMembers,
   useMyPermissions,
+  useSendAiSuggestionToNextAgenda,
+  useUndoAiSuggestionNextAgenda,
   existingTaskLine,
   useSimilarTasks,
   type AiSuggestion,
@@ -49,6 +52,7 @@ import {
   aiSuggestionRefusalLine,
   can,
   lastYearTaskLine,
+  nextAgendaOutcomeLines,
 } from "@repo/validation";
 
 import { Button } from "@/components/ui/button";
@@ -65,6 +69,8 @@ import {
   meetingHref,
 } from "@/components/meetings/meeting-copy";
 import { useToast } from "@/lib/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { ReportAiDialog } from "@/components/ai/report-ai";
 import {
   DropdownMenu,
@@ -225,6 +231,12 @@ export function SuggestedTasks({
   );
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
+  const toNextAgenda = useSendAiSuggestionToNextAgenda();
+  const undoNextAgenda = useUndoAiSuggestionNextAgenda();
+  const moduleGate = useChapterModuleGateState();
+  // The next meeting's Suggested list lives on events (#5790).
+  const eventsOn =
+    moduleGate.status === "ready" && moduleGate.isModuleEnabled("events");
   const decide = useDecideAiSuggestions();
   const { toast } = useToast();
   const [edits, setEdits] = useState<Record<string, RowEdits>>({});
@@ -372,6 +384,62 @@ export function SuggestedTasks({
     }
   }
 
+  /**
+   * Add to next meeting's agenda (#5790; Shawn, 2026-11-20): the action item
+   * goes onto the next meeting with the same people, or under Suggested there
+   * when the officer can't edit it, or waits for that meeting to be created.
+   * The toast says which, with Undo and a link to the meeting.
+   */
+  async function sendToNextAgenda(item: WaitingSuggestion) {
+    setBusyId(item.id);
+    try {
+      const outcome = await toNextAgenda.mutateAsync(item.id);
+      const lines = nextAgendaOutcomeLines(outcome);
+      toast({
+        title: lines.title,
+        description: outcome.meeting ? (
+          <span className="flex flex-col gap-1">
+            {lines.body ? <span>{lines.body}</span> : null}
+            <Link
+              href={`/events?event=${outcome.meeting.id}`}
+              className="w-fit underline underline-offset-2"
+            >
+              {AI_SUGGESTION_COPY.toAgendaOpen}
+            </Link>
+          </span>
+        ) : (
+          (lines.body ?? undefined)
+        ),
+        action: (
+          <ToastAction
+            altText={`${AI_SUGGESTION_COPY.undo}: ${item.task.title}`}
+            onClick={() =>
+              void undoNextAgenda.mutateAsync(item.id).then(
+                () => toast({ title: AI_SUGGESTION_COPY.undone }),
+                (error: unknown) =>
+                  toast({
+                    title: AI_SUGGESTION_COPY.undoFailed,
+                    description: suggestionRefusalLine(error),
+                    variant: "destructive",
+                  }),
+              )
+            }
+          >
+            {AI_SUGGESTION_COPY.undo}
+          </ToastAction>
+        ),
+      });
+    } catch (error) {
+      toast({
+        title: AI_SUGGESTION_COPY.toAgendaFailed,
+        description: suggestionRefusalLine(error),
+        variant: "destructive",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function acceptAllReady() {
     try {
       const decisions = ready.map((item) => ({
@@ -496,6 +564,13 @@ export function SuggestedTasks({
         onEdit={(patch) => editRow(current.id, patch)}
         onAccept={() => void acceptRow(current)}
         onDismiss={() => void dismissRow(current)}
+        onToAgenda={
+          eventsOn &&
+          current.source.type === "meeting" &&
+          !current.task.last_year_on
+            ? () => void sendToNextAgenda(current)
+            : undefined
+        }
         onAlreadyDoing={
           current.task.last_year_on
             ? () => void dismissRow(current, "already_doing")
@@ -549,6 +624,7 @@ function SuggestedTaskRow({
   onEdit,
   onAccept,
   onDismiss,
+  onToAgenda,
   onAlreadyDoing,
   existing,
   onSameTask,
@@ -570,6 +646,8 @@ function SuggestedTaskRow({
   onEdit: (patch: RowEdits) => void;
   onAccept: () => void;
   onDismiss: () => void;
+  /** From minutes: offer it on the next meeting's agenda instead (#5790). */
+  onToAgenda?: () => void;
   /** Only on a "this time last year" row: the chapter is already on it. */
   onAlreadyDoing?: () => void;
   /** The open task this suggestion reads like, until the officer says. */
@@ -698,6 +776,7 @@ function SuggestedTaskRow({
             item={item}
             disabled={disabled}
             onChange={onOpenForm}
+            onToAgenda={onToAgenda}
             onDismiss={onDismiss}
           />
         </div>
@@ -767,11 +846,13 @@ function SuggestionMenu({
   item,
   disabled,
   onChange,
+  onToAgenda,
   onDismiss,
 }: {
   item: WaitingSuggestion;
   disabled: boolean;
   onChange?: () => void;
+  onToAgenda?: () => void;
   onDismiss: () => void;
 }) {
   const [reporting, setReporting] = useState(false);
@@ -797,6 +878,12 @@ function SuggestionMenu({
             <DropdownMenuItem onSelect={onChange}>
               <Pencil className="h-4 w-4" aria-hidden="true" />
               {AI_SUGGESTION_COPY.change}
+            </DropdownMenuItem>
+          ) : null}
+          {onToAgenda ? (
+            <DropdownMenuItem onSelect={onToAgenda}>
+              <ListPlus className="h-4 w-4" aria-hidden="true" />
+              {AI_SUGGESTION_COPY.toAgenda}
             </DropdownMenuItem>
           ) : null}
           <DropdownMenuItem onSelect={onDismiss}>

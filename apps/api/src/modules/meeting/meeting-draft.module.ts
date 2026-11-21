@@ -33,6 +33,8 @@ import { AiRunsModule } from '../ai-runs/ai-runs.module';
 import { AiConsentModule } from '../ai-consent/ai-consent.module';
 import { MeetingModule } from './meeting.module';
 import { EventModule } from '../event/event.module';
+import { MEETING_NEXT_AGENDA_ITEM_REPOSITORY } from '#domain/repositories/meeting-next-agenda-item.repository.interface';
+import { SupabaseMeetingNextAgendaItemRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-next-agenda-item.repository';
 
 /**
  * Minutes drafted from notes (#4312): the first feature on the AI gateway
@@ -86,6 +88,11 @@ import { EventModule } from '../event/event.module';
     {
       provide: EVENT_AGENDA_SUGGESTION_REPOSITORY,
       useClass: SupabaseEventAgendaSuggestionRepository,
+    },
+    // What earlier minutes sent to the next meeting's agenda (#5790).
+    {
+      provide: MEETING_NEXT_AGENDA_ITEM_REPOSITORY,
+      useClass: SupabaseMeetingNextAgendaItemRepository,
     },
     { provide: ROLE_TIER_REPOSITORY, useClass: SupabaseRoleTierRepository },
     { provide: EVENT_TYPE_REPOSITORY, useClass: SupabaseEventTypeRepository },

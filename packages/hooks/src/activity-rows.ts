@@ -1,6 +1,6 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
-import { signUpLinkKind, taskGroupLabel } from "@repo/validation";
+import { eventOnAt, signUpLinkKind, taskGroupLabel } from "@repo/validation";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
   closesAtHasPassed,
@@ -891,7 +891,7 @@ export interface ActivityToDo {
    * closing time. A task with only a date is read as noon that day.
    */
   at: Date | null;
-  /** An event the member can check in to right now and hasn't. */
+  /** An event on now (`eventOnAt`) that the member can check in to and hasn't. */
   now: boolean;
   /** A task past its due date. */
   overdue: boolean;
@@ -930,7 +930,19 @@ export function activityToDos(
           (when) =>
             eventRow(event, needsCheckIn ? "needs" : "coming", now, when),
           parseInstant(event.start_time),
-          { now: needsCheckIn },
+          // Happening now only until its end, as the Now card and the
+          // event's pill say (#5777); check-in's grace after it still
+          // offers Check in under its day.
+          {
+            now:
+              needsCheckIn &&
+              eventOnAt(
+                event.start_time,
+                event.end_time,
+                event.check_in_opens_minutes,
+                now.getTime(),
+              ),
+          },
         );
       }),
     ...activity.needs_you.tasks.map((task) =>

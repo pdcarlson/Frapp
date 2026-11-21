@@ -271,14 +271,15 @@ the plan and the screens still to migrate are #5739. A site not yet migrated is 
   `Segmented` only for 2 to 4 short choices that stay visible; swatches only for a look (accent,
   background, density). Never a hand-drawn radio list, and never filter chips used as a form picker.
 - **lint** (partly) **Acting on a thing:** one action menu. Web: `RowMenu` (right-click plus the row's ⋯) and
-  `ActionMenuButton` (a header's ⋯), the same entries. Phone: the glass menu through `useItemMenu`, from
-  long-press and every ⋯. Most used first, at most three groups, Delete red and last and confirmed.
+  `ActionMenuButton` (a header's ⋯), the same entries. Phone: the glass menu, `useItemMenu` for a row's
+  long-press and `openItemMenu` from any other press (a ⋯, a value row, a repeating item's "this one or
+  all upcoming"). The phone has no other menu system: no iOS system sheet, no Android dialog list (Paul,
+  11-20: the system menus "take up almost the whole screen"). Most used first, at most three groups, Delete red and last and confirmed.
   Right-click and long-press are shortcuts, never the only way in; the screen's main action is a visible
   button, and a menu of one or two items becomes buttons. Never the iOS system action sheet, an Alert
   with three or more buttons, or a bottom sheet of actions. A chat message's long-press sheet with its
   reaction row is the one exception. Lint catches only a hand-drawn ⋯ icon or a `ui/context-menu`
-  import on web, and the iOS action sheet, `lib/action-menu` or an inline Alert of three or more buttons
-  on the phone; the rest of this rule is checked in review.
+  import on web, and `ActionSheetIOS` or an inline Alert of three or more buttons on the phone; the rest of this rule is checked in review.
 - **Settings:** web `SettingsGroup` and `SettingsRow` (`components/shared/settings-row.tsx`), phone
   `ListSection` and `ListRow`. A row is a label, at most one muted line, and one trailing thing: a switch,
   a value that opens the picker, or a chevron. **Settings save on their own** (Paul's pick, 11-20): a

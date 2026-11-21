@@ -4,7 +4,6 @@ import { useId, useState } from "react";
 import {
   addMinutesToTime,
   localClock,
-  localIsoDate,
   timeSpanMinutes,
 } from "@repo/formatting";
 import { FieldError } from "@/components/shared/short-form";
@@ -22,7 +21,6 @@ import {
   DEFAULT_MEETING_NAME,
   EVENT_NAME_MAX_LENGTH,
   NEW_MEETING_MINUTES,
-  meetingStartingNow,
 } from "@repo/validation";
 
 /** What a meeting with no event needs before its quiet event can be made. */
@@ -52,23 +50,18 @@ function localIso(date: string, time: string): string | null {
 }
 
 /**
- * The quiet event's start and end (`spec/behavior/meetings.md` § Writing
- * minutes by hand, #5219). Only the day is asked for: the event earns no
- * points and requires nobody, so its times feed nothing but the check-in
- * window, which only matters while the meeting is on. With no start typed, a
- * meeting today starts now (so members can check in while it runs), and an
- * earlier day takes the time the chapter's last event of the same name
- * started, or 7 PM. With no end, it runs an hour. An end earlier on the
- * clock than the start ran past midnight, up to {@link MAX_LENGTH_MINUTES}.
- *
- * `live: false` is for minutes already written (Link an event): their
- * meeting is over, so today is read like any other day, not as starting now.
+ * The quiet event Link a meeting's Add it to the calendar makes: its start
+ * and end (`spec/behavior/meetings.md` § Writing minutes by hand, #5219).
+ * Only the day is asked for: the event earns no points and requires nobody,
+ * so its times feed nothing but the check-in window. The minutes are already
+ * written, so the meeting is over: with no start typed, the day (today too)
+ * takes the time the chapter's last event of the same name started, or
+ * 7 PM. With no end, it runs an hour. An end earlier on the clock than the
+ * start ran past midnight, up to {@link MAX_LENGTH_MINUTES}.
  */
 export function offCalendarSpan(
   meeting: Pick<OffCalendarMeeting, "name" | "date" | "startTime" | "endTime">,
   events: EventTimes[],
-  now: Date,
-  { live = true }: { live?: boolean } = {},
 ):
   | { start_time: string; end_time: string }
   | { problem: string; field: "date" | "time" } {
@@ -85,10 +78,7 @@ export function offCalendarSpan(
     };
   }
   const start =
-    meeting.startTime ||
-    (live && meeting.date === localIsoDate(now)
-      ? localClock(new Date(meetingStartingNow(now).start_time))
-      : (lastStartOf(meeting.name, events) ?? EVENING_START));
+    meeting.startTime || (lastStartOf(meeting.name, events) ?? EVENING_START);
   const startIso = localIso(meeting.date, start);
   if (!startIso) {
     return {
@@ -125,8 +115,8 @@ function lastStartOf(name: string, events: EventTimes[]): string | null {
  * The questions a meeting off the calendar asks, in the order an officer
  * backlogging it thinks of them: what it was called, then which day. The
  * times wait behind "Add times", and who reads the minutes is one line
- * (Everyone) until changed. Starting minutes and Link an event (#4935) both
- * use it.
+ * (Everyone) until changed. Link a meeting's Add it to the calendar uses
+ * it (#4935).
  */
 export function OffCalendarMeetingFields({
   value,

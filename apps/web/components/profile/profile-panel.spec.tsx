@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => {
       serviceFailed: false,
     },
     permissions: ["members:view"] as string[],
+    majors: ["Mechanical Engineering", "Music", "Computer Science"],
     memberByUserId: vi.fn<(userId: string) => { data: unknown }>(() => ({
       data: undefined,
     })),
@@ -66,6 +67,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useUpdateUser: () => mocks.updateUser,
     useMyProfileStats: () => mocks.stats,
     usePermissionList: () => mocks.permissions,
+    useChapterMajors: () => mocks.majors,
     useMemberByUserId: (userId: string) => mocks.memberByUserId(userId),
   };
 });
@@ -254,6 +256,46 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
     render(<ProfilePanel />);
 
     expect(screen.getByText(/couldn't load your profile/i)).toBeInTheDocument();
+  });
+});
+
+describe("ProfilePanel — Major suggests the chapter's majors (#5778)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetQueries();
+  });
+
+  it("offers matching majors and saves the picked spelling", async () => {
+    render(<ProfilePanel />);
+    const major = screen.getByRole("combobox", { name: /major/i });
+    await userEvent.type(major, "mu");
+    const list = await screen.findByRole("listbox", {
+      name: "Majors in your chapter",
+    });
+    expect(
+      Array.from(list.querySelectorAll('[role="option"]')).map(
+        (option) => option.textContent,
+      ),
+    ).toEqual(["Music"]);
+    await userEvent.click(screen.getByRole("option", { name: "Music" }));
+    expect(major).toHaveValue("Music");
+    expect(screen.queryByRole("listbox")).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /save profile/i }),
+    );
+    await waitFor(() =>
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled(),
+    );
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0].major).toBe("Music");
+  });
+
+  it("still takes a major nobody has yet", async () => {
+    render(<ProfilePanel />);
+    const major = screen.getByRole("combobox", { name: /major/i });
+    await userEvent.type(major, "Industrial Systems");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(major).toHaveValue("Industrial Systems");
   });
 });
 

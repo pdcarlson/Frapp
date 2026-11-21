@@ -25,6 +25,9 @@ const groups = {
       member_ids: ['user-1', 'user-2'],
     },
     { id: 'g-2', kind: 'manual', name: 'House crew', member_ids: ['user-2'] },
+    // Dana's major's group (#5778): never named to the model, as her major
+    // isn't.
+    { id: 'g-3', kind: 'major', name: 'Physics', member_ids: ['user-1'] },
   ]),
 };
 
@@ -227,6 +230,15 @@ describe('roster', () => {
       'Dana Reyes: Treasurer',
     ]);
     expect(groups.list).toHaveBeenCalledWith('chapter-a');
+  });
+
+  it("doesn't find a major's group, which would say who has which major (#5778)", async () => {
+    await expect(
+      tool().run({ role: '', group: 'Physics' }, context),
+    ).resolves.toMatchObject({
+      sources: [],
+      note: expect.stringMatching(/^No group, class or class year/),
+    });
   });
 
   it('says so when no role or group has that name, or nobody fits', async () => {

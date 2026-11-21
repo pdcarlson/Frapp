@@ -117,6 +117,7 @@ import {
   MOBILE_SETUP_CHECKLIST_OMIT,
   SetupChecklistView,
 } from "@/components/chat/setup-checklist";
+import { NowCard } from "@/components/now-card";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { AwayCard } from "@/components/chat/away-card";
 import {
@@ -884,6 +885,9 @@ export default function ChatHomeScreen() {
         </View>
       }
     >
+      {/* What's on right now, above everything else (#5777): Up next only
+          ever looks ahead, so a meeting in progress lives here. */}
+      <NowCard />
       {awayCard}
       <UpNextStrip
         events={eventsQuery.data}

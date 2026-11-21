@@ -2,10 +2,23 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   AGENDA_SUGGESTION_KINDS,
   type AgendaSuggestion,
+  type AgendaSuggestionFromMinutes,
   type AgendaSuggestionKind,
   type AgendaSuggestionList,
 } from '@repo/validation';
 import { EventAgendaItemDto, EventAgendaTabledFromDto } from './event.dto';
+
+/** The minutes a `minutes` suggestion was sent from (#5790). */
+export class AgendaSuggestionFromMinutesDto implements AgendaSuggestionFromMinutes {
+  @ApiProperty({ format: 'uuid' })
+  meeting_id: string;
+
+  @ApiProperty({
+    format: 'date-time',
+    description: 'When that meeting started.',
+  })
+  start_time: string;
+}
 
 /** One suggestion under an event's agenda (#5534). */
 export class AgendaSuggestionDto implements AgendaSuggestion {
@@ -15,7 +28,7 @@ export class AgendaSuggestionDto implements AgendaSuggestion {
   @ApiProperty({
     enum: AGENDA_SUGGESTION_KINDS,
     description:
-      '`tabled`: a matter earlier minutes of a meeting with the same audience tabled. `ai`: an item the model suggested.',
+      '`tabled`: a matter earlier minutes of a meeting with the same audience tabled. `minutes`: an action item those minutes sent to the next meeting’s agenda instead of making it a task. `ai`: an item the model suggested.',
   })
   kind: AgendaSuggestionKind;
 
@@ -25,9 +38,18 @@ export class AgendaSuggestionDto implements AgendaSuggestion {
   @ApiProperty({
     type: EventAgendaTabledFromDto,
     nullable: true,
-    description: 'Where a tabled matter was first tabled; null for `ai`.',
+    description:
+      'Where a tabled matter was first tabled; null for any other kind.',
   })
   tabled_from: EventAgendaTabledFromDto | null;
+
+  @ApiProperty({
+    type: AgendaSuggestionFromMinutesDto,
+    nullable: true,
+    description:
+      'The minutes a `minutes` item was sent from, for “From the minutes of {day}”; null for any other kind.',
+  })
+  from_minutes: AgendaSuggestionFromMinutesDto | null;
 
   @ApiProperty({
     type: String,

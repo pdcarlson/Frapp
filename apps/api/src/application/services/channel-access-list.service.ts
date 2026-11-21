@@ -85,7 +85,8 @@ const LISTED_TYPES: ReadonlySet<ChannelType> = new Set([
  * hold (#3722), and the check every write of one goes through.
  *
  * The options are tiers first (highest first), then roles in the chapter's
- * role order, then groups (#4076): manual ones, pledge classes, class years.
+ * role order, then groups (#4076): manual ones and pledge classes (class
+ * years and majors never go on a list).
  * The editor groups by `kind`.
  */
 @Injectable()
@@ -307,8 +308,8 @@ export class ChannelAccessListService {
           hidden: role.system_key === SystemRoleKeys.MEMBER,
         };
       });
-    // A class year never goes on a list: members set their own graduation
-    // year (`groupKindOpensChannels`).
+    // A class year or a major never goes on a list: members set their own
+    // (`groupKindOpensChannels`).
     const groupOptions: ChannelAccessOption[] = withMembers(
       groups.filter(
         (group) =>
@@ -398,15 +399,21 @@ export class ChannelAccessListService {
           .filter((group) => group.chapter_id === chapterId)
           .map((group) => channelAccessEntry('group', group.id)),
       ]);
-      const yearIds = new Set(
+      // Class years and majors: members set their own (#4076, #5778).
+      const selfSet = new Map(
         groups
           .filter((group) => !groupKindOpensChannels(group.kind))
-          .map((group) => group.id),
+          .map((group) => [group.id, group.kind] as const),
       );
       for (const { kind, id } of parsed) {
-        if (kind === 'group' && yearIds.has(id)) {
+        const selfSetKind = kind === 'group' ? selfSet.get(id) : undefined;
+        if (selfSetKind) {
+          const [what, theirs] =
+            selfSetKind === 'major'
+              ? ['A major', 'major']
+              : ['A class year', 'graduation year'];
           throw new BadRequestException(
-            "A class year can't decide who sees a channel, because members set their own graduation year. Make a group and pick its members instead.",
+            `${what} can't decide who sees a channel, because members set their own ${theirs}. Make a group and pick its members instead.`,
           );
         }
         if (!known.has(channelAccessEntry(kind, id))) {

@@ -23,7 +23,7 @@ import {
  * API stays the authority, and a refusal it sends still lands as a toast.
  *
  * Groups grant nothing, so any `groups:manage` holder may tick any of the
- * chapter's own groups. A pledge class's or class year's group follows the
+ * chapter's own groups. A pledge class's, class year's or major's group follows the
  * member's own details and is never offered. A group a channel's access list
  * names also needs `channels:manage`; the client can't see which lists name
  * which groups, so that refusal comes back from the API.
@@ -60,6 +60,7 @@ export function groupFollowsLabel(
 ): string | null {
   if (group.kind === "pledge_class") return "Follows pledge class";
   if (group.kind === "class_year") return "Follows graduation year";
+  if (group.kind === "major") return "Follows major";
   return null;
 }
 
@@ -207,7 +208,7 @@ export type AssignmentChip = {
   /**
    * Whether the viewer can take it away from the chip itself: a role they
    * may give, or one of the chapter's own groups they may change. A pledge
-   * class's or class year's group never can.
+   * class's, class year's or major's group never can.
    */
   removable: boolean;
 };

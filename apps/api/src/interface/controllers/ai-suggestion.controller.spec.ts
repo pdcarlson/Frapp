@@ -52,7 +52,10 @@ describe('AiSuggestionController (#4309)', () => {
 
   it('passes an officer’s changes to a points proposal on to Confirm (#718)', async () => {
     const accept = jest.fn(async () => ({ suggestion: row(), outcome: null }));
-    const controller = new AiSuggestionController({ accept } as never);
+    const controller = new AiSuggestionController(
+      { accept } as never,
+      {} as never,
+    );
     await controller
       .accept(CHAPTER, USER, null, row().id, {
         points: { target_user_ids: [USER] },
@@ -70,7 +73,10 @@ describe('AiSuggestionController (#4309)', () => {
 
   it('passes the event made from a proposal in the event form on to Confirm, to record and not make (#5117)', async () => {
     const accept = jest.fn(async () => ({ suggestion: row(), outcome: null }));
-    const controller = new AiSuggestionController({ accept } as never);
+    const controller = new AiSuggestionController(
+      { accept } as never,
+      {} as never,
+    );
     const made = '99999999-9999-4999-8999-999999999999';
     await controller
       .accept(CHAPTER, USER, null, row().id, {
@@ -89,7 +95,10 @@ describe('AiSuggestionController (#4309)', () => {
 
   it('passes points typed on an event card on to Confirm (#5148)', async () => {
     const accept = jest.fn(async () => ({ suggestion: row(), outcome: null }));
-    const controller = new AiSuggestionController({ accept } as never);
+    const controller = new AiSuggestionController(
+      { accept } as never,
+      {} as never,
+    );
     await controller
       .accept(CHAPTER, USER, null, row().id, {
         new_event: { point_value: 5 },
@@ -107,7 +116,10 @@ describe('AiSuggestionController (#4309)', () => {
 
   it('wants source_type and source_id together', async () => {
     const listForUser = jest.fn(async () => ({ items: [], has_more: false }));
-    const controller = new AiSuggestionController({ listForUser } as never);
+    const controller = new AiSuggestionController(
+      { listForUser } as never,
+      {} as never,
+    );
     await expect(
       controller.list(CHAPTER, USER, null, { source_type: 'meeting' }),
     ).rejects.toBeInstanceOf(BadRequestException);

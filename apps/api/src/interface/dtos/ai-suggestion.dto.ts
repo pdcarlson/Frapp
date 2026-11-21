@@ -24,6 +24,8 @@ import {
   TASK_PEOPLE_MAX,
   TASK_SUGGESTION_AUDIENCES,
   TASK_TITLE_MAX_LENGTH,
+  NEXT_AGENDA_OUTCOMES,
+  type NextAgendaOutcomeKind,
   type TaskSuggestionAudience,
 } from '@repo/validation';
 import {
@@ -36,6 +38,7 @@ import {
   type AiSuggestionStatus,
 } from '#domain/entities/ai-suggestion.entity';
 import { AI_SUGGESTION_DECIDE_MAX } from '../../application/services/ai-suggestion.service';
+import type { NextAgendaOutcome } from '../../application/services/minutes-next-agenda.service';
 import type {
   AiSuggestionDecideOutcome,
   AiSuggestionDecisionResult,
@@ -740,4 +743,54 @@ export class AiSuggestionDecideOutcomeDto {
 export class AiSuggestionDecideResponseDto {
   @ApiProperty({ type: [AiSuggestionDecideOutcomeDto] })
   outcomes: AiSuggestionDecideOutcomeDto[];
+}
+
+/** The meeting an item sent to the next agenda went to (#5790). */
+export class NextAgendaMeetingDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ format: 'date-time' })
+  start_time: string;
+}
+
+/** What Add to next meeting's agenda did (#5790). */
+export class SendToNextAgendaResponseDto {
+  @ApiProperty({
+    enum: NEXT_AGENDA_OUTCOMES,
+    description:
+      '`placed`: on `meeting`’s agenda. `offered`: under Suggested on `meeting` (the caller can’t edit it, or its agenda is full). `waiting`: no such meeting yet; it goes onto the next one created, for 30 days.',
+  })
+  outcome: NextAgendaOutcomeKind;
+
+  @ApiProperty({
+    type: NextAgendaMeetingDto,
+    nullable: true,
+    description: 'Where it went; null while it waits.',
+  })
+  meeting: NextAgendaMeetingDto | null;
+
+  @ApiProperty({
+    description:
+      'The name of the minutes’ own meeting, for “the next Chapter Meeting”.',
+  })
+  source_name: string;
+
+  @ApiProperty({ description: 'The words, as the agenda holds them.' })
+  text: string;
+
+  static from(outcome: NextAgendaOutcome): SendToNextAgendaResponseDto {
+    const { item, event } = outcome;
+    return {
+      outcome: item.state,
+      meeting: event
+        ? { id: event.id, name: event.name, start_time: event.start_time }
+        : null,
+      source_name: outcome.sourceName,
+      text: item.text,
+    };
+  }
 }

@@ -283,6 +283,40 @@ describe("profile mutations (#732, #3387)", () => {
   // A GET of the profile that left before the PATCH landed must not answer
   // last and put the pre-save row back. Real invalidation, no harness: the
   // save's refetch has to cancel the held GET.
+  it("refreshes the groups and the mention list after a major or year, and only then (#5778)", async () => {
+    const mockClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: { id: "u-1" },
+        error: undefined,
+      }),
+    };
+    const keys = {
+      groups: ["roles", "ch-1", "groups"],
+      mentions: ["roles", "ch-1", "mention-roles"],
+      roles: ["roles", "ch-1"],
+    };
+    const seed = () => {
+      for (const key of Object.values(keys)) queryClient.setQueryData(key, []);
+    };
+    const stale = () =>
+      Object.fromEntries(
+        Object.entries(keys).map(([name, key]) => [
+          name,
+          queryClient.getQueryState(key)?.isInvalidated ?? false,
+        ]),
+      );
+    const { result } = renderHook(() => useUpdateUser(), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    seed();
+    await result.current.mutateAsync({ bio: "Hi" });
+    expect(stale()).toEqual({ groups: false, mentions: false, roles: false });
+
+    await result.current.mutateAsync({ major: "Industrial Systems" });
+    expect(stale()).toEqual({ groups: true, mentions: true, roles: false });
+  });
+
   it("keeps the saved row over a profile GET that was already in flight", async () => {
     const before = { id: "u-1", display_name: "Old Name" };
     const saved = { id: "u-1", display_name: "Alex Rivera" };

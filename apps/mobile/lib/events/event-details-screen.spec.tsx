@@ -116,6 +116,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   usePermissionList: () => permissions,
   useRoles: () => ({ data: [], isPending: false, isError: false }),
   useEventTypes: () => ({ data: [] }),
+  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCreateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteEvent: () => ({ mutate: vi.fn(), isPending: false }),
@@ -384,6 +385,17 @@ describe("Event details layout", () => {
     const checkIn = text.indexOf("Scan code");
     expect(details).toBeGreaterThan(-1);
     expect(checkIn).toBeGreaterThan(details);
+  });
+
+  it("carries the Now pill while the event is on, then Ended for the rest of the day (#5777)", () => {
+    const tree = render();
+    expect(screenText(tree)).toMatch(/Now · until/);
+    act(() => {
+      // Ten minutes past the end.
+      vi.advanceTimersByTime(60 * 60_000);
+    });
+    expect(screenText(tree)).toMatch(/Ended /);
+    expect(screenText(tree)).not.toContain("Tonight");
   });
 
   it("offers no calendar export until calendar sync ships (#3708)", () => {
@@ -1305,7 +1317,9 @@ describe("Event details agenda and attachments (#4934)", () => {
     act(() =>
       rows.forEach((row, index) =>
         row.props.onLayout({
-          nativeEvent: { layout: { x: 0, y: index * 48, width: 300, height: 44 } },
+          nativeEvent: {
+            layout: { x: 0, y: index * 48, width: 300, height: 44 },
+          },
         }),
       ),
     );
@@ -1393,9 +1407,7 @@ describe("Event details agenda and attachments (#4934)", () => {
     expect(boxes).toHaveLength(2);
     for (const box of boxes) expect(box.props.disabled).toBe(true);
     const text = screenText(tree);
-    expect(
-      text.split(AGENDA_CHECK_OFF_LOCKED_COPY).length - 1,
-    ).toBe(1);
+    expect(text.split(AGENDA_CHECK_OFF_LOCKED_COPY).length - 1).toBe(1);
     // No "done" count before there is anything to count.
     expect(text).not.toContain("of 2 done");
   });

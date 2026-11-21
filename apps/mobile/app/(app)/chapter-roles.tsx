@@ -69,8 +69,8 @@ const SEARCH_FROM = 8;
  *
  * Groups follow the roles on the same screen (Paul, 2026-11-19: roles and
  * groups live in one place, as on web's Roles and groups tab): the chapter's
- * own groups, then the ones that follow each member's pledge class and
- * graduation year, each with how many are in it. A member is put in or taken
+ * own groups, then the ones that follow each member's pledge class,
+ * graduation year and major, each with how many are in it. A member is put in or taken
  * out of a group from their profile; making and renaming groups stays on web
  * with the rest of the structure. The roles part shows to whoever web shows
  * it to (`chapter-config:view` or `roles:manage`), so a `groups:manage`

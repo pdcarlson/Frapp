@@ -173,38 +173,20 @@ vi.mock("@/components/chat/new-poll-sheet", async () => {
   };
 });
 
-const presentSignupSheet = vi.fn();
-vi.mock("@/components/chat/new-signup-sheet", async () => {
+const presentTaskLinkSheet = vi.fn();
+vi.mock("@/components/chat/task-link-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
     await import("react");
   return {
-    NewSignupSheet: forwardRef(function NewSignupSheet(
+    TaskLinkSheet: forwardRef(function TaskLinkSheet(
       props: Record<string, unknown>,
       ref,
     ) {
       useImperativeHandle(ref, () => ({
-        present: presentSignupSheet,
+        present: presentTaskLinkSheet,
         dismiss: vi.fn(),
       }));
-      return createElement("NewSignupSheet", props);
-    }),
-  };
-});
-
-const presentFormSheet = vi.fn();
-vi.mock("@/components/chat/new-form-sheet", async () => {
-  const { createElement, forwardRef, useImperativeHandle } =
-    await import("react");
-  return {
-    NewFormSheet: forwardRef(function NewFormSheet(
-      props: Record<string, unknown>,
-      ref,
-    ) {
-      useImperativeHandle(ref, () => ({
-        present: presentFormSheet,
-        dismiss: vi.fn(),
-      }));
-      return createElement("NewFormSheet", props);
+      return createElement("TaskLinkSheet", props);
     }),
   };
 });
@@ -228,23 +210,6 @@ vi.mock("@/components/chat/composer-plus-sheet", async () => {
 });
 
 const presentTaskSheet = vi.fn();
-const presentRolePickerSheet = vi.fn();
-vi.mock("@/components/chat/new-role-picker-sheet", async () => {
-  const { createElement, forwardRef, useImperativeHandle } =
-    await import("react");
-  return {
-    NewRolePickerSheet: forwardRef(function NewRolePickerSheet(
-      props: Record<string, unknown>,
-      ref,
-    ) {
-      useImperativeHandle(ref, () => ({
-        present: presentRolePickerSheet,
-        dismiss: vi.fn(),
-      }));
-      return createElement("NewRolePickerSheet", props);
-    }),
-  };
-});
 vi.mock("@/components/tasks/new-task-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
     await import("react");
@@ -271,17 +236,6 @@ vi.mock("@/components/events/new-event-sheet", async () => {
     }),
   };
 });
-vi.mock("@/components/service-hours/log-hours-sheet", async () => {
-  const { createElement, forwardRef } = await import("react");
-  return {
-    LogHoursSheet: forwardRef(function LogHoursSheet(
-      props: Record<string, unknown>,
-    ) {
-      return createElement("LogHoursSheet", props);
-    }),
-  };
-});
-
 const presentMemberSheet = vi.fn();
 const dismissMemberSheet = vi.fn();
 vi.mock("@/components/chat/channel-member-sheet", async () => {
@@ -368,11 +322,8 @@ function channelState(
     sendInFlight: () => false,
     sendPoll: vi.fn(async () => ({ ok: true as const })),
     sendGif: vi.fn(async () => ({ ok: true as const })),
-    sendSignup: vi.fn(async () => ({ ok: true as const })),
-    sendRolePicker: vi.fn(async () => ({ ok: true as const })),
-    sendForm: vi.fn(async () => ({ ok: true as const })),
     postTask: vi.fn(async () => ({ ok: true })),
-    postHours: vi.fn(async () => ({ ok: true })),
+    linkTask: vi.fn(async () => ({ ok: true })),
     trackEventCard: vi.fn(() => ({
       clientMessageId: "c1",
       failed: vi.fn(),
@@ -610,9 +561,7 @@ vi.mock("@/lib/ai/availability", () => ({
   }),
 }));
 vi.mock("@/components/chat/catch-up", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("@/components/chat/catch-up")
-  >()),
+  ...(await importOriginal<typeof import("@/components/chat/catch-up")>()),
   useCatchUp: (options: {
     onOpenPoint: (point: Record<string, unknown>) => void;
   }) => {
@@ -2613,26 +2562,20 @@ describe("chat thread + sheet (#3865)", () => {
     const open = composer(tree).props.onOpenPlus as () => void;
     act(() => open());
     expect(presentPlusSheet).toHaveBeenCalledTimes(1);
-    // A sign-up sheet and a form need no grant (#3926), so they are always
-    // offered.
-    expect(rowsOf(tree).map((row) => row.command)).toEqual(["signup", "form"]);
+    expect(rowsOf(tree)).toEqual([]);
     expect(footerOf(tree)).toEqual([
-      "Your role can't create polls, events, tasks, service hours or role pickers.",
+      "Your role can't create polls, events or tasks.",
     ]);
     act(() => tree.unmount());
   });
 
-  it("offers each form the role allows, in web's order, and never Points", () => {
+  it("offers Poll, Event and Task, in web's order (#5772)", () => {
     permissionList = ["*"];
     const tree = render();
     expect(rowsOf(tree).map((row) => row.command)).toEqual([
       "poll",
-      "signup",
-      "form",
       "event",
       "task",
-      "hours",
-      "roles",
     ]);
     act(() => tree.unmount());
   });
@@ -2654,9 +2597,6 @@ describe("chat thread + sheet (#3865)", () => {
     const tree = render();
     expect(rowsOf(tree)).toEqual([
       { command: "poll", label: "Poll", disabledReason: "Still loading" },
-      // It needs no module, so it waits on nothing (#3926).
-      { command: "signup", label: "Sign-up sheet", disabledReason: null },
-      { command: "form", label: "Form", disabledReason: null },
     ]);
     act(() => tree.unmount());
   });
@@ -2708,86 +2648,52 @@ describe("chat thread + sheet (#3865)", () => {
     act(() => tree.unmount());
   });
 
-  it("opens the New sign-up sheet from its row and posts through sendSignup (#3926)", async () => {
-    presentSignupSheet.mockClear();
+  it("opens the Task picker from its row, linking into this channel (#5772)", async () => {
+    permissionList = ["members:view"];
+    presentTaskLinkSheet.mockClear();
     const tree = render();
     const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
-    act(() => openForm("signup"));
-    expect(presentSignupSheet).toHaveBeenCalledTimes(1);
-    const onPost = tree.root.findByType("NewSignupSheet" as never).props
-      .onPost as (signup: unknown) => Promise<unknown>;
-    const signup = { content: "Sober drivers", payload: {} };
+    act(() => openForm("task"));
+    expect(presentTaskLinkSheet).toHaveBeenCalledTimes(1);
+    const picker = tree.root.findByType("TaskLinkSheet" as never);
+    // A member who can only read tasks links one; making one is an officer's.
+    expect(picker.props.canCreate).toBe(false);
     await act(async () => {
-      await onPost(signup);
+      await (picker.props.onLink as (t: unknown) => Promise<unknown>)({
+        id: "t1",
+        title: "Fix the door",
+      });
     });
-    expect(channel.sendSignup).toHaveBeenCalledWith(signup);
+    expect(channel.linkTask).toHaveBeenCalledWith({
+      id: "t1",
+      title: "Fix the door",
+    });
     act(() => tree.unmount());
   });
 
-  it("opens the New form sheet from its row and posts through sendForm (#3926 step 3)", async () => {
-    presentFormSheet.mockClear();
-    const tree = render();
-    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
-    act(() => openForm("form"));
-    expect(presentFormSheet).toHaveBeenCalledTimes(1);
-    const onPost = tree.root.findByType("NewFormSheet" as never).props
-      .onPost as (form: unknown) => Promise<unknown>;
-    const form = { content: "Formal housing", payload: {} };
-    await act(async () => {
-      await onPost(form);
-    });
-    expect(channel.sendForm).toHaveBeenCalledWith(form);
-    act(() => tree.unmount());
-  });
-
-  it("opens the Task form on first use, posting into this channel", () => {
+  it("opens the Task form from the picker's New task, posting into this channel", () => {
     permissionList = ["*"];
     const tree = render();
     expect(tree.root.findAllByType("NewTaskSheet" as never)).toHaveLength(0);
-    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
-    act(() => openForm("task"));
+    const picker = tree.root.findByType("TaskLinkSheet" as never);
+    expect(picker.props.canCreate).toBe(true);
+    act(() => (picker.props.onNew as () => void)());
     const task = tree.root.findByType("NewTaskSheet" as never);
     expect(task.props.postToChannel).toBe(channel.postTask);
     expect(presentTaskSheet).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 
-  it("mounts the New role picker on first use and posts through sendRolePicker (#4958)", async () => {
-    permissionList = ["*"];
-    presentRolePickerSheet.mockClear();
-    const tree = render();
-    expect(tree.root.findAllByType("NewRolePickerSheet" as never)).toHaveLength(
-      0,
-    );
-    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
-    act(() => openForm("roles"));
-    expect(presentRolePickerSheet).toHaveBeenCalledTimes(1);
-    const onPost = tree.root.findByType("NewRolePickerSheet" as never).props
-      .onPost as (picker: unknown) => Promise<unknown>;
-    const picker = {
-      content: "Pick your roles",
-      payload: { title: "Pick your roles", role_ids: ["r1"] },
-    };
-    await act(async () => {
-      await onPost(picker);
-    });
-    expect(channel.sendRolePicker).toHaveBeenCalledWith(picker);
-    act(() => tree.unmount());
-  });
-
-  it("opens Event and Service hours posting into this channel", () => {
+  it("opens Event posting into this channel", () => {
     permissionList = ["*"];
     const tree = render();
     const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
     act(() => openForm("event"));
-    act(() => openForm("hours"));
     const event = tree.root.findByType("NewEventSheet" as never);
     expect(event.props.chat).toEqual({
       channelId: CHANNEL,
       trackCard: channel.trackEventCard,
     });
-    const hours = tree.root.findByType("LogHoursSheet" as never);
-    expect(hours.props.postToChannel).toBe(channel.postHours);
     act(() => tree.unmount());
   });
 
@@ -2802,7 +2708,11 @@ describe("chat thread + sheet (#3865)", () => {
     });
     const tree = render();
     const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
-    act(() => openForm("task"));
+    act(() =>
+      (
+        tree.root.findByType("TaskLinkSheet" as never).props.onNew as () => void
+      )(),
+    );
     act(() => openForm("event"));
     const task = tree.root.findByType("NewTaskSheet" as never);
     act(() =>
@@ -2815,19 +2725,6 @@ describe("chat thread + sheet (#3865)", () => {
     expect(alert).toHaveBeenLastCalledWith(
       "Couldn't confirm the task",
       "Check the task board.",
-    );
-    act(() => openForm("hours"));
-    const hours = tree.root.findByType("LogHoursSheet" as never);
-    act(() =>
-      (hours.props.onPosted as (r: unknown) => void)({
-        ok: true,
-        unconfirmed: true,
-        warning: "Check the Service page.",
-      }),
-    );
-    expect(alert).toHaveBeenLastCalledWith(
-      "Couldn't confirm the hours",
-      "Check the Service page.",
     );
     const onPost = tree.root.findByType("NewPollSheet" as never).props
       .onPost as (poll: unknown) => Promise<unknown>;

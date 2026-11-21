@@ -157,7 +157,7 @@ describe('mentionRoleViews', () => {
     const group = (
       id: string,
       name: string,
-      kind: 'manual' | 'pledge_class' | 'class_year' = 'manual',
+      kind: 'manual' | 'pledge_class' | 'class_year' | 'major' = 'manual',
     ) => ({
       id,
       chapter_id: 'ch-1',
@@ -167,6 +167,7 @@ describe('mentionRoleViews', () => {
       mentionable: true,
       pledge_class_id: kind === 'pledge_class' ? 'pc-1' : null,
       class_year: kind === 'class_year' ? 2027 : null,
+      major_key: kind === 'major' ? name.toLowerCase() : null,
       created_at: '2026-11-06T00:00:00Z',
       updated_at: '2026-11-06T00:00:00Z',
     });
@@ -177,6 +178,29 @@ describe('mentionRoleViews', () => {
           ? { ...r, tier_id: 't-members' }
           : r,
     );
+
+    it('leaves out a major named like a role, tier, other group or member, and keeps the rest (#5778)', () => {
+      const majors = [
+        group('m-officers', 'officers', 'major'),
+        group('m-exec', 'Exec', 'major'),
+        group('m-floor', 'Third floor', 'major'),
+        group('m-ann', 'Ann', 'major'),
+        group('m-music', 'Music', 'major'),
+      ];
+      const views = mentionRoleViews(tiered, members, {
+        tiers: [tier('t-exec', 'Exec', 1)],
+        groups: [group('g-floor', 'Third floor'), ...majors],
+        memberships: [...majors, group('g-floor', 'Third floor')].map((g) => ({
+          chapter_id: 'ch-1',
+          group_id: g.id,
+          user_id: 'u2',
+          kind: g.kind,
+        })),
+      });
+      expect(
+        views.filter((view) => view.kind === 'group').map((v) => v.role_id),
+      ).toEqual(['g-floor', 'm-music']);
+    });
 
     it('reaches every holder of any role in a tier, once each', () => {
       const views = mentionRoleViews(tiered, members, {
@@ -408,6 +432,7 @@ describe('ChatMentionService.resolveForSend', () => {
       mentionable: true,
       pledge_class_id: null,
       class_year: null,
+      major_key: null,
       created_at: '2026-11-06T00:00:00Z',
       updated_at: '2026-11-06T00:00:00Z',
     };

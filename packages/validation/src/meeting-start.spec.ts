@@ -3,7 +3,6 @@ import {
   likelyMeeting,
   looksLikeHearing,
   meetingInTheRoom,
-  meetingStartingNow,
 } from "./meeting-start";
 
 const NOW = Date.parse("2026-11-17T19:20:00");
@@ -135,15 +134,5 @@ describe("looksLikeHearing", () => {
     expect(looksLikeHearing("J-Board hearing")).toBe(true);
     expect(looksLikeHearing("Chapter Meeting")).toBe(false);
     expect(looksLikeHearing("Standardized testing study")).toBe(false);
-  });
-});
-
-describe("meetingStartingNow", () => {
-  it("starts on the five minutes before now and runs an hour", () => {
-    const span = meetingStartingNow(new Date("2026-11-17T19:23:41"));
-    expect(new Date(span.start_time).getMinutes()).toBe(20);
-    expect(Date.parse(span.end_time) - Date.parse(span.start_time)).toBe(
-      60 * 60_000,
-    );
   });
 });

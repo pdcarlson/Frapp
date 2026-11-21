@@ -9,7 +9,6 @@ import {
 import { serverMessageOf, type components } from "@repo/api-sdk";
 import type { FrappApiClient } from "./chat-client";
 import { isCardClosed } from "./card-closing";
-import { makePollOptionId } from "./polls";
 import type { ChatMessage } from "./types";
 
 /**
@@ -77,57 +76,6 @@ export type FormAnswers = Record<string, string | string[]>;
 /** Whether a question lists options to pick from. */
 export function isChoiceQuestion(type: FormQuestionType): boolean {
   return FORM_CHOICE_QUESTION_TYPES.includes(type);
-}
-
-/** What a member wrote in the form builder. */
-export interface FormMessageInput {
-  title: string;
-  description?: string;
-  questions: readonly {
-    type: FormQuestionType;
-    title: string;
-    required: boolean;
-    /** Option labels, for a choice question. */
-    options?: readonly string[];
-  }[];
-  /** When the form closes, or absent for one that stays open. */
-  closesAt?: Date | null;
-}
-
-/**
- * The `kind: "form"` message a client posts: `content` is the title, which is
- * what a notification, the channel preview and search read, and `payload` is
- * the card. The API checks and rebuilds it on send (`normalizeFormCard`), so
- * this only shapes it.
- */
-export function buildFormMessage(
-  input: FormMessageInput,
-  makeId: () => string = makePollOptionId,
-): { content: string; payload: FormPayload } {
-  const title = input.title.trim();
-  const description = input.description?.trim();
-  return {
-    content: title,
-    payload: {
-      title,
-      ...(description ? { description } : {}),
-      questions: input.questions.map((q) => ({
-        id: makeId(),
-        type: q.type,
-        title: q.title.trim(),
-        required: q.required,
-        ...(isChoiceQuestion(q.type)
-          ? {
-              options: (q.options ?? []).map((label) => ({
-                id: makeId(),
-                label: label.trim(),
-              })),
-            }
-          : {}),
-      })),
-      ...(input.closesAt ? { closes_at: input.closesAt.toISOString() } : {}),
-    },
-  };
 }
 
 function readOptions(raw: unknown): FormOption[] {

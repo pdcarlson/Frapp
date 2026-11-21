@@ -1,8 +1,3 @@
-import {
-  ROLE_PICKER_DEFAULT_TITLE,
-  ROLE_PICKER_ROLES_MAX,
-  ROLE_PICKER_TITLE_MAX_LENGTH,
-} from "@repo/validation";
 import type { ChatMessage } from "./types";
 
 /**
@@ -19,28 +14,10 @@ import type { ChatMessage } from "./types";
  * read their own roles.
  */
 
-export {
-  ROLE_PICKER_DEFAULT_TITLE,
-  ROLE_PICKER_ROLES_MAX,
-  ROLE_PICKER_TITLE_MAX_LENGTH,
-};
-
 export interface RolePickerPayload {
   title: string;
   /** The roles the card lists, in the order the officer picked them. */
   role_ids: string[];
-}
-
-/** The message a picker posts: its title as `content`, so previews read it. */
-export function buildRolePickerMessage(input: {
-  title: string;
-  roleIds: readonly string[];
-}): { content: string; payload: RolePickerPayload } {
-  const title = input.title.trim() || ROLE_PICKER_DEFAULT_TITLE;
-  return {
-    content: title,
-    payload: { title, role_ids: [...new Set(input.roleIds)] },
-  };
 }
 
 /** The card's payload, or `null` when it can't be read (then it draws as text). */

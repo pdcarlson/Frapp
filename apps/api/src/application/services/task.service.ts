@@ -1908,39 +1908,92 @@ export class TaskService {
     input: CreateTaskInput,
     task: Task,
   ): Promise<void> {
+    await this.sendTaskCard(task, {
+      chapter_id: input.chapter_id,
+      channel_id: input.channel_id!,
+      sender_id: input.created_by,
+      client_message_id: input.client_message_id!,
+      assigner_id: input.created_by,
+      status: 'TODO',
+    });
+  }
+
+  /**
+   * Post an existing task's card into a channel (#5772): the + sheet's Task
+   * row links a task the member can already read. The card is the same one
+   * `/task` posts, so it reads the task's live status the same way; it is
+   * sent as the member who linked it, and names the task's own creator as
+   * the assigner. The caller has checked the member may read the task;
+   * channel access is re-checked by `ChatService.sendMessage`.
+   */
+  async shareToChat(
+    task: TaskView,
+    input: {
+      chapter_id: string;
+      channel_id: string;
+      sender_id: string;
+      client_message_id: string;
+    },
+  ): Promise<void> {
+    await this.sendTaskCard(task, {
+      ...input,
+      assigner_id: task.created_by,
+      status: task.status,
+      linked: true,
+    });
+  }
+
+  private async sendTaskCard(
+    task: Task,
+    card: {
+      chapter_id: string;
+      channel_id: string;
+      sender_id: string;
+      client_message_id: string;
+      assigner_id: string;
+      status: string;
+      /**
+       * A link, not a create: the text the preview, search and a push read
+       * names the task without saying the sender assigned it.
+       */
+      linked?: boolean;
+    },
+  ): Promise<void> {
     const users = await this.userRepo.findByIds([
-      input.created_by,
+      card.assigner_id,
       task.assignee_id,
     ]);
     const nameOf = (id: string): string =>
       users.find((u) => u.id === id)?.display_name ?? 'Unknown member';
-    const assignerName = nameOf(input.created_by);
+    const assignerName = nameOf(card.assigner_id);
     const assigneeName = nameOf(task.assignee_id);
 
     const payload = {
       task_id: task.id,
       title: task.title,
-      assigner_user_id: input.created_by,
+      assigner_user_id: card.assigner_id,
       assigner_name: assignerName,
       assignee_user_id: task.assignee_id,
       assignee_name: assigneeName,
       due_date: task.due_date,
       due_at: task.due_at,
-      status: 'TODO' as const,
+      status: card.status,
       point_reward: task.point_reward,
       created_at: task.created_at,
     };
 
-    const content = `Assigned "${task.title}" to ${assigneeName} (due ${task.due_date})`;
+    const content = card.linked
+      ? `"${task.title}" for ${assigneeName} (due ${task.due_date})`
+      : `Assigned "${task.title}" to ${assigneeName} (due ${task.due_date})`;
 
     await this.chatService.sendMessage({
-      chapter_id: input.chapter_id,
-      channel_id: input.channel_id!,
-      sender_id: input.created_by,
+      chapter_id: card.chapter_id,
+      channel_id: card.channel_id,
+      sender_id: card.sender_id,
       content,
       kind: 'task',
       payload,
-      client_message_id: input.client_message_id,
+      client_message_id: card.client_message_id,
       system_originated: true,
     });
   }

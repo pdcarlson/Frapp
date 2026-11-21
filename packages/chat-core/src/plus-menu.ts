@@ -3,30 +3,42 @@ import { canAll, EVENT_CREATE_PERMISSIONS } from "@repo/validation";
 import { getSlashCommand } from "./integrations";
 
 /**
- * The composer's **+** (#3865): one menu for everything a message can carry
- * besides text. The attachment row (web's Attach a file, the phone's Photo),
- * then one row per command that has a visual form, each opening the same form
- * the bare slash command opens (#3773). Shawn's rule: every slash command also
- * has a button and a form.
+ * The composer's **+** (#3865): one menu for what a message can carry besides
+ * text. The attachment rows (web's Attach a file, the phone's Photo and GIF),
+ * then a short row per thing members post most: Poll, Event, Task.
  *
- * Web and the phone draw it differently (a dropdown, a bottom sheet) but offer,
+ * Paul cut it to that on 2026-11-20 (#5772): "most of the time I want to add
+ * a photo or a GIF", and the rest was "a little overwhelming". Service hours
+ * and Points left the menu but keep their forms, which a bare `/hours` or
+ * `/points` still opens. Sign-up sheets, forms and role pickers left
+ * altogether; the cards already posted keep working.
+ *
+ * Web and the phone draw it differently (a card, a bottom sheet) but offer,
  * grey and explain rows by this one model, so the two can't drift. What a row
  * does with the member's role, the chapter's modules and the moment follows
  * `spec/ui/design-system/README.md` §5, entitlement gating.
  */
 
-/** Commands with a form the **+** can open, in the menu's order. */
+/**
+ * Every form the **+** card can show: a menu row's, or one a bare slash
+ * command opens (`/hours`, `/points`).
+ */
 export const PLUS_MENU_COMMANDS = [
   "poll",
-  "signup",
-  "form",
   "event",
   "task",
   "hours",
   "points",
-  "roles",
 ] as const;
 export type PlusMenuCommand = (typeof PLUS_MENU_COMMANDS)[number];
+
+/** The menu's rows, in order (#5772). */
+export const PLUS_MENU_ROWS = [
+  "poll",
+  "event",
+  "task",
+] as const satisfies readonly PlusMenuCommand[];
+export type PlusMenuRowCommand = (typeof PLUS_MENU_ROWS)[number];
 
 /** Each row's label, and the plural the footer names it by. */
 const PLUS_MENU_ROW_COPY: Record<
@@ -34,69 +46,55 @@ const PLUS_MENU_ROW_COPY: Record<
   { label: string; noun: string }
 > = {
   poll: { label: "Poll", noun: "polls" },
-  signup: { label: "Sign-up sheet", noun: "sign-up sheets" },
-  form: { label: "Form", noun: "forms" },
   event: { label: "Event", noun: "events" },
   task: { label: "Task", noun: "tasks" },
   hours: { label: "Service hours", noun: "service hours" },
   points: { label: "Points", noun: "points" },
-  roles: { label: "Role picker", noun: "role pickers" },
 };
 
 /**
- * The grant each form needs. Four are their routes' guards: `POST /v1/events`
- * is `EVENT_CREATE_PERMISSIONS`; `POST /v1/tasks` is `tasks:manage` under the
- * controller's `members:view`; `POST /v1/service-entries` is `service:log`;
- * `POST /v1/points/adjust` is `points:adjust` under `members:view`. The task
- * and points forms also list members to pick from, which `members:view` reads.
+ * The grant each form needs to open. Three are their routes' guards: `POST
+ * /v1/events` is `EVENT_CREATE_PERMISSIONS`; `POST /v1/service-entries` is
+ * `service:log`; `POST /v1/points/adjust` is `points:adjust` under
+ * `members:view`.
  *
- * Poll is not: a poll card goes through the chat send route like a message,
- * which doesn't check `polls:create` (web's `/poll` posts for anyone), so this
- * is a client-side offer, the phone's rule since #3701. Whether the server
- * should enforce it is #3007's open decision.
+ * Task is the read (#5772): the row opens a picker of the tasks the member can
+ * already see, to link one into chat (`POST /v1/tasks/:id/share`, under the
+ * task controller's `members:view`). Making a new one from there needs
+ * {@link TASK_CREATE_PERMISSIONS}, as typing `/task` with details does.
  *
- * A sign-up sheet (#3926) needs nothing: anyone who can post in the channel
- * can post one, as they can a message. So does a form (#3926 step 3).
- *
- * A role picker (#4958) needs `roles:manage`, which the send route checks for
- * that kind (`ChatController.sendMessage`): it hands out roles, so it is an
- * officer's post, like marking a role Non-chapter business.
+ * Poll is not a route's guard: a poll card goes through the chat send route
+ * like a message, which doesn't check `polls:create` (web's `/poll` posts for
+ * anyone), so this is a client-side offer, the phone's rule since #3701.
+ * Whether the server should enforce it is #3007's open decision.
  */
 export const PLUS_MENU_PERMISSIONS: Record<PlusMenuCommand, readonly string[]> =
   {
     poll: ["polls:create"],
-    signup: [],
-    form: [],
     event: EVENT_CREATE_PERMISSIONS,
-    task: ["tasks:manage", "members:view"],
+    task: ["members:view"],
     hours: ["service:log"],
     points: ["points:adjust", "members:view"],
-    roles: ["roles:manage"],
   };
 
-/**
- * The `enabled_modules` key a command's form needs: its `SLASH_COMMANDS`
- * entry's. A sign-up sheet and a form have no slash command and no module.
- */
+/** What `POST /v1/tasks` needs: `tasks:manage` under `members:view`. */
+export const TASK_CREATE_PERMISSIONS: readonly string[] = [
+  "tasks:manage",
+  "members:view",
+];
+
+/** The `enabled_modules` key a command's form needs: its `SLASH_COMMANDS` entry's. */
 function rowModule(command: PlusMenuCommand): string | null {
   return getSlashCommand(command)?.requiredModule ?? null;
 }
 
-/**
- * The typed shortcut a row shows beside its label, or `null` for a form with
- * no slash command (a sign-up sheet, a form).
- */
+/** The typed shortcut a row shows beside its label. */
 export function plusMenuShortcut(command: PlusMenuCommand): string | null {
   return getSlashCommand(command) ? `/${command}` : null;
 }
 
 /** The forms that post through the outbox like a message, so work offline. */
-const QUEUED_COMMANDS: ReadonlySet<PlusMenuCommand> = new Set([
-  "poll",
-  "signup",
-  "form",
-  "roles",
-]);
+const QUEUED_COMMANDS: ReadonlySet<PlusMenuCommand> = new Set(["poll"]);
 
 /**
  * One form the host can open, and whether the member's role may use it:
@@ -122,15 +120,11 @@ export function plusMenuForms(
 ): PlusMenuForm[] {
   return commands.map((command) => ({
     command,
-    // A form that needs no grant (a sign-up sheet) waits on nothing.
-    roleAllows:
-      PLUS_MENU_PERMISSIONS[command].length === 0
-        ? true
-        : granted
-          ? canAll(PLUS_MENU_PERMISSIONS[command], granted)
-          : failed
-            ? "unknown"
-            : "loading",
+    roleAllows: granted
+      ? canAll(PLUS_MENU_PERMISSIONS[command], granted)
+      : failed
+        ? "unknown"
+        : "loading",
   }));
 }
 
@@ -156,7 +150,7 @@ export interface PlusMenuContext {
 }
 
 interface PlusMenuRow {
-  command: PlusMenuCommand;
+  command: PlusMenuRowCommand;
   label: string;
   /** Why the row can't be used this second, shown beside it; else `null`. */
   disabledReason: string | null;
@@ -206,7 +200,7 @@ export function plusMenuModel(ctx: PlusMenuContext): PlusMenuModel {
   const roleHidden: string[] = [];
   const roleUnknown: string[] = [];
   const switchedOff: string[] = [];
-  for (const command of PLUS_MENU_COMMANDS) {
+  for (const command of PLUS_MENU_ROWS) {
     const form = ctx.forms.find((each) => each.command === command);
     if (!form || form.roleAllows === "loading") continue;
     const moduleKey = rowModule(command);
@@ -262,7 +256,7 @@ function rowDisabledReason(
   command: PlusMenuCommand,
   ctx: PlusMenuContext,
 ): string | null {
-  // A poll, a sign-up or a form goes through the outbox, so it works offline.
+  // A poll goes through the outbox, so it works offline.
   if (ctx.offline && !QUEUED_COMMANDS.has(command)) return "Reconnect first";
   // The module read only holds back a form that needs a module.
   if (rowModule(command)) {

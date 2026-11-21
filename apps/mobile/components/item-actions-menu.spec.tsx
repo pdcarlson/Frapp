@@ -8,8 +8,12 @@ import * as Haptics from "expo-haptics";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
+  currentItemMenu,
+  dismissItemMenu,
   ItemActionsMenu,
+  ItemMenuHost,
   itemMenuAccessibility,
+  openItemMenu,
   longPressOf,
   useItemMenu,
   type ItemMenu,
@@ -226,5 +230,76 @@ describe("itemMenuAccessibility", () => {
     expect(run.duplicate).toHaveBeenCalledTimes(1);
     expect(toggle).toHaveBeenCalledTimes(1);
     expect(itemMenuAccessibility(null)).toEqual({});
+  });
+});
+
+describe("openItemMenu and ItemMenuHost", () => {
+  const hostTree = () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ItemMenuHost />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  };
+
+  it("draws the opened menu with its message, and a tap closes then runs", () => {
+    const tree = hostTree();
+    const call = vi.fn();
+    const onDismiss = vi.fn();
+    act(() =>
+      openItemMenu({
+        title: "Ryan Castellano",
+        message: "(555) 010-2233",
+        actions: [{ key: "call", label: "Call", run: call }],
+        onDismiss,
+      }),
+    );
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Text" &&
+          node.props.children === "(555) 010-2233",
+      ),
+    ).toHaveLength(1);
+    act(() => items(tree)[0]!.props.onPress());
+    expect(call).toHaveBeenCalledTimes(1);
+    // A pick is not a dismiss.
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(currentItemMenu()).toBeNull();
+    expect(items(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("answers a dismiss on a tap outside, and on a second menu replacing it", () => {
+    const tree = hostTree();
+    const first = vi.fn();
+    const second = vi.fn();
+    const action = { key: "a", label: "A", run: vi.fn() };
+    act(() =>
+      openItemMenu({ title: "One", actions: [action], onDismiss: first }),
+    );
+    act(() =>
+      openItemMenu({ title: "Two", actions: [action], onDismiss: second }),
+    );
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(currentItemMenu()?.title).toBe("Two");
+    act(() =>
+      tree.root
+        .find((node) => node.props.testID === "item-actions-backdrop")
+        .props.onPress(),
+    );
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(currentItemMenu()).toBeNull();
+    act(() => tree.unmount());
+  });
+
+  it("opens nothing with no actions", () => {
+    openItemMenu({ title: "Empty", actions: [] });
+    expect(currentItemMenu()).toBeNull();
+    dismissItemMenu();
   });
 });
