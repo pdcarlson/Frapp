@@ -1,6 +1,7 @@
 import {
   ALUMNI_CHANNEL_PERMISSION,
   roleColor,
+  ACTIVE_ROLE_NAME,
   EVERYONE_ROLE_NAME,
   RUSH_MEMBER_PERMISSIONS,
   type PermissionDefinition,
@@ -143,8 +144,14 @@ export const SystemRoleKeys = {
   TREASURER: 'TREASURER',
   VICE_PRESIDENT: 'VICE_PRESIDENT',
   SECRETARY: 'SECRETARY',
-  /** The Everyone role, called Member until #4191; the key stayed. */
+  /**
+   * The Actives base role (Paul, 2026-11-21). The seeded Member role, then
+   * from #4191 to 2026-11-21 the hidden Everyone role; the key stayed, so
+   * every stored reference to the row now means the actives.
+   */
   MEMBER: 'MEMBER',
+  /** The Everyone role every member holds, the floor (2026-11-21). */
+  EVERYONE: 'EVERYONE',
   NEW_MEMBER: 'NEW_MEMBER',
   ALUMNI: 'ALUMNI',
 } as const;
@@ -328,19 +335,18 @@ const SEEDED_ROLES = [
     color: roleColor('rose'),
   },
   {
-    // The Everyone role (#4191): the seeded Member role, renamed and hidden.
+    // The Actives base role (Paul, 2026-11-21): a chapter's full members.
     // It keeps the `MEMBER` key, so every lookup of "the Member role" (the
-    // invite fallback, presidency's floor, the rank rules' exemption) still
-    // finds it, and its starting tier, so plain members rank where they did.
-    // Not mentionable: `@everyone` is officers-only until a chapter opens it.
-    name: EVERYONE_ROLE_NAME,
+    // semester rollover's promotion, presidency's floor, the tier reorder's
+    // floor) finds it, and its starting tier, so actives rank where members
+    // did. A chapter renames it ("Brothers").
+    name: ACTIVE_ROLE_NAME,
     system_key: SystemRoleKeys.MEMBER,
     starting_tier: 2,
     extra_permissions: [],
     is_system: true,
     display_order: 5,
     color: null,
-    mentionable: false,
   },
   {
     name: 'New Member',
@@ -367,6 +373,20 @@ const SEEDED_ROLES = [
     display_order: 7,
     color: roleColor('slate'),
   },
+  {
+    // The Everyone role (2026-11-21): every member holds it, whatever else
+    // they hold, and it gives only what anyone in the chapter may do. Outside
+    // the tiers, so it ranks below all of them and no tier lends it more.
+    // Not mentionable: `@everyone` is officers-only until a chapter opens it.
+    name: EVERYONE_ROLE_NAME,
+    system_key: SystemRoleKeys.EVERYONE,
+    starting_tier: null,
+    extra_permissions: [SystemPermissions.MEMBERS_VIEW],
+    is_system: true,
+    display_order: 8,
+    color: null,
+    mentionable: false,
+  },
 ] as const satisfies readonly {
   starting_tier: number | null;
   extra_permissions: readonly string[];
@@ -380,7 +400,7 @@ const SEEDED_ROLES = [
  * database applies on every later save (`role_effective_permissions`).
  *
  * Colors come from the role palette in `@repo/validation` (#3485): the five
- * officer and Alumni roles get one, while Member and New Member stay uncolored
+ * officer and Alumni roles get one, while Actives, New Member and Everyone stay uncolored
  * so most of a chapter's chat reads in the plain foreground and the officers
  * stand out. Migration `20261105200000_role_color_palette_defaults.sql` moves
  * existing chapters' untouched seeds onto the same values.

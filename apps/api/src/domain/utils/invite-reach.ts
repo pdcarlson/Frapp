@@ -39,8 +39,8 @@ const INVITE_RANK_REFUSAL =
   'You can only invite people into a role ranked below your own.';
 
 /** The chapter's Everyone role, by its rename-proof key. */
-export function memberRoleOf(context: RankContext): Role | undefined {
-  return context.roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
+export function everyoneRoleOf(context: RankContext): Role | undefined {
+  return context.roles.find((r) => r.system_key === SystemRoleKeys.EVERYONE);
 }
 
 /**
@@ -55,15 +55,15 @@ export function inviteRefusal(
   if (!role) return null;
   if (role.permissions.includes(WILDCARD)) return INVITE_PRESIDENT_REFUSAL;
   const { reach, positions } = context;
-  const member = memberRoleOf(context);
+  const everyone = everyoneRoleOf(context);
   if (
     !reach.wildcard &&
-    role.id !== member?.id &&
+    role.id !== everyone?.id &&
     ranksAtOrAbove(roleRank(role, positions), reach.rank)
   ) {
     return INVITE_RANK_REFUSAL;
   }
-  const base = new Set(member?.permissions ?? []);
+  const base = new Set(everyone?.permissions ?? []);
   const missing = permissionsNotHeld(reach, role.permissions).filter(
     (permission) => !base.has(permission),
   );

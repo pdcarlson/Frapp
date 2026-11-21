@@ -1,0 +1,1 @@
+Someone who joins now holds only Everyone, which opens the channels the whole chapter can see, until an officer gives them New Member, Actives or Alumni, and a member holds just one of those three at a time.

@@ -305,7 +305,7 @@ export class ChannelAccessListService {
           color: role.color ?? null,
           tier_id: role.tier_id ?? null,
           user_ids: usersOf(entry),
-          hidden: role.system_key === SystemRoleKeys.MEMBER,
+          hidden: role.system_key === SystemRoleKeys.EVERYONE,
         };
       });
     // A class year or a major never goes on a list: members set their own

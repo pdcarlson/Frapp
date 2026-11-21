@@ -510,14 +510,21 @@ describe('ChapterService', () => {
       display_order: roleDef.display_order,
       color: roleDef.color ?? null,
       // Every seeded role can be pinged but Everyone, which only officers
-      // may use until the chapter opens it (#4191).
-      mentionable: roleDef.system_key !== SystemRoleKeys.MEMBER,
+      // may use until the chapter opens it.
+      mentionable: roleDef.system_key !== SystemRoleKeys.EVERYONE,
     }));
     expect(mockRoleRepo.createMany).toHaveBeenCalledWith(expectedRolesData);
-    expect(
-      expectedRolesData.find((r) => r.system_key === SystemRoleKeys.MEMBER)
-        ?.name,
-    ).toBe('Everyone');
+    const byKey = (key: string) =>
+      expectedRolesData.find((r) => r.system_key === key);
+    // The base role is Actives (Paul, 2026-11-21); Everyone is the floor,
+    // outside the tiers, with the directory and nothing private.
+    expect(byKey(SystemRoleKeys.MEMBER)?.name).toBe('Actives');
+    expect(byKey(SystemRoleKeys.MEMBER)?.tier_id).toBe('tier-3');
+    expect(byKey(SystemRoleKeys.EVERYONE)).toMatchObject({
+      name: 'Everyone',
+      tier_id: null,
+      permissions: ['members:view'],
+    });
     expect(result).toEqual(chapter);
   });
 

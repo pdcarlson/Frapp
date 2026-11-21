@@ -320,7 +320,7 @@ export class ChapterService {
         is_system: roleDef.is_system,
         display_order: roleDef.display_order,
         color: roleDef.color ?? null,
-        // Every seeded role is mentionable but Everyone (#4191).
+        // Every seeded role is mentionable but Everyone.
         mentionable: 'mentionable' in roleDef ? roleDef.mentionable : true,
       };
     });

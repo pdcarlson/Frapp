@@ -5,6 +5,7 @@ import {
   memberAssignmentSections,
   memberGroupChips,
   memberRoleChips,
+  needsBaseRole,
 } from "./member-assignments";
 import type { ChapterGroup } from "./use-groups";
 import type { Reach, TierRow, TieredRole } from "./role-tiers";
@@ -56,7 +57,7 @@ const ROLES: TieredRole[] = [
   role("r-vp", "Vice President", "t-exec"),
   role("r-rush", "Rush Chair", "t-chairs"),
   role("r-everyone", "Everyone", "t-chairs", {
-    system_key: "MEMBER",
+    system_key: "EVERYONE",
     is_system: true,
   }),
   role("r-past", "Past Cor Sec", null),
@@ -107,6 +108,42 @@ function sections(
     ...overrides,
   });
 }
+
+describe("base roles (2026-11-21)", () => {
+  const withBase = [
+    ...ROLES,
+    role("r-alumni", "Grads", null, { system_key: "ALUMNI", is_system: true }),
+    role("r-actives", "Brothers", "t-chairs", {
+      system_key: "MEMBER",
+      is_system: true,
+    }),
+    role("r-new", "New Member", "t-chairs", {
+      system_key: "NEW_MEMBER",
+      is_system: true,
+    }),
+  ];
+
+  it("opens on the base roles, in their one order, as radios", () => {
+    const [base, ...rest] = sections({ roles: withBase });
+    expect(base?.title).toBe("Base role");
+    expect(base?.rows.map((r) => [r.name, r.exclusive])).toEqual([
+      ["New Member", true],
+      ["Brothers", true],
+      ["Grads", true],
+    ]);
+    // Not listed twice.
+    expect(rest.flatMap((s) => s.rows.map((r) => r.id))).not.toContain(
+      "r-actives",
+    );
+  });
+
+  it("says when a member holds no base role", () => {
+    expect(needsBaseRole(withBase, ["r-rush", "r-everyone"])).toBe(true);
+    expect(needsBaseRole(withBase, ["r-actives", "r-everyone"])).toBe(false);
+    // A chapter with no base roles never asks for one.
+    expect(needsBaseRole(ROLES, [])).toBe(false);
+  });
+});
 
 describe("memberAssignmentSections", () => {
   it("lists roles under their tiers, then roles outside them, then the chapter's own groups", () => {

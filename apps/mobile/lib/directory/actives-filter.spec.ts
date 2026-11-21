@@ -208,7 +208,7 @@ describe("activesFilterRoles and the Everyone role (#4191)", () => {
     expect(
       activesFilterRoles(
         parseChapterRoles([
-          { id: "r-everyone", name: "Everyone", system_key: "MEMBER" },
+          { id: "r-everyone", name: "Everyone", system_key: "EVERYONE" },
           { id: "r-chair", name: "Rush Chair", system_key: null },
         ]),
       ).map((role) => role.id),

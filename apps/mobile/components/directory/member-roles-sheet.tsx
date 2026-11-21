@@ -28,7 +28,6 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import {
-  removesBaseAccess,
   rolesSaveFailedBody,
   toggleRole,
   type RoleOption,
@@ -310,28 +309,7 @@ export const MemberRolesSheet = forwardRef<
   function onToggle(option: RoleOption) {
     if (!session || option.locked || !session.canManageRoles) return;
     const current = draftRef.current;
-    const next = toggleRole(current, option.id);
-    if (removesBaseAccess(current, next, options)) {
-      Alert.alert(
-        ASSIGN_COPY.accessTitle(session.name),
-        ASSIGN_COPY.accessBody(session.name),
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: ASSIGN_COPY.accessConfirm(option.name),
-            style: "destructive",
-            // A removal, never a toggle: a save that failed while the alert
-            // was up may have put the list back, and the button must not
-            // then add the role.
-            onPress: () => {
-              if (!draftRef.current.includes(option.id)) return;
-              apply(draftRef.current.filter((id) => id !== option.id));
-            },
-          },
-        ],
-      );
-      return;
-    }
+    const next = toggleRole(current, option.id, options);
     apply(next);
   }
 
@@ -416,7 +394,7 @@ export const MemberRolesSheet = forwardRef<
           const dim = row.disabledReason !== null;
           return (
             <Pressable
-              accessibilityRole="checkbox"
+              accessibilityRole={row.exclusive ? "radio" : "checkbox"}
               accessibilityLabel={row.name}
               accessibilityHint={row.disabledReason ?? undefined}
               accessibilityState={{

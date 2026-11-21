@@ -1,5 +1,4 @@
 import {
-  can,
   isEveryoneRole,
   roleColorOrNull,
   WILDCARD_PERMISSION,
@@ -27,16 +26,11 @@ export type ChapterRole = {
   /** See {@link isLockedRole}. */
   locked: boolean;
   /**
-   * The Everyone role (#4191): no picker, filter or column offers it, but it
-   * is kept so a lookup from id to name, and a save's access question, still
-   * find it.
+   * The Everyone role, which every member holds: no picker, filter or
+   * column offers it, but it is kept so a lookup from id to name and a
+   * save's settling (`rolesAfterSave`) still find it.
    */
   everyone: boolean;
-  /**
-   * Holding it is enough to open chat, the roster and events: it grants
-   * `members:view` (or `*`), the shared rule in `memberAccessRoleIds`.
-   */
-  grantsBase: boolean;
   /** Members add and remove it themselves (#4958). */
   selfAssignable: boolean;
   /** Its order inside its tier, for the rank (`compareRolesByRank`). */
@@ -86,7 +80,6 @@ export function parseChapterRoles(data: unknown): ChapterRole[] {
           typeof role.system_key === "string" ? role.system_key : null,
         locked: isLockedRole(permissions),
         everyone: isEveryoneRole(role),
-        grantsBase: can("members:view", permissions),
         selfAssignable: role.self_assignable === true,
         display_order:
           typeof role.display_order === "number" ? role.display_order : 0,

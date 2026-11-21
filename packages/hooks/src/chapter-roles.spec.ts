@@ -24,7 +24,7 @@ const EVERYONE = {
   id: "r-everyone",
   name: "Everyone",
   is_system: true,
-  system_key: "MEMBER",
+  system_key: "EVERYONE",
   permissions: ["members:view"],
 };
 const DISCORD = {
@@ -43,7 +43,6 @@ describe("parseChapterRoles", () => {
       locked: true,
       is_system: true,
       system_key: "PRESIDENT",
-      grantsBase: true,
       everyone: false,
     });
   });
@@ -59,12 +58,10 @@ describe("parseChapterRoles", () => {
     expect(everyone).toMatchObject({
       locked: false,
       everyone: true,
-      grantsBase: true,
     });
     expect(discord).toMatchObject({
       locked: false,
       everyone: false,
-      grantsBase: false,
       // Palette colors only.
       color: null,
       system_key: null,

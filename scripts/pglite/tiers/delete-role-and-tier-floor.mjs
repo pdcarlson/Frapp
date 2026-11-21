@@ -7,7 +7,10 @@ import { db, miss } from "../harness.mjs";
 // #4547: `DELETE /v1/roles/:id` calls `delete_role`, which in one transaction
 // takes the role off every holder, gives Everyone to a holder it leaves with
 // no member-access role and no New Member or Alumni role (the rule
-// `rolesAfterSave` applies to a save), and deletes the role.
+// `rolesAfterSave` applied to a save), and deletes the role. Since
+// 20261121001050 (#5802) it gives nobody anything: the `MEMBER` row here is
+// Actives, and the member-row trigger keeps the `EVERYONE` floor, which this
+// fixture's chapter doesn't have.
 //
 // #4548: `reorder_role_tiers` refuses (22023) an order that puts a tier
 // holding the New Member or Alumni role above the Everyone role's tier.
@@ -146,8 +149,8 @@ console.log(
       {},
     );
     check(
-      "a member whose only role it was holds Everyone",
-      same(await rolesOf(U[0]), [R.everyone]),
+      "a member whose only role it was is not handed Actives (#5802)",
+      same(await rolesOf(U[0]), []),
       { roles: await rolesOf(U[0]) },
     );
     check(
@@ -196,10 +199,10 @@ console.log(
       [0, 1, 2, 3, 5, 6, 7].map((i) => memberId(U[i])),
     );
     check(
-      "it reports who lost the role and who was given Everyone",
+      "it reports who lost the role, and that nobody was given a role",
       result?.role?.id === R.photo &&
         same([...result.stripped_member_ids].sort(), [...stripped].sort()) &&
-        same(result.given_everyone_member_ids, [await memberId(U[0])]),
+        same(result.given_everyone_member_ids, []),
       { result },
     );
 

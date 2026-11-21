@@ -34,7 +34,7 @@ import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
 import type { RankContext } from '#domain/utils/rank-context';
-import { inviteRefusal, memberRoleOf } from '#domain/utils/invite-reach';
+import { inviteRefusal, everyoneRoleOf } from '#domain/utils/invite-reach';
 import {
   DAILY_LIMIT_WINDOW_MS,
   INVITE_EMAILS_PER_CHAPTER_PER_DAY,
@@ -383,7 +383,7 @@ export class InviteService {
       this.rbac.getRankContext(chapterId, inviterUserId),
     ]);
     let role = resolved;
-    const member = memberRoleOf(context);
+    const member = everyoneRoleOf(context);
     if (
       !requested?.trim() &&
       member &&
@@ -447,7 +447,7 @@ export class InviteService {
       const roles = await this.roleRepo.findByChapter(chapterId);
       if (roles.some((r) => r.name === explicit)) return explicit;
       const everyone = roles.find(
-        (r) => r.system_key === SystemRoleKeys.MEMBER,
+        (r) => r.system_key === SystemRoleKeys.EVERYONE,
       );
       return everyone?.name ?? explicit;
     }
@@ -474,8 +474,10 @@ export class InviteService {
       );
     }
 
-    const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
-    if (member) return member.name;
+    const everyone = roles.find(
+      (r) => r.system_key === SystemRoleKeys.EVERYONE,
+    );
+    if (everyone) return everyone.name;
 
     throw new BadRequestException({
       code: 'invite.role_unresolved',
@@ -876,16 +878,12 @@ export class InviteService {
 
   /**
    * The role a redeem grants, plus every role id the new membership starts
-   * with. A role a chapter made itself, or one a Discord import brought over,
-   * often carries nothing but a `channels:read:<slug>` permission. Granted
-   * alone it leaves the new member refused on every screen, because the
-   * access every member needs (`members:view`) lives on the seeded roles
-   * (2026-11-07: two testers invited as "Cabinet"). So a role that is not
-   * seeded (`is_system` false, which also covers seeded roles renamed before
-   * `system_key` existed) and grants neither `members:view` nor `*` comes with
-   * the chapter's Member role. Member goes after the invited role, because
-   * web's Members list labels a member by their first role. Every other role
-   * is granted alone, as before.
+   * with: the invite's role, then the chapter's Everyone role, the floor
+   * every member holds (Paul, 2026-11-21). Nothing else: a join into a role
+   * that carries no access lands with the directory and the channels open to
+   * the whole chapter, and an officer gives the base role. Until 2026-11-21 a
+   * role carrying no `members:view` came with the old Member role, which
+   * landed the joiner as a full member.
    */
   private async resolveRedeemRoles(invite: Invite) {
     // The inviter's reach as it stands now, not when they sent the invite
@@ -895,9 +893,9 @@ export class InviteService {
       invite.chapter_id,
       invite.created_by,
     );
-    const member = memberRoleOf(context);
+    const everyone = everyoneRoleOf(context);
     // A role deleted since the invite was sent grants the Everyone role.
-    const role = context.roles.find((r) => r.name === invite.role) ?? member;
+    const role = context.roles.find((r) => r.name === invite.role) ?? everyone;
     // Fails closed: an invite for a role carrying `*`, or one its sender can
     // no longer grant, joins nobody, rather than quietly joining as Everyone.
     // A sender who has since left the chapter or lost `members:invite` can no
@@ -910,9 +908,7 @@ export class InviteService {
       : 'The sender of this invite can no longer invite members.';
     if (!role) return { role, roleIds: [] as string[], refusal };
     const roleIds = [role.id];
-    if (member && member.id !== role.id && lacksBaseAccess(role)) {
-      roleIds.push(member.id);
-    }
+    if (everyone && everyone.id !== role.id) roleIds.push(everyone.id);
     return { role, roleIds, refusal };
   }
 
@@ -1468,13 +1464,13 @@ function assertInviteRoleExists(context: RankContext, roleName: string): void {
  * so it, like no role at all, is named as none.
  */
 function shownInviteRole(role: Role | null | undefined): string | null {
-  return role && role.system_key !== SystemRoleKeys.MEMBER ? role.name : null;
+  return role && role.system_key !== SystemRoleKeys.EVERYONE ? role.name : null;
 }
 
 function namedRole(context: RankContext, roleName: string): Role | undefined {
   return (
     context.roles.find((candidate) => candidate.name === roleName) ??
-    memberRoleOf(context)
+    everyoneRoleOf(context)
   );
 }
 
@@ -1492,7 +1488,7 @@ function redeemedRole(
   const named = context.roles.find((candidate) => candidate.name === roleName);
   return named && !named.permissions.includes(WILDCARD)
     ? named
-    : memberRoleOf(context);
+    : everyoneRoleOf(context);
 }
 
 /**
@@ -1512,20 +1508,4 @@ function visibilityIn(context: RankContext): (invite: Invite) => boolean {
     }
     return visible;
   };
-}
-
-/**
- * A role that is not seeded and gives none of the access every member needs.
- * See `InviteService.resolveRedeemRoles`.
- */
-function lacksBaseAccess(role: {
-  is_system: boolean;
-  permissions: string[] | null;
-}): boolean {
-  if (role.is_system) return false;
-  const permissions = role.permissions ?? [];
-  return (
-    !permissions.includes(WILDCARD) &&
-    !permissions.includes(SystemPermissions.MEMBERS_VIEW)
-  );
 }

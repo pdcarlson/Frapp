@@ -100,14 +100,20 @@ export * from "./event-excuse";
 export * from "./event-form-rows";
 // What is on right now, and the Now card's words (#5777).
 export * from "./event-now";
-// The chapter's Everyone role, the Member role renamed and hidden (#4191).
+// The chapter's Everyone role, the floor every member holds, and the three
+// base roles an officer gives (Paul, 2026-11-21).
 export {
+  ACTIVE_ROLE_NAME,
+  ACTIVE_ROLE_SYSTEM_KEY,
+  BASE_ROLE_SYSTEM_KEYS,
+  baseRoleIds,
   EVERYONE_MEMBER_LIST_HEADING,
   EVERYONE_MENTION_NAME,
   EVERYONE_ROLE_NAME,
   EVERYONE_ROLE_SYSTEM_KEY,
   HERE_MENTION_NAME,
   type HereMentionSource,
+  isBaseRole,
   isEveryoneRole,
   mentionRoleHint,
   reservedMentionName,

@@ -22,7 +22,6 @@ import { groupKindOpensChannels } from '#domain/entities/chapter-group.entity';
 import { Role, RoleTier } from '#domain/entities/role.entity';
 import { Member } from '#domain/entities/member.entity';
 import {
-  EVERYONE_ROLE_NAME,
   highestRankedRole,
   isEveryoneRole,
   sortRolesByRank,
@@ -556,7 +555,7 @@ export class RbacService {
     return tier;
   }
 
-  /** 400 when `tierId` ranks above the tier holding the Everyone role. */
+  /** 400 when `tierId` ranks above the tier holding the Actives role. */
   private async assertNotAboveEveryone(
     chapterId: string,
     tierId: string,
@@ -565,13 +564,13 @@ export class RbacService {
       this.roleRepo.findByChapter(chapterId),
       this.tierRepo.findByChapter(chapterId),
     ]);
-    const everyone = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
-    const floor = tiers.find((t) => t.id === everyone?.tier_id);
+    const actives = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
+    const floor = tiers.find((t) => t.id === actives?.tier_id);
     const target = tiers.find((t) => t.id === tierId);
     if (floor && target && target.position < floor.position) {
       throw new BadRequestException({
         code: 'role.below_everyone',
-        message: 'New Member and Alumni stay below the Everyone tier.',
+        message: `New Member and Alumni stay at or below the ${actives?.name ?? 'Actives'} tier.`,
       });
     }
   }
@@ -705,36 +704,42 @@ export class RbacService {
       );
     }
 
-    // The Everyone role (#4191) is the base under every tier: it keeps its
-    // name, which `@everyone` reads, and its tier, which is where plain
-    // members rank and where presidency's claim walk stops. Its permissions
-    // and its `@everyone` switch stay editable. Two moves stay open because
-    // they only bring it to where it belongs: renaming it Everyone (a row
-    // the previous API seeded as Member after the migration ran), and
-    // putting it in a tier when it sits outside them.
-    if (role.system_key === SystemRoleKeys.MEMBER) {
-      if (
-        data.name !== undefined &&
-        data.name !== role.name &&
-        data.name !== EVERYONE_ROLE_NAME
-      ) {
+    // The Everyone role is the floor every member holds: it keeps its name,
+    // which `@everyone` reads, and stays outside the tiers, so no tier lends
+    // every member more than the chapter gave Everyone itself. Its
+    // permissions and its `@everyone` switch stay editable.
+    if (role.system_key === SystemRoleKeys.EVERYONE) {
+      if (data.name !== undefined && data.name !== role.name) {
         throw new BadRequestException({
           code: 'role.everyone_fixed',
           message: 'The Everyone role keeps its name.',
         });
       }
-      if (
-        data.tier_id !== undefined &&
-        data.tier_id !== role.tier_id &&
-        !(role.tier_id === null && data.tier_id !== null)
-      ) {
+      if (data.tier_id !== undefined && data.tier_id !== null) {
         throw new BadRequestException({
           code: 'role.everyone_fixed',
-          message: 'The Everyone role stays in its tier.',
+          message: 'The Everyone role stays outside the tiers.',
         });
       }
     } else if (data.name && data.name !== role.name) {
       assertNotReservedMentionName(data.name);
+    }
+
+    // The Actives role (the seeded Member role) stays in its tier: it is
+    // where actives rank and where presidency's claim walk and the tier
+    // reorder's floor stop, and outside the tiers it would rank below New
+    // members. The one move left open brings it to where it belongs: into a
+    // tier when it sits outside them.
+    if (
+      role.system_key === SystemRoleKeys.MEMBER &&
+      data.tier_id !== undefined &&
+      data.tier_id !== role.tier_id &&
+      !(role.tier_id === null && data.tier_id !== null)
+    ) {
+      throw new BadRequestException({
+        code: 'role.everyone_fixed',
+        message: `The ${role.name} role stays in its tier.`,
+      });
     }
 
     // New Member and Alumni rank at or below Everyone (#4548): neither moves
@@ -812,9 +817,8 @@ export class RbacService {
     if (role.is_system)
       throw new ForbiddenException('Cannot delete system roles');
 
-    // One transaction (#4547): the id leaves every holder's role_ids, and a
-    // holder left with no member-access role gets Everyone, as
-    // `rolesAfterSave` gives it back, so nobody is locked out by a delete.
+    // One transaction (#4547): the id leaves every holder's role_ids. The
+    // Everyone role stays on each row, so nobody is locked out by a delete.
     const deletion = await this.roleRepo.delete(chapterId, roleId);
     if (!deletion) throw new NotFoundException('Role not found');
     await this.chapterAuditLogService.record({

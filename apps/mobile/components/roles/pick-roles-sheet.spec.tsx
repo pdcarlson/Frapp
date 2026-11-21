@@ -31,7 +31,6 @@ const ROLES = [
   system_key: null,
   locked: false,
   everyone: false,
-  grantsBase: false,
   selfAssignable: true,
   display_order: 0,
   tier_id: null,

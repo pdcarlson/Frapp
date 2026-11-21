@@ -1,4 +1,8 @@
-import { PERMISSION_REGISTRY, permissionLabel } from "@repo/validation";
+import {
+  isEveryoneRole,
+  PERMISSION_REGISTRY,
+  permissionLabel,
+} from "@repo/validation";
 
 /*
  * Role tiers as web and the phone both read them (#3990, #4072, #4074): the
@@ -100,24 +104,16 @@ export function byDisplayOrder(a: TieredRole, b: TieredRole): number {
 }
 
 /**
- * What "View as a role" (#4072) previews: a member holding only this role,
- * with the chapter's Member role beside it when joining into the role would
- * add it. That mirrors the redeem (`lacksBaseAccess` in the API's
- * `invite.service.ts`): a role the chapter made that grants neither
- * `members:view` nor `*` comes with Member, because on its own it opens no
- * screen at all.
+ * What "View as a role" (#4072) previews: a member holding only this role
+ * and the chapter's Everyone role, which every member holds beside whatever
+ * else they have (the redeem gives both, `InviteService.resolveRedeemRoles`).
  */
 export function previewPermissions(
   role: TieredRole,
   roles: readonly TieredRole[],
 ): string[] {
-  const own = role.permissions;
-  const comesWithMember =
-    !role.is_system && !own.includes("*") && !own.includes("members:view");
-  const member = comesWithMember
-    ? roles.find((candidate) => candidate.system_key === "MEMBER")
-    : undefined;
-  return [...new Set([...own, ...(member?.permissions ?? [])])];
+  const everyone = roles.find((candidate) => isEveryoneRole(candidate));
+  return [...new Set([...role.permissions, ...(everyone?.permissions ?? [])])];
 }
 
 export function isWildcardRole(role: Pick<TieredRole, "permissions">): boolean {

@@ -48,9 +48,14 @@ export const CLIENT_CONTRACT_ERROR_CODES = [
   // A config PATCH switching off an always-on module. Chapter settings draws
   // those locked and never sends it (#4073).
   "chapter.config.module_always_on",
-  // Renaming the Everyone role or moving it out of its tier (#4191). Its role
-  // page draws both locked and never sends a change.
+  // Renaming the Everyone role or putting it in a tier, or moving the Actives
+  // role out of its tier (2026-11-21). Their role pages draw both locked and
+  // never send a change.
   "role.everyone_fixed",
+  // A member's roles saved with two base roles (New Member, Actives, Alumni)
+  // and neither newly added. Both apps settle the list with `rolesAfterSave`
+  // first, which keeps one.
+  "role.base_conflict",
   // Changes for one kind of suggestion sent to accept another kind. The
   // review screen sends a suggestion's edits under its own kind (#4309).
   "ai.suggestion.edits_kind",

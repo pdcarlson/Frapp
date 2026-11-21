@@ -16,6 +16,8 @@ import {
   dmChannelIdOf,
   memberGroupChips,
   memberRoleChips,
+  NO_BASE_ROLE_LABEL,
+  needsBaseRole,
   useBlockedUserIds,
   useGetOrCreateDm,
   useGroups,
@@ -539,6 +541,15 @@ export function MemberProfile({
               <Text style={styles.meta}>Loading roles</Text>
             ) : (
               <View style={styles.chips}>
+                {/* No base role: they see only what the whole chapter may
+                    (Paul, 2026-11-21), said as web's card says it. */}
+                {!!detail && needsBaseRole(rolesData.roles, detail.roleIds) ? (
+                  <View style={[styles.chip, styles.addChip]}>
+                    <Text style={[styles.chipText, styles.addChipText]}>
+                      {NO_BASE_ROLE_LABEL}
+                    </Text>
+                  </View>
+                ) : null}
                 {roleChips.map((chip) => (
                   <ColorChip
                     key={chip.id}
@@ -552,8 +563,11 @@ export function MemberProfile({
                     disabled={dmPending}
                     onPress={() => openAssignments("roles")}
                   />
-                ) : roleChips.length === 0 ? (
-                  // Everyone draws no chip (#4191): as Discord says it.
+                ) : roleChips.length === 0 &&
+                  !(
+                    !!detail && needsBaseRole(rolesData.roles, detail.roleIds)
+                  ) ? (
+                  // Everyone draws no chip: as Discord says it.
                   <Text style={styles.meta}>No roles</Text>
                 ) : null}
               </View>

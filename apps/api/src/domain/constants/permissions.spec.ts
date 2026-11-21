@@ -82,6 +82,9 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
       MEMBER,
       NEW_MEMBER: ['ai:use', 'backwork:upload', 'members:view'],
       ALUMNI: ['alumni:post', 'members:view'],
+      // The floor every member holds (2026-11-21): the directory and the
+      // channels open to the whole chapter, nothing else.
+      EVERYONE: ['members:view'],
     });
   });
 
@@ -163,7 +166,7 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
 // migration 20261105200000_role_color_palette_defaults.sql carries the same
 // values for existing chapters.
 describe('DEFAULT_SYSTEM_ROLES colors', () => {
-  it('seeds the palette defaults, and none for Member and New Member', () => {
+  it('seeds the palette defaults, and none for Actives, New Member and Everyone', () => {
     const colors = Object.fromEntries(
       DEFAULT_SYSTEM_ROLES.map((role) => [role.system_key, role.color]),
     );
@@ -175,6 +178,7 @@ describe('DEFAULT_SYSTEM_ROLES colors', () => {
       MEMBER: null,
       NEW_MEMBER: null,
       ALUMNI: '#A9B4C2',
+      EVERYONE: null,
     });
   });
 });

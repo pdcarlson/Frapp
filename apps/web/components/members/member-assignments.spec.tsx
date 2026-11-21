@@ -52,8 +52,8 @@ const ROLES = [
   }),
   role("r-social", "Social chair", "t-chairs"),
   role("r-rush", "Rush chair", "t-chairs"),
-  role("r-everyone", "Everyone", "t-chairs", {
-    system_key: "MEMBER",
+  role("r-everyone", "Everyone", null, {
+    system_key: "EVERYONE",
     is_system: true,
   }),
 ];
@@ -83,6 +83,8 @@ vi.mock("@repo/hooks", async () => {
     memberAssignmentSections: actual.memberAssignmentSections,
     memberGroupChips: actual.memberGroupChips,
     memberRoleChips: actual.memberRoleChips,
+    needsBaseRole: actual.needsBaseRole,
+    NO_BASE_ROLE_LABEL: actual.NO_BASE_ROLE_LABEL,
     useGroups: () => ({
       data: [
         {
@@ -163,21 +165,17 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
     });
   });
 
-  it("asks before taking away the last role that lets them open the app", async () => {
+  it("takes away a member's last role at once, leaving them Everyone", async () => {
     const user = userEvent.setup();
-    renderIt(["r-sec"]);
-    await user.click(
-      screen.getByRole("button", { name: "Remove Corresponding Secretary" }),
-    );
-    expect(
-      await screen.findByText("Take away Jimmy Mitchell's access?"),
-    ).toBeInTheDocument();
-    expect(updateRoles).not.toHaveBeenCalled();
+    renderIt(["r-sec", "r-everyone"]);
     await user.click(
       screen.getByRole("button", { name: "Remove Corresponding Secretary" }),
     );
     await waitFor(() =>
-      expect(updateRoles).toHaveBeenCalledWith({ id: "m1", role_ids: [] }),
+      expect(updateRoles).toHaveBeenCalledWith({
+        id: "m1",
+        role_ids: ["r-everyone"],
+      }),
     );
   });
 
@@ -299,14 +297,14 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
     expect(updateRoles).toHaveBeenCalledTimes(1);
     expect(updateRoles).toHaveBeenLastCalledWith({
       id: "m1",
-      role_ids: ["r-sec", "r-everyone", "r-social"],
+      role_ids: ["r-sec", "r-social", "r-everyone"],
     });
 
     finish();
     await waitFor(() => expect(updateRoles).toHaveBeenCalledTimes(2));
     expect(updateRoles).toHaveBeenLastCalledWith({
       id: "m1",
-      role_ids: ["r-sec", "r-everyone", "r-social", "r-rush"],
+      role_ids: ["r-sec", "r-social", "r-rush", "r-everyone"],
     });
     expect(list).toBeInTheDocument();
     await waitFor(() =>
@@ -343,12 +341,6 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
     renderIt(["r-sec", "r-everyone"]);
     await user.click(
       screen.getByRole("button", { name: "Remove Corresponding Secretary" }),
-    );
-    // The access confirm: this was their last role with access.
-    await user.click(
-      await screen.findByRole("button", {
-        name: "Remove Corresponding Secretary",
-      }),
     );
     await waitFor(() => expect(updateRoles).toHaveBeenCalledTimes(1));
     // The profile prop still holds the old list; the chip is gone anyway.

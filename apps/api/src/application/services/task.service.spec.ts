@@ -646,7 +646,7 @@ describe('TaskService', () => {
           name: 'Member',
           tier_id: MEMBERS,
           permissions: [],
-          system_key: 'MEMBER',
+          system_key: 'EVERYONE',
         },
       ] as never);
       mockTierRepo.findByChapter.mockResolvedValue([
@@ -686,7 +686,7 @@ describe('TaskService', () => {
           id: 'role-everyone',
           name: 'Member',
           tier_id: ALL,
-          system_key: 'MEMBER',
+          system_key: 'EVERYONE',
         },
       ] as never);
       mockTierRepo.findByChapter.mockResolvedValue([
@@ -971,7 +971,7 @@ describe('TaskService', () => {
             id: 'role-everyone',
             chapter_id: 'ch-1',
             name: 'Everyone',
-            system_key: 'MEMBER',
+            system_key: 'EVERYONE',
           },
           {
             id: 'role-alumni',

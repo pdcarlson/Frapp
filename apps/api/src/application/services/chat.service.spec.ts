@@ -6546,7 +6546,7 @@ describe('ChatService', () => {
           role('r-officers', 'Officers'),
           // The Everyone role (#4191): pinged as @everyone, off by default.
           role('r-member', 'Everyone', {
-            system_key: 'MEMBER',
+            system_key: 'EVERYONE',
             display_order: 9,
             mentionable: false,
           }),

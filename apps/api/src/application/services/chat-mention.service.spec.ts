@@ -51,7 +51,7 @@ const members = [
 
 const roles = [
   role('member', 'Everyone', {
-    system_key: 'MEMBER',
+    system_key: 'EVERYONE',
     display_order: 5,
     mentionable: false,
   }),

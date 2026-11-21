@@ -47,7 +47,7 @@ const directory = buildWhoDirectory({
     { user_id: "u-blank", display_name: "  ", role_ids: [] },
   ],
   roles: [
-    { id: "everyone", name: "Member", system_key: "MEMBER", display_order: 0 },
+    { id: "everyone", name: "Everyone", system_key: "EVERYONE", display_order: 0 },
     { id: "alumni", name: "Alumni", system_key: "ALUMNI", display_order: 1 },
     { id: "exec", name: "President", tier_id: "t-exec", display_order: 2 },
     { id: "recruit", name: "Recruitment Committee", tier_id: "t-comm", display_order: 3 },
@@ -446,7 +446,7 @@ describe("a tier as a pick (#5473)", () => {
         { user_id: "u-b", display_name: "B", role_ids: [] },
       ],
       roles: [
-        { id: "everyone", name: "Member", system_key: "MEMBER", tier_id: "t-all", display_order: 0 },
+        { id: "everyone", name: "Member", system_key: "EVERYONE", tier_id: "t-all", display_order: 0 },
         { id: "officer", name: "Officer", tier_id: "t-all", display_order: 1 },
       ],
       tiers: [{ id: "t-all", name: "Members", position: 1 }],

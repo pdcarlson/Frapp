@@ -156,7 +156,7 @@ describe('InviteService', () => {
           id: 'role-member',
           chapter_id: 'ch-1',
           name: 'Member',
-          system_key: SystemRoleKeys.MEMBER,
+          system_key: SystemRoleKeys.EVERYONE,
           is_system: true,
         }),
       ]),
@@ -309,7 +309,7 @@ describe('InviteService', () => {
     return roleFixture({
       id: 'role-member',
       name: 'Member',
-      system_key: SystemRoleKeys.MEMBER,
+      system_key: SystemRoleKeys.EVERYONE,
       is_system: true,
       display_order: 3,
       ...overrides,
@@ -631,7 +631,7 @@ describe('InviteService', () => {
         roleFixture({
           id: 'r-member',
           name: 'Everyone',
-          system_key: SystemRoleKeys.MEMBER,
+          system_key: SystemRoleKeys.EVERYONE,
         }),
       ]);
 
@@ -649,7 +649,7 @@ describe('InviteService', () => {
         roleFixture({
           id: 'r-member',
           name: 'Everyone',
-          system_key: SystemRoleKeys.MEMBER,
+          system_key: SystemRoleKeys.EVERYONE,
         }),
         roleFixture({
           id: 'r-pledge',
@@ -979,7 +979,7 @@ describe('InviteService', () => {
         roleFixture({
           id: 'r-member',
           name: 'Everyone',
-          system_key: SystemRoleKeys.MEMBER,
+          system_key: SystemRoleKeys.EVERYONE,
         }),
         roleFixture({
           id: 'r-brothers',
@@ -1289,7 +1289,7 @@ describe('InviteService', () => {
         roleFixture({
           id: 'r-member',
           name: 'Member',
-          system_key: SystemRoleKeys.MEMBER,
+          system_key: SystemRoleKeys.EVERYONE,
         }),
       ]);
       mockMemberRepo.findByUser.mockResolvedValue([]);
@@ -1815,16 +1815,25 @@ describe('InviteService', () => {
     );
   });
 
-  // 2026-11-07: two testers invited as "Cabinet", a role a Discord import
-  // brought over with only `channels:read:cabinet`, were refused on every
-  // screen because nothing gave them `members:view`.
-  describe('a custom role with no base access comes with Member', () => {
+  // Every join holds the Everyone role, the floor (Paul, 2026-11-21): the
+  // invite's role, then Everyone, and nothing else, so a join into a role
+  // carrying no access lands with only what the whole chapter may see.
+  describe('a join holds the invite role and Everyone', () => {
     const memberRole: Role = roleFixture({
       id: 'role-member',
-      name: 'Member',
+      name: 'Everyone',
+      system_key: SystemRoleKeys.EVERYONE,
+      is_system: true,
+      display_order: 8,
+      permissions: ['members:view'],
+    });
+    const activesRole: Role = roleFixture({
+      id: 'role-actives',
+      name: 'Actives',
       system_key: SystemRoleKeys.MEMBER,
       is_system: true,
       display_order: 5,
+      permissions: ['members:view', 'events:create'],
     });
     const cabinetRole: Role = roleFixture({
       id: 'role-cabinet',
@@ -1850,12 +1859,12 @@ describe('InviteService', () => {
     beforeEach(() => {
       // Each test names the invite it redeems.
       arrangeRedeem({
-        roles: [memberRole, cabinetRole, newMemberRole],
+        roles: [memberRole, activesRole, cabinetRole, newMemberRole],
         member: memberFixture(),
       });
     });
 
-    it('grants Member after a custom role that lacks members:view', async () => {
+    it('adds Everyone after a role that carries no access, never Actives', async () => {
       mockInviteRepo.findByToken.mockResolvedValue(inviteFor('Cabinet'));
 
       await service.redeem('test-uuid', 'user-2');
@@ -1868,59 +1877,29 @@ describe('InviteService', () => {
       );
     });
 
-    it('grants a custom role that already carries members:view alone', async () => {
-      mockRoleRepo.findByChapter.mockResolvedValue([
-        memberRole,
-        roleFixture({
-          id: 'role-guest',
-          name: 'Rush Guest',
-          system_key: null,
-          is_system: false,
-          display_order: 22,
-          permissions: ['members:view', 'channels:read:rush'],
-        }),
-      ]);
-      mockInviteRepo.findByToken.mockResolvedValue(inviteFor('Rush Guest'));
-
-      await service.redeem('test-uuid', 'user-2');
-
-      expect(mockMemberRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ role_ids: ['role-guest'] }),
-      );
-    });
-
-    it('grants a seeded role renamed before system_key existed alone', async () => {
-      mockRoleRepo.findByChapter.mockResolvedValue([
-        memberRole,
-        roleFixture({
-          id: 'role-pledge',
-          name: 'Pledge',
-          system_key: null,
-          is_system: true,
-          display_order: 6,
-          permissions: ['backwork:upload'],
-        }),
-      ]);
-      mockInviteRepo.findByToken.mockResolvedValue(inviteFor('Pledge'));
-
-      await service.redeem('test-uuid', 'user-2');
-
-      expect(mockMemberRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ role_ids: ['role-pledge'] }),
-      );
-    });
-
-    it('grants a seeded role alone', async () => {
+    it('adds Everyone after a base role', async () => {
       mockInviteRepo.findByToken.mockResolvedValue(inviteFor('New Member'));
 
       await service.redeem('test-uuid', 'user-2');
 
       expect(mockMemberRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ role_ids: ['role-new-member'] }),
+        expect.objectContaining({
+          role_ids: ['role-new-member', 'role-member'],
+        }),
       );
     });
 
-    it('grants only the custom role when the chapter has no Member role', async () => {
+    it('joins with Everyone alone from an invite naming Everyone', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue(inviteFor('Everyone'));
+
+      await service.redeem('test-uuid', 'user-2');
+
+      expect(mockMemberRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ role_ids: ['role-member'] }),
+      );
+    });
+
+    it('grants only the custom role when the chapter has no Everyone role', async () => {
       mockRoleRepo.findByChapter.mockResolvedValue([cabinetRole]);
       mockInviteRepo.findByToken.mockResolvedValue(inviteFor('Cabinet'));
 
@@ -2745,7 +2724,7 @@ describe('InviteService', () => {
             id: 'role-everyone',
             chapter_id: CHAPTER_ID,
             name: 'Everyone',
-            system_key: SystemRoleKeys.MEMBER,
+            system_key: SystemRoleKeys.EVERYONE,
             is_system: true,
             tier_id: TIER.brothers,
             permissions: ['members:view'],
@@ -3012,7 +2991,7 @@ describe('InviteService', () => {
         id: 'role-everyone',
         chapter_id: CHAPTER_ID,
         name: 'Everyone',
-        system_key: SystemRoleKeys.MEMBER,
+        system_key: SystemRoleKeys.EVERYONE,
         is_system: true,
         permissions: ['members:view'],
       });
@@ -3062,7 +3041,7 @@ describe('InviteService', () => {
       return roleFixture({
         id: 'role-member',
         name: 'Member',
-        system_key: SystemRoleKeys.MEMBER,
+        system_key: SystemRoleKeys.EVERYONE,
         is_system: true,
         display_order: 3,
         ...over,

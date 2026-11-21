@@ -5,6 +5,8 @@ import { Check, Loader2, Plus, X } from "lucide-react";
 import {
   ASSIGN_COPY,
   memberAssignmentSections,
+  NO_BASE_ROLE_LABEL,
+  needsBaseRole,
   memberGroupChips,
   memberRoleChips,
   useGroups,
@@ -14,14 +16,8 @@ import {
   type AssignmentChip,
   type AssignmentRow,
 } from "@repo/hooks";
-import {
-  can,
-  memberAccessRoleIds,
-  removesMemberAccess,
-  rolesAfterSave,
-} from "@repo/validation";
+import { can, rolesAfterSave } from "@repo/validation";
 import { useRolesData } from "@/components/roles/use-roles-data";
-import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
@@ -41,9 +37,12 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * groups (`memberAssignmentSections`, shared with the phone). Every tick and
  * every x saves at once, as Slack's and Discord's role pickers do.
  *
- * Roles follow the rank rules: a role the viewer can't give is listed,
- * disabled, with why. Taking away the last role that lets someone open the
- * app still asks first (#3670). Groups grant nothing, so they need only
+ * The list opens on the member's base role (New Member, Actives, Alumni),
+ * picked as one: choosing one takes the others away, and a member with none
+ * shows "No base role" among their chips, since they see only what the whole
+ * chapter may (Paul, 2026-11-21). Roles follow the rank rules: a role the
+ * viewer can't give is listed, disabled, with why. Groups grant nothing, so
+ * they need only
  * `groups:manage`, plus `channels:manage` for one a channel's access list
  * names, which the API answers.
  *
@@ -105,7 +104,6 @@ export function MemberAssignments({
   const updateRoles = useUpdateMemberRoles();
   const setMembership = useSetGroupMembership();
   const { toast } = useToast();
-  const { confirm, confirmDialog } = useConfirmDialog();
   // Ticks and x's waiting to save, by `kind:id`, with the state each asked
   // for. The list draws a row in that state at once (#5752), and only that
   // row waits for its save; the rest stay open to more ticks.
@@ -133,27 +131,15 @@ export function MemberAssignments({
   async function setRole(roleId: string, give: boolean) {
     if (!memberId) return;
     const current = latestRoleIds.current;
-    const requested = give
-      ? [...new Set([...current, roleId])]
-      : current.filter((id) => id !== roleId);
-    if (
-      !give &&
-      removesMemberAccess(
-        [...current],
-        rolesAfterSave(requested, current, data.roles),
-        memberAccessRoleIds(data.roles),
-      )
-    ) {
-      const roleName =
-        data.roles.find((role) => role.id === roleId)?.name ?? "this role";
-      const confirmed = await confirm({
-        title: ASSIGN_COPY.accessTitle(displayName),
-        description: ASSIGN_COPY.accessBody(displayName),
-        confirmLabel: ASSIGN_COPY.accessConfirm(roleName),
-        tone: "destructive",
-      });
-      if (!confirmed) return;
-    }
+    // Settled as the API settles it: Everyone stays, and a base role picked
+    // takes the others away, so the next tick builds on what lands.
+    const requested = rolesAfterSave(
+      give
+        ? [...new Set([...current, roleId])]
+        : current.filter((id) => id !== roleId),
+      current,
+      data.roles,
+    );
     try {
       await updateRoles.mutateAsync({ id: memberId, role_ids: requested });
       latestRoleIds.current = requested;
@@ -203,6 +189,16 @@ export function MemberAssignments({
       <ChipRow
         title="Roles"
         chips={roleChips}
+        // A member with no base role sees only what the whole chapter may,
+        // so it is said where the base role would be, before the officer
+        // opens the list.
+        notice={
+          editable &&
+          data.rolesQuery.data !== undefined &&
+          needsBaseRole(data.roles, heldRoleIds)
+            ? NO_BASE_ROLE_LABEL
+            : null
+        }
         // A read still out, or one that failed, is not a member with no roles.
         empty={
           data.rolesQuery.data !== undefined
@@ -275,7 +271,6 @@ export function MemberAssignments({
           }
         />
       ) : null}
-      {confirmDialog}
     </div>
   );
 }
@@ -283,6 +278,7 @@ export function MemberAssignments({
 function ChipRow({
   title,
   chips,
+  notice = null,
   empty,
   compact,
   pending,
@@ -291,6 +287,8 @@ function ChipRow({
 }: {
   title: string;
   chips: AssignmentChip[];
+  /** A muted, dashed chip first, for a missing base role. */
+  notice?: string | null;
   empty: string;
   compact: boolean;
   pending: ReadonlyMap<string, boolean>;
@@ -308,6 +306,11 @@ function ChipRow({
         {title}
       </h3>
       <ul className="flex flex-wrap items-center gap-1.5">
+        {notice ? (
+          <li className="inline-flex items-center rounded-full border border-dashed border-border px-2.5 py-1 text-caption text-muted-foreground">
+            {notice}
+          </li>
+        ) : null}
         {chips.map((chip) => {
           const saving = pending.has(`${chip.kind}:${chip.id}`);
           return (
@@ -358,7 +361,7 @@ function ChipRow({
           );
         })}
         {add ? <li>{add}</li> : null}
-        {chips.length === 0 && !add ? (
+        {chips.length === 0 && !add && !notice ? (
           <li className="text-caption text-muted-foreground">{empty}</li>
         ) : null}
       </ul>
@@ -461,7 +464,9 @@ function AddPicker({
                     <button
                       key={row.id}
                       type="button"
-                      role="menuitemcheckbox"
+                      role={
+                        row.exclusive ? "menuitemradio" : "menuitemcheckbox"
+                      }
                       aria-checked={held}
                       aria-busy={busy || undefined}
                       disabled={row.disabledReason !== null}
@@ -479,7 +484,8 @@ function AddPicker({
                       <span
                         aria-hidden="true"
                         className={cn(
-                          "grid h-4 w-4 shrink-0 place-items-center rounded border",
+                          "grid h-4 w-4 shrink-0 place-items-center border",
+                          row.exclusive ? "rounded-full" : "rounded",
                           held
                             ? "border-primary bg-primary text-primary-foreground"
                             : "border-muted-foreground",

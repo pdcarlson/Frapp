@@ -1,20 +1,55 @@
 import { foldMentionName } from "./mentions";
-import { can } from "./permissions";
 
 /**
- * The chapter's Everyone role (#4191, Paul 2026-11-11: "@members should just
- * be @everyone in my opinion, and there should not be a member role").
+ * The chapter's Everyone role, the floor every member stands on (Paul,
+ * 2026-11-21: "Everyone comes in as nothing and gets no access to any private
+ * channels by default. Then we give them a role and all 3 of the base roles
+ * provide access based on how the chapter set it up").
  *
- * It is the role that used to be called Member, kept under its rename-proof
- * key (`roles.system_key = 'MEMBER'`) so every stored reference to it keeps
- * working: members' `role_ids`, invites, `default_invite_role_id`, channel
- * lists and mobile builds already in the store. It is held by exactly the
- * members who held Member and sits in the same tier, so nobody's access or
- * rank moved. What changed is that no list, chip, filter or picker offers it,
- * nobody assigns or removes it, and pinging it means `@everyone`
+ * Like Discord's `@everyone`, every member of the chapter holds it, always,
+ * whatever else they hold. It sits outside the tiers, so it ranks below all
+ * of them, and it gives only what anyone in the chapter may do: the directory
+ * and the channels open to the whole chapter. No list, chip, filter or picker
+ * offers it, nobody assigns or removes it, and pinging it means `@everyone`
  * (`spec/behavior/rbac.md` § The Everyone role).
+ *
+ * Until 2026-11-21 (#4191) "Everyone" was the old Member role renamed and
+ * hidden, keyed `MEMBER` and sitting in the members' tier, so everyone who
+ * joined landed as a full member. That row is now the Actives base role
+ * ({@link ACTIVE_ROLE_SYSTEM_KEY}) and this one is new.
  */
-export const EVERYONE_ROLE_SYSTEM_KEY = "MEMBER";
+export const EVERYONE_ROLE_SYSTEM_KEY = "EVERYONE";
+
+/**
+ * The Actives base role: the chapter's full members, brothers or sisters
+ * (Paul, 2026-11-21, named "Actives" for new chapters; a chapter renames it).
+ * The row that was the seeded Member role, and from #4191 to 2026-11-21 the
+ * hidden Everyone role, keeps its `MEMBER` key, id, tier, permissions and
+ * holders, so every stored reference to it (channel lists, events, invites)
+ * now means the actives.
+ */
+export const ACTIVE_ROLE_SYSTEM_KEY = "MEMBER";
+
+/** The Actives role's seeded name in a new chapter. */
+export const ACTIVE_ROLE_NAME = "Actives";
+
+/**
+ * The three base roles, one of which an officer gives each member: New
+ * Member, Actives and Alumni (shown to Paul as new members, brothers and
+ * grads). A member holds at most one; giving one takes the others away.
+ */
+export const BASE_ROLE_SYSTEM_KEYS = [
+  "NEW_MEMBER",
+  ACTIVE_ROLE_SYSTEM_KEY,
+  "ALUMNI",
+] as const;
+
+/** Whether a role row is one of the three base roles. */
+export function isBaseRole(role: unknown): boolean {
+  if (!role || typeof role !== "object") return false;
+  const key = (role as Record<string, unknown>).system_key;
+  return (BASE_ROLE_SYSTEM_KEYS as readonly unknown[]).includes(key);
+}
 
 /** The Everyone role's name. Fixed: the API refuses to rename it. */
 export const EVERYONE_ROLE_NAME = "Everyone";
@@ -112,13 +147,6 @@ export function mentionRoleHint(name: string, kind?: string | null): string {
   return "Role";
 }
 
-/** The seeded roles that rank below Everyone: making someone one of these
- * takes Everyone away, as unticking Member used to. */
-const BELOW_EVERYONE_SYSTEM_KEYS: ReadonlySet<unknown> = new Set([
-  "NEW_MEMBER",
-  "ALUMNI",
-]);
-
 /** A role row as {@link rolesAfterSave} reads it. */
 export interface EveryoneSaveRole {
   id: string;
@@ -127,30 +155,21 @@ export interface EveryoneSaveRole {
 }
 
 /**
- * The role ids a member ends up with when a save asks for `requested` (#4191).
- * Nobody ticks or unticks Everyone: the clients don't offer it, and a mobile
- * build already in the store draws it as a chip whose tap must not move it.
- * So whatever the save sent, Everyone follows what the save means, read from
- * the roles it leaves the member with:
+ * The role ids a member ends up with when a save asks for `requested`.
  *
- * - **Never beside New Member or Alumni**, which rank below it: graduating a
- *   member used to mean unticking Member and ticking Alumni, and an alumnus
- *   or a pledge must not keep what members get. This holds whatever those
- *   roles carry, so a chapter that took `members:view` off them still
- *   demotes.
- * - **Given** when the save takes the member's last New Member or Alumni role
- *   away (a pledge made a member, a chair or both), and when it leaves them
- *   no role granting member access (`members:view` or `*`, as
- *   `memberAccessRoleIds` reads it), the way a redeem has always added it and
- *   the way Discord leaves a member with no roles holding `@everyone`.
- * - **Kept as held** otherwise, so a member made a chair keeps it, and one
- *   who never held it (an officer invited straight into their role) isn't
- *   handed it.
+ * - **Everyone is always held.** Nobody ticks or unticks it (no client offers
+ *   it), so whatever the save sent, it comes back on the list, last.
+ * - **One base role at most.** New Member, Actives and Alumni are one choice:
+ *   a save that adds one takes away the others the member held, so making a
+ *   pledge an active, or an active a grad, is one tap, as unticking Member and
+ *   ticking Alumni used to be two. A save that sends several without adding
+ *   any keeps them as sent, and the API refuses it (`role.base_conflict`).
+ * - Nothing else is given or taken: a member with no base role keeps only
+ *   Everyone, and an officer's roles stack on top of their base role.
  *
- * A chapter with no Everyone role (the legacy `system_key` gap) gets
- * `requested` unchanged. The API applies this to every
- * `PATCH /v1/members/:id/roles`; web's member sheet and mobile's roles sheet
- * apply it before asking whether a save takes access away.
+ * The API applies this to every `PATCH /v1/members/:id/roles`; web's member
+ * sheet and mobile's roles sheet apply it before saving, so the list they
+ * show is the list that lands.
  */
 export function rolesAfterSave(
   requested: readonly string[],
@@ -158,19 +177,22 @@ export function rolesAfterSave(
   roles: readonly EveryoneSaveRole[],
 ): string[] {
   const everyone = roles.find(isEveryoneRole);
-  if (!everyone) return [...requested];
-  const others = requested.filter((id) => id !== everyone.id);
   const byId = new Map(roles.map((role) => [role.id, role]));
-  const isLower = (id: string) =>
-    BELOW_EVERYONE_SYSTEM_KEYS.has(byId.get(id)?.system_key);
-  if (others.some(isLower)) return others;
-  const withEveryone = requested.includes(everyone.id)
-    ? [...requested]
-    : [...others, everyone.id];
-  const leftLower = held.some(isLower);
-  const givesAccess = others.some((id) =>
-    can("members:view", byId.get(id)?.permissions),
-  );
-  if (leftLower || !givesAccess) return withEveryone;
-  return held.includes(everyone.id) ? withEveryone : others;
+  const isBase = (id: string) => isBaseRole(byId.get(id));
+  const others = [...new Set(requested.filter((id) => id !== everyone?.id))];
+  const added = others.filter((id) => isBase(id) && !held.includes(id));
+  const keep = added.length > 0 ? added[added.length - 1] : null;
+  const settled = keep
+    ? others.filter((id) => !isBase(id) || id === keep)
+    : others;
+  return everyone ? [...settled, everyone.id] : settled;
+}
+
+/** The base roles a role list holds, in list order. */
+export function baseRoleIds(
+  roleIds: readonly string[],
+  roles: readonly EveryoneSaveRole[],
+): string[] {
+  const byId = new Map(roles.map((role) => [role.id, role]));
+  return roleIds.filter((id) => isBaseRole(byId.get(id)));
 }

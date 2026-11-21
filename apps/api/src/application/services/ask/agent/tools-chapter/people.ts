@@ -32,7 +32,7 @@ export type ProfileForAsk = Pick<
 export function roleNames(roles: readonly Role[]): Map<string, string> {
   return new Map(
     roles
-      .filter((role) => role.system_key !== SystemRoleKeys.MEMBER)
+      .filter((role) => role.system_key !== SystemRoleKeys.EVERYONE)
       .map((role) => [role.id, nameInLine(role.name)]),
   );
 }

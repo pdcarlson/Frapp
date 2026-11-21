@@ -9,11 +9,7 @@
  * `memberAssignmentSections` (`@repo/hooks`), shared with web.
  */
 import type { ChapterRole } from "@repo/hooks/chapter-roles";
-import {
-  memberAccessRoleIds,
-  removesMemberAccess,
-  rolesAfterSave,
-} from "@repo/validation";
+import { rolesAfterSave } from "@repo/validation";
 
 /**
  * A role as the editor lists it: `GET /v1/roles` read once, by
@@ -24,36 +20,23 @@ import {
 export type RoleOption = ChapterRole;
 
 /**
- * The member's role ids with `roleId` turned on or off. Ids the list doesn't
- * know are kept: the API exempts ids a member already holds, and dropping
- * them here would be a change the officer never made. A role delete takes its
- * id off its holders (#4547), so one only lingers here from a stale read.
+ * The member's role ids with `roleId` turned on or off, settled as the API
+ * settles them (`rolesAfterSave`): the Everyone role stays, and a base role
+ * (New Member, Actives, Alumni) turned on takes the others away. Ids the list
+ * doesn't know are kept: the API exempts ids a member already holds, and
+ * dropping them here would be a change the officer never made. A role delete
+ * takes its id off its holders (#4547), so one only lingers from a stale read.
  */
 export function toggleRole(
   heldIds: readonly string[],
   roleId: string,
+  options: readonly RoleOption[] = [],
 ): string[] {
   const unique = [...new Set(heldIds)];
-  return unique.includes(roleId)
+  const toggled = unique.includes(roleId)
     ? unique.filter((id) => id !== roleId)
     : [...unique, roleId];
-}
-
-/**
- * True when this change is the one that takes away chat, the roster and
- * events. A member who already lacked base access is not warned again on
- * every tap. The rule is web's too (`removesMemberAccess` in
- * `@repo/validation`), asked of the roles the save ends with once the API
- * settles the Everyone role (`rolesAfterSave`, #4191): a member left with no
- * other role giving access keeps or gets Everyone.
- */
-export function removesBaseAccess(
-  before: readonly string[],
-  after: readonly string[],
-  options: readonly RoleOption[],
-): boolean {
-  const settled = rolesAfterSave(after, before, options);
-  return removesMemberAccess(before, settled, memberAccessRoleIds(options));
+  return rolesAfterSave(toggled, unique, options);
 }
 
 /**
