@@ -33,13 +33,14 @@ COPY packages/observability/src/ ./packages/observability/src/
 COPY packages/observability/tsconfig.json ./packages/observability/
 COPY apps/api/src/ ./apps/api/src/
 COPY apps/api/tsconfig.json apps/api/tsconfig.build.json apps/api/nest-cli.json ./apps/api/
+# First, before validation and chapter-theme, which both import @repo/color and
+# resolve it through dist (validation since #5784's role colors). Separate RUN
+# lines, not one --workspace list: npm gives no ordering guarantee across
+# workspaces, so a combined invocation can compile a dependent first and fail on
+# a dist that does not exist yet.
+RUN npm run build --workspace=packages/color
 RUN npm run build --workspace=packages/validation
 RUN npm run build --workspace=packages/org-archetypes
-# Before chapter-theme, which imports @repo/color and resolves it through dist.
-# Separate RUN lines, not one --workspace list: npm gives no ordering guarantee
-# across workspaces, so a combined invocation can compile chapter-theme first
-# and fail on a dist that does not exist yet.
-RUN npm run build --workspace=packages/color
 RUN npm run build --workspace=packages/chapter-theme
 # @repo/formatting and @repo/observability have no @repo dependencies, so they
 # only have to precede apps/api.

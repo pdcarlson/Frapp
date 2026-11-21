@@ -156,7 +156,7 @@ export interface MemberRosterEntry {
   display_name: string;
   avatar_url: string | null;
   /**
-   * The palette color of the member's highest-ranked colored role, or `null`
+   * The paintable color of the member's highest-ranked colored role, or `null`
    * (#3485). Chat paints the author's name in it. Computed here so a chat
    * surface needs no second roles read and never sees `role_ids`.
    */

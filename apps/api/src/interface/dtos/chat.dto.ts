@@ -967,7 +967,8 @@ export class MentionRoleDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    description: 'The role’s palette color, or null.',
+    description:
+      'The role’s color (a palette color or a readable custom `#RRGGBB`, `isPaintableRoleColor`), or null.',
   })
   color: string | null;
 
@@ -1004,7 +1005,7 @@ export class ChannelAccessOptionDto {
     type: String,
     nullable: true,
     description:
-      "A role's palette color; null for a tier or an uncolored role.",
+      "A role's color (palette or readable custom, `isPaintableRoleColor`); null for a tier or an uncolored role.",
   })
   color: string | null;
 

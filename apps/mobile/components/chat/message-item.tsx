@@ -115,7 +115,7 @@ export interface MessageItemProps {
    */
   nameFor: (userId: string) => string | null;
   /**
-   * Resolves a `users.id` to the palette color of the member's top colored
+   * Resolves a `users.id` to the paintable color of the member's top colored
    * role (#3485), which paints their name on the author line. Optional: a
    * surface without a roster draws plain names, which is a fine degradation.
    */
@@ -629,7 +629,7 @@ export function MessageRowFrame({
  * `@repo/hooks` resolves the name: `sender_id` is nullable, so an imported
  * archive message has no roster entry and names its author in `author_name`.
  * Every name, the viewer's own "You" included, takes the author's role color
- * (a contrast-checked palette value) or else the foreground text, and never
+ * (a contrast-checked value, `roleColorOrNull`) or else the foreground text, and never
  * the chapter accent (foundations.md §6, "Where the accent goes").
  */
 function rowAuthor(

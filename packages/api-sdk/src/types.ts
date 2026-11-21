@@ -7329,11 +7329,8 @@ export interface components {
             name: string;
             permissions: string[];
             display_order?: number;
-            /**
-             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
-             * @enum {string|null}
-             */
-            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description A role palette color (`ROLE_COLOR_PALETTE` in `@repo/validation`), or any custom `#RRGGBB` that reads at WCAG AA on every dark surface and is not red or gold (`isPaintableRoleColor`), in any letter case. A palette color is stored as listed, a custom one in uppercase; any other value is refused (`400`). Null clears the color. */
+            color?: string | null;
             /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
             mentionable?: boolean;
             /**
@@ -7349,11 +7346,8 @@ export interface components {
             name?: string;
             permissions?: string[];
             display_order?: number;
-            /**
-             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
-             * @enum {string|null}
-             */
-            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description A role palette color (`ROLE_COLOR_PALETTE` in `@repo/validation`), or any custom `#RRGGBB` that reads at WCAG AA on every dark surface and is not red or gold (`isPaintableRoleColor`), in any letter case. A palette color is stored as listed, a custom one in uppercase; any other value is refused (`400`). Null clears the color. */
+            color?: string | null;
             /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
             mentionable?: boolean;
             /**
@@ -7481,7 +7475,7 @@ export interface components {
             /** @description May be an empty string: the column is NOT NULL DEFAULT '', so clients treat empty as unresolved rather than rendering a blank name. */
             display_name: string;
             avatar_url: string | null;
-            /** @description Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
+            /** @description Color (palette or readable custom, `isPaintableRoleColor`) of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
             role_color: string | null;
         };
         MemberBirthdayDto: {
@@ -8215,7 +8209,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
-            /** @description A role's palette color; null for a tier or an uncolored role. */
+            /** @description A role's color (palette or readable custom, `isPaintableRoleColor`); null for a tier or an uncolored role. */
             color: string | null;
             /**
              * Format: uuid
@@ -8240,7 +8234,7 @@ export interface components {
             kind: "role" | "tier" | "group";
             /** @description The name; the picker inserts it folded. */
             name: string;
-            /** @description The role’s palette color, or null. */
+            /** @description The role’s color (a palette color or a readable custom `#RRGGBB`, `isPaintableRoleColor`), or null. */
             color: string | null;
             /** @description Whether the caller may `@` it: its own switch (`mentionable` on the role, tier or group, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming one the sender may not ping reaches nobody. */
             mentionable: boolean;
@@ -10734,7 +10728,7 @@ export interface components {
             kind: "manual" | "pledge_class" | "class_year" | "major";
             /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, "Class of" and the year, or the major as most of its members write it. */
             name: string;
-            /** @description One of the role palette colors, or null. */
+            /** @description A palette color, or a custom `#RRGGBB` that reads on every surface (`isPaintableRoleColor` in `@repo/validation`), or null. */
             color: string | null;
             /** @description Whether any member may `@` the group. While false, only a member holding `channels:manage` or `roles:manage` can ping it. */
             mentionable: boolean;
@@ -10757,11 +10751,8 @@ export interface components {
         CreateChapterGroupDto: {
             /** @description The name, as the chapter writes it ("Third floor", "Live-ins"). Stored trimmed. No other role, tier or group of the chapter may be called the same, ignoring case and punctuation, and it may not read as @everyone or @here. */
             name: string;
-            /**
-             * @description One of the role palette colors, in any letter case.
-             * @enum {string|null}
-             */
-            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description A role palette color (`ROLE_COLOR_PALETTE` in `@repo/validation`), or any custom `#RRGGBB` that reads at WCAG AA on every dark surface and is not red or gold (`isPaintableRoleColor`), in any letter case. A palette color is stored as listed, a custom one in uppercase; any other value is refused (`400`). Null clears the color. */
+            color?: string | null;
             /** @description Whether any member may `@` it. Defaults to true. */
             mentionable?: boolean;
             /** @description Its first members, as `users.id`s of members of the chapter. Defaults to none. */
@@ -10770,11 +10761,8 @@ export interface components {
         UpdateChapterGroupDto: {
             /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class, year or major and is refused here. */
             name?: string;
-            /**
-             * @description One of the role palette colors, in any letter case. Null clears it.
-             * @enum {string|null}
-             */
-            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description A role palette color (`ROLE_COLOR_PALETTE` in `@repo/validation`), or any custom `#RRGGBB` that reads at WCAG AA on every dark surface and is not red or gold (`isPaintableRoleColor`), in any letter case. A palette color is stored as listed, a custom one in uppercase; any other value is refused (`400`). Null clears the color. */
+            color?: string | null;
             /** @description Whether any member may `@` it. */
             mentionable?: boolean;
         };

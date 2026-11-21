@@ -65,7 +65,7 @@ export function memberHashHue(userId: string): RoleColorHex {
 export function memberAvatarHue(
   userId: string,
   roleColor: string | null | undefined,
-): RoleColorHex {
+): string {
   return roleColorOrNull(roleColor) ?? memberHashHue(userId);
 }
 

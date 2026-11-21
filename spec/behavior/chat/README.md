@@ -2555,7 +2555,7 @@ These are the user-observable guarantees of the chat client (web and mobile), in
 - **Author and DM names resolve by id, client-side, from one narrow roster.**
   A message carries only `sender_id`; a DM channel carries only its server-generated `dm-<userA>-<userB>` / `group-dm-<epoch>` name plus `member_ids`.
   Both clients resolve those against a single cached chapter projection — `GET /v1/members/roster`, which returns `{ user_id, display_name, avatar_url, role_color }` and deliberately nothing else, so rendering a name never puts the chapter's contact details on a device.
-  `role_color` is the palette color of the member's highest-ranked colored role, or `null`, and paints the author's name on both clients ([`rbac.md` § Role Lifecycle](../rbac.md#role-lifecycle), #3485).
+  `role_color` is the color (a palette value or a readable custom hue, [`rbac.md` § Role Lifecycle](../rbac.md#role-lifecycle)) of the member's highest-ranked colored role, or `null`, and paints the author's name on both clients ([`rbac.md` § Role Lifecycle](../rbac.md#role-lifecycle), #3485).
   On both clients a message author's avatar is their profile photo from that roster (`avatar_url`, signed by the API), else initials of the resolved name (#732, mobile #2884);
   a row with a `sender_id`, a linked imported row included, draws only the member, never its Discord snapshot, and only an imported author nobody has linked draws their Discord avatar (`resolveAuthorAvatar`, #2878).
   On web a DM row in the channel list still draws initials only.

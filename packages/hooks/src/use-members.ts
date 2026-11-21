@@ -195,10 +195,10 @@ export interface MemberDisplayNames {
    */
   avatarFor: (userId: string) => string | null;
   /**
-   * The palette color of the member's highest-ranked colored role, or `null`
-   * for the plain foreground (#3485). Chat paints a sender's name in it. Same
-   * roster read again, and re-checked against the palette here so a client
-   * never paints a value the contrast guard did not cover.
+   * The color of the member's highest-ranked colored role, or `null` for the
+   * plain foreground (#3485, #5784). Chat paints a sender's name in it. Same
+   * roster read again, and re-checked with `roleColorOrNull` here so a client
+   * never paints a value the contrast rule did not pass.
    */
   roleColorFor: (userId: string) => string | null;
   /**
