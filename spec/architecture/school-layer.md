@@ -2,6 +2,8 @@
 
 **Status: Proposed, pending Paul.** Nothing here is built, and nothing is scheduled: recruitment sits behind the beta, and no build issues are filed until Paul sets a date. Paul made the recruitment calls on 2026-11-11, recorded in [#4218 § Decisions for Paul](https://github.com/pdcarlson/Frapp/pull/4218); [§ 8](#8-open-questions-for-paul) lists what they settle here and what is still open. Asked by Winston (`whewitt-frapp`), 2026-11-11, for [#4192](https://github.com/pdcarlson/Frapp/issues/4192). Until Paul accepts it, the specs listed in [§ 9](#9-specs-this-would-change) describe the system, and this doc changes none of them.
 
+GitHub hides `whewitt-frapp`'s issues and PRs since 2026-11-11, including #4192, #4218 and this doc's first PR, #4222. The visible record is [#5833](https://github.com/frapplive/Frapp/issues/5833), and #4218 is reopened as [#5834](https://github.com/frapplive/Frapp/pull/5834) (2026-11-21, Winston as `gampheadband`).
+
 This doc is one part of #4192's design. It covers the tables, isolation, permission scopes and the migration of existing chapters. Three parts are decided elsewhere, and this doc defers to them:
 
 - **URLs and tenant context:** [ADR-27](adr/README.md) (PR [#4213](https://github.com/pdcarlson/Frapp/pull/4213)). It settles `/c/<slug>` and `/s/<school>`, the `tenant_slugs` and `school_slugs` registries, the header-first `ChapterGuard`, route-declared tenant kinds (`@TenantKinds`), `SchoolGuard` and `x-school-id`.
