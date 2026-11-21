@@ -30,6 +30,15 @@ const MEMBER = [
 ];
 
 describe("isSettingsTabVisible", () => {
+  it("shows Logs only with both grants the audit-log route takes", () => {
+    expect(
+      isSettingsTabVisible("logs", ["chapter-config:view", "members:view"]),
+    ).toBe(true);
+    expect(isSettingsTabVisible("logs", ["chapter-config:view"])).toBe(false);
+    expect(isSettingsTabVisible("logs", ["members:view"])).toBe(false);
+    expect(isSettingsTabVisible("logs", ["*"])).toBe(true);
+  });
+
   // #4076: a chair who keeps groups current needs no chapter config. Groups
   // share the Roles and groups tab since 2026-11-19, which opens for them.
   it("shows Roles and groups to a groups:manage holder with nothing else", () => {

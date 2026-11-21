@@ -20,13 +20,18 @@ describe("chapterSettingsAccess", () => {
     expect(chapterSettingsAccess(["roles:manage"])).toEqual({
       chapter: false,
       roles: true,
+      logs: false,
       any: true,
     });
     expect(chapterSettingsAccess(["chapter-config:view"])).toEqual({
       chapter: true,
       roles: true,
+      logs: false,
       any: true,
     });
+    expect(
+      chapterSettingsAccess(["chapter-config:view", "members:view"]).logs,
+    ).toBe(true);
     expect(chapterSettingsAccess(["*"]).any).toBe(true);
   });
 
@@ -34,6 +39,7 @@ describe("chapterSettingsAccess", () => {
     expect(chapterSettingsAccess(["groups:manage"])).toEqual({
       chapter: false,
       roles: true,
+      logs: false,
       any: true,
     });
   });

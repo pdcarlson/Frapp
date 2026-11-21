@@ -51,6 +51,8 @@ export * from "./chapter-branding";
 export * from "./chapter-config";
 export * from "./chapter-goals";
 export * from "./chapter-groups";
+// Logs (Paul, 2026-11-21): the chapter's record of officer changes.
+export * from "./chapter-logs";
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export * from "./chapter-mark";
 // The audit log (#3909): what may change on a line already in it.

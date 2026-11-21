@@ -528,12 +528,16 @@ the `realtime.messages` policy, so the test applies every migration to PGlite (w
 never an edit to this one.
 
 The same migration also publishes `chapter_audit_log`, for the API's `ChatBridgeWorkerService`
-(service role) to mirror audit entries into `#chapter-audit`. Publishing a table means its DELETE
+(service role) to mirror audit entries into `#chapter-audit`. That worker and the channel were
+removed on 2026-11-21 (officers read the log on the Logs page in Chapter settings,
+[`settings/README.md` § Audit Rules](../../spec/behavior/settings/README.md#audit-rules)), so nothing
+subscribes to the table now; the removal migration left the publication as it was. Publishing a table means its DELETE
 events reach subscribers past RLS, trimmed to the primary key: the residual
 [`security-fixes.md` § Residual, not closed by this fix](security-fixes.md#residual-not-closed-by-this-fix)
 records for `chat_message_actions` holds for all three tables. An audit row is deleted only by its
 chapter's cascade, so publishing it adds bare UUIDs of a deleted chapter's entries and nothing else.
-Taking it out of the publication would silence the bridge, so it stays (reviewed 2026-11-17).
+Taking it out of the publication would have silenced the bridge, so it stayed (reviewed 2026-11-17);
+with the bridge gone, nothing needs it published.
 
 Each of the three ping triggers wraps its `realtime.send` call in `exception when others then null`
 — deliberate, since an AFTER trigger fires inside the writing transaction and an unguarded send

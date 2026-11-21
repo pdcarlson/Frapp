@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { MODULE_SETTINGS } from "@/components/settings/settings-modules";
 import { InlineNote } from "@/components/shared/inline-note";
+import { CHAPTER_LOGS_TITLE } from "@repo/validation";
 import { SettingsSearch } from "@/components/settings/settings-search";
 
 // Board `4d`: rail rows are `height:34px;border-radius:10px;padding:0 10px`,
@@ -82,7 +83,8 @@ export type SettingsTab = {
   - **`classes` is ours**, live chapter configuration with no other home. It
     takes the chapter's own word for a class, which the page sets.
 
-  `beta` and `audit` are gone rather than reordered. They rendered
+  `beta` and the old `audit` stub are gone rather than reordered (the
+  built Logs row took the audit's place). They rendered
   `SettingsComingSoon` stubs naming "Chunk 08", generated chrome advertising
   unbuilt work.
 */
@@ -97,6 +99,12 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   */
   { value: "ai", label: "AI", group: "chapter" },
   { value: "billing", label: "Plan and billing", group: "chapter" },
+  /*
+    The record of officer changes (Paul, 2026-11-21), which was the
+    `#chapter-audit` channel in chat. Last in the group: read when something
+    needs looking into, not set up.
+  */
+  { value: "logs", label: CHAPTER_LOGS_TITLE, group: "chapter" },
   { value: "roles", label: "Roles and groups", group: "people" },
   { value: "classes", label: "Pledge class", group: "people" },
   { value: "fields", label: "Member fields", group: "people" },

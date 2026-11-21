@@ -121,7 +121,7 @@ function toDraft(dues: OrgDues): DuesDraft {
  * Settings → Dues. Edits the chapter's singleton `chapter_dues_config` row:
  * cadence, per-class amounts, an optional installment plan, grace period, late
  * fee, and scholarship pool. Edits are held locally and committed with one save,
- * which writes a `chapter_audit_log` row (mirrored to `#chapter-audit`).
+ * which writes a `chapter_audit_log` row (read on the Logs tab).
  *
  * Every numeric input holds a text draft, and a field can be emptied mid-edit.
  * Amounts are typed in dollars with up to two decimals (`DOLLAR_DRAFT`): a

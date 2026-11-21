@@ -38,7 +38,6 @@ Default system roles seeded on chapter creation:
 Default channels seeded on chapter creation:
 - #general (everyone sees and posts)
 - #announcements (everyone sees; the top two starting tiers post)
-- #chapter-audit (everyone sees; only Frapp posts)
 - #alumni (the four starting tiers and the Alumni role see and post)
 (who_can_see / who_can_post, #3722; DEFAULT_CHANNELS owns the list)
 */

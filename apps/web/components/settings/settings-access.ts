@@ -164,6 +164,15 @@ export function isSettingsTabVisible(
       )
     );
   }
+  /*
+    Logs (Paul, 2026-11-21) reads `GET /v1/audit-log`, which takes both
+    `chapter-config:view` and `members:view`: entries name who removed whom.
+  */
+  if (tab === "logs") {
+    return (
+      can(CHAPTER_CONFIG_VIEW, permissions) && can("members:view", permissions)
+    );
+  }
   const only = TAB_ONLY_PERMISSIONS[tab];
   if (only) return canAny(only, permissions);
   return canAny(

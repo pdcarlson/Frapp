@@ -123,8 +123,8 @@ export class ChapterGoalService {
       },
       userId,
     );
-    // Audited like the rules beside it, and mirrored to #chapter-audit: a
-    // goal changes what every member's bar measures against.
+    // Audited like the rules beside it, and shown on the Logs page: a goal
+    // changes what every member's bar measures against.
     await this.auditLog.record({
       chapterId,
       actorUserId: userId,

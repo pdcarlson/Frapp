@@ -1,7 +1,7 @@
 # Chat Integrations — Slash Commands, Renderers, and System Channel
 
 Chat is the spine; an ops module with a message-shaped action is a **chat integration** (see [README.md](./README.md) → _Chat is the spine_; which modules have none, by design: [`../integrations.md` § Integration Pattern](../integrations.md#integration-pattern)).
-This file specifies the slash-command catalog, the dispatch path, the rich-message renderer registry, and the `#chapter-audit` system-channel bridge.
+This file specifies the slash-command catalog, the dispatch path, and the rich-message renderer registry. The `#chapter-audit` system-channel bridge it also specified was removed on 2026-11-21 (§ [`#chapter-audit` system-channel bridge](#chapter-audit-system-channel-bridge)).
 Push-notification rules for chat live in [../notifications.md](../notifications.md).
 
 ## Slash command catalog
@@ -162,9 +162,10 @@ A client therefore **cannot** post these kinds directly: `chat.service.sendMessa
 `PointsService.adjustPoints` is the only writer of `points` cards; `TaskService.create` is the only writer of `task` cards;
 `EventService.create` is the only writer of `event` cards (it posts through `EventAnnouncementService.postEventCard`);
 `ServiceEntryService.create` is the only writer of `hours` cards; `RushService.create` is the only writer of `rush` cards;
-`system_audit` has four server-side writers — the `#chapter-audit` bridge worker, plus `PollService` (expiry notices, into the poll's own channel), `InviteService` (acceptance notices, into the DM between the inviter and the new member) and `ChapterOnboardingService` (the one-time welcome message, whose channel [`onboarding.md` § First-Officer Onboarding Wizard](../onboarding.md#first-officer-onboarding-wizard) owns).
-**None of the four goes through `sendMessage`** — each writes on the service-role path instead (`PollService` and `InviteService` say why in comments).
-So `SERVER_ONLY_KINDS` is what stops a _client_ posting the kind; it is not what gates these four.
+`system_audit` has two server-side writers: `PollService` (expiry notices, into the poll's own channel) and `ChapterOnboardingService` (the one-time welcome message, whose channel [`onboarding.md` § First-Officer Onboarding Wizard](../onboarding.md#first-officer-onboarding-wizard) owns).
+The `#chapter-audit` bridge worker was a third until it was removed on 2026-11-21, and `InviteService`'s acceptance notice was one until #5625 made it a notification.
+**Neither goes through `sendMessage`**: each writes on the service-role path instead.
+So `SERVER_ONLY_KINDS` is what stops a _client_ posting the kind; it is not what gates these writers.
 `ask_answer` (#4713) has one writer, `AskPostService`, which inserts on the service-role path keyed `client_message_id = 'ask:<ask id>'`, from an answer the server sealed for the member posting it ([`../ai.md` § Posting an answer to the channel](../ai.md#posting-an-answer-to-the-channel)).
 The optimistic `loading` placeholder stays client-postable — it carries no assertion until the server's real card replaces it.
 
@@ -372,7 +373,7 @@ A gate's refusal of either write is told in a member's words, `rushCardGateRefus
 Voter names are never shown); mobile draws `poll`, `signup`, `form`, `role_picker`, `event`, `task`, `points`, `hours`, `rush`, `announcement`, `system_audit` and `ask_answer` as cards in the same row frame (`apps/mobile/components/chat/`), and `dues` and `loading` as text via `message-item.tsx`; a card whose payload doesn't read is drawn as its `content` text, as on web.
 The `announcement` card draws the message's `content` through the message markdown, and `payload.body` only when `content` is empty: `content` is what the push and the channel preview showed, and `announcement` is not a server-only kind, so a client could send a body that says something else.
 The `system_audit` card names its actor through `actorLabel` (`@repo/hooks`): the roster's name, "Frapp" for the system, or the member fallback, never a bare id prefix.
-Only the `#chapter-audit` mirror writes that payload; the server's own notices (a poll closing, the chapter welcome) are `system_audit` rows without one, whose `content` is the whole sentence: mobile draws them as text, and web as that sentence in a muted card frame, because the renderer registry keeps every card kind out of the text body.
+Only the `#chapter-audit` mirror wrote that payload, and it was removed on 2026-11-21, so no new row carries one; the server's own notices (a poll closing, the chapter welcome) are `system_audit` rows without one, whose `content` is the whole sentence: mobile draws them as text, and web as that sentence in a muted card frame, because the renderer registry keeps every card kind out of the text body.
 The `task` card is an immutable creation-time snapshot (`assigner → assignee`, title, due date, point reward) whose **live** status is read back through the task query
 — the chat message row is never mutated — and carries inline lifecycle actions: the assignee can Start / Mark done and a `tasks:manage` admin can Confirm / Reject, gated client-side for UX with the existing task REST endpoints as the trust boundary.
 No control and no status badge is drawn until the live task is read, because the payload's status is the creation-time `TODO` forever (#2065); a viewer who can't read the task sees the snapshot without a live status ([`../tasks.md` § Chat Integration](../tasks.md#chat-integration)).
@@ -388,17 +389,10 @@ See [README.md](./README.md) → _Message Kinds and Actions_ for the canonical `
 
 ## `#chapter-audit` system-channel bridge
 
-Member-visible officer changes (dues, modules, roles) surface in chat as a system-written audit feed.
-The bridge worker subscribes (service-role) to `chapter_audit_log` INSERT via Supabase Realtime and posts a `kind='system_audit'` message into the chapter's `#chapter-audit` channel as the system sender (`00000000-0000-0000-0000-000000000000`).
-This is a server-originated insert that bypasses the client send path and goes direct via service role; it has a single owner (no inline audit-post in writing services).
+Removed on 2026-11-21 (Paul's call). Member-visible officer changes used to surface in chat: a bridge worker (`ChatBridgeWorkerService`, ADR-08) subscribed to `chapter_audit_log` INSERT and posted a `kind='system_audit'` message into the chapter's `#chapter-audit` channel as the system sender.
+The channel and the worker are gone; `chapter_audit_log` is still the record, and officers read it on the Logs page in Chapter settings ([`../settings/README.md` § Audit Rules](../settings/README.md#audit-rules)).
 
-- Rows with `member_visible=false` are skipped — internal-scope rows stay out of the channel.
-- Message shape: `sender_id` = system sender; `content` = human summary (`"<action>: <diff keys>"`); `kind` = `system_audit`; `payload` = `{ action, actor_user_id, diff }`.
-  The renderer reads from `payload`, not the prose `content`.
-- Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge logs and continues.
-  The audit row itself is always the source of truth.
-
-The same `system_audit` message pattern is reused, targeted to a DM, for a DM poll's closing notice. The invite-accept notice used to be one too; since #5625 it is a notification to the inviter ([`notifications.md`](../notifications.md)).
+The `system_audit` message pattern is still used, targeted to a DM, for a DM poll's closing notice. The invite-accept notice used to be one too; since #5625 it is a notification to the inviter ([`notifications.md`](../notifications.md)).
 
 ## The team's Dev log channel
 

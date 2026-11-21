@@ -15,6 +15,10 @@ import { can, canAny } from "@repo/validation";
  *   `roles:manage` or `groups:manage` (one page for both since Paul's
  *   2026-11-19 call).
  *
+ * - `logs`: the Logs screen (Paul, 2026-11-21), behind what
+ *   `GET /v1/audit-log` takes: `chapter-config:view` and `members:view`, as
+ *   web's Logs row (`settings-access.ts`).
+ *
  * `usePermissionList()` is `[]` while loading, so every answer here is false
  * until the role is read: the item fails closed.
  */
@@ -24,5 +28,6 @@ export function chapterSettingsAccess(permissions: readonly string[]) {
     ["chapter-config:view", "roles:manage", "groups:manage"],
     permissions,
   );
-  return { chapter, roles, any: chapter || roles };
+  const logs = chapter && can("members:view", permissions);
+  return { chapter, roles, logs, any: chapter || roles };
 }

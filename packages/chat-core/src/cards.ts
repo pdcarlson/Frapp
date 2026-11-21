@@ -7,7 +7,12 @@ import type {
   TaskPayload,
 } from "./integrations/payloads";
 import type { ChatMessage } from "./types";
-import { attendanceFieldsOf, checkInOpensMinutes } from "@repo/validation";
+import {
+  attendanceFieldsOf,
+  chapterLogPhrase,
+  checkInOpensMinutes,
+  keyAsWords,
+} from "@repo/validation";
 
 export type {
   EventPayload,
@@ -249,51 +254,6 @@ export function readSystemAuditPayload(
 }
 
 /**
- * What each audited action did, as the words after the actor's name in an
- * audit line ("Paul **updated the chapter profile**"). One copy so web's and
- * mobile's lines say the same. An action not listed here reads as its key
- * with the underscores taken out, so a new writer never draws a raw key.
- */
-const AUDIT_ACTION_PHRASES: Record<string, string> = {
-  chapter_config_updated: "updated chapter settings",
-  chapter_profile_updated: "updated the chapter profile",
-  chapter_logo_updated: "updated the chapter logo",
-  chapter_logo_removed: "removed the chapter logo",
-  chapter_custom_field_created: "added a profile field",
-  chapter_custom_field_updated: "edited a profile field",
-  chapter_custom_field_deleted: "removed a profile field",
-  chapter_custom_role_created: "added a role",
-  chapter_custom_role_updated: "edited a role",
-  chapter_custom_role_deleted: "removed a role",
-  role_created: "added a role",
-  role_updated: "edited a role",
-  role_deleted: "removed a role",
-  role_tier_created: "added a tier",
-  role_tier_updated: "edited a tier",
-  role_tier_deleted: "removed a tier",
-  role_tiers_reordered: "reordered the tiers",
-  chapter_group_created: "added a group",
-  chapter_group_updated: "edited a group",
-  chapter_group_members_set: "changed who is in a group",
-  chapter_group_deleted: "removed a group",
-  member_removed: "removed a member",
-  member_profile_corrected: "edited a member's profile",
-  presidency_transferred: "handed over the presidency",
-  presidency_claimed: "claimed the presidency",
-  president_orphaned: "left the chapter without a president",
-  ai_settings_updated: "changed the AI settings",
-  chapter_goals_updated: "changed the chapter's goals",
-  ai_diagnostics_started:
-    "turned on saving Ask Frapp answers for the Frapp team",
-  ai_diagnostics_stopped: "turned off saving Ask Frapp answers",
-};
-
-/** `accent_color` → `accent color`: a key as words, never as a key. */
-function keyAsWords(key: string): string {
-  return key.replace(/[_-]+/g, " ").trim();
-}
-
-/**
  * An audit line's words: what the actor did, and which fields it touched
  * (`null` when the row recorded none). The line draws them after the actor's
  * name, the detail muted: "Paul updated the chapter profile · accent color"
@@ -303,8 +263,8 @@ export function auditLineText(payload: SystemAuditPayload): {
   phrase: string;
   detail: string | null;
 } {
-  const phrase =
-    AUDIT_ACTION_PHRASES[payload.action] ?? keyAsWords(payload.action);
+  // One copy of the words, shared with the Logs page (`@repo/validation`).
+  const phrase = chapterLogPhrase(payload.action);
   const fields = Object.keys(payload.diff).map(keyAsWords).filter(Boolean);
   return { phrase, detail: fields.length > 0 ? fields.join(", ") : null };
 }

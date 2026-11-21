@@ -18,6 +18,7 @@ import {
   aiSwitchState,
   canAll,
   type AiChapterSwitchKey,
+  CHAPTER_LOGS_TITLE,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_BACKGROUND_LABELS,
   isModuleEnabled,
@@ -205,6 +206,15 @@ export default function ChapterSettingsScreen() {
                           ? "—"
                           : `${zoneCount} ${zoneCount === 1 ? "zone" : "zones"}`
                       }
+                    />
+                  ) : null}
+                  {access.logs ? (
+                    // Last in Chapter, as web's Logs row is (Paul,
+                    // 2026-11-21): read when something needs looking into.
+                    <ListRow
+                      label={CHAPTER_LOGS_TITLE}
+                      accessibilityHint="Opens who changed what in the chapter, and when."
+                      onPress={() => router.push("/chapter-logs")}
                     />
                   ) : null}
                 </ListSection>
