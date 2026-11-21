@@ -337,6 +337,9 @@ describe("cutChips", () => {
     ]);
     expect(folded.toggle?.label).toBe("+6 more");
     expect(names(cutChips(chips, true).shown)).toEqual(names(chips));
+  });
+});
+
 describe("groupFollowsLabel", () => {
   it("says what each automatic group follows, and nothing for a manual one", () => {
     expect(
