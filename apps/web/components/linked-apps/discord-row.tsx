@@ -10,15 +10,10 @@ import {
   useDiscordAuthorLink,
   useUnlinkDiscordAuthor,
 } from "@repo/hooks";
-import { MoreHorizontal, RotateCcw, Unlink } from "lucide-react";
+import { RotateCcw, Unlink } from "lucide-react";
 import { discordLinkedState } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ActionMenuButton } from "@/components/shared/row-menu";
 import { LinkedAppRow } from "@/components/linked-apps/linked-app-row";
 import { DiscordMark } from "@/components/linked-apps/brand-marks";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -239,22 +234,19 @@ export function DiscordRow() {
   return (
     <LinkedAppRow icon={<DiscordMark />} name="Discord" state={state}>
       {state.tone === "connected" ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Discord options">
-              <MoreHorizontal aria-hidden="true" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              disabled={busy}
-              onSelect={() => void removeLink()}
-            >
-              <Unlink aria-hidden="true" />
-              Unlink
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ActionMenuButton
+          label="More for Discord"
+          entries={[
+            {
+              type: "item",
+              key: "unlink",
+              label: "Unlink",
+              icon: Unlink,
+              disabled: busy,
+              onSelect: () => void removeLink(),
+            },
+          ]}
+        />
       ) : (
         <Button
           variant="secondary"

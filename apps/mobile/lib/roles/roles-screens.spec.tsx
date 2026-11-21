@@ -37,6 +37,9 @@ const h = vi.hoisted(() => ({
   aiSettings: null as Record<string, unknown> | null,
   updateAi: vi.fn(),
   aiSaving: false,
+  // Chapter config (#5801): whether members may rename themselves.
+  config: { members_can_change_name: false } as Record<string, unknown>,
+  patchConfig: vi.fn(),
 }));
 
 vi.mock("react-native", async () => {
@@ -79,6 +82,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useUpdateRoleTier: () => ({ mutateAsync: h.updateTier, isPending: false }),
     useAiChapterSettings: (options?: { enabled?: boolean }) =>
       ok(options?.enabled === false ? undefined : h.aiSettings),
+    useOrgConfig: (options?: { enabled?: boolean }) =>
+      ok(options?.enabled === false ? undefined : h.config),
+    usePatchOrgConfig: () => ({ mutate: h.patchConfig, isPending: false }),
     useUpdateAiChapterSettings: () => ({
       mutate: h.updateAi,
       isPending: h.aiSaving,
@@ -263,6 +269,38 @@ describe("Chapter settings (#4074)", () => {
     );
     expect(text).toContain("Roles");
     expect(text).not.toContain("Set by an officer");
+  });
+
+  it("lets an officer with chapter-config:manage turn member renames on (#5801)", () => {
+    h.patchConfig.mockClear();
+    h.permissions = ["*"];
+    const tree = render(<ChapterSettingsScreen />);
+    expect(screenText(tree)).toContain(
+      "Members can change their own name\nWhen off, officers who manage roles change names.",
+    );
+    const toggle = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Members can change their own name" &&
+        typeof node.props.onValueChange === "function",
+    );
+    expect(toggle.props.value).toBe(false);
+    act(() => toggle.props.onValueChange(true));
+    expect(h.patchConfig).toHaveBeenCalledWith(
+      { members_can_change_name: true },
+      expect.anything(),
+    );
+  });
+
+  it("shows the member-names switch read-only to a viewer without :manage (#5801)", () => {
+    h.patchConfig.mockClear();
+    h.permissions = ["chapter-config:view"];
+    const tree = render(<ChapterSettingsScreen />);
+    const toggle = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Members can change their own name" &&
+        typeof node.props.onValueChange === "function",
+    );
+    expect(toggle.props.disabled).toBe(true);
   });
 
   it("opens the accent and background sheets for an editor", () => {
@@ -504,6 +542,47 @@ describe("Roles (#4074)", () => {
       pathname: "/role",
       params: { roleId: "r-rush" },
     });
+  });
+
+  it("names a class year by its standing, and finds it by that (#5786)", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
+    try {
+      h.groups = [
+        ...h.groups,
+        {
+          id: "g-29",
+          name: "Class of 2029",
+          kind: "class_year",
+          class_year: 2029,
+          color: null,
+          member_ids: ["u2"],
+        },
+      ];
+      h.roles = [
+        ...h.roles,
+        ...Array.from({ length: 10 }, (_, index) =>
+          role({
+            id: `r-x${index}`,
+            name: `Committee ${index}`,
+            tier_id: "t-bro",
+          }),
+        ),
+      ];
+      const tree = render(<ChapterRolesScreen />);
+      expect(screenText(tree)).toContain("Sophomores · Class of 2029");
+      const search = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "TextInput" &&
+          node.props.accessibilityLabel === "Find a role or group",
+      );
+      act(() => search.props.onChangeText("soph"));
+      const text = screenText(tree);
+      expect(text).toContain("Sophomores · Class of 2029");
+      expect(text).not.toContain("In house");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("finds a role or group by name once the list is long", () => {

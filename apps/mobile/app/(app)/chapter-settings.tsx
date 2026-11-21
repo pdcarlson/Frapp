@@ -8,6 +8,8 @@ import {
   useChapterChatBackground,
   useCurrentChapter,
   useGeofences,
+  useOrgConfig,
+  usePatchOrgConfig,
   usePermissionList,
   useUpdateAiChapterSettings,
 } from "@repo/hooks";
@@ -16,12 +18,14 @@ import {
   AI_SETTINGS_COPY,
   AI_SWITCHES,
   aiSwitchState,
+  can,
   canAll,
   type AiChapterSwitchKey,
   CHAPTER_LOGS_TITLE,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_BACKGROUND_LABELS,
   isModuleEnabled,
+  NAME_LOCK_COPY,
 } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_CHAT } from "@/components/back-row";
@@ -48,8 +52,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * - **Chapter**: the accent and the chat background, each a sheet for a
  *   member holding `CHAPTER_PROFILE_PERMISSIONS` and read-only, saying who
- *   sets it, for anyone else; and Study zones, read-only, since zones are
- *   drawn on the web dashboard.
+ *   sets it, for anyone else; Members can change their own name (#5801), a
+ *   switch for `chapter-config:manage`, as web's Chapter tab has it; and
+ *   Study zones, read-only, since zones are drawn on the web dashboard.
  * - **AI**: the president's three switches (#4789), the same ones and the
  *   same rules as web's AI tab (`settings-ai-tab.tsx`): every member here can
  *   read them, only the president changes them, and Include channel messages
@@ -93,6 +98,12 @@ export default function ChapterSettingsScreen() {
   // and on the chat background default (#4031).
   const canEditProfile = canAll(CHAPTER_PROFILE_PERMISSIONS, permissions);
   const chapterBackground = useChapterChatBackground();
+  // Member names (#5801): the config PATCH's guard, as web's switch reads it.
+  const canManageConfig = can("chapter-config:manage", permissions);
+  const orgConfig = useOrgConfig({ enabled: access.chapter });
+  const patchConfig = usePatchOrgConfig();
+  const [namesSaveFailed, setNamesSaveFailed] = useState(false);
+  const membersCanRename = orgConfig.data?.members_can_change_name === true;
 
   const chapterQuery = useCurrentChapter();
   const geofencesEnabled =
@@ -195,6 +206,37 @@ export default function ChapterSettingsScreen() {
                       }
                     />
                   </SettingAnchor>
+                  {orgConfig.data ? (
+                    <SettingAnchor id="member-names">
+                      <ListRow
+                        label={NAME_LOCK_COPY.settingLabel}
+                        description={
+                          namesSaveFailed
+                            ? NAME_LOCK_COPY.saveFailed
+                            : canManageConfig
+                              ? NAME_LOCK_COPY.settingLine
+                              : readOnlyLine
+                        }
+                        descriptionTone={
+                          namesSaveFailed ? "destructive" : "default"
+                        }
+                        trailing={
+                          <Toggle
+                            value={membersCanRename}
+                            disabled={!canManageConfig || patchConfig.isPending}
+                            onValueChange={(next) => {
+                              setNamesSaveFailed(false);
+                              patchConfig.mutate(
+                                { members_can_change_name: next },
+                                { onError: () => setNamesSaveFailed(true) },
+                              );
+                            }}
+                            accessibilityLabel={NAME_LOCK_COPY.settingLabel}
+                          />
+                        }
+                      />
+                    </SettingAnchor>
+                  ) : null}
                   {geofencesEnabled ? (
                     // Read-only here (the phone has no zone editor), so it says
                     // where zones are changed: the dashboard's Study zones tool.

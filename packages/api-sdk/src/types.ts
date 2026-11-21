@@ -7218,6 +7218,8 @@ export interface components {
              * @description The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived or the audit log (400 otherwise).
              */
             birthday_channel_id?: string | null;
+            /** @description Whether settled members (finished the welcome screen, or joined over a day ago) may change their own name (#5801). False, the default, locks it: PATCH /v1/users/me refuses a changed display_name unless the member holds roles:manage here. Officers fix names through PATCH /v1/members/{id}/profile; a member of two or more chapters is never locked, since that route refuses them. */
+            members_can_change_name?: boolean;
         };
         CustomRoleDto: {
             id: string;
@@ -8228,7 +8230,7 @@ export interface components {
         MentionRoleDto: {
             /**
              * Format: uuid
-             * @description The role's id, or the tier's or group's (`kind`).
+             * @description The role's id, or the tier's or group's (`kind`). A class year's standing (`@Seniors`, #5786) has its own id, fixed for that group and standing, so no two rows share one.
              */
             role_id: string;
             /**

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, MoreHorizontal, Undo2, Users } from "lucide-react";
+import { CheckCircle2, Undo2, Users } from "lucide-react";
 import {
   TASK_ACTION_LABELS,
   actionStatus,
@@ -57,17 +57,11 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { RepeatOptions } from "@/components/shared/repeat-options";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ActionMenuButton } from "@/components/shared/row-menu";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { useToast } from "@/lib/hooks/use-toast";
 import { toastFailure } from "@/lib/failure-toast";
@@ -169,27 +163,20 @@ function MoreMenu({
   const isGroup = target.kind === "group";
   const title = isGroup ? target.tile.sample.title : target.task.title;
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <IconButton
-          label={`More for ${title}`}
-          className="text-muted-foreground"
-        >
-          <MoreHorizontal className="h-[18px] w-[18px]" aria-hidden="true" />
-        </IconButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          className="text-destructive-text"
-          disabled={!!gate.controlProps().disabled}
-          onSelect={() =>
-            isGroup ? onDeleteGroup(target.tile) : onDelete(target.task)
-          }
-        >
-          {isGroup ? "Delete for everyone" : "Delete task"}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <ActionMenuButton
+      label={`More for ${title}`}
+      entries={[
+        {
+          type: "item",
+          key: "delete",
+          label: isGroup ? "Delete for everyone" : "Delete task",
+          destructive: true,
+          disabled: !!gate.controlProps().disabled,
+          onSelect: () =>
+            isGroup ? onDeleteGroup(target.tile) : onDelete(target.task),
+        },
+      ]}
+    />
   );
 }
 
@@ -464,7 +451,11 @@ function TaskPanelBody({
                 className="h-4 w-4 text-muted-foreground"
                 aria-hidden="true"
               />
-              {TASK_AUDIENCE_COPY.groupLine(copyOf.label, copyOf.done, copyOf.total)}
+              {TASK_AUDIENCE_COPY.groupLine(
+                copyOf.label,
+                copyOf.done,
+                copyOf.total,
+              )}
             </span>
           </FieldRow>
         ) : null}

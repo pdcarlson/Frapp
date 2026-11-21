@@ -72,6 +72,11 @@ export interface OrgConfig {
   /** When true, this chapter has opted out of pseudonymous product analytics. */
   analytics_opt_out?: boolean;
   /**
+   * Whether settled members may change their own name (#5801);
+   * false, the default, locks it to officers who manage roles.
+   */
+  members_can_change_name?: boolean;
+  /**
    * Role new invites default to (#422). `null` means no default is configured
    * and the API falls back to the seeded Member role. Typed explicitly rather
    * than left to the index signature below, which would surface it as
@@ -89,7 +94,11 @@ type OrgConfigWithHelpers = OrgConfig & {
   isModuleEnabled: (key: string) => boolean;
 };
 
-export function useOrgConfig() {
+/**
+ * `enabled: false` keeps a viewer without `chapter-config:view` from asking
+ * for a read the API would refuse (the phone's Chapter settings, #5801).
+ */
+export function useOrgConfig(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
 
@@ -103,7 +112,7 @@ export function useOrgConfig() {
       if (error) throw error;
       return (data ?? {}) as unknown as OrgConfig;
     },
-    enabled: !!chapterId,
+    enabled: !!chapterId && (options?.enabled ?? true),
     staleTime: 5 * 60 * 1000,
     select: (data): OrgConfigWithHelpers => ({
       ...data,
@@ -300,7 +309,12 @@ export function usePatchOrgConfig() {
     // overwrite its optimistic value, flicking the switch and its nav row
     // back. During `onSettled` this mutation still counts as pending, so 1
     // means "only this one".
-    onSettled: () => {
+    onSettled: (_data, _error, diff) => {
+      // The member-names switch can lock or free the officer's own name
+      // (#5801), which their own row says.
+      if (diff.members_can_change_name !== undefined) {
+        void qc.invalidateQueries({ queryKey: ["user", "me"], exact: true });
+      }
       if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1)
         return;
       void qc.invalidateQueries({ queryKey });

@@ -13,7 +13,7 @@ describe('UserController', () => {
     removeAvatar: jest.fn(),
     findProfile: jest.fn(),
     update: jest.fn(),
-    withSignedPhoto: jest.fn(),
+    ownProfile: jest.fn(),
     whatsNewSeen: jest.fn(),
     recordWhatsNewSeen: jest.fn(),
   };
@@ -89,7 +89,7 @@ describe('UserController', () => {
   it('serves the caller profile and the PATCH result with a signed photo', async () => {
     userService.findProfile.mockResolvedValue({ id: 'user-1' });
     userService.update.mockResolvedValue({ id: 'user-1', avatar_url: 'p' });
-    userService.withSignedPhoto.mockResolvedValue({
+    userService.ownProfile.mockResolvedValue({
       id: 'user-1',
       avatar_url: 'signed',
     });
@@ -100,7 +100,7 @@ describe('UserController', () => {
     await expect(
       controller.updateMe('user-1', { display_name: 'Ann' }),
     ).resolves.toEqual({ id: 'user-1', avatar_url: 'signed' });
-    expect(userService.withSignedPhoto).toHaveBeenCalledWith({
+    expect(userService.ownProfile).toHaveBeenCalledWith({
       id: 'user-1',
       avatar_url: 'p',
     });

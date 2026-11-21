@@ -253,6 +253,8 @@ export interface PatchChapterConfigInput {
   default_invite_role_id?: string | null;
   /** The birthday post channel (#4959); `null` turns the posts off. */
   birthday_channel_id?: string | null;
+  /** Whether members may change their own name after joining (#5801). */
+  members_can_change_name?: boolean;
 }
 
 @Injectable()
@@ -405,6 +407,8 @@ export class ChapterConfigService {
       default_invite_role_id: chapter.default_invite_role_id ?? null,
       // #4959: where the happy-birthday posts go; null while they're off.
       birthday_channel_id: chapter.birthday_channel_id ?? null,
+      // #5801: locked unless the chapter turned renaming on.
+      members_can_change_name: chapter.members_can_change_name === true,
       workflows,
       dues,
       service,
@@ -579,6 +583,17 @@ export class ChapterConfigService {
         to: dto.birthday_channel_id,
       };
       update['birthday_channel_id'] = dto.birthday_channel_id;
+    }
+    // #5801: whether members may rename themselves after joining.
+    if (
+      dto.members_can_change_name !== undefined &&
+      dto.members_can_change_name !== existing.members_can_change_name
+    ) {
+      diff['members_can_change_name'] = {
+        from: existing.members_can_change_name,
+        to: dto.members_can_change_name,
+      };
+      update['members_can_change_name'] = dto.members_can_change_name;
     }
     // JSON columns are patched, not replaced: a partial payload deep-merges
     // onto the existing value so untouched keys are preserved.
@@ -968,6 +983,10 @@ export class ChapterConfigService {
         'default_invite_role_id' in update
           ? (update.default_invite_role_id ?? null)
           : existing.default_invite_role_id,
+      members_can_change_name:
+        update.members_can_change_name !== undefined
+          ? update.members_can_change_name
+          : existing.members_can_change_name,
       workflows,
       dues: duesUpsert ?? existing.dues,
       service: serviceUpsert ?? existing.service,

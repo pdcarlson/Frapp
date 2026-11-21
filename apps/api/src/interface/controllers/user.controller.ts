@@ -159,7 +159,7 @@ export class UserController {
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateUserDto,
   ) {
-    return this.userService.withSignedPhoto(
+    return this.userService.ownProfile(
       await this.userService.update(userId, dto),
     );
   }

@@ -163,6 +163,19 @@ describe("WelcomeYou", () => {
     expect(order).toEqual(["name", "finish"]);
   });
 
+  it("shows a locked name read-only and finishes without sending it (#5801)", async () => {
+    mocks.user = { ...ADA, display_name: "Member", display_name_locked: true };
+    render(<WelcomeYou />);
+
+    expect(field().value).toBe("Member");
+    expect(field().readOnly).toBe(true);
+    expect(screen.getByText("Your chapter's officers set names.")).toBeTruthy();
+    fireEvent.click(goToChat());
+
+    await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/chat"));
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+  });
+
   it("offers a retry when the profile can't be read", () => {
     mocks.user = undefined;
     mocks.isError = true;

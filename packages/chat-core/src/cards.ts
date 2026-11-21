@@ -265,8 +265,28 @@ export function auditLineText(payload: SystemAuditPayload): {
 } {
   // One copy of the words, shared with the Logs page (`@repo/validation`).
   const phrase = chapterLogPhrase(payload.action);
-  const fields = Object.keys(payload.diff).map(keyAsWords).filter(Boolean);
+  const fields = Object.entries(payload.diff)
+    .map(([key, change]) => renamedDetail(key, change) ?? keyAsWords(key))
+    .filter(Boolean);
   return { phrase, detail: fields.length > 0 ? fields.join(", ") : null };
+}
+
+/**
+ * A name change reads as the names themselves, "Ethan Smith to Paul", so the
+ * audit feed is the chapter's rename history (#5801): a member's own rename
+ * (`member_renamed`) and an officer's correction alike. Anything else, and a
+ * name diff that isn't two strings, reads as its field.
+ */
+function renamedDetail(key: string, change: unknown): string | null {
+  if (key !== "display_name" || !change || typeof change !== "object") {
+    return null;
+  }
+  const { from, to } = change as { from?: unknown; to?: unknown };
+  if (typeof from !== "string" || typeof to !== "string") return null;
+  const before = from.trim();
+  const after = to.trim();
+  if (!before || !after) return null;
+  return `${before} to ${after}`;
 }
 
 /**

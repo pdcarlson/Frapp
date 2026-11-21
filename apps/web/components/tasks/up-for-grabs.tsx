@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { MoreHorizontal } from "lucide-react";
 import { statusOf } from "@repo/api-sdk";
 import {
   taskDueLine,
@@ -33,15 +32,9 @@ import { SectionLabel } from "@/components/shared/section-label";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { Button } from "@/components/ui/button";
-import { IconButton } from "@/components/ui/icon-button";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { ToastAction } from "@/components/ui/toast";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ActionMenuButton } from "@/components/shared/row-menu";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -351,22 +344,19 @@ function OpenTaskPanelInner({
       {confirmDialog}
       <PanelHeader
         actions={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <IconButton label={`More for ${posting.title}`} className="text-muted-foreground">
-                <MoreHorizontal className="h-[18px] w-[18px]" aria-hidden="true" />
-              </IconButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                className="text-destructive-text"
-                disabled={!editable}
-                onSelect={() => void takeDown()}
-              >
-                Take it down
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ActionMenuButton
+            label={`More for ${posting.title}`}
+            entries={[
+              {
+                type: "item",
+                key: "take-down",
+                label: "Take it down",
+                destructive: true,
+                disabled: !editable,
+                onSelect: () => void takeDown(),
+              },
+            ]}
+          />
         }
       >
         {posting.title}
