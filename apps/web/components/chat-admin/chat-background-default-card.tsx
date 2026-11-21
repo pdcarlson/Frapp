@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  errorCopy,
+  chatBackgroundErrorCopy,
   useChapterChatBackground,
   useSetChapterChatBackground,
 } from "@repo/hooks";
@@ -44,7 +44,9 @@ function DefaultBackgroundSection() {
           allowInherit={false}
           letters={letters}
           saving={setDefault.isPending}
-          error={setDefault.error ? errorCopy(setDefault.error) : null}
+          error={
+            setDefault.error ? chatBackgroundErrorCopy(setDefault.error) : null
+          }
           onPick={(pick) => {
             if (pick.background === null) return;
             setDefault.mutate({
@@ -53,7 +55,7 @@ function DefaultBackgroundSection() {
                 ? {
                     body: pick.photo,
                     filename: pick.photo.name,
-                    contentType: pick.photo.type,
+                    contentType: pick.contentType,
                   }
                 : undefined,
             });
