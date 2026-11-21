@@ -61,6 +61,7 @@ import {
   dedupeEmails,
   EVERYONE_ROLE_NAME,
   MEMBER_JOINED_AUDIENCE,
+  needsBaseRole,
 } from '@repo/validation';
 import { orgHidingGreekLettersIn } from '@repo/org-archetypes';
 
@@ -134,6 +135,12 @@ export function inviteStatus(invite: Invite, now = new Date()): InviteStatus {
   if (new Date(invite.expires_at) <= now) return 'expired';
   return 'pending';
 }
+
+/**
+ * The officers' join notice body for a member who holds no base role (#5802):
+ * the state, not a direction, as the profile's dashed chip says it.
+ */
+export const NO_BASE_ROLE_JOIN_BODY = 'No base role yet';
 
 /**
  * What the invite's sender is told when someone joins with it (#5625): their
@@ -1271,6 +1278,8 @@ export class InviteService {
     user_id: string;
     chapter_id: string;
     joined_via_invite_id: string | null;
+    /** Their roles at the finish, to say when they hold no base role. */
+    role_ids: readonly string[];
   }): Promise<void> {
     if (!member.joined_via_invite_id) return;
     const userId = member.user_id;
@@ -1298,6 +1307,22 @@ export class InviteService {
     // means a chat sender, and a block withholds rows by it. Not `memberId`,
     // which means a `members.id`.
     const data = { target: { screen: 'members' }, memberUserId: userId };
+    // A joiner holding none of New Member, Actives and Alumni waits on an
+    // officer for one (#5802), so both notices say so: the inviter's too,
+    // since the inviter is often the one officer who gives roles. A failed
+    // roles read keeps the plain lines rather than costing the pushes.
+    const needsBase = await this.roleRepo
+      .findByChapter(chapterId)
+      .then((roles) => needsBaseRole(roles, member.role_ids))
+      .catch((error: unknown) => {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'invite-member-joined-base-role-read',
+          message: `Could not read roles for the member-joined notice (chapter ${chapterId})`,
+          error,
+        });
+        return false;
+      });
     // Whoever sent the invite hears it as theirs (#5625, Paul 2026-11-19: "not
     // the biggest fan of these DMs"). It used to arrive as a Frapp message
     // inside a DM with the new member, a conversation neither had started,
@@ -1318,7 +1343,9 @@ export class InviteService {
       sends.push(
         this.notificationService.notifyMembers(chapterId, [inviterId], {
           title: inviterNoticeTitle(name, invite.reusable),
-          body: 'Say hi from their profile in Members.',
+          body: needsBase
+            ? NO_BASE_ROLE_JOIN_BODY
+            : 'Say hi from their profile in Members.',
           priority: 'NORMAL',
           category: 'members',
           data,
@@ -1343,7 +1370,9 @@ export class InviteService {
         if (recipients.length === 0) return;
         await this.notificationService.notifyMembers(chapterId, recipients, {
           title: name ? `${name} joined` : 'A new member joined',
-          body: 'New member of the chapter',
+          body: needsBase
+            ? NO_BASE_ROLE_JOIN_BODY
+            : 'New member of the chapter',
           priority: 'NORMAL',
           category: 'members',
           data,

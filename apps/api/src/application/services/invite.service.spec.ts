@@ -29,6 +29,7 @@ import * as Sentry from '@sentry/nestjs';
 import {
   DEAD_INVITE_DETAILS_DAYS,
   InviteService,
+  NO_BASE_ROLE_JOIN_BODY,
   inviteStatus,
   verifiedEmailOf,
 } from './invite.service';
@@ -1614,6 +1615,7 @@ describe('InviteService', () => {
     token = 'test-uuid',
     userId = 'user-2',
     inviterLeft = false,
+    roleIds: string[] = [],
   ) {
     const result = await service.redeem(token, userId);
     const used = (await mockInviteRepo.findByToken.mock.results.at(-1)
@@ -1632,6 +1634,7 @@ describe('InviteService', () => {
       user_id: userId,
       chapter_id: used.chapter_id,
       joined_via_invite_id: used.id,
+      role_ids: roleIds,
     });
     return result;
   }
@@ -1665,6 +1668,7 @@ describe('InviteService', () => {
         user_id: 'user-2',
         chapter_id: 'ch-1',
         joined_via_invite_id: null,
+        role_ids: [],
       });
 
       expect(mockInviteRepo.findById).not.toHaveBeenCalled();
@@ -2052,6 +2056,46 @@ describe('InviteService', () => {
         [SystemPermissions.MEMBERS_VIEW, SystemPermissions.MEMBERS_INVITE],
         [SystemPermissions.MEMBERS_VIEW, SystemPermissions.ROLES_MANAGE],
       ]);
+    });
+
+    it('tells the officers when the new member holds no base role (#5802)', async () => {
+      const actives = roleFixture({
+        id: 'role-actives',
+        chapter_id: 'ch-1',
+        name: 'Actives',
+        system_key: SystemRoleKeys.MEMBER,
+        is_system: true,
+      });
+      mockRoleRepo.findByChapter.mockResolvedValue([memberRole, actives]);
+      mockRbac.findUserIdsWithAnyPermissions.mockResolvedValue([
+        'user-officer',
+      ]);
+
+      await redeemThenFinish('test-uuid', 'user-2', false, [memberRole.id]);
+      expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['user-officer'],
+        expect.objectContaining({ body: NO_BASE_ROLE_JOIN_BODY }),
+      );
+      // The inviter, often the one officer who gives roles, hears it too.
+      expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['user-1'],
+        expect.objectContaining({ body: NO_BASE_ROLE_JOIN_BODY }),
+      );
+
+      mockNotificationService.notifyMembers.mockClear();
+      await service.announceJoin({
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        joined_via_invite_id: 'inv-1',
+        role_ids: ['ROLE-ACTIVES', memberRole.id],
+      });
+      expect(mockNotificationService.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['user-officer'],
+        expect.objectContaining({ body: 'New member of the chapter' }),
+      );
     });
 
     it('never pushes the member who joined, even when they could act on it', async () => {

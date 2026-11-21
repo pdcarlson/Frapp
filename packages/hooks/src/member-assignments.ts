@@ -3,6 +3,7 @@ import {
   compareRolesByRank,
   isBaseRole,
   isEveryoneRole,
+  needsBaseRole,
   roleColorOrNull,
   tierPositionsOf,
 } from "@repo/validation";
@@ -230,18 +231,31 @@ export function baseRolesInOrder<R extends { system_key?: string | null }>(
   return roles.filter(isBaseRole).sort((a, b) => order(a) - order(b));
 }
 
+/** Shared with the API's join notice: `@repo/validation`. */
+export { needsBaseRole };
+
 /**
- * Whether a member holds none of the chapter's base roles, so they see only
- * what the whole chapter may. False for a chapter with no base roles at all.
+ * The Members Role filter's pick for members holding none of New Member,
+ * Actives and Alumni (#5802), most often those who joined with Everyone
+ * alone. Offered on web and the phone, beside "Any role", to whoever can
+ * give roles.
  */
-export function needsBaseRole(
+export const NO_BASE_ROLE_FILTER = "no-base-role" as const;
+
+/**
+ * Whether a member passes the Role filter: any role (`null`), a role they
+ * hold, or {@link NO_BASE_ROLE_FILTER} when they hold no base role.
+ */
+export function matchesRoleFilter(
   roles: readonly { id: string; system_key?: string | null }[],
   heldRoleIds: readonly string[],
+  roleFilter: string | null,
 ): boolean {
-  const base = roles.filter(isBaseRole);
-  if (base.length === 0) return false;
-  const held = new Set(heldRoleIds);
-  return !base.some((role) => held.has(role.id));
+  if (roleFilter === null) return true;
+  if (roleFilter === NO_BASE_ROLE_FILTER) {
+    return needsBaseRole(roles, heldRoleIds);
+  }
+  return heldRoleIds.includes(roleFilter);
 }
 
 /** A chip on the profile: a role or group the member has. */

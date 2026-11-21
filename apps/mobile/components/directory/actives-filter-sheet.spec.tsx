@@ -41,6 +41,7 @@ function render(
     onRetryRoles?: () => void;
     showPhoneReach?: boolean;
     groups?: { id: string; name: string }[];
+    offerNoBaseRole?: boolean;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -58,6 +59,7 @@ function render(
           onRetryRoles={more.onRetryRoles ?? vi.fn()}
           showPhoneReach={more.showPhoneReach}
           groups={more.groups}
+          offerNoBaseRole={more.offerNoBaseRole}
         />
       </FrappThemeProvider>,
     );
@@ -71,11 +73,11 @@ function list(tree: ReactTestRenderer) {
   );
 }
 
-type Row = FilterRole | "__any";
+type Row = FilterRole | "__any" | "no-base-role";
 
 function shown(tree: ReactTestRenderer): string[] {
   return (list(tree).props.data as Row[]).map((row) =>
-    row === "__any" ? "any" : row.id,
+    row === "__any" ? "any" : typeof row === "string" ? row : row.id,
   );
 }
 
@@ -119,6 +121,25 @@ describe("ActivesFilterSheet (#3971)", () => {
     const tree = render();
     expect(shown(tree)).toEqual(["any", "r-member", "r-rush", "r-social"]);
     expect(row(tree, "__any").props.accessibilityState.checked).toBe(true);
+  });
+
+  it("offers No base role under Any role only when asked, as web's chip (#5802)", () => {
+    expect(shown(render())).not.toContain("no-base-role");
+    const onChange = vi.fn();
+    const tree = render(NO_ACTIVES_FILTER, onChange, { offerNoBaseRole: true });
+    expect(shown(tree).slice(0, 2)).toEqual(["any", "no-base-role"]);
+    const pick = row(tree, "no-base-role");
+    expect(pick.props.accessibilityLabel).toBe("No base role");
+    act(() => pick.props.onPress());
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...NO_ACTIVES_FILTER,
+      roleId: "no-base-role",
+    });
+    // Typed for like a role, as web's chip finds it by its label.
+    search(tree, "rush");
+    expect(shown(tree)).toEqual(["r-rush"]);
+    search(tree, "base");
+    expect(shown(tree)).toEqual(["no-base-role"]);
   });
 
   it("types the role list down by word starts, Any role stepping aside", () => {

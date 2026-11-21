@@ -18,9 +18,11 @@ import {
   usesFraternalOrder,
   type MemberAvatarTint,
 } from "@repo/hooks";
+import { NO_BASE_ROLE_FILTER } from "@repo/hooks/member-assignments";
 import { useRouter } from "expo-router";
 import {
   can,
+  isBaseRole,
   DIRECTORY_COPY,
   directoryNoSearchMatches,
 } from "@repo/validation";
@@ -169,7 +171,8 @@ export default function DirectoryScreen() {
   // The roster's role-color resolution, so a row's initials match the color
   // that member's name takes in chat (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
-  const canInvite = can("members:invite", usePermissionList());
+  const permissionList = usePermissionList();
+  const canInvite = can("members:invite", permissionList);
   const activesFilterSheetRef = useRef<BottomSheetModal>(null);
   const pickRolesSheetRef = useRef<BottomSheetModal>(null);
   const pickable = usePickableRoles();
@@ -220,10 +223,17 @@ export default function DirectoryScreen() {
   const classesQuery = usePledgeClasses();
   const { classTerm, orderTerm } = usePledgeClassTerms();
   const rolesQuery = useRoles();
-  const filterRoles = useMemo(
-    () => activesFilterRoles(parseChapterRoles(rolesQuery.data)),
+  const chapterRoles = useMemo(
+    () => parseChapterRoles(rolesQuery.data),
     [rolesQuery.data],
   );
+  const filterRoles = useMemo(
+    () => activesFilterRoles(chapterRoles),
+    [chapterRoles],
+  );
+  // "No base role" for whoever can give roles (#5802), as web's Role chip.
+  const offersNoBaseRole =
+    can("roles:manage", permissionList) && chapterRoles.some(isBaseRole);
   // `null` until the list has answered once. The last list read is kept when
   // a refetch fails, as web keeps it (and as the members list beside it is
   // kept), so a weak signal doesn't strip the names and undo the sort.
@@ -278,7 +288,10 @@ export default function DirectoryScreen() {
   const activesFilter = useMemo(
     () =>
       effectiveActivesFilter(activesFilterPicks, {
-        roleIds: new Set(filterRoles.map((role) => role.id)),
+        roleIds: new Set([
+          ...filterRoles.map((role) => role.id),
+          ...(offersNoBaseRole ? [NO_BASE_ROLE_FILTER] : []),
+        ]),
         groupIds: new Set(filterGroups.map((group) => group.id)),
         years: yearOptions,
         classIds: new Set(classNames.keys()),
@@ -291,6 +304,7 @@ export default function DirectoryScreen() {
       yearOptions,
       classNames,
       showsPhoneReach,
+      offersNoBaseRole,
     ],
   );
   const activesFilterCount = countActivesFilters(activesFilter);
@@ -307,8 +321,9 @@ export default function DirectoryScreen() {
         activesFilter,
         phoneReach?.byUserId,
         groupMemberIds,
+        chapterRoles,
       ),
-    [actives, activesFilter, phoneReach, groupMemberIds],
+    [actives, activesFilter, phoneReach, groupMemberIds, chapterRoles],
   );
   // The member's reach on their row, only while the Phone app filter is set
   // on the Actives tab, so the everyday list stays as it was.
@@ -670,6 +685,7 @@ export default function DirectoryScreen() {
           }
           onRetryRoles={() => void rolesQuery.refetch()}
           showPhoneReach={showsPhoneReach}
+          offerNoBaseRole={offersNoBaseRole}
         />
       </SafeAreaView>
     </View>

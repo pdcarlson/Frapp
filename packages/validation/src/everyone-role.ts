@@ -62,6 +62,23 @@ export function isBaseRole(role: unknown): boolean {
   return (BASE_ROLE_SYSTEM_KEYS as readonly unknown[]).includes(key);
 }
 
+/**
+ * Whether a member holds none of the chapter's base roles (#5802), so an
+ * officer still has to give them New Member, Actives or Alumni. The one rule
+ * the profile's "No base role" chip, the Members Role filter and the
+ * officers' join notice all read. Ids are compared lower-cased, as the guard
+ * compares them. A chapter with no base roles never asks for one.
+ */
+export function needsBaseRole(
+  roles: readonly { id: string; system_key?: string | null }[],
+  heldRoleIds: readonly string[],
+): boolean {
+  const base = roles.filter(isBaseRole);
+  if (base.length === 0) return false;
+  const held = new Set(heldRoleIds.map((id) => id.toLowerCase()));
+  return !base.some((role) => held.has(role.id.toLowerCase()));
+}
+
 /** The Everyone role's name. Fixed: the API refuses to rename it. */
 export const EVERYONE_ROLE_NAME = "Everyone";
 

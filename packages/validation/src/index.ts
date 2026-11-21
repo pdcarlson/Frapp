@@ -119,6 +119,7 @@ export {
   isBaseRole,
   isEveryoneRole,
   mentionRoleHint,
+  needsBaseRole,
   reservedMentionName,
   rolesAfterSave,
   withHereMention,
