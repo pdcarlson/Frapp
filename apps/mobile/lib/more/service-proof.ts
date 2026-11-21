@@ -30,14 +30,15 @@ import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
  * this too, and a refused mint is told apart by `lib/chat/gated-upload.ts`,
  * as s21's is. Gated on the `proof` upload kind, the list the API checks.
  *
- * Photos only, like s21: a PDF needs `expo-document-picker`, a native module
- * no store build carries yet.
+ * Photos only. s21 takes a PDF from Files through `expo-document-picker`
+ * (#3401, `lib/more/document-upload.ts`'s `pickDocumentFile`); whether proof
+ * should too is #5149.
  *
  * Nothing here throws: the sheet has no toast, so every failure comes back as
  * a sentence to show in it.
  */
 
-export const PROOF_TYPE_REFUSAL =
+const PROOF_TYPE_REFUSAL =
   "Proof from your phone can be a JPEG, PNG, GIF or WebP photo.";
 export const PROOF_SIZE_REFUSAL = `Proof can be up to ${MAX_UPLOAD_LABEL}.`;
 
@@ -130,10 +131,11 @@ export function receiptRequiredOf(error: unknown): boolean {
  *
  * Any 400 but the receipt policy's. The sheet's own checks keep the other
  * fields inside what the API accepts, so a 400 to a create carrying proof is
- * `ServiceEntryService.assertValidProofPath` turning the path down: minted
- * under another chapter, or naming no object in the bucket. Retrying with the
- * same path can never win, so the sheet drops it and the next Submit uploads
- * the photo again. Read by status, not by the API's sentences, which carry no
+ * the API turning the path down: minted under another chapter, naming no
+ * object in the bucket, or already on another member's entry. (A resend of
+ * this member's own saved entry isn't refused: it answers with that entry.)
+ * Retrying with the same path can never win, so the sheet drops it and the
+ * next Submit uploads the photo again. Read by status, not by the API's sentences, which carry no
  * code and may be reworded; at worst a 400 for some other reason costs one
  * extra upload.
  */

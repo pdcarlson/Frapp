@@ -1,6 +1,6 @@
 /**
  * The form column of the signed-out frame — `/sign-in`, `/sign-up`, `/join`,
- * `/no-access`, `/new-account`.
+ * `/no-access`.
  *
  * `AuthFrame` (`auth-frame.tsx`, mounted by `app/(auth)/layout.tsx`) owns the
  * page: the `<main>`, the lockup and the live product panel. This component is
@@ -44,17 +44,24 @@
 
 export function AuthScreen({
   title,
+  hero,
   subtitle,
   toggle,
   children,
   footer,
 }: {
-  title: string;
+  title?: string;
+  /**
+   * Drawn instead of the title, for a screen whose subject is not a sentence:
+   * `/join`'s invite card (#5625), which leads with the chapter. It must hold
+   * the screen's one `<h1>`.
+   */
+  hero?: React.ReactNode;
   /** Left out on sign-in and sign-up, where the toggle above says the same. */
   subtitle?: string;
   /** The sign-in / sign-up switch, above the title. */
   toggle?: React.ReactNode;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   footer?: React.ReactNode;
 }) {
   // Spacing is tight on purpose: sign-in and sign-up have to fit a 1280×650
@@ -64,16 +71,20 @@ export function AuthScreen({
     <>
       <div className="my-auto w-full py-4">
         {toggle ? <div className="mb-6">{toggle}</div> : null}
-        <h1 className="text-headline font-bold tracking-tight text-foreground">
-          {title}
-        </h1>
+        {hero ?? (
+          <h1 className="text-headline font-bold tracking-tight text-foreground">
+            {title}
+          </h1>
+        )}
         {subtitle ? (
           <p className="mt-1.5 text-base leading-relaxed text-muted-foreground">
             {subtitle}
           </p>
         ) : null}
 
-        <div className={subtitle ? "mt-8" : "mt-5"}>{children}</div>
+        {children ? (
+          <div className={subtitle || hero ? "mt-8" : "mt-5"}>{children}</div>
+        ) : null}
       </div>
 
       {footer ? (

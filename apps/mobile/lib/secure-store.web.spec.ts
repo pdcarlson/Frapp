@@ -7,7 +7,7 @@ import {
 } from "./secure-store.web";
 
 /**
- * These tests are about the *closed* direction, like `lib/ask/flag.spec.ts`:
+ * These tests are about the *closed* direction, that is,
  * what fails to open web persistence. `localStorage` is not secure storage, and
  * the only reason this module may use it is that the flag confines it to a
  * local demo capture. A loose parse here would put a real member's session

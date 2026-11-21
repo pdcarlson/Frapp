@@ -1,10 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { DISPLAY_NAME_MAX_LENGTH } from '@repo/validation';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 
-export const PLACEHOLDER_EMAIL_HOST = 'users.invalid';
-export const APPLE_PRIVATE_RELAY_HOST = 'privaterelay.appleid.com';
+const PLACEHOLDER_EMAIL_HOST = 'users.invalid';
+const APPLE_PRIVATE_RELAY_HOST = 'privaterelay.appleid.com';
 
 function stringField(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -12,11 +13,11 @@ function stringField(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function isPlaceholderAuthEmail(email: string): boolean {
+function isPlaceholderAuthEmail(email: string): boolean {
   return email.split('@')[1]?.toLowerCase() === PLACEHOLDER_EMAIL_HOST;
 }
 
-export function isApplePrivateRelayEmail(email: string): boolean {
+function isApplePrivateRelayEmail(email: string): boolean {
   return email.split('@')[1]?.toLowerCase() === APPLE_PRIVATE_RELAY_HOST;
 }
 
@@ -24,7 +25,7 @@ export function isApplePrivateRelayEmail(email: string): boolean {
  * `users.email` is NOT NULL. Native Sign in with Apple may omit email after
  * the first grant, so an empty Auth email cannot be written as `''`.
  */
-export function emailForSync(supabaseAuthId: string, email: string): string {
+function emailForSync(supabaseAuthId: string, email: string): string {
   const trimmed = email.trim();
   if (trimmed.length > 0) return trimmed;
   return `noreply+${supabaseAuthId}@${PLACEHOLDER_EMAIL_HOST}`;
@@ -38,10 +39,7 @@ export function emailForSync(supabaseAuthId: string, email: string): string {
  * Collision of two *different* auth users who share an email is GoTrue
  * identity linking — this table is unique on `supabase_auth_id` only.
  */
-export function shouldAdoptSyncedEmail(
-  current: string,
-  incoming: string,
-): boolean {
+function shouldAdoptSyncedEmail(current: string, incoming: string): boolean {
   if (current === incoming) return false;
   if (isPlaceholderAuthEmail(incoming)) return false;
   if (isPlaceholderAuthEmail(current)) return true;
@@ -50,7 +48,7 @@ export function shouldAdoptSyncedEmail(
   );
 }
 
-export function displayNameFromMetadata(
+function displayNameFromMetadata(
   metadata: Record<string, unknown> | null | undefined,
 ): string | null {
   if (!metadata) return null;
@@ -65,9 +63,24 @@ export function displayNameFromMetadata(
 }
 
 /** The name stored when sign-in carried none and the email gives none away. */
-export const PLACEHOLDER_DISPLAY_NAME = 'Member';
+const PLACEHOLDER_DISPLAY_NAME = 'Member';
 
-export function displayNameForSync(
+/**
+ * The name sign-in stores, cut to the length a member may give their own
+ * (`DISPLAY_NAME_MAX_LENGTH`). The provider's metadata is whatever the
+ * account holder typed there, so without the cut a long one would be stored,
+ * shown everywhere the member is named, and make the member's own profile
+ * save refuse a name they never typed. Cut by character, so an emoji or an
+ * accented letter at the edge is kept whole or dropped, never split.
+ */
+function displayNameForSync(
+  email: string,
+  metadata?: Record<string, unknown> | null,
+): string {
+  return clampDisplayName(unclampedDisplayName(email, metadata));
+}
+
+function unclampedDisplayName(
   email: string,
   metadata?: Record<string, unknown> | null,
 ): string {
@@ -80,6 +93,12 @@ export function displayNameForSync(
   return local.length > 0 ? local : PLACEHOLDER_DISPLAY_NAME;
 }
 
+function clampDisplayName(name: string): string {
+  const characters = Array.from(name.trim());
+  if (characters.length <= DISPLAY_NAME_MAX_LENGTH) return name.trim();
+  return characters.slice(0, DISPLAY_NAME_MAX_LENGTH).join('').trimEnd();
+}
+
 /**
  * Whether a sync fills in the stored name. An empty one always takes the
  * fallback; the `Member` stand-in gives way only to a real name from the
@@ -90,7 +109,7 @@ export function displayNameForSync(
  * gives only once was never adopted. A name the member typed is never
  * replaced.
  */
-export function shouldFillDisplayName(
+function shouldFillDisplayName(
   stored: unknown,
   metadata: Record<string, unknown> | null | undefined,
 ): boolean {

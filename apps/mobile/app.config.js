@@ -75,20 +75,42 @@
 // channel's profile (publicValueProfile below, #3472). The google-services fence
 // stays build-only: an update carries no native config.
 //
-// Every EAS **production** build also refuses when `EXPO_PUBLIC_ASK_ENABLED`
-// switches Ask on (#2259). Ask answers from a synthetic corpus
-// (`lib/ask/corpus.ts`), and the App Store listing and review notes describe
-// a binary with no Ask surface. The parse is `lib/ask/flag.ts`'s exactly:
-// `"1"` or `"true"` after trimming is on, anything else is off, so a value
-// the app would read as off is not refused either. This is the half of
-// "production has no Ask" that `eas.json` cannot show, because an
-// `eas env:set --environment production` reaches the bundle with no repo
-// change; with this fence such a value fails the build instead of shipping.
-//
 // The FCM V1 *service account* key (what Expo's push service uses to send) is
 // a separate upload under EAS credentials → Android → FCM V1; it never touches
 // this repo. iOS needs neither: EAS generates the APNs key on the first
 // `eas build -p ios` against the Apple account.
+//
+// The **staging variant** (#2511): a second app that installs beside the store
+// app, so staging can be used on a phone without replacing the app a member
+// signs in to. `FRAPP_APP_VARIANT=staging`, which only eas.json's `staging`
+// profile sets, gives it its own name, scheme, bundle id and package
+// (STAGING_IDENTITY below; spec/ui/brand-identity.md § 1 lists them beside the
+// production ones). The variant moves the universal-link and App Link claims
+// to the host of the profile's `EXPO_PUBLIC_APP_URL` (app.staging.frapp.live,
+// 2026-11-17), whose `/.well-known` files vouch for the staging app, so a
+// staging QR opens Frapp Staging; with no such host (unset, localhost, or the
+// production origin) it drops them, since app.frapp.live vouches only for the
+// production app.
+// Two fences keep the pair apart: the variant refuses every EAS profile but
+// `staging` (and that profile refuses to run without it), and it refuses the
+// production API and Supabase origins, so a binary called Frapp Staging can
+// never hold a member's real chapter. Everything else (the EAS project, the
+// update URL, the Sentry project) is shared, which is why its updates go to
+// a channel of their own. A new bundle id, package and scheme each need
+// registering before a build of it is usable (the stores and signing, the
+// Firebase Android app the Google services file must list, the staging
+// Supabase redirect allow list for `frapp-staging://`, the Apple and Google
+// sign-in providers); #4917 lists them.
+//
+// The variant's **runtime version** is not app.json's `appVersion` policy. It
+// follows `main`, where native inputs move between version bumps, so a staging
+// build and a staging update both take `FRAPP_STAGING_RUNTIME`: the version
+// plus a hash of the native inputs, computed by scripts/eas-update.mjs
+// (`stagingRuntimeVersion`). An update from newer native code then has a
+// runtime no older staging binary asks for. The staging profile refuses to
+// build or publish without it; a run with no profile keeps app.json's policy.
+// It reaches a build only through the shell of `eas build --local`: a build on
+// Expo's workers has no such shell, and the value is never stored in EAS.
 //
 // Source of truth for the credential inventory:
 // docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).
@@ -389,34 +411,11 @@ function assertProductionAppUrl({ easBuildProfile, appUrl } = {}) {
   throw new Error(PRODUCTION_APP_URL_ERROR);
 }
 
-// `isAskAvailable()` in lib/ask/flag.ts, duplicated because this file is
-// CommonJS that Expo evaluates outside the app's TypeScript. The spec runs
-// both parses over the same values so the two cannot drift.
-const ASK_ON_VALUES = ["1", "true"];
-
-function isAskEnabledValue(raw) {
-  return typeof raw === "string" && ASK_ON_VALUES.includes(raw.trim());
-}
-
-const PRODUCTION_ASK_ENABLED_ERROR = [
-  "EAS production builds require EXPO_PUBLIC_ASK_ENABLED unset or off",
-  '(only "1" and "true" switch it on, the parse in apps/mobile/lib/ask/flag.ts).',
-  "Ask answers from a synthetic corpus, and the App Store listing and review",
-  "notes describe a store binary with no Ask (#2259). Remove it from the EAS",
-  "production environment (npm run eas -- env:list --environment production, from the repo root).",
-  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile (Expo — EAS).",
-].join(" ");
-
-function assertProductionAskDisabled({ easBuildProfile, askEnabled } = {}) {
-  if (easBuildProfile !== "production") return;
-  if (!isAskEnabledValue(askEnabled)) return;
-  throw new Error(PRODUCTION_ASK_ENABLED_ERROR);
-}
-
 // Native Google Sign-In (#2126, `lib/google-auth.ts`). The iOS SDK returns
 // to the app through a URL scheme that is the iOS OAuth client's ID reversed
 // (`com.googleusercontent.apps.<id>`); the package's config plugin writes it
-// into Info.plist. The client IDs live in app.json → `extra.googleSignIn`
+// into Info.plist. The store app's client IDs live in app.json →
+// `extra.googleSignIn`, Frapp Staging's in `STAGING_GOOGLE_SIGN_IN` below
 // (they are not secrets). With no iOS client ID the plugin is left out, and
 // `lib/google-auth.ts` keeps iOS on the browser flow. Setting the ID takes a
 // native build: an update that sets it still reaches same-version binaries
@@ -433,7 +432,7 @@ function googleIosUrlScheme(iosClientId) {
   if (!id) return undefined;
   if (!id.endsWith(GOOGLE_CLIENT_ID_SUFFIX)) {
     throw new Error(
-      `apps/mobile/app.json extra.googleSignIn.iosClientId must be a Google OAuth iOS client ID ending in ${GOOGLE_CLIENT_ID_SUFFIX}.`,
+      `extra.googleSignIn.iosClientId (apps/mobile/app.json, or STAGING_GOOGLE_SIGN_IN in app.config.js for Frapp Staging) must be a Google OAuth iOS client ID ending in ${GOOGLE_CLIENT_ID_SUFFIX}.`,
     );
   }
   return `com.googleusercontent.apps.${id.slice(0, -GOOGLE_CLIENT_ID_SUFFIX.length)}`;
@@ -464,6 +463,161 @@ function withGoogleSignIn(config) {
   };
 }
 
+const APP_VARIANT_ENV = "FRAPP_APP_VARIANT";
+const STAGING_VARIANT = "staging";
+// The eas.json profile that builds the variant, and the only one that may.
+const STAGING_PROFILE = "staging";
+const STAGING_IDENTITY = Object.freeze({
+  name: "Frapp Staging",
+  scheme: "frapp-staging",
+  applicationId: "live.frapp.mobile.staging",
+});
+
+/**
+ * Frapp Staging's own Google sign-in clients (Paul, 2026-11-21). Google ties
+ * an iOS client to one bundle ID and an Android client to one package and
+ * signing key, so the staging app (`live.frapp.mobile.staging`) can't use the
+ * store app's clients in app.json's `extra.googleSignIn`: until these are set,
+ * every Google sign-in in Frapp Staging opens Supabase's web sheet ("wants to
+ * use …supabase.co to Sign In"), as a new member's did on 2026-11-20 (#4148).
+ * The values match app.json's today; they part once the staging iOS and
+ * Android clients exist. The Web client is the one staging Supabase's
+ * Google provider lists ("Frapp Web (staging)", in Google Cloud project
+ * "Frapp sign-in"). An empty ID keeps that platform on the browser flow, as in
+ * app.json; recording one is a native change (see `withGoogleSignIn`).
+ */
+const STAGING_GOOGLE_SIGN_IN = Object.freeze({
+  webClientId:
+    "661618060468-nefnjm72f4at1hfrl48bf4fjb2l18uel.apps.googleusercontent.com",
+  iosClientId: "",
+  androidClientId: "",
+});
+
+const APP_VARIANT_VALUE_ERROR = [
+  `${APP_VARIANT_ENV} must be unset (the production app) or "${STAGING_VARIANT}"`,
+  "(the side-by-side staging app). Any other value would build an app with",
+  "identifiers nobody registered.",
+].join(" ");
+
+const APP_VARIANT_PROFILE_ERROR = [
+  `${APP_VARIANT_ENV}=${STAGING_VARIANT} and the "${STAGING_PROFILE}" profile in`,
+  "apps/mobile/eas.json go together: that profile sets the variable, and no",
+  "other profile may. A staging-named app built from another profile, or the",
+  "staging profile built without the variant, would put one environment's",
+  "backend under the other app's name and bundle id.",
+].join(" ");
+
+const STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR = [
+  "The staging variant (Frapp Staging) refuses the production API and Supabase",
+  `origins (${PRODUCTION_API_ORIGIN}, ${PRODUCTION_SUPABASE_ORIGIN}). It exists`,
+  "to test against staging beside the store app; pointed at production it would",
+  "be a second, unreviewed app holding members' real chapters.",
+].join(" ");
+
+const STAGING_RUNTIME_ENV = "FRAPP_STAGING_RUNTIME";
+
+const STAGING_RUNTIME_ERROR = [
+  `The staging variant's ${STAGING_RUNTIME_ENV} must be this app's version, a dash,`,
+  "and twelve hex digits (the hash of its native inputs), and the staging profile",
+  "requires it. Without it a staging update would reach staging binaries built",
+  "from other native code and could crash them at launch. `npm run eas -- update",
+  "--channel staging` sets it; an `eas build --local` takes it from the shell",
+  "(`node scripts/staging-runtime.mjs` prints it). Unset it for a run with no profile.",
+].join(" ");
+
+/**
+ * The staging variant's runtime version, or undefined to keep app.json's
+ * policy (a run with no profile and no value). A profile makes it required.
+ */
+function stagingRuntimeVersion({ env, profile, version }) {
+  const raw = String(env[STAGING_RUNTIME_ENV] || "");
+  if (!raw && !profile) return undefined;
+  const match = /^(\d+\.\d+\.\d+)-[0-9a-f]{12}$/.exec(raw);
+  if (!match || match[1] !== version) throw new Error(STAGING_RUNTIME_ERROR);
+  return raw;
+}
+
+/** `"staging"`, or undefined for the production app. Anything else throws. */
+function appVariant(env) {
+  const raw = String(env[APP_VARIANT_ENV] || "").trim();
+  if (!raw) return undefined;
+  if (raw !== STAGING_VARIANT) throw new Error(APP_VARIANT_VALUE_ERROR);
+  return raw;
+}
+
+// A run with no profile (`expo start`, a local `expo prebuild`) may set the
+// variant by hand; every EAS build and guarded update has a profile and must
+// pair the two.
+function assertVariantMatchesProfile({ variant, profile } = {}) {
+  if (!profile) return;
+  if ((variant === STAGING_VARIANT) === (profile === STAGING_PROFILE)) return;
+  throw new Error(APP_VARIANT_PROFILE_ERROR);
+}
+
+function assertStagingVariantOrigins({ variant, apiUrl, supabaseUrl } = {}) {
+  if (variant !== STAGING_VARIANT) return;
+  if (
+    normalizePublicOrigin(apiUrl) === PRODUCTION_API_ORIGIN ||
+    supabasePublicOrigin(supabaseUrl) === PRODUCTION_SUPABASE_ORIGIN
+  ) {
+    throw new Error(STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR);
+  }
+}
+
+/**
+ * The host the staging variant claims links on: its own dashboard's
+ * (`EXPO_PUBLIC_APP_URL`, `app.staging.frapp.live` on the staging profile), so
+ * a staging check-in code or invite scanned with the phone's camera opens
+ * Frapp Staging rather than the browser (2026-11-17). Null for anything that
+ * isn't an https origin other than production's, which the store app owns.
+ */
+function stagingLinkHost(appUrl) {
+  let url;
+  try {
+    url = new URL(String(appUrl || "").trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.origin === PRODUCTION_APP_ORIGIN) {
+    return null;
+  }
+  return url.host;
+}
+
+/**
+ * app.json's config as the staging variant: its own identity, and app.json's
+ * link claims moved to the staging dashboard's host (none without one). The
+ * staging web's `/.well-known` files name this app (`apps/web/lib/app-links.ts`).
+ */
+function withStagingVariant(config, runtimeVersion, appUrl) {
+  const host = stagingLinkHost(appUrl);
+  const ios = { ...config.ios };
+  const android = { ...config.android };
+  if (host) {
+    ios.associatedDomains = [`applinks:${host}`];
+    android.intentFilters = (android.intentFilters ?? []).map((filter) => ({
+      ...filter,
+      data: (filter.data ?? []).map((entry) =>
+        entry.scheme === "https" ? { ...entry, host } : entry,
+      ),
+    }));
+  } else {
+    delete ios.associatedDomains;
+    delete android.intentFilters;
+  }
+  const extra =
+    config.extra && typeof config.extra === "object" ? config.extra : {};
+  return {
+    ...config,
+    name: STAGING_IDENTITY.name,
+    scheme: STAGING_IDENTITY.scheme,
+    extra: { ...extra, googleSignIn: { ...STAGING_GOOGLE_SIGN_IN } },
+    ...(runtimeVersion ? { runtimeVersion } : {}),
+    ios: { ...ios, bundleIdentifier: STAGING_IDENTITY.applicationId },
+    android: { ...android, package: STAGING_IDENTITY.applicationId },
+  };
+}
+
 // The profile whose public-value fences apply: an EAS build's, or the one
 // `npm run eas -- update` publishes for (`scripts/eas-update.mjs` sets
 // `FRAPP_EAS_UPDATE_PROFILE` from the channel's build profile in eas.json, #3472).
@@ -490,11 +644,30 @@ function assertProductionUpdateSentryDsn({ updateProfile, sentryDsn } = {}) {
 }
 
 function applyMobileConfig(
-  config,
+  appJsonConfig,
   { env = process.env, existsSync = fs.existsSync } = {},
 ) {
   const googleServicesFile = resolveGoogleServicesFile({ env, existsSync });
   const profile = publicValueProfile(env);
+  const variant = appVariant(env);
+  assertVariantMatchesProfile({ variant, profile });
+  assertStagingVariantOrigins({
+    variant,
+    apiUrl: env.EXPO_PUBLIC_API_URL,
+    supabaseUrl: env.EXPO_PUBLIC_SUPABASE_URL,
+  });
+  const config =
+    variant === STAGING_VARIANT
+      ? withStagingVariant(
+          appJsonConfig,
+          stagingRuntimeVersion({
+            env,
+            profile,
+            version: appJsonConfig.version,
+          }),
+          env.EXPO_PUBLIC_APP_URL,
+        )
+      : appJsonConfig;
   // Native-only: an update never carries google-services.json, so this one
   // keys on the build profile alone.
   assertProductionAndroidGoogleServices({
@@ -526,10 +699,6 @@ function applyMobileConfig(
   assertProductionAppUrl({
     easBuildProfile: profile,
     appUrl: env.EXPO_PUBLIC_APP_URL,
-  });
-  assertProductionAskDisabled({
-    easBuildProfile: profile,
-    askEnabled: env.EXPO_PUBLIC_ASK_ENABLED,
   });
   assertProductionUpdateSentryDsn({
     updateProfile: env.EAS_BUILD_PROFILE ? undefined : env.FRAPP_EAS_UPDATE_PROFILE,
@@ -567,12 +736,23 @@ applyExpoConfig.assertProductionSupabasePublishableKey =
 applyExpoConfig.assertNoSupabaseSecretKey = assertNoSupabaseSecretKey;
 applyExpoConfig.assertEasSupabaseClientKey = assertEasSupabaseClientKey;
 applyExpoConfig.assertProductionAppUrl = assertProductionAppUrl;
-applyExpoConfig.assertProductionAskDisabled = assertProductionAskDisabled;
-applyExpoConfig.isAskEnabledValue = isAskEnabledValue;
 applyExpoConfig.googleIosUrlScheme = googleIosUrlScheme;
 applyExpoConfig.publicValueProfile = publicValueProfile;
 applyExpoConfig.assertProductionUpdateSentryDsn = assertProductionUpdateSentryDsn;
 applyExpoConfig.applyMobileConfig = applyMobileConfig;
+applyExpoConfig.appVariant = appVariant;
+applyExpoConfig.assertVariantMatchesProfile = assertVariantMatchesProfile;
+applyExpoConfig.assertStagingVariantOrigins = assertStagingVariantOrigins;
+applyExpoConfig.APP_VARIANT_ENV = APP_VARIANT_ENV;
+applyExpoConfig.STAGING_RUNTIME_ENV = STAGING_RUNTIME_ENV;
+applyExpoConfig.STAGING_RUNTIME_ERROR = STAGING_RUNTIME_ERROR;
+applyExpoConfig.STAGING_PROFILE = STAGING_PROFILE;
+applyExpoConfig.STAGING_IDENTITY = STAGING_IDENTITY;
+applyExpoConfig.STAGING_GOOGLE_SIGN_IN = STAGING_GOOGLE_SIGN_IN;
+applyExpoConfig.APP_VARIANT_VALUE_ERROR = APP_VARIANT_VALUE_ERROR;
+applyExpoConfig.APP_VARIANT_PROFILE_ERROR = APP_VARIANT_PROFILE_ERROR;
+applyExpoConfig.STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR =
+  STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR;
 applyExpoConfig.PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR =
   PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR;
 applyExpoConfig.PRODUCTION_API_URL_ERROR = PRODUCTION_API_URL_ERROR;
@@ -584,7 +764,6 @@ applyExpoConfig.PUBLIC_SUPABASE_SECRET_KEY_ERROR =
   PUBLIC_SUPABASE_SECRET_KEY_ERROR;
 applyExpoConfig.EAS_SUPABASE_CLIENT_KEY_ERROR = EAS_SUPABASE_CLIENT_KEY_ERROR;
 applyExpoConfig.PRODUCTION_APP_URL_ERROR = PRODUCTION_APP_URL_ERROR;
-applyExpoConfig.PRODUCTION_ASK_ENABLED_ERROR = PRODUCTION_ASK_ENABLED_ERROR;
 applyExpoConfig.PRODUCTION_UPDATE_SENTRY_DSN_ERROR =
   PRODUCTION_UPDATE_SENTRY_DSN_ERROR;
 applyExpoConfig.PRODUCTION_API_ORIGIN = PRODUCTION_API_ORIGIN;

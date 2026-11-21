@@ -8,7 +8,9 @@ import {
   throwUnlessOk,
 } from "@repo/api-sdk";
 import type { components } from "@repo/api-sdk";
-import { useFrappClient } from "./use-frapp-client";
+import { eventsNowKey } from "./use-events-now";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { invalidatePointReads } from "./use-points";
 
 export interface AttendanceOptions {
   /**
@@ -31,8 +33,9 @@ export function useAttendance(
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result = await client.GET("/v1/events/{eventId}/attendance", {
+        signal,
         params: { path: { eventId } },
       });
       // On the status, not `error` (see `throwUnlessOk`). An empty-bodied 5xx
@@ -65,8 +68,9 @@ export function useMyAttendance(
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId, "me"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result = await client.GET("/v1/events/{eventId}/attendance/me", {
+        signal,
         params: { path: { eventId } },
       });
       throwUnlessOk(result);
@@ -90,7 +94,7 @@ const ATTENDANCE_ROW_STATUS_SET: Record<AttendanceRowStatus, true> = {
   ABSENT: true,
 };
 
-export const ATTENDANCE_ROW_STATUSES = Object.keys(
+const ATTENDANCE_ROW_STATUSES = Object.keys(
   ATTENDANCE_ROW_STATUS_SET,
 ) as AttendanceRowStatus[];
 
@@ -150,9 +154,14 @@ export interface CheckInVariables {
   token?: string;
   /** Short code typed off the host screen when the camera fails. */
   manualCode?: string;
-  /** Required by the server when the event defines a check-in geofence. */
+  /**
+   * Required by the server when the event defines a check-in geofence, or
+   * when an officer's screen showing the code reported where it is (#4532).
+   */
   lat?: number;
   lng?: number;
+  /** The phone's reported accuracy, in meters, when it gives one. */
+  accuracy_meters?: number;
 }
 
 /**
@@ -166,6 +175,7 @@ export interface CheckInVariables {
 export function useCheckIn() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     // Rooted at `attendance`, the root `useAttendance` reads, so a failed
     // write reports to Sentry under its feature, not `unkeyed` (#3393). The
@@ -176,15 +186,24 @@ export function useCheckIn() {
         "/v1/events/{eventId}/attendance/check-in",
         { params: { path: { eventId } }, body: payload },
       );
-      // On the status, not `error`: openapi-fetch returns an empty error body
-      // as `undefined` or `""`, so an edge's empty-bodied 502 during a deploy
-      // would read as a check-in, and with no outbox the member would leave
+      // On the status, not `error`: openapi-fetch alone returns an empty
+      // error body as `undefined` or `""` (`createFrappClient` fills it in
+      // since #3394), and an edge's empty-bodied 502 during a deploy must
+      // never read as a check-in: with no outbox the member would leave
       // believing they were on the roster.
       throwUnlessOk(result);
       return result.data;
     },
     onSuccess: (_data, { eventId }) => {
       queryClient.invalidateQueries({ queryKey: ["attendance", eventId] });
+      // The check-in awards the event's points in the same transaction.
+      void invalidatePointReads(queryClient);
+      // The Now card says "Checked in 9:24 PM" now, not at the next poll.
+      if (chapterId) {
+        void queryClient.invalidateQueries({
+          queryKey: eventsNowKey(chapterId),
+        });
+      }
     },
     // A 409 is the member already on the list (a second scan, or a check-in
     // from another device): re-read their own row so the event page shows
@@ -291,7 +310,7 @@ export const CHECK_IN_TOKEN_FALLBACK_POLL_MS = 10_000;
  * that still lands early just asks again, {@link CHECK_IN_TOKEN_MIN_POLL_MS}
  * later.
  */
-export const CHECK_IN_TOKEN_ROTATION_SLACK_MS = 500;
+const CHECK_IN_TOKEN_ROTATION_SLACK_MS = 500;
 /** The shortest wait between two mints, so a mistimed answer can't loop. */
 export const CHECK_IN_TOKEN_MIN_POLL_MS = 1_000;
 
@@ -376,11 +395,11 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId, "check-in-token"],
-    queryFn: async (): Promise<MintedCheckInTokenResult> => {
+    queryFn: async ({ signal }): Promise<MintedCheckInTokenResult> => {
       const requestedAt = deviceNow();
       const result = await client.GET(
         "/v1/events/{eventId}/attendance/check-in-token",
-        { params: { path: { eventId } } },
+        { signal, params: { path: { eventId } } },
       );
       // On the status, not `error` (see `throwUnlessOk`). An empty-bodied
       // 5xx read as a success would replace the code on screen, which still
@@ -396,6 +415,71 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
     // asking again, and a transient failure or a 401 is asked again by the
     // fallback poll, not at once.
     retry: false,
+  });
+}
+
+/**
+ * How the server is checking presence for an event, as `PUT
+ * /v1/events/{eventId}/attendance/check-in-screen` answers (#4532):
+ * `screen` (this screen knows where it is, and members must be near a located
+ * screen), `other_screen` (this one can't tell where it is, but another
+ * officer's screen can), `no_location` (no screen could tell where it is, so
+ * distance isn't checked), `zone` (the event's drawn zone), or `not_open` /
+ * `closed` (outside the check-in window). Read from the generated contract.
+ */
+export type CheckInScreenCheck =
+  components["schemas"]["CheckInScreenResultDto"]["check"];
+
+// A record over the union, so a value the contract adds or renames fails the
+// type check here instead of reading as "unknown" on the host screen.
+const CHECK_IN_SCREEN_CHECKS: Readonly<Record<CheckInScreenCheck, true>> = {
+  zone: true,
+  screen: true,
+  other_screen: true,
+  no_location: true,
+  not_open: true,
+  closed: true,
+};
+
+/** The `check` from the route's answer, or `null` for anything else. */
+function checkInScreenCheckOf(response: unknown): CheckInScreenCheck | null {
+  if (typeof response !== "object" || response === null) return null;
+  const check = (response as { check?: unknown }).check;
+  return typeof check === "string" &&
+    Object.prototype.hasOwnProperty.call(CHECK_IN_SCREEN_CHECKS, check)
+    ? (check as CheckInScreenCheck)
+    : null;
+}
+
+export interface CheckInScreenVariables {
+  eventId: string;
+  /** Left out when the screen can't tell where it is. */
+  lat?: number;
+  lng?: number;
+  accuracy_meters?: number;
+}
+
+/**
+ * The host screen (s22) telling the server it is showing the code, and where
+ * it is (#4532). Sent about once a minute while a code is drawn, so members
+ * are checked against where the screen is now. Officer-only, like the mint.
+ * Resolves to the server's check (see {@link CheckInScreenCheck}).
+ */
+export function useReportCheckInScreen() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationKey: ["attendance", "check-in-screen"],
+    mutationFn: async ({
+      eventId,
+      ...body
+    }: CheckInScreenVariables): Promise<CheckInScreenCheck | null> => {
+      const result = await client.PUT(
+        "/v1/events/{eventId}/attendance/check-in-screen",
+        { params: { path: { eventId } }, body },
+      );
+      throwUnlessOk(result);
+      return checkInScreenCheckOf(result.data);
+    },
   });
 }
 
@@ -423,6 +507,42 @@ export function useUpdateAttendanceStatus() {
       // On the status, not `error` (see `throwUnlessOk`).
       throwUnlessOk(result);
       return result.data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["attendance", variables.eventId],
+      });
+    },
+  });
+}
+
+/**
+ * Marks members who were at an event by hand, in one request (the minutes
+ * page, for a meeting nobody checked in to). Members with a row keep it.
+ */
+export function useMarkAttendanceByHand() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["attendance", "by-hand"],
+    mutationFn: async ({
+      eventId,
+      userIds,
+      status,
+    }: {
+      eventId: string;
+      userIds: string[];
+      status: "PRESENT" | "LATE" | "EXCUSED";
+    }) => {
+      const result = await client.POST(
+        "/v1/events/{eventId}/attendance/by-hand",
+        {
+          params: { path: { eventId } },
+          body: { user_ids: userIds, status },
+        },
+      );
+      throwUnlessOk(result);
+      return result.data!;
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({

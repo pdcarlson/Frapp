@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import {
   anyReadUncached,
   PermissionsOfflineSurface,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
@@ -65,6 +66,9 @@ const FIRST_STEP: Record<ImportSource, WizardStep> = {
  * Gate ordering is permission → network → data: every async state renders
  * *inside* `<Can>`, so a member who URL-hits this route is told they cannot see
  * it rather than watching a spinner for a surface they will never reach.
+ *
+ * Drawn inside Chapter settings, in place of the Chat page (#3837,
+ * `?tab=chat&tool=discord-import`); `/discord-import` only redirects there.
  */
 export function DiscordImportPage() {
   const searchParams = useSearchParams();
@@ -161,7 +165,7 @@ export function DiscordImportPage() {
         // "Permission check offline"). Without this the screen-level gate fell
         // back to the control-slot chip, one line of text standing in for the
         // page. The card it draws instead is the same screen-level fallback
-        // every flushed route's gate draws (`/reports`, `/geofences`).
+        // every flushed route's gate draws (`/reports`, `/chat-admin`).
         offlineFallback={(retry) => (
           <PermissionsOfflineSurface
             description="Reconnect to check whether you can import Discord history."
@@ -230,7 +234,7 @@ function DiscordImportView({
   // The channel-by-channel panel (#2857), opened from the import's own page.
   const [channelsOpen, setChannelsOpen] = useState(false);
 
-  const paused = imports.isPending && imports.fetchStatus === "paused";
+  const paused = pausedRead(imports);
 
   // Above every state branch, and so above anything the page's own read can
   // do. The wizard holds every choice the admin has made (source, consent,

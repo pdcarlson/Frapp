@@ -72,6 +72,11 @@ export interface OrgConfig {
   /** When true, this chapter has opted out of pseudonymous product analytics. */
   analytics_opt_out?: boolean;
   /**
+   * Whether settled members may change their own name (#5801);
+   * false, the default, locks it to officers who manage roles.
+   */
+  members_can_change_name?: boolean;
+  /**
    * Role new invites default to (#422). `null` means no default is configured
    * and the API falls back to the seeded Member role. Typed explicitly rather
    * than left to the index signature below, which would surface it as
@@ -81,25 +86,33 @@ export interface OrgConfig {
   [key: string]: unknown;
 }
 
+/** The `GET /v1/chapters/current` payload, which `usePatchOrgConfig` writes module toggles into. */
+type CurrentChapter = components["schemas"]["CurrentChapterResponseDto"];
+
 type OrgConfigWithHelpers = OrgConfig & {
   /** A module is enabled unless explicitly set to `false`. */
   isModuleEnabled: (key: string) => boolean;
 };
 
-export function useOrgConfig() {
+/**
+ * `enabled: false` keeps a viewer without `chapter-config:view` from asking
+ * for a read the API would refuse (the phone's Chapter settings, #5801).
+ */
+export function useOrgConfig(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
 
   return useQuery({
     queryKey: ["chapter-config", chapterId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/chapters/{id}/config", {
+        signal,
         params: { path: { id: chapterId as string } },
       });
       if (error) throw error;
       return (data ?? {}) as unknown as OrgConfig;
     },
-    enabled: !!chapterId,
+    enabled: !!chapterId && (options?.enabled ?? true),
     staleTime: 5 * 60 * 1000,
     select: (data): OrgConfigWithHelpers => ({
       ...data,
@@ -212,7 +225,7 @@ export function usePatchOrgConfig() {
     // (per the Chunk 06 brief — settings writes go through this mutation).
     //
     // A module toggle is also written into the current-chapter payload. The
-    // web shell's module gate (sidebar, drawer, Ask pill, Settings tools) reads
+    // web shell's module gate (sidebar, drawer, Settings tools) reads
     // `enabled_modules` from there, because members cannot read this config
     // endpoint (#1982), and that query is cached for five minutes. Without this
     // write, switching a module off would leave its nav row up until the cache
@@ -236,15 +249,14 @@ export function usePatchOrgConfig() {
       // optimistic write lands while this one is in flight; restoring a
       // whole-object snapshot on error would silently undo it too.
       const touchedModules: Record<string, boolean | undefined> = {};
-      const replaced: { optOut?: { value: unknown } } = {};
-      qc.setQueryData(chapterKey, (old: unknown) => {
+      const replaced: { optOut?: { value: boolean | undefined } } = {};
+      qc.setQueryData<CurrentChapter>(chapterKey, (old) => {
         if (!old || typeof old !== "object") return old;
-        let next = old as Record<string, unknown>;
+        let next = old;
         if (modules) {
-          const current =
-            (next.enabled_modules as Record<string, boolean> | null | undefined) ??
-            {};
-          for (const key of Object.keys(modules)) touchedModules[key] = current[key];
+          const current = next.enabled_modules ?? {};
+          for (const key of Object.keys(modules))
+            touchedModules[key] = current[key];
           next = { ...next, enabled_modules: { ...current, ...modules } };
         }
         if (optOut !== undefined) {
@@ -264,22 +276,22 @@ export function usePatchOrgConfig() {
         qc.setQueryData(queryKey, context.previous);
       }
       const optOutBefore =
-        context && "touchedOptOut" in context ? context.touchedOptOut : undefined;
+        context && "touchedOptOut" in context
+          ? context.touchedOptOut
+          : undefined;
       if (optOutBefore) {
-        qc.setQueryData(chapterKey, (old: unknown) =>
+        qc.setQueryData<CurrentChapter>(chapterKey, (old) =>
           old && typeof old === "object"
             ? { ...old, analytics_opt_out: optOutBefore.value }
             : old,
         );
       }
-      const touched = context && "touchedModules" in context ? context.touchedModules : null;
+      const touched =
+        context && "touchedModules" in context ? context.touchedModules : null;
       if (touched) {
-        qc.setQueryData(chapterKey, (old: unknown) => {
+        qc.setQueryData<CurrentChapter>(chapterKey, (old) => {
           if (!old || typeof old !== "object") return old;
-          const restored = {
-            ...((old as { enabled_modules?: Record<string, boolean> | null })
-              .enabled_modules ?? {}),
-          };
+          const restored = { ...(old.enabled_modules ?? {}) };
           for (const [key, value] of Object.entries(touched)) {
             if (value === undefined) delete restored[key];
             else restored[key] = value;
@@ -297,8 +309,14 @@ export function usePatchOrgConfig() {
     // overwrite its optimistic value, flicking the switch and its nav row
     // back. During `onSettled` this mutation still counts as pending, so 1
     // means "only this one".
-    onSettled: () => {
-      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1) return;
+    onSettled: (_data, _error, diff) => {
+      // The member-names switch can lock or free the officer's own name
+      // (#5801), which their own row says.
+      if (diff.members_can_change_name !== undefined) {
+        void qc.invalidateQueries({ queryKey: ["user", "me"], exact: true });
+      }
+      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1)
+        return;
       void qc.invalidateQueries({ queryKey });
       void qc.invalidateQueries({ queryKey: chapterKey });
     },

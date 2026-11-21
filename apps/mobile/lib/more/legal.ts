@@ -21,11 +21,11 @@ export interface LegalLink {
   url: string;
 }
 
-const TERMS_LINK: LegalLink = {
+export const TERMS_LINK: LegalLink = {
   label: "Terms of Service",
   url: `${LEGAL_BASE_URL}/terms`,
 };
-const PRIVACY_LINK: LegalLink = {
+export const PRIVACY_LINK: LegalLink = {
   label: "Privacy Policy",
   url: `${LEGAL_BASE_URL}/privacy`,
 };

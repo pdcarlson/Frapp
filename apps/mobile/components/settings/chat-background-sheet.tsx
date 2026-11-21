@@ -1,4 +1,4 @@
-import { forwardRef, useState } from "react";
+import { forwardRef, useCallback, useState } from "react";
 import { StyleSheet, Text } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import {
@@ -16,6 +16,7 @@ import {
   SheetScrim,
   useSheetBackgroundStyle,
   useSheetClose,
+  useSheetVisit,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { saveChatBackgroundPick } from "@/lib/chat/chat-background-photo";
@@ -28,14 +29,24 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `CHAPTER_PROFILE_PERMISSIONS`, the route's own guard.
  *
  * A tap saves and, once saved, closes. Photo opens the library first; the
- * sheet stays up meanwhile, so a refusal is read here.
+ * sheet stays up meanwhile, so a refusal is read here. A save can land after
+ * the officer swiped the sheet away (a photo upload is slow), so it closes
+ * only the visit it was sent from (`useSheetVisit`, #3405).
  */
 export const ChatBackgroundSheet = forwardRef<BottomSheetModal>(
   function ChatBackgroundSheet(_props, ref) {
     const closeSheet = useSheetClose(ref);
+    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useSheetVisit(ref);
     const backgroundStyle = useSheetBackgroundStyle();
     const { tokens } = useFrappTheme();
     const styles = createStyles(tokens);
+    const closeAfterSave = useCallback(
+      (sentFrom: number) => {
+        if (isSameVisit(sentFrom)) dismiss();
+      },
+      [dismiss, isSameVisit],
+    );
 
     return (
       <BottomSheetModal
@@ -45,11 +56,13 @@ export const ChatBackgroundSheet = forwardRef<BottomSheetModal>(
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
+        onAnimate={onAnimate}
+        onDismiss={markClosed}
       >
         <SheetBackToClose onClose={closeSheet} />
         <BottomSheetView style={styles.body} onAccessibilityEscape={closeSheet}>
           <SheetHeader title="Chat background" />
-          <ChatBackgroundDefaultPicker onSaved={closeSheet} />
+          <ChatBackgroundDefaultPicker visit={visit} onSaved={closeAfterSave} />
         </BottomSheetView>
       </BottomSheetModal>
     );
@@ -58,9 +71,13 @@ export const ChatBackgroundSheet = forwardRef<BottomSheetModal>(
 
 /** The sheet's body: the default's swatches, their save, and its words. */
 export function ChatBackgroundDefaultPicker({
+  visit,
   onSaved,
 }: {
-  onSaved: () => void;
+  /** Names the sheet visit a save is sent from (`useSheetVisit`). */
+  visit: () => number;
+  /** Saved: close the visit it was sent from, if that is still the one up. */
+  onSaved: (sentFrom: number) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -74,8 +91,9 @@ export function ChatBackgroundDefaultPicker({
   async function pick(next: ChatBackgroundKey | null) {
     // The default has no "follow" choice; the picker offers none.
     if (next === null || busy) return;
+    const sentFrom = visit();
     if (next !== "photo" && next === value) {
-      onSaved();
+      onSaved(sentFrom);
       return;
     }
     setBusy(true);
@@ -94,7 +112,7 @@ export function ChatBackgroundDefaultPicker({
         }),
     });
     setBusy(false);
-    if (result.status === "saved") onSaved();
+    if (result.status === "saved") onSaved(sentFrom);
     else if (result.status === "refused") setError(result.reason);
   }
 

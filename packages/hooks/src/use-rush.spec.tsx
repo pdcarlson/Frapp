@@ -1,14 +1,13 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
-import { FrappClientProvider } from "./use-frapp-client";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   rushKeys,
   useBidRushCandidate,
   useRushCandidate,
   useVoteRushCandidate,
 } from "./use-rush";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const VIEW = {
   id: "cand-1",
@@ -29,29 +28,19 @@ function createWrapper(
   mockClient: unknown,
   chapterId: string | null = "chapter-1",
 ) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      chapterId={chapterId}
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId,
+    displayName: "Wrapper",
+  });
 }
 
 describe("useRushCandidate", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   it("reads one candidate by id", async () => {
@@ -60,7 +49,7 @@ describe("useRushCandidate", () => {
       wrapper: createWrapper(queryClient, { GET }),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(GET).toHaveBeenCalledWith("/v1/rush/candidates/{id}", {
+    expect(GET).toHaveBeenCalledWith("/v1/rush/candidates/{id}", { signal: expect.any(AbortSignal),
       params: { path: { id: "cand-1" } },
     });
     expect(result.current.data).toEqual(VIEW);
@@ -137,9 +126,7 @@ describe.each([
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   it("posts to the candidate's route and replaces the card's read with the answer", async () => {

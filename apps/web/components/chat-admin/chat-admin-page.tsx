@@ -1,7 +1,7 @@
 "use client";
 
-import { ALWAYS_FORMAL_LABEL_WITH_HINT } from "@repo/chat-core/density";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { useKeptPanel } from "@repo/hooks/kept-drafts";
 import { AUDIT_LOG_SETTINGS_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
@@ -9,19 +9,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  ChevronRight,
   Loader2,
   Pencil,
   PinOff,
-  Plus,
   Trash2,
   Users,
 } from "lucide-react";
 import {
+  compareChannelOrder,
+  groupChannelsByCategory,
   useCategories,
   useChannelAccessOptions,
   useChannels,
   useCreateCategory,
-  useCreateChannel,
   useDeleteCategory,
   useMemberDisplayNames,
   usePinnedMessages,
@@ -30,6 +31,10 @@ import {
   useUpdateChannel,
   resolveAuthorLabel,
 } from "@repo/hooks";
+import {
+  isEmptyChannelAccessChoice,
+  matchesCategoryAccess,
+} from "@repo/hooks/channel-access";
 import { formatClock } from "@repo/formatting";
 import {
   builtInChannelDefault,
@@ -39,12 +44,14 @@ import {
 import { Can } from "@/components/shared/can";
 import { ChatBackgroundDefaultCard } from "./chat-background-default-card";
 import { Button } from "@/components/ui/button";
+import { NewButton } from "@/components/ui/new-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { EYEBROW } from "@/components/ui/typography";
+import { FOCUS_RING } from "@/components/ui/focus";
 import { SectionLabel } from "@/components/shared/section-label";
 import {
   Select,
@@ -53,17 +60,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
-import {
-  PanelBody,
-  PanelContent,
-  PanelFooter,
-  PanelHeader,
-} from "@/components/shared/panel";
 import {
   anyReadUncached,
   readIsOffline,
   PermissionsOfflineSurface,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import {
@@ -73,20 +74,30 @@ import {
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "@/components/chat/use-delete-channel-flow";
+import { ChannelMark } from "@/components/chat/channel-start";
+import { isSystemChannel } from "@repo/hooks/channel-start";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { ChatReportsCard } from "./chat-reports-card";
 import {
   ChannelAccessField,
+  channelAccessOptionsState,
   describeChannelAccess,
   type ChannelAccessOption,
+  type ChannelAccessOptionsState,
 } from "@/components/chat-admin/channel-access-field";
 import {
   ChannelsSkeleton,
   ChatAdminBodySkeleton,
 } from "@/components/chat-admin/chat-admin-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
+import { CreateChannelSheet, channelDraftName } from "./create-channel-sheet";
+import {
+  CHAT_SETTINGS_PATH,
+  channelSettingsPath,
+} from "@/components/settings/settings-paths";
+import { SettingsBackLink } from "@/components/settings/settings-subpage";
 
 type ChannelType = "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
 
@@ -117,6 +128,11 @@ interface AdminChannel {
    * form locks both.
    */
   is_audit_log?: boolean;
+  /**
+   * The chapter's order inside its category (#4178), set by dragging in the
+   * chat rail. The category tree sorts by it the way the rail does.
+   */
+  display_order?: number | null;
 }
 
 interface AdminCategory {
@@ -160,10 +176,24 @@ const BUILT_IN_DEFAULT_LEVEL = "__built_in__";
 
 /** Sentinel for "no category" — Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
+/** The category tree's key for the System group (the audit log), as the rail splits it. */
+const SYSTEM_GROUP = "__system__";
 
-/** A chosen list with nothing on it: the API refuses it, so the form does. */
-function isEmptyChoice(list: readonly string[] | null): boolean {
-  return list !== null && list.length === 0;
+/** The live row's fields the editor seeds from, in the editor's own terms. */
+interface LiveChannelFields {
+  id: string;
+  name: string;
+  category: string;
+  level: string;
+}
+
+function liveChannelFields(channel: AdminChannel): LiveChannelFields {
+  return {
+    id: channel.id,
+    name: channel.name,
+    category: channel.category_id ?? NO_CATEGORY,
+    level: channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
+  };
 }
 
 /** A category's two answers in one line, for its row in the list. */
@@ -183,32 +213,25 @@ function categoryAccessSummary(
   return `Seen by ${seen}. Posts: ${posters}`;
 }
 
-/** Whether a channel's two lists equal its category's (it "matches" and follows it). */
-function matchesCategory(
-  see: readonly string[] | null,
-  post: readonly string[] | null,
-  category: AdminCategory | null | undefined,
-): boolean {
-  if (!category) return false;
-  return (
-    sameChannelAccessList(see, category.who_can_see ?? null) &&
-    sameChannelAccessList(post, category.who_can_post ?? null)
-  );
-}
-
 /**
- * Two pages on one route, the way Discord splits channel settings from server
- * settings (Paul, 2026-11-11: "scope the chat admin panel to whatever channel
- * you're editing"):
+ * Chat admin, inside Chapter settings' Chat page (#3837). Two views, the way
+ * Discord splits channel settings from server settings (Paul, 2026-11-11:
+ * "scope the chat admin panel to whatever channel you're editing"):
  *
- * - **`?channel=<id>`: that channel's settings, and nothing else.** The
- *   channel start's Edit channel shortcut (`components/chat/channel-start.tsx`)
- *   and the chat rail's right-click Edit channel (`chat-shell.tsx`) open it.
- *   Its settings first, then its pins, then the reports filed in it. No list
- *   of every channel: the chat rail beside the page already is one.
- * - **No channel: the chapter's chat settings.** New channel, a picker to open
- *   one channel's settings, categories, the chapter's chat background, and the
- *   whole report queue last (the only place a report about a DM shows).
+ * - **`?channel=<id>`: that channel's settings, and nothing else**, drawn in
+ *   place of the Chat page. The channel start's Edit channel shortcut
+ *   (`components/chat/channel-start.tsx`) and the chat rail's right-click
+ *   Edit channel (`chat-shell.tsx`) open it, as Discord's Edit Channel opens
+ *   its full-screen settings. Its settings first, then its pins, then the
+ *   reports filed in it, and a way back to all chat settings.
+ * - **No channel: the chapter's chat settings**, the body of the Chat page.
+ *   New channel, the categories with every channel under its own (#5727;
+ *   a channel row opens that channel's settings), the chapter's chat
+ *   background, and the whole report queue last (the only
+ *   place a report about a DM shows).
+ *
+ * It used to be its own route, `/chat-admin`, beside chat; that route only
+ * redirects here now.
  */
 export function ChatAdminPage({
   initialChannelId = null,
@@ -263,7 +286,7 @@ export function ChatAdminPage({
         down. The card carries its own gate (`CHAT_REPORT_QUEUE_PERMISSIONS`,
         which includes channels:manage) and renders nothing for an officer it
         refuses. The new-report notification links to its anchor
-        (`/chat-admin#reported-messages`).
+        (`CHAT_REPORTS_SETTINGS_PATH`).
       */}
       <div className="mt-10">
         <ChatReportsCard channelId={initialChannelId ?? undefined} />
@@ -285,7 +308,6 @@ function ChatAdminBody({
   const categoriesQuery = useCategories();
   const accessOptionsQuery = useChannelAccessOptions();
 
-  const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
   const deleteChannelFlow = useDeleteChannelFlow(confirm);
   const router = useRouter();
@@ -316,14 +338,48 @@ function ChatAdminBody({
     () => asArray<ChannelAccessOption>(accessOptionsQuery.data),
     [accessOptionsQuery.data],
   );
-  const accessOptionsState: "ready" | "loading" | "error" =
-    accessOptionsQuery.data !== undefined
-      ? "ready"
-      : accessOptionsQuery.isError ||
-          (accessOptionsQuery.isPending &&
-            accessOptionsQuery.fetchStatus === "paused")
-        ? "error"
-        : "loading";
+  const accessOptionsState = channelAccessOptionsState(accessOptionsQuery);
+
+  // ── Category tree (#5727) ───────────────────────────────────────────────
+  // Every channel under its category, sectioned the way the chat rail
+  // sections them: the audit log split off into a System group first, then
+  // the shared grouping (categories in the server's order, an unknown
+  // category falling back to none), then the chapter's drag order inside
+  // each group, then A to Z. Like the rail, channels in no category come
+  // first (the rail calls that group "Channels"; here it reads
+  // "Uncategorized", the word the channel form and the delete warning on
+  // this page use) and System last.
+  const channelTree = useMemo(() => {
+    const system = channels.filter((c) => isSystemChannel(c));
+    const rest = channels.filter((c) => !isSystemChannel(c));
+    const grouped = groupChannelsByCategory(rest, categories);
+    const byOrder = compareChannelOrder<AdminChannel>((c) => c.name);
+    return {
+      uncategorized: [...grouped.uncategorized].sort(byOrder),
+      categories: grouped.categories.map(({ category, channels: inIt }) => ({
+        category,
+        channels: [...inIt].sort(byOrder),
+      })),
+      system: [...system].sort(byOrder),
+    };
+  }, [channels, categories]);
+  // What the officer chose for each group, open or closed. A group they
+  // haven't touched starts closed, except Uncategorized in a chapter with no
+  // categories, which is then the only way to a channel. The choice is kept
+  // as the answer itself, not a flip of that default, so creating the first
+  // category or deleting the last one never reverses it.
+  const [groupChoices, setGroupChoices] = useState<
+    ReadonlyMap<string, boolean>
+  >(() => new Map());
+  function isGroupOpen(key: string) {
+    return (
+      groupChoices.get(key) ?? (key === NO_CATEGORY && categories.length === 0)
+    );
+  }
+  function toggleGroup(key: string) {
+    const open = isGroupOpen(key);
+    setGroupChoices((current) => new Map(current).set(key, !open));
+  }
 
   // ── Category drafts ─────────────────────────────────────────────────────
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -347,7 +403,10 @@ function ChatAdminBody({
   }
 
   async function handleSaveCategoryAccess(category: AdminCategory) {
-    if (isEmptyChoice(categorySeeDraft) || isEmptyChoice(categoryPostDraft)) {
+    if (
+      isEmptyChannelAccessChoice(categorySeeDraft) ||
+      isEmptyChannelAccessChoice(categoryPostDraft)
+    ) {
       return;
     }
     // Only the lists the officer changed go out, so a list another officer
@@ -481,6 +540,14 @@ function ChatAdminBody({
   // another officer's change (or the category's) isn't written back over.
   const [seeSeed, setSeeSeed] = useState<string[] | null>(null);
   const [postSeed, setPostSeed] = useState<string[] | null>(null);
+  // Name, category and default level are seeded the same way (#4542): a rail
+  // drag, a rename in the chat header or another officer's change moves the
+  // live row under the editor, and a save of the description must not send
+  // the old value back. `seenLive` is the live row's values as the editor last
+  // took them in, and is their seed: a field goes out only when its draft
+  // differs from it, and it follows the live row even under an edited draft,
+  // so an officer who types back the old value still has it sent.
+  const [seenLive, setSeenLive] = useState<LiveChannelFields | null>(null);
 
   // `?channel=` from the channel start. Applied once, during render rather
   // than in an effect, so the editor's first paint already shows the channel.
@@ -504,22 +571,42 @@ function ChatAdminBody({
   function selectChannel(channel: AdminChannel) {
     setFocusDescription(false);
     setSelectedChannelId(channel.id);
-    setNameDraft(channel.name);
+    const live = liveChannelFields(channel);
+    setSeenLive(live);
+    setNameDraft(live.name);
     setDescriptionDraft(channel.description ?? "");
     setDescriptionSeed((channel.description ?? "").trim());
-    setCategoryDraft(channel.category_id ?? NO_CATEGORY);
+    setCategoryDraft(live.category);
     setIsDefaultDraft(channel.is_default === true);
     setIsDefaultSeed(channel.is_default === true);
     setActivityExcludedDraft(channel.activity_excluded === true);
     setActivityExcludedSeed(channel.activity_excluded === true);
-    setDefaultLevelDraft(
-      channel.default_notification_level ?? BUILT_IN_DEFAULT_LEVEL,
-    );
+    setDefaultLevelDraft(live.level);
     setSeeDraft(channel.who_can_see ?? null);
     setPostDraft(channel.who_can_post ?? null);
     setSeeSeed(channel.who_can_see ?? null);
     setPostSeed(channel.who_can_post ?? null);
     setMatchDraft(false);
+  }
+
+  // The live row moved under the editor (a refetch after a rail drag, a header
+  // rename, another officer): a draft the officer hasn't touched takes the new
+  // value, and one they edited keeps their edit. Adjusted during render, as
+  // the `?channel=` pick above is, so the editor never paints the stale value.
+  if (selectedChannel && seenLive?.id === selectedChannel.id) {
+    const live = liveChannelFields(selectedChannel);
+    if (
+      live.name !== seenLive.name ||
+      live.category !== seenLive.category ||
+      live.level !== seenLive.level
+    ) {
+      setSeenLive(live);
+      if (nameDraft === seenLive.name) setNameDraft(live.name);
+      if (categoryDraft === seenLive.category) setCategoryDraft(live.category);
+      if (defaultLevelDraft === seenLive.level) {
+        setDefaultLevelDraft(live.level);
+      }
+    }
   }
 
   /** The channel takes lists: not private, not a DM, not the audit log. */
@@ -539,8 +626,8 @@ function ChatAdminBody({
   // doesn't block saving its name.
   const accessIncomplete =
     selectedTakesLists &&
-    ((seeChanged && isEmptyChoice(seeDraft)) ||
-      (postChanged && isEmptyChoice(postDraft)));
+    ((seeChanged && isEmptyChannelAccessChoice(seeDraft)) ||
+      (postChanged && isEmptyChannelAccessChoice(postDraft)));
   /** A private channel made read-only before #3722, which can be opened up. */
   const clearsPrivatePosters =
     selectedChannel?.type === "PRIVATE" && postChanged && postDraft === null;
@@ -556,7 +643,7 @@ function ChatAdminBody({
       toast({
         variant: "destructive",
         description:
-          "Add a tier or role to each chosen list, or pick Everyone.",
+          "Add a tier, role or group to each chosen list, or pick Everyone.",
       });
       return;
     }
@@ -569,15 +656,27 @@ function ChatAdminBody({
     // this draft sits untouched must not send the stale draft over it.
     const description = descriptionDraft.trim();
     const descriptionChanged = description !== descriptionSeed;
+    // Name, category and default level likewise go out only when they differ
+    // from the live row the editor last took in (#4542). Nothing is re-seeded
+    // after the save: the refetch it triggers moves `seenLive`, and a write
+    // here could land in another channel's editor picked while it was pending.
+    const nameChanged = name !== seenLive?.name;
+    const categoryChanged = categoryDraft !== seenLive?.category;
+    const defaultLevelChanged = defaultLevelDraft !== seenLive?.level;
     try {
       await updateChannel.mutateAsync({
         id: selectedChannel.id,
         body: {
-          name,
+          ...(nameChanged ? { name } : {}),
           ...(descriptionChanged ? { description } : {}),
           // `null` clears the category; `NO_CATEGORY` selected means "make this
           // uncategorized," which is a real write, not "leave it alone."
-          category_id: categoryDraft === NO_CATEGORY ? null : categoryDraft,
+          ...(categoryChanged
+            ? {
+                category_id:
+                  categoryDraft === NO_CATEGORY ? null : categoryDraft,
+              }
+            : {}),
           // The lists go out only when they changed (a save of the name must
           // not write back lists another officer, or the category, just
           // moved), or as "match the category" when the officer asked for it.
@@ -601,10 +700,14 @@ function ChatAdminBody({
             ? { is_default: isDefaultDraft }
             : {}),
           // `null` clears an officer's choice; the built-in default applies.
-          default_notification_level:
-            defaultLevelDraft === BUILT_IN_DEFAULT_LEVEL
-              ? null
-              : (defaultLevelDraft as ChatNotificationLevel),
+          ...(defaultLevelChanged
+            ? {
+                default_notification_level:
+                  defaultLevelDraft === BUILT_IN_DEFAULT_LEVEL
+                    ? null
+                    : (defaultLevelDraft as ChatNotificationLevel),
+              }
+            : {}),
         },
       });
       setMatchDraft(false);
@@ -626,92 +729,21 @@ function ChatAdminBody({
     await deleteChannelFlow(channel, () => {
       if (selectedChannelId === channel.id) setSelectedChannelId(null);
       // The page was this channel's; back to the chapter's chat settings.
-      if (channelMode) router.replace("/chat-admin");
+      if (channelMode) router.replace(CHAT_SETTINGS_PATH);
     });
   }
 
-  // ── Create-channel panel ────────────────────────────────────────────────
+  // ── Create-channel panel (`create-channel-sheet.tsx`, shared with the rail)
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createDescription, setCreateDescription] = useState("");
-  // Discord's create dialog asks one question about access, "Private
-  // channel", and Frapp keeps it: a private channel's members are added by
-  // hand, everyone else's access is the two lists below it.
-  const [createPrivate, setCreatePrivate] = useState(false);
-  const [createCategoryId, setCreateCategoryId] = useState(NO_CATEGORY);
-  const [createSee, setCreateSee] = useState<string[] | null>(null);
-  const [createPost, setCreatePost] = useState<string[] | null>(null);
-  // Until the officer edits a list, the channel takes its category's (the
-  // server copies them when the lists are left out), and the form shows them.
-  const [createAccessTouched, setCreateAccessTouched] = useState(false);
-  const [createAlwaysFormal, setCreateAlwaysFormal] = useState(false);
-
-  function resetCreateDraft() {
-    setCreateName("");
-    setCreateDescription("");
-    setCreatePrivate(false);
-    setCreateCategoryId(NO_CATEGORY);
-    setCreateSee(null);
-    setCreatePost(null);
-    setCreateAccessTouched(false);
-    setCreateAlwaysFormal(false);
-  }
-
-  function handleCreateCategoryChange(categoryId: string) {
-    setCreateCategoryId(categoryId);
-    if (createAccessTouched) return;
-    const category = categories.find((c) => c.id === categoryId);
-    setCreateSee(category?.who_can_see ?? null);
-    setCreatePost(category?.who_can_post ?? null);
-  }
-
-  const createAccessIncomplete =
-    !createPrivate && (isEmptyChoice(createSee) || isEmptyChoice(createPost));
-
-  /** Every way the create panel closes (X, Escape, scrim, Cancel) drops the draft. */
-  function handleCreateOpenChange(open: boolean) {
-    setCreateDialogOpen(open);
-    if (!open) resetCreateDraft();
-  }
-
-  async function handleCreateChannel(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = createName.trim();
-    if (!name) return;
-    if (createAccessIncomplete) {
-      toast({
-        variant: "destructive",
-        description:
-          "Add a tier or role to each chosen list, or pick Everyone.",
-      });
-      return;
-    }
-    try {
-      await createChannel.mutateAsync({
-        name,
-        description: createDescription.trim() || undefined,
-        type: createPrivate
-          ? "PRIVATE"
-          : createSee === null
-            ? "PUBLIC"
-            : "ROLE_GATED",
-        category_id:
-          createCategoryId === NO_CATEGORY ? undefined : createCategoryId,
-        display_locked: createAlwaysFormal,
-        ...(!createPrivate && createAccessTouched
-          ? { who_can_see: createSee, who_can_post: createPost }
-          : {}),
-      });
-      toast({ description: `#${name} created.` });
-      resetCreateDraft();
-      setCreateDialogOpen(false);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        description: getErrorMessage(error, "Couldn't create the channel."),
-      });
-    }
-  }
+  // Left with New channel open, the page reopens it on its draft (#4593).
+  // A channel's own page has no New channel, so it waits for the chapter's.
+  useKeptPanel({
+    page: "chat-admin",
+    form: channelDraftName(null, true),
+    open: createDialogOpen,
+    setOpen: setCreateDialogOpen,
+    ready: !channelMode,
+  });
 
   // ── Pinned messages for the selected channel ────────────────────────────
   const pinsQuery = usePinnedMessages(selectedChannelId ?? "");
@@ -740,9 +772,7 @@ function ChatAdminBody({
     void accessOptionsQuery.refetch();
   }
 
-  const paused =
-    (channelsQuery.isPending && channelsQuery.fetchStatus === "paused") ||
-    (categoriesQuery.isPending && categoriesQuery.fetchStatus === "paused");
+  const paused = pausedRead(channelsQuery) || pausedRead(categoriesQuery);
 
   // The nested family, not `async-states.tsx`'s: those paint `--card`, so on
   // this flush route they would redraw the card the route deleted. `sole`
@@ -801,32 +831,29 @@ function ChatAdminBody({
           {selectedChannel ? (
             // Its own container: the form's fields count the page's width.
             <div className="@container">
-              <section aria-labelledby="ca-edit-label" className="space-y-4">
-                <div className="flex min-h-9 min-w-0 flex-wrap items-center gap-2">
-                  <h2
-                    id="ca-edit-label"
-                    className="min-w-0 truncate text-lg font-bold"
-                  >
-                    #{selectedChannel.name}
-                  </h2>
-                  <Badge variant="outline">
-                    {CHANNEL_TYPE_LABEL[selectedChannel.type]}
-                  </Badge>
-                  {selectedChannel.is_default ? (
-                    <Badge variant="secondary">Default</Badge>
-                  ) : null}
-                  <Button
-                    asChild
-                    variant="ghost"
-                    size="sm"
-                    className="ml-auto gap-1.5 text-muted-foreground"
-                  >
-                    <Link href="/chat-admin">
-                      <ArrowLeft className="h-4 w-4" />
-                      All chat settings
-                    </Link>
-                  </Button>
-                </div>
+              <section aria-labelledby="ca-edit-label" className="space-y-6">
+                {/*
+                  Drawn in place of the Chat page of Chapter settings, so it
+                  heads itself the way that page does, with the way back to
+                  it above (`SettingsSubpage`'s shape, plus the badges).
+                */}
+                <header className="space-y-1 border-b border-border pb-6">
+                  <SettingsBackLink href={CHAT_SETTINGS_PATH} label="Chat" />
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h2
+                      id="ca-edit-label"
+                      className="min-w-0 truncate text-title text-foreground"
+                    >
+                      #{selectedChannel.name}
+                    </h2>
+                    <Badge variant="outline">
+                      {CHANNEL_TYPE_LABEL[selectedChannel.type]}
+                    </Badge>
+                    {selectedChannel.is_default ? (
+                      <Badge variant="secondary">Default</Badge>
+                    ) : null}
+                  </div>
+                </header>
                 <div className="grid gap-3 @md:grid-cols-2">
                   <div className="grid gap-1">
                     <Label htmlFor="ca-name">Name</Label>
@@ -911,7 +938,8 @@ function ChatAdminBody({
                   <p className="text-xs text-muted-foreground">
                     Chat opens here when a member&apos;s device has no last
                     channel. Turning this on moves it off any other channel.
-                    Members who can&apos;t see this channel open #general.
+                    Members who can&apos;t see this channel open #general, or
+                    the first channel they can post in.
                   </p>
                 </div>
                 <div className="grid gap-1">
@@ -1105,7 +1133,7 @@ function ChatAdminBody({
                 This channel isn&apos;t here anymore. It may have been deleted.
               </InlineNote>
               <Button asChild variant="secondary" size="sm" className="gap-1.5">
-                <Link href="/chat-admin">
+                <Link href={CHAT_SETTINGS_PATH}>
                   <ArrowLeft className="h-4 w-4" />
                   All chat settings
                 </Link>
@@ -1117,10 +1145,11 @@ function ChatAdminBody({
         <>
           {/*
         Flush, not carded (`1f` pin 2: "one toolbar row, no wrapper card, no
-        description paragraph"). The chapter's page lists no channels: the
-        chat rail beside it already does, and right-click > Edit channel there
-        opens one channel's own page. The picker is the way in from Settings,
-        where the rail is not beside it.
+        description paragraph"). The channels themselves are listed under
+        their categories below (#5727), each row opening that channel's own
+        page; the "Edit a channel" picker that stood here went with it, since
+        the tree reaches every channel and a 20-channel picker ran off the
+        page (#5724).
       */}
           <section aria-labelledby="ca-channels-label" className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -1135,180 +1164,13 @@ function ChatAdminBody({
                 Channels
               </SectionLabel>
               <div className="flex flex-wrap items-center gap-2">
-                {channels.length > 0 ? (
-                  <Select
-                    value=""
-                    onValueChange={(id) =>
-                      router.push(
-                        `/chat-admin?channel=${encodeURIComponent(id)}`,
-                      )
-                    }
-                  >
-                    <SelectTrigger
-                      aria-label="Edit a channel"
-                      className="w-56 max-w-full"
-                    >
-                      <SelectValue placeholder="Edit a channel" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {channels.map((channel) => (
-                        <SelectItem key={channel.id} value={channel.id}>
-                          #{channel.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : null}
-                <Sheet
+                <CreateChannelSheet
                   open={createDialogOpen}
-                  onOpenChange={handleCreateOpenChange}
-                >
-                  <SheetTrigger asChild>
-                    <Button className="gap-2">
-                      <Plus className="h-4 w-4" />
-                      New channel
-                    </Button>
-                  </SheetTrigger>
-                  {/*
-              A panel, not a dialog (`components.md` § Surface size): a
-              channel's two access lists and their Add menus would scroll
-              inside a 512px dialog capped at 80vh.
-            */}
-                  <PanelContent>
-                    <PanelHeader>Create a channel</PanelHeader>
-                    <PanelBody
-                      as="form"
-                      id="channel-create-form"
-                      onSubmit={handleCreateChannel}
-                    >
-                      <SheetDescription>
-                        Choose who can see the channel and who can post in it.
-                        In a category, it starts with the category&apos;s
-                        answers and follows them until you change it.
-                      </SheetDescription>
-                      <div className="grid gap-1">
-                        <Label htmlFor="ca-create-name">Name</Label>
-                        <Input
-                          id="ca-create-name"
-                          value={createName}
-                          onChange={(event) =>
-                            setCreateName(event.target.value)
-                          }
-                          placeholder="announcements"
-                          required
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="ca-create-description">
-                          Description
-                        </Label>
-                        <Textarea
-                          id="ca-create-description"
-                          value={createDescription}
-                          onChange={(event) =>
-                            setCreateDescription(event.target.value)
-                          }
-                          rows={2}
-                        />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="ca-create-category">Category</Label>
-                        <Select
-                          value={createCategoryId}
-                          onValueChange={handleCreateCategoryChange}
-                        >
-                          <SelectTrigger id="ca-create-category">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NO_CATEGORY}>
-                              Uncategorized
-                            </SelectItem>
-                            {categories.map((category) => (
-                              <SelectItem key={category.id} value={category.id}>
-                                {category.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-1">
-                        <label className="flex items-center gap-3">
-                          <Switch
-                            checked={createPrivate}
-                            onCheckedChange={setCreatePrivate}
-                          />
-                          <span className="text-sm">Private channel</span>
-                        </label>
-                        <p className="text-xs text-muted-foreground">
-                          Only people you add can see it, starting with you. Its
-                          type can&apos;t be changed after it&apos;s created.
-                        </p>
-                      </div>
-                      {createPrivate ? null : (
-                        <div className="grid gap-4 rounded-md border border-border p-3">
-                          <ChannelAccessField
-                            id="ca-create-see"
-                            question="see"
-                            value={createSee}
-                            onChange={(next) => {
-                              setCreateSee(next);
-                              setCreateAccessTouched(true);
-                            }}
-                            options={accessOptions}
-                            optionsState={accessOptionsState}
-                          />
-                          <ChannelAccessField
-                            id="ca-create-post"
-                            question="post"
-                            value={createPost}
-                            onChange={(next) => {
-                              setCreatePost(next);
-                              setCreateAccessTouched(true);
-                            }}
-                            options={accessOptions}
-                            optionsState={accessOptionsState}
-                          />
-                        </div>
-                      )}
-                      <label className="flex items-center gap-3">
-                        <Switch
-                          checked={createAlwaysFormal}
-                          onCheckedChange={setCreateAlwaysFormal}
-                        />
-                        <span className="text-sm">
-                          {ALWAYS_FORMAL_LABEL_WITH_HINT}
-                        </span>
-                      </label>
-                    </PanelBody>
-                    <PanelFooter>
-                      <Button
-                        variant="secondary"
-                        // Through the same handler as the X and Escape: Radix fires no
-                        // `onOpenChange` for a close made by setting state, so a bare
-                        // `setCreateDialogOpen(false)` would keep the draft.
-                        onClick={() => handleCreateOpenChange(false)}
-                        disabled={createChannel.isPending}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        form="channel-create-form"
-                        type="submit"
-                        disabled={
-                          createChannel.isPending ||
-                          !createName.trim() ||
-                          createAccessIncomplete
-                        }
-                      >
-                        {createChannel.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : null}
-                        Create channel
-                      </Button>
-                    </PanelFooter>
-                  </PanelContent>
-                </Sheet>
+                  onOpenChange={setCreateDialogOpen}
+                  docked
+                  backLabel="Back to chat admin"
+                  trigger={<NewButton thing="channel" />}
+                />
               </div>
             </div>
             {channels.length === 0 ? (
@@ -1331,13 +1193,28 @@ function ChatAdminBody({
             </SectionLabel>
             {categories.length === 0 ? (
               <InlineNote>
-                No categories yet. Channels without one show as uncategorized.
+                No categories yet. Channels without one are listed under
+                Uncategorized.
               </InlineNote>
-            ) : (
+            ) : null}
+            {categories.length > 0 || channels.length > 0 ? (
               <ul className={denseListClassName}>
-                {[...categories]
-                  .sort((a, b) => a.display_order - b.display_order)
-                  .map((category) => (
+                {channelTree.uncategorized.length > 0 ? (
+                  <PlainChannelGroup
+                    groupKey={NO_CATEGORY}
+                    name="Uncategorized"
+                    channels={channelTree.uncategorized}
+                    open={isGroupOpen(NO_CATEGORY)}
+                    onToggle={() => toggleGroup(NO_CATEGORY)}
+                  />
+                ) : null}
+                {/*
+                  The server's order (display_order, then created_at), which
+                  is the order the chat rail draws; the re-sort that stood
+                  here was a second copy of that rule.
+                */}
+                {channelTree.categories.map(
+                  ({ category, channels: categoryChannels }) => (
                     <li key={category.id}>
                       <div className="flex min-h-11 items-center justify-between gap-2">
                         {editingCategoryId === category.id ? (
@@ -1371,19 +1248,17 @@ function ChatAdminBody({
                           </>
                         ) : (
                           <>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">
-                                {category.name}
-                              </p>
-                              {/*
-                              Both answers in one line, so an officer scanning
-                              the list sees which categories are private
-                              without opening each.
-                            */}
-                              <p className="truncate text-caption text-muted-foreground">
-                                {categoryAccessSummary(category, accessOptions)}
-                              </p>
-                            </div>
+                            <CategoryToggle
+                              groupKey={category.id}
+                              name={category.name}
+                              channelCount={categoryChannels.length}
+                              open={isGroupOpen(category.id)}
+                              onToggle={() => toggleGroup(category.id)}
+                              summary={categoryAccessSummary(
+                                category,
+                                accessOptions,
+                              )}
+                            />
                             <div className="flex shrink-0 gap-1">
                               <Button
                                 variant="ghost"
@@ -1438,10 +1313,26 @@ function ChatAdminBody({
                           onSave={() => void handleSaveCategoryAccess(category)}
                         />
                       ) : null}
+                      {isGroupOpen(category.id) ? (
+                        <CategoryChannelList
+                          groupKey={category.id}
+                          channels={categoryChannels}
+                        />
+                      ) : null}
                     </li>
-                  ))}
+                  ),
+                )}
+                {channelTree.system.length > 0 ? (
+                  <PlainChannelGroup
+                    groupKey={SYSTEM_GROUP}
+                    name="System"
+                    channels={channelTree.system}
+                    open={isGroupOpen(SYSTEM_GROUP)}
+                    onToggle={() => toggleGroup(SYSTEM_GROUP)}
+                  />
+                ) : null}
               </ul>
-            )}
+            ) : null}
             <form
               onSubmit={handleCreateCategory}
               className="flex items-end gap-2 pt-2"
@@ -1499,7 +1390,7 @@ function ChannelAccessSection({
   post: string[] | null;
   matching: boolean;
   options: readonly ChannelAccessOption[];
-  optionsState: "ready" | "loading" | "error";
+  optionsState: ChannelAccessOptionsState;
   onSeeChange: (next: string[] | null) => void;
   onPostChange: (next: string[] | null) => void;
   onMatch: () => void;
@@ -1539,7 +1430,7 @@ function ChannelAccessSection({
       </InlineNote>
     );
   }
-  const matches = matching || matchesCategory(see, post, category);
+  const matches = matching || matchesCategoryAccess(see, post, category);
   return (
     <section
       aria-labelledby="ca-access-label"
@@ -1595,6 +1486,152 @@ function ChannelAccessSection({
   );
 }
 
+/** The id the toggle's `aria-controls` names, for one group's channel list. */
+function categoryGroupListId(groupKey: string) {
+  return `ca-category-channels-${groupKey}`;
+}
+
+/**
+ * A category's name as the button that opens out its channels (#5727), the
+ * way Discord's server settings and Slack's sidebar sections fold: a chevron
+ * that turns, the name, and under it the access summary and how many
+ * channels are inside.
+ */
+function CategoryToggle({
+  groupKey,
+  name,
+  channelCount,
+  open,
+  onToggle,
+  summary,
+}: {
+  groupKey: string;
+  name: string;
+  channelCount: number;
+  open: boolean;
+  onToggle: () => void;
+  summary?: string;
+}) {
+  const count = `${channelCount} channel${channelCount === 1 ? "" : "s"}`;
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-controls={open ? categoryGroupListId(groupKey) : undefined}
+      onClick={onToggle}
+      className={cn(
+        "-ml-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent py-1 pl-1 pr-2 text-left transition-colors hover:bg-card-hover",
+        FOCUS_RING,
+      )}
+    >
+      <ChevronRight
+        aria-hidden="true"
+        className={cn(
+          "h-4 w-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
+          open && "rotate-90",
+        )}
+      />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium">{name}</span>
+        {/*
+          The access answers in one line, so an officer scanning the list sees
+          which categories are private without opening each, then the count.
+        */}
+        <span className="flex min-w-0 text-caption text-muted-foreground">
+          {summary ? <span className="truncate">{summary}</span> : null}
+          <span className="shrink-0 whitespace-pre">
+            {summary ? ` · ${count}` : count}
+          </span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * A group in the category tree that isn't a category (Uncategorized,
+ * System): the same toggle and channel rows, with no rename, access or
+ * delete, since there is nothing to rename or delete.
+ */
+function PlainChannelGroup({
+  groupKey,
+  name,
+  channels,
+  open,
+  onToggle,
+}: {
+  groupKey: string;
+  name: string;
+  channels: readonly AdminChannel[];
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <li>
+      <div className="flex min-h-11 items-center gap-2">
+        <CategoryToggle
+          groupKey={groupKey}
+          name={name}
+          channelCount={channels.length}
+          open={open}
+          onToggle={onToggle}
+        />
+      </div>
+      {open ? (
+        <CategoryChannelList groupKey={groupKey} channels={channels} />
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * One group's channels, opened out under its category row (#5727). Each row
+ * opens that channel's own settings page, the place the rail's right-click
+ * Edit channel goes.
+ */
+function CategoryChannelList({
+  groupKey,
+  channels,
+}: {
+  groupKey: string;
+  channels: readonly AdminChannel[];
+}) {
+  if (channels.length === 0) {
+    return (
+      <p
+        id={categoryGroupListId(groupKey)}
+        className="pb-2 pl-7 text-sm text-muted-foreground"
+      >
+        No channels in this category.
+      </p>
+    );
+  }
+  return (
+    <ul id={categoryGroupListId(groupKey)} className="pb-1.5 pl-5">
+      {channels.map((channel) => (
+        <li key={channel.id}>
+          <Link
+            href={channelSettingsPath(channel.id)}
+            className={cn(
+              "group flex min-h-9 items-center gap-2 rounded-md border border-transparent px-2 text-sm text-muted-foreground transition-colors hover:bg-card-hover hover:text-foreground pointer-coarse:min-h-11",
+              FOCUS_RING,
+            )}
+          >
+            <span className="flex w-4 shrink-0 justify-center">
+              <ChannelMark channel={channel} className="h-3.5 w-3.5" />
+            </span>
+            <span className="min-w-0 flex-1 truncate">{channel.name}</span>
+            <ChevronRight
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+            />
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * A category's two answers, edited under its row. Saving moves every channel
  * in it that matched (the server does it in one transaction), so the editor
@@ -1620,7 +1657,7 @@ function CategoryAccessEditor({
   onSeeChange: (next: string[] | null) => void;
   onPostChange: (next: string[] | null) => void;
   options: readonly ChannelAccessOption[];
-  optionsState: "ready" | "loading" | "error";
+  optionsState: ChannelAccessOptionsState;
   saving: boolean;
   onCancel: () => void;
   onSave: () => void;
@@ -1632,14 +1669,15 @@ function CategoryAccessEditor({
       channel.is_audit_log !== true,
   );
   const following = inCategory.filter((channel) =>
-    matchesCategory(
+    matchesCategoryAccess(
       channel.who_can_see ?? null,
       channel.who_can_post ?? null,
       category,
     ),
   );
   const custom = inCategory.length - following.length;
-  const incomplete = isEmptyChoice(see) || isEmptyChoice(post);
+  const incomplete =
+    isEmptyChannelAccessChoice(see) || isEmptyChannelAccessChoice(post);
   return (
     <div className="mb-2 mt-1 grid gap-4 rounded-md border border-border p-3">
       <ChannelAccessField

@@ -28,7 +28,8 @@ export const CARD_VOTE_ACTION_TYPE = 'vote';
 /**
  * A chat poll card's payload as the clients write it (`buildPollMessage` in
  * `@repo/chat-core/polls`), `choice_mode: 'multi'` included when the creator
- * allows more than one choice (#3793). Nothing validates it on send, so read
+ * allows more than one choice (#3793). Checked on send since 2026-11-17
+ * (`normalizePollCard`), but cards stored before then were not, so read
  * it through the helpers below, which guard each field.
  */
 export interface CardPollPayload {
@@ -50,7 +51,7 @@ export interface CardPollPayload {
  * comparing the stamp to a clock: `closed_at` is stamped by whichever API
  * process ran the close, so a vote checked on a process whose clock runs
  * behind would otherwise see the close as still in the future. Both clients
- * read it by presence too (`isPollCardClosed`).
+ * read it by presence too (`isCardClosed` in `@repo/chat-core/card-closing`).
  */
 export function cardPollClosedEarly(card: CardPollPayload): boolean {
   return typeof card.closed_at === 'string' && card.closed_at !== '';

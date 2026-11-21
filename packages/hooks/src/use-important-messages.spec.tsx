@@ -1,8 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
-import { FrappClientProvider } from "./use-frapp-client";
 import {
   IMPORTANT_SEEN_BATCH_MS,
   IMPORTANT_SEEN_RETRY_PAUSE_MS,
@@ -13,6 +10,7 @@ import {
   withoutMessages,
   type ImportantMessages,
 } from "./use-important-messages";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const KEY = importantMessageKeys.detail("chapter-1", "chan-1");
 
@@ -38,9 +36,7 @@ type Flagged = {
 };
 
 function setup(initial: ImportantMessages) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  const queryClient = createTestQueryClient();
   const GET = vi.fn().mockResolvedValue({ data: initial });
   const POST = vi.fn(
     (path: string, init: { body?: { message_ids: string[] } }) => {
@@ -59,18 +55,11 @@ function setup(initial: ImportantMessages) {
     },
   );
   const client = { GET, POST };
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        client as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId="chapter-1"
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
+  const wrapper = createHookWrapper({
+    client,
+    queryClient,
+    chapterId: "chapter-1",
+  });
   return { queryClient, GET, POST, wrapper };
 }
 
@@ -131,6 +120,7 @@ describe("useImportantMessages", () => {
     await waitFor(() => expect(result.current.total).toBe(2));
     expect(result.current.next?.id).toBe("a");
     expect(GET).toHaveBeenCalledWith("/v1/channels/{id}/important", {
+      signal: expect.any(AbortSignal),
       params: { path: { id: "chan-1" } },
     });
   });

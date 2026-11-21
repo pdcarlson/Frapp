@@ -83,7 +83,7 @@ describe("parseBareDateLocalNoon", () => {
           );
           expect(formatBareDateMedium(value), `${value} in ${zone}`).toBe(
             new Date(year, month, day).toLocaleDateString(undefined, {
-              month: "short",
+              month: "long",
               day: "numeric",
               year: "numeric",
             }),
@@ -143,10 +143,10 @@ describe("parseInstantOrBareLocalNoon", () => {
 });
 
 describe("formatBareDateMedium", () => {
-  it("spells the month short and keeps the year", () => {
+  it("writes the month out and keeps the year", () => {
     expect(formatBareDateMedium("2026-11-04")).toBe(
       new Date(2026, 10, 4).toLocaleDateString(undefined, {
-        month: "short",
+        month: "long",
         day: "numeric",
         year: "numeric",
       }),

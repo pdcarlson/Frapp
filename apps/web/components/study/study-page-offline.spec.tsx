@@ -122,7 +122,18 @@ describe("StudyPage offline read path (#1621)", () => {
     expect(
       screen.queryByText("Study hours unavailable offline"),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Library 3rd floor")).toBeInTheDocument();
+    expect(screen.getAllByText("Library 3rd floor").length).toBeGreaterThan(0);
+  });
+
+  it("titles a past session with its zone, a retired one too, as the phone's row does (2026-11-19)", () => {
+    geofencesQuery.data = [{ ...ZONE, is_active: false }];
+
+    render(<StudyPage />);
+
+    // A retired zone is no longer offered to start in, so the name is the
+    // history row's alone.
+    expect(screen.getByText("Library 3rd floor").tagName).toBe("P");
+    expect(screen.getByText("1h")).toBeInTheDocument();
   });
 
   it("shows the offline card when the zones read is uncached", () => {

@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
@@ -12,12 +13,13 @@ import { can } from "@repo/validation";
 import {
   BACK_TO_CHAT,
   BACK_TO_DIRECTORY,
-  BACK_TO_MORE,
+  BACK_TO_YOU,
   type BackTarget,
 } from "@/components/back-row";
 import { ShareGlyph } from "@/components/control-glyphs";
 import { InviteByEmail } from "@/components/more/invite-by-email";
 import { InvitedList } from "@/components/more/invited-list";
+import { ChapterLinkSection } from "@/components/more/chapter-link-section";
 import { InviteLinksCard } from "@/components/onboarding/invite-links-card";
 import { OnboardingSecondaryButton } from "@/components/onboarding/onboarding-secondary-button";
 import { ScreenShell } from "@/components/screen-shell";
@@ -45,17 +47,19 @@ import { InlineNote } from "@/components/inline-note";
  * through the same `POST /v1/invites/email`; then Share invite, setup's
  * share-first link (`useInviteShares`), which mints a fresh single-use link
  * and opens the share sheet with it, Mail and Gmail among its targets; then
+ * Chapter links (#3353), one 7-day link per role the officer picks (#5633); then
  * the chapter's invites under Invited, each with web's Share link, Send again
  * and Revoke. No token is ever drawn. Inside a chapter the Send button, the
  * field's focus border and the link tile take the chapter accent, where
  * setup's take house gold (`spec/behavior/branding.md`).
  *
- * Neither path names a role, so the server applies the chapter's
- * `default_invite_role_id` (#422), as web's dialog does without a pick.
+ * Invite by email and Share invite name no role, so the server applies the
+ * chapter's `default_invite_role_id` (#422), as web's dialog does without a
+ * pick; Chapter links picks one per link.
  *
  * Reached from four doors, each drawn only for a member who holds
  * `members:invite` (the permission every invite route checks; by default the
- * President's alone): the More hub's Admin row, the Directory's floating +,
+ * President's alone): the You tab's Admin row, the Directory's floating +,
  * the tab bar's quick action, and Chat home's setup checklist line. `from`
  * says which one opened it, so the back capsule names where it goes.
  */
@@ -136,14 +140,14 @@ function InviteBody({ focused }: { focused: boolean }) {
         {permissionsQuery.isError ? (
           <ErrorState
             title="Couldn't load your role"
-            body="Whether you can send invites depends on it, so it has to load first."
+            body={describeLoadFailure(permissionsQuery.error)}
             onRetry={() => {
               void permissionsQuery.refetch();
             }}
             isRetrying={permissionsQuery.isFetching}
           />
         ) : (
-          <SkeletonRegion label="Loading invites">
+          <SkeletonRegion label="Loading invites" flush>
             <SkeletonBlock
               width="100%"
               height={72}
@@ -168,7 +172,14 @@ function InviteBody({ focused }: { focused: boolean }) {
   }
 
   return (
-    <ScreenShell back={back} title="Invite members">
+    // "handled": with the keyboard up, the first tap on Send invite sends,
+    // not just closes the keyboard (Paul, 2026-11-15: "I have to hit the
+    // button twice").
+    <ScreenShell
+      back={back}
+      title="Invite members"
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.stack}>
         <InviteByEmail
           accent={branding.accentPrimary}
@@ -179,7 +190,7 @@ function InviteBody({ focused }: { focused: boolean }) {
           <Text style={styles.label}>Or share a link</Text>
           <Text style={styles.body}>
             Paste it in a group chat, or send it from your mail app. A link lets
-            one person in and lasts 24 hours.
+            one person in and lasts 7 days.
           </Text>
           <InviteLinksCard
             tile={{
@@ -214,6 +225,7 @@ function InviteBody({ focused }: { focused: boolean }) {
             }
           />
         </View>
+        <ChapterLinkSection chapterName={shareName} />
         <InvitedList
           invites={invites.data}
           isError={invites.isError}
@@ -234,7 +246,7 @@ function InviteBody({ focused }: { focused: boolean }) {
 export function backTargetFor(from: string | undefined): BackTarget {
   if (from === "directory") return BACK_TO_DIRECTORY;
   if (from === "chat") return BACK_TO_CHAT;
-  return BACK_TO_MORE;
+  return BACK_TO_YOU;
 }
 
 function createStyles(tokens: SignetTokens) {

@@ -1,0 +1,1483 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  EMPTY_MEETING_CONTENT,
+  MEETING_TEXT_MAX_LENGTH,
+  MeetingTabledItemSchema,
+  agendaMatterKey,
+  STANDARDS_MEETING_REFUSAL,
+  STANDARDS_MEETING_TYPE,
+  isMeetingType,
+  normalizeMeetingSections,
+  eventSeriesKey,
+  minutesGist,
+  isMeetingContentEmpty,
+  guessMeetingType,
+  MINUTES_WITHOUT_MEETING_NAME,
+  readMeetingContent,
+  type MeetingContent,
+  type MeetingTabledItem,
+  type MeetingSectionKey,
+  type MeetingType,
+} from '@repo/validation';
+import { MEETING_REPOSITORY } from '#domain/repositories/meeting.repository.interface';
+import type {
+  IMeetingRepository,
+  MeetingWrite,
+} from '#domain/repositories/meeting.repository.interface';
+import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
+import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import {
+  LIVE_RECORDING_STALE_MS,
+  type Meeting,
+} from '#domain/entities/meeting.entity';
+import type { Event } from '#domain/entities/event.entity';
+import { SystemPermissions } from '#domain/constants/permissions';
+import { EventService } from './event.service';
+import { RbacService } from './rbac.service';
+import { NotificationService } from './notification.service';
+import { isInvited, type EventViewer } from './event-role-targeting';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+import { chunkIds } from '#domain/utils/chunk-ids';
+
+/** A Minutes list row's facts beyond the row (`MeetingService.listFacts`). */
+export interface MeetingListFacts {
+  series_key: string | null;
+  series_rule: string | null;
+  decision_count: number;
+  action_item_count: number;
+  recorded: boolean;
+  /** The TL;DR's first line, for the list row to say what happened. */
+  gist: string | null;
+  /**
+   * Whether anything is in the minutes yet: a written section, someone's
+   * notes, or a recording. A draft without is "Not started", not "Drafting"
+   * (Paul, 2026-11-20).
+   */
+  started: boolean;
+  /** Who is recording the meeting on their phone right now, else `null`. */
+  recording_by: string | null;
+}
+
+/**
+ * What a feature does each time posted minutes are saved: when they are
+ * posted, and on every edit after. See `MeetingService.onPostedMinutesSaved`.
+ */
+export type PostedMinutesListener = (
+  meeting: Meeting,
+  change: { reason: 'posted' | 'edited'; actorId: string },
+) => Promise<void>;
+
+/**
+ * What a feature does when minutes are linked to a meeting: the recording
+ * notice waits for an audience (`meetings.md` § Recording notice).
+ */
+export type MinutesLinkedListener = (meeting: Meeting) => Promise<void>;
+
+/** The most minutes the list reads; a chapter meets about weekly. */
+const MEETING_LIST_LIMIT = 500;
+
+/** Who checked in, by the event's own attendance record. */
+export interface MeetingAttendees {
+  present: string[];
+  late: string[];
+  excused: string[];
+}
+
+/** What a reader gets for one set of minutes. */
+export interface MeetingView {
+  meeting: Meeting;
+  content: MeetingContent;
+  /** The chapter's template, in order. */
+  sections: MeetingSectionKey[];
+  /** `null` when the event is gone. */
+  attendees: MeetingAttendees | null;
+  /** The event's end, read live; `null` when the event is gone. */
+  event_end_time: string | null;
+  can_edit: boolean;
+  can_delete: boolean;
+}
+
+/** A section-by-section change; a section left out keeps what is stored. */
+export type MeetingContentPatch = Partial<MeetingContent>;
+
+export interface StartMeetingInput {
+  meeting_type: string;
+  other_label?: string | null;
+  /**
+   * The meeting's event. At most one of this and `new_event`; with neither,
+   * the minutes start with no meeting and are linked to one later (Paul,
+   * 2026-11-20), which they need before they can be posted.
+   */
+  event_id?: string;
+  /**
+   * A meeting with no event gets one now, with the audience the officer
+   * picks (`meetings.md` § Workflow, step 1): everyone, or only the members
+   * holding `role_ids`. Nobody is required to attend and it carries no
+   * points, so a meeting written up afterwards never marks anyone absent.
+   */
+  new_event?: {
+    name: string;
+    start_time: string;
+    end_time: string;
+    /** Empty or omitted: everyone in the chapter. */
+    role_ids?: string[];
+  };
+}
+
+export interface UpdateMeetingInput {
+  /** The `updated_at` the editor loaded; a save over a newer one is refused. */
+  expected_updated_at: string;
+  meeting_type?: string;
+  other_label?: string | null;
+  content?: MeetingContentPatch;
+}
+
+interface ViewerAccess {
+  canEditAny: boolean;
+  canDelete: boolean;
+}
+
+/**
+ * Meeting minutes written by hand (`spec/behavior/meetings.md`, #4312). No
+ * model call happens here; the AI draft builds on these rows later.
+ *
+ * Who reads what (§ Who can read minutes):
+ * - posted minutes: the members the event invites, by the event's own read
+ *   rule (`EventService.findById` with a viewer), so an Exec meeting's minutes
+ *   are exec-only without a setting of their own. Minutes whose event was
+ *   deleted have no audience and are read only by `meetings:edit` holders.
+ * - a draft: its author and `meetings:edit` holders. Another officer who
+ *   tries to start minutes for the same event learns only that some exist.
+ *
+ * Who writes (§ Permissions): `meetings:record` starts minutes; the author
+ * and `meetings:edit` holders edit and post them; `meetings:delete` deletes,
+ * and an author may throw away their own unposted draft.
+ */
+@Injectable()
+export class MeetingService {
+  private readonly logger = new Logger(MeetingService.name);
+  private readonly postedListeners: PostedMinutesListener[] = [];
+  private readonly linkedListeners: MinutesLinkedListener[] = [];
+
+  constructor(
+    @Inject(MEETING_REPOSITORY)
+    private readonly meetingRepo: IMeetingRepository,
+    @Inject(ATTENDANCE_REPOSITORY)
+    private readonly attendanceRepo: IAttendanceRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    private readonly events: EventService,
+    private readonly rbac: RbacService,
+    private readonly notifications: NotificationService,
+  ) {}
+
+  /**
+   * Runs `listener` after minutes are posted and after each later save of
+   * posted minutes, so what is made from them follows them (suggested tasks,
+   * #4313). A feature registers in its own `onModuleInit`. The save has
+   * already happened: a listener that fails is reported and never fails the
+   * officer's post or edit, so each must be safe to run again on the next
+   * save.
+   */
+  onPostedMinutesSaved(listener: PostedMinutesListener): void {
+    this.postedListeners.push(listener);
+  }
+
+  /**
+   * Runs `listener` once minutes are linked to a meeting (Link a meeting).
+   * Like a posted listener, a failure is reported and never fails the link.
+   */
+  onMinutesLinked(listener: MinutesLinkedListener): void {
+    this.linkedListeners.push(listener);
+  }
+
+  private async tellPostedListeners(
+    meeting: Meeting,
+    change: { reason: 'posted' | 'edited'; actorId: string },
+  ): Promise<void> {
+    for (const listener of this.postedListeners) {
+      try {
+        await listener(meeting, change);
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'meeting-posted-listener',
+          message: `a follow-up to saving minutes ${meeting.id} failed`,
+          error,
+        });
+      }
+    }
+  }
+
+  /** The minutes the viewer may read, newest meeting first. */
+  async list(
+    chapterId: string,
+    viewerId: string,
+    eventId?: string,
+  ): Promise<Meeting[]> {
+    const rows = eventId
+      ? await this.meetingRepo
+          .findByEvent(chapterId, eventId)
+          .then((row) => (row ? [row] : []))
+      : await this.meetingRepo.findByChapter(chapterId, MEETING_LIST_LIMIT);
+    return this.readableRows(chapterId, viewerId, rows);
+  }
+
+  /**
+   * The Minutes list (#5290): the minutes the viewer may read, as `list`,
+   * with each row's facts (`listFacts`). The events the read rule already
+   * loaded are reused, so the list reads each event once.
+   */
+  async listWithFacts(
+    chapterId: string,
+    viewerId: string,
+    eventId?: string,
+  ): Promise<{ rows: Meeting[]; facts: Map<string, MeetingListFacts> }> {
+    const all = eventId
+      ? await this.meetingRepo
+          .findByEvent(chapterId, eventId)
+          .then((row) => (row ? [row] : []))
+      : await this.meetingRepo.findByChapter(chapterId, MEETING_LIST_LIMIT);
+    const { rows, events } = await this.readableWithEvents(
+      chapterId,
+      viewerId,
+      all,
+    );
+    const facts = await this.listFacts(chapterId, viewerId, rows, events);
+    return { rows, facts };
+  }
+
+  /**
+   * What the Minutes list shows on each row beyond the row itself (#5290):
+   * the series its event belongs to (`eventSeriesKey`, the rule the apps'
+   * Events lists key a series by) with the first event's repeat rule, how
+   * many decisions and action items it holds, and whether a recording was
+   * used. `known` holds events already read for this viewer; only the rest
+   * are read, then the series' first events, then the drafts' recordings. An
+   * event the viewer can't see (an editor reading every row) gives no series.
+   */
+  async listFacts(
+    chapterId: string,
+    viewerId: string,
+    rows: readonly Meeting[],
+    known: ReadonlyMap<string, Event> = new Map(),
+  ): Promise<Map<string, MeetingListFacts>> {
+    const events = new Map(known);
+    const unread = rows.flatMap((row) =>
+      row.event_id && !events.has(row.event_id) ? [row.event_id] : [],
+    );
+    for (const event of await this.visibleEvents(chapterId, viewerId, unread)) {
+      events.set(event.id, event);
+    }
+    const headIds = [...events.values()].flatMap((event) =>
+      event.parent_event_id && !events.has(event.parent_event_id)
+        ? [event.parent_event_id]
+        : [],
+    );
+    for (const head of await this.visibleEvents(chapterId, viewerId, headIds)) {
+      events.set(head.id, head);
+    }
+    const drafts = rows.flatMap((row) =>
+      row.status === 'draft' ? [row.id] : [],
+    );
+    const [recorded, withNotes, recorders] = await Promise.all([
+      this.meetingRepo.findRecordedIds(chapterId, drafts),
+      this.meetingRepo.findWithNotesIds(chapterId, drafts),
+      this.meetingRepo.findLiveRecorders(
+        chapterId,
+        drafts,
+        new Date(Date.now() - LIVE_RECORDING_STALE_MS).toISOString(),
+      ),
+    ]);
+
+    const facts = new Map<string, MeetingListFacts>();
+    for (const row of rows) {
+      const event = row.event_id ? events.get(row.event_id) : undefined;
+      const seriesKey = event ? eventSeriesKey(event) : null;
+      const content = readMeetingContent(row.content);
+      facts.set(row.id, {
+        series_key: seriesKey,
+        series_rule: seriesKey
+          ? (events.get(seriesKey)?.recurrence_rule ?? null)
+          : null,
+        decision_count: content.decisions.length,
+        action_item_count: content.action_items.length,
+        recorded: row.transcript !== null || recorded.has(row.id),
+        gist: minutesGist(content.tldr),
+        started:
+          row.status === 'posted' ||
+          !isMeetingContentEmpty(content) ||
+          recorded.has(row.id) ||
+          withNotes.has(row.id),
+        recording_by: recorders.get(row.id) ?? null,
+      });
+    }
+    return facts;
+  }
+
+  /**
+   * The newest posted minutes the viewer may read for meetings held since
+   * `since`, at most `limit`. The same read rule as `list`, over a read that
+   * does not load the chapter's whole history (Ask's opening, #4700).
+   */
+  async listPostedSince(
+    chapterId: string,
+    viewerId: string,
+    since: Date,
+    limit: number,
+  ): Promise<Meeting[]> {
+    const rows = await this.meetingRepo.findPostedSince(
+      chapterId,
+      since.toISOString(),
+      limit,
+    );
+    return this.readableRows(chapterId, viewerId, rows);
+  }
+
+  /**
+   * The newest posted minutes of one type the viewer may read for meetings
+   * held before `before`, at most `limit` read: the earlier minutes a draft
+   * reads (#5477), by the same read rule as `list`.
+   */
+  async listPostedBefore(
+    chapterId: string,
+    viewerId: string,
+    before: string,
+    meetingType: MeetingType | null,
+    limit: number,
+  ): Promise<Meeting[]> {
+    const rows = await this.meetingRepo.findPostedBefore(
+      chapterId,
+      before,
+      meetingType,
+      limit,
+    );
+    return this.readableRows(chapterId, viewerId, rows);
+  }
+
+  /** The rows of `rows` the viewer may read (`readable`), in their order. */
+  private async readableRows(
+    chapterId: string,
+    viewerId: string,
+    rows: Meeting[],
+  ): Promise<Meeting[]> {
+    return (await this.readableWithEvents(chapterId, viewerId, rows)).rows;
+  }
+
+  /**
+   * The events among `ids` the viewer may read, in `chunkIds` reads, so a
+   * chapter's whole list never builds a URL PostgREST refuses (414).
+   */
+  private async visibleEvents(
+    chapterId: string,
+    viewerId: string,
+    ids: readonly string[],
+  ): Promise<Event[]> {
+    const found: Event[] = [];
+    for (const chunk of chunkIds([...new Set(ids)])) {
+      found.push(
+        ...(await this.events.findVisibleByIds(chunk, chapterId, viewerId)),
+      );
+    }
+    return found;
+  }
+
+  /**
+   * `readableRows`, with the events it read to decide: the ones the viewer
+   * may see, which the Minutes list's facts reuse.
+   */
+  private async readableWithEvents(
+    chapterId: string,
+    viewerId: string,
+    rows: Meeting[],
+  ): Promise<{ rows: Meeting[]; events: Map<string, Event> }> {
+    if (rows.length === 0) return { rows: [], events: new Map() };
+    const access = await this.access(chapterId, viewerId);
+    // Only the events these rows point at, never the whole calendar: a
+    // `meetings:edit` holder reads every row anyway.
+    const pointedAt = access.canEditAny
+      ? []
+      : rows.flatMap((row) =>
+          row.event_id &&
+          (row.status === 'posted' || row.created_by === viewerId)
+            ? [row.event_id]
+            : [],
+        );
+    const events = new Map(
+      (await this.visibleEvents(chapterId, viewerId, pointedAt)).map(
+        (event) => [event.id, event],
+      ),
+    );
+    return {
+      rows: rows.filter((row) =>
+        this.readable(row, viewerId, access, (id) => events.has(id)),
+      ),
+      events,
+    };
+  }
+
+  /**
+   * Whether `userId` may read these minutes. The one door other features use
+   * (a suggestion pointing at minutes, the AI index later), so the rule lives
+   * in one place. A missing or other-chapter id is `false`.
+   */
+  async canRead(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const meeting = await this.meetingRepo.findById(chapterId, meetingId);
+    if (!meeting) return false;
+    const access = await this.access(chapterId, userId);
+    return (
+      (await this.readableEvent(chapterId, meeting, userId, access)) !== false
+    );
+  }
+
+  /**
+   * `canRead` for many meetings at once, by the same rule (`readable`): one
+   * resolve of the member's permissions and one read of the events, however
+   * many ids. For a caller with a list to filter, such as AI retrieval
+   * (#720). Returns the ids the member may read.
+   */
+  async readableAmong(
+    chapterId: string,
+    userId: string,
+    meetingIds: readonly string[],
+  ): Promise<Set<string>> {
+    const ids = [...new Set(meetingIds)];
+    if (ids.length === 0) return new Set();
+    const [access, found] = await Promise.all([
+      this.access(chapterId, userId),
+      Promise.all(ids.map((id) => this.meetingRepo.findById(chapterId, id))),
+    ]);
+    const rows = found.filter((row): row is Meeting => row !== null);
+    const pointedAt = access.canEditAny
+      ? []
+      : rows.flatMap((row) => (row.event_id ? [row.event_id] : []));
+    const visibleEventIds = new Set(
+      (await this.events.findVisibleByIds(pointedAt, chapterId, userId)).map(
+        (event) => event.id,
+      ),
+    );
+    return new Set(
+      rows
+        .filter((row) =>
+          this.readable(row, userId, access, (id) => visibleEventIds.has(id)),
+        )
+        .map((row) => row.id),
+    );
+  }
+
+  /**
+   * Of `meetingIds`, the minutes every one of `viewers` may read, by the same
+   * rule as `canRead` (`readable`), for members whose permissions and roles
+   * the caller already holds. An id that names no minutes is not in the
+   * answer. For a check made over a whole audience: who in a channel could
+   * open what an Ask Frapp answer drew on, before it is posted there (#4713).
+   */
+  async readableByAll(
+    chapterId: string,
+    meetingIds: readonly string[],
+    viewers: ReadonlyArray<EventViewer & { user_id: string }>,
+  ): Promise<Set<string>> {
+    const ids = [...new Set(meetingIds)];
+    if (ids.length === 0) return new Set();
+    const rows = (
+      await Promise.all(
+        ids.map((id) => this.meetingRepo.findById(chapterId, id)),
+      )
+    ).filter((row): row is Meeting => row !== null);
+    const canEditAny = (viewer: EventViewer) =>
+      viewer.permissions.has('*') ||
+      viewer.permissions.has(SystemPermissions.MEETINGS_EDIT);
+    // An editor reads every minutes whatever its event; the event only has
+    // to show itself to the rest.
+    const rest = viewers.filter((viewer) => !canEditAny(viewer));
+    const visibleToRest = await this.events.visibleToAll(
+      rows.flatMap((row) => (row.event_id ? [row.event_id] : [])),
+      chapterId,
+      rest,
+    );
+    return new Set(
+      rows
+        .filter((row) =>
+          viewers.every((viewer) =>
+            this.readable(
+              row,
+              viewer.user_id,
+              { canEditAny: canEditAny(viewer), canDelete: false },
+              (eventId) => visibleToRest.has(eventId),
+            ),
+          ),
+        )
+        .map((row) => row.id),
+    );
+  }
+
+  async get(
+    chapterId: string,
+    id: string,
+    viewerId: string,
+  ): Promise<MeetingView> {
+    const meeting = await this.meetingRepo.findById(chapterId, id);
+    if (!meeting) throw new NotFoundException('Minutes not found');
+    const access = await this.access(chapterId, viewerId);
+    const event = await this.readableEvent(
+      chapterId,
+      meeting,
+      viewerId,
+      access,
+    );
+    // The same 404 as a missing id, so a reader the event leaves out can't
+    // learn that an Exec meeting has minutes.
+    if (event === false) throw new NotFoundException('Minutes not found');
+    return this.view(chapterId, meeting, event, viewerId, access);
+  }
+
+  /** Whether the event has minutes at all, a draft or posted, whoever's. */
+  async hasMinutesFor(chapterId: string, eventId: string): Promise<boolean> {
+    return (await this.meetingRepo.findByEvent(chapterId, eventId)) !== null;
+  }
+
+  async start(
+    chapterId: string,
+    userId: string,
+    input: StartMeetingInput,
+  ): Promise<MeetingView> {
+    const meetingType = this.meetingTypeOf(input.meeting_type);
+    const otherLabel = otherLabelFor(meetingType, input.other_label);
+    if (input.event_id && input.new_event) {
+      throw new BadRequestException(
+        'Send the meeting’s event_id, or new_event to make one, but not both.',
+      );
+    }
+    if (!input.event_id && !input.new_event) {
+      return this.startUnlinked(chapterId, userId, meetingType, otherLabel);
+    }
+
+    let event: Event;
+    if (input.event_id) {
+      // The viewer's read rule: an officer can't start minutes for an event
+      // they can't see.
+      event = await this.events.findById(input.event_id, chapterId, userId);
+      const existing = await this.meetingRepo.findByEvent(chapterId, event.id);
+      if (existing) throw this.alreadyStarted();
+    } else {
+      event = await this.createEventFor(chapterId, userId, input.new_event!);
+    }
+
+    // An event's notes field is where officers wrote minutes before this
+    // existed (`events.md` § Event Creation). Starting minutes carries them in,
+    // so nothing is typed twice; the event keeps its notes.
+    const content: MeetingContent = {
+      ...EMPTY_MEETING_CONTENT,
+      summary: (event.notes ?? '').slice(0, MEETING_TEXT_MAX_LENGTH),
+    };
+    const created = await this.meetingRepo.create({
+      chapter_id: chapterId,
+      event_id: event.id,
+      event_name: event.name,
+      event_start_time: event.start_time,
+      meeting_type: meetingType,
+      other_label: otherLabel,
+      status: 'draft',
+      content: { ...content },
+      created_by: userId,
+      updated_by: userId,
+    });
+    if (!created) {
+      // Another officer started the same meeting's minutes a moment ago.
+      const existing = await this.meetingRepo.findByEvent(chapterId, event.id);
+      if (existing) throw this.alreadyStarted();
+      throw new ConflictException('These minutes changed. Reload them.');
+    }
+    return this.view(
+      chapterId,
+      created,
+      event,
+      userId,
+      await this.access(chapterId, userId),
+    );
+  }
+
+  /**
+   * Minutes with no meeting yet (Paul, 2026-11-20: "record minutes for no
+   * meeting and then link them to a meeting afterwards"): a draft dated now,
+   * its author's alone, until Link a meeting gives it an event and with it
+   * an audience. It can't be posted before then (`post`).
+   */
+  private async startUnlinked(
+    chapterId: string,
+    userId: string,
+    meetingType: MeetingType,
+    otherLabel: string | null,
+  ): Promise<MeetingView> {
+    const created = await this.meetingRepo.create({
+      chapter_id: chapterId,
+      event_id: null,
+      event_name: MINUTES_WITHOUT_MEETING_NAME,
+      event_start_time: new Date().toISOString(),
+      meeting_type: meetingType,
+      other_label: otherLabel,
+      status: 'draft',
+      content: { ...EMPTY_MEETING_CONTENT },
+      created_by: userId,
+      updated_by: userId,
+    });
+    if (!created) {
+      throw new ConflictException('These minutes changed. Reload them.');
+    }
+    return this.view(
+      chapterId,
+      created,
+      null,
+      userId,
+      await this.access(chapterId, userId),
+    );
+  }
+
+  async update(
+    chapterId: string,
+    id: string,
+    userId: string,
+    input: UpdateMeetingInput,
+  ): Promise<MeetingView> {
+    const { meeting, access } = await this.editable(chapterId, id, userId);
+    const write: MeetingWrite = { updated_by: userId };
+    if (input.meeting_type !== undefined) {
+      write.meeting_type = this.meetingTypeOf(input.meeting_type);
+    }
+    const type = write.meeting_type ?? meeting.meeting_type;
+    if (input.other_label !== undefined || write.meeting_type !== undefined) {
+      write.other_label = otherLabelFor(
+        type,
+        input.other_label !== undefined
+          ? input.other_label
+          : meeting.other_label,
+      );
+    }
+    if (input.content) {
+      await this.assertOwnersAreMembers(chapterId, input.content);
+      const stored = readMeetingContent(meeting.content);
+      const patch = pickContent(input.content);
+      if (patch.tabled !== undefined) {
+        patch.tabled = await this.tabledFromChapter(
+          chapterId,
+          keepTabledOrigins(patch.tabled, stored.tabled),
+          stored,
+        );
+      }
+      write.content = { ...stored, ...patch };
+    }
+    const event = await this.liveEvent(chapterId, meeting);
+    if (event) {
+      write.event_name = event.name;
+      write.event_start_time = event.start_time;
+    }
+    const saved = await this.meetingRepo.update(
+      chapterId,
+      id,
+      input.expected_updated_at,
+      write,
+    );
+    if (!saved) throw this.stale();
+    if (saved.status === 'posted' && write.content) {
+      await this.tellPostedListeners(saved, {
+        reason: 'edited',
+        actorId: userId,
+      });
+    }
+    return this.view(chapterId, saved, event, userId, access);
+  }
+
+  /**
+   * Posts a draft: from now on the event's audience reads it, and each of
+   * them is told once. Posting minutes that are already posted changes
+   * nothing and tells nobody again.
+   */
+  async post(
+    chapterId: string,
+    id: string,
+    userId: string,
+    expectedUpdatedAt: string,
+  ): Promise<MeetingView> {
+    const { meeting, access } = await this.editable(chapterId, id, userId);
+    const event = await this.liveEvent(chapterId, meeting);
+    if (meeting.status === 'posted') {
+      return this.view(chapterId, meeting, event, userId, access);
+    }
+    if (!event) {
+      // The event is what says who reads posted minutes (§ Who can read
+      // minutes): minutes with none are linked to a meeting first.
+      throw new ConflictException({
+        code: 'meeting.no_event',
+        message: 'Link these minutes to a meeting before posting them.',
+      });
+    }
+    const saved = await this.meetingRepo.update(
+      chapterId,
+      id,
+      expectedUpdatedAt,
+      {
+        status: 'posted',
+        posted_at: new Date().toISOString(),
+        posted_by: userId,
+        updated_by: userId,
+        ...(event
+          ? { event_name: event.name, event_start_time: event.start_time }
+          : {}),
+      },
+    );
+    if (!saved) throw this.stale();
+    // Before the audience is told: a listener never fails the post, and a
+    // post that failed after this point is not run again on the retry.
+    await this.tellPostedListeners(saved, {
+      reason: 'posted',
+      actorId: userId,
+    });
+    if (event) await this.notifyAudience(chapterId, saved, event, userId);
+    return this.view(chapterId, saved, event, userId, access);
+  }
+
+  async delete(chapterId: string, id: string, userId: string): Promise<void> {
+    const meeting = await this.meetingRepo.findById(chapterId, id);
+    if (!meeting) return;
+    const access = await this.access(chapterId, userId);
+    if (!access.canDelete) {
+      // Anyone who can't read the minutes gets the 404 a missing id does,
+      // the author too once the event no longer shows itself to them.
+      if (
+        (await this.readableEvent(chapterId, meeting, userId, access)) === false
+      ) {
+        throw new NotFoundException('Minutes not found');
+      }
+      const ownDraft =
+        meeting.status === 'draft' && meeting.created_by === userId;
+      if (ownDraft) {
+        await this.meetingRepo.delete(chapterId, id);
+        return;
+      }
+      throw new ForbiddenException(
+        'Only someone who can delete minutes can delete these.',
+      );
+    }
+    await this.meetingRepo.delete(chapterId, id);
+  }
+
+  async getTemplate(chapterId: string): Promise<MeetingSectionKey[]> {
+    const row = await this.meetingRepo.findTemplate(chapterId);
+    return normalizeMeetingSections(row?.sections);
+  }
+
+  async setTemplate(
+    chapterId: string,
+    userId: string,
+    sections: readonly string[],
+  ): Promise<MeetingSectionKey[]> {
+    const normalized = normalizeMeetingSections(sections);
+    const row = await this.meetingRepo.upsertTemplate(
+      chapterId,
+      normalized,
+      userId,
+    );
+    return normalizeMeetingSections(row.sections);
+  }
+
+  // ── Reading rules ─────────────────────────────────────────────────────────
+
+  /** The viewer's meetings permissions, from one resolve of their set. */
+  private async access(
+    chapterId: string,
+    userId: string,
+  ): Promise<ViewerAccess> {
+    const held = new Set(
+      await this.rbac.getEffectivePermissions(chapterId, userId),
+    );
+    const has = (permission: string) => held.has('*') || held.has(permission);
+    return {
+      canEditAny: has(SystemPermissions.MEETINGS_EDIT),
+      canDelete: has(SystemPermissions.MEETINGS_DELETE),
+    };
+  }
+
+  private readable(
+    meeting: Meeting,
+    viewerId: string,
+    access: ViewerAccess,
+    eventVisible: (eventId: string) => boolean,
+  ): boolean {
+    if (access.canEditAny) return true;
+    // A draft with no meeting is its author's until it is linked to one:
+    // minutes started with no meeting (Paul, 2026-11-20), or a draft whose
+    // event was deleted.
+    if (!meeting.event_id) {
+      return meeting.status === 'draft' && meeting.created_by === viewerId;
+    }
+    // Posted minutes whose event is gone are for `meetings:edit` holders
+    // alone.
+    if (!eventVisible(meeting.event_id)) return false;
+    // A draft is its author's until it is posted; the author still has to be
+    // someone the event shows itself to.
+    return meeting.status === 'posted' || meeting.created_by === viewerId;
+  }
+
+  /**
+   * The meeting's event as the viewer may read it: the event, `null` when
+   * the event is gone but the viewer may still read the minutes, or `false`
+   * when the viewer may not read them at all.
+   */
+  private async readableEvent(
+    chapterId: string,
+    meeting: Meeting,
+    viewerId: string,
+    access: ViewerAccess,
+  ): Promise<Event | null | false> {
+    const event = meeting.event_id
+      ? await this.events
+          .findById(meeting.event_id, chapterId, viewerId)
+          .catch((error: unknown) => {
+            if (error instanceof NotFoundException) return null;
+            throw error;
+          })
+      : null;
+    const visible = event !== null;
+    if (!this.readable(meeting, viewerId, access, () => visible)) return false;
+    // A `meetings:edit` holder the event leaves out still reads the minutes,
+    // but gets the event through the unscoped read for its name and time.
+    if (event) return event;
+    return meeting.event_id ? this.liveEvent(chapterId, meeting) : null;
+  }
+
+  /** The event row itself, with no viewer rule; `null` when it is gone. */
+  private async liveEvent(
+    chapterId: string,
+    meeting: Meeting,
+  ): Promise<Event | null> {
+    if (!meeting.event_id) return null;
+    return this.events
+      .findById(meeting.event_id, chapterId)
+      .catch((error: unknown) => {
+        if (error instanceof NotFoundException) return null;
+        throw error;
+      });
+  }
+
+  /**
+   * The row, when `userId` may change it; the right refusal otherwise. The
+   * author must still be able to read it: an author the event no longer
+   * invites, or whose minutes lost their event, gets the 404 any other
+   * reader does (§ Who can read minutes).
+   */
+  private async editable(
+    chapterId: string,
+    id: string,
+    userId: string,
+  ): Promise<{ meeting: Meeting; access: ViewerAccess }> {
+    const meeting = await this.meetingRepo.findById(chapterId, id);
+    if (!meeting) throw new NotFoundException('Minutes not found');
+    const access = await this.access(chapterId, userId);
+    if (access.canEditAny) return { meeting, access };
+    if (
+      (await this.readableEvent(chapterId, meeting, userId, access)) === false
+    ) {
+      throw new NotFoundException('Minutes not found');
+    }
+    if (meeting.created_by === userId) return { meeting, access };
+    throw new ForbiddenException(
+      'Only the officer who started these minutes, or someone who can edit any minutes, can change them.',
+    );
+  }
+
+  /**
+   * What note-taking needs to know about one set of minutes (#4935,
+   * `meetings.md` § Several note-takers): the row, whether `userId` may
+   * edit it (its author or a `meetings:edit` holder), whether its event
+   * shows itself to them, and whether they hold `meetings:record` and
+   * `meetings:edit`. A missing id is a 404. A note-taker reads none of the
+   * minutes themselves: a draft stays its author's.
+   */
+  async noteTakingView(
+    chapterId: string,
+    id: string,
+    userId: string,
+  ): Promise<{
+    meeting: Meeting;
+    canEdit: boolean;
+    eventVisible: boolean;
+    canRecord: boolean;
+  }> {
+    const meeting = await this.meetingRepo.findById(chapterId, id);
+    if (!meeting) throw new NotFoundException('Minutes not found');
+    const held = new Set(
+      await this.rbac.getEffectivePermissions(chapterId, userId),
+    );
+    const has = (permission: string) => held.has('*') || held.has(permission);
+    const access: ViewerAccess = {
+      canEditAny: has(SystemPermissions.MEETINGS_EDIT),
+      canDelete: has(SystemPermissions.MEETINGS_DELETE),
+    };
+    const eventVisible = await this.eventShowsTo(chapterId, meeting, userId);
+    // The author of a draft with no meeting yet edits it too (§ Who can
+    // read minutes), as `readable` lets them read it.
+    const ownUnlinkedDraft = !meeting.event_id && meeting.status === 'draft';
+    const canEdit =
+      access.canEditAny ||
+      (meeting.created_by === userId && (eventVisible || ownUnlinkedDraft));
+    return {
+      meeting,
+      canEdit,
+      eventVisible,
+      canRecord: has(SystemPermissions.MEETINGS_RECORD),
+    };
+  }
+
+  /** Whether the minutes' event shows itself to `userId` (false when gone). */
+  async eventShowsTo(
+    chapterId: string,
+    meeting: Meeting,
+    userId: string,
+  ): Promise<boolean> {
+    if (!meeting.event_id) return false;
+    const event = await this.events
+      .findById(meeting.event_id, chapterId, userId)
+      .catch((error: unknown) => {
+        if (error instanceof NotFoundException) return null;
+        throw error;
+      });
+    return event !== null;
+  }
+
+  /**
+   * The unposted minutes of the chapter, or of one event, whose events show
+   * themselves to `userId`, for the note-taking list (#4935). Who may take
+   * notes on which is `MeetingNotesService`'s rule.
+   */
+  async draftsVisibleTo(
+    chapterId: string,
+    userId: string,
+    eventId?: string,
+  ): Promise<Meeting[]> {
+    const rows = (
+      eventId
+        ? await this.meetingRepo
+            .findByEvent(chapterId, eventId)
+            .then((row) => (row ? [row] : []))
+        : await this.meetingRepo.findByChapter(chapterId, MEETING_LIST_LIMIT)
+    ).filter((row) => row.status === 'draft' && row.event_id);
+    if (rows.length === 0) return [];
+    const visible = new Set(
+      (
+        await this.events.findVisibleByIds(
+          rows.map((row) => row.event_id!),
+          chapterId,
+          userId,
+        )
+      ).map((event) => event.id),
+    );
+    return rows.filter((row) => visible.has(row.event_id!));
+  }
+
+  /**
+   * The recording phone says it is recording these minutes (Paul,
+   * 2026-11-20: "Winston Hewitt is recording"): on start and every minute
+   * after. Whoever may upload the recording may say so (`editableBy`).
+   */
+  async markLiveRecording(
+    chapterId: string,
+    id: string,
+    userId: string,
+  ): Promise<void> {
+    const { meeting } = await this.editable(chapterId, id, userId);
+    if (meeting.status !== 'draft') return;
+    await this.meetingRepo.markLiveRecording(
+      chapterId,
+      id,
+      userId,
+      new Date().toISOString(),
+    );
+  }
+
+  /**
+   * The meetings being recorded right now whose events the viewer can see,
+   * for anyone the meeting invites (the event's Minutes row on web and
+   * phone): who, since when, and which event. A recording is announced to
+   * the room before it starts (§ Recording notice), so saying who is
+   * recording shows nothing of the draft itself, which stays its author's.
+   * Minutes with no meeting have no audience and are left out.
+   */
+  async liveRecordingsVisibleTo(
+    chapterId: string,
+    viewerId: string,
+  ): Promise<
+    {
+      meeting_id: string;
+      event_id: string;
+      user_id: string;
+      started_at: string;
+    }[]
+  > {
+    const live = await this.meetingRepo.findLiveRecordings(
+      chapterId,
+      new Date(Date.now() - LIVE_RECORDING_STALE_MS).toISOString(),
+    );
+    if (live.length === 0) return [];
+    const meetings = (
+      await this.meetingRepo.findByIds(
+        chapterId,
+        live.map((row) => row.meeting_id),
+      )
+    ).filter(
+      (row): row is Meeting =>
+        row !== null && row.status === 'draft' && row.event_id !== null,
+    );
+    const visible = new Set(
+      (
+        await this.visibleEvents(
+          chapterId,
+          viewerId,
+          meetings.map((row) => row.event_id!),
+        )
+      ).map((event) => event.id),
+    );
+    const eventOf = new Map(meetings.map((row) => [row.id, row.event_id!]));
+    return live.flatMap((row) => {
+      const eventId = eventOf.get(row.meeting_id);
+      return eventId && visible.has(eventId)
+        ? [
+            {
+              meeting_id: row.meeting_id,
+              event_id: eventId,
+              user_id: row.user_id,
+              started_at: row.started_at,
+            },
+          ]
+        : [];
+    });
+  }
+
+  /** The phone stopped recording, or never started: nobody is, by it. */
+  async clearLiveRecording(
+    chapterId: string,
+    id: string,
+    userId: string,
+  ): Promise<void> {
+    await this.meetingRepo.clearLiveRecording(chapterId, id, userId);
+  }
+
+  /**
+   * Links minutes that have no event to one (`meetings.md` § Linking a
+   * meeting later): minutes started with no meeting, or whose event was
+   * deleted. Whoever may edit them links them: the author of a draft, or a
+   * `meetings:edit` holder. The event must not have minutes of its own;
+   * `new_event` makes the same quiet event starting minutes does.
+   */
+  async linkEvent(
+    chapterId: string,
+    id: string,
+    userId: string,
+    input: { event_id?: string; new_event?: StartMeetingInput['new_event'] },
+  ): Promise<MeetingView> {
+    const { meeting, access } = await this.editable(chapterId, id, userId);
+    if (meeting.event_id && (await this.liveEvent(chapterId, meeting))) {
+      throw new ConflictException({
+        code: 'meeting.event_linked',
+        message: 'These minutes already have their event.',
+      });
+    }
+    if (!input.event_id === !input.new_event) {
+      throw new BadRequestException(
+        'Send the meeting’s event_id, or new_event to make one, but not both.',
+      );
+    }
+    let event: Event;
+    if (input.event_id) {
+      event = await this.events.findById(input.event_id, chapterId, userId);
+      const existing = await this.meetingRepo.findByEvent(chapterId, event.id);
+      if (existing) throw this.alreadyStarted();
+    } else {
+      event = await this.createEventFor(chapterId, userId, input.new_event!);
+    }
+    let saved: Meeting | null;
+    try {
+      saved = await this.meetingRepo.update(chapterId, id, meeting.updated_at, {
+        event_id: event.id,
+        event_name: event.name,
+        event_start_time: event.start_time,
+        // Minutes started with no meeting are filed as Other, unnamed: the
+        // meeting they join says what they are, as starting on it would.
+        ...(meeting.meeting_type === 'other' && !meeting.other_label
+          ? { meeting_type: guessMeetingType(event.name) }
+          : {}),
+        updated_by: userId,
+      });
+    } catch (error) {
+      // Someone started or linked minutes on that event a moment ago: the
+      // one-minutes-per-event index refused this.
+      if (
+        error instanceof SupabaseQueryError &&
+        error.code === PG_UNIQUE_VIOLATION
+      ) {
+        if (input.new_event) await this.events.delete(event.id, chapterId);
+        throw this.alreadyStarted();
+      }
+      throw error;
+    }
+    if (!saved) {
+      // The minutes changed meanwhile; an event made for this link goes, so
+      // trying again doesn't leave a second one behind.
+      if (input.new_event) await this.events.delete(event.id, chapterId);
+      throw this.stale();
+    }
+    for (const listener of this.linkedListeners) {
+      try {
+        await listener(saved);
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'meeting-linked-listener',
+          message: `a linked-minutes listener failed for meeting ${saved.id}`,
+          error,
+        });
+      }
+    }
+    return this.view(chapterId, saved, event, userId, access);
+  }
+
+  /**
+   * The minutes, when `userId` may change them; otherwise the refusal a save
+   * gives (404 for someone who can't read them, 403 for a reader who isn't
+   * their author). The draft-from-notes flow asks this rather than restating
+   * who edits minutes.
+   */
+  async editableBy(
+    chapterId: string,
+    id: string,
+    userId: string,
+  ): Promise<Meeting> {
+    return (await this.editable(chapterId, id, userId)).meeting;
+  }
+
+  private async view(
+    chapterId: string,
+    meeting: Meeting,
+    event: Event | null,
+    viewerId: string,
+    access: ViewerAccess,
+  ): Promise<MeetingView> {
+    const sections = await this.getTemplate(chapterId);
+    // The check-ins go out only while the chapter shows Attendees: the
+    // event's own roster is an officer read (`events:update`), and a chapter
+    // that switched the section off chose not to show it to readers.
+    const attendees =
+      event && sections.includes('attendees')
+        ? await this.attendeesOf(event.id)
+        : null;
+    return {
+      meeting,
+      content: readMeetingContent(meeting.content),
+      sections,
+      attendees,
+      event_end_time: event?.end_time ?? null,
+      can_edit: meeting.created_by === viewerId || access.canEditAny,
+      can_delete:
+        access.canDelete ||
+        (meeting.status === 'draft' && meeting.created_by === viewerId),
+    };
+  }
+
+  /** The Attendees section: the event's check-ins, filled without typing. */
+  private async attendeesOf(eventId: string): Promise<MeetingAttendees> {
+    const rows = await this.attendanceRepo.findByEvent(eventId);
+    const of = (status: string) =>
+      rows.filter((row) => row.status === status).map((row) => row.user_id);
+    return { present: of('PRESENT'), late: of('LATE'), excused: of('EXCUSED') };
+  }
+
+  // ── Writing helpers ───────────────────────────────────────────────────────
+
+  private meetingTypeOf(value: string): MeetingType {
+    if (value === STANDARDS_MEETING_TYPE) {
+      // Before any text is stored or sent anywhere (§ Standards meetings).
+      throw new BadRequestException({
+        code: 'meeting.standards_refused',
+        message: STANDARDS_MEETING_REFUSAL,
+      });
+    }
+    if (!isMeetingType(value)) {
+      throw new BadRequestException('Unknown meeting type.');
+    }
+    return value;
+  }
+
+  private async createEventFor(
+    chapterId: string,
+    userId: string,
+    input: NonNullable<StartMeetingInput['new_event']>,
+  ): Promise<Event> {
+    // Starting minutes is enough (#4935): this event requires nobody, earns
+    // no points and sends no push, so it can't do what `events:create`
+    // guards. `meetings:edit` alone is not: linking orphaned minutes to a
+    // new event still needs one of these two.
+    const canCreate = await this.rbac.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.EVENTS_CREATE, SystemPermissions.MEETINGS_RECORD],
+    );
+    if (!canCreate) {
+      throw new ForbiddenException(
+        'Making an event for these minutes needs permission to start minutes. Pick the meeting’s event instead.',
+      );
+    }
+    const roleIds = [...new Set(input.role_ids ?? [])];
+    if (roleIds.length > 0) {
+      const roles = await this.rbac.findByChapter(chapterId);
+      const known = new Set(roles.map((role) => role.id));
+      if (roleIds.some((id) => !known.has(id))) {
+        throw new BadRequestException(
+          'One of those roles isn’t in this chapter.',
+        );
+      }
+    }
+    return this.events.create({
+      chapter_id: chapterId,
+      name: input.name.trim(),
+      start_time: input.start_time,
+      end_time: input.end_time,
+      point_value: 0,
+      is_mandatory: false,
+      // Everyone, or only the picked roles, and nobody required.
+      others_invited: roleIds.length === 0,
+      optional_role_ids: roleIds.length > 0 ? roleIds : null,
+      created_by: userId,
+      silent: true,
+    });
+  }
+
+  /**
+   * Tells the members the event invites that its minutes are up, leaving out
+   * whoever posted them. The text of the minutes is never in the push.
+   */
+  private async notifyAudience(
+    chapterId: string,
+    meeting: Meeting,
+    event: Event,
+    posterId: string,
+  ): Promise<void> {
+    const members = await this.memberRepo.findByChapter(chapterId);
+    const audience = members
+      .filter(
+        (member) =>
+          member.user_id !== posterId && isInvited(event, member.role_ids),
+      )
+      .map((member) => member.user_id);
+    if (audience.length === 0) return;
+    await this.notifications.notifyMembers(chapterId, audience, {
+      title: 'Minutes posted',
+      body: `The minutes from ${event.name} are up.`,
+      category: 'events',
+      priority: 'NORMAL',
+      data: {
+        target: { screen: 'events', eventId: event.id, meetingId: meeting.id },
+      },
+    });
+  }
+
+  /**
+   * Tells the members who were at a meeting that a recording of it was
+   * uploaded (`meetings.md` § Recording notice), leaving out the uploader.
+   * "Who was there" is the event's check-ins; a meeting nobody checked in to
+   * tells the members its event invites instead, so the notice is never
+   * silently skipped. Minutes with no event have nobody to tell.
+   */
+  async notifyRecordingUploaded(
+    chapterId: string,
+    meeting: Meeting,
+    uploaderId: string,
+    notice: { title: string; body: string },
+  ): Promise<number> {
+    if (!meeting.event_id) return 0;
+    const event = await this.liveEvent(chapterId, meeting);
+    if (!event) return 0;
+    const [attendees, members] = await Promise.all([
+      this.attendeesOf(event.id),
+      this.memberRepo.findByChapter(chapterId),
+    ]);
+    const there = new Set([...attendees.present, ...attendees.late]);
+    const audience = members
+      .filter((member) =>
+        there.size > 0
+          ? there.has(member.user_id)
+          : isInvited(event, member.role_ids),
+      )
+      .map((member) => member.user_id)
+      .filter((userId) => userId !== uploaderId);
+    if (audience.length === 0) return 0;
+    await this.notifications.notifyMembers(chapterId, audience, {
+      ...notice,
+      category: 'events',
+      priority: 'NORMAL',
+      // The event, not the minutes: they are a draft, which the members
+      // being told cannot open.
+      data: { target: { screen: 'events', eventId: event.id } },
+    });
+    return audience.length;
+  }
+
+  /** An action item's owner is someone in this chapter, or nobody. */
+  private async assertOwnersAreMembers(
+    chapterId: string,
+    content: MeetingContentPatch,
+  ): Promise<void> {
+    const owners = new Set(
+      (content.action_items ?? []).flatMap((item) =>
+        item.owner_user_id ? [item.owner_user_id] : [],
+      ),
+    );
+    if (owners.size === 0) return;
+    const members = await this.memberRepo.findByChapter(chapterId);
+    const inChapter = new Set(members.map((member) => member.user_id));
+    if ([...owners].some((owner) => !inChapter.has(owner))) {
+      throw new BadRequestException(
+        'An action item’s owner isn’t a member of this chapter.',
+      );
+    }
+  }
+
+  /**
+   * Every tabled item reads back as sent (#5522): one the shared schema
+   * would drop on read is refused here instead. Where an item says it was
+   * first tabled is kept only when those minutes are this chapter's and
+   * still there: otherwise the item keeps its words and count and loses
+   * the origin (#5534), so minutes deleted since never fail a save or a
+   * draft, and no client can point one at another chapter's minutes.
+   */
+  private async tabledFromChapter(
+    chapterId: string,
+    tabled: readonly MeetingTabledItem[],
+    stored: MeetingContent,
+  ): Promise<MeetingTabledItem[]> {
+    if (
+      tabled.some((item) => !MeetingTabledItemSchema.safeParse(item).success)
+    ) {
+      throw new BadRequestException(
+        'A tabled item needs its text, and where it was first tabled as a meeting id and a start time with its offset, or neither.',
+      );
+    }
+    const known = new Set(
+      stored.tabled.flatMap((item) =>
+        item.first_meeting_id ? [item.first_meeting_id] : [],
+      ),
+    );
+    const named = [
+      ...new Set(
+        tabled.flatMap((item) =>
+          item.first_meeting_id && !known.has(item.first_meeting_id)
+            ? [item.first_meeting_id]
+            : [],
+        ),
+      ),
+    ];
+    const missing = new Set<string>();
+    for (const id of named) {
+      if (!(await this.meetingRepo.findById(chapterId, id))) missing.add(id);
+    }
+    return tabled.map((item) =>
+      item.first_meeting_id && missing.has(item.first_meeting_id)
+        ? { ...item, first_meeting_id: null, first_start_time: null }
+        : item,
+    );
+  }
+
+  private alreadyStarted(): ConflictException {
+    return new ConflictException({
+      code: 'meeting.already_started',
+      // No id: a draft is its author's, so another officer learns only that
+      // minutes exist (§ Who can read minutes).
+      message: 'This meeting already has minutes.',
+    });
+  }
+
+  private stale(): ConflictException {
+    return new ConflictException({
+      code: 'meeting.stale',
+      message:
+        'Someone else saved these minutes while you were editing. Reload to see their changes.',
+    });
+  }
+}
+
+function otherLabelFor(
+  type: MeetingType,
+  label: string | null | undefined,
+): string | null {
+  if (type !== 'other') return null;
+  const trimmed = label?.trim();
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * A tabled matter keeps where it was first tabled (#5522): a list written
+ * without it (a draft asked for again) takes the first date and count of
+ * the stored item with the same words, so drafting again never makes a
+ * carried matter read as new.
+ */
+export function keepTabledOrigins(
+  next: readonly MeetingTabledItem[],
+  stored: readonly MeetingTabledItem[],
+): MeetingTabledItem[] {
+  const key = agendaMatterKey;
+  const carried = new Map(
+    stored
+      .filter((item) => item.first_meeting_id)
+      .map((item) => [key(item.text), item]),
+  );
+  return next.map((item) => {
+    if (item.first_meeting_id) return item;
+    const origin = carried.get(key(item.text));
+    return origin
+      ? {
+          ...item,
+          first_meeting_id: origin.first_meeting_id,
+          first_start_time: origin.first_start_time,
+          times: Math.max(item.times, origin.times),
+        }
+      : item;
+  });
+}
+
+/** Only the known sections of a patch, so a stray key is never stored. */
+function pickContent(patch: MeetingContentPatch): MeetingContentPatch {
+  const out: MeetingContentPatch = {};
+  if (patch.tldr !== undefined) out.tldr = patch.tldr;
+  if (patch.summary !== undefined) out.summary = patch.summary;
+  if (patch.announcements !== undefined)
+    out.announcements = patch.announcements;
+  if (patch.decisions !== undefined) out.decisions = patch.decisions;
+  if (patch.action_items !== undefined) out.action_items = patch.action_items;
+  if (patch.tabled !== undefined) out.tabled = patch.tabled;
+  // Soonest first, as Coming up reads them (#5562).
+  if (patch.dates !== undefined) {
+    out.dates = [...patch.dates].sort((a, b) => a.date.localeCompare(b.date));
+  }
+  if (patch.officer_reports !== undefined) {
+    out.officer_reports = patch.officer_reports;
+  }
+  if (patch.old_business !== undefined) out.old_business = patch.old_business;
+  if (patch.new_business !== undefined) out.new_business = patch.new_business;
+  if (patch.discussion_log !== undefined) {
+    out.discussion_log = patch.discussion_log;
+  }
+  return out;
+}

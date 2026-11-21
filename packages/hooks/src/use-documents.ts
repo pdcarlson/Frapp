@@ -3,6 +3,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import {
+  selectChannelAccessOptions,
+  type ChannelAccessOption,
+} from "./channel-access";
 
 /**
  * List documents, optionally narrowed to a folder or a title search.
@@ -23,8 +27,9 @@ export function useDocuments(options?: {
   const search = options?.search;
   return useQuery({
     queryKey: ["documents", chapterId, "list", folder, search],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/documents", {
+        signal,
         params: { query: { folder, search } },
       });
       if (error) throw error;
@@ -48,8 +53,10 @@ export function useDocumentFolders() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["documents", chapterId, "folders"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/documents/folders");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/documents/folders", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -58,7 +65,7 @@ export function useDocumentFolders() {
 }
 
 /**
- * Invalidate everything a folder write can have changed.
+ * Invalidate everything a folder or type write can have changed.
  *
  * Scoped to `["documents", chapterId]`, not the bare `["documents"]` the
  * document mutations below still use: folder writes are chapter-scoped and
@@ -85,7 +92,12 @@ export function useCreateDocumentFolder() {
   const invalidate = useInvalidateDocumentFolders();
   return useMutation({
     mutationKey: ["documents", "create-document-folder"],
-    mutationFn: async (body: { name: string; sort_order?: number }) => {
+    mutationFn: async (body: {
+      name: string;
+      sort_order?: number;
+      /** `null` or absent is everyone (#3642 piece 1). */
+      who_can_see?: string[] | null;
+    }) => {
       const { data, error } = await client.POST("/v1/documents/folders", {
         body,
       });
@@ -96,7 +108,10 @@ export function useCreateDocumentFolder() {
   });
 }
 
-/** Rename and reorder are one route — `PATCH` takes `name`, `sort_order`, or both. */
+/**
+ * Rename, reorder and who can see are one route: `PATCH` takes any of
+ * `name`, `sort_order` and `who_can_see` (`null` opens it to everyone).
+ */
 export function useUpdateDocumentFolder() {
   const client = useFrappClient();
   const invalidate = useInvalidateDocumentFolders();
@@ -109,10 +124,93 @@ export function useUpdateDocumentFolder() {
       id: string;
       name?: string;
       sort_order?: number;
+      who_can_see?: string[] | null;
     }) => {
       const { data, error } = await client.PATCH("/v1/documents/folders/{id}", {
         params: { path: { id } },
         body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * What a who-can-see list may hold (the chapter's tiers, roles and groups,
+ * as a channel's list offers them), and the tiers any list the caller sets
+ * always keeps: their own and every tier above it (#3642 piece 1).
+ */
+export function useDocumentAccessOptions(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["documents", chapterId, "access-options"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/documents/access-options", {
+        signal,
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 300_000,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * What a document "Who can see" field offers (#3642 piece 1,
+ * `chapter-docs.md` § Who can see), read off `useDocumentAccessOptions` and
+ * shared by web's dialogs and the phone's upload sheet: the chapter's tiers,
+ * roles and groups, as a channel's list offers them, and the tiers every
+ * list the caller writes keeps (their own and those above). `canLimit` is
+ * false while those load, when they fail, and for a caller outside every
+ * tier, who may not set a list (but may lift one: the API takes `null`).
+ */
+export function documentAccessChoices(query: {
+  data?: { options?: unknown; always?: string[] | null } | undefined;
+  isSuccess: boolean;
+  isError: boolean;
+}) {
+  const options: ChannelAccessOption[] = selectChannelAccessOptions(
+    query.data?.options,
+  );
+  const locked = query.data?.always ?? null;
+  // Decided by the data held, not the last fetch: a background refetch that
+  // fails leaves good options cached, and the field stays as it was.
+  const loaded = query.data !== undefined;
+  return {
+    options,
+    optionsState: loaded
+      ? ("ready" as const)
+      : query.isError
+        ? ("error" as const)
+        : ("loading" as const),
+    locked: locked ?? [],
+    canLimit: loaded && locked !== null,
+  };
+}
+
+/**
+ * Sets who can see one file: `null` follows its folder, a list narrows it.
+ * Its uploader or a member with Manage documents may (#3642 piece 1).
+ */
+export function useSetDocumentAccess() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationKey: ["documents", "set-document-access"],
+    mutationFn: async ({
+      id,
+      who_can_see,
+    }: {
+      id: string;
+      who_can_see: string[] | null;
+    }) => {
+      const { data, error } = await client.PUT("/v1/documents/{id}/access", {
+        params: { path: { id } },
+        body: { who_can_see },
       });
       if (error) throw error;
       return data;
@@ -138,12 +236,145 @@ export function useDeleteDocumentFolder() {
   });
 }
 
+/**
+ * The chapter's document types, in display order (#3642). The upload form
+ * offers them as its type choices, and an officer edits them from there.
+ */
+export function useDocumentTypes(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["documents", chapterId, "types"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/documents/types", {
+        signal,
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 300_000,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+export type DocumentTypeRow = components["schemas"]["DocumentTypeDto"];
+
+/*
+  A type write invalidates the whole chapter's documents prefix, as a folder
+  write does: a rename renames the type on its documents and a delete clears
+  it, so the document lists are stale too.
+*/
+
+export function useCreateDocumentType() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationKey: ["documents", "create-document-type"],
+    mutationFn: async (body: { name: string; sort_order?: number }) => {
+      const { data, error } = await client.POST("/v1/documents/types", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+/** Rename and reorder are one route, as for folders. */
+export function useUpdateDocumentType() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationKey: ["documents", "update-document-type"],
+    mutationFn: async ({
+      id,
+      ...body
+    }: {
+      id: string;
+      name?: string;
+      sort_order?: number;
+    }) => {
+      const { data, error } = await client.PATCH("/v1/documents/types/{id}", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteDocumentType() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationKey: ["documents", "delete-document-type"],
+    mutationFn: async (id: string) => {
+      const { data, error } = await client.DELETE("/v1/documents/types/{id}", {
+        params: { path: { id } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+/** Ids one `GET /v1/documents/previews` signs; the API refuses more. */
+const DOCUMENT_PREVIEW_BATCH = 100;
+
+/**
+ * Inline preview links for the web Documents grid (#4647), as a map from
+ * document id to signed URL. One request per hundred ids, rather than a
+ * `useDocument` per tile: the grid spends a read or two of the member's read
+ * budget, records no `document-viewed` event (a tile coming into view isn't a
+ * member opening a file), and the links stay put when an upload or delete
+ * invalidates `["documents"]`, so photos aren't downloaded again.
+ *
+ * The links last an hour, so the cache keeps them 50 minutes and doesn't
+ * refetch on window focus. A tile whose id is missing from the map (storage
+ * couldn't sign it) shows its type glyph.
+ */
+export function useDocumentPreviews(
+  ids: readonly string[],
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const sorted = [...new Set(ids)].sort();
+  return useQuery({
+    queryKey: ["document-previews", chapterId, sorted.join(",")],
+    queryFn: async ({ signal }) => {
+      const urls = new Map<string, string>();
+      for (let i = 0; i < sorted.length; i += DOCUMENT_PREVIEW_BATCH) {
+        const batch = sorted.slice(i, i + DOCUMENT_PREVIEW_BATCH);
+        const { data, error } = await client.GET("/v1/documents/previews", {
+          signal,
+          params: { query: { ids: batch } },
+        });
+        if (error) throw error;
+        for (const { id, url } of data) urls.set(id, url);
+      }
+      return urls;
+    },
+    staleTime: 50 * 60_000,
+    gcTime: 60 * 60_000,
+    refetchOnWindowFocus: false,
+    // A narrower or wider list keeps the links it had while the next set signs.
+    placeholderData: (previous) => previous,
+    enabled: sorted.length > 0 && (options?.enabled ?? true),
+  });
+}
+
 export function useDocument(id: string, options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["documents", id],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/documents/{id}", {
+        signal,
         params: { path: { id } },
       });
       if (error) throw error;
@@ -195,6 +426,53 @@ export function useRequestDocumentUploadUrl() {
       return data;
     },
   });
+}
+
+/** Signed upload links for up to 25 files in one call (folder import, #2242). */
+export function useRequestDocumentUploadUrls() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationKey: ["documents", "request-document-upload-urls"],
+    mutationFn: async (
+      body: components["schemas"]["RequestDocumentUploadUrlsDto"],
+    ) => {
+      const { data, error } = await client.POST("/v1/documents/upload-urls", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/**
+ * Files up to 25 uploads in one call (folder import, #2242); each result says
+ * whether its document was filed. It doesn't invalidate the library: an
+ * import calls this every few seconds, so it refreshes the list once, when it
+ * ends ({@link useInvalidateDocuments}).
+ */
+export function useConfirmDocumentUploads() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationKey: ["documents", "confirm-document-uploads"],
+    mutationFn: async (
+      body: components["schemas"]["ConfirmDocumentUploadsDto"],
+    ) => {
+      const { data, error } = await client.POST("/v1/documents/batch", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/** Refreshes every chapter's document lists, as a single upload does. */
+export function useInvalidateDocuments() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ["documents"] });
+  };
 }
 
 export function useConfirmDocumentUpload() {
@@ -263,8 +541,10 @@ export function useDocumentStars() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: starsKey(chapterId),
-    queryFn: async (): Promise<DocumentStarIds> => {
-      const { data, error } = await client.GET("/v1/documents/stars");
+    queryFn: async ({ signal }): Promise<DocumentStarIds> => {
+      const { data, error } = await client.GET("/v1/documents/stars", {
+        signal,
+      });
       if (error) throw error;
       return data ?? NO_STARS;
     },

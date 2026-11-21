@@ -35,7 +35,9 @@ describe("normalizeWords, other scripts", () => {
   it("keeps Greek and CJK letters, so such a query narrows instead of matching all", () => {
     expect(normalizeWords("Ψυχολογία 101")).toEqual(["ψυχολογια", "101"]);
     const docs = ["Ψυχολογία notes", "Physics notes"];
-    expect(fuzzyMatch(docs, "ψυχολογια", (d) => d).map((r) => r.item)).toEqual([docs[0]]);
+    expect(fuzzyMatch(docs, "ψυχολογια", (d) => d).map((r) => r.item)).toEqual([
+      docs[0],
+    ]);
     expect(fuzzyMatch(docs, "王", (d) => d)).toEqual([]);
   });
 });
@@ -43,9 +45,9 @@ describe("normalizeWords, other scripts", () => {
 describe("fuzzyMatchWords", () => {
   it("scores pre-normalised words the same as fuzzyMatch scores text", () => {
     const items = [{ words: ["homework", "2"] }, { words: ["exam", "1"] }];
-    expect(fuzzyMatchWords(items, "homwork", (i) => i.words).map((r) => r.item)).toEqual([
-      items[0],
-    ]);
+    expect(
+      fuzzyMatchWords(items, "homwork", (i) => i.words).map((r) => r.item),
+    ).toEqual([items[0]]);
   });
 });
 
@@ -84,7 +86,8 @@ describe("fuzzyMatch", () => {
 
   it("never fuzzes a word with a digit in it", () => {
     const courses = ["CS 101 cs101", "CS 102 cs102", "COGS 2120 cogs2120"];
-    const match = (q: string) => fuzzyMatch(courses, q, (d) => d).map((r) => r.item);
+    const match = (q: string) =>
+      fuzzyMatch(courses, q, (d) => d).map((r) => r.item);
     expect(match("cs201")).toEqual([]);
     expect(match("cs101")).toEqual([courses[0]]);
     expect(match("cogs2210")).toEqual([]);
@@ -99,8 +102,14 @@ describe("fuzzyMatch", () => {
   });
 
   it("matches a Roman numeral from I to X as a whole word only, like a short number", () => {
-    const titles = ["Calculus I Final", "Calculus II Midterm", "Integral practice", "Unit VII notes"];
-    const findTitle = (query: string) => fuzzyMatch(titles, query, (t) => t).map((r) => r.item);
+    const titles = [
+      "Calculus I Final",
+      "Calculus II Midterm",
+      "Integral practice",
+      "Unit VII notes",
+    ];
+    const findTitle = (query: string) =>
+      fuzzyMatch(titles, query, (t) => t).map((r) => r.item);
     // "i" neither prefixes "ii" nor "integral"; "calc i" behaves as "calc 1".
     expect(findTitle("calc i")).toEqual(["Calculus I Final"]);
     expect(findTitle("i")).toEqual(["Calculus I Final"]);
@@ -116,7 +125,8 @@ describe("fuzzyMatch", () => {
 
   it("allows one edit from 4 letters and two from 7, no more", () => {
     const words = ["lab", "quiz", "midterm", "homeworksheets"];
-    const match = (q: string) => fuzzyMatch(words, q, (d) => d).map((r) => r.item);
+    const match = (q: string) =>
+      fuzzyMatch(words, q, (d) => d).map((r) => r.item);
     expect(match("quix")).toEqual(["quiz"]); // 4 letters, 1 edit
     expect(match("qxix")).toEqual([]); // 4 letters, 2 edits
     expect(match("mdtrem")).toEqual([]); // 6 letters, 2 edits
@@ -135,8 +145,15 @@ describe("fuzzyMatch", () => {
   });
 
   it("ranks exact over near matches and keeps order on ties", () => {
-    const ranked = fuzzyMatch(["homwork notes", "homework notes"], "homework", (d) => d);
-    expect(ranked.map((r) => r.item)).toEqual(["homework notes", "homwork notes"]);
+    const ranked = fuzzyMatch(
+      ["homwork notes", "homework notes"],
+      "homework",
+      (d) => d,
+    );
+    expect(ranked.map((r) => r.item)).toEqual([
+      "homework notes",
+      "homwork notes",
+    ]);
   });
 
   it("returns everything, unscored, for an empty query", () => {
@@ -165,13 +182,22 @@ describe("highlightRuns", () => {
 
 describe("withNumeralVariants", () => {
   it("adds the digits after a Roman numeral and the numeral after a digit", () => {
-    expect(withNumeralVariants(["calculus", "i"])).toEqual(["calculus", "i", "1"]);
+    expect(withNumeralVariants(["calculus", "i"])).toEqual([
+      "calculus",
+      "i",
+      "1",
+    ]);
     expect(withNumeralVariants(["calc", "2"])).toEqual(["calc", "2", "ii"]);
     expect(withNumeralVariants(["ix", "10"])).toEqual(["ix", "9", "10", "x"]);
   });
 
   it("leaves longer numbers and numerals past X alone", () => {
-    expect(withNumeralVariants(["1010", "xi", "11", "0"])).toEqual(["1010", "xi", "11", "0"]);
+    expect(withNumeralVariants(["1010", "xi", "11", "0"])).toEqual([
+      "1010",
+      "xi",
+      "11",
+      "0",
+    ]);
   });
 
   it("makes 'calc 1' and 'calc i' find either spelling", () => {
@@ -198,7 +224,9 @@ describe("withNumeralVariants", () => {
 
 describe("matchQueryWord", () => {
   it("tries the alias too", () => {
-    expect(matchQueryWord("hw", ["homework"], { hw: "homework" }).hit).toBe("homework");
+    expect(matchQueryWord("hw", ["homework"], { hw: "homework" }).hit).toBe(
+      "homework",
+    );
     expect(matchQueryWord("hw", ["homework"]).score).toBe(0);
   });
 });
@@ -207,7 +235,9 @@ describe("matchesWordStarts", () => {
   it("finds a word behind punctuation, which a name matcher would miss", () => {
     expect(matchesWordStarts("(Exec) Treasurer", "exec")).toBe(true);
     expect(matchesWordStarts("Rush/Recruitment Chair", "rec")).toBe(true);
-    expect(matchesWordStarts("MATH 2210 · Calc (Honors)", "honors 22")).toBe(true);
+    expect(matchesWordStarts("MATH 2210 · Calc (Honors)", "honors 22")).toBe(
+      true,
+    );
     expect(matchesWordStarts("Vice President", "vi pre")).toBe(true);
     expect(matchesWordStarts("Vice President", "ice")).toBe(false);
     // Every word must match: a second word narrows, never widens.

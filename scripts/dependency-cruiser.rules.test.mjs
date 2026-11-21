@@ -49,9 +49,24 @@ const FIXTURE = {
   // A module spec is an orphan by nature and stays exempt.
   "src/modules/a/a.module.spec.ts": "export const SPEC = 1;\n",
   "src/application/a.service.ts": "export const S = 1;\n",
+  // #4306: a provider SDK outside the adapters, as a value import, a type
+  // import and a subpath. The adapter and its spec, importing the same, pass.
+  "src/application/ask.service.ts":
+    "import Anthropic from '@anthropic-ai/sdk';\nexport const A = Anthropic;\n",
+  "src/interface/ask.dto.ts":
+    "import type { Message } from '@anthropic-ai/sdk/resources/messages';\n" +
+    "export type M = Message;\n",
+  "src/domain/embed.ts":
+    "import { GoogleGenAI } from '@google/genai';\nexport const G = GoogleGenAI;\n",
+  "src/infrastructure/ai/anthropic-language-model.ts":
+    "import Anthropic from '@anthropic-ai/sdk';\nexport const A = Anthropic;\n",
+  "src/infrastructure/ai/anthropic-language-model.spec.ts":
+    "import Anthropic from '@anthropic-ai/sdk';\nexport const A = Anthropic;\n",
+  "src/infrastructure/ai/google-language-model.ts":
+    "import { GoogleGenAI } from '@google/genai';\nexport const G = GoogleGenAI;\n",
 };
 
-function cruiseFixture() {
+function cruiseFixture(rulePrefix = "api-modules-wiring-only") {
   const dir = mkdtempSync(path.join(tmpdir(), "depcruise-modules-"));
   try {
     for (const [file, body] of Object.entries(FIXTURE)) {
@@ -90,9 +105,7 @@ function cruiseFixture() {
       throw new Error(`depcruise produced no report:\n${stdout ?? ""}`);
     }
     return JSON.parse(stdout)
-      .summary.violations.filter((v) =>
-        v.rule.name.startsWith("api-modules-wiring-only"),
-      )
+      .summary.violations.filter((v) => v.rule.name.startsWith(rulePrefix))
       .map((v) => `${v.rule.name}: ${v.from} -> ${v.to}`)
       .sort();
   } finally {
@@ -108,5 +121,15 @@ test("each api-modules-wiring-only form fires on its file, and only there", () =
     "api-modules-wiring-only-target: src/modules/a/a.module.ts -> src/modules/a/a.module.helpers.ts",
     "api-modules-wiring-only: src/modules/a/a.helper.ts -> src/application/a.service.ts",
     "api-modules-wiring-only: src/modules/b/b.module.helpers.ts -> src/application/a.service.ts",
+  ]);
+});
+
+// The real tree has no provider SDK import outside the adapters, so
+// `check:dep-cruiser` is green with or without this rule too.
+test("ai-provider-sdks-only-in-adapters fires outside the adapters, and only there", () => {
+  assert.deepEqual(cruiseFixture("ai-provider-sdks-only-in-adapters"), [
+    "ai-provider-sdks-only-in-adapters: src/application/ask.service.ts -> @anthropic-ai/sdk",
+    "ai-provider-sdks-only-in-adapters: src/domain/embed.ts -> @google/genai",
+    "ai-provider-sdks-only-in-adapters: src/interface/ask.dto.ts -> @anthropic-ai/sdk/resources/messages",
   ]);
 });

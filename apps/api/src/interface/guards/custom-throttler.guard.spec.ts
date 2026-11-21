@@ -1,4 +1,4 @@
-import { ExecutionContext } from '@nestjs/common';
+import { ExecutionContext, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
@@ -11,21 +11,35 @@ import {
 import { createHmac } from 'node:crypto';
 import {
   CustomThrottlerGuard,
+  JWKS_REFRESH_INTERVAL_MS,
   READ_THROTTLE_METHODS,
   THROTTLED_MESSAGE,
-  UNKNOWN_KID_ATTEMPT_INTERVAL_MS,
+  UNVERIFIED_BEARER_LIMIT,
+  UNVERIFIED_BEARER_THROTTLER,
+  UNVERIFIED_BEARER_TTL_MS,
+  UNVERIFIED_LIMIT_AUTH_CODE,
+  clientAddress,
 } from './custom-throttler.guard';
+import {
+  AuthRejectedException,
+  INVALID_TOKEN_MESSAGE,
+} from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { WebhookController } from '../controllers/webhook.controller';
 import { ReportController } from '../controllers/report.controller';
 import { SearchController } from '../controllers/search.controller';
 import { DevLogController } from '../controllers/dev-log.controller';
 import { InviteController } from '../controllers/invite.controller';
+import { InviteDetailsController } from '../controllers/invite-details.controller';
+import { ActController } from '../controllers/act.controller';
 import { EventController } from '../controllers/event.controller';
+import { AskController } from '../controllers/ask.controller';
+import { ChatCatchUpController } from '../controllers/chat-catch-up.controller';
 import { ChapterDocumentController } from '../controllers/chapter-document.controller';
 import { BackworkController } from '../controllers/backwork.controller';
 import { ChatController } from '../controllers/chat.controller';
 import { ChapterController } from '../controllers/chapter.controller';
+import { TaskController } from '../controllers/task.controller';
 import { ServiceEntryController } from '../controllers/service-entry.controller';
 import { UserController } from '../controllers/user.controller';
 
@@ -111,6 +125,15 @@ describe('CustomThrottlerGuard', () => {
         ip: '10.0.0.1',
       };
       await expect(guard.track(req)).resolves.toBe('user:user-9');
+    });
+
+    it('falls back to IP for a token whose header decodes to JSON null, instead of throwing', async () => {
+      const nullHeader = Buffer.from('null').toString('base64url');
+      const req = {
+        headers: { authorization: `Bearer ${nullHeader}.e30.x` },
+        ip: '203.0.113.9',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.9');
     });
 
     it('falls back to IP for a forged (bad-signature) token — the bypass is closed', async () => {
@@ -218,6 +241,26 @@ describe('CustomThrottlerGuard', () => {
       await expect(guard.track(req)).resolves.toBe('ip:198.51.100.4');
     });
 
+    // A device on an IPv6 network can pick a fresh address inside its /64 for
+    // every request, so the /64 is what one network is keyed on.
+    it('keys IPv6 callers on their /64, and IPv4 ones unchanged', async () => {
+      const track = (ip: string) => guard.track({ headers: {}, ip });
+
+      const [a, b, other] = await Promise.all([
+        track('2001:db8:aa:bb:1111:2222:3333:4444'),
+        track('2001:db8:aa:bb:9999:8888:7777:6666'),
+        track('2001:db8:aa:cc::1'),
+      ]);
+      expect(a).toBe('ip:2001:db8:aa:bb::/64');
+      expect(b).toBe(a);
+      expect(other).not.toBe(a);
+
+      await expect(track('::ffff:198.51.100.9')).resolves.toBe(
+        'ip:198.51.100.9',
+      );
+      await expect(track('198.51.100.9')).resolves.toBe('ip:198.51.100.9');
+    });
+
     it('falls back to IP for a structurally malformed bearer token', async () => {
       const req = {
         headers: { authorization: 'Bearer not-a-jwt' },
@@ -248,23 +291,44 @@ describe('CustomThrottlerGuard', () => {
   // Both hosted Frapp projects sign access tokens with ES256 (the HS256 secret
   // is `previously_used` on each), so the HS256 path above never keys a hosted
   // request per user. Asymmetric tokens go to `supabase.auth.getClaims()`,
-  // which verifies against the project JWKS. The client is mocked here: what
-  // is under test is the routing by `alg`, the trust placed in the verifier's
-  // answer, and every failure landing in per-IP keying rather than a rejection.
+  // handed the key the project's JWKS lists for their `kid`, which the guard
+  // reads itself. The client and the JWKS are mocked here: what is under test
+  // is the routing by `alg`, which keys reach the verifier, the trust placed
+  // in its answer, and every failure landing in per-IP keying rather than a
+  // rejection.
   describe('getTracker — asymmetric (ES256/RS256) tokens via JWKS', () => {
     let getClaims: jest.Mock;
     let jwksGuard: TestableGuard;
+    let fetchSpy: jest.SpyInstance;
+    let warn: jest.SpyInstance;
+
+    const SERVICE_KEY = 'service-role-key-for-tests';
+    const PROJECT_URL = 'https://project.example.test/';
+    const JWKS_URL =
+      'https://project.example.test/auth/v1/.well-known/jwks.json';
+    const KEY_1 = { kid: 'key-1', kty: 'EC', alg: 'ES256' };
+    const previousEnv = {
+      url: process.env.SUPABASE_URL,
+      key: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    };
+
+    const jwksResponse = (body: unknown, ok = true, status = 200) =>
+      ({
+        ok,
+        status,
+        json: () => Promise.resolve(body),
+      }) as unknown as Response;
 
     /** A token whose header names an asymmetric alg; the signature is opaque
      * to this guard — the verifier is what decides, and it is mocked. */
     const asymmetricJwt = (
       payload: Record<string, unknown>,
       alg: 'ES256' | 'RS256' = 'ES256',
+      kid = 'key-1',
     ): string =>
-      `${b64url({ alg, typ: 'JWT', kid: 'key-1' })}.${b64url(payload)}.opaque-signature`;
+      `${b64url({ alg, typ: 'JWT', kid })}.${b64url(payload)}.opaque-signature`;
 
-    beforeEach(async () => {
-      getClaims = jest.fn();
+    const buildGuard = async (): Promise<TestableGuard> => {
       const moduleRef: TestingModule = await Test.createTestingModule({
         providers: [
           TestableGuard,
@@ -274,7 +338,35 @@ describe('CustomThrottlerGuard', () => {
           { provide: SUPABASE_CLIENT, useValue: { auth: { getClaims } } },
         ],
       }).compile();
-      jwksGuard = moduleRef.get(TestableGuard);
+      const built = moduleRef.get(TestableGuard);
+      // Starts the boot read of the JWKS; requests wait for it.
+      await built.onModuleInit();
+      return built;
+    };
+
+    beforeEach(async () => {
+      process.env.SUPABASE_URL = PROJECT_URL;
+      process.env.SUPABASE_SERVICE_ROLE_KEY = SERVICE_KEY;
+      fetchSpy = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(jwksResponse({ keys: [KEY_1] }));
+      warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      getClaims = jest.fn();
+      jwksGuard = await buildGuard();
+    });
+
+    afterEach(() => {
+      fetchSpy.mockRestore();
+      warn.mockRestore();
+      for (const [name, value] of [
+        ['SUPABASE_URL', previousEnv.url],
+        ['SUPABASE_SERVICE_ROLE_KEY', previousEnv.key],
+      ] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
     });
 
     it('keys on the sub the verifier returns for an ES256 token', async () => {
@@ -292,8 +384,57 @@ describe('CustomThrottlerGuard', () => {
           ip: '203.0.113.20',
         }),
       ).resolves.toBe('user:user-es256');
-      // The whole compact token goes to the verifier, untouched.
-      expect(getClaims).toHaveBeenCalledWith(token);
+      // The whole compact token goes to the verifier, untouched, with the one
+      // key the project lists for its `kid`, so the check never fetches.
+      expect(getClaims).toHaveBeenCalledWith(token, {
+        jwks: { keys: [KEY_1] },
+      });
+    });
+
+    // `SupabaseAuthGuard` starts the chapter lookups on these while `getUser`
+    // runs (#3728), so they must be exactly what was verified, and nothing
+    // when verification did not happen.
+    it('leaves the claims it verified on the request, and none it did not', async () => {
+      const claims = {
+        sub: 'user-es256',
+        exp: futureExp(),
+        active_chapter_id: 'chapter-1',
+      };
+      getClaims.mockResolvedValueOnce({ data: { claims }, error: null });
+      const verified: Record<string, unknown> = {
+        headers: {
+          authorization: `Bearer ${asymmetricJwt({ exp: futureExp() })}`,
+        },
+        ip: '203.0.113.30',
+      };
+      await jwksGuard.track(verified);
+      expect(verified.throttlerVerifiedClaims).toEqual(claims);
+
+      getClaims.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'invalid signature', code: 'invalid_jwt' },
+      });
+      const rejected: Record<string, unknown> = {
+        headers: {
+          authorization: `Bearer ${asymmetricJwt({ exp: futureExp() })}`,
+        },
+        ip: '203.0.113.31',
+      };
+      await jwksGuard.track(rejected);
+      expect(rejected).not.toHaveProperty('throttlerVerifiedClaims');
+
+      getClaims.mockResolvedValueOnce({
+        data: { claims: { sub: 'user-es256', exp: 1 } },
+        error: null,
+      });
+      const expired: Record<string, unknown> = {
+        headers: {
+          authorization: `Bearer ${asymmetricJwt({ exp: futureExp() })}`,
+        },
+        ip: '203.0.113.32',
+      };
+      await jwksGuard.track(expired);
+      expect(expired).not.toHaveProperty('throttlerVerifiedClaims');
     });
 
     it('accepts RS256 through the same verifier', async () => {
@@ -314,7 +455,7 @@ describe('CustomThrottlerGuard', () => {
     it('falls back to IP when the verifier rejects the token', async () => {
       getClaims.mockResolvedValue({
         data: null,
-        error: { message: 'invalid signature' },
+        error: { message: 'invalid signature', code: 'invalid_jwt' },
       });
       await expect(
         jwksGuard.track({
@@ -326,8 +467,8 @@ describe('CustomThrottlerGuard', () => {
       ).resolves.toBe('ip:203.0.113.22');
     });
 
-    it('falls back to IP when the verifier throws (JWKS unreachable on a cold start)', async () => {
-      getClaims.mockRejectedValue(new Error('fetch failed'));
+    it('falls back to IP when the verifier throws', async () => {
+      getClaims.mockRejectedValue(new Error('crypto failure'));
       await expect(
         jwksGuard.track({
           headers: {
@@ -348,7 +489,7 @@ describe('CustomThrottlerGuard', () => {
       await expect(
         jwksGuard.track({
           headers: {
-            authorization: `Bearer ${asymmetricJwt({ sub: 'u', exp: 1 })}`,
+            authorization: `Bearer ${asymmetricJwt({ sub: 'u', exp: futureExp() })}`,
           },
           ip: '203.0.113.24',
         }),
@@ -366,6 +507,19 @@ describe('CustomThrottlerGuard', () => {
           ip: '203.0.113.25',
         }),
       ).resolves.toBe('ip:203.0.113.25');
+      expect(getClaims).toHaveBeenCalledTimes(2);
+    });
+
+    it('never sends a token whose own exp has passed to the verifier', async () => {
+      await expect(
+        jwksGuard.track({
+          headers: {
+            authorization: `Bearer ${asymmetricJwt({ sub: 'u', exp: 1 })}`,
+          },
+          ip: '203.0.113.29',
+        }),
+      ).resolves.toBe('ip:203.0.113.29');
+      expect(getClaims).not.toHaveBeenCalled();
     });
 
     it('never sends an HS256 token to the JWKS verifier', async () => {
@@ -394,16 +548,32 @@ describe('CustomThrottlerGuard', () => {
       expect(getClaims).not.toHaveBeenCalled();
     });
 
-    // supabase-js re-fetches the JWKS over the network for every `kid` it has
-    // not cached, and this guard runs before authentication — so without a
-    // bound, a flood of ES256-shaped headers with random `kid`s is one
-    // outbound fetch each. The bound: a `kid` that never verified gets one
-    // attempt per interval, process-wide; a `kid` that has verified always
-    // goes through.
-    describe('JWKS fetch amplification is bounded', () => {
+    it('verifies a request once however many throttlers ask for its tracker', async () => {
+      getClaims.mockResolvedValue({
+        data: { claims: { sub: 'member-a', exp: futureExp() } },
+        error: null,
+      });
+      const req = {
+        headers: {
+          authorization: `Bearer ${asymmetricJwt({ exp: futureExp() })}`,
+        },
+        ip: '203.0.113.36',
+      };
+      await expect(jwksGuard.track(req)).resolves.toBe('user:member-a');
+      await expect(jwksGuard.track(req)).resolves.toBe('user:member-a');
+      expect(getClaims).toHaveBeenCalledTimes(1);
+    });
+
+    // supabase-js fetches the JWKS for a `kid` it has not cached, and asks
+    // Supabase Auth about a token whose `kid` the JWKS does not list; this
+    // guard runs before authentication. So the guard reads the project's
+    // JWKS itself, hands the verifier only a key from it, and for a `kid` it
+    // does not hold re-reads the JWKS, one read at a time and at most once
+    // per interval, learning every key the project lists.
+    describe("the project's signing keys", () => {
       const withKid = (kid: string): string =>
-        `${b64url({ alg: 'ES256', typ: 'JWT', kid })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
-      const reqFor = (kid: string, ip: string) => ({
+        asymmetricJwt({ sub: 'u', exp: futureExp() }, 'ES256', kid);
+      const reqFor = (kid: string, ip = '203.0.113.40') => ({
         headers: { authorization: `Bearer ${withKid(kid)}` },
         ip,
       });
@@ -411,99 +581,193 @@ describe('CustomThrottlerGuard', () => {
       let nowSpy: jest.SpyInstance<number, []>;
       let now: number;
 
-      beforeEach(() => {
+      beforeEach(async () => {
         now = 1_800_000_000_000;
         nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+        // Rebuilt under the mocked clock, so its boot read's interval is on it.
+        fetchSpy.mockClear();
+        jwksGuard = await buildGuard();
+        getClaims.mockResolvedValue({
+          data: { claims: { sub: 'member-a', exp: futureExp() } },
+          error: null,
+        });
       });
 
       afterEach(() => {
         nowSpy.mockRestore();
       });
 
-      it('sends an unknown kid to the verifier at most once per interval', async () => {
-        getClaims.mockResolvedValue({
-          data: null,
-          error: { message: 'no matching key' },
+      it('reads the JWKS with the headers supabase-js sends for it', () => {
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(fetchSpy).toHaveBeenCalledWith(JWKS_URL, {
+          headers: {
+            apikey: SERVICE_KEY,
+            Authorization: `Bearer ${SERVICE_KEY}`,
+          },
+          signal: expect.any(AbortSignal),
         });
-        await expect(
-          jwksGuard.track(reqFor('random-1', '203.0.113.30')),
-        ).resolves.toBe('ip:203.0.113.30');
-        await expect(
-          jwksGuard.track(reqFor('random-2', '203.0.113.30')),
-        ).resolves.toBe('ip:203.0.113.30');
-        await expect(
-          jwksGuard.track(reqFor('random-3', '203.0.113.31')),
-        ).resolves.toBe('ip:203.0.113.31');
-        expect(getClaims).toHaveBeenCalledTimes(1);
-
-        now += UNKNOWN_KID_ATTEMPT_INTERVAL_MS;
-        await expect(
-          jwksGuard.track(reqFor('random-4', '203.0.113.30')),
-        ).resolves.toBe('ip:203.0.113.30');
-        expect(getClaims).toHaveBeenCalledTimes(2);
       });
 
-      it('always sends a kid that has verified before, regardless of the interval', async () => {
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'member-a', exp: futureExp() } },
-          error: null,
-        });
-        await expect(
-          jwksGuard.track(reqFor('rotated-key', '203.0.113.32')),
-        ).resolves.toBe('user:member-a');
+      it('never sends a kid the project does not list to the verifier, and re-reads at most once per interval', async () => {
+        await expect(jwksGuard.track(reqFor('made-up-1'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+        await expect(jwksGuard.track(reqFor('made-up-2'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+        // The boot read, and nothing more inside its interval.
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
 
-        // Same kid, immediately, from another member on the same network.
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'member-b', exp: futureExp() } },
-          error: null,
-        });
-        await expect(
-          jwksGuard.track(reqFor('rotated-key', '203.0.113.32')),
-        ).resolves.toBe('user:member-b');
-        expect(getClaims).toHaveBeenCalledTimes(2);
-
-        // A forged token naming the known kid still reaches the verifier — a
-        // known kid is a local WebCrypto check, not a fetch — and still fails.
-        getClaims.mockResolvedValue({
-          data: null,
-          error: { message: 'invalid signature' },
-        });
-        await expect(
-          jwksGuard.track(reqFor('rotated-key', '203.0.113.33')),
-        ).resolves.toBe('ip:203.0.113.33');
-        expect(getClaims).toHaveBeenCalledTimes(3);
+        now += JWKS_REFRESH_INTERVAL_MS;
+        await expect(jwksGuard.track(reqFor('made-up-3'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+        await expect(jwksGuard.track(reqFor('made-up-4'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+        expect(getClaims).not.toHaveBeenCalled();
       });
 
-      it('does not learn a kid from a failed verification', async () => {
-        getClaims.mockResolvedValueOnce({
-          data: null,
-          error: { message: 'invalid signature' },
+      it("learns a rotated key from the project's list the first time a token names it", async () => {
+        await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+          'user:member-a',
+        );
+        const KEY_2 = { kid: 'key-2', kty: 'EC', alg: 'ES256' };
+        fetchSpy.mockResolvedValue(jwksResponse({ keys: [KEY_1, KEY_2] }));
+        now += JWKS_REFRESH_INTERVAL_MS;
+
+        await expect(jwksGuard.track(reqFor('key-2'))).resolves.toBe(
+          'user:member-a',
+        );
+        expect(getClaims).toHaveBeenLastCalledWith(withKid('key-2'), {
+          jwks: { keys: [KEY_2] },
         });
-        await jwksGuard.track(reqFor('attacker-kid', '203.0.113.34'));
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'u', exp: futureExp() } },
-          error: null,
-        });
-        // Still inside the interval: the failed kid is unknown, so it waits.
-        await expect(
-          jwksGuard.track(reqFor('attacker-kid', '203.0.113.34')),
-        ).resolves.toBe('ip:203.0.113.34');
-        expect(getClaims).toHaveBeenCalledTimes(1);
+        // Known from then on: no read for the next member.
+        await expect(jwksGuard.track(reqFor('key-2'))).resolves.toBe(
+          'user:member-a',
+        );
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
       });
 
-      it('treats a header without a kid as unknown every time', async () => {
-        getClaims.mockResolvedValue({
-          data: { claims: { sub: 'u', exp: futureExp() } },
-          error: null,
-        });
+      it('lets a made-up kid start a read that teaches the real one, rather than taking its place', async () => {
+        const KEY_2 = { kid: 'key-2', kty: 'EC', alg: 'ES256' };
+        fetchSpy.mockResolvedValue(jwksResponse({ keys: [KEY_1, KEY_2] }));
+        now += JWKS_REFRESH_INTERVAL_MS;
+
+        await expect(jwksGuard.track(reqFor('made-up'))).resolves.toBe(
+          'ip:203.0.113.40',
+        );
+        // Inside the next interval, the member's new key is already held.
+        await expect(jwksGuard.track(reqFor('key-2'))).resolves.toBe(
+          'user:member-a',
+        );
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+      });
+
+      it('makes requests arriving during a read wait for that one read', async () => {
+        let answer!: (res: Response) => void;
+        fetchSpy.mockReturnValue(
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+        );
+        now += JWKS_REFRESH_INTERVAL_MS;
+        const KEY_2 = { kid: 'key-2', kty: 'EC', alg: 'ES256' };
+        const members = [1, 2, 3].map((n) =>
+          jwksGuard.track(reqFor('key-2', `203.0.113.${50 + n}`)),
+        );
+        answer(jwksResponse({ keys: [KEY_1, KEY_2] }));
+        await expect(Promise.all(members)).resolves.toEqual([
+          'user:member-a',
+          'user:member-a',
+          'user:member-a',
+        ]);
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+      });
+
+      it('makes a request wait for the boot read rather than race it', async () => {
+        let answer!: (res: Response) => void;
+        fetchSpy.mockReturnValue(
+          new Promise<Response>((resolve) => {
+            answer = resolve;
+          }),
+        );
+        jwksGuard = await buildGuard();
+        const member = jwksGuard.track(reqFor('key-1'));
+        answer(jwksResponse({ keys: [KEY_1] }));
+        await expect(member).resolves.toBe('user:member-a');
+      });
+
+      it.each([
+        [
+          'the JWKS is unreachable',
+          () => Promise.reject(new TypeError('fetch failed')),
+          'TypeError',
+        ],
+        [
+          'the JWKS answers an error',
+          () => Promise.resolve(jwksResponse({}, false, 503)),
+          'HTTP 503',
+        ],
+        [
+          'the body has no key list',
+          () => Promise.resolve(jwksResponse({ keys: 'nope' })),
+          'no key list',
+        ],
+      ])(
+        'warns, and keys tokens it cannot check by address, when %s',
+        async (_why, failure, named) => {
+          fetchSpy.mockImplementation(failure);
+          jwksGuard = await buildGuard();
+          await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+            'ip:203.0.113.40',
+          );
+          expect(getClaims).not.toHaveBeenCalled();
+          expect(warn).toHaveBeenCalledWith(expect.stringContaining(named));
+          // Never the key, never the project's address.
+          const logged = JSON.stringify(warn.mock.calls);
+          expect(logged).not.toContain(SERVICE_KEY);
+          expect(logged).not.toContain('project.example.test');
+
+          // A later read that works is picked up by the next token.
+          fetchSpy.mockResolvedValue(jwksResponse({ keys: [KEY_1] }));
+          now += JWKS_REFRESH_INTERVAL_MS;
+          await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+            'user:member-a',
+          );
+        },
+      );
+
+      it('keeps the keys it holds when a later read fails', async () => {
+        await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+          'user:member-a',
+        );
+        fetchSpy.mockRejectedValue(new TypeError('fetch failed'));
+        now += JWKS_REFRESH_INTERVAL_MS;
+        await jwksGuard.track(reqFor('made-up'));
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+        expect(warn).toHaveBeenCalled();
+        await expect(jwksGuard.track(reqFor('key-1'))).resolves.toBe(
+          'user:member-a',
+        );
+      });
+
+      it('treats a token with no kid as one it cannot check', async () => {
         const noKid = `${b64url({ alg: 'ES256', typ: 'JWT' })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
-        const req = {
-          headers: { authorization: `Bearer ${noKid}` },
-          ip: '203.0.113.35',
-        };
-        await expect(jwksGuard.track(req)).resolves.toBe('user:u');
-        await expect(jwksGuard.track(req)).resolves.toBe('ip:203.0.113.35');
-        expect(getClaims).toHaveBeenCalledTimes(1);
+        await expect(
+          jwksGuard.track({
+            headers: { authorization: `Bearer ${noKid}` },
+            ip: '203.0.113.35',
+          }),
+        ).resolves.toBe('ip:203.0.113.35');
+        expect(getClaims).not.toHaveBeenCalled();
+      });
+
+      it('does not read the JWKS when no Supabase client is wired', async () => {
+        fetchSpy.mockClear();
+        await guard.onModuleInit();
+        expect(fetchSpy).not.toHaveBeenCalled();
       });
     });
 
@@ -613,6 +877,306 @@ describe('CustomThrottlerGuard', () => {
     });
   });
 
+  // A bearer token that does not verify sends the auth guard to Supabase Auth,
+  // so those requests share one counter per address across every route,
+  // while signed-in members (keyed per user) and token-less calls (refused
+  // by the auth guard without an outbound call) never touch it.
+  describe('unverified-token bucket', () => {
+    class FirstController {
+      list(): void {}
+    }
+    class SecondController {
+      list(): void {}
+    }
+
+    let bucketGuard: TestableGuard;
+    let increment: jest.Mock;
+    let header: jest.Mock;
+
+    const ctxFor = (
+      cls: new (...args: never[]) => unknown,
+      handler: (...args: never[]) => unknown,
+      req: Record<string, unknown>,
+    ): ExecutionContext =>
+      ({
+        getClass: () => cls,
+        getHandler: () => handler,
+        switchToHttp: () => ({
+          getRequest: () => req,
+          getResponse: () => ({ header }),
+        }),
+      }) as unknown as ExecutionContext;
+
+    const get = (authorization?: string): Record<string, unknown> => ({
+      method: 'GET',
+      headers: authorization ? { authorization } : {},
+      ip: '198.51.100.20',
+    });
+
+    /** `[throttlerName, key]` for each counter the request reached. */
+    const counted = (): [string, string][] =>
+      (increment.mock.calls as unknown[][]).map((call) => [
+        call[4] as string,
+        call[0] as string,
+      ]);
+
+    /** Storage that reports the unverified-token bucket used up. */
+    const usedUp = () =>
+      increment.mockImplementation(
+        (
+          _key: string,
+          _ttl: number,
+          _limit: number,
+          _b: number,
+          name: string,
+        ) =>
+          Promise.resolve({
+            totalHits: name === UNVERIFIED_BEARER_THROTTLER ? 201 : 1,
+            timeToExpire: 60,
+            isBlocked: name === UNVERIFIED_BEARER_THROTTLER,
+            timeToBlockExpire: 30,
+          }),
+      );
+
+    const refusal = (authorization: string): Promise<unknown> =>
+      bucketGuard
+        .canActivate(
+          ctxFor(
+            FirstController,
+            FirstController.prototype.list,
+            get(authorization),
+          ),
+        )
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+
+    beforeEach(async () => {
+      header = jest.fn();
+      increment = jest.fn().mockResolvedValue({
+        totalHits: 1,
+        timeToExpire: 60,
+        isBlocked: false,
+        timeToBlockExpire: 0,
+      });
+      const moduleRef: TestingModule = await Test.createTestingModule({
+        providers: [
+          TestableGuard,
+          Reflector,
+          {
+            provide: getOptionsToken(),
+            useValue: [
+              { name: 'read', ttl: 60_000, limit: 100 },
+              { name: 'write', ttl: 60_000, limit: 30 },
+              {
+                name: UNVERIFIED_BEARER_THROTTLER,
+                ttl: UNVERIFIED_BEARER_TTL_MS,
+                limit: UNVERIFIED_BEARER_LIMIT,
+              },
+            ],
+          },
+          { provide: getStorageToken(), useValue: { increment } },
+        ],
+      }).compile();
+      bucketGuard = moduleRef.get(TestableGuard);
+      await bucketGuard.onModuleInit();
+    });
+
+    it('counts a token that did not verify in one counter shared by every route', async () => {
+      const forged = `Bearer ${makeJwt({ sub: 'x', exp: futureExp() }, null)}`;
+      await bucketGuard.canActivate(
+        ctxFor(FirstController, FirstController.prototype.list, get(forged)),
+      );
+      await bucketGuard.canActivate(
+        ctxFor(SecondController, SecondController.prototype.list, get(forged)),
+      );
+
+      const unverified = counted().filter(
+        ([name]) => name === UNVERIFIED_BEARER_THROTTLER,
+      );
+      expect(unverified).toHaveLength(2);
+      expect(unverified[0][1]).toBe(unverified[1][1]);
+      expect(increment).toHaveBeenCalledWith(
+        expect.any(String),
+        UNVERIFIED_BEARER_TTL_MS,
+        UNVERIFIED_BEARER_LIMIT,
+        UNVERIFIED_BEARER_TTL_MS,
+        UNVERIFIED_BEARER_THROTTLER,
+      );
+      // The per-route `read` counters stay per route.
+      const reads = counted().filter(([name]) => name === 'read');
+      expect(reads[0][1]).not.toBe(reads[1][1]);
+    });
+
+    it('applies to writes too', async () => {
+      const req = {
+        ...get('Bearer not-a-jwt'),
+        method: 'POST',
+      };
+      await bucketGuard.canActivate(
+        ctxFor(FirstController, FirstController.prototype.list, req),
+      );
+      expect(
+        counted()
+          .map(([name]) => name)
+          .sort(),
+      ).toEqual([UNVERIFIED_BEARER_THROTTLER, 'write']);
+    });
+
+    it("leaves a signed-in member's request out of it", async () => {
+      await bucketGuard.canActivate(
+        ctxFor(
+          FirstController,
+          FirstController.prototype.list,
+          get(`Bearer ${makeJwt({ sub: 'member-1', exp: futureExp() })}`),
+        ),
+      );
+      expect(counted().map(([name]) => name)).toEqual(['read']);
+    });
+
+    it('leaves a call with no token out of it (health, version check, invite preview)', async () => {
+      await bucketGuard.canActivate(
+        ctxFor(FirstController, FirstController.prototype.list, get()),
+      );
+      await bucketGuard.canActivate(
+        ctxFor(
+          FirstController,
+          FirstController.prototype.list,
+          get('Basic abc123'),
+        ),
+      );
+      expect(counted().map(([name]) => name)).toEqual(['read', 'read']);
+    });
+
+    // An outage of the guard's own means of checking (here: no verifier for
+    // an ES256 token at all) must not put every member on a network into one
+    // bucket: those tokens keep the per-route address keying alone.
+    it('leaves out a token it could not check because its means of checking are down', async () => {
+      const es256 = `${b64url({ alg: 'ES256', typ: 'JWT', kid: 'key-1' })}.${b64url({ sub: 'u', exp: futureExp() })}.sig`;
+      await bucketGuard.canActivate(
+        ctxFor(
+          FirstController,
+          FirstController.prototype.list,
+          get(`Bearer ${es256}`),
+        ),
+      );
+      expect(counted().map(([name]) => name)).toEqual(['read']);
+    });
+
+    // A client recovers a dead or stale session only through a 401: mobile
+    // drops its learned clock offset and re-checks the session, web signs a
+    // revoked one out. Past the limit, a 429 would keep such a member stuck
+    // for as long as their network stays over it.
+    describe('once the address has used it up', () => {
+      beforeEach(() => {
+        usedUp();
+      });
+
+      it.each([
+        ['a malformed token', 'Bearer not-a-jwt'],
+        [
+          'a forged signature',
+          `Bearer ${makeJwt({ sub: 'x', exp: futureExp() }, null)}`,
+        ],
+        [
+          'a lapsed token from a phone whose clock runs behind',
+          `Bearer ${makeJwt({ sub: 'member-1', exp: Math.floor(Date.now() / 1000) - 30 })}`,
+        ],
+      ])(
+        "answers %s with the auth guard's 401, not a 429",
+        async (_why, authorization) => {
+          const error = await refusal(authorization);
+          expect(error).toBeInstanceOf(AuthRejectedException);
+          expect((error as AuthRejectedException).getStatus()).toBe(401);
+          expect((error as AuthRejectedException).getResponse()).toMatchObject({
+            message: INVALID_TOKEN_MESSAGE,
+          });
+          expect((error as AuthRejectedException).detail).toMatchObject({
+            reason: 'claims_rejected',
+            authErrorCode: UNVERIFIED_LIMIT_AUTH_CODE,
+          });
+          // No retry header on a 401: the client should refresh, not wait.
+          expect(header).not.toHaveBeenCalledWith(
+            'Retry-After',
+            expect.anything(),
+          );
+        },
+      );
+
+      it('says on the 401 whether the token had expired', async () => {
+        const lapsed = await refusal(
+          `Bearer ${makeJwt({ sub: 'member-1', exp: Math.floor(Date.now() / 1000) - 30 })}`,
+        );
+        expect((lapsed as AuthRejectedException).detail.tokenExpired).toBe(
+          true,
+        );
+      });
+
+      // A token the guard could not check might be a member's valid one (a
+      // signing key it has not learned yet), so it is never told its session
+      // is gone: it waits like any other throttled request.
+      it('answers a token it could not check with the usual 429', async () => {
+        delete process.env.SUPABASE_JWT_SECRET;
+        const error = await refusal(
+          `Bearer ${makeJwt({ sub: 'member-1', exp: futureExp() })}`,
+        );
+        expect(error).toBeInstanceOf(ThrottlerException);
+        expect((error as ThrottlerException).getStatus()).toBe(429);
+        expect(header).toHaveBeenCalledWith('Retry-After', '30');
+      });
+
+      it('still lets a signed-in member through', async () => {
+        await expect(
+          refusal(`Bearer ${makeJwt({ sub: 'member-1', exp: futureExp() })}`),
+        ).resolves.toBeUndefined();
+      });
+    });
+
+    // The per-route buckets count the same address, so the same holds when
+    // one of those is what ran out.
+    it("answers an invalid token with a 401 when a route's own bucket ran out too", async () => {
+      increment.mockImplementation(
+        (
+          _key: string,
+          _ttl: number,
+          _limit: number,
+          _b: number,
+          name: string,
+        ) =>
+          Promise.resolve({
+            totalHits: name === 'read' ? 101 : 1,
+            timeToExpire: 60,
+            isBlocked: name === 'read',
+            timeToBlockExpire: 30,
+          }),
+      );
+      const lapsed = await refusal(
+        `Bearer ${makeJwt({ sub: 'member-1', exp: Math.floor(Date.now() / 1000) - 30 })}`,
+      );
+      expect(lapsed).toBeInstanceOf(AuthRejectedException);
+
+      const tokenless = await bucketGuard
+        .canActivate(
+          ctxFor(FirstController, FirstController.prototype.list, get()),
+        )
+        .catch((error: unknown) => error);
+      expect(tokenless).toBeInstanceOf(ThrottlerException);
+    });
+
+    it('is skipped on the Stripe webhook, whatever it carries', async () => {
+      const req = { ...get('Bearer not-a-jwt'), method: 'POST' };
+      await bucketGuard.canActivate(
+        ctxFor(
+          WebhookController,
+          WebhookController.prototype.handleStripeWebhook,
+          req,
+        ),
+      );
+      expect(increment).not.toHaveBeenCalled();
+    });
+  });
+
   // #850. These pin the per-route limits themselves, not the mechanism: each
   // case names a real controller handler and the limit it must reach the
   // storage with, so deleting a `@Throttle*` decorator — or moving a route
@@ -625,6 +1189,8 @@ describe('CustomThrottlerGuard', () => {
       cls: new (...args: never[]) => unknown;
       handler: (...args: never[]) => unknown;
       limit: number;
+      /** Window in ms; the minute unless the profile says otherwise. */
+      ttl?: number;
     }
 
     /**
@@ -641,7 +1207,8 @@ describe('CustomThrottlerGuard', () => {
       cls: new (...args: never[]) => unknown,
       handler: (...args: never[]) => unknown,
       limit: number,
-    ): RouteCase => ({ route: r, cls, handler, limit });
+      ttl?: number,
+    ): RouteCase => ({ route: r, cls, handler, limit, ttl });
 
     const RP = ReportController.prototype;
     const IN = InviteController.prototype;
@@ -662,12 +1229,63 @@ describe('CustomThrottlerGuard', () => {
       route('POST /invites/batch', InviteController, IN.createBatch, 5),
       route('POST /invites/redeem', InviteController, IN.redeem, 10),
       route('POST /invites/preview', InviteController, IN.preview, 10),
+      route(
+        'POST /invites/details',
+        InviteDetailsController,
+        InviteDetailsController.prototype.details,
+        120,
+      ),
+      route(
+        'POST /invites/funnel',
+        InviteDetailsController,
+        InviteDetailsController.prototype.funnelStep,
+        120,
+      ),
+      route(
+        'POST /invites/ask-for-new-link',
+        InviteController,
+        IN.askForNewLink,
+        3,
+        60 * 60_000,
+      ),
       route('POST /events', EventController, EV.create, 10),
       route('PATCH /events/:id', EventController, EV.update, 10),
+      route('POST /ai/ask', AskController, AskController.prototype.ask, 10),
+      route(
+        'POST /ai/ask/dictation',
+        AskController,
+        AskController.prototype.cleanDictation,
+        10,
+      ),
+      route('POST /ai/act', ActController, ActController.prototype.act, 10),
+      route(
+        'POST /ai/act/event-audience',
+        ActController,
+        ActController.prototype.eventAudience,
+        10,
+      ),
+      route(
+        'POST /ai/catch-up',
+        ChatCatchUpController,
+        ChatCatchUpController.prototype.catchUp,
+        10,
+      ),
       route(
         'POST /documents/upload-url',
         ChapterDocumentController,
         CD.requestUploadUrl,
+        10,
+      ),
+      route(
+        'POST /documents/upload-urls',
+        ChapterDocumentController,
+        CD.requestUploadUrls,
+        10,
+      ),
+      route(
+        'POST /documents/batch',
+        ChapterDocumentController,
+        CD.confirmUploads,
         10,
       ),
       route(
@@ -692,6 +1310,12 @@ describe('CustomThrottlerGuard', () => {
         'POST /service-entries/proof-upload-url',
         ServiceEntryController,
         SE.requestProofUploadUrl,
+        10,
+      ),
+      route(
+        'POST /tasks/photo-upload-url',
+        TaskController,
+        TaskController.prototype.requestPhotoUploadUrl,
         10,
       ),
       route(
@@ -751,7 +1375,7 @@ describe('CustomThrottlerGuard', () => {
       await overrideGuard.onModuleInit();
     });
 
-    it.each(cases)('$route is capped at $limit/min', async (c) => {
+    it.each(cases)('$route is capped at $limit per window', async (c) => {
       await expect(overrideGuard.canActivate(ctxFor(c))).resolves.toBe(true);
 
       // Exactly one bucket runs: the other is method-gated off. Asserting the
@@ -762,9 +1386,9 @@ describe('CustomThrottlerGuard', () => {
       // increment(key, ttl, limit, blockDuration, throttlerName)
       expect(increment).toHaveBeenCalledWith(
         expect.any(String),
-        60_000,
+        c.ttl ?? 60_000,
         c.limit,
-        60_000,
+        c.ttl ?? 60_000,
         bucketFor(c.route.split(' ')[0]),
       );
     });
@@ -820,11 +1444,32 @@ describe('CustomThrottlerGuard', () => {
     });
   });
 
+  // The one notion of a caller's address: the throttler, the calendar feed's
+  // miss limit and the auth-failure spike detector all count by it.
+  describe('clientAddress', () => {
+    it('takes the first forwarded address, cutting IPv6 to its /64', () => {
+      expect(
+        clientAddress({ ips: ['2001:db8:1:2:3:4:5:6', '10.0.0.1'], ip: 'x' }),
+      ).toBe('2001:db8:1:2::/64');
+      expect(clientAddress({ ips: [], ip: '198.51.100.3' })).toBe(
+        '198.51.100.3',
+      );
+    });
+
+    it('is undefined when Express resolved no address', () => {
+      expect(clientAddress({ ips: [] })).toBeUndefined();
+      expect(clientAddress({ ip: '' })).toBeUndefined();
+    });
+  });
+
   describe('throwThrottlingException', () => {
     it('sets a standard Retry-After header before throwing', async () => {
       const header = jest.fn();
       const context = {
-        switchToHttp: () => ({ getResponse: () => ({ header }) }),
+        switchToHttp: () => ({
+          getRequest: () => ({ headers: {} }),
+          getResponse: () => ({ header }),
+        }),
         getClass: () => class {},
         getHandler: () => () => undefined,
       } as unknown as ExecutionContext;
@@ -840,7 +1485,10 @@ describe('CustomThrottlerGuard', () => {
 
     it('says what happened and what to do, not the framework class name (#3142)', async () => {
       const context = {
-        switchToHttp: () => ({ getResponse: () => ({ header: jest.fn() }) }),
+        switchToHttp: () => ({
+          getRequest: () => ({ headers: {} }),
+          getResponse: () => ({ header: jest.fn() }),
+        }),
         getClass: () => class {},
         getHandler: () => () => undefined,
       } as unknown as ExecutionContext;

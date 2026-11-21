@@ -5,8 +5,14 @@ export interface SendInviteEmailParams {
   to: string;
   /** Full `${origin}/join?token=…` URL the recipient redeems. */
   joinUrl: string;
-  /** Role name the invite grants, shown in the email body. */
-  role: string;
+  /**
+   * Name of the role the invite grants, shown in the email body. Null when
+   * it grants only the chapter's Everyone role, which joins as nobody in
+   * particular, so the email names no role (as the invite card does).
+   */
+  role: string | null;
+  /** How many days the invite works for, written out in the email. */
+  validDays: number;
   /** The chapter's name, for the subject and body. Null drops it. */
   chapterName?: string | null;
   /** Who sent the invite, by display name. Null drops it. */

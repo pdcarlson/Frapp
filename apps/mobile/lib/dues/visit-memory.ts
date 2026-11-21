@@ -5,6 +5,17 @@ import { useFocusEffect } from "expo-router";
 export interface CapturedPayment {
   id: string;
   title: string;
+  /**
+   * When the sheet completed (`Date.now()`). Only an invoice list read that
+   * landed after this can end the hold on a recorded failure (#3460): one
+   * cached from before the attempt may still carry the previous attempt's.
+   */
+  capturedAt: number;
+  /**
+   * Set once a list read showed the payment failed after the capture (#3460):
+   * the hold has ended, and the failure line stands until the visit ends.
+   */
+  failure?: { reason: string | null };
 }
 
 /**

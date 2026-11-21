@@ -7,9 +7,9 @@ import {
   Type,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PostgrestError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { readRolesByIds } from '../../infrastructure/supabase/repositories/supabase-role.repository';
 import { lookupUnavailable } from './guard-lookup';
 import {
   PERMISSIONS_KEY,
@@ -69,28 +69,27 @@ export class PermissionsGuard implements CanActivate {
     // Filter on the active chapter as well as the id list: a stale or
     // cross-chapter id left on the member row then resolves to no row instead
     // of silently granting that other chapter's permissions here.
-    const { data: roles, error } = (await this.supabase
-      .from('roles')
-      .select('permissions')
-      .in('id', roleIds)
-      .eq('chapter_id', chapterId)) as {
-      data: RolePermissionRow[] | null;
-      error: PostgrestError | null;
-    };
-
+    //
+    // The same read `RbacService.getChannelAccessHolder` makes for the
+    // caller's roles, so a GET shares it with the handler instead of repeating
+    // it (`request-reads.ts`, #3728).
+    //
     // A failed lookup must surface as a server fault, not a permission
     // denial — otherwise a transient DB error reads as a terminal 403. A 503,
     // like the auth and chapter guards' (#3143), so clients retry it. The
     // query error rides along as the cause, so Sentry gets its code and the
     // query's stack (#1264); the client still gets only the generic body.
-    if (error) {
-      throw lookupUnavailable(
-        'Failed to resolve permissions',
-        new SupabaseQueryError(error),
-      );
+    let roles: RolePermissionRow[];
+    try {
+      roles = await readRolesByIds(this.supabase, roleIds, chapterId);
+    } catch (error) {
+      if (error instanceof SupabaseQueryError) {
+        throw lookupUnavailable('Failed to resolve permissions', error);
+      }
+      throw error;
     }
 
-    if (!roles?.length) {
+    if (!roles.length) {
       throw new ForbiddenException('No valid roles found');
     }
 

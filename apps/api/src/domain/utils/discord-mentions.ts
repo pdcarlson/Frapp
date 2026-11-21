@@ -16,9 +16,11 @@
  * never change.
  *
  * **The rewrite is permanent, and nothing keeps the original text.** A copy
- * on `payload` was tried and dropped in review: deleting a message clears
- * `content` and leaves `payload` alone, so a moderator's delete would have
- * left the removed words readable by every member of the channel.
+ * on `payload` was tried and dropped in review: deleting a message cleared
+ * `content` and left `payload` alone, so a moderator's delete would have
+ * left the removed words readable by every member of the channel. (Corrected
+ * 2026-11-12: since #1575 a delete clears `payload` too. The decision stands
+ * until someone revisits it.)
  *
  * The output is native Frapp prose, so nothing downstream learns a new syntax:
  * `@Name` is what a member types, and a channel whose Frapp channel exists

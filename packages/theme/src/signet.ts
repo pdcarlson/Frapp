@@ -1,5 +1,5 @@
 /**
- * Signet design tokens — the dark-first neutral graphite palette.
+ * Signet design tokens — the dark-first violet near-black palette.
  *
  * This started as an ADDITIVE entrypoint beside the legacy bone/bronze/ink
  * tokens, with `apps/mobile` its first consumer. It is now the ONLY token set
@@ -38,7 +38,7 @@ export type SignetTypeRole = {
 
 export type SignetTokens = {
   color: {
-    /** The neutral ladder. Each step is visibly lighter than the one below; elevation is luminance, never shadow. */
+    /** The surface ladder, a faintly violet near-black. Each step is a soft step lighter than the one below (1.08 / 1.10 / 1.15); the hairline separates, elevation is luminance, never shadow. */
     surface: {
       background: string;
       surface1: string;
@@ -46,7 +46,17 @@ export type SignetTokens = {
       popover: string;
     };
     /** Low-opacity white so a hairline tracks whatever surface it sits on. Fixed-hex borders are banned. */
-    border: { hairline: string; input: string };
+    border: {
+      hairline: string;
+      input: string;
+      /**
+       * The edge that identifies a control: a text field, a select, a
+       * Secondary button, a switch's track, a segmented control. Strong
+       * enough to clear WCAG 1.4.11's 3:1 on every seat (foundations.md §3,
+       * #4389). `input` stays the quiet edge for everything else.
+       */
+      control: string;
+    };
     text: {
       foreground: string;
       mutedForeground: string;
@@ -64,6 +74,13 @@ export type SignetTokens = {
        */
       destructiveText: string;
       info: string;
+      /**
+       * The AA-lifted tone for info TEXT, on an info tint or on `popover`
+       * (components.md §5), the same lift as `destructiveText`. In
+       * `signetDarkTokens` since 2026-11-12 (#3826), when mobile's StatusChip
+       * started drawing info text in it.
+       */
+      infoText: string;
       /** "You were addressed" — @-mention or DM. Never replaced by the chapter accent. */
       mention: string;
       mentionForeground: string;
@@ -74,10 +91,23 @@ export type SignetTokens = {
        */
       mentionChip: string;
       mentionChipText: string;
+      /**
+       * Ink drawn ON a solid semantic fill (`success`, `warning`,
+       * `destructive`): a label, a count or a glyph. Near-black, because white
+       * on the lifted hues is under 3:1 (white on `success` is 2.28:1) while
+       * this clears 6.89:1 or more on each (foundations.md §5). Emitted to CSS
+       * as the three `--*-foreground` pairs; in `signetDarkTokens` since
+       * 2026-11-12 (#4393), when mobile's Quick Actions add badge adopted it.
+       */
+      onSemantic: string;
     };
     /**
      * Signet's own gold. Fixed for every chapter — the Ask/AI surface speaks in
-     * Signet's voice, not the tenant's, so these never retint.
+     * Signet's voice, not the tenant's, so these never retint. Since #4702 what
+     * that covers on Ask is what is Frapp's inside the conversation (the source
+     * markers and the number on a source chip); Ask's entry and the member's
+     * own controls take the chapter accent
+     * (`spec/ui/design-system/components.md` §11).
      */
     gold: {
       /** The brand gold itself. Also the Signet mark, which never takes a chapter accent. */
@@ -86,7 +116,10 @@ export type SignetTokens = {
       seed: string;
       /** Text/icons drawn on `house`. */
       onHouse: string;
-      /** The Ask card and Ask entry chip: tinted fill, border, and text. */
+      /**
+       * Ask's source markers and chip numbers (the Ask card and the entry
+       * chip until #4702): tinted fill, border, and text.
+       */
       askFill: string;
       askBorder: string;
       askText: string;
@@ -120,7 +153,12 @@ export type SignetTokens = {
     "2xl": number;
     "3xl": number;
   };
-  touch: { minimum: number; button: number; buttonLarge: number; tabBar: number };
+  touch: {
+    minimum: number;
+    button: number;
+    buttonLarge: number;
+    tabBar: number;
+  };
   focus: { ringWidth: number; ringOpacity: number };
   /**
    * Scrollbars are quiet chrome drawn on every scroll region: a thin neutral
@@ -146,37 +184,40 @@ export type SignetTokens = {
 const SIGNET_DARK: SignetTokens = {
   color: {
     surface: {
-      background: "#0A0A0A",
-      surface1: "#111111",
-      card: "#171717",
-      popover: "#1E1E1E",
+      background: "#0B0A0D",
+      surface1: "#151419",
+      card: "#1F1D25",
+      popover: "#2A2830",
     },
     border: {
-      hairline: "rgba(255,255,255,0.08)",
-      input: "rgba(255,255,255,0.14)",
+      hairline: "rgba(255,255,255,0.18)",
+      input: "rgba(255,255,255,0.20)",
+      control: "rgba(255,255,255,0.40)",
     },
     text: {
       foreground: "#F5F5F5",
       mutedForeground: "#C4C4C4",
-      muted: "#9E9E9E",
+      muted: "#A8A8A8",
       disabled: "#6B6B6B",
     },
     semantic: {
-      success: "#3FB950",
+      success: "#4BC262",
       warning: "#E5A000",
-      destructive: "#F85149",
-      destructiveText: "#FF7B72",
+      destructive: "#FF665C",
+      destructiveText: "#FF958A",
       info: "#2F81F7",
+      infoText: "#61A7FF",
       mention: "#E5484D",
       mentionForeground: "#FFFFFF",
       mentionChip: "#2D2617",
       mentionChipText: "#EED7A8",
+      onSemantic: "#0A0A0A",
     },
     gold: {
       house: "#EFB63B",
       seed: "#DDB844",
       onHouse: "#2C2000",
-      askFill: "#251E0E",
+      askFill: "#2C2515",
       askBorder: "#6B5619",
       askText: "#F4CB63",
     },
@@ -219,6 +260,16 @@ const SIGNET_DARK: SignetTokens = {
 
 export const signetDarkTokens: SignetTokens = SIGNET_DARK;
 
+/**
+ * How far the Tinted hover and press move from `--accent-subtle` toward
+ * `--accent-border`: `signet.css`'s `--accent-subtle-hover` mix, the phone's
+ * pressed Tinted fill (`apps/mobile/components/tinted-control.ts`) and web's
+ * contrast fixture all read it, and `signet.css.spec.ts` pins the stylesheet to
+ * it. 0.15 until the 2026-11-19 violet ladder, where 15% put a hovered
+ * mention row's Violet name under AA for the darkest blue chapter.
+ */
+export const ACCENT_SUBTLE_HOVER_MIX = 0.14;
+
 /** Keyed so a future appearance is a new entry here, not a change at every call site. */
 const SIGNET_TOKENS: Record<SignetAppearance, SignetTokens> = {
   dark: SIGNET_DARK,
@@ -257,6 +308,7 @@ export function getSignetCssVars(
 
     "--border": t.color.border.hairline,
     "--input": t.color.border.input,
+    "--control-edge": t.color.border.control,
 
     "--foreground": t.color.text.foreground,
     "--muted-foreground": t.color.text.mutedForeground,
@@ -264,10 +316,14 @@ export function getSignetCssVars(
     "--disabled": t.color.text.disabled,
 
     "--success": t.color.semantic.success,
+    "--success-foreground": t.color.semantic.onSemantic,
     "--warning": t.color.semantic.warning,
+    "--warning-foreground": t.color.semantic.onSemantic,
     "--destructive": t.color.semantic.destructive,
+    "--destructive-foreground": t.color.semantic.onSemantic,
     "--destructive-text": t.color.semantic.destructiveText,
     "--info": t.color.semantic.info,
+    "--info-text": t.color.semantic.infoText,
     "--mention": t.color.semantic.mention,
     "--mention-foreground": t.color.semantic.mentionForeground,
     "--mention-chip": t.color.semantic.mentionChip,

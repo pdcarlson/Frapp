@@ -23,10 +23,6 @@ Object.defineProperty(window, "location", {
 const { mockOffline } = vi.hoisted(() => ({ mockOffline: { value: false } }));
 
 const mocks = vi.hoisted(() => {
-  const noopMutation = {
-    mutateAsync: () => Promise.resolve({}),
-    isPending: false,
-  };
   return {
     settingsData: undefined as Record<string, unknown> | undefined,
     updateSettingsMutateAsync: vi.fn(),
@@ -53,7 +49,6 @@ const mocks = vi.hoisted(() => {
       fetchStatus: "idle" as string,
       refetch: vi.fn(),
     },
-    noopMutation,
     updateUser: {
       mutateAsync: vi.fn<(body: Record<string, unknown>) => Promise<unknown>>(
         () => Promise.resolve({}),
@@ -112,7 +107,6 @@ vi.mock("@repo/hooks", () => ({
   useUserSettings: () => mocks.settingsQuery,
   useUpdateUser: () => mocks.updateUser,
   useUpdateUserSettings: () => mocks.updateSettings,
-  useUpdateOnboarding: () => mocks.noopMutation,
   useDeleteAccount: () => mocks.deleteAccount,
   useActiveChapterId: () => mocks.chapterId,
   usePermissionList: () => mocks.permissions,
@@ -120,6 +114,9 @@ vi.mock("@repo/hooks", () => ({
   useUpdateNotificationPreference: () => ({
     mutateAsync: mocks.updatePreferenceMutateAsync,
   }),
+  // The Chat messages choice has its own spec (`chat-level-control.spec.tsx`).
+  useChapterChatLevel: () => ({ data: "all", isError: false }),
+  useSetChapterChatLevel: () => ({ isPending: false, mutateAsync: vi.fn() }),
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -707,6 +704,20 @@ describe("ChapterAlertsSection — notification categories (#564)", () => {
       .queryAllByRole("switch")
       .filter((element) => element.id.startsWith("notification-category-"));
   }
+
+  // #4124: the chapter-wide Chat messages choice sits above the switches,
+  // and only while there is a chapter to set it for.
+  it("draws the Chat messages choice for the active chapter only", () => {
+    const { unmount } = render(<ChapterAlertsSection />);
+    expect(
+      screen.getByRole("group", { name: "Chat messages" }),
+    ).toBeInTheDocument();
+    unmount();
+
+    mocks.chapterId = null;
+    render(<ChapterAlertsSection />);
+    expect(screen.queryByRole("group", { name: "Chat messages" })).toBeNull();
+  });
 
   it("renders a switch for every catalog category", () => {
     render(<ChapterAlertsSection />);

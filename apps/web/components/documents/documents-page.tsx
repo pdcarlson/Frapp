@@ -1,6 +1,14 @@
 "use client";
 
-import { useDeferredValue, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useSearchParams } from "next/navigation";
 import {
   useDeleteDocument,
   useDocumentFolders,
@@ -10,6 +18,9 @@ import {
   useMemberDisplayNames,
   useMyPermissions,
   useSemesters,
+  useDocumentTypes,
+  useViewerUserId,
+  type DocumentTypeRow,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
@@ -25,12 +36,15 @@ import {
   DELETE_DOCUMENT_LABEL,
   NO_DOCUMENT_FILTERS,
   deleteDocumentTitle,
+  documentFolderHues,
+  limitedDocumentCheck,
   markedItems,
   tierRows,
   type DocumentFilters,
   type DocumentSort,
 } from "@repo/hooks/document-library";
 import { DocumentViewer } from "@/components/documents/document-viewer";
+import { DOCUMENT_LINK_PARAM } from "@/components/ask/ask-source-link";
 import type {
   ChapterDocument,
   ChapterDocumentFolder,
@@ -40,12 +54,16 @@ import {
   FolderDialog,
   useFolderManagement,
 } from "@/components/documents/folder-management";
-import { FolderRail } from "@/components/documents/folder-rail";
+import {
+  DocumentAccessDialog,
+  canSetDocumentAccess,
+} from "@/components/documents/document-access";
+import { FolderMenu, FolderRail } from "@/components/documents/folder-rail";
+import { UploadMenu } from "@/components/documents/upload-menu";
 import { MarkedStrip } from "@/components/documents/marked-strip";
 import { useDocumentMarks } from "@/components/documents/use-document-marks";
 import {
   DocumentsPageDropTarget,
-  UploadDocumentPanel,
   useDocumentUpload,
 } from "@/components/documents/upload-document-panel";
 import { documentTypeOptions } from "@/lib/documents/upload-defaults";
@@ -144,6 +162,17 @@ function ChapterDocumentsPage() {
       .map((name) => ({ id: null, name, sort_order: null }));
   }, [folders, foldersQuery.isError, documents]);
 
+  // Each file's tile wears its folder's hue, in the rail's order (#5576).
+  const folderHue = useMemo(
+    () => documentFolderHues(railFolders.map((folder) => folder.name)),
+    [railFolders],
+  );
+
+  const railFolderNames = useMemo(
+    () => new Set(railFolders.map((folder) => folder.name)),
+    [railFolders],
+  );
+
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   // The document open in the viewer (#3849), by id: the viewer reads the row
   // from `visible`, so it steps through the list as shown and closes when the
@@ -197,7 +226,6 @@ function ChapterDocumentsPage() {
     filters: effectiveFilters,
     semesterKnown,
     filtering,
-    truncated,
   } = useDocumentLibrary({
     documents,
     folder: activeFolder,
@@ -243,24 +271,58 @@ function ChapterDocumentsPage() {
   );
 
   /*
-    The upload panel's type chips: the common types plus every type this
-    chapter has already filed under, read off the documents in hand. Free text
-    on the wire until #3642, so this keeps new uploads on the spellings the
-    library already uses.
+    The upload panel's type chips: the chapter's own list of document types
+    (#3642). Until that list has loaded, or when it can't be read, the common
+    types plus every type the documents in hand already use, so the panel still
+    offers the spellings the library has.
   */
-  const typeOptions = useMemo(
-    () => documentTypeOptions(documents.map((doc) => doc.document_type)),
-    [documents],
+  const typesQuery = useDocumentTypes();
+  const typeRows = useMemo(
+    () => asArray<DocumentTypeRow>(typesQuery.data),
+    [typesQuery.data],
   );
+  const typeOptions = useMemo(
+    () =>
+      typesQuery.isSuccess
+        ? typeRows.map((type) => type.name)
+        : documentTypeOptions(documents.map((doc) => doc.document_type)),
+    [typesQuery.isSuccess, typeRows, documents],
+  );
+  const canManageTypes = can(
+    "chapter_docs:manage",
+    permissionsPayload?.permissions ?? [],
+  );
+  /*
+    Who can see (#3642 piece 1). A file in a limited folder, or with its own
+    list, draws a lock; its uploader and whoever manages documents get its
+    Who can see control. The list only ever holds what this member sees.
+  */
+  const viewerId = useViewerUserId();
+  const isLimited = useMemo(
+    () =>
+      limitedDocumentCheck(foldersQuery.data === undefined ? null : folders),
+    [foldersQuery.data, folders],
+  );
+  const canSetAccess = (doc: ChapterDocument) =>
+    canSetDocumentAccess(doc, viewerId, {
+      manages: canManageTypes,
+      uploads: canUpload,
+    });
+  const [accessDoc, setAccessDoc] = useState<ChapterDocument | null>(null);
   const folderNames = useMemo(
     () => folders.map((folder) => folder.name),
     [folders],
+  );
+  const importContext = useMemo(
+    () => ({ typeOptions, folders: folderNames, documents }),
+    [typeOptions, folderNames, documents],
   );
   const upload = useDocumentUpload(gate, {
     activeFolder,
     typeOptions,
     folders: folderNames,
     documents,
+    canUpload,
   });
   /*
     Which rows' deletes are in flight — a set, not a scalar. `useDeleteDocument` is pessimistic —
@@ -285,6 +347,18 @@ function ChapterDocumentsPage() {
     confirm,
     refetchFolders: foldersQuery.refetch,
   });
+
+  const railProps = {
+    railFolders,
+    activeFolder,
+    setActiveFolder,
+    gate,
+    management: folderManagement,
+    marks,
+    loadFailed: foldersQuery.isError,
+    onRetryLoad: () => void foldersQuery.refetch(),
+    folderHue,
+  };
 
   async function handleDelete(doc: ChapterDocument) {
     // README §2 bans `window.confirm` on *every* surface, and §9 specs the
@@ -358,15 +432,21 @@ function ChapterDocumentsPage() {
   return (
     // A container (#4022): beside chat (#3779) the page is narrow while the
     // window is wide, so the folder rail counts the page's own width.
-    <div className="@container space-y-6">
+    <div className="@container/docs space-y-6">
       <PageActions>
+        <UploadMenu
+          gate={gate}
+          upload={upload}
+          folders={folderNames}
+          typeOptions={typeOptions}
+          typeRows={typesQuery.isSuccess && canManageTypes ? typeRows : null}
+          importContext={importContext}
+          documents={documents}
+          folderRows={folders}
+          canUpload={canUpload}
+          canManage={canManageTypes}
+        />
         <Can permission="chapter_docs:upload">
-          <UploadDocumentPanel
-            gate={gate}
-            upload={upload}
-            folders={folderNames}
-            typeOptions={typeOptions}
-          />
           <DocumentsPageDropTarget
             gate={gate}
             upload={upload}
@@ -428,17 +508,17 @@ function ChapterDocumentsPage() {
         200px rather than the old 240: the rail holds folder names and a four
         control management row, and the width it was giving up was the list's.
       */}
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 @2xl:grid-cols-[200px_minmax(0,1fr)]">
-        <FolderRail
-          railFolders={railFolders}
-          activeFolder={activeFolder}
-          setActiveFolder={setActiveFolder}
-          gate={gate}
-          management={folderManagement}
-          marks={marks}
-          loadFailed={foldersQuery.isError}
-          onRetryLoad={() => void foldersQuery.refetch()}
-        />
+      {/*
+        Files first (#5576): where the page is wide enough the folders are a
+        rail beside the list, as Drive's and Dropbox's sidebars are, and cost
+        the list no height. Narrower (the tool panel beside chat, a small
+        window) the rail would stack seven rows over the first file, so it
+        folds into a Folder control at the start of the list's toolbar.
+      */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-4 @2xl/docs:grid-cols-[200px_minmax(0,1fr)]">
+        <div className="hidden @2xl/docs:block">
+          <FolderRail {...railProps} />
+        </div>
 
         <div className="min-w-0 space-y-6">
           {/*
@@ -446,7 +526,7 @@ function ChapterDocumentsPage() {
           still gets its card. Not over the loading, error or offline states,
           which have nothing to say about the cards.
         */}
-        {showStrip && (listState === "ready" || listState === "empty") ? (
+          {showStrip && (listState === "ready" || listState === "empty") ? (
             <MarkedStrip
               pinned={strip.pinned}
               starred={strip.starred}
@@ -454,6 +534,12 @@ function ChapterDocumentsPage() {
               gate={gate}
               onOpenFolder={setActiveFolder}
               onOpenDocument={openDocument}
+              folderNames={railFolderNames}
+              isLimited={(item) =>
+                item.kind === "folder"
+                  ? item.folder.who_can_see != null
+                  : isLimited(item.doc)
+              }
             />
           ) : null}
           <DocumentList
@@ -462,7 +548,6 @@ function ChapterDocumentsPage() {
             visible={tieredVisible}
             activeFolder={activeFolder}
             total={folderTotal}
-            truncated={truncated}
             filtering={filtering}
             search={search}
             setSearch={setSearch}
@@ -487,6 +572,13 @@ function ChapterDocumentsPage() {
             onUpload={canUpload ? () => upload.openPanel() : undefined}
             marks={marks}
             onHoldRow={hold}
+            isLimited={isLimited}
+            canSetAccess={canSetAccess}
+            onSetAccess={setAccessDoc}
+            folderHue={folderHue}
+            folderPicker={
+              <FolderMenu {...railProps} className="@2xl/docs:hidden" />
+            }
           />
         </div>
       </div>
@@ -498,6 +590,27 @@ function ChapterDocumentsPage() {
         interaction the Chapter Ops slice shipped and its guard caught.
       */}
       <FolderDialog gate={gate} management={folderManagement} />
+      <DocumentAccessDialog
+        doc={accessDoc}
+        gate={gate}
+        onClose={() => setAccessDoc(null)}
+      />
+      <Suspense fallback={null}>
+        <OpenLinkedDocument
+          known={documents}
+          shown={visibleDocs}
+          onReveal={() => {
+            // The viewer reads the list as shown, so show all of it.
+            setActiveFolder(null);
+            setFilters(NO_DOCUMENT_FILTERS);
+            setSearch("");
+          }}
+          onOpen={(id) => {
+            viewerOpener.current = null;
+            setOpenId(id);
+          }}
+        />
+      </Suspense>
       <DocumentViewer
         documents={visibleDocs}
         openId={openId}
@@ -508,4 +621,48 @@ function ChapterDocumentsPage() {
       {confirmDialog}
     </div>
   );
+}
+
+/**
+ * `/documents?document=<id>`: opens that file in the viewer, which is how a
+ * source cited by Ask opens (`ask-source-link.ts`). It waits for the library
+ * to hold the file, clears a folder, filter or search that hides it (the
+ * viewer closes on a file the list does not show), opens it once the list
+ * shows it, and takes the parameter back out of the
+ * address so closing the viewer and following the same link again works. A
+ * file the member cannot see, or one since deleted, opens nothing and leaves
+ * them on the library. Its own component because `useSearchParams` needs a
+ * Suspense boundary.
+ */
+function OpenLinkedDocument({
+  known,
+  shown,
+  onReveal,
+  onOpen,
+}: {
+  known: readonly ChapterDocument[];
+  shown: readonly ChapterDocument[];
+  onReveal: () => void;
+  onOpen: (id: string) => void;
+}) {
+  const linked = useSearchParams()?.get(DOCUMENT_LINK_PARAM) ?? null;
+  const found = linked !== null && known.some((doc) => doc.id === linked);
+  const visible = found && shown.some((doc) => doc.id === linked);
+  // The latest callbacks without making the effect depend on their identity.
+  const callbacks = useRef({ onReveal, onOpen });
+  useEffect(() => {
+    callbacks.current = { onReveal, onOpen };
+  });
+  useEffect(() => {
+    if (!linked || !found) return;
+    if (!visible) {
+      callbacks.current.onReveal();
+      return;
+    }
+    callbacks.current.onOpen(linked);
+    // Next keeps `useSearchParams` in step with the History API, so this
+    // clears the parameter without a navigation.
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [linked, found, visible]);
+  return null;
 }

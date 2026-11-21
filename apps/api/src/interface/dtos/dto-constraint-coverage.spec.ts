@@ -110,6 +110,8 @@ describe('DTO constraint coverage (#849)', () => {
       'not stored; the service refuses one past MAX_UPLOAD_BYTES with its own message',
     'RequestProofUploadUrlDto.size_bytes':
       'not stored; the service refuses one past MAX_UPLOAD_BYTES with its own message',
+    'RequestTaskPhotoUploadUrlDto.size_bytes':
+      'not stored; the service refuses one past MAX_UPLOAD_BYTES with its own message',
     'RequestAvatarUploadUrlDto.size_bytes':
       'not stored; the service refuses one past MAX_UPLOAD_BYTES with its own message',
     'DiscordImportUploadFileDto.byte_size':

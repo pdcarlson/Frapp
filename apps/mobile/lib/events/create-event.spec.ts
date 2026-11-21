@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   CHECK_IN_OPENS_ERROR,
+  editRepeatDraft,
+  pickRepeatPreset,
+  repeatDraftFromRule,
+} from "@repo/validation";
+import {
+  calendarHourStart,
+  pickedDayStart,
   defaultEventStart,
   applyEventType,
   emptyEventDraft,
-  moreOptionsSummary,
-  repeatCaption,
   resolveEventTimes,
   shiftEnd,
   validateNewEvent,
@@ -60,7 +65,7 @@ describe("validateNewEvent", () => {
         pointsInput: "25",
         attendance: { everyone: "required", roles: {} },
         description: " Bring dues forms. ",
-        recurrenceRule: "WEEKLY",
+        repeat: repeatDraftFromRule("WEEKLY", "America/New_York"),
       }),
       AFTERNOON,
     );
@@ -180,45 +185,33 @@ describe("attendance by role", () => {
   });
 });
 
-describe("the More options summary", () => {
-  it("says points, who's coming and repeat while closed", () => {
-    expect(
-      moreOptionsSummary(
-        {
-          pointsInput: "10",
-          checkInOpensInput: "10",
-          attendance: { everyone: "required", roles: { a: "optional" } },
-          recurrenceRule: "BIWEEKLY",
-        },
-        (id) => (id === "a" ? "Alumni" : undefined),
-      ),
-    ).toBe(
-      "10 pts · Required for everyone, optional for Alumni · Every 2 weeks",
+describe("Repeat on create", () => {
+  it("sends the structured rule the controls build", () => {
+    const repeat = editRepeatDraft(
+      pickRepeatPreset(repeatDraftFromRule(null, "America/New_York"), "WEEKLY"),
+      { byDay: ["MO", "TH"], countInput: "20" },
     );
-    expect(moreOptionsSummary(emptyEventDraft(), () => undefined)).toBe(
-      "10 pts · Optional for everyone · Doesn't repeat",
+    const result = validateNewEvent(
+      draft({ start: local(9, 19), repeat }),
+      AFTERNOON,
+    );
+    expect(result.ok && result.body.recurrence_rule).toBe(
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York",
     );
   });
 
-  it("says a check-in lead only when it isn't the default", () => {
-    const summary = (checkInOpensInput: string) =>
-      moreOptionsSummary(
-        { ...emptyEventDraft(), checkInOpensInput },
-        () => undefined,
-      );
-    expect(summary("30")).toBe(
-      "10 pts · Optional for everyone · Check-in opens 30 min early · Doesn't repeat",
+  it("refuses a series it can't make, under Repeat", () => {
+    const repeat = editRepeatDraft(
+      pickRepeatPreset(emptyEventDraft().repeat, "MONTHLY"),
+      { countInput: "500" },
     );
-    expect(summary("0")).toContain("Check-in opens at the start");
-    expect(summary("")).not.toContain("Check-in");
-    expect(summary("500")).toContain("Check-in time needs a fix");
-  });
-
-  it("says how long a series runs", () => {
-    expect(repeatCaption(local(10, 20), "WEEKLY")).toBe(
-      "13 meetings, the last on Feb 2, 2027.",
+    const result = validateNewEvent(
+      draft({ start: local(9, 19), repeat }),
+      AFTERNOON,
     );
-    expect(repeatCaption(local(10, 20), null)).toBeNull();
+    expect(result.ok ? null : result.errors.repeat).toBe(
+      "A series holds 2 to 120 meetings.",
+    );
   });
 });
 
@@ -288,5 +281,114 @@ describe("applyEventType (#3730)", () => {
     );
     expect(plain.ok && plain.body).not.toHaveProperty("event_type_id");
     expect(typed.ok && typed.body.event_type_id).toBe("type-meeting");
+  });
+});
+
+// #3709: any member with `events:create` makes an event, but only an
+// `events:update` holder makes anyone required or attaches points.
+describe("a member who can't edit events", () => {
+  const now = new Date(2026, 10, 5, 14, 0);
+  const meeting = {
+    id: "type-meeting",
+    name: "Chapter meeting",
+    point_value: 10,
+    is_mandatory: true,
+  };
+
+  it("makes an optional event worth no points, whatever the points field says", () => {
+    const result = validateNewEvent(draft({ pointsInput: "25" }), now, false);
+    expect(result.ok && result.body).toMatchObject({
+      point_value: 0,
+      is_mandatory: false,
+    });
+  });
+
+  it("ignores a points field it can't see, even one that wouldn't parse", () => {
+    const result = validateNewEvent(draft({ pointsInput: "1.5" }), now, false);
+    expect(result.ok).toBe(true);
+  });
+
+  it.each([
+    ["for everyone", { everyone: "required" as const, roles: {} }],
+    [
+      "for a role",
+      {
+        everyone: "optional" as const,
+        roles: { officers: "required" as const },
+      },
+    ],
+  ])("can't make the event required %s", (_, attendance) => {
+    const result = validateNewEvent(draft({ attendance }), now, false);
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.errors.attendance).toBe(
+      "Only officers who manage events can make one required. Set it to optional.",
+    );
+  });
+
+  it("may still leave a role out", () => {
+    const result = validateNewEvent(
+      draft({
+        attendance: {
+          everyone: "optional",
+          roles: { pledges: "not_invited" },
+        },
+      }),
+      now,
+      false,
+    );
+    expect(result.ok && result.body.excluded_role_ids).toEqual(["pledges"]);
+  });
+
+  it("takes only a type's name, not its points or required default", () => {
+    expect(applyEventType(emptyEventDraft(), meeting, false)).toEqual({
+      eventTypeId: "type-meeting",
+      name: "Chapter meeting",
+      typeFilledName: "Chapter meeting",
+    });
+  });
+});
+
+// #4818: an hour pressed in the Calendar's Day grid.
+describe("calendarHourStart", () => {
+  const day = local(6, 0);
+  it("starts a later hour on the hour", () => {
+    expect(calendarHourStart(day, 19, AFTERNOON)).toEqual(local(6, 19));
+    expect(calendarHourStart(local(7, 0), 9, AFTERNOON)).toEqual(local(7, 9));
+  });
+
+  it("starts the hour under way at the next quarter hour, which the form accepts", () => {
+    const start = calendarHourStart(day, 14, AFTERNOON);
+    expect(start).toEqual(local(6, 14, 30));
+    expect(validateNewEvent(draft({ start, end: null }), AFTERNOON).ok).toBe(
+      true,
+    );
+  });
+
+  it("offers nothing for an hour that is over", () => {
+    expect(calendarHourStart(day, 13, AFTERNOON)).toBeNull();
+    expect(calendarHourStart(local(5, 0), 20, AFTERNOON)).toBeNull();
+  });
+});
+
+// #5113: the Calendar's +, with a day picked.
+describe("pickedDayStart", () => {
+  it("starts a later day at the usual hour", () => {
+    expect(pickedDayStart(local(9, 0), EVENING)).toEqual(local(9, 19));
+  });
+
+  it("keeps today at the usual hour while it is ahead", () => {
+    expect(pickedDayStart(local(6, 0), AFTERNOON)).toEqual(local(6, 19));
+  });
+
+  it("keeps today, at the next quarter hour, once the usual hour has passed", () => {
+    const start = pickedDayStart(local(6, 0), EVENING);
+    expect(start).toEqual(local(6, 19, 45));
+    expect(validateNewEvent(draft({ start, end: null }), EVENING).ok).toBe(
+      true,
+    );
+  });
+
+  it("leaves a day already gone to the sheet's default", () => {
+    expect(pickedDayStart(local(5, 0), AFTERNOON)).toBeNull();
   });
 });

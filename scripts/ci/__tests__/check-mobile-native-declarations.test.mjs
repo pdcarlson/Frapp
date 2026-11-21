@@ -14,6 +14,7 @@ import {
   ANDROID_REMOVED_PERMISSIONS,
   ANDROID_RUNTIME_PERMISSIONS,
   ANDROID_TEMPLATE_PERMISSIONS,
+  IOS_BACKGROUND_MODES,
   IOS_PURPOSE_STRINGS,
   MANIFESTLESS_REQUIRED_REASON_USERS,
   androidPermissionProblems,
@@ -42,7 +43,7 @@ const KEYS = "NSPrivacyAccessedAPICategoryActiveKeyboards";
 
 /** The Info.plist the roster describes, plus the keys a real one also carries. */
 function rosterInfoPlist(extra = {}) {
-  const plist = { CFBundleDisplayName: "Frapp", ITSAppUsesNonExemptEncryption: false };
+  const plist = { CFBundleDisplayName: "Frapp", ITSAppUsesNonExemptEncryption: false, UIBackgroundModes: [...IOS_BACKGROUND_MODES] };
   for (const [key, { text }] of IOS_PURPOSE_STRINGS) plist[key] = text;
   return { ...plist, ...extra };
 }
@@ -59,6 +60,13 @@ function manifestOf(entries) {
 
 const REMOVE = { "tools:node": "remove" };
 
+/** The meeting recorder's calls the rosters name, as its device file makes them. */
+const RECORDER =
+  "requestRecordingPermissionsAsync( requestNotificationPermissionsAsync( setAudioModeAsync( allowsBackgroundRecording";
+
+/** The calls every requester but location's makes: the scanner, the picker, the recorder and dictation. */
+const NOT_LOCATION = `useCameraPermissions( requestMediaLibraryPermissionsAsync( requestPermissionsAsync( ${RECORDER}`;
+
 /** The app manifest `expo config --type introspect` returned when this gate landed. */
 function currentManifest() {
   return manifestOf([
@@ -70,7 +78,12 @@ function currentManifest() {
     ["android.permission.CAMERA"],
     ["android.permission.ACCESS_COARSE_LOCATION"],
     ["android.permission.ACCESS_FINE_LOCATION"],
-    ["android.permission.RECORD_AUDIO", REMOVE],
+    // The meeting recorder's, from expo-audio's plugin.
+    ["android.permission.RECORD_AUDIO"],
+    ["android.permission.MODIFY_AUDIO_SETTINGS"],
+    ["android.permission.POST_NOTIFICATIONS"],
+    ["android.permission.FOREGROUND_SERVICE"],
+    ["android.permission.FOREGROUND_SERVICE_MICROPHONE"],
   ]);
 }
 
@@ -82,12 +95,13 @@ function pod(packageName, categories = {}, hasManifest = false) {
 function currentScan() {
   return [
     pod("@stripe/stripe-react-native", { [UD]: ["ios/StripeSdkImpl.swift"] }),
+    pod("expo-document-picker", { [FT]: ["ios/DocumentPickerModule.swift"] }),
     pod("expo-eas-client", { [UD]: ["EASClient/EASClientID.swift"] }),
     pod("expo-sharing", { [UD]: ["SharingModule.swift"] }),
     pod("expo-updates", { [UD]: ["EXUpdates/UpdatesConfigOverride.swift"] }),
     pod("expo-file-system", { [DISK]: ["FileSystemModule.swift"], [FT]: ["FileSystemPath.swift"] }, true),
     pod("react-native", { [BOOT]: ["React/Fabric/RCTConversions.h"], [FT]: ["x.mm"], [UD]: ["y.mm"] }, true),
-    pod("expo-camera"),
+    pod("expo-image-picker"),
   ];
 }
 
@@ -102,12 +116,12 @@ test("the roster's own Info.plist passes", () => {
 });
 
 test("an omitted option's plugin default fails (blind spot 1)", () => {
-  // What deleting expo-camera's `"microphonePermission": false` ships.
+  // What deleting expo-secure-store's `"faceIDPermission": false` ships.
   const problems = purposeStringProblems(
-    rosterInfoPlist({ NSMicrophoneUsageDescription: "Allow $(PRODUCT_NAME) to access your microphone" }),
+    rosterInfoPlist({ NSFaceIDUsageDescription: "Allow $(PRODUCT_NAME) to access your Face ID biometric data." }),
   );
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /NSMicrophoneUsageDescription.*not in IOS_PURPOSE_STRINGS/);
+  assert.match(problems[0], /NSFaceIDUsageDescription.*not in IOS_PURPOSE_STRINGS/);
 });
 
 test("a key written by a vendor option spelled any way, or by hand, fails (blind spot 2)", () => {
@@ -160,28 +174,27 @@ test("every roster entry's requester call exists in the app today", () => {
   assert.deepEqual(requesterProblems(read), []);
 });
 
+const LOCATION_GONE = (call) =>
+  [
+    `NSLocationWhenInUseUsageDescription: apps/mobile/lib/location.ts no longer calls ${call}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
+    `android.permission.ACCESS_FINE_LOCATION: apps/mobile/lib/location.ts no longer calls ${call}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
+    `android.permission.ACCESS_COARSE_LOCATION: apps/mobile/lib/location.ts no longer calls ${call}. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy`,
+  ];
+
 test("a purpose string whose feature is gone fails", () => {
-  const read = (file) => (file.endsWith("check-in.tsx") ? "export default function CheckIn() {}" : "useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync(");
-  const problems = requesterProblems(read);
-  assert.deepEqual(
-    problems,
-    [
-      "NSCameraUsageDescription: apps/mobile/app/(app)/check-in.tsx no longer calls useCameraPermissions. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy",
-      "android.permission.CAMERA: apps/mobile/app/(app)/check-in.tsx no longer calls useCameraPermissions. If the feature is gone, drop the permission and its roster entry; if the call moved, update requestedBy",
-    ],
-  );
+  const read = (file) => (file.endsWith("location.ts") ? "export function here() {}" : NOT_LOCATION);
+  assert.deepEqual(requesterProblems(read), LOCATION_GONE("requestForegroundPermissionsAsync"));
 });
 
 test("a requester call that survives only in a comment fails", () => {
-  const live = "requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync(";
+  const live = NOT_LOCATION;
   for (const leftover of [
-    "// was useCameraPermissions() before the check-in rebuild",
-    "/* useCameraPermissions(); */",
-    "/**\n * Calls useCameraPermissions() on mount.\n */",
+    "// was requestForegroundPermissionsAsync() before the study-zone rebuild",
+    "/* requestForegroundPermissionsAsync(); */",
+    "/**\n * Calls requestForegroundPermissionsAsync() on mount.\n */",
   ]) {
-    const problems = requesterProblems((file) => (file.endsWith("check-in.tsx") ? leftover : live));
-    assert.equal(problems.length, 2, leftover);
-    assert.match(problems[0], /check-in\.tsx no longer calls useCameraPermissions/);
+    const problems = requesterProblems((file) => (file.endsWith("location.ts") ? leftover : live));
+    assert.deepEqual(problems, LOCATION_GONE("requestForegroundPermissionsAsync"), leftover);
   }
 });
 
@@ -207,7 +220,7 @@ test("a /* or // inside a string, a line comment, or JSX text can't swallow a li
 });
 
 test("a deleted requester file fails", () => {
-  const problems = requesterProblems((file) => (file.endsWith("location.ts") ? null : "useCameraPermissions( requestMediaLibraryPermissionsAsync("));
+  const problems = requesterProblems((file) => (file.endsWith("location.ts") ? null : NOT_LOCATION));
   assert.ok(problems.some((p) => p === "NSLocationWhenInUseUsageDescription: its requester apps/mobile/lib/location.ts no longer exists"), problems.join("\n"));
 });
 
@@ -223,7 +236,7 @@ test("a declined linked-only purpose string fails, because App Store Connect rej
 });
 
 test("a linked-only key has no requester to check", () => {
-  const live = "useCameraPermissions( requestForegroundPermissionsAsync( requestMediaLibraryPermissionsAsync(";
+  const live = `requestForegroundPermissionsAsync( ${NOT_LOCATION}`;
   assert.deepEqual(requesterProblems(() => live), []);
 });
 
@@ -232,9 +245,11 @@ test("every iOS roster entry names exactly one of a requester or a linked API", 
     const linked = entry.linkedBy !== undefined;
     assert.equal(linked, entry.requestedBy === null, `${key}: requestedBy is null exactly when linkedBy is set`);
     if (linked) {
-      for (const field of ["packageName", "symbol", "requestCall"]) {
+      for (const field of ["packageName", "symbol"]) {
         assert.equal(typeof entry.linkedBy[field], "string", `${key}: linkedBy.${field}`);
       }
+      const calls = [entry.linkedBy.requestCall].flat();
+      assert.ok(calls.length > 0 && calls.every((call) => typeof call === "string" && call.endsWith("(")), `${key}: linkedBy.requestCall`);
     } else {
       assert.equal(typeof entry.requestedBy?.file, "string", `${key}: requestedBy.file`);
       assert.equal(typeof entry.requestedBy?.call, "string", `${key}: requestedBy.call`);
@@ -312,7 +327,8 @@ test("the app never makes a linked-only key's request today", () => {
   assert.ok(sources.length > 50, "read the real app sources");
   for (const [, entry] of IOS_PURPOSE_STRINGS) {
     if (!entry.linkedBy) continue;
-    const callers = sources.filter((s) => withoutComments(s.text).includes(entry.linkedBy.requestCall)).map((s) => s.file);
+    const calls = [entry.linkedBy.requestCall].flat();
+    const callers = sources.filter((s) => calls.some((call) => withoutComments(s.text).includes(call))).map((s) => s.file);
     assert.deepEqual(callers, []);
   }
 });
@@ -324,8 +340,9 @@ test("the manifest introspection returned when this gate landed passes", () => {
 });
 
 test("a declined camera option on the picker fails, the #2296 defect", () => {
-  // `cameraPermission: false` on expo-image-picker compiles to
-  // withBlockedPermissions: the add disappears and a removal takes its place.
+  // `cameraPermission: false` on expo-image-picker (or the camera in
+  // `android.blockedPermissions`) compiles to withBlockedPermissions: the add
+  // disappears and a removal takes its place, which kills s18's Scan code.
   const manifest = currentManifest();
   manifest.manifest["uses-permission"] = manifest.manifest["uses-permission"].filter(
     (entry) => entry.$["android:name"] !== "android.permission.CAMERA",
@@ -344,26 +361,37 @@ test("a removal alongside the add still fails, since the removal wins the merge"
 });
 
 test("a new removal of a library's permission fails", () => {
-  // POST_NOTIFICATIONS comes from expo-notifications' own manifest, which
+  // WAKE_LOCK comes from expo-notifications' own manifest, which
   // introspection never sees; a removal in the app manifest would strip it.
   const manifest = currentManifest();
-  manifest.manifest["uses-permission"].push({ $: { "android:name": "android.permission.POST_NOTIFICATIONS", ...REMOVE } });
+  manifest.manifest["uses-permission"].push({ $: { "android:name": "android.permission.WAKE_LOCK", ...REMOVE } });
   const problems = androidPermissionProblems(manifest);
   assert.equal(problems.length, 1);
-  assert.match(problems[0], /removes android\.permission\.POST_NOTIFICATIONS.*not in ANDROID_REMOVED_PERMISSIONS/);
+  assert.match(problems[0], /removes android\.permission\.WAKE_LOCK.*not in ANDROID_REMOVED_PERMISSIONS/);
 });
 
-test("losing the RECORD_AUDIO removal fails, since the picker then adds it (blind spot 1, Android half)", () => {
+test("a declined microphone option on the picker fails, since it strips the recorder's permission", () => {
+  // `microphonePermission: false` on expo-image-picker compiles to
+  // withBlockedPermissions(RECORD_AUDIO), which is how the app shipped before
+  // it had a recorder.
   const manifest = currentManifest();
   manifest.manifest["uses-permission"] = manifest.manifest["uses-permission"].map((entry) =>
     entry.$["android:name"] === "android.permission.RECORD_AUDIO"
-      ? { $: { "android:name": "android.permission.RECORD_AUDIO" } }
+      ? { $: { "android:name": "android.permission.RECORD_AUDIO", ...REMOVE } }
       : entry,
   );
   const problems = androidPermissionProblems(manifest);
   assert.equal(problems.length, 2);
-  assert.match(problems[0], /declares android\.permission\.RECORD_AUDIO, which is in neither/);
-  assert.match(problems[1], /no longer removes android\.permission\.RECORD_AUDIO/);
+  assert.match(problems[0], /doesn't declare android\.permission\.RECORD_AUDIO/);
+  assert.match(problems[1], /removes android\.permission\.RECORD_AUDIO.*#2296/);
+});
+
+test("a removal the roster lists must still be there", () => {
+  const removed = new Map([["android.permission.READ_CONTACTS", "nothing reads contacts"]]);
+  assert.match(
+    androidPermissionProblems(currentManifest(), { removed }).join("\n"),
+    /no longer removes android\.permission\.READ_CONTACTS/,
+  );
 });
 
 test("a manifest with no permission list fails instead of checking nothing", () => {
@@ -400,15 +428,19 @@ test("a template permission that disappears fails, so the roster stays exact", (
   ]);
 });
 
-test("no background mode ships today, and one a plugin adds fails", () => {
+test("only the recorder's audio background mode ships, and one a plugin adds fails", () => {
+  assert.deepEqual(IOS_BACKGROUND_MODES, ["audio"]);
   assert.deepEqual(backgroundModeProblems(rosterInfoPlist()), []);
-  assert.deepEqual(backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: [] })), []);
+  assert.deepEqual(backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: [] })), [
+    'iOS no longer ships the "audio" background mode the roster lists',
+  ]);
+  assert.deepEqual(backgroundModeProblems({}, []), []);
   // isIosBackgroundLocationEnabled: true
-  const problems = backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: ["location"] }));
+  const problems = backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: ["audio", "location"] }));
   assert.equal(problems.length, 1);
   assert.match(problems[0], /"location" background mode.*Guideline 2\.5\.4/);
   assert.match(backgroundModeProblems(rosterInfoPlist({ UIBackgroundModes: "location" }))[0], /not a list/);
-  assert.deepEqual(backgroundModeProblems(rosterInfoPlist(), ["remote-notification"]), [
+  assert.deepEqual(backgroundModeProblems(rosterInfoPlist(), ["audio", "remote-notification"]), [
     'iOS no longer ships the "remote-notification" background mode the roster lists',
   ]);
 });
@@ -626,7 +658,7 @@ test("swiftPackageFiles finds spm_dependency in a podspec or a Ruby file beside 
 test("swiftPackageProblems fails a Swift package unless pods link as dynamic frameworks", () => {
   const pods = [
     { packageName: "@stripe/stripe-react-native", swiftPackageFiles: ["stripe_spm.rb"] },
-    { packageName: "expo-camera", swiftPackageFiles: [] },
+    { packageName: "expo-image-picker", swiftPackageFiles: [] },
   ];
   for (const podfileProperties of [undefined, {}, { "ios.useFrameworks": "static" }]) {
     const problems = swiftPackageProblems(pods, podfileProperties);
@@ -686,13 +718,22 @@ const AGGREGATION_RB = `
     end
 `;
 
+// What a roster pod's source holds by default: one use of each category it was
+// audited for, so the fixture passes until a test changes it.
+const SAMPLE_USE = {
+  [UD]: "UserDefaults.standard",
+  NSPrivacyAccessedAPICategoryFileTimestamp: "let d = attrs[.modificationDate]; url.creationDate",
+};
+const auditedSource = (name) =>
+  MANIFESTLESS_REQUIRED_REASON_USERS.get(name).map((category) => SAMPLE_USE[category]).join("; ");
+
 function fixture({
   infoPlist = rosterInfoPlist(),
   manifest = currentManifest(),
   declared = DECLARED,
-  podSource = "UserDefaults.standard",
+  podSource,
   modules,
-  checkIn = "useCameraPermissions();",
+  location = "requestForegroundPermissionsAsync();",
   reactNativeSource = "[[NSUserDefaults standardUserDefaults] boolForKey:k]; mach_absolute_time();",
   aggregation = AGGREGATION_RB,
   reactNativePath = true,
@@ -704,15 +745,17 @@ function fixture({
     mkdirSync(dirname(join(root, rel)), { recursive: true });
     writeFileSync(join(root, rel), text);
   };
-  put("apps/mobile/app/(app)/check-in.tsx", checkIn);
-  put("apps/mobile/lib/location.ts", "requestForegroundPermissionsAsync();");
+  put("apps/mobile/components/check-in/check-in-scanner.tsx", "useCameraPermissions();");
+  put("apps/mobile/lib/location.ts", location);
+  put("apps/mobile/lib/minutes/recorder/device.ts", RECORDER);
+  put("apps/mobile/lib/dictation/speech.ts", "requestPermissionsAsync();");
   put("apps/mobile/lib/chat/attachment-upload.ts", "requestMediaLibraryPermissionsAsync();");
   const podDirs = {};
   podDirs["expo-location"] = join(root, "node_modules/expo-location/ios");
   put("node_modules/expo-location/ios/Requesters/MotionActivityPermissionRequester.swift", motionRequester);
   for (const name of MANIFESTLESS_REQUIRED_REASON_USERS.keys()) {
     podDirs[name] = join(root, "node_modules", name, "ios");
-    put(`node_modules/${name}/ios/Module.swift`, podSource);
+    put(`node_modules/${name}/ios/Module.swift`, podSource ?? auditedSource(name));
   }
   put("node_modules/react-native/React/Base/RCTThing.mm", reactNativeSource);
   if (aggregation !== null) put("node_modules/react-native/scripts/cocoapods/privacy_manifest_utils.rb", aggregation);
@@ -754,13 +797,13 @@ test("main passes a coherent project, and asks the CLI for iOS introspection and
 test("main reports each check's failure together", () => {
   const f = fixture({
     infoPlist: rosterInfoPlist({ NSMicrophoneUsageDescription: "Allow $(PRODUCT_NAME) to access your microphone" }),
-    manifest: manifestOf([["android.permission.CAMERA", REMOVE]]),
+    manifest: manifestOf([["android.permission.WAKE_LOCK", REMOVE]]),
     podSource: "UserDefaults.standard; UITextInputMode.activeInputModes",
   });
   try {
     const text = main(f.root, f.run).violations.join("\n");
     assert.match(text, /NSMicrophoneUsageDescription/);
-    assert.match(text, /removes android\.permission\.CAMERA/);
+    assert.match(text, /removes android\.permission\.WAKE_LOCK/);
     assert.match(text, /ActiveKeyboards API/);
   } finally {
     f.cleanup();
@@ -781,10 +824,14 @@ test("main reads a linked-only key's symbol from the pod autolinking lists, and 
 });
 
 test("main reports a purpose string whose requester is gone", () => {
-  const f = fixture({ checkIn: "// useCameraPermissions() went with the old scanner\nexport default function CheckIn() {}" });
+  const f = fixture({ location: "// requestForegroundPermissionsAsync() went with study zones\nexport function here() {}" });
   try {
     const { violations } = main(f.root, f.run);
-    assert.deepEqual(violations.map((v) => v.split(":")[0]), ["NSCameraUsageDescription", "android.permission.CAMERA"]);
+    assert.deepEqual(violations.map((v) => v.split(":")[0]), [
+      "NSLocationWhenInUseUsageDescription",
+      "android.permission.ACCESS_FINE_LOCATION",
+      "android.permission.ACCESS_COARSE_LOCATION",
+    ]);
   } finally {
     f.cleanup();
   }

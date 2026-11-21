@@ -3,8 +3,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
+import {
+  taskNeedsSignOff,
+  type TaskAudience,
+  type TaskProofKind,
+} from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { useViewerUserId } from "./use-user";
 import { useChapterScope } from "./chapter-scope";
+import { invalidatePointReads } from "./use-points";
+import { activityKeys } from "./use-activity";
 
 /**
  * Query keys for this module.
@@ -46,9 +54,21 @@ interface CachedTask {
   due_date?: string;
   due_at?: string | null;
   completed_at?: string | null;
+  /** Who marked it done (#5732). */
+  completed_by?: string | null;
   confirmed_at?: string | null;
   points_awarded?: boolean;
+  point_reward?: number | null;
+  proof_kind?: string;
+  sent_back_at?: string | null;
+  sent_back_reason?: string | null;
   subtasks?: TaskSubtask[];
+  /** The repeating series this task is a copy of (#5119). */
+  series_id?: string | null;
+  series?: TaskSeriesSummary | null;
+  /** The group task this is one member's copy of (#4295 step 3). */
+  group_id?: string | null;
+  group?: TaskGroupSummary | null;
 }
 
 /** One line of a task's checklist (#4003), as the task reads carry it. */
@@ -60,8 +80,12 @@ type TaskPatch = Partial<
     | "status"
     | "stored_status"
     | "completed_at"
+    | "completed_by"
     | "confirmed_at"
     | "points_awarded"
+    | "sent_back_at"
+    | "sent_back_reason"
+    | "proof_kind"
   >
 >;
 
@@ -336,26 +360,78 @@ function invalidateTask(
  * else, which is strictly worse than no parameter: two callers asking for
  * different assignees got two entries holding identical data.
  *
+ * The list is read in pages ({@link readAllTaskPages}) but cached whole.
+ *
  * Assignee scoping is the server's, and no client argument can reproduce or
  * override it: `TaskService.list` returns the chapter's whole task set to a
  * `tasks:manage` holder and only the caller's own rows to everyone else. A
  * surface drawn as a personal board therefore has to filter by assignee itself.
  */
-export function useTasks() {
+export function useTasks(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   // No chapter-scoped read without a chapter to scope it to (#4094).
   const scope = useChapterScope();
   return useQuery({
     queryKey: taskKeys.lists(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/tasks");
-      if (error) throw error;
-      return data;
-    },
+    queryFn: ({ signal }) => readAllTaskPages(client, signal),
     staleTime: 30_000,
-    enabled: scope === "chapter",
+    enabled: scope === "chapter" && (options.enabled ?? true),
   });
+}
+
+/** Rows per `GET /v1/tasks` page: the route's largest `limit` (#4037). */
+export const TASK_PAGE_SIZE = 200;
+
+type TaskPageRow = { id: string; created_at: string };
+
+/**
+ * Pages read before the list is taken to be runaway (100,000 rows): far past
+ * any chapter, so reaching it means the server is not honouring the cursor.
+ */
+const TASK_PAGE_CEILING = 500;
+
+/**
+ * Every task the server scopes to the caller, read a page at a time
+ * (#4037). Each request is bounded, and the cursor is the last row's
+ * `created_at` and `id` passed back exactly as received: the server orders
+ * by both, so no row repeats or drops at a page edge. A page shorter than
+ * the limit is the last; the server fills every page it can, even under a
+ * row cap below the limit (`SupabaseTaskRepository.findByChapter`). The
+ * result is one array, the shape the board and every optimistic write on
+ * this cache expect.
+ *
+ * An API from before paging ignores the parameters and answers the whole
+ * list every time (a rollback with a newer client live). That answer is
+ * taken as the list rather than looped on: a page longer than the limit, or
+ * one ending on the row the cursor already named, ends the read.
+ */
+export async function readAllTaskPages(
+  client: ReturnType<typeof useFrappClient>,
+  signal?: AbortSignal,
+): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  let cursor: { before: string; before_id: string } | undefined;
+  for (let pages = 0; ; pages += 1) {
+    if (pages === TASK_PAGE_CEILING) {
+      throw new Error("The task list did not end; stopped paging.");
+    }
+    const { data, error } = await client.GET("/v1/tasks", {
+      params: { query: { limit: TASK_PAGE_SIZE, ...cursor } },
+      signal,
+    });
+    if (error) throw error;
+    const page = (Array.isArray(data) ? data : []) as TaskPageRow[];
+    // The server ignored `limit`: this is already the whole list.
+    if (page.length > TASK_PAGE_SIZE) return page;
+    const last = page[TASK_PAGE_SIZE - 1];
+    // The server ignored the cursor and sent the first page again.
+    if (cursor && last?.id === cursor.before_id) break;
+    rows.push(...page);
+    if (!last) break;
+    cursor = { before: last.created_at, before_id: last.id };
+  }
+  return rows;
 }
 
 export function useTask(id: string) {
@@ -363,8 +439,9 @@ export function useTask(id: string) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: taskKeys.detail(chapterId, id),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/tasks/{id}", {
+        signal,
         params: { path: { id } },
       });
       if (error) throw error;
@@ -389,13 +466,34 @@ export function useCreateTask() {
     mutationFn: async (body: {
       title: string;
       description?: string;
-      assignee_id: string;
+      /** Who it is for. Send exactly one of this, `assignee_ids` or `audience`. */
+      assignee_id?: string;
+      /**
+       * Several people picked by hand (2026-11-18): each gets their own copy.
+       * Active members only; a list of one is a task for that person.
+       */
+      assignee_ids?: string[];
+      /**
+       * A task for everyone instead (#4295 step 3): each active member gets
+       * their own copy. It can't repeat or carry photos yet.
+       */
+      audience?: TaskAudience;
+      /** With `audience`: only this role's active holders (2026-11-18). */
+      audience_role_id?: string;
+      /** With `audience`: only this chapter group's active members. */
+      audience_group_id?: string;
       due_date: string;
       /** The moment it is due, when it has a time of day (#4003). */
       due_at?: string;
       /** Subtask titles, in order (#4003). */
       subtasks?: string[];
       point_reward?: number;
+      /** Reference photos' `storage_path`s, in order, up to 6 (#4635). */
+      reference_photo_paths?: string[];
+      /** What Mark done needs (#4635). */
+      proof_kind?: TaskProofKind;
+      /** Repeat on this rule (#5119); the task is the series' first copy. */
+      recurrence_rule?: string;
     }) => {
       const { data, error } = await client.POST("/v1/tasks", { body });
       if (error) throw error;
@@ -409,6 +507,21 @@ export function useCreateTask() {
 
 /** The fields an officer can change on a task after it is made (#4296). */
 export type TaskEdit = components["schemas"]["UpdateTaskDto"];
+
+/**
+ * "This task only" (`instance`) or "All upcoming tasks" (`series`) on a copy
+ * of a repeating task (#5119).
+ */
+export type TaskEditScope = NonNullable<TaskEdit["scope"]>;
+
+/** How a task read says it repeats (#5119); null on a task that doesn't. */
+export type TaskSeriesSummary = components["schemas"]["TaskSeriesSummaryDto"];
+
+/**
+ * How far a group task is (#4295 step 3), on each of its copies; null on a
+ * task given to one person.
+ */
+export type TaskGroupSummary = components["schemas"]["TaskGroupSummaryDto"];
 
 /**
  * An officer edits a task (#4296). Send only the fields that changed; `null`
@@ -431,12 +544,25 @@ export function useUpdateTask() {
     },
     // Returned, so a form awaiting the save closes onto the saved values
     // rather than the old ones for a refetch's length.
-    onSettled: (_data, _error, { id }) =>
+    onSettled: (_data, _error, { id, body }) =>
       Promise.all([
         queryClient.invalidateQueries({
-          queryKey: taskKeys.detail(chapterId, id),
+          // An edit for everyone (#4295 step 3) changes every copy, so every
+          // task's detail is read again, not just the one it went through.
+          queryKey:
+            body.scope === "group"
+              ? (["tasks", chapterId, "detail"] as const)
+              : taskKeys.detail(chapterId, id),
         }),
         queryClient.invalidateQueries({ queryKey: taskKeys.lists(chapterId) }),
+        // Activity draws a task's card from its own read, not the task's: an
+        // edit from that card (#4512) would otherwise come back showing the
+        // old title, assignee and points.
+        chapterId
+          ? queryClient.invalidateQueries({
+              queryKey: activityKeys.chapter(chapterId),
+            })
+          : undefined,
       ]),
   });
 }
@@ -460,6 +586,8 @@ export function useUpdateTaskStatus() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
+  // Who is marking it done, for the cache's `completed_by` (#5732).
+  const viewerId = useViewerUserId();
   return useMutation({
     mutationKey: ["tasks", "update-task-status"],
     // No retry. The web client retries a failed mutation twice when the
@@ -476,7 +604,16 @@ export function useUpdateTaskStatus() {
       body,
     }: {
       id: string;
-      body: { status: TaskStatus };
+      /**
+       * Proof and a reply ride with `COMPLETED` only (#4635): `storage_path`s
+       * of proof photos already uploaded, a link, a note to the officer.
+       */
+      body: {
+        status: TaskStatus;
+        proof_photo_paths?: string[];
+        proof_link?: string;
+        completion_note?: string;
+      };
     }) => {
       const { data, error } = await client.PATCH("/v1/tasks/{id}/status", {
         params: { path: { id } },
@@ -505,6 +642,15 @@ export function useUpdateTaskStatus() {
       // alone otherwise, so a "Done <weekday>" subtitle does not blank for a beat.
       if (body.status === "COMPLETED") {
         patch.completed_at = new Date().toISOString();
+        // The server stamps the caller: an officer marking it done for them
+        // reads as the officer's, not the assignee's, before the refetch.
+        patch.completed_by = viewerId;
+        // A task with no points and no proof is Done as it is marked (#4635):
+        // the server confirms it in the same write.
+        if (row && row.proof_kind !== undefined && !taskNeedsSignOff(row)) {
+          patch.confirmed_at = patch.completed_at;
+          patch.points_awarded = true;
+        }
       }
       // The assignee taking back their own "done" (`COMPLETED → IN_PROGRESS`):
       // the server clears `completed_at` on that move, so a done row doesn't
@@ -514,6 +660,12 @@ export function useUpdateTaskStatus() {
         (row?.stored_status ?? row?.status) === "COMPLETED"
       ) {
         patch.completed_at = null;
+        patch.completed_by = null;
+        // Taking back a Done that needed no sign-off unconfirms it too.
+        if (row?.points_awarded) {
+          patch.confirmed_at = null;
+          patch.points_awarded = false;
+        }
       }
       return applyTaskPatch(queryClient, chapterId, id, patch);
     },
@@ -523,6 +675,61 @@ export function useUpdateTaskStatus() {
     },
     onSettled: (_data, _error, { id }, context) => {
       invalidateTask(queryClient, context?.chapterId ?? chapterId, id);
+    },
+  });
+}
+
+/**
+ * A signed upload URL for a task photo (#4565): a reference photo on create or
+ * edit, or a proof photo with Mark done. The service-hours proof flow: PUT the
+ * bytes to `upload_url`, then send `storage_path` on the write.
+ */
+export function useRequestTaskPhotoUploadUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationKey: ["tasks", "request-task-photo-upload-url"],
+    mutationFn: async (body: {
+      filename: string;
+      content_type: string;
+      /** Declared so the API's own size check answers with a readable 400. */
+      size_bytes?: number;
+    }) => {
+      const { data, error } = await client.POST("/v1/tasks/photo-upload-url", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/**
+ * A short-lived link to one of a task's photos (#4635), for its assignee or a
+ * `tasks:manage` holder. Keyed on the photo's id, which a replaced photo never
+ * reuses, and kept well inside the link's lifetime so a cached link never
+ * outlives it. Pass `photoId: null` to read nothing.
+ */
+export function useTaskPhotoUrl(taskId: string, photoId: string | null) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    // Its own root, not under `["tasks"]`: a task write invalidates the
+    // task keys, and a photo link refetched with them would be signed anew,
+    // change its `src` and send the browser for the whole image again.
+    queryKey: ["task-photo-url", chapterId, taskId, photoId],
+    enabled: Boolean(photoId && taskId),
+    // Under the link's hour (`getSignedDownloadUrl`'s default), so a cached
+    // link is never handed out expired.
+    staleTime: 45 * 60 * 1000,
+    gcTime: 50 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET(
+        "/v1/tasks/{id}/photos/{photoId}/url",
+        { signal, params: { path: { id: taskId, photoId: photoId! } } },
+      );
+      if (error) throw error;
+      return data.url;
     },
   });
 }
@@ -574,10 +781,8 @@ export function useConfirmTask() {
     },
     onSettled: (_data, _error, id, context) => {
       invalidateTask(queryClient, context?.chapterId ?? chapterId, id);
-      // Broad prefix on purpose: points keys are `["points", chapterId, …]`, so
-      // this matches the balance, the leaderboard and the transaction list. A
-      // confirm is the one task action that moves the ledger.
-      queryClient.invalidateQueries({ queryKey: ["points"] });
+      // A confirm is the one task action that moves the ledger.
+      void invalidatePointReads(queryClient);
     },
   });
 }
@@ -609,19 +814,32 @@ export function useRejectTask() {
       body,
     }: {
       id: string;
-      body?: { comment?: string };
+      /**
+       * `comment` is the reason, which the server requires (#4635): it stays
+       * on the task for the assignee. `require_photo` raises the task's proof
+       * to Photo. Both apps' Send back sheets ask for the reason before they
+       * send.
+       */
+      body: { comment: string; require_photo?: boolean };
     }) => {
       const { data, error } = await client.POST("/v1/tasks/{id}/reject", {
         params: { path: { id } },
-        body: body ?? {},
+        body,
       });
       if (error) throw error;
       return data;
     },
-    onMutate: async ({ id }) => {
+    onMutate: async ({ id, body }) => {
       await cancelTaskQueries(queryClient, chapterId, id);
       const row = readCachedTask(queryClient, chapterId, id);
       return applyTaskPatch(queryClient, chapterId, id, {
+        sent_back_at: new Date().toISOString(),
+        sent_back_reason: body.comment.trim(),
+        ...(body.require_photo ? { proof_kind: "photo" } : {}),
+        // A Done that needed no sign-off goes back unconfirmed (#4635).
+        ...(row?.points_awarded
+          ? { points_awarded: false, confirmed_at: null }
+          : {}),
         status: deriveDisplayStatus(
           "IN_PROGRESS",
           row?.due_date,
@@ -644,16 +862,23 @@ export function useRejectTask() {
 
 /**
  * Delete a task. **Not optimistic**, per `spec/ui/resilience/`: creating and
- * updating are optimistic, deleting and paying are pessimistic.
+ * updating are optimistic, deleting and paying are pessimistic. On a copy of
+ * a repeating task, `scope: "series"` is "All upcoming tasks" (#5119): it
+ * stops the repeat, and the server deletes the open copy only if no one has
+ * started it.
  */
 export function useDeleteTask() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["tasks", "delete-task"],
-    mutationFn: async (id: string) => {
+    mutationFn: async (
+      target: string | { id: string; scope?: TaskEditScope },
+    ) => {
+      const { id, scope } =
+        typeof target === "string" ? { id: target, scope: undefined } : target;
       const { data, error } = await client.DELETE("/v1/tasks/{id}", {
-        params: { path: { id } },
+        params: { path: { id }, ...(scope ? { query: { scope } } : {}) },
       });
       if (error) throw error;
       return data;
@@ -661,6 +886,52 @@ export function useDeleteTask() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: taskKeys.all });
     },
+  });
+}
+
+/** What `POST /v1/tasks/{id}/group/remove` answers (#5492). */
+export type RemoveFromTaskGroupResult =
+  components["schemas"]["RemoveFromTaskGroupResponseDto"];
+
+/**
+ * Take members out of a group task (#5492): their copies are deleted, everyone
+ * else's stay. `id` is any copy of the group. **Not optimistic**, as a delete
+ * isn't (`spec/ui/resilience/`): the server refuses a confirmed copy, and
+ * every copy, with a 400 the caller says. Every task read and Activity are
+ * read again, since each copy carries the group's counts.
+ */
+export function useRemoveFromTaskGroup() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["tasks", "remove-from-task-group"],
+    // A retry after a lost answer finds those copies gone and skips them,
+    // but a refusal is final, so the caller decides.
+    retry: false,
+    mutationFn: async ({
+      id,
+      assigneeIds,
+    }: {
+      id: string;
+      assigneeIds: string[];
+    }): Promise<RemoveFromTaskGroupResult> => {
+      const { data, error } = await client.POST("/v1/tasks/{id}/group/remove", {
+        params: { path: { id } },
+        body: { assignee_ids: assigneeIds },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSettled: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: taskKeys.all }),
+        chapterId
+          ? queryClient.invalidateQueries({
+              queryKey: activityKeys.chapter(chapterId),
+            })
+          : undefined,
+      ]),
   });
 }
 

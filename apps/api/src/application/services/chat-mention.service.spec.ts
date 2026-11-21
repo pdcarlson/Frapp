@@ -1,3 +1,6 @@
+import type { IRoleTierRepository } from '#domain/repositories/role-tier.repository.interface';
+import type { IChapterGroupRepository } from '#domain/repositories/chapter-group.repository.interface';
+import { createChapterGroupRepoMock } from '#test/helpers/chapter-group-repo.mock';
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import type { Role } from '#domain/entities/role.entity';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
@@ -5,8 +8,22 @@ import {
   ChatMentionService,
   canPingAnyRole,
   mentionRoleViews,
+  standingMentionId,
 } from './chat-mention.service';
+import { resolveMentions } from '@repo/validation';
 import type { RbacService } from './rbac.service';
+import type { ChapterPresenceReader } from './chapter-presence-reader.service';
+
+/** A presence reader that answers `online` (or `null`, a failed read). */
+function presenceOf(online: string[] | null = []) {
+  const onlineUserIds = jest
+    .fn()
+    .mockResolvedValue(online === null ? null : new Set(online));
+  return {
+    reader: { onlineUserIds } as unknown as ChapterPresenceReader,
+    onlineUserIds,
+  };
+}
 
 function role(id: string, name: string, extra: Partial<Role> = {}): Role {
   return {
@@ -21,6 +38,7 @@ function role(id: string, name: string, extra: Partial<Role> = {}): Role {
     mentionable: true,
     tier_id: null,
     permission_overrides: {},
+    self_assignable: false,
     created_at: '2026-11-06T00:00:00Z',
     ...extra,
   };
@@ -34,8 +52,8 @@ const members = [
 ];
 
 const roles = [
-  role('member', 'Member', {
-    system_key: 'MEMBER',
+  role('member', 'Everyone', {
+    system_key: 'EVERYONE',
     display_order: 5,
     mentionable: false,
   }),
@@ -44,6 +62,16 @@ const roles = [
   role('empty', 'Rush Chair', { display_order: 2 }),
 ];
 
+/** No tiers and no groups (#4076): the role-only tests read the chapter as before. */
+function noSets(): [IRoleTierRepository, IChapterGroupRepository] {
+  return [
+    {
+      findByChapter: jest.fn().mockResolvedValue([]),
+    } as unknown as IRoleTierRepository,
+    createChapterGroupRepoMock(),
+  ];
+}
+
 describe('mentionRoleViews', () => {
   it('lists roles in role order with their holders', () => {
     const views = mentionRoleViews(roles, members);
@@ -51,9 +79,22 @@ describe('mentionRoleViews', () => {
       'Officers',
       'Rush Chair',
       'Brothers',
-      'Member',
+      'everyone',
+      'here',
     ]);
     expect(views[0].member_ids).toEqual(['u1']);
+  });
+
+  it('names the Everyone role @everyone and reaches every member with it (#4191)', () => {
+    const everyone = mentionRoleViews(roles, members).find(
+      (view) => view.role_id === 'member',
+    );
+    // Dee holds Brothers and Alumni, not the Everyone role, and is still in.
+    expect(everyone).toMatchObject({
+      name: 'everyone',
+      member_ids: ['u1', 'u2', 'u3', 'u4'],
+      open_to_all: false,
+    });
   });
 
   it('carries the switch of each role, on unless an officer turned it off', () => {
@@ -67,7 +108,344 @@ describe('mentionRoleViews', () => {
       Officers: true,
       'Rush Chair': true,
       Brothers: true,
-      Member: false,
+      everyone: false,
+      here: false,
+    });
+  });
+
+  it('adds an empty @here on the Everyone switch', () => {
+    expect(mentionRoleViews(roles, members).at(-1)).toMatchObject({
+      name: 'here',
+      member_ids: [],
+      open_to_all: false,
+    });
+    const opened = roles.map((r) =>
+      r.id === 'member' ? { ...r, mentionable: true } : r,
+    );
+    expect(mentionRoleViews(opened, members).at(-1)?.open_to_all).toBe(true);
+  });
+
+  it('leaves out a role named Here, which @here now means', () => {
+    const named = [...roles, role('h', 'Here', { display_order: 4 })];
+    const views = mentionRoleViews(named, members);
+    expect(views.filter((view) => view.name.toLowerCase() === 'here')).toEqual([
+      expect.objectContaining({ name: 'here', role_id: 'member' }),
+    ]);
+  });
+
+  it('keeps @here for officers only in a chapter with no Everyone role', () => {
+    const legacy = roles.filter((r) => r.id !== 'member');
+    expect(mentionRoleViews(legacy, members).at(-1)).toMatchObject({
+      name: 'here',
+      open_to_all: false,
+    });
+  });
+
+  it('has no @here when no roles were read', () => {
+    expect(mentionRoleViews([], members)).toEqual([]);
+  });
+
+  describe('tiers and groups (#4076)', () => {
+    const tier = (id: string, name: string, position: number) => ({
+      id,
+      chapter_id: 'ch-1',
+      name,
+      position,
+      permissions: [],
+      mentionable: true,
+      created_at: '2026-11-06T00:00:00Z',
+      updated_at: '2026-11-06T00:00:00Z',
+    });
+    const group = (
+      id: string,
+      name: string,
+      kind: 'manual' | 'pledge_class' | 'class_year' | 'major' = 'manual',
+    ) => ({
+      id,
+      chapter_id: 'ch-1',
+      kind,
+      name,
+      color: null,
+      mentionable: true,
+      pledge_class_id: kind === 'pledge_class' ? 'pc-1' : null,
+      class_year: kind === 'class_year' ? 2027 : null,
+      major_key: kind === 'major' ? name.toLowerCase() : null,
+      created_at: '2026-11-06T00:00:00Z',
+      updated_at: '2026-11-06T00:00:00Z',
+    });
+    const tiered = roles.map((r) =>
+      r.id === 'officers' || r.id === 'empty'
+        ? { ...r, tier_id: 't-exec' }
+        : r.id === 'brothers'
+          ? { ...r, tier_id: 't-members' }
+          : r,
+    );
+
+    it('leaves out a major named like a role, tier, other group or member, and keeps the rest (#5778)', () => {
+      const majors = [
+        group('m-officers', 'officers', 'major'),
+        group('m-exec', 'Exec', 'major'),
+        group('m-floor', 'Third floor', 'major'),
+        group('m-ann', 'Ann', 'major'),
+        group('m-music', 'Music', 'major'),
+      ];
+      const views = mentionRoleViews(tiered, members, {
+        tiers: [tier('t-exec', 'Exec', 1)],
+        groups: [group('g-floor', 'Third floor'), ...majors],
+        memberships: [...majors, group('g-floor', 'Third floor')].map((g) => ({
+          chapter_id: 'ch-1',
+          group_id: g.id,
+          user_id: 'u2',
+          kind: g.kind,
+        })),
+      });
+      expect(
+        views.filter((view) => view.kind === 'group').map((v) => v.role_id),
+      ).toEqual(['g-floor', 'm-music']);
+    });
+
+    describe('class standings (#5786)', () => {
+      const year = (id: string, classYear: number) => ({
+        ...group(id, `Class of ${classYear}`, 'class_year'),
+        class_year: classYear,
+      });
+      const joined = (groups: ReturnType<typeof group>[], userId = 'u3') => ({
+        groups,
+        memberships: groups.map((g) => ({
+          chapter_id: 'ch-1',
+          group_id: g.id,
+          user_id: userId,
+          kind: g.kind,
+        })),
+      });
+
+      beforeEach(() => {
+        jest.useFakeTimers().setSystemTime(new Date('2026-11-20T12:00:00Z'));
+      });
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('names each class year by its standing too, standing first, alumni years by year only', () => {
+        const views = mentionRoleViews(
+          roles,
+          members,
+          joined([
+            year('y27', 2027),
+            year('y29', 2029),
+            year('y25', 2025),
+            group('m-seniors', 'Seniors', 'major'),
+          ]),
+        );
+        expect(
+          views
+            .filter((view) => view.kind === 'group')
+            .map((view) => [view.name, view.role_id, view.member_ids]),
+        ).toEqual([
+          ['Class of 2025', 'y25', ['u3']],
+          ['Seniors', standingMentionId('y27', 'Seniors'), ['u3']],
+          ['Class of 2027', 'y27', ['u3']],
+          ['Sophomores', standingMentionId('y29', 'Sophomores'), ['u3']],
+          ['Class of 2029', 'y29', ['u3']],
+        ]);
+      });
+
+      it('moves the standing up at the June 1 rollover', () => {
+        jest.setSystemTime(new Date('2027-06-01T00:00:00Z'));
+        const views = mentionRoleViews(
+          roles,
+          members,
+          joined([year('y28', 2028), year('y27', 2027)]),
+        );
+        expect(
+          views.filter((view) => view.kind === 'group').map((v) => v.name),
+        ).toEqual(['Class of 2027', 'Seniors', 'Class of 2028']);
+      });
+
+      it("gives the standing's name way to a role the chapter made for the class", () => {
+        const withRole = [
+          ...roles,
+          role('r-soph', 'Sophomores', { display_order: 5 }),
+        ];
+        const views = mentionRoleViews(
+          withRole,
+          members,
+          joined([year('y29', 2029)]),
+        );
+        expect(
+          views
+            .filter((view) => view.name === 'Sophomores')
+            .map((view) => view.kind),
+        ).toEqual(['role']);
+      });
+
+      it('gives the standing its own UUID, the same on every read', () => {
+        const id = standingMentionId(
+          '11111111-1111-4111-8111-111111111111',
+          'Seniors',
+        );
+        expect(id).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+        expect(
+          standingMentionId('11111111-1111-4111-8111-111111111111', 'Seniors'),
+        ).toBe(id);
+        expect(
+          standingMentionId('11111111-1111-4111-8111-111111111111', 'Juniors'),
+        ).not.toBe(id);
+      });
+
+      it("follows its class year's ping switch", () => {
+        const off = { ...year('y27', 2027), mentionable: false };
+        const views = mentionRoleViews(roles, members, joined([off]));
+        expect(
+          views
+            .filter((view) => view.kind === 'group')
+            .map((view) => [view.name, view.open_to_all]),
+        ).toEqual([
+          ['Seniors', false],
+          ['Class of 2027', false],
+        ]);
+        // A member who can't ping any role reaches nobody with it.
+        const member = views.map((view) => ({
+          ...view,
+          mentionable: view.open_to_all,
+        }));
+        expect(resolveMentions('hey @Seniors', members, member)).toEqual([]);
+      });
+
+      it('offers no standing or major when the roles could not be read', () => {
+        const views = mentionRoleViews(
+          [],
+          members,
+          joined([year('y27', 2027), group('m-music', 'Music', 'major')]),
+        );
+        expect(views.map((view) => view.name)).toEqual(['Class of 2027']);
+      });
+
+      it('makes @Seniors reach the class graduating this academic year', () => {
+        const views = mentionRoleViews(
+          roles,
+          members,
+          joined([year('y27', 2027)]),
+        ).map((view) => ({ ...view, mentionable: view.open_to_all }));
+        expect(resolveMentions('hey @Seniors', members, views)).toEqual(['u3']);
+      });
+    });
+
+    it('reaches every holder of any role in a tier, once each', () => {
+      const views = mentionRoleViews(tiered, members, {
+        tiers: [tier('t-members', 'Members', 3), tier('t-exec', 'Exec', 1)],
+      });
+      const tiers = views.filter((view) => view.kind === 'tier');
+      expect(tiers.map((view) => [view.name, view.member_ids])).toEqual([
+        ['Exec', ['u1']],
+        ['Members', ['u3', 'u4']],
+      ]);
+    });
+
+    it("carries a tier's own switch", () => {
+      const views = mentionRoleViews(tiered, members, {
+        tiers: [{ ...tier('t-exec', 'Exec', 1), mentionable: false }],
+      });
+      expect(views.find((view) => view.kind === 'tier')?.open_to_all).toBe(
+        false,
+      );
+    });
+
+    it("makes a tier holding the Everyone role follow @everyone's switch (#4191)", () => {
+      const withEveryone = tiered.map((r) =>
+        r.id === 'member' ? { ...r, tier_id: 't-members' } : r,
+      );
+      const members_ = (everyoneOn: boolean) =>
+        mentionRoleViews(
+          withEveryone.map((r) =>
+            r.id === 'member' ? { ...r, mentionable: everyoneOn } : r,
+          ),
+          members,
+          { tiers: [tier('t-members', 'Members', 3)] },
+        ).find((view) => view.kind === 'tier');
+
+      // Off (the default): @Members is officers-only, as @everyone is.
+      expect(members_(false)).toMatchObject({
+        open_to_all: false,
+        member_ids: ['u1', 'u2', 'u3', 'u4'],
+      });
+      // A chapter that opened @everyone opens it too.
+      expect(members_(true)?.open_to_all).toBe(true);
+    });
+
+    it('makes a tier holding the Actives role follow its switch (#5802)', () => {
+      const members_ = (activesOn: boolean) =>
+        mentionRoleViews(
+          tiered.map((r) =>
+            r.id === 'brothers'
+              ? { ...r, system_key: 'MEMBER', mentionable: activesOn }
+              : r,
+          ),
+          members,
+          { tiers: [tier('t-members', 'Members', 3)] },
+        ).find((view) => view.kind === 'tier');
+
+      // The old Everyone row: @Members stays officers-only while it is.
+      expect(members_(false)?.open_to_all).toBe(false);
+      expect(members_(true)?.open_to_all).toBe(true);
+    });
+
+    it('reaches the members of a group now, before @here', () => {
+      const views = mentionRoleViews(roles, members, {
+        groups: [group('g-floor', 'Third floor')],
+        memberships: [
+          {
+            chapter_id: 'ch-1',
+            group_id: 'g-floor',
+            user_id: 'u2',
+            kind: 'manual',
+          },
+          {
+            chapter_id: 'ch-1',
+            group_id: 'g-floor',
+            user_id: 'u4',
+            kind: 'manual',
+          },
+        ],
+      });
+      expect(views.find((view) => view.kind === 'group')).toMatchObject({
+        role_id: 'g-floor',
+        name: 'Third floor',
+        member_ids: ['u2', 'u4'],
+        open_to_all: true,
+      });
+      expect(views.at(-1)?.name).toBe('here');
+    });
+
+    it('leaves out an automatic group nobody is in, and keeps an empty manual one', () => {
+      const views = mentionRoleViews(roles, members, {
+        groups: [
+          group('g-new', 'Live-ins'),
+          group('g-class', 'Alpha', 'pledge_class'),
+        ],
+        memberships: [],
+      });
+      expect(
+        views.filter((view) => view.kind === 'group').map((v) => v.name),
+      ).toEqual(['Live-ins']);
+    });
+
+    it('leaves out a tier or group whose name reads as @everyone or @here', () => {
+      const views = mentionRoleViews(tiered, members, {
+        tiers: [tier('t-exec', 'Everyone', 1)],
+        groups: [group('g-here', 'here')],
+        memberships: [
+          {
+            chapter_id: 'ch-1',
+            group_id: 'g-here',
+            user_id: 'u1',
+            kind: 'manual',
+          },
+        ],
+      });
+      expect(views.filter((view) => view.kind !== 'role')).toEqual([]);
     });
   });
 
@@ -95,7 +473,12 @@ describe('ChatMentionService.listMentionRoles', () => {
       findByChapter: jest.fn().mockResolvedValue(roles),
       getEffectivePermissions: jest.fn().mockResolvedValue(permissions),
     } as unknown as RbacService;
-    return new ChatMentionService(memberRepo, rbac);
+    return new ChatMentionService(
+      memberRepo,
+      rbac,
+      presenceOf().reader,
+      ...noSets(),
+    );
   }
 
   it('leaves out a role nobody holds, and gates one switched off', async () => {
@@ -103,7 +486,7 @@ describe('ChatMentionService.listMentionRoles', () => {
     expect(list.map(({ name, mentionable }) => [name, mentionable])).toEqual([
       ['Officers', true],
       ['Brothers', true],
-      ['Member', false],
+      ['everyone', false],
     ]);
   });
 
@@ -121,6 +504,7 @@ describe('ChatMentionService.resolveForSend', () => {
     chapterMembers: typeof members,
     chapterRoles: Role[],
     permissions: string[] = [],
+    online: string[] | null = [],
   ) {
     const memberRepo = {
       findChapterMemberIdentities: jest.fn().mockResolvedValue(chapterMembers),
@@ -130,11 +514,117 @@ describe('ChatMentionService.resolveForSend', () => {
       findByChapter: jest.fn().mockResolvedValue(chapterRoles),
       getEffectivePermissions,
     } as unknown as RbacService;
+    const presence = presenceOf(online);
     return {
-      mentions: new ChatMentionService(memberRepo, rbac),
+      mentions: new ChatMentionService(
+        memberRepo,
+        rbac,
+        presence.reader,
+        ...noSets(),
+      ),
       getEffectivePermissions,
+      onlineUserIds: presence.onlineUserIds,
     };
   }
+
+  describe('@tier and @group (#4076)', () => {
+    function withSets(
+      tiers: unknown[],
+      groups: unknown[],
+      memberships: unknown[],
+      permissions: string[] = [],
+    ) {
+      const memberRepo = {
+        findChapterMemberIdentities: jest.fn().mockResolvedValue(members),
+      } as unknown as IMemberRepository;
+      const rbac = {
+        findByChapter: jest
+          .fn()
+          .mockResolvedValue(
+            roles.map((r) =>
+              r.id === 'brothers' ? { ...r, tier_id: 't-1' } : r,
+            ),
+          ),
+        getEffectivePermissions: jest.fn().mockResolvedValue(permissions),
+      } as unknown as RbacService;
+      const tierRepo = {
+        findByChapter: jest.fn().mockResolvedValue(tiers),
+      } as unknown as IRoleTierRepository;
+      const groupRepo = createChapterGroupRepoMock();
+      groupRepo.findByChapter.mockResolvedValue(groups);
+      groupRepo.findMemberships.mockResolvedValue(memberships);
+      return new ChatMentionService(
+        memberRepo,
+        rbac,
+        presenceOf().reader,
+        tierRepo,
+        groupRepo,
+      );
+    }
+    const tier = {
+      id: 't-1',
+      chapter_id: 'ch-1',
+      name: 'Members',
+      position: 3,
+      permissions: [],
+      mentionable: true,
+      created_at: '2026-11-06T00:00:00Z',
+      updated_at: '2026-11-06T00:00:00Z',
+    };
+    const floor = {
+      id: 'g-1',
+      chapter_id: 'ch-1',
+      kind: 'manual',
+      name: 'Third floor',
+      color: null,
+      mentionable: true,
+      pledge_class_id: null,
+      class_year: null,
+      major_key: null,
+      created_at: '2026-11-06T00:00:00Z',
+      updated_at: '2026-11-06T00:00:00Z',
+    };
+
+    it('reaches every holder of a role in the tier', async () => {
+      await expect(
+        withSets([tier], [], []).resolveForSend('ch-1', 'u2', 'hi @Members'),
+      ).resolves.toEqual(['u3', 'u4']);
+    });
+
+    it("reaches a group's members now", async () => {
+      await expect(
+        withSets(
+          [],
+          [floor],
+          [
+            {
+              chapter_id: 'ch-1',
+              group_id: 'g-1',
+              user_id: 'u1',
+              kind: 'manual',
+            },
+          ],
+        ).resolveForSend('ch-1', 'u2', '@Third floor quiet hours'),
+      ).resolves.toEqual(['u1']);
+    });
+
+    it('reaches nobody through a group switched off, unless an officer sends', async () => {
+      const off = { ...floor, mentionable: false };
+      const rows = [
+        { chapter_id: 'ch-1', group_id: 'g-1', user_id: 'u1', kind: 'manual' },
+      ];
+      await expect(
+        withSets([], [off], rows).resolveForSend('ch-1', 'u2', '@Third floor'),
+      ).resolves.toEqual([]);
+      await expect(
+        withSets([], [off], rows, ['channels:manage']).resolveForSend(
+          'ch-1',
+          'u2',
+          '@Third floor',
+        ),
+      ).resolves.toEqual(['u1']);
+    });
+  });
 
   describe('names with spaces (#3825)', () => {
     const spaced = [
@@ -183,6 +673,208 @@ describe('ChatMentionService.resolveForSend', () => {
     });
   });
 
+  describe('@everyone (#4191)', () => {
+    it('reaches every member when an officer sends it', async () => {
+      const officer = service(members, roles, ['channels:manage']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', 'meeting at 8 @everyone'),
+      ).resolves.toEqual(expect.arrayContaining(['u2', 'u3', 'u4']));
+    });
+
+    it('is not silenced by a member whose display name reads the same', async () => {
+      const named = [
+        ...members,
+        { user_id: 'u9', display_name: 'Every One', role_ids: [] },
+      ];
+      const officer = service(named, roles, ['channels:manage']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', '@everyone hi'),
+      ).resolves.toEqual(expect.arrayContaining(['u2', 'u3', 'u4', 'u9']));
+    });
+
+    it('reaches nobody from a member until the chapter opens it', async () => {
+      const member = service(members, roles, ['members:view']);
+      await expect(
+        member.mentions.resolveForSend('ch-1', 'u2', '@everyone hi'),
+      ).resolves.toEqual([]);
+
+      const opened = roles.map((r) =>
+        r.id === 'member' ? { ...r, mentionable: true } : r,
+      );
+      const open = service(members, opened, ['members:view']);
+      await expect(
+        open.mentions.resolveForSend('ch-1', 'u2', '@everyone hi'),
+      ).resolves.toEqual(expect.arrayContaining(['u1', 'u3', 'u4']));
+    });
+  });
+
+  describe('@here', () => {
+    it('reaches the members online now when an officer sends it', async () => {
+      const officer = service(
+        members,
+        roles,
+        ['channels:manage'],
+        ['u1', 'u3', 'not-in-this-chapter'],
+      );
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', 'anyone free? @here'),
+      ).resolves.toEqual(['u1', 'u3']);
+      expect(officer.onlineUserIds).toHaveBeenCalledWith('ch-1');
+    });
+
+    it('reads who is online only when the body says @here', async () => {
+      const officer = service(members, roles, ['channels:manage'], ['u3']);
+      await officer.mentions.resolveForSend('ch-1', 'u1', '@Ann and @everyone');
+      expect(officer.onlineUserIds).not.toHaveBeenCalled();
+    });
+
+    it('follows the Everyone switch: nobody from a member until it is on', async () => {
+      const member = service(members, roles, ['members:view'], ['u1', 'u3']);
+      await expect(
+        member.mentions.resolveForSend('ch-1', 'u2', '@here'),
+      ).resolves.toEqual([]);
+      expect(member.getEffectivePermissions).toHaveBeenCalledTimes(1);
+      // Nobody it could reach, so nothing waits on reading who is online.
+      expect(member.onlineUserIds).not.toHaveBeenCalled();
+
+      const opened = roles.map((r) =>
+        r.id === 'member' ? { ...r, mentionable: true } : r,
+      );
+      const open = service(members, opened, ['members:view'], ['u1', 'u3']);
+      await expect(
+        open.mentions.resolveForSend('ch-1', 'u2', '@here'),
+      ).resolves.toEqual(['u1', 'u3', 'u2']);
+    });
+
+    it('reaches the sender even when the presence read misses them', async () => {
+      // They are here, sending it (Paul, 2026-11-13). Only their own row
+      // lights: the push and the badge skip a sender's own message.
+      const officer = service(members, roles, ['channels:manage'], ['u3']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', '@here'),
+      ).resolves.toEqual(['u3', 'u1']);
+    });
+
+    it('never falls through to a member when nobody is online or the read fails', async () => {
+      const named = [
+        ...members,
+        { user_id: 'u8', display_name: 'Herenton', role_ids: [] },
+      ];
+      for (const online of [[], null]) {
+        const officer = service(named, roles, ['channels:manage'], online);
+        await expect(
+          officer.mentions.resolveForSend('ch-1', 'u1', '@here'),
+        ).resolves.toEqual(['u1']);
+      }
+    });
+
+    it('keeps who the earlier @here reached on an edit instead of reading again', async () => {
+      const officer = service(members, roles, ['channels:manage'], ['u2']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@here (edited)',
+          ['u3', 'u4'],
+          null,
+          '@here',
+        ),
+      ).resolves.toEqual(['u3', 'u4']);
+      expect(officer.onlineUserIds).not.toHaveBeenCalled();
+    });
+
+    it('reads the earlier body with its picks when working out who @here reached (#3835)', async () => {
+      // Sent "@Ben Stone @here" with a pick for Ben Stone (u9), who has
+      // left; @here reached Ben (u2). Read without the pick, the earlier
+      // body's `@Ben Stone` is `@Ben`, which would count Ben as named and
+      // take his @here mention away on the edit.
+      const officer = service(members, roles, ['channels:manage']);
+      const picks = [{ user_id: 'u9', label: 'Ben Stone' }];
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@Ben Stone @here (edited)',
+          ['u2'],
+          null,
+          '@Ben Stone @here',
+          { previous: picks, next: picks },
+        ),
+      ).resolves.toEqual(['u2']);
+    });
+
+    it('drops a name the edit removes, though the message keeps @here', async () => {
+      // Sent "@Dee @here" with Ann and Cal online: Dee by name, Ann and Cal
+      // by @here. Editing Dee out for Ben takes her mention away.
+      const officer = service(members, roles, ['channels:manage']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@Ben @here',
+          ['u4', 'u1', 'u3'],
+          null,
+          '@Dee @here',
+        ),
+      ).resolves.toEqual(['u2', 'u1', 'u3']);
+    });
+
+    it('reaches nobody new when an edit adds @here', async () => {
+      const officer = service(members, roles, ['channels:manage'], ['u2']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          '@Ann @here',
+          ['u1'],
+          null,
+          '@Ann',
+        ),
+      ).resolves.toEqual(['u1']);
+    });
+
+    it('adds not even the sender when an edit adds @here', async () => {
+      // The send stored no @here, so the edit keeps what it stored: the
+      // sender's row does not start lighting on an edit.
+      const officer = service(members, roles, ['channels:manage'], ['u1']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          'lunch? @here',
+          [],
+          null,
+          'lunch?',
+        ),
+      ).resolves.toEqual([]);
+    });
+
+    it('keeps member mentions when the roles read fails', async () => {
+      const memberRepo = {
+        findChapterMemberIdentities: jest.fn().mockResolvedValue(members),
+      } as unknown as IMemberRepository;
+      const getEffectivePermissions = jest
+        .fn()
+        .mockRejectedValue(new Error('roles down'));
+      const rbac = {
+        findByChapter: jest.fn().mockRejectedValue(new Error('roles down')),
+        getEffectivePermissions,
+      } as unknown as RbacService;
+      const presence = presenceOf(['u3']);
+      const mentions = new ChatMentionService(
+        memberRepo,
+        rbac,
+        presence.reader,
+        ...noSets(),
+      );
+      await expect(
+        mentions.resolveForSend('ch-1', 'u1', '@Ben @here'),
+      ).resolves.toEqual(['u2']);
+      expect(getEffectivePermissions).not.toHaveBeenCalled();
+      expect(presence.onlineUserIds).not.toHaveBeenCalled();
+    });
+  });
+
   it('still resolves member mentions when the roles read fails', async () => {
     const memberRepo = {
       findChapterMemberIdentities: jest.fn().mockResolvedValue(members),
@@ -191,7 +883,12 @@ describe('ChatMentionService.resolveForSend', () => {
       findByChapter: jest.fn().mockRejectedValue(new Error('roles down')),
       getEffectivePermissions: jest.fn(),
     } as unknown as RbacService;
-    const mentions = new ChatMentionService(memberRepo, rbac);
+    const mentions = new ChatMentionService(
+      memberRepo,
+      rbac,
+      presenceOf().reader,
+      ...noSets(),
+    );
 
     const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
@@ -218,7 +915,12 @@ describe('ChatMentionService.resolveForSend', () => {
       findByChapter: jest.fn().mockResolvedValue([]),
       getEffectivePermissions: jest.fn(),
     } as unknown as RbacService;
-    const mentions = new ChatMentionService(memberRepo, rbac);
+    const mentions = new ChatMentionService(
+      memberRepo,
+      rbac,
+      presenceOf().reader,
+      ...noSets(),
+    );
     const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
 
     await expect(

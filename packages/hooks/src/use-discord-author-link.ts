@@ -11,11 +11,11 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * sign-in, and no route links anyone but the caller. Linking and unlinking
  * change `sender_id` on imported messages server-side; imported rows never
  * arrive over Realtime, so a chat thread already in the cache shows the change
- * only on its next read. The caller decides what to drop, because this package
+ * only on its next read. The caller decides what to drop or refetch, because this package
  * does not own the chat message cache (`@repo/chat-core`).
  */
 
-export const discordAuthorLinkKeys = {
+const discordAuthorLinkKeys = {
   all: ["discord-author-link"] as const,
   mine: (chapterId: string | null) =>
     ["discord-author-link", chapterId, "mine"] as const,
@@ -28,8 +28,10 @@ export function useDiscordAuthorLink(options?: { enabled?: boolean }) {
 
   return useQuery({
     queryKey: discordAuthorLinkKeys.mine(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord/author-link");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/discord/author-link", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -40,7 +42,7 @@ export function useDiscordAuthorLink(options?: { enabled?: boolean }) {
 
 /**
  * Start linking. Returns Discord's authorize URL; the caller navigates to it.
- * Discord brings the browser back to `/preferences?section=discord&discord=…&handshake=…`.
+ * Discord brings the browser back to `/preferences?section=apps&discord=…&handshake=…`.
  */
 export function useBeginDiscordAuthorLink() {
   const client = useFrappClient();

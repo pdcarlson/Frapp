@@ -4,6 +4,7 @@ import { CloseGlyph } from "@/components/control-glyphs";
 import { BellGlyph } from "@/components/notifications/push-ask";
 import { usePushReminder } from "@/lib/notifications/use-push-primer";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The chat home's one come-back for push (`shouldOfferReminder`): a member who
@@ -19,6 +20,10 @@ export function PushReminder() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const reminder = usePushReminder();
+  const turnOn = () => {
+    void reminder.turnOn();
+  };
+  const dismiss = reminder.dismiss;
   if (!reminder.show) return null;
 
   const label = reminder.action === "settings" ? "Open Settings" : "Turn on";
@@ -40,9 +45,7 @@ export function PushReminder() {
             : "Turn on notifications"
         }
         disabled={reminder.isRequesting}
-        onPress={() => {
-          void reminder.turnOn();
-        }}
+        onPress={turnOn}
         hitSlop={8}
         style={({ pressed }) => [
           styles.action,
@@ -54,7 +57,7 @@ export function PushReminder() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Dismiss"
-        onPress={reminder.dismiss}
+        onPress={dismiss}
         hitSlop={10}
         style={({ pressed }) => [styles.close, pressed ? styles.pressed : null]}
       >
@@ -65,6 +68,7 @@ export function PushReminder() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     card: {
       flexDirection: "row",
@@ -73,7 +77,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingVertical: tokens.spacing.md,
       paddingLeft: tokens.spacing.md,
       paddingRight: tokens.spacing.sm,

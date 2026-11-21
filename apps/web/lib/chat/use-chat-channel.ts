@@ -15,7 +15,7 @@
  * chat-core covers and what differs between the two, and why.
  */
 
-import type { ChatMessageFlag } from "@repo/validation";
+import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import {
   useCallback,
   useContext,
@@ -26,7 +26,11 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "@repo/hooks";
+import {
+  chatRecordKindForCommand,
+  useFrappClient,
+  withChatRecordRefresh,
+} from "@repo/hooks";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { useChannelDraft } from "./use-channel-draft";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
@@ -63,6 +67,8 @@ import {
 import {
   actOnCard,
   closePoll as closePollAction,
+  closeCard as closeCardAction,
+  type ClosableCardKind,
   setMessageFlag as setMessageFlagAction,
   deleteMessage as deleteMessageAction,
   discardOutboxRow,
@@ -80,12 +86,13 @@ import {
   browserKeyValueStore,
   type OutboxAttachment,
 } from "@repo/chat-core/adapters";
-import type { ReplayRequest } from "@repo/chat-core/types";
+import type { OutgoingGif, ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
   postHours,
   postEvent,
   postPointsAdjustment,
+  linkTask,
   postPoll,
   postTask,
   retryPointsDispatch,
@@ -133,7 +140,17 @@ export interface UseChatChannelResult {
   loadNewer: () => Promise<number | null>;
   send: (
     content: string,
-    opts?: { replyToId?: string | null; attachments?: OutboxAttachment[] },
+    opts?: {
+      replyToId?: string | null;
+      attachments?: OutboxAttachment[];
+      /** The members the `@` list put in `content` (#3835). */
+      mentionPicks?: readonly MentionPick[];
+    },
+  ) => Promise<void>;
+  /** A GIF from the picker, as its own message (#4631). */
+  sendGif: (
+    gif: OutgoingGif,
+    opts?: { replyToId?: string | null },
   ) => Promise<void>;
   /*
     Every row write below takes an optional `threadRootId`: set, the message
@@ -155,6 +172,8 @@ export interface UseChatChannelResult {
     messageId: string,
     content: string,
     threadRootId?: string | null,
+    /** Members picked while editing (#3835). */
+    mentionPicks?: readonly MentionPick[],
   ) => Promise<void>;
   /** Own message, or any message with `channels:manage` (server-enforced). */
   delete: (messageId: string, threadRootId?: string | null) => Promise<void>;
@@ -163,6 +182,16 @@ export interface UseChatChannelResult {
    * server. Toasts and rejects on failure.
    */
   closePoll: (messageId: string, threadRootId?: string | null) => Promise<void>;
+  /**
+   * Closes a sign-up or form card early (#3926): its creator's or a
+   * `channels:manage` holder's, enforced on the server. Toasts and rejects on
+   * failure.
+   */
+  closeCard: (
+    messageId: string,
+    threadRootId: string | null | undefined,
+    kind: ClosableCardKind,
+  ) => Promise<void>;
   /**
    * Puts a flag on a message, replaces it, or (`null`) takes it off (#3921).
    * Toasts and rejects on failure, a lost race included.
@@ -178,6 +207,11 @@ export interface UseChatChannelResult {
   typingUsers: readonly string[];
   emitTyping: () => void;
   connection: ConnectionStatus;
+  /**
+   * Realtime refused this channel because the member may not read it any more
+   * (#5765): deleted, or access taken away. Nothing retries it on a timer.
+   */
+  unavailable: boolean;
   retry: (clientMessageId: string) => Promise<void>;
   discard: (clientMessageId: string) => Promise<void>;
   /**
@@ -216,7 +250,10 @@ export interface UseChatChannelResult {
   /** The event form's card bookkeeping in a channel (#3773, `trackEventCard`). */
   trackEventCard: (channelId: string, name: string) => EventCardTrack;
   /** The + card's Event form (#3983): the write `/event` makes, into `targetChannelId`. */
-  postEvent: (targetChannelId: string, input: EventInput) => Promise<DispatchResult>;
+  postEvent: (
+    targetChannelId: string,
+    input: EventInput,
+  ) => Promise<DispatchResult>;
   /**
    * The + menu's Task, Service hours and Points forms (#3865): the same
    * writes `/task`, `/hours log` and `/points` make, posting the card into
@@ -224,8 +261,22 @@ export interface UseChatChannelResult {
    * points) unconfirmed-retry bookkeeping. Never reject; read the result as
    * `notifyDispatchOutcome` does.
    */
-  postTask: (targetChannelId: string, input: TaskInput) => Promise<DispatchResult>;
-  postHours: (targetChannelId: string, input: HoursInput) => Promise<DispatchResult>;
+  postTask: (
+    targetChannelId: string,
+    input: TaskInput,
+  ) => Promise<DispatchResult>;
+  /**
+   * The + menu's Task row (#5772): posts an existing task's card into
+   * `targetChannelId`. `linkTask` in `@repo/chat-core/dispatch`.
+   */
+  linkTask: (
+    targetChannelId: string,
+    task: { id: string; title: string },
+  ) => Promise<DispatchResult>;
+  postHours: (
+    targetChannelId: string,
+    input: HoursInput,
+  ) => Promise<DispatchResult>;
   postPointsAdjustment: (
     targetChannelId: string,
     input: PointsAdjustmentInput,
@@ -525,6 +576,25 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const typingUsers = channelId ? typingUsersState : NO_TYPING_USERS;
 
   /*
+    Realtime refused this channel's join because the member may not read it
+    (#5765): it was deleted, or their access went. The manager has stopped
+    asking for it and the channel list is being read again; the thread shows
+    `CHANNEL_UNAVAILABLE_TITLE` in place of its timeline. Held with the channel
+    it is about, so a switch never carries it to the next one for a render.
+  */
+  const [unavailableFor, setUnavailableFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!channelId) return;
+    const refresh = () =>
+      setUnavailableFor(
+        chatRealtime.isUnavailable(channelId) ? channelId : null,
+      );
+    refresh();
+    return chatRealtime.subscribeStatus(refresh);
+  }, [channelId]);
+  const unavailable = channelId !== null && unavailableFor === channelId;
+
+  /*
     Draft persistence lives in its own hook (#2176).
 
     It was inline here until the composer shell needed it to survive a channel
@@ -540,7 +610,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const send = useCallback(
     async (
       content: string,
-      opts?: { replyToId?: string | null; attachments?: OutboxAttachment[] },
+      opts?: {
+        replyToId?: string | null;
+        attachments?: OutboxAttachment[];
+        mentionPicks?: readonly MentionPick[];
+      },
     ): Promise<void> => {
       // A message may be nothing but a file. Guarding on empty text alone would
       // silently drop an attachment-only send — the case the old
@@ -557,12 +631,31 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         content: content.trim(),
         replyToId: opts?.replyToId ?? null,
         attachments: opts?.attachments ?? null,
+        mentionPicks: opts?.mentionPicks ?? null,
       });
       // Clears only the text that was sent: anything typed while the POST
       // was out is the next message and stays in the composer (#4141).
       await clearAfterSend(content);
     },
     [cancelPendingSave, clearAfterSend, channelId, ctx],
+  );
+
+  /**
+   * Send a GIF from the picker (#4631): its own message, with no text, so
+   * the draft in the composer stays where it is.
+   */
+  const sendGif = useCallback(
+    async (gif: OutgoingGif, opts?: { replyToId?: string | null }) => {
+      if (!channelId) return;
+      await sendMessage(ctx, {
+        channelId,
+        content: "",
+        replyToId: opts?.replyToId ?? null,
+        gif,
+        keepDraft: true,
+      });
+    },
+    [channelId, ctx],
   );
 
   const reactCb = useCallback(
@@ -586,6 +679,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       messageId: string,
       content: string,
       threadRootId?: string | null,
+      mentionPicks?: readonly MentionPick[],
     ) => {
       if (!channelId) return;
       await editMessageAction(ctx, {
@@ -593,6 +687,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         messageId,
         content,
         threadRootId,
+        mentionPicks: mentionPicks ?? null,
       });
     },
     [channelId, ctx],
@@ -612,6 +707,20 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     async (messageId: string, threadRootId?: string | null) => {
       if (!channelId) return;
       await closePollAction(ctx, { channelId, messageId, threadRootId });
+    },
+    [channelId, ctx],
+  );
+
+  // A sign-up card's Close sign-ups and a form card's Close form (#3926),
+  // pessimistic like Close poll.
+  const closeCardCb = useCallback(
+    async (
+      messageId: string,
+      threadRootId: string | null | undefined,
+      kind: ClosableCardKind,
+    ) => {
+      if (!channelId) return;
+      await closeCardAction(ctx, { channelId, messageId, threadRootId, kind });
     },
     [channelId, ctx],
   );
@@ -662,8 +771,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   const retryUnconfirmed = useCallback(
-    async (replay: ReplayRequest) => retryPointsDispatch(ctx, replay),
-    [ctx],
+    async (replay: ReplayRequest) =>
+      withChatRecordRefresh(queryClient, "points", () =>
+        retryPointsDispatch(ctx, replay),
+      ),
+    [ctx, queryClient],
   );
 
   const act = useCallback(
@@ -695,15 +807,22 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       if (!channelId) {
         return { ok: false, error: "No active channel" };
       }
-      return dispatchSlashCommand(ctx, {
-        command,
-        args,
-        channelId,
-        announcementsChannelId,
-        resolveMember,
-      });
+      // Chat-core writes through the API client, so the page a record lands
+      // on (Tasks, Service, Points) never hears of it (#3912).
+      return withChatRecordRefresh(
+        queryClient,
+        chatRecordKindForCommand(command.name),
+        () =>
+          dispatchSlashCommand(ctx, {
+            command,
+            args,
+            channelId,
+            announcementsChannelId,
+            resolveMember,
+          }),
+      );
     },
-    [channelId, ctx],
+    [channelId, ctx, queryClient],
   );
 
   const sendPoll = useCallback(
@@ -741,18 +860,29 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
   const postTaskCb = useCallback(
     (targetChannelId: string, input: TaskInput) =>
-      postTask(ctx, targetChannelId, input),
+      withChatRecordRefresh(queryClient, "task", () =>
+        postTask(ctx, targetChannelId, input),
+      ),
+    [ctx, queryClient],
+  );
+  const linkTaskCb = useCallback(
+    (targetChannelId: string, task: { id: string; title: string }) =>
+      linkTask(ctx, targetChannelId, task),
     [ctx],
   );
   const postHoursCb = useCallback(
     (targetChannelId: string, input: HoursInput) =>
-      postHours(ctx, targetChannelId, input),
-    [ctx],
+      withChatRecordRefresh(queryClient, "hours", () =>
+        postHours(ctx, targetChannelId, input),
+      ),
+    [ctx, queryClient],
   );
   const postPointsCb = useCallback(
     (targetChannelId: string, input: PointsAdjustmentInput) =>
-      postPointsAdjustment(ctx, targetChannelId, input),
-    [ctx],
+      withChatRecordRefresh(queryClient, "points", () =>
+        postPointsAdjustment(ctx, targetChannelId, input),
+      ),
+    [ctx, queryClient],
   );
 
   // Best-effort flush whenever the connection comes live for this channel.
@@ -779,17 +909,20 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     loadOlder,
     loadNewer,
     send,
+    sendGif,
     react: reactCb,
     unreact: unreactCb,
     edit: editCb,
     delete: deleteCb,
     closePoll: closePollCb,
+    closeCard: closeCardCb,
     flag: flagCb,
     draft,
     setDraft,
     typingUsers,
     emitTyping,
     connection,
+    unavailable,
     retry,
     discard,
     retryUnconfirmed,
@@ -798,6 +931,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     trackEventCard: trackEventCardCb,
     postEvent: postEventCb,
     postTask: postTaskCb,
+    linkTask: linkTaskCb,
     postHours: postHoursCb,
     postPointsAdjustment: postPointsCb,
     act,

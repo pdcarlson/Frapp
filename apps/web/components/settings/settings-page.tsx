@@ -6,6 +6,9 @@ import { useSearchParams } from "next/navigation";
 import {
   type OrgDues,
   useCurrentChapter,
+  aiAvailableFrom,
+  isFirstAiReadInFlight,
+  useAiConsent,
   useMyPermissions,
   useOrgConfig,
   usePatchOrgConfig,
@@ -26,6 +29,7 @@ import {
   ErrorState,
   anyReadUncached,
   OfflineState,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -40,6 +44,7 @@ import {
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import { downscaleImage } from "@/lib/downscale-image";
 import {
   isSettingsTabVisible,
   visibleSettingsTools,
@@ -54,12 +59,24 @@ import {
   isModuleSettingsTab,
   shownModuleSettings,
 } from "@/components/settings/settings-modules";
+import { chapterProfileSaveBody } from "@/components/settings/chapter-profile-save-body";
 import { ModuleSettingsPage } from "@/components/settings/module-settings-page";
+import {
+  SettingsToolBody,
+  SettingsToolSubpage,
+} from "@/components/settings/settings-tool-views";
+import {
+  SETTINGS_SUBPAGE_PARAMS,
+  settingsSubpageFor,
+} from "@/components/settings/settings-paths";
+import { useSettingJump } from "@/lib/settings/use-setting-jump";
+import { MeetingSectionsRules } from "@/components/meetings/meeting-sections-rules";
 import {
   DuesGraceRule,
   PointsRules,
   ServiceHoursRules,
 } from "@/components/settings/module-rules";
+import { ModuleGoals } from "@/components/settings/module-goals";
 import {
   SettingsAccentTab,
   useAccentDraft,
@@ -72,7 +89,11 @@ import { PlanAndBilling } from "@/components/billing/plan-and-billing";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
+import { SettingsBirthdayPosts } from "@/components/settings/settings-birthday-posts";
+import { SettingsMemberNames } from "@/components/settings/settings-member-names";
+import { SettingsLogsTab } from "@/components/settings/settings-logs-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
+import { SettingsAiTab } from "@/components/settings/settings-ai-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
 import { SettingsClassesTab } from "@/components/settings/settings-classes-tab";
 import {
@@ -123,6 +144,9 @@ function SettingsPageContent() {
     enabled: !!activeChapterId,
   });
   const isModuleEnabled = useChapterModuleGate();
+  // Whether this server has AI: the AI row shows only on `true` (#4308).
+  const aiConsent = useAiConsent();
+  const aiAvailable = aiAvailableFrom(aiConsent);
   const semestersQuery = useSemesters();
   const updateChapter = useUpdateChapter();
   const uploadLogo = useUploadChapterLogo();
@@ -167,10 +191,27 @@ function SettingsPageContent() {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
+  /*
+    A page opened inside a module page (#3837): one channel's settings
+    (`?channel=`, the chat rail's Edit channel) or Discord import
+    (`?tool=discord-import`), each drawn in place of the Chat page with a way
+    back, so the rail stays on screen.
+  */
+  const channelParam = searchParams.get("channel");
+  const toolParam = searchParams.get("tool");
   // Switching rows starts the panel at its top, not wherever the last one
-  // was scrolled to: the panel scrolls inside the shell's tool pane.
+  // was scrolled to: the panel scrolls inside the shell's tool pane. The
+  // address follows the row, without the params that opened a page inside
+  // the last one, so Chat shows its own page when the officer comes back to
+  // it, and a refresh or a copied link lands on the row they were on. Next
+  // keeps `useSearchParams` in step with `replaceState`.
   const changeTab = useCallback((next: string) => {
     setActiveTab(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", next);
+    for (const param of SETTINGS_SUBPAGE_PARAMS) url.searchParams.delete(param);
+    url.hash = "";
+    window.history.replaceState(null, "", url.toString());
     document.querySelector("[data-tool-page]")?.scrollTo?.({ top: 0 });
   }, []);
 
@@ -212,6 +253,9 @@ function SettingsPageContent() {
     [],
   );
 
+  // `?setting=` from settings search: scroll to the setting and light it.
+  useSettingJump();
+
   const accentDraft = useAccentDraft(chapterQuery.data);
   const rolloverForm = useRolloverForm();
 
@@ -242,8 +286,7 @@ function SettingsPageContent() {
     not fail that way — it blocks the thread — so this is a cost the
     conversion introduces and has to pay for. Found by the pre-push review.
   */
-  const chapterPaused =
-    chapterQuery.isPending && chapterQuery.fetchStatus === "paused";
+  const chapterPaused = pausedRead(chapterQuery);
   let stateBanner: React.ReactNode = null;
   if (
     isOffline &&
@@ -261,7 +304,10 @@ function SettingsPageContent() {
     );
   } else if (chapterQuery.isLoading || chapterPaused) {
     stateBanner = <SettingsBodySkeleton />;
-  } else if (chapterQuery.isError) {
+  } else if (chapterQuery.isError && chapterQuery.data === undefined) {
+    // Only a first load that failed. A background refetch that fails keeps
+    // the page it already drew: unmounting it would throw away a study zone
+    // half drawn in the map editor, or an open delete confirmation.
     stateBanner = (
       <ErrorState
         title="Couldn't load chapter settings"
@@ -287,6 +333,16 @@ function SettingsPageContent() {
       ) : (
         <SettingsBodySkeleton />
       );
+  } else if (isFirstAiReadInFlight(aiConsent)) {
+    /*
+      The same hold for the AI row (#4308): drawn without it and then
+      inserted, it pushed every row below Privacy down and sent `?tab=ai` to
+      the first tab. The read runs beside the permissions read, so the wait
+      is rarely longer. A paused read, or a first attempt that failed, stops
+      waiting and leaves the row out, as with AI off, without waiting out
+      the retries (#4504).
+    */
+    stateBanner = <SettingsBodySkeleton />;
   }
 
   if (stateBanner) {
@@ -385,12 +441,13 @@ function SettingsPageContent() {
     university: string;
     donation_url: string;
   }) {
+    // Only what the officer changed, so a name stored before the API's rule
+    // never refuses an edit of the donation link.
+    const body = chapterProfileSaveBody(profile, next);
     try {
-      await updateChapter.mutateAsync({
-        name: next.name || undefined,
-        university: next.university || undefined,
-        donation_url: next.donation_url || undefined,
-      });
+      if (Object.keys(body).length > 0) {
+        await updateChapter.mutateAsync(body);
+      }
       toast({
         title: "Chapter profile saved",
         description: "Everyone sees the changes on their next refresh.",
@@ -406,7 +463,10 @@ function SettingsPageContent() {
 
   async function saveLogo(upload: ChapterLogoUpload) {
     try {
-      await uploadLogo.mutateAsync(upload);
+      // Stored at 512px for the crests that draw it (#2912).
+      await uploadLogo.mutateAsync(
+        await downscaleImage(upload, { keepAlpha: true }),
+      );
       toast({
         title: "Logo saved",
         description: "An entry was written to the chapter audit log.",
@@ -478,24 +538,30 @@ function SettingsPageContent() {
       patchConfig(diff, title);
     if (key === "hours") {
       return renderConfigGated(
-        <ServiceHoursRules
-          minutesPerPoint={config?.service?.minutes_per_point}
-          workflows={workflows}
-          canManage={canManage}
-          savingRate={pendingConfigKeys.has("service")}
-          savingWorkflows={pendingConfigKeys.has("workflows")}
-          onPatch={patchRules}
-        />,
+        <div className="space-y-4">
+          <ServiceHoursRules
+            minutesPerPoint={config?.service?.minutes_per_point}
+            workflows={workflows}
+            canManage={canManage}
+            savingRate={pendingConfigKeys.has("service")}
+            savingWorkflows={pendingConfigKeys.has("workflows")}
+            onPatch={patchRules}
+          />
+          <ModuleGoals metrics={["service", "study"]} canManage={canManage} />
+        </div>,
       );
     }
     if (key === "points") {
       return renderConfigGated(
-        <PointsRules
-          points={config?.points}
-          canManage={canManage}
-          saving={pendingConfigKeys.has("points")}
-          onPatch={patchRules}
-        />,
+        <div className="space-y-4">
+          <PointsRules
+            points={config?.points}
+            canManage={canManage}
+            saving={pendingConfigKeys.has("points")}
+            onPatch={patchRules}
+          />
+          <ModuleGoals metrics={["points"]} canManage={canManage} />
+        </div>,
       );
     }
     if (key === "dues") {
@@ -517,12 +583,15 @@ function SettingsPageContent() {
         </div>,
       );
     }
+    if (key === "meetings") {
+      return <MeetingSectionsRules canManage={canManage} />;
+    }
     return undefined;
   }
 
   /*
-    Settings shows each viewer only what they can use (#2946). The nav's
-    Settings row admits anyone Settings holds a tab or an officer tool for
+    Settings shows each viewer only what they can use (#2946). The chapter
+    menu's Chapter settings link admits anyone Settings holds a tab or an officer tool for
     (`hasSettingsDestination`), so a treasurer who holds only reports:export
     arrives here too. Before, every setup tab rendered for everyone and the
     config-gated ones answered a non-holder with "Couldn't load chapter
@@ -541,8 +610,11 @@ function SettingsPageContent() {
     if (enabledModules) return isStoredModuleEnabled(enabledModules, key);
     return isModuleEnabled ? isModuleEnabled(key) : true;
   };
-  const visibleTabs = SETTINGS_TABS.filter((tab) =>
-    isSettingsTabVisible(tab.value, permissions, isModuleEnabled),
+  const visibleTabs = SETTINGS_TABS.filter(
+    (tab) =>
+      isSettingsTabVisible(tab.value, permissions, isModuleEnabled) &&
+      // The AI row waits for the server to say it has AI (#4308).
+      (tab.value !== "ai" || aiAvailable === true),
   ).map((tab) => {
     if (tab.value === "classes") return { ...tab, label: classTerm };
     if (isModuleSettingsTab(tab.value)) {
@@ -552,6 +624,16 @@ function SettingsPageContent() {
   });
   const canViewConfig = can("chapter-config:view", permissions);
   const canSeeWhoCan = can("members:view", permissions);
+  const holdsTool = (id: string) => tools.some((tool) => tool.id === id);
+  // A page opened in place of a module page (#3837): a channel's settings or
+  // Discord import, inside Chat.
+  const subpageFor = (key: string) =>
+    settingsSubpageFor(
+      key,
+      { channel: channelParam, tool: toolParam },
+      holdsTool,
+    );
+
   // A `?tab=` deep link to a tab this viewer does not get, or the default
   // `org` for someone with no setup tabs, lands on the first tab they do get.
   const shownTab = visibleTabs.some((tab) => tab.value === activeTab)
@@ -595,7 +677,16 @@ function SettingsPageContent() {
         onValueChange={changeTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10"
       >
-        <SettingsRail visibleTabs={visibleTabs} />
+        <SettingsRail
+          visibleTabs={visibleTabs}
+          onRowClick={(value) => {
+            // The lit row closes a page opened inside it (a channel's
+            // settings, Discord import) and goes back to the row's own page.
+            if (value === shownTab && (channelParam || toolParam)) {
+              changeTab(value);
+            }
+          }}
+        />
 
         <div className="w-full min-w-0 max-w-[960px] flex-1">
           <TabsContent value="org" className="mt-0">
@@ -633,6 +724,44 @@ function SettingsPageContent() {
                 }
               />,
             )}
+            {config ? (
+              <div className="mt-10">
+                <SettingsBirthdayPosts
+                  channelId={
+                    typeof config.birthday_channel_id === "string"
+                      ? config.birthday_channel_id
+                      : null
+                  }
+                  canManage={canManage}
+                  isSaving={pendingConfigKeys.has("birthday_channel_id")}
+                  onChange={(birthdayChannelId) =>
+                    patchConfig(
+                      { birthday_channel_id: birthdayChannelId },
+                      birthdayChannelId
+                        ? "Birthday posts on"
+                        : "Birthday posts off",
+                    )
+                  }
+                />
+              </div>
+            ) : null}
+            {config ? (
+              <div className="mt-10">
+                <SettingsMemberNames
+                  enabled={config.members_can_change_name === true}
+                  canManage={canManage}
+                  isSaving={pendingConfigKeys.has("members_can_change_name")}
+                  onChange={(enabled) =>
+                    patchConfig(
+                      { members_can_change_name: enabled },
+                      enabled
+                        ? "Members can change their own name"
+                        : "Member names locked",
+                    )
+                  }
+                />
+              </div>
+            ) : null}
           </TabsContent>
           {/*
             Board `4d` gives Semester its own rail entry. It used to be two
@@ -663,17 +792,17 @@ function SettingsPageContent() {
 
           {/*
             **Deliberately not `renderConfigGated`.** A `roles:manage` holder
-            without `chapter-config:view` reaches this tab: the nav's Settings
-            row admits `roles:manage` on its own (`settings-access.ts`), and
+            without `chapter-config:view` reaches this tab: the chapter menu's
+            Chapter settings item admits `roles:manage` on its own (`settings-access.ts`), and
             `/roles` redirects here. This page's config read is gated on
             `chapter-config:view`, so gating the tab on it would land that
             member on "Couldn't load chapter configuration", which is what
             happened while the nav had a Roles row of its own (#2946 folded it
             into Settings). That combination is freely constructible from the
-            matrix below.
+            tier permission pages below.
 
-            It does not need the gate: the matrix reads `useRoles` and
-            `usePermissionsCatalog`, neither of which is chapter config. Only
+            It does not need the gate: the roles pages read `useRoles` and
+            `useRoleTiers`, neither of which is chapter config. Only
             the default-invite-role picker is, and it degrades on its own —
             `configUnavailable` hides that one control rather than the tab.
           */}
@@ -722,34 +851,58 @@ function SettingsPageContent() {
             config a tool-only viewer lacks the way rules do, so only the
             rules wait on the config read.
           */}
-          {shownModuleSettings().map((module) => (
-            <TabsContent key={module.key} value={module.key} className="mt-0">
-              <ModuleSettingsPage
-                module={module}
-                on={moduleOn(module.key)}
-                canManage={canManage}
-                switchPending={pendingConfigKeys.has(
-                  `enabled_modules.${module.key}`,
+          {shownModuleSettings().map((module) => {
+            const subpage = subpageFor(module.key);
+            return (
+              <TabsContent key={module.key} value={module.key} className="mt-0">
+                {subpage ? (
+                  <SettingsToolSubpage subpage={subpage} />
+                ) : (
+                  <ModuleSettingsPage
+                    module={module}
+                    on={moduleOn(module.key)}
+                    canManage={canManage}
+                    switchPending={pendingConfigKeys.has(
+                      `enabled_modules.${module.key}`,
+                    )}
+                    onToggle={(enabled) =>
+                      patchConfig(
+                        { enabled_modules: { [module.key]: enabled } },
+                        enabled
+                          ? `${module.label} turned on`
+                          : `${module.label} turned off`,
+                      )
+                    }
+                    tools={tools.filter((tool) => tool.page === module.key)}
+                    toolBody={
+                      <SettingsToolBody
+                        moduleKey={module.key}
+                        holdsTool={holdsTool}
+                      />
+                    }
+                    canSeeWhoCan={canSeeWhoCan}
+                    canEditRoles={can("roles:manage", permissions)}
+                    focusSwitch={focusModuleKey === module.key}
+                    onSwitchFocused={handleModuleFocused}
+                    rules={
+                      canViewConfig ? renderModuleRules(module.key) : undefined
+                    }
+                  />
                 )}
-                onToggle={(enabled) =>
-                  patchConfig(
-                    { enabled_modules: { [module.key]: enabled } },
-                    enabled
-                      ? `${module.label} turned on`
-                      : `${module.label} turned off`,
-                  )
-                }
-                tools={tools.filter((tool) => tool.page === module.key)}
-                canSeeWhoCan={canSeeWhoCan}
-                canEditRoles={can("roles:manage", permissions)}
-                focusSwitch={focusModuleKey === module.key}
-                onSwitchFocused={handleModuleFocused}
-                rules={
-                  canViewConfig ? renderModuleRules(module.key) : undefined
-                }
-              />
-            </TabsContent>
-          ))}
+              </TabsContent>
+            );
+          })}
+          {/*
+            Logs (Paul, 2026-11-21): no config gate, since it reads the audit
+            log, not chapter config; the rail shows it only to a viewer the
+            route admits (`isSettingsTabVisible`).
+          */}
+          <TabsContent value="logs" className="mt-0">
+            <SettingsLogsTab />
+          </TabsContent>
+          <TabsContent value="ai" className="mt-0">
+            <SettingsAiTab />
+          </TabsContent>
           <TabsContent value="privacy" className="mt-0">
             {renderConfigGated(
               <SettingsPrivacyTab

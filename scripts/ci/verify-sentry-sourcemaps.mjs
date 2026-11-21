@@ -6,7 +6,7 @@
 // ── Why this exists ─────────────────────────────────────────────────────────
 // All three deployed surfaces upload source maps on a best-effort basis, and
 // that is deliberate: symbolicated stack traces are telemetry, and they must
-// not gate shipping (#2431). The API's Render build logs one `WARNING:` line
+// not gate shipping (#2431). The API's image build logs one `WARNING:` line
 // when `sentry-cli` fails and carries on
 // (`apps/api/src/infrastructure/observability/upload-sentry-sourcemaps.ts`).
 // Web's and landing's Sentry plugin logs a recoverable error and carries on.
@@ -31,15 +31,15 @@
 //     staging's chunks, and the debug IDs derived from them, are not
 //     production's, and staging's maps can't symbolicate a production frame.
 //   * The API's dist is the same in both environments, but its debug IDs
-//     exist only if that environment's Render build ran `sentry-cli
-//     sourcemaps inject`. A build without the token (a lagging Infisical →
-//     Render sync) or with a failed inject ships JS with none, which no
+//     exist only if that environment's image build (the deploy job's
+//     `Build the API image`) ran `sentry-cli sourcemaps inject`. A build
+//     without the token or with a failed inject ships JS with none, which no
 //     bundle can symbolicate, while staging's bundle for the same commit
 //     would still be there to count (#2489 review).
-// Known limits, both loud rather than silent: a same-commit redeploy where
-// Render reuses its cached upload layer uploads nothing new and reads
-// `missing` (the alert says to clear the build cache), and a staging deploy
-// of the same commit that uploads while this run builds would count.
+// Known limit, loud rather than silent: a staging deploy of the same commit
+// that uploads while this run builds would count. (Render's build cache
+// could also hide a same-commit upload until #5228; the runner's build
+// starts with no cache.)
 //
 // ── The question it asks ────────────────────────────────────────────────────
 //   GET <SENTRY_URL>/api/0/projects/<org>/<project>/files/artifact-bundles/?query=<sha>
@@ -58,8 +58,7 @@
 //   missing      — Sentry answered, and none is (re-asked every 15 s for a
 //                  minute first, because Sentry assembles an upload after it
 //                  lands)
-//   no-token     — this job has no SENTRY_AUTH_TOKEN, so the build it ran, or
-//                  the Render build synced from the same Infisical environment,
+//   no-token     — this job has no SENTRY_AUTH_TOKEN, so the builds it ran
 //                  uploaded nothing
 //   rejected     — 401, or 403 from both this endpoint and the documented
 //                  releases list: the token that uploads can't read either.
@@ -105,7 +104,7 @@
 //
 // Env inputs:
 //   DEPLOY_SHA         — required: the full commit SHA the run deployed
-//   API_BUILT          — `true` when this run built the API image on Render
+//   API_BUILT          — `true` when this run built the API image
 //   FRONTENDS_BUILT    — `true` when this run built web and landing
 //   SOURCEMAPS_SINCE   — ISO time the run's builds began; required for any
 //                        project to be judged
@@ -373,8 +372,8 @@ export async function verifySentrySourcemaps({
       return {
         verdict: "no-token",
         detail:
-          "this job got no SENTRY_AUTH_TOKEN from its Infisical injection, and the builds read the same Infisical " +
-          "environment (web and landing in this job, the API through Render's sync), so they uploaded nothing",
+          "this job got no SENTRY_AUTH_TOKEN from its Infisical injection, and its builds read it from there, " +
+          "so they uploaded nothing",
       };
     }
     if (!Number.isFinite(since)) {

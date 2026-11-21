@@ -7,7 +7,14 @@
  * `geofences: false` while still enabling `hours` — a chapter that never
  * administers zones from the app still has members who study in them.
  */
+import { isValidZoneOutline, studyZoneRulesLine } from "@repo/validation";
 import { num, records, str } from "../more/narrow";
+
+/** One corner of a zone's outline, as `study_geofences.coordinates` stores it. */
+export interface ZoneCorner {
+  lat: number;
+  lng: number;
+}
 
 export interface StudyZoneModel {
   id: string;
@@ -17,6 +24,20 @@ export interface StudyZoneModel {
   pointsPerInterval: number;
   minSessionMinutes: number;
   pauseGraceMinutes: number;
+  /**
+   * The polygon the server checks a fix against, or empty when the row's
+   * outline is unreadable. Only used to say where the member is before they
+   * tap Start (`lib/study/proximity.ts`); the server stays the judge.
+   */
+  outline: ZoneCorner[];
+}
+
+function toOutline(value: unknown): ZoneCorner[] {
+  // The API's own validity rule, so the phone measures exactly the zones the
+  // server can check.
+  return isValidZoneOutline(value)
+    ? value.map((point) => ({ lat: point.lat, lng: point.lng }))
+    : [];
 }
 
 /** Server defaults, mirrored so a zone row missing a field still reads honestly. */
@@ -46,6 +67,7 @@ function toZone(row: Record<string, unknown>): StudyZoneModel | null {
       num(row, "min_session_minutes") ?? DEFAULTS.minSessionMinutes,
     pauseGraceMinutes:
       num(row, "pause_grace_minutes") ?? DEFAULTS.pauseGraceMinutes,
+    outline: toOutline(row.coordinates),
   };
 }
 
@@ -55,6 +77,20 @@ export function selectActiveZones(data: unknown): StudyZoneModel[] {
     .map(toZone)
     .filter((zone): zone is StudyZoneModel => !!zone && zone.isActive)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Every zone's name by id, turned-off ones too: a past session's row is titled
+ * with the zone it was in after an officer retires it, as web's row is
+ * (2026-11-19).
+ */
+export function selectZoneNames(data: unknown): Map<string, string> {
+  return new Map(
+    records(data)
+      .map(toZone)
+      .filter((zone): zone is StudyZoneModel => !!zone)
+      .map((zone) => [zone.id, zone.name]),
+  );
 }
 
 export function findZone(
@@ -78,9 +114,11 @@ export function graceWindowCopy(zone: StudyZoneModel | null): string {
   return `Leaving the zone pauses with a ${minutes}-min grace window.`;
 }
 
-/** e.g. `1 pt per 30 min · 15 min minimum` — what a zone actually pays. */
+/** What a zone pays, "1 point every 30 min · 15 min minimum", as web says it. */
 export function zoneRewardCopy(zone: StudyZoneModel): string {
-  const points =
-    zone.pointsPerInterval === 1 ? "1 pt" : `${zone.pointsPerInterval} pts`;
-  return `${points} per ${zone.minutesPerPoint} min · ${zone.minSessionMinutes} min minimum`;
+  return studyZoneRulesLine({
+    points_per_interval: zone.pointsPerInterval,
+    minutes_per_point: zone.minutesPerPoint,
+    min_session_minutes: zone.minSessionMinutes,
+  });
 }

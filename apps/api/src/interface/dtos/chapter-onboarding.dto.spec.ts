@@ -1,6 +1,10 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import {
+  CHAPTER_NAME_MAX_LENGTH,
+  CHAPTER_UNIVERSITY_MAX_LENGTH,
+} from '@repo/validation';
 import { ChapterOnboardingDto } from './chapter-onboarding.dto';
 
 /** Validate a plain payload through the DTO and return the failing property names. */
@@ -29,5 +33,41 @@ describe('ChapterOnboardingDto — Terms/Privacy acceptance gate (FRA-17)', () =
 
   it('rejects a missing accept_terms_privacy', async () => {
     expect(await failingProps(base)).toContain('accept_terms_privacy');
+  });
+});
+
+describe('ChapterOnboardingDto — name and university', () => {
+  const base = { accept_terms_privacy: true };
+
+  it('trims both, and takes each at its limit', async () => {
+    const dto = plainToInstance(ChapterOnboardingDto, {
+      ...base,
+      name: '  Sigma Phi Epsilon ',
+      university: ' UCLA  ',
+    });
+    expect(await validate(dto)).toEqual([]);
+    expect(dto.name).toBe('Sigma Phi Epsilon');
+    expect(dto.university).toBe('UCLA');
+
+    expect(
+      await failingProps({
+        ...base,
+        name: 'n'.repeat(CHAPTER_NAME_MAX_LENGTH),
+        university: 'u'.repeat(CHAPTER_UNIVERSITY_MAX_LENGTH),
+      }),
+    ).toEqual([]);
+  });
+
+  it('refuses spaces alone, and each one past its limit', async () => {
+    expect(
+      await failingProps({ ...base, name: '     ', university: '    ' }),
+    ).toEqual(['name', 'university']);
+    expect(
+      await failingProps({
+        ...base,
+        name: 'n'.repeat(CHAPTER_NAME_MAX_LENGTH + 1),
+        university: 'u'.repeat(CHAPTER_UNIVERSITY_MAX_LENGTH + 1),
+      }),
+    ).toEqual(['name', 'university']);
   });
 });

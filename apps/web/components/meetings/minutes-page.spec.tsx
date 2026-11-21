@@ -1,0 +1,1852 @@
+import { MINUTES_FLOW_COPY, minutesDraftElapsed } from "@repo/validation";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { MeetingMinutes } from "@repo/hooks";
+
+const mocks = vi.hoisted(() => ({
+  datesReview: vi.fn(),
+  meeting: { current: null as unknown },
+  event: { current: undefined as unknown },
+  actionItemTasks: { current: [] as unknown[] },
+  permissions: { current: [] as string[] },
+  markAttendance: vi.fn(),
+  updateEvent: vi.fn(),
+  update: vi.fn(),
+  post: vi.fn(),
+  remove: vi.fn(),
+  refetch: vi.fn(),
+  toast: vi.fn(),
+  push: vi.fn(),
+  confirm: vi.fn(),
+  draft: { current: null as unknown },
+  requestDraft: vi.fn(),
+  discardDraft: vi.fn(),
+  useDraft: vi.fn(),
+  ensureConsent: vi.fn(),
+  recording: { current: null as unknown },
+  startRecording: vi.fn(),
+  confirmRecording: vi.fn(),
+  removeRecording: vi.fn(),
+  uploadResumable: vi.fn(),
+  readAudioDuration: vi.fn(),
+  notes: { current: null as unknown },
+  saveNotes: vi.fn(),
+  choose: vi.fn(),
+}));
+
+vi.mock("@repo/hooks", () => ({
+  useMeetingNotes: () => ({ isPending: false, data: mocks.notes.current }),
+  useSaveMeetingNotes: () => ({
+    mutateAsync: mocks.saveNotes,
+    isPending: false,
+  }),
+  useAddMeetingNoteTaker: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoveMeetingNoteTaker: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useChooseMeetingDraftVersion: () => ({
+    mutateAsync: mocks.choose,
+    isPending: false,
+  }),
+  useLinkMeetingEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEvents: () => ({ data: [] }),
+  useEvent: () => ({ data: mocks.event.current }),
+  useRoles: () => ({ data: [] }),
+  useUpdateEvent: () => ({ mutateAsync: mocks.updateEvent, isPending: false }),
+  useMeetings: () => ({ data: [] }),
+  useCurrentUser: () => ({
+    data: { id: "11111111-1111-4111-8111-111111111111" },
+  }),
+  useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
+  usePermissionList: () => mocks.permissions.current,
+  useMarkAttendanceByHand: () => ({
+    mutateAsync: mocks.markAttendance,
+    isPending: false,
+  }),
+  useMeeting: () => mocks.meeting.current,
+  useCachedMeetingRow: () => null,
+  // The real clock's arithmetic, read once: the spec has no timers to tick.
+  useMinutesDraftClock: (at: string | null) =>
+    minutesDraftElapsed(at ?? null, Date.now()),
+  useMeetingActionItemTasks: () => ({ data: mocks.actionItemTasks.current }),
+  useUpdateMeeting: () => ({ mutateAsync: mocks.update, isPending: false }),
+  usePostMeeting: () => ({ mutateAsync: mocks.post, isPending: false }),
+  useDeleteMeeting: () => ({ mutateAsync: mocks.remove, isPending: false }),
+  useMeetingDraft: () => ({ isPending: false, data: mocks.draft.current }),
+  useRequestMeetingDraft: () => ({
+    mutateAsync: mocks.requestDraft,
+    isPending: false,
+  }),
+  useUseMeetingDraft: () => ({ mutateAsync: mocks.useDraft, isPending: false }),
+  useDiscardMeetingDraft: () => ({
+    mutateAsync: mocks.discardDraft,
+    isPending: false,
+  }),
+  useMeetingRecording: () => ({
+    isPending: false,
+    data: mocks.recording.current,
+  }),
+  useStartMeetingRecording: () => ({
+    mutateAsync: mocks.startRecording,
+    isPending: false,
+  }),
+  useConfirmMeetingRecording: () => ({
+    mutateAsync: mocks.confirmRecording,
+    isPending: false,
+  }),
+  useRemoveMeetingRecording: () => ({
+    mutateAsync: mocks.removeRecording,
+    isPending: false,
+  }),
+  useMemberDisplayNames: () => ({
+    nameFor: (id: string) =>
+      ({
+        "11111111-1111-4111-8111-111111111111": "Jake Ross",
+        "22222222-2222-4222-8222-222222222222": "Sam Lee",
+      })[id] ?? null,
+  }),
+  useChapterRoster: () => ({
+    data: [
+      {
+        user_id: "11111111-1111-4111-8111-111111111111",
+        display_name: "Jake Ross",
+      },
+      {
+        user_id: "22222222-2222-4222-8222-222222222222",
+        display_name: "Sam Lee",
+      },
+    ],
+  }),
+}));
+
+// The list has its own spec; here only where the page puts it.
+// Coming up's tracking reads events and tasks of its own (its spec covers
+// it); here the dates draw as plain tiles.
+vi.mock("@/components/meetings/coming-up-dates", async () => {
+  const { DatesView } = await import("./minutes-read");
+  return {
+    ComingUpDates: ({
+      dates,
+    }: {
+      dates: React.ComponentProps<typeof DatesView>["dates"];
+    }) => <DatesView dates={dates} />,
+  };
+});
+
+// The review after Post has its own spec; here only when the page starts it.
+vi.mock("@/components/meetings/coming-up-post-review", () => ({
+  ComingUpPostReview: (props: { meetingId: string }) => {
+    mocks.datesReview(props);
+    return null;
+  },
+}));
+
+vi.mock("@/components/ai/suggested-tasks", () => ({
+  SuggestedTasks: ({ source }: { source: { type: string; id: string } }) => (
+    <div data-testid="suggested-tasks">{`${source.type}:${source.id}`}</div>
+  ),
+}));
+
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
+  useAiConsentGate: () => ({
+    ensureConsent: mocks.ensureConsent,
+    consentDialog: null,
+  }),
+}));
+
+vi.mock("@repo/hooks/resumable-upload", () => ({
+  ResumableUploadError: class extends Error {
+    constructor(readonly failure: string) {
+      super(failure);
+    }
+  },
+  blobSource: (blob: Blob) => blob,
+  uploadResumable: mocks.uploadResumable,
+}));
+
+vi.mock("@/lib/audio-duration", () => ({
+  readAudioDuration: mocks.readAudioDuration,
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mocks.push }),
+}));
+
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: mocks.toast }),
+}));
+
+vi.mock("@/components/shared/confirm-dialog", () => ({
+  useConfirmDialog: () => ({ confirm: mocks.confirm, confirmDialog: null }),
+}));
+
+const { MinutesPage } = await import("./minutes-page");
+
+const EMPTY = {
+  tldr: "",
+  tabled: [],
+  dates: [],
+  summary: "",
+  announcements: "",
+  decisions: [],
+  action_items: [],
+  officer_reports: "",
+  old_business: "",
+  new_business: "",
+  discussion_log: "",
+};
+
+/** A draft saves itself once typing rests (`AUTOSAVE_MS`), so waits run past it. */
+const AUTOSAVED = { timeout: 3000 };
+
+function minutes(overrides: Partial<MeetingMinutes> = {}): MeetingMinutes {
+  return {
+    id: "m-1",
+    event_id: "e-1",
+    event_name: "Chapter meeting",
+    event_start_time: "2026-11-09T23:00:00.000Z",
+    event_end_time: "2026-11-10T00:00:00.000Z",
+    meeting_type: "chapter",
+    other_label: null,
+    status: "posted",
+    created_by: "11111111-1111-4111-8111-111111111111",
+    updated_by: "11111111-1111-4111-8111-111111111111",
+    posted_by: "11111111-1111-4111-8111-111111111111",
+    posted_at: "2026-11-10T01:00:00.000Z",
+    updated_at: "2026-11-10T01:00:00.000Z",
+    created_at: "2026-11-09T23:00:00.000Z",
+    transcript: null,
+    content: {
+      ...EMPTY,
+      summary: "Budget approved.",
+      decisions: [
+        {
+          text: "Approve the formal budget",
+          vote: { for: 30, against: 2, abstain: 1 },
+        },
+      ],
+      action_items: [
+        {
+          text: "Book the venue",
+          owner_user_id: "22222222-2222-4222-8222-222222222222",
+          due_date: "2026-11-14",
+        },
+      ],
+    },
+    sections: [
+      "attendees",
+      "summary",
+      "announcements",
+      "decisions",
+      "action_items",
+    ],
+    attendees: {
+      present: [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+      ],
+      late: [],
+      excused: [],
+    },
+    can_edit: false,
+    can_delete: false,
+    ...overrides,
+  } as MeetingMinutes;
+}
+
+function loaded(meeting: MeetingMinutes) {
+  mocks.meeting.current = {
+    isPending: false,
+    data: meeting,
+    error: null,
+    refetch: mocks.refetch,
+  };
+}
+
+beforeEach(() => {
+  mocks.datesReview.mockReset();
+  mocks.notes.current = null;
+  for (const fn of [
+    mocks.saveNotes,
+    mocks.choose,
+    mocks.updateEvent,
+    mocks.update,
+    mocks.post,
+    mocks.remove,
+    mocks.refetch,
+    mocks.toast,
+    mocks.push,
+    mocks.confirm,
+    mocks.requestDraft,
+    mocks.discardDraft,
+    mocks.useDraft,
+    mocks.ensureConsent,
+    mocks.startRecording,
+    mocks.confirmRecording,
+    mocks.removeRecording,
+    mocks.uploadResumable,
+    mocks.readAudioDuration,
+  ]) {
+    fn.mockReset();
+  }
+  mocks.draft.current = null;
+  mocks.recording.current = null;
+});
+
+const NO_RECORDING = {
+  status: "none",
+  upload_id: null,
+  file_name: null,
+  size_bytes: null,
+  duration_seconds: null,
+  failure: null,
+  failure_message: null,
+  transcript: null,
+  speaker_count: null,
+  uploaded_at: null,
+  available: true,
+  blocked: null,
+  max_bytes: 200 * 1024 * 1024,
+  max_seconds: 7200,
+  upload: null,
+};
+
+const TRANSCRIPT = "Speaker 1: Call to order.\nSpeaker 2: Treasurer report.";
+
+const READY_RECORDING = {
+  ...NO_RECORDING,
+  status: "ready",
+  upload_id: "u-1",
+  file_name: "chapter.m4a",
+  size_bytes: 60_000_000,
+  duration_seconds: 4320,
+  transcript: TRANSCRIPT,
+  speaker_count: 2,
+};
+
+const NO_DRAFT = {
+  status: "none",
+  notes: "",
+  failure: null,
+  failure_message: null,
+  content: null,
+  review: { gaps: [], sources: [], left_out: 0 },
+  requested_at: null,
+  blocked: null,
+};
+
+function ownDraft(overrides: Partial<MeetingMinutes> = {}): MeetingMinutes {
+  return minutes({
+    status: "draft",
+    posted_at: null,
+    posted_by: null,
+    can_edit: true,
+    can_delete: true,
+    content: EMPTY,
+    ...overrides,
+  });
+}
+
+/** Opens the header's ⋯ menu and picks an item, as a keyboard user would. */
+function openMenuItem(name: string) {
+  fireEvent.keyDown(screen.getByRole("button", { name: "More" }), {
+    key: "Enter",
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name }));
+}
+
+describe("MinutesPage", () => {
+  it("reads posted minutes as a document, with only the sections that hold something", () => {
+    loaded(minutes());
+    render(<MinutesPage id="m-1" />);
+    expect(
+      screen.getByRole("heading", { name: "Chapter meeting" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Budget approved.")).toBeTruthy();
+    // The vote in words under the decision, as the phone reads it (#5562).
+    expect(screen.getByText("30 for, 2 against, 1 abstaining")).toBeTruthy();
+    expect(screen.getByText(/Sam Lee · Due/)).toBeTruthy();
+    // Attendance is a row under the minutes, its count on the row.
+    expect(screen.getByText("2 attended")).toBeTruthy();
+    expect(screen.getByText("Jake Ross, Sam Lee")).toBeTruthy();
+    // Announcements is in the template but empty, so it isn't drawn.
+    expect(screen.queryByRole("heading", { name: "Announcements" })).toBeNull();
+    // A member who can't edit gets the menu with nothing that changes them.
+    fireEvent.keyDown(screen.getByRole("button", { name: "More" }), {
+      key: "Enter",
+    });
+    expect(screen.getByRole("menuitem", { name: "Copy link" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Open event" })).toBeTruthy();
+    for (const name of ["Edit details", "Edit minutes", "Delete minutes"]) {
+      expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    }
+  });
+
+  it("leads posted minutes with the TL;DR, the full summary folded under it (#5562)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          tldr: "- Formal budget approved\n- Book the venue by Friday",
+          summary: "Budget approved.",
+        },
+        sections: ["tldr", "summary", "discussion_log"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    const headings = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((node) => node.textContent);
+    // The gist is said once: the Summary opens under the TL;DR.
+    expect(headings).toEqual(["TL;DR"]);
+    expect(screen.getByText("Formal budget approved")).toBeTruthy();
+    expect(screen.getByText("Book the venue by Friday")).toBeTruthy();
+    expect(screen.queryByText("Budget approved.")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Read the full summary" }),
+    );
+    expect(screen.getByText("Budget approved.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Hide the summary" }),
+    ).toBeTruthy();
+  });
+
+  it("draws Coming up as date tiles and leads a decision with its headline (#5562)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          dates: [{ date: "2026-11-28", text: "Officer installation" }],
+          decisions: [
+            {
+              text: "Moved to spend $400 from social on the formal venue deposit",
+              headline: "Formal deposit approved",
+              vote: null,
+            },
+          ],
+        },
+        sections: ["dates", "decisions"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByText("NOV")).toBeTruthy();
+    expect(screen.getByText("28")).toBeTruthy();
+    expect(screen.getByText("Officer installation")).toBeTruthy();
+    // The weekday alone beside the tile, which already says the day.
+    expect(screen.getByText(/^Saturday(, \d{4})?$/)).toBeTruthy();
+    expect(screen.getByText("Formal deposit approved").className).toContain(
+      "font-semibold",
+    );
+    expect(
+      screen.getByText(
+        "Moved to spend $400 from social on the formal venue deposit",
+      ).className,
+    ).toContain("text-muted-foreground");
+    // The jump bar goes to each, with its count.
+    const jump = screen.getByRole("navigation", { name: "Jump to a section" });
+    expect(jump.textContent).toContain("Coming up1");
+    expect(jump.textContent).toContain("Decisions1");
+  });
+
+  it("shows the first few of a long list, and the rest on Show all (#5562)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          decisions: Array.from({ length: 7 }, (_, at) => ({
+            text: `Decision ${at + 1}`,
+            vote: null,
+          })),
+        },
+        sections: ["decisions"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByText("Decision 4")).toBeTruthy();
+    expect(screen.queryByText("Decision 5")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show all 7" }));
+    expect(screen.getByText("Decision 7")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show fewer" })).toBeTruthy();
+  });
+
+  it("lists what was tabled, with where a carried item was first tabled (#5522)", () => {
+    loaded(
+      minutes({
+        content: {
+          ...EMPTY,
+          summary: "Budget approved.",
+          tabled: [
+            {
+              text: "Formal budget",
+              first_meeting_id: null,
+              first_start_time: null,
+              times: 1,
+            },
+            {
+              text: "Rush shirts",
+              first_meeting_id: "33333333-3333-4333-8333-333333333333",
+              first_start_time: "2026-11-03T23:00:00.000Z",
+              times: 2,
+            },
+          ],
+        },
+        sections: ["summary", "tabled", "discussion_log"],
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByRole("heading", { name: "Tabled" })).toBeTruthy();
+    expect(screen.getByText("Formal budget")).toBeTruthy();
+    expect(screen.getByText("Rush shirts")).toBeTruthy();
+    expect(screen.getByText(/^Tabled from .* · 2nd time$/)).toBeTruthy();
+  });
+
+  it("keeps changing posted minutes out of the way: Copy link an icon, Edit and a red Delete behind the dots (Paul, 2026-11-18)", () => {
+    loaded(minutes({ can_edit: true, can_delete: true }));
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("button", { name: "More" }), {
+      key: "Enter",
+    });
+    expect(screen.getByRole("menuitem", { name: "Edit minutes" })).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", { name: "Delete minutes" }).className,
+    ).toContain("text-destructive-text");
+  });
+
+  it("ticks an action item off once its task is done, and says so at a glance", () => {
+    mocks.actionItemTasks.current = [{ index: 0, done: true, group: null }];
+    try {
+      loaded(minutes());
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByText("Done:")).toBeTruthy();
+      expect(screen.getByText("1 done")).toBeTruthy();
+    } finally {
+      mocks.actionItemTasks.current = [];
+    }
+  });
+
+  it("marks the reader's own action items, says when nobody was named, and leads each topic line with its topic", () => {
+    loaded(
+      minutes({
+        sections: ["summary", "action_items", "discussion_log"],
+        content: {
+          ...EMPTY,
+          summary: "Budget approved.",
+          action_items: [
+            {
+              text: "Collect the deposit",
+              owner_user_id: "11111111-1111-4111-8111-111111111111",
+              due_date: null,
+            },
+            {
+              text: "Send the shirt form",
+              owner_user_id: null,
+              due_date: null,
+            },
+          ],
+          discussion_log:
+            "Rusty Pipes afterparty: the venue asked for a deposit, and it passed with that condition.\nNo topic on this line.",
+        },
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    const mine = screen.getByText("Collect the deposit").parentElement!;
+    expect(mine.textContent).toContain("Yours");
+    // The reader's own come first, alone, until they ask for all of them.
+    expect(screen.queryByText("Send the shirt form")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "All 2" }));
+    const theirs = screen.getByText("Send the shirt form").parentElement!;
+    expect(theirs.textContent).not.toContain("Yours");
+    expect(screen.getByText("Nobody named yet")).toBeTruthy();
+    const topic = screen.getByText("Rusty Pipes afterparty");
+    expect(topic.className).toContain("font-semibold");
+    expect(screen.getByText("No topic on this line.")).toBeTruthy();
+    // What was settled and who owes what come before the discussion.
+    const headings = screen
+      .getAllByRole("heading", { level: 3 })
+      .map((h) => h.textContent);
+    expect(headings).toEqual(["Summary", "Action items", "Notes"]);
+  });
+
+  it("draws the notes as topics over their points, and keeps the transcript under them (#5410)", () => {
+    loaded(
+      minutes({
+        transcript: "Speaker 1: One join code for Discord.",
+        content: {
+          ...EMPTY,
+          summary: "Paul and Shawn took stock before the pitch.",
+          discussion_log:
+            "Rolling out to the chapter\n- One join code to drop in Discord\n  - 100 members can't be added one by one",
+        },
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByText("Rolling out to the chapter").className).toContain(
+      "font-semibold",
+    );
+    expect(screen.getByText("One join code to drop in Discord")).toBeTruthy();
+    expect(
+      screen.getByText("100 members can't be added one by one").parentElement!
+        .className,
+    ).toContain("pl-5");
+    // A topic opens in place, its points under it.
+    expect(
+      screen.getByText("Rolling out to the chapter").closest("details"),
+    ).toBeTruthy();
+    // The transcript opens in its own tab, not under the minutes.
+    expect(
+      screen
+        .getByRole("link", { name: /Open transcript/ })
+        .getAttribute("href"),
+    ).toBe("/meetings/m-1/transcript");
+    expect(
+      screen.queryByText("Speaker 1: One join code for Discord."),
+    ).toBeNull();
+  });
+
+  it("lists suggested tasks under posted minutes, and never beside a draft or the editor", () => {
+    loaded(minutes({ can_edit: true }));
+    const { unmount } = render(<MinutesPage id="m-1" />);
+    expect(screen.getByTestId("suggested-tasks").textContent).toBe(
+      "meeting:m-1",
+    );
+    openMenuItem("Edit minutes");
+    expect(screen.queryByTestId("suggested-tasks")).toBeNull();
+    unmount();
+
+    loaded(minutes({ status: "draft", posted_at: null, can_edit: true }));
+    render(<MinutesPage id="m-1" />);
+    expect(screen.queryByTestId("suggested-tasks")).toBeNull();
+  });
+
+  it("says the minutes aren't here on a 404, without a retry", () => {
+    mocks.meeting.current = {
+      isPending: false,
+      data: undefined,
+      error: { statusCode: 404 },
+      refetch: mocks.refetch,
+    };
+    render(<MinutesPage id="m-1" />);
+    expect(screen.getByText("These minutes aren't here")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("opens the author's draft as its editor and saves it on its own, against the version it loaded", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      posted_by: null,
+      can_edit: true,
+      can_delete: true,
+      content: EMPTY,
+    });
+    loaded(draft);
+    mocks.update.mockResolvedValue({
+      ...draft,
+      updated_at: "2026-11-10T02:00:00.000Z",
+      content: { ...EMPTY, summary: "We met." },
+    });
+    render(<MinutesPage id="m-1" />);
+    // A draft has no Save button: it saves once typing rests.
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.getByRole("status", { name: "" }).textContent).toBe("Saved");
+    fireEvent.change(screen.getByRole("textbox", { name: "Summary" }), {
+      target: { value: "We met." },
+    });
+    expect(screen.getByText("Saving…")).toBeTruthy();
+    await waitFor(
+      () => expect(mocks.update).toHaveBeenCalledTimes(1),
+      AUTOSAVED,
+    );
+    expect(mocks.update.mock.calls[0]![0]).toMatchObject({
+      id: "m-1",
+      body: {
+        expected_updated_at: "2026-11-10T01:00:00.000Z",
+        meeting_type: "chapter",
+        other_label: null,
+        content: { summary: "We met." },
+      },
+    });
+  });
+
+  it("drops a blank decision row rather than sending it", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+    });
+    loaded(draft);
+    mocks.update.mockResolvedValue(draft);
+    render(<MinutesPage id="m-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Add a decision" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Summary" }), {
+      target: { value: "Short one." },
+    });
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled(), AUTOSAVED);
+    expect(mocks.update.mock.calls[0]![0].body.content.decisions).toEqual([]);
+  });
+
+  it("tables an item by hand and takes one out, saving what's left (#5522)", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: {
+        ...EMPTY,
+        tabled: [
+          {
+            text: "Rush shirts",
+            first_meeting_id: null,
+            first_start_time: null,
+            times: 1,
+          },
+        ],
+      },
+      sections: ["summary", "tabled", "discussion_log"],
+    });
+    loaded(draft);
+    mocks.update.mockResolvedValue(draft);
+    render(<MinutesPage id="m-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Table an item" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Tabled item 2" }), {
+      target: { value: "Formal budget " },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove tabled item 1" }),
+    );
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled(), AUTOSAVED);
+    expect(mocks.update.mock.calls[0]![0].body.content.tabled).toEqual([
+      {
+        text: "Formal budget",
+        first_meeting_id: null,
+        first_start_time: null,
+        times: 1,
+      },
+    ]);
+  });
+
+  it("tables an agenda item in one tap, keeping a carried one's first date (#5534)", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+      sections: ["summary", "tabled", "discussion_log"],
+    });
+    loaded(draft);
+    mocks.event.current = {
+      agenda: [
+        { id: "a1", text: "Treasurer report", done: true },
+        {
+          id: "a2",
+          text: "Formal budget",
+          done: false,
+          tabled_from: {
+            meeting_id: "22222222-2222-4222-8222-222222222222",
+            start_time: "2026-11-11T23:00:00+00:00",
+            times: 1,
+          },
+        },
+      ],
+    };
+    mocks.update.mockResolvedValue(draft);
+    render(<MinutesPage id="m-1" />);
+    fireEvent.click(
+      screen.getByRole("button", { name: 'Table "Formal budget"' }),
+    );
+    // Tabled now: no longer offered.
+    expect(
+      screen.queryByRole("button", { name: 'Table "Formal budget"' }),
+    ).toBeNull();
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled(), AUTOSAVED);
+    expect(mocks.update.mock.calls[0]![0].body.content.tabled).toEqual([
+      {
+        text: "Formal budget",
+        first_meeting_id: "22222222-2222-4222-8222-222222222222",
+        first_start_time: "2026-11-11T23:00:00+00:00",
+        times: 2,
+      },
+    ]);
+    mocks.event.current = undefined;
+  });
+
+  it("says someone else saved, and keeps the typing, when a save is stale", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+    });
+    loaded(draft);
+    mocks.update.mockRejectedValue({ statusCode: 409, code: "meeting.stale" });
+    render(<MinutesPage id="m-1" />);
+    const summary = screen.getByRole("textbox", { name: "Summary" });
+    fireEvent.change(summary, { target: { value: "Mine." } });
+    expect(
+      await screen.findByText(
+        /Someone else saved these minutes/,
+        {},
+        AUTOSAVED,
+      ),
+    ).toBeTruthy();
+    expect((summary as HTMLTextAreaElement).value).toBe("Mine.");
+    expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
+  it("posts the saved version without asking, and shows the read view at once", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: { ...EMPTY, summary: "Done." },
+    });
+    loaded(draft);
+    let land: (value: unknown) => void = () => {};
+    mocks.post.mockReturnValue(new Promise((resolve) => (land = resolve)));
+    const { rerender } = render(<MinutesPage id="m-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "Post minutes" }));
+    // The editor gives way before the post lands.
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Summary" })).toBeNull(),
+    );
+    expect(screen.getByText("Done.")).toBeTruthy();
+    await waitFor(() => expect(mocks.post).toHaveBeenCalled());
+    loaded({
+      ...draft,
+      status: "posted",
+      posted_at: "2026-11-10T02:00:00.000Z",
+    });
+    land({ ...draft, status: "posted", posted_at: "2026-11-10T02:00:00.000Z" });
+    // Once it lands: posted, the toast, and the read view's own actions.
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith({ title: "Minutes posted" }),
+    );
+    // The real hook writes the posted meeting into the query cache, which
+    // re-renders the route; the mock needs a nudge to do the same.
+    rerender(<MinutesPage id="m-1" />);
+    expect(
+      await screen.findByRole("button", { name: "Copy link" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/posting/)).toBeNull();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.post).toHaveBeenCalledWith({
+      id: "m-1",
+      expectedUpdatedAt: "2026-11-10T01:00:00.000Z",
+    });
+    // Then the Coming up review, once the minutes are posted (#5672).
+    expect(mocks.datesReview).toHaveBeenLastCalledWith(
+      expect.objectContaining({ meetingId: "m-1" }),
+    );
+  });
+
+  it("saves typing that hasn't saved yet before posting, and posts that version", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+    });
+    loaded(draft);
+    mocks.update.mockResolvedValue({
+      ...draft,
+      updated_at: "2026-11-10T02:00:00.000Z",
+      content: { ...EMPTY, summary: "Last line." },
+    });
+    mocks.post.mockResolvedValue({ ...draft, status: "posted" });
+    render(<MinutesPage id="m-1" />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Summary" }), {
+      target: { value: "Last line." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post minutes" }));
+    await waitFor(() => expect(mocks.post).toHaveBeenCalled());
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(mocks.update.mock.calls[0]![0].body.content.summary).toBe(
+      "Last line.",
+    );
+    expect(mocks.post).toHaveBeenCalledWith({
+      id: "m-1",
+      expectedUpdatedAt: "2026-11-10T02:00:00.000Z",
+    });
+  });
+
+  it("saves an Other meeting from Edit details without a name, since the name is optional", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+    });
+    loaded(draft);
+    mocks.update.mockResolvedValue({ ...draft, meeting_type: "other" });
+    render(<MinutesPage id="m-1" />);
+    openMenuItem("Edit details");
+    fireEvent.click(await screen.findByRole("radio", { name: "Other" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mocks.update).toHaveBeenCalled());
+    // The type saves on its own, with none of the minutes' words.
+    expect(mocks.update.mock.calls[0]![0].body).toEqual({
+      expected_updated_at: draft.updated_at,
+      meeting_type: "other",
+      other_label: null,
+    });
+    // Without events:update, the event's name and time aren't offered.
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+  });
+
+  it("renames and moves the meeting's event from Edit details, for someone who can edit events (#5562)", async () => {
+    mocks.permissions.current = ["events:update"];
+    try {
+      loaded(minutes({ can_edit: true }));
+      mocks.updateEvent.mockResolvedValue({});
+      mocks.refetch.mockResolvedValue({ data: undefined });
+      render(<MinutesPage id="m-1" />);
+      openMenuItem("Edit details");
+      const name = (await screen.findByRole("textbox", {
+        name: "Name",
+      })) as HTMLInputElement;
+      expect(name.value).toBe("Chapter meeting");
+      // Who reads them is the event's, changed in the event.
+      expect(
+        screen
+          .getByRole("link", { name: "Change who's invited" })
+          .getAttribute("href"),
+      ).toBe("/events?event=e-1");
+      fireEvent.change(name, { target: { value: "Chapter meeting 12" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(mocks.updateEvent).toHaveBeenCalled());
+      expect(mocks.updateEvent.mock.calls[0]![0]).toMatchObject({
+        id: "e-1",
+        body: { name: "Chapter meeting 12" },
+      });
+      // Nothing about the minutes changed, so they aren't saved.
+      expect(mocks.update).not.toHaveBeenCalled();
+    } finally {
+      mocks.permissions.current = [];
+    }
+  });
+
+  it("loads their version, then saves against it rather than the version it first opened", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+    });
+    const theirs = {
+      ...draft,
+      updated_at: "2026-11-10T03:00:00.000Z",
+      content: { ...EMPTY, summary: "Theirs." },
+    };
+    loaded(draft);
+    mocks.update
+      .mockRejectedValueOnce({ statusCode: 409, code: "meeting.stale" })
+      .mockResolvedValueOnce({
+        ...theirs,
+        updated_at: "2026-11-10T04:00:00.000Z",
+        content: { ...EMPTY, summary: "Theirs, and mine." },
+      });
+    mocks.refetch.mockResolvedValue({ data: theirs });
+    render(<MinutesPage id="m-1" />);
+    const summary = () =>
+      screen.getByRole("textbox", { name: "Summary" }) as HTMLTextAreaElement;
+    fireEvent.change(summary(), { target: { value: "Mine." } });
+    fireEvent.click(
+      await screen.findByRole(
+        "button",
+        { name: "Load their version" },
+        AUTOSAVED,
+      ),
+    );
+    await waitFor(() => expect(summary().value).toBe("Theirs."));
+    expect(screen.queryByText(/Someone else saved these minutes/)).toBeNull();
+    fireEvent.change(summary(), { target: { value: "Theirs, and mine." } });
+    await waitFor(
+      () => expect(mocks.update).toHaveBeenCalledTimes(2),
+      AUTOSAVED,
+    );
+    expect(mocks.update.mock.calls[1]![0].body).toMatchObject({
+      expected_updated_at: "2026-11-10T03:00:00.000Z",
+      content: { summary: "Theirs, and mine." },
+    });
+  });
+
+  it("shows a newer version that arrives while nothing is typed", () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+    });
+    loaded(draft);
+    const view = render(<MinutesPage id="m-1" />);
+    loaded({
+      ...draft,
+      updated_at: "2026-11-10T03:00:00.000Z",
+      content: { ...EMPTY, summary: "Newer." },
+    });
+    view.rerender(<MinutesPage id="m-1" />);
+    expect(
+      (screen.getByRole("textbox", { name: "Summary" }) as HTMLTextAreaElement)
+        .value,
+    ).toBe("Newer.");
+  });
+
+  it("marks who was there by hand when nobody checked in, for someone who can edit events", async () => {
+    mocks.permissions.current = ["events:update"];
+    mocks.markAttendance.mockResolvedValue({
+      marked: ["22222222-2222-4222-8222-222222222222"],
+      already_marked: 0,
+      not_invited: 0,
+    });
+    mocks.refetch.mockResolvedValue({ data: undefined });
+    loaded(
+      ownDraft({
+        attendees: {
+          present: ["11111111-1111-4111-8111-111111111111"],
+          late: [],
+          excused: [],
+        },
+      }),
+    );
+    render(<MinutesPage id="m-1" />);
+    // The ⋯ menu's item, the same on the phone (#5562).
+    openMenuItem("Mark who was there");
+    // Someone already marked (here, checked in) can't be picked again.
+    expect(
+      (await screen.findByRole("checkbox", { name: /Jake Ross/ })).matches(
+        ":disabled",
+      ),
+    ).toBe(true);
+    // "Everyone not marked yet" picks only who has no mark, in one request.
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Everyone not marked yet" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mark 1 present" }));
+    await waitFor(() =>
+      expect(mocks.markAttendance).toHaveBeenCalledWith({
+        eventId: "e-1",
+        userIds: ["22222222-2222-4222-8222-222222222222"],
+        status: "PRESENT",
+      }),
+    );
+    expect(mocks.markAttendance).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.refetch).toHaveBeenCalled());
+    mocks.permissions.current = [];
+  });
+
+  it("offers no attendance marking without permission to edit events", () => {
+    mocks.permissions.current = [];
+    loaded(ownDraft({ attendees: { present: [], late: [], excused: [] } }));
+    render(<MinutesPage id="m-1" />);
+    fireEvent.keyDown(screen.getByRole("button", { name: "More" }), {
+      key: "Enter",
+    });
+    expect(
+      screen.queryByRole("menuitem", { name: "Mark who was there" }),
+    ).toBeNull();
+  });
+
+  describe("drafting from notes", () => {
+    it("shows no notes box where drafting isn't offered", () => {
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      expect(screen.queryByRole("heading", { name: "Your notes" })).toBeNull();
+      mocks.draft.current = { ...NO_DRAFT, blocked: "chapter_off" };
+      render(<MinutesPage id="m-1" />);
+      expect(screen.queryByRole("heading", { name: "Your notes" })).toBeNull();
+    });
+
+    it("asks for a draft against the version on screen, with the meeting's day", async () => {
+      mocks.draft.current = NO_DRAFT;
+      loaded(ownDraft());
+      mocks.refetch.mockResolvedValue({ data: ownDraft() });
+      mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
+      render(<MinutesPage id="m-1" />);
+      // The start box: one box, and Draft minutes lights up once there is
+      // something to draft from. No sections and no Post yet (#5562).
+      expect(screen.getByText("How did the meeting go?")).toBeTruthy();
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Draft minutes",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      expect(screen.queryByRole("textbox", { name: "Summary" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Post minutes" })).toBeNull();
+
+      fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
+        target: { value: "voted yes on formal budget 30-2" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      await waitFor(() => expect(mocks.requestDraft).toHaveBeenCalledTimes(1));
+      // Nothing was written yet, so nothing is replaced and nobody is asked.
+      expect(mocks.confirm).not.toHaveBeenCalled();
+      expect(mocks.requestDraft.mock.calls[0]![0]).toMatchObject({
+        id: "m-1",
+        body: {
+          notes: "voted yes on formal budget 30-2",
+          expected_updated_at: "2026-11-10T01:00:00.000Z",
+        },
+      });
+      expect(mocks.requestDraft.mock.calls[0]![0].body.meeting_date).toMatch(
+        /^2026-11-(09|10)$/,
+      );
+    });
+
+    it("asks before a draft replaces what is written, and saves typing first", async () => {
+      mocks.draft.current = NO_DRAFT;
+      const draft = ownDraft();
+      loaded(draft);
+      mocks.confirm.mockResolvedValue({ comment: "" });
+      mocks.update.mockResolvedValue({
+        ...draft,
+        updated_at: "2026-11-10T02:00:00.000Z",
+        content: { ...EMPTY, summary: "We met." },
+      });
+      mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
+      render(<MinutesPage id="m-1" />);
+      // Started by hand: the template's sections are laid out to type in.
+      fireEvent.click(
+        screen.getByRole("button", { name: "Write the minutes by hand" }),
+      );
+      fireEvent.change(screen.getByRole("textbox", { name: "Summary" }), {
+        target: { value: "We met." },
+      });
+      // With minutes written, the notes fold behind a banner.
+      fireEvent.click(
+        screen.getByRole("button", { name: "Notes and transcript" }),
+      );
+      fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
+        target: { value: "notes" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      await waitFor(() => expect(mocks.requestDraft).toHaveBeenCalledTimes(1));
+      expect(mocks.confirm.mock.calls[0]![0].title).toBe(
+        "Replace what's written?",
+      );
+      expect(mocks.update).toHaveBeenCalledTimes(1);
+      expect(
+        mocks.requestDraft.mock.calls[0]![0].body.expected_updated_at,
+      ).toBe("2026-11-10T02:00:00.000Z");
+    });
+
+    it("shows the steps and a clock while a draft is written, and offers Stop", () => {
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "drafting",
+        notes: "notes",
+        requested_at: new Date(Date.now() - 42_000).toISOString(),
+      };
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      // What is done, what is under way and for how long, and that the
+      // officer may leave (Paul, 2026-11-19: "Nothing indicates it's
+      // processing").
+      expect(screen.getByText("Saved your notes")).toBeTruthy();
+      expect(screen.getByText("Writing the minutes")).toBeTruthy();
+      expect(screen.getByText(/^0:4\d$/)).toBeTruthy();
+      expect(screen.getByText("Ready for you to read")).toBeTruthy();
+      expect(screen.getByText(/We'll send you a notification/)).toBeTruthy();
+      // Where the minutes will land, not empty boxes, and nothing to post.
+      expect(screen.queryByRole("textbox", { name: "Summary" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Post minutes" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Stop drafting" }));
+      // Stopping keeps the notes, stored and in the box.
+      expect(mocks.discardDraft).toHaveBeenCalledWith({
+        id: "m-1",
+        keepNotes: true,
+      });
+      expect(
+        screen.getByRole("textbox", { name: "Your notes", hidden: true }),
+      ).toHaveProperty("value", "notes");
+    });
+
+    it("reviews a draft with only the sections it filled, and adds another from the menu", async () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "applied", notes: "notes" };
+      loaded(
+        ownDraft({
+          content: {
+            ...EMPTY,
+            tldr: "- Formal is on.",
+            decisions: [
+              { text: "Approved the DJ.", headline: null, vote: null },
+            ],
+          },
+        }),
+      );
+      render(<MinutesPage id="m-1" />);
+      expect(
+        screen.getByText(
+          "Drafted from your notes. Read it over and fix anything, then post.",
+        ),
+      ).toBeTruthy();
+      expect(screen.getByRole("textbox", { name: "TL;DR" })).toBeTruthy();
+      // No empty boxes for what the draft didn't fill (Paul, 2026-11-19).
+      expect(screen.queryByRole("textbox", { name: "Summary" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Post minutes" })).toBeTruthy();
+      fireEvent.keyDown(screen.getByRole("button", { name: "Add a section" }), {
+        key: "Enter",
+      });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Summary" }));
+      await waitFor(() =>
+        expect(screen.getByRole("textbox", { name: "Summary" })).toBeTruthy(),
+      );
+      // The notes stay behind the banner, and the ⋯ menu opens them too.
+      expect(screen.queryByRole("textbox", { name: "Your notes" })).toBeNull();
+      openMenuItem("Notes and transcript");
+      expect(
+        screen.getByRole("textbox", { name: "Your notes" }),
+      ).toHaveProperty("value", "notes");
+    });
+
+    it("keeps a section the officer empties, even the only one the draft filled", () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "applied", notes: "notes" };
+      loaded(ownDraft({ content: { ...EMPTY, tldr: "- Formal is on." } }));
+      render(<MinutesPage id="m-1" />);
+      const tldr = screen.getByRole("textbox", { name: "TL;DR" });
+      fireEvent.change(tldr, { target: { value: "" } });
+      // Not swept away from under the cursor, and no start box in its place.
+      expect(screen.getByRole("textbox", { name: "TL;DR" })).toHaveProperty(
+        "value",
+        "",
+      );
+      expect(screen.queryByText(MINUTES_FLOW_COPY.start.heading)).toBeNull();
+    });
+
+    it("folds a pasted transcript into a card with View and Remove, like the phone (#5562)", async () => {
+      mocks.draft.current = NO_DRAFT;
+      loaded(ownDraft());
+      mocks.confirm.mockResolvedValue({ comment: "" });
+      render(<MinutesPage id="m-1" />);
+      const transcript = Array.from(
+        { length: 40 },
+        (_, at) => `00:${String(at).padStart(2, "0")} Paul: point ${at}`,
+      ).join("\n");
+      const box = screen.getByRole("textbox", { name: "Your notes" });
+      // A paste lands in a focused box, which stays open until it blurs.
+      fireEvent.focus(box);
+      fireEvent.change(box, { target: { value: transcript } });
+      expect(box).toHaveProperty("value", transcript);
+      fireEvent.blur(box);
+      expect(screen.queryByRole("textbox", { name: "Your notes" })).toBeNull();
+      expect(screen.getByText("Pasted transcript")).toBeTruthy();
+      expect(screen.getByText("160 words")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "View" }));
+      expect(
+        screen.getByRole("textbox", { name: "Your notes" }),
+      ).toHaveProperty("value", transcript);
+      fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+      await waitFor(() =>
+        expect(
+          screen.getByRole("textbox", { name: "Your notes" }),
+        ).toHaveProperty("value", ""),
+      );
+      expect(mocks.confirm.mock.calls[0]![0].title).toBe(
+        "Remove the pasted transcript?",
+      );
+    });
+
+    it("puts To fill in above the minutes and redrafts with the answers, without asking", async () => {
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "applied",
+        notes: "Evan wins.",
+        requested_at: "2026-11-10T01:30:00.000Z",
+        review: {
+          gaps: ["Which cabinet role did Evan win?", "Who books the venue?"],
+          sources: [],
+          left_out: 0,
+        },
+      };
+      loaded(ownDraft({ content: { ...EMPTY, summary: "We met." } }));
+      mocks.refetch.mockResolvedValue({
+        data: ownDraft({ content: { ...EMPTY, summary: "We met." } }),
+      });
+      mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
+      render(<MinutesPage id="m-1" />);
+      const heading = screen.getByRole("heading", { name: "To fill in, 2" });
+      const summary = screen.getByRole("heading", { name: "Summary" });
+      // The questions come before the minutes, the first thing to do.
+      expect(
+        heading.compareDocumentPosition(summary) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // The notes the draft read fold away under the minutes.
+      expect(screen.queryByRole("textbox", { name: "Your notes" })).toBeNull();
+      const update = screen.getByRole("button", { name: "Update the draft" });
+      expect(update).toHaveProperty("disabled", true);
+      fireEvent.change(
+        screen.getByRole("textbox", {
+          name: "Which cabinet role did Evan win?",
+        }),
+        { target: { value: "Treasurer" } },
+      );
+      fireEvent.click(update);
+      await waitFor(() => expect(mocks.requestDraft).toHaveBeenCalledTimes(1));
+      expect(mocks.confirm).not.toHaveBeenCalled();
+      expect(mocks.requestDraft.mock.calls[0]![0].body.notes).toBe(
+        [
+          "Evan wins.",
+          "",
+          "Answers from the minutes author to the draft's open questions (these correct anything above):",
+          "Which cabinet role did Evan win? Treasurer",
+        ].join("\n"),
+      );
+    });
+
+    it("puts the editor back with every word when a post fails", async () => {
+      loaded(ownDraft({ content: { ...EMPTY, summary: "Done." } }));
+      mocks.post.mockRejectedValue(new Error("offline"));
+      render(<MinutesPage id="m-1" />);
+      fireEvent.click(screen.getByRole("button", { name: "Post minutes" }));
+      await waitFor(() =>
+        expect(mocks.toast).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Couldn't post the minutes" }),
+        ),
+      );
+      expect(mocks.datesReview).not.toHaveBeenCalled();
+      expect(
+        (
+          screen.getByRole("textbox", {
+            name: "Summary",
+          }) as HTMLTextAreaElement
+        ).value,
+      ).toBe("Done.");
+    });
+
+    it("shows what to fill in and the line each drafted item came from", () => {
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "applied",
+        notes: "voted yes on formal budget 30-2",
+        review: {
+          gaps: ["The notes don't say who is booking the venue."],
+          sources: [
+            {
+              kind: "decision",
+              text: "Approve the formal budget",
+              quote: "voted yes on formal budget 30-2",
+            },
+          ],
+          left_out: 1,
+        },
+      };
+      loaded(
+        ownDraft({
+          content: {
+            ...EMPTY,
+            decisions: [
+              {
+                text: "Approve the formal budget",
+                vote: { for: 30, against: 2, abstain: 0 },
+              },
+            ],
+          },
+        }),
+      );
+      render(<MinutesPage id="m-1" />);
+      expect(
+        screen.getByText("The notes don't say who is booking the venue."),
+      ).toBeTruthy();
+      // A draft the AI wrote can be reported (#4315).
+      expect(screen.getByRole("button", { name: "Report this" })).toBeTruthy();
+      expect(
+        screen.getByText(
+          "One drafted line was left out because nothing in your notes backed it.",
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.getByText("From your notes: “voted yes on formal budget 30-2”"),
+      ).toBeTruthy();
+      // Once the officer rewrites the line it is theirs, and the quote goes.
+      fireEvent.change(screen.getByRole("textbox", { name: "Decision 1" }), {
+        target: { value: "Approve the budget" },
+      });
+      expect(screen.queryByText(/^From your notes:/)).toBeNull();
+      expect(screen.getByRole("button", { name: "Draft again" })).toBeTruthy();
+    });
+
+    it("puts a draft that waited into the minutes only when asked, on the newest version", async () => {
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "ready",
+        notes: "notes",
+        content: { ...EMPTY, summary: "Drafted summary." },
+      };
+      const mine = ownDraft({ content: { ...EMPTY, summary: "Mine." } });
+      loaded(mine);
+      // Someone saved while the draft was written, which is why it waited.
+      mocks.refetch.mockResolvedValue({
+        data: { ...mine, updated_at: "2026-11-10T03:00:00.000Z" },
+      });
+      mocks.confirm.mockResolvedValue({ comment: "" });
+      mocks.useDraft.mockResolvedValue({ ...NO_DRAFT, status: "applied" });
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByRole("textbox", { name: "Summary" })).toHaveProperty(
+        "value",
+        "Mine.",
+      );
+      expect(mocks.useDraft).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Use the draft" }));
+      await waitFor(() => expect(mocks.useDraft).toHaveBeenCalledTimes(1));
+      // It replaces what is written, so it asks first.
+      expect(mocks.confirm.mock.calls[0]![0].title).toBe(
+        "Replace what's written?",
+      );
+      expect(mocks.useDraft).toHaveBeenCalledWith({
+        id: "m-1",
+        expectedUpdatedAt: "2026-11-10T03:00:00.000Z",
+      });
+    });
+
+    it("loads the minutes when a draft lands in them", async () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "drafting", notes: "notes" };
+      const draft = ownDraft();
+      loaded(draft);
+      mocks.refetch.mockResolvedValue({ data: draft });
+      const view = render(<MinutesPage id="m-1" />);
+      expect(mocks.refetch).not.toHaveBeenCalled();
+      mocks.draft.current = { ...NO_DRAFT, status: "applied", notes: "notes" };
+      view.rerender(<MinutesPage id="m-1" />);
+      await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
+    });
+
+    it("clears stored notes only after asking", async () => {
+      mocks.draft.current = { ...NO_DRAFT, status: "applied", notes: "notes" };
+      loaded(ownDraft());
+      mocks.confirm.mockResolvedValueOnce(null);
+      render(<MinutesPage id="m-1" />);
+      fireEvent.click(screen.getByRole("button", { name: "Clear notes" }));
+      await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
+      expect(mocks.discardDraft).not.toHaveBeenCalled();
+      mocks.confirm.mockResolvedValueOnce({ comment: "" });
+      mocks.discardDraft.mockResolvedValue("m-1");
+      fireEvent.click(screen.getByRole("button", { name: "Clear notes" }));
+      await waitFor(() =>
+        expect(mocks.discardDraft).toHaveBeenCalledWith({ id: "m-1" }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("textbox", { name: "Your notes" }),
+        ).toHaveProperty("value", ""),
+      );
+    });
+
+    it("tells the officer when someone saved before the draft could start", async () => {
+      mocks.draft.current = NO_DRAFT;
+      const draft = ownDraft();
+      loaded(draft);
+      mocks.refetch.mockResolvedValue({ data: draft });
+      mocks.requestDraft.mockRejectedValue({ code: "meeting.stale" });
+      render(<MinutesPage id="m-1" />);
+      fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
+        target: { value: "notes" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      expect(
+        await screen.findByText(/Someone else saved these minutes/),
+      ).toBeTruthy();
+    });
+
+    it("opens the AI sheet on the first ask, and drafts nothing on a No", async () => {
+      mocks.draft.current = { ...NO_DRAFT, blocked: "consent_required" };
+      loaded(ownDraft());
+      mocks.refetch.mockResolvedValue({ data: ownDraft() });
+      mocks.ensureConsent.mockResolvedValueOnce(false);
+      mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
+      render(<MinutesPage id="m-1" />);
+      expect(
+        screen.getByText(/Turn on Frapp AI to draft from your notes/),
+      ).toBeTruthy();
+      fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
+        target: { value: "notes" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      await waitFor(() => expect(mocks.ensureConsent).toHaveBeenCalledTimes(1));
+      expect(mocks.requestDraft).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole("textbox", { name: "Your notes" }),
+      ).toHaveProperty("value", "notes");
+      mocks.ensureConsent.mockResolvedValueOnce(true);
+      fireEvent.click(screen.getByRole("button", { name: "Draft minutes" }));
+      await waitFor(() => expect(mocks.requestDraft).toHaveBeenCalledTimes(1));
+    });
+
+    it("says plainly when a draft failed, and keeps the notes", () => {
+      loaded(ownDraft());
+      const first = render(<div />);
+      first.unmount();
+
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "failed",
+        notes: "notes",
+        failure: "failed",
+        failure_message: "The draft didn't come through.",
+      };
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByText("The draft didn't come through.")).toBeTruthy();
+      expect(
+        screen.getByRole("textbox", { name: "Your notes" }),
+      ).toHaveProperty("value", "notes");
+    });
+  });
+
+  describe("uploading a recording", () => {
+    const notesBox = () => screen.getByRole("textbox", { name: "Your notes" });
+    const recordingFile = () =>
+      new File(["audio"], "chapter.m4a", { type: "audio/x-m4a" });
+
+    function open() {
+      mocks.draft.current = NO_DRAFT;
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+    }
+
+    it("offers no upload where this server transcribes nothing", () => {
+      mocks.recording.current = null;
+      open();
+      expect(
+        screen.queryByRole("button", { name: "Upload a recording" }),
+      ).toBeNull();
+      expect(notesBox()).toBeTruthy();
+    });
+
+    it("offers none when no provider is set up", () => {
+      mocks.recording.current = { ...NO_RECORDING, available: false };
+      open();
+      expect(
+        screen.queryByRole("button", { name: "Upload a recording" }),
+      ).toBeNull();
+    });
+
+    it("won't upload until a file is chosen and the room is confirmed told, then sends it and asks for the transcript", async () => {
+      mocks.recording.current = NO_RECORDING;
+      mocks.readAudioDuration.mockResolvedValue(4320.4);
+      mocks.startRecording.mockResolvedValue({
+        ...NO_RECORDING,
+        status: "uploading",
+        upload: {
+          upload_id: "u-1",
+          bucket: "meeting-audio",
+          path: "c/m/u-1.m4a",
+          token: "signed",
+          content_type: "audio/x-m4a",
+        },
+      });
+      mocks.uploadResumable.mockResolvedValue(undefined);
+      mocks.confirmRecording.mockResolvedValue({});
+      open();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Upload a recording" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog.textContent).toContain(
+        "This meeting is being recorded and transcribed by Frapp.",
+      );
+      expect(dialog.textContent).toContain("Never upload a Standards hearing");
+
+      fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+      expect(screen.getByText("Choose the recording first.")).toBeTruthy();
+
+      const input = dialog.querySelector('input[type="file"]')!;
+      fireEvent.change(input, { target: { files: [recordingFile()] } });
+      expect(
+        await screen.findByText(/chapter\.m4a · 1 hour 12 minutes/),
+      ).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+      expect(screen.getByText(/Confirm that the room was told/)).toBeTruthy();
+      expect(mocks.startRecording).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("checkbox"));
+      fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+      await waitFor(() =>
+        expect(mocks.confirmRecording).toHaveBeenCalledWith({
+          id: "m-1",
+          uploadId: "u-1",
+        }),
+      );
+      expect(mocks.startRecording.mock.calls[0]![0]).toEqual({
+        id: "m-1",
+        body: {
+          file_name: "chapter.m4a",
+          mime_type: "audio/x-m4a",
+          size_bytes: 5,
+          duration_seconds: 4320,
+          notice_confirmed: true,
+        },
+      });
+      expect(mocks.uploadResumable.mock.calls[0]![1]).toEqual({
+        bucket: "meeting-audio",
+        path: "c/m/u-1.m4a",
+        token: "signed",
+        contentType: "audio/x-m4a",
+      });
+    });
+
+    it.each([
+      [
+        new File(["x"], "meeting.mov", { type: "video/quicktime" }),
+        60,
+        /isn't a recording Frapp can read/,
+      ],
+      [
+        new File(["x"], "long.m4a", { type: "audio/mp4" }),
+        7300,
+        /the most Frapp takes is 2 hours/,
+      ],
+      [
+        new File(["x"], "odd.ogg", { type: "audio/ogg" }),
+        null,
+        /couldn't read how long/,
+      ],
+    ])(
+      "says what is wrong with a file the moment it is chosen",
+      async (file, seconds, message) => {
+        mocks.recording.current = NO_RECORDING;
+        mocks.readAudioDuration.mockResolvedValue(seconds);
+        open();
+        fireEvent.click(
+          screen.getByRole("button", { name: "Upload a recording" }),
+        );
+        const dialog = await screen.findByRole("dialog");
+        fireEvent.change(dialog.querySelector('input[type="file"]')!, {
+          target: { files: [file] },
+        });
+        expect(await screen.findByText(message)).toBeTruthy();
+      },
+    );
+
+    it("asks on the AI sheet first, and opens nothing on a No", async () => {
+      mocks.recording.current = {
+        ...NO_RECORDING,
+        blocked: "consent_required",
+      };
+      mocks.ensureConsent.mockResolvedValue(false);
+      open();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Upload a recording" }),
+      );
+      await waitFor(() => expect(mocks.ensureConsent).toHaveBeenCalled());
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("says an upload is transcribing after a reload, and that the page can be left", () => {
+      mocks.recording.current = {
+        ...NO_RECORDING,
+        status: "transcribing",
+        upload_id: "u-1",
+        duration_seconds: 4320,
+      };
+      open();
+      expect(
+        screen.getByText(
+          /Transcribing 1 hour 12 minutes of audio\. This takes a few minutes, and you can leave this page\./,
+        ),
+      ).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+    });
+
+    it("says an upload cut off by a reload has to be sent again", () => {
+      mocks.recording.current = {
+        ...NO_RECORDING,
+        status: "uploading",
+        upload_id: "u-1",
+      };
+      open();
+      expect(screen.getByText(/upload was interrupted/)).toBeTruthy();
+    });
+
+    it("shows a failure in plain words with a way to try again", () => {
+      mocks.recording.current = {
+        ...NO_RECORDING,
+        status: "failed",
+        failure: "no_speech",
+        failure_message: "No speech could be heard in that recording.",
+      };
+      open();
+      expect(
+        screen.getByText("No speech could be heard in that recording."),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Upload a recording" }),
+      ).toBeTruthy();
+    });
+
+    it("reads a transcript as its own source, never into the notes (#4935)", async () => {
+      mocks.recording.current = READY_RECORDING;
+      mocks.draft.current = { ...NO_DRAFT, notes: "my own notes" };
+      mocks.notes.current = notesState();
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      expect(notesBox()).toHaveProperty("value", "my own notes");
+      expect(
+        screen.getByText(/the draft reads it with everyone's notes/),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("button", { name: "Add to your notes" }),
+      ).toBeNull();
+      const open = screen.getByRole("link", { name: "Open transcript" });
+      expect(open.getAttribute("href")).toBe("/meetings/m-1/transcript");
+      expect(open.getAttribute("target")).toBe("_blank");
+      expect(
+        screen.getByRole("button", { name: "Draft from all notes" }),
+      ).toBeTruthy();
+    });
+
+    it("clearing the notes removes the recording and its transcript too", async () => {
+      mocks.recording.current = READY_RECORDING;
+      mocks.confirm.mockResolvedValue({});
+      mocks.removeRecording.mockResolvedValue("m-1");
+      open();
+      fireEvent.click(screen.getByRole("button", { name: "Clear notes" }));
+      await waitFor(() =>
+        expect(mocks.removeRecording).toHaveBeenCalledWith({ id: "m-1" }),
+      );
+      expect(mocks.confirm.mock.calls[0]![0].description).toContain(
+        "the recording and its transcript",
+      );
+    });
+  });
+
+  describe("several note-takers (#4935)", () => {
+    it("lists other note-takers' notes for the author to read", () => {
+      mocks.draft.current = NO_DRAFT;
+      mocks.notes.current = notesState({
+        takers: [
+          {
+            user_id: "22222222-2222-4222-8222-222222222222",
+            display_name: "Sam Lee",
+            is_author: false,
+            added: false,
+            notes: "budget passed 21-6",
+            updated_at: "2026-11-10T02:00:00.000Z",
+            held: null,
+          },
+        ],
+        others_count: 1,
+      });
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByText("Notes for this meeting")).toBeTruthy();
+      expect(screen.getByText("Sam Lee")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Read" }));
+      expect(screen.getByText("budget passed 21-6")).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Draft from all notes" }),
+      ).toBeTruthy();
+    });
+
+    it("saves the officer's notes as they type", async () => {
+      mocks.draft.current = NO_DRAFT;
+      mocks.notes.current = notesState();
+      mocks.saveNotes.mockResolvedValue(notesState());
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      fireEvent.change(screen.getByPlaceholderText(/Paste or type/), {
+        target: { value: "dues due Friday" },
+      });
+      await waitFor(
+        () =>
+          expect(mocks.saveNotes).toHaveBeenCalledWith({
+            id: "m-1",
+            notes: "dues due Friday",
+          }),
+        { timeout: 2000 },
+      );
+    });
+
+    it("lists a disagreement and puts the other version in on a tap", async () => {
+      mocks.notes.current = notesState();
+      mocks.choose.mockResolvedValue(NO_DRAFT);
+      mocks.refetch.mockResolvedValue({ data: ownDraft() });
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "applied",
+        notes: "notes",
+        review: {
+          gaps: [],
+          sources: [],
+          left_out: 0,
+          conflicts: [
+            {
+              kind: "decision",
+              about: "The formal budget vote",
+              versions: [
+                {
+                  from: "Jake Ross",
+                  quote: "budget passed 22-5",
+                  text: "Approved the budget, 22 to 5.",
+                  vote: { for: 22, against: 5, abstain: 0 },
+                  owner_user_id: null,
+                  due_date: null,
+                },
+                {
+                  from: "Sam Lee",
+                  quote: "budget passed 21-6",
+                  text: "Approved the budget, 21 to 6.",
+                  vote: { for: 21, against: 6, abstain: 0 },
+                  owner_user_id: null,
+                  due_date: null,
+                },
+              ],
+              chosen: 0,
+              settled_by: "authority",
+            },
+          ],
+        },
+      };
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByText("Notes disagreed")).toBeTruthy();
+      expect(screen.getByText("Settled by who wrote it")).toBeTruthy();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Use Sam Lee's instead" }),
+      );
+      await waitFor(() =>
+        expect(mocks.choose).toHaveBeenCalledWith({
+          id: "m-1",
+          body: expect.objectContaining({ conflict: 0, version: 1 }),
+        }),
+      );
+    });
+
+    it("offers Link a meeting on minutes with no meeting, and holds Post until then (Paul, 2026-11-20)", () => {
+      mocks.draft.current = null;
+      loaded({ ...ownDraft(), event_id: null });
+      render(<MinutesPage id="m-1" />);
+      expect(
+        screen.getByRole("button", { name: "Link a meeting" }),
+      ).toBeTruthy();
+      const post = screen.getByRole("button", {
+        name: "Link a meeting first",
+      }) as HTMLButtonElement;
+      expect(post.disabled).toBe(true);
+      expect(screen.queryByRole("button", { name: "Post" })).toBeNull();
+    });
+  });
+});
+
+function notesState(overrides: Record<string, unknown> = {}) {
+  return {
+    meeting: {
+      id: "m-1",
+      event_id: "e-1",
+      event_name: "Chapter meeting",
+      event_start_time: "2026-11-10T00:00:00.000Z",
+      meeting_type: "chapter",
+      author_name: "Jake Ross",
+    },
+    role: "editor",
+    mine: { notes: "my own notes", updated_at: null, held: null },
+    takers: [],
+    others_count: 0,
+    can_add: true,
+    joined: true,
+    ...overrides,
+  };
+}

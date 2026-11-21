@@ -1,11 +1,15 @@
 import { useUnreadFirstPaintRuntime } from "@/lib/chat/use-unread-first-paint-runtime";
+import { useFirstPaintCacheRuntime } from "@/lib/launch/use-first-paint-cache-runtime";
 import { useChatRealtimeBinding } from "@/lib/chat/use-chat-runtime";
 import { useConnectionRuntime } from "@/lib/connection/use-connection";
 import { useBadgeSyncRuntime } from "@/lib/notifications/use-badge-sync";
 import { useNotificationSyncRuntime } from "@/lib/notifications/use-notification-sync";
 import { usePushRuntime } from "@/lib/notifications/use-push-runtime";
+import { useMeetingRecorderRuntime } from "@/lib/minutes/recorder/use-recorder-runtime";
 import { useOnboardingRedirect } from "@/lib/onboarding/use-onboarding-redirect";
+import { useMemberInviteHandoff } from "@/lib/onboarding/use-member-invite-handoff";
 import { useChapterPresenceRuntime } from "@/lib/presence/chapter-presence";
+import { useResumeUpdates } from "@/lib/updates/use-resume-updates";
 
 /**
  * The app-wide runtimes that have no screen to live on.
@@ -51,17 +55,38 @@ import { useChapterPresenceRuntime } from "@/lib/presence/chapter-presence";
  * **Chapter presence** (#3917) publishes the member on the chapter's
  * presence topic and reads everyone's dot off it, while the app is in the
  * foreground; screens read the result (`lib/presence/chapter-presence.ts`).
+ *
+ * **The meeting recorder** (`spec/behavior/meetings.md` § Recording in the
+ * app) outlives the minutes screen it was started on: the secretary leaves
+ * that screen, locks the phone, and it records for two hours. So the one
+ * recorder is bound here to the signed-in member, and finds a recording a
+ * killed app left on the phone (`lib/minutes/recorder`).
+ *
+ * **Over-the-air updates** are checked for when the app comes back to the
+ * foreground, and a downloaded one runs when the member returns after ten
+ * minutes or more away, never mid-recording (`lib/updates/resume-updates.ts`).
+ * Without it an update waits for two cold launches, which iOS can put off
+ * for days.
  */
 export function AppRuntime(): null {
+  // Chat as the member last saw it, so launch paints before the network
+  // answers (`lib/launch/first-paint-cache.ts`, #5768). First, so its query
+  // cache listener is in place before any runtime here or any screen starts a
+  // fetch in the same commit: it keeps only answers whose fetch it saw start.
+  useFirstPaintCacheRuntime();
   useConnectionRuntime();
   useChatRealtimeBinding();
   usePushRuntime();
   useOnboardingRedirect();
-  // Ahead of badge sync: it reads the tray, which badge sync can empty on
-  // Android (`lib/chat/use-unread-first-paint-runtime.ts`).
+  // An invite link a member with a chapter opened goes to web `/join` (#4002).
+  useMemberInviteHandoff();
+  // Ahead of badge sync, which takes read channels' pushes out of the tray
+  // this one reads (`lib/chat/use-unread-first-paint-runtime.ts`).
   useUnreadFirstPaintRuntime();
   useBadgeSyncRuntime();
   useNotificationSyncRuntime();
   useChapterPresenceRuntime();
+  useMeetingRecorderRuntime();
+  useResumeUpdates();
   return null;
 }

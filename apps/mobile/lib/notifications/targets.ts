@@ -12,7 +12,8 @@
  *
  * The keys below are the values `apps/api` actually emits, found by grepping
  * `target: {` across its services: `chat`, `events`, `tasks`, `billing`,
- * `points`, `service`, `members`, `chat_reports`, `discord_import`.
+ * `points`, `service`, `members`, `ai_suggestions`, `activity`,
+ * `chat_reports`, `discord_import`.
  * `lib/more/notifications.ts` maps a
  * deliberately *wider* set to display labels, because a label that is merely
  * absent costs a member nothing. A route does: navigating somewhere on a guess
@@ -72,7 +73,35 @@ const ROUTES: Record<
   billing: { pathname: "/dues" },
   service: { pathname: "/service-hours" },
   members: { pathname: "/directory" },
+  // Tasks suggested from posted minutes (#4313): the officer's list.
+  ai_suggestions: { pathname: "/suggested-tasks" },
+  // The weekly recap push (#4985): Activity, where the "Last week" card is.
+  activity: { pathname: "/activity" },
 };
+
+/**
+ * Where a "minutes posted" push opens (#4312). It is an `events` target that
+ * also names the minutes (`meetingId`), and the member tapped it to read
+ * them, not to see the event.
+ */
+const MINUTES: NotificationTarget = { pathname: "/minutes-details" };
+
+/**
+ * Where a task push opens. "Submitted a task" (`view: "review"`) opens the
+ * review: Activity (`/activity?review=`), which pushes the task's screen
+ * with Confirm and Send back over it (#5513), since
+ * the board under Tasks lists only the viewer's own tasks and an officer's
+ * review was never on it. Every other task push opens the board
+ * (`/tasks?task=`), which pushes the task's screen over it (#5492): the
+ * reader's own (assigned, confirmed, sent back, overdue), or one they
+ * assigned (Overdue also reaches the assigner). A task the reader can't read
+ * opens nothing over the board.
+ */
+function taskTarget(taskId: string, view: string | null): NotificationTarget {
+  return view === "review"
+    ? { pathname: "/activity", params: { review: taskId } }
+    : { pathname: "/tasks", params: { task: taskId } };
+}
 
 /**
  * Where an unrecognized or malformed target lands. Always renderable.
@@ -142,13 +171,20 @@ export function notificationIdFrom(data: unknown): string | null {
  * `/chat-thread` with no `channelId` would render an error, so it is not
  * offered.
  */
-export function resolveNotificationTarget(data: unknown): NotificationTarget {
+export function resolveNotificationTarget(
+  data: unknown,
+  chatMessageId: string | null = null,
+): NotificationTarget {
   if (!isRecord(data)) return FALLBACK;
 
   const target = data.target;
   if (!isRecord(target)) return FALLBACK;
 
   const screen = str(target, "screen");
+  const meetingId = screen === "events" ? str(target, "meetingId") : null;
+  if (meetingId) return { ...MINUTES, params: { id: meetingId } };
+  const taskId = screen === "tasks" ? str(target, "taskId") : null;
+  if (taskId) return taskTarget(taskId, str(target, "view"));
   const route = screen ? ROUTES[screen] : undefined;
   if (!route) return FALLBACK;
 
@@ -162,14 +198,28 @@ export function resolveNotificationTarget(data: unknown): NotificationTarget {
     params: { [route.as ?? route.param]: value },
   };
 
+  // A chat push or row that quotes one message opens chat at it, as Slack and
+  // Discord open a mention or reply (#4977; a reminder since #4957). The push
+  // carries the message as `messageId` (§ Deep Linking); the in-app row as its
+  // `chat_message_id`, which the inbox passes in. A bundle quotes none and
+  // opens the conversation at its newest messages.
+  const focusMessageId =
+    screen === "chat" ? (str(data, "messageId") ?? chatMessageId) : null;
+
   // A thread reply's push names its root too (`spec/behavior/chat/README.md`
   // § Message threads → Notifications). The thread is the channel's route
   // pushed again with the root, over the channel (#4054).
   const threadRootId = screen === "chat" ? str(target, "threadRootId") : null;
-  if (!threadRootId) return resolved;
+  if (!threadRootId) {
+    return focusMessageId
+      ? { ...resolved, params: { ...resolved.params, focusMessageId } }
+      : resolved;
+  }
   return {
     pathname: route.pathname,
-    params: { channelId: value, threadRootId },
+    params: focusMessageId
+      ? { channelId: value, threadRootId, focusMessageId }
+      : { channelId: value, threadRootId },
     under: resolved,
   };
 }

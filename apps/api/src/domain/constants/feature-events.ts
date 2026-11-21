@@ -44,21 +44,99 @@ export const FEATURE_EVENTS = {
     feature: 'events',
     properties: ['status', 'has_excuse'],
   },
+  'attendance-marked-by-hand': {
+    feature: 'events',
+    properties: ['status', 'count'],
+  },
+  // Absence excuses (#3735): never the reason a member wrote.
+  'event-excuse-sent': {
+    feature: 'events',
+    properties: [],
+  },
+  'event-excuse-edited': {
+    feature: 'events',
+    properties: [],
+  },
+  'event-excuse-decided': {
+    feature: 'events',
+    properties: ['decision'],
+  },
+
+  // Meetings (#4312): minutes written by hand. Only the type and which
+  // sections hold something, never a word of the minutes.
+  'meeting-started': {
+    feature: 'meetings',
+    properties: ['meeting_type', 'from_new_event'],
+  },
+  'meeting-posted': {
+    feature: 'meetings',
+    properties: ['meeting_type', 'has_decisions', 'has_action_items'],
+  },
+  // An officer asks for minutes drafted from their notes (#4312). No
+  // property: the AI call itself is counted by the gateway's own event.
+  'meeting-draft-requested': {
+    feature: 'meetings',
+    properties: [],
+  },
+  // An officer's recording finished uploading and its transcription was
+  // queued (#712). No property: nothing about the file, and the provider
+  // call is counted by the gateway's own event.
+  'meeting-recording-uploaded': {
+    feature: 'meetings',
+    properties: [],
+  },
 
   // Tasks
   'task-created': {
     feature: 'tasks',
     properties: [
       'assigned_to_self',
+      // `person`, or the group it went to: `everyone` (#4295 step 3),
+      // `people`, `role` or `group` (2026-11-18), or `tier` (#5473); and how
+      // many copies it made.
+      'audience',
+      // Whether a tier, role or group follows it (#5473).
+      'followed',
+      'group_size',
+      'has_due_time',
+      'has_point_reward',
+      'has_reference_photo',
+      'has_subtasks',
+      'posted_to_chat',
+      'proof_kind',
+      'repeats',
+    ],
+  },
+  'task-status-changed': {
+    feature: 'tasks',
+    properties: [
+      'status',
+      'has_proof_photo',
+      'has_proof_link',
+      'has_completion_note',
+    ],
+  },
+  'task-completion-confirmed': { feature: 'tasks', properties: [] },
+  'task-completion-rejected': {
+    feature: 'tasks',
+    properties: ['asked_for_photo'],
+  },
+  // Tasks up for grabs (2026-11-18): posted, then claimed or handed out.
+  'open-task-created': {
+    feature: 'tasks',
+    properties: [
+      'scope',
+      'eligible_count',
       'has_due_time',
       'has_point_reward',
       'has_subtasks',
-      'posted_to_chat',
+      'proof_kind',
     ],
   },
-  'task-status-changed': { feature: 'tasks', properties: ['status'] },
-  'task-completion-confirmed': { feature: 'tasks', properties: [] },
-  'task-completion-rejected': { feature: 'tasks', properties: [] },
+  'open-task-claimed': {
+    feature: 'tasks',
+    properties: ['assigned_by_officer'],
+  },
 
   // Polls (a poll is a chat message of kind `poll`)
   'poll-created': {
@@ -105,6 +183,7 @@ export const FEATURE_EVENTS = {
     properties: ['kind', 'is_reply', 'attachment_count'],
   },
   'announcement-posted': { feature: 'announcements', properties: [] },
+  'message-forwarded': { feature: 'chat', properties: ['has_comment'] },
   'message-reacted': { feature: 'chat', properties: [] },
   'message-flagged': { feature: 'chat', properties: ['flag'] },
   'dm-opened': { feature: 'chat', properties: [] },
@@ -120,11 +199,22 @@ export const FEATURE_EVENTS = {
     properties: ['has_document_type', 'has_folder'],
   },
   'document-viewed': { feature: 'documents', properties: [] },
+  // One per batch a folder import files (#2242): counts only, since types
+  // and folders are chapter-chosen names.
+  'documents-imported': {
+    feature: 'documents',
+    properties: ['count', 'typed_count', 'filed_count'],
+  },
   'backwork-uploaded': {
     feature: 'backwork',
     properties: ['assignment_type', 'is_redacted', 'tag_count'],
   },
   'backwork-viewed': { feature: 'backwork', properties: [] },
+  // One per publish call from the drafts table (#5208): counts only.
+  'backwork-drafts-published': {
+    feature: 'backwork',
+    properties: ['count', 'failed_count'],
+  },
 
   // Recruitment
   'rush-candidate-added': {

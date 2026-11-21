@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
 
@@ -17,7 +17,25 @@ vi.mock("@/components/chat/renderers/poll-card", () => ({
   PollCard: () => null,
 }));
 vi.mock("@/components/chat/renderers/task-card", () => ({
-  TaskCard: () => null,
+  TaskCard: () => <div data-testid="task-card" />,
+}));
+vi.mock("@/components/tasks/task-review", () => ({
+  TaskReview: ({
+    taskId,
+    waitingAfter,
+    onDone,
+  }: {
+    taskId: string;
+    waitingAfter?: number;
+    onDone: () => void;
+  }) => (
+    <div data-testid="task-review">
+      {taskId}:{waitingAfter ?? 0}
+      <button type="button" onClick={onDone}>
+        done
+      </button>
+    </div>
+  ),
 }));
 vi.mock("@/components/service/use-service-review", () => ({
   useServiceReview: () => ({}),
@@ -65,5 +83,114 @@ describe("ActivityPanel: an event", () => {
     expect(
       screen.getByRole("link", { name: "Open in Events" }).getAttribute("href"),
     ).toBe("/events?event=evt-9");
+  });
+});
+
+describe("ActivityPanel docked (#4593)", () => {
+  it("opens in place of the Activity page beside chat, and goes back with the arrow", () => {
+    const onClose = vi.fn();
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="" />
+        <ActivityPanel
+          row={eventRow}
+          viewerId="user-1"
+          onClose={onClose}
+          onActed={() => {}}
+        />
+      </div>,
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const region = screen.getByRole("region", { name: "Event" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+    fireEvent.click(screen.getByRole("button", { name: "Back to activity" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe("ActivityPanel: a task (#4693)", () => {
+  const taskRow = (glyph: "confirm" | "task") =>
+    ({
+      kind: "task",
+      key: `needs:task:task-1`,
+      title: "Clean his room",
+      detail: "",
+      badge: null,
+      glyph,
+      task: {
+        id: "task-1",
+        title: "Clean his room",
+        assignee_id: "user-1",
+        assignee_name: "Shawn Klein",
+        created_by: "admin-1",
+        created_by_name: "Paul Carlson",
+        due_date: "2099-11-05",
+        due_at: null,
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        point_reward: 10,
+        completed_at: null,
+        confirmed_at: null,
+      },
+    }) as unknown as ActivityRow;
+
+  it("opens a task waiting on the viewer's sign-off as its review", () => {
+    render(
+      <ActivityPanel
+        row={taskRow("confirm")}
+        viewerId="admin-1"
+        onClose={() => {}}
+        onActed={() => {}}
+      />,
+    );
+    expect(screen.getByText("Review task")).toBeTruthy();
+    expect(screen.getByTestId("task-review").textContent).toContain("task-1:0");
+    expect(screen.queryByTestId("task-card")).toBeNull();
+  });
+
+  it("opens the next waiting review once this one is done, else closes", () => {
+    const next = { ...taskRow("confirm"), key: "needs-confirm:task:task-2" };
+    const open = vi.fn();
+    const onClose = vi.fn();
+    const onActed = vi.fn();
+    const { rerender } = render(
+      <ActivityPanel
+        row={taskRow("confirm")}
+        viewerId="admin-1"
+        onClose={onClose}
+        onActed={onActed}
+        reviewQueue={{ after: () => [next], open }}
+      />,
+    );
+    expect(screen.getByTestId("task-review").textContent).toContain("task-1:1");
+    fireEvent.click(screen.getByRole("button", { name: "done" }));
+    expect(onActed).toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(next);
+    expect(onClose).not.toHaveBeenCalled();
+
+    rerender(
+      <ActivityPanel
+        row={taskRow("confirm")}
+        viewerId="admin-1"
+        onClose={onClose}
+        onActed={onActed}
+        reviewQueue={{ after: () => [], open }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "done" }));
+    expect(onClose).toHaveBeenCalledWith("needs:task:task-1");
+  });
+
+  it("opens any other task as chat's card", () => {
+    render(
+      <ActivityPanel
+        row={taskRow("task")}
+        viewerId="user-1"
+        onClose={() => {}}
+        onActed={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("task-card")).toBeTruthy();
+    expect(screen.queryByTestId("task-review")).toBeNull();
   });
 });

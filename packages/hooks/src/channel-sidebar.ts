@@ -2,6 +2,7 @@ import {
   categorySectionKey,
   isDirectChannel,
   type SidebarSectionKey,
+  type SidebarSort,
 } from "@repo/validation";
 import type { ChannelSections, GroupableChannel } from "./channel-sections";
 
@@ -14,7 +15,9 @@ import type { ChannelSections, GroupableChannel } from "./channel-sections";
  * come from `GET /v1/chat-sidebar`.
  *
  * Pure: every number it reads (unread, mentions, mute) is the server's, passed
- * in. Nothing here derives an unread count or a mute from anything else.
+ * in. One exception derives an unread count: `withUnreadThreadChannels` counts
+ * a read channel whose thread has new replies as one unread, for arranging
+ * only (#5277, #5300), so a folded section's total can include those.
  */
 
 /** The fields of a channel row the arrangement reads. */
@@ -53,6 +56,18 @@ export interface ArrangeSidebarInput<C extends SidebarChannelLike> {
   pinnedIds: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
   filters: SidebarFilters;
+  /**
+   * How rows sort inside every section, Pinned included. Absent reads as
+   * `chapter`, the order from before the member could choose.
+   */
+  sort?: SidebarSort;
+  /**
+   * Each channel's latest message time (`GET /v1/channels/latest`), which the
+   * `recent` sort reads; a channel with no entry has no message. `undefined`
+   * means the times are not known yet, and `recent` then draws the chapter's
+   * order, so the list never reads as A to Z on missing data.
+   */
+  latestAtByChannelId?: ReadonlyMap<string, string> | undefined;
   /** The channel open right now, which always shows. */
   activeChannelId: string | null;
   /** The title the row shows, which is also what it sorts by. */
@@ -98,7 +113,7 @@ export interface ArrangedSidebar<C extends SidebarChannelLike> {
   emptiedByFilters: boolean;
 }
 
-export const PINNED_SECTION_LABEL = "Pinned";
+const PINNED_SECTION_LABEL = "Pinned";
 
 /** The shape of a TanStack query result these helpers read. */
 interface QueryState<T> {
@@ -201,6 +216,27 @@ export function sidebarSections<
 const NO_UNREAD: SidebarUnreadCounts = { unreadCount: 0, mentionCount: 0 };
 
 /**
+ * The direct messages order (owner, 2026-11-07, mobile's Messages screen;
+ * web's Direct messages list since #3774): newest conversation first by its
+ * latest message (`GET /v1/channels/latest`), a conversation with no message
+ * after every one with one, then A to Z by the title the row shows. One rule
+ * for both clients, so the phone and the web list a member's DMs alike.
+ *
+ * `latestAt` gives a conversation's latest message time, `undefined` for
+ * none. ISO timestamps from one server compare as strings.
+ */
+export function compareLatestFirst<C extends { id: string }>(
+  latestAt: (channel: C) => string | undefined,
+  titleOf: (channel: C) => string,
+): (a: C, b: C) => number {
+  return (a, b) => {
+    const at = latestAt(a) ?? "";
+    const bt = latestAt(b) ?? "";
+    return bt.localeCompare(at) || titleOf(a).localeCompare(titleOf(b));
+  };
+}
+
+/**
  * The order of rows inside a section (owner, 2026-11-11, #4178): the
  * chapter's `display_order` first, a row without one after every row with
  * one, then A to Z by the title the row shows, then id so two rows with one
@@ -247,7 +283,7 @@ export function isAddressed(
  * mentions, or a direct message's unread count. A channel that is merely
  * unread draws no number; its bold name says so.
  */
-export function addressedCount(
+function addressedCount(
   isDirect: boolean,
   counts: SidebarUnreadCounts,
 ): number {
@@ -285,6 +321,67 @@ export function countsAddressMember(
   return counts.mentionCount > 0 || (isDirect && counts.unreadCount > 0);
 }
 
+/**
+ * Whether a row draws as unread (bold name, unread dot). A muted channel
+ * stays quiet unless it addresses the member: a mention, or a direct
+ * message, gets past a mute as it does for push. Shawn, 2026-11-13 (#3999):
+ * the same rule decides what a folded header counts and what Unread only
+ * keeps, so the header never lights for a channel whose row reads as read.
+ */
+export function countsLookUnread(
+  isDirect: boolean,
+  counts: SidebarUnreadCounts,
+  muted: boolean,
+): boolean {
+  const addressed = countsAddressMember(isDirect, counts);
+  // A mention implies an unread row even if the two counts ever disagree: a
+  // red badge on a read-styled row is a contradiction on screen.
+  const unread = counts.unreadCount > 0 || addressed;
+  return unread && (!muted || addressed);
+}
+
+/**
+ * Which channels hold a thread, among those listed under it
+ * (`sidebarThreadsByChannel`), with replies new to the member (#5277). Thread
+ * replies never count toward a channel's own unread (chat README § Message
+ * threads), so the rail's Unread only filter and a folded section's total read
+ * this too, or the only sign of those replies would be filtered away. One rule
+ * for the phone's channel list and web's rail (#5300).
+ */
+export function channelsWithUnreadThreads(
+  byChannel: ReadonlyMap<string, readonly { readonly unread_count: number }[]>,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const [channelId, threads] of byChannel) {
+    if (threads.some((thread) => thread.unread_count > 0)) ids.add(channelId);
+  }
+  return ids;
+}
+
+/**
+ * What the arrangement reads as unread (#5277): the server's counts, plus one
+ * for a channel whose listed thread has new replies, so Unread only keeps that
+ * channel and its thread rows, and a folded section reads unread over it. A
+ * row's own badge still reads the server's counts alone. `undefined` (counts
+ * unknown) stays `undefined`, so no filter hides a row on missing data.
+ */
+export function withUnreadThreadChannels(
+  counts: ReadonlyMap<string, SidebarUnreadCounts> | undefined,
+  unreadThreadChannelIds: ReadonlySet<string>,
+): ReadonlyMap<string, SidebarUnreadCounts> | undefined {
+  if (!counts || unreadThreadChannelIds.size === 0) return counts;
+  const merged = new Map(counts);
+  for (const channelId of unreadThreadChannelIds) {
+    const own = merged.get(channelId);
+    if ((own?.unreadCount ?? 0) === 0)
+      merged.set(channelId, {
+        unreadCount: 1,
+        mentionCount: own?.mentionCount ?? 0,
+      });
+  }
+  return merged;
+}
+
 export function arrangeChannelSidebar<C extends SidebarChannelLike>(
   input: ArrangeSidebarInput<C>,
 ): ArrangedSidebar<C> {
@@ -297,10 +394,25 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     titleOf,
     unreadByChannelId,
     mutedChannelIds,
+    sort = "chapter",
+    latestAtByChannelId,
   } = input;
 
-  const countsOf = (channel: C) =>
-    unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
+  // The counts the filters and the folded headers read (rows read the
+  // server's counts directly). A muted channel's plain unread is quiet here
+  // (#3999, Shawn 2026-11-13): it adds nothing to a folded header and Unread
+  // only drops it, as its row (`countsLookUnread`) reads as read. Nothing here
+  // changes what the server holds.
+  const countsOf = (channel: C): SidebarUnreadCounts => {
+    const counts = unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
+    if (
+      mutedChannelIds?.has(channel.id) &&
+      !countsLookUnread(isDirectChannel(channel), counts, true)
+    ) {
+      return NO_UNREAD;
+    }
+    return counts;
+  };
 
   // A filter applies only while its data is known. Hiding rows on missing
   // counts would tell the member "nothing unread" when the truth is "we don't
@@ -327,6 +439,23 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     // Deterministic between two rows that show the same title.
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   const byOrder = compareChannelOrder(titleOf);
+  // The member's sort (#2877). Chapter order keeps Pinned A to Z, since pins
+  // carry no chapter order; the other two sort every section alike.
+  const sortRows = ((): ((isPinned: boolean) => (a: C, b: C) => number) => {
+    if (sort === "alpha") return () => byTitle;
+    if (sort === "recent" && latestAtByChannelId) {
+      const newest = compareLatestFirst<C>(
+        (channel) => latestAtByChannelId.get(channel.id),
+        titleOf,
+      );
+      // `compareLatestFirst` ends on the title; the id keeps two rows with
+      // one time and one title in the same order every render.
+      const byRecent = (a: C, b: C) =>
+        newest(a, b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      return () => byRecent;
+    }
+    return (isPinned) => (isPinned ? byTitle : byOrder);
+  })();
 
   const pinned: C[] = [];
   const rest = sections.map((section) => ({
@@ -351,7 +480,7 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
   ): ArrangedSidebarSection<C> | null => {
     const kept = channels
       .filter((c) => passes(c, isPinned))
-      .sort(isPinned ? byTitle : byOrder);
+      .sort(sortRows(isPinned));
     if (kept.length === 0) return null;
     let unreadCount = 0;
     let mentionCount = 0;
@@ -402,12 +531,30 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
 export const PIN_TO_TOP_LABEL = "Pin to top";
 export const UNPIN_FROM_TOP_LABEL = "Unpin from top";
 
+/** The sort control's name and each answer's label, in the order both clients draw them. */
+export const SORT_CHANNELS_LABEL = "Sort";
+export const SIDEBAR_SORT_OPTIONS: readonly {
+  value: SidebarSort;
+  label: string;
+}[] = [
+  { value: "chapter", label: "Chapter order" },
+  { value: "recent", label: "Recent" },
+  { value: "alpha", label: "A–Z" },
+];
+
 export const UNREAD_ONLY_LABEL = "Unread only";
 export const HIDE_MUTED_LABEL = "Hide muted";
 
-/** The control both clients keep the two filters behind (mobile since 2026-11-06). */
-export const FILTER_CHANNELS_LABEL = "Filter channels";
-export const FILTER_CHANNELS_ON_LABEL = "Filter channels, filters on";
+/**
+ * The control both clients keep the sort and the two filters behind (mobile
+ * since 2026-11-06; the sort joined it in #2877). "Filters on" names only the
+ * filters: a sort shortens nothing, so it lights no dot.
+ */
+export const FILTER_CHANNELS_LABEL = "Sort and filter channels";
+export const FILTER_CHANNELS_ON_LABEL = "Sort and filter channels, filters on";
+/** The same control where it offers no sort: web's Direct messages panel. */
+export const FILTER_ONLY_CHANNELS_LABEL = "Filter channels";
+export const FILTER_ONLY_CHANNELS_ON_LABEL = "Filter channels, filters on";
 
 export const NO_MATCHING_CHANNELS = "No channels match your filters.";
 export const SHOW_ALL_CHANNELS_LABEL = "Show all channels";

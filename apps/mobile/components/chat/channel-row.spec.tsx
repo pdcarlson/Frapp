@@ -11,18 +11,12 @@ import { describe, expect, it, vi } from "vitest";
 // mount. A purple chapter's values, deliberately not house gold, so a control
 // that slips back to a `gold.*` token shows up in an assertion; the hook
 // itself has its own spec.
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
+import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { expectRoundedRipple } from "@/test/pressable-row";
@@ -35,6 +29,8 @@ import {
   HIDE_ACTION,
   PIN_ACTION,
 } from "./channel-row";
+import { channelMarkFor } from "@repo/hooks/channel-start";
+import { PURPLE_BRANDING as PURPLE } from "@/test/chapter-branding";
 
 /**
  * The rules under test are the two `foundations.md:67-68` states this row
@@ -271,9 +267,7 @@ describe("ChannelRow pin and DM badge (#2877)", () => {
           (node.type as unknown) === "Text" && node.props.children === "#",
       );
       const flat = JSON.stringify(sigil.props.style);
-      expect(flat).toContain(
-        `"color":"${signetDarkTokens.color.text.muted}"`,
-      );
+      expect(flat).toContain(`"color":"${signetDarkTokens.color.text.muted}"`);
       expect(flat).not.toContain("#CB9FFF");
     }
   });
@@ -352,7 +346,7 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     ).toHaveLength(1);
   });
 
-  it("draws a muted unread row's title quiet, with the crossed-out bell", () => {
+  it("draws a muted unread row's title quiet, with the crossed-out speaker", () => {
     const tree = renderRow({ unreadCount: 7, isMuted: true });
     const title = titleStyle(tree);
     expect(title.fontFamily).toBe("Figtree_400Regular");
@@ -360,6 +354,26 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     expect(
       tree.root.findAll((node) => (node.type as unknown) === "Svg"),
     ).toHaveLength(1);
+    // Web's `MuteGlyph` (#4738), from the one copy of its path data: the
+    // speaker with its × in place of the waves, not a bell, which is the
+    // notification inbox's glyph (#3362). At 14 in the muted text hue, never
+    // the chapter accent, and hidden from screen readers.
+    const paths = tree.root.findAll(
+      (node) => (node.type as unknown) === "Path",
+    );
+    expect(paths.map((node) => node.props.d)).toEqual([
+      MARK_GLYPH_PATHS.mute.body,
+      MARK_GLYPH_PATHS.mute.split,
+      MARK_GLYPH_PATHS.mute.muted,
+    ]);
+    for (const path of paths) {
+      expect(path.props.stroke).toBe(signetDarkTokens.color.text.muted);
+    }
+    const svg = tree.root.find((node) => (node.type as unknown) === "Svg");
+    expect(svg.props.width).toBe(14);
+    const [mark] = tree.root.findAllByProps({ testID: "channel-row-muted" });
+    expect(mark.props.accessibilityElementsHidden).toBe(true);
+    expect(mark.props.importantForAccessibility).toBe("no-hide-descendants");
     expect(
       renderRow({ unreadCount: 7 }).root.findAll(
         (node) => (node.type as unknown) === "Svg",
@@ -388,8 +402,9 @@ describe("ChannelRow unread emphasis and press feedback", () => {
     const held = flatten(row.props.style({ pressed: true }));
 
     expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
-    // The suite's react-native stub runs as iOS.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    // The suite's react-native stub runs as iOS. A row on the page lifts one
+    // step above it (`lib/surfaces.ts`).
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.surface1);
     expect(held).not.toHaveProperty("opacity");
   });
 
@@ -495,5 +510,144 @@ describe("accessibilityLabelFor, muted and previewed rows", () => {
         preview: "",
       }),
     ).toBe("#social");
+  });
+});
+
+describe("ChannelRow mark (#4134)", () => {
+  const hashes = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Text" && node.props.children === "#",
+    );
+  const marked = (tree: ReactTestRenderer, mark: string) =>
+    tree.root.findAll((node) => node.props.testID === `channel-row-${mark}`);
+  const labelOf = (tree: ReactTestRenderer) =>
+    tree.root.findByProps({ accessibilityRole: "button" }).props
+      .accessibilityLabel;
+
+  it("draws a lock, not #, on a PRIVATE row", () => {
+    const tree = renderRow({
+      name: "exec",
+      mark: channelMarkFor({ type: "PRIVATE", name: "exec" }),
+    });
+    expect(marked(tree, "lock")).toHaveLength(1);
+    expect(hashes(tree)).toHaveLength(0);
+  });
+
+  it("draws # and no lock on a PUBLIC row", () => {
+    const tree = renderRow({
+      mark: channelMarkFor({ type: "PUBLIC", name: "general" }),
+    });
+    expect(hashes(tree)).toHaveLength(1);
+    expect(marked(tree, "lock")).toHaveLength(0);
+  });
+
+  it("draws the lock on a ROLE_GATED row and the shield on the audit channel", () => {
+    expect(marked(renderRow({ mark: "role-gated" }), "lock")).toHaveLength(1);
+    expect(marked(renderRow({ mark: "audit" }), "audit")).toHaveLength(1);
+  });
+
+  it("paints the lock in the sigil's read, unread and muted colours", () => {
+    const strokeOf = (
+      props: Partial<React.ComponentProps<typeof ChannelRow>>,
+    ) =>
+      renderRow({ name: "exec", mark: "private", ...props })
+        .root.findAll((node) => (node.type as unknown) === "Path")
+        .map((node) => node.props.stroke)[0];
+    expect(strokeOf({})).toBe(signetDarkTokens.color.text.muted);
+    expect(strokeOf({ unreadCount: 3 })).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    expect(strokeOf({ isMuted: true })).toBe(
+      signetDarkTokens.color.text.disabled,
+    );
+  });
+
+  it("says a private row is private, and a role-gated one only that roles limit it", () => {
+    expect(
+      labelOf(renderRow({ name: "exec", mark: "private", unreadCount: 2 })),
+    ).toBe("#exec, private channel, 2 unread");
+    // A role-gated channel may be open to every member, so it is never
+    // called private (`channelStartCopy`).
+    expect(labelOf(renderRow({ name: "officers", mark: "role-gated" }))).toBe(
+      "#officers, limited to some roles",
+    );
+    expect(labelOf(renderRow({ name: "general" }))).toBe("#general");
+  });
+
+  it("lets the # grow past its slot rather than clip at a large text size", () => {
+    const sigil = hashes(renderRow({}))[0]!;
+    const flat = flatten(sigil.props.style);
+    expect(flat.width).toBeUndefined();
+    expect(flat.minWidth).toBe(signetDarkTokens.typography.role.title.size);
+  });
+});
+
+// #5519: a Messages row's time, and the check on the member's own last line.
+describe("ChannelRow time and read check (#5519)", () => {
+  const messagesRow = (
+    props: Partial<React.ComponentProps<typeof ChannelRow>> = {},
+  ) =>
+    renderRow({
+      name: "Alice Chen",
+      isDirect: true,
+      preview: "see you at 6",
+      time: "4:46 PM",
+      timeLabel: "Nov 18, 2026, 4:46 PM",
+      ...props,
+    });
+  const byTestId = (tree: ReactTestRenderer, id: string) =>
+    tree.root.findAll((node) => node.props.testID === id, { deep: true });
+  const texts = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAll((node) => (node.type as unknown as string) === "Text", {
+        deep: true,
+      })
+      .map((node) => node.props.children);
+
+  it("draws the time on the name line", () => {
+    expect(texts(messagesRow())).toContain("4:46 PM");
+  });
+
+  it("draws one check for sent and two in the chapter accent for read", () => {
+    const sent = messagesRow({ readStatus: "sent" });
+    expect(byTestId(sent, "channel-row-sent")).toHaveLength(1);
+    expect(byTestId(sent, "channel-row-read")).toHaveLength(0);
+
+    const read = messagesRow({ readStatus: "read" });
+    const mark = byTestId(read, "channel-row-read")[0]!;
+    const glyph = mark.findAll((node) => node.props.color !== undefined)[0]!;
+    expect(glyph.props.color).toBe(PURPLE.accent);
+    // A sent check stays muted, never the accent.
+    const sentGlyph = byTestId(sent, "channel-row-sent")[0]!.findAll(
+      (node) => node.props.color !== undefined,
+    )[0]!;
+    expect(sentGlyph.props.color).toBe(signetDarkTokens.color.text.muted);
+  });
+
+  it("draws no check without a status, and no time on a one-line row", () => {
+    const none = messagesRow();
+    expect(byTestId(none, "channel-row-sent")).toHaveLength(0);
+    expect(byTestId(none, "channel-row-read")).toHaveLength(0);
+    expect(texts(renderRow({ time: null }))).not.toContain("4:46 PM");
+  });
+
+  it("keeps the badge on a Messages row, on its last line", () => {
+    const style = findBadgeStyle(messagesRow({ unreadCount: 2 }));
+    expect(style?.backgroundColor).toBe(signetDarkTokens.color.semantic.mention);
+  });
+
+  it("says Read or Sent after the line, then when", () => {
+    expect(
+      accessibilityLabelFor({
+        name: "Alice Chen",
+        isDirect: true,
+        unreadCount: 0,
+        mentionCount: 0,
+        preview: "see you at 6",
+        readStatus: "read",
+        timeLabel: "Nov 18, 2026, 4:46 PM",
+      }),
+    ).toBe("Alice Chen, see you at 6, Read, Nov 18, 2026, 4:46 PM");
   });
 });

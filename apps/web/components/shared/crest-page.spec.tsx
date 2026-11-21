@@ -12,6 +12,21 @@ const { back, push, captureException } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ back, push }) }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
+// The error page reads the browser link to choose its remedy (#2200).
+const { network } = vi.hoisted(() => ({ network: { linkOnline: true } }));
+vi.mock("@/lib/providers/network-provider", () => ({
+  useNetwork: () => network,
+}));
+
+// A stale chunk's remedy replaces the document; jsdom's real
+// `location.reload` throws "not implemented", so stand in for it, as
+// `segment-error.spec.tsx` does.
+const reload = vi.fn();
+Object.defineProperty(window, "location", {
+  value: { ...window.location, reload },
+  writable: true,
+});
+
 import sharedConfig from "@repo/theme/tailwind";
 import tailwindConfig from "@/tailwind.config";
 import NotFound from "@/app/not-found";
@@ -26,8 +41,8 @@ import RouteError from "@/app/error";
  * the 260px raster on the two terminal-state routes.
  */
 
-const CREST_ASSET = "/brand/signet-emblem-B.png";
-const CREST = /signet-emblem-B\.png/;
+const CREST_ASSET = "/brand/signet-emblem-B";
+const CREST = /signet-emblem-B-glyph\.png/;
 
 /**
  * Every `.tsx` under `apps/web`, walked rather than globbed.
@@ -111,14 +126,18 @@ describe("the crest", () => {
     },
   );
 
-  it("is drawn on the ladder step nearest the mark's field, so the tile edge does not show", () => {
-    // The raster's field is `#1A1A1A`. Until 2026-11-05 `--surface-1` was that
-    // exact hex; the neutral ladder moved it to `#111111` (1.085:1, a visible
-    // square), so the page paints `--card` (`#171717`, 1.03:1). That is what
-    // lets the board's `opacity:.9` wash be dropped.
+  it("draws the field-less glyph, so no tile edge shows on the violet card", () => {
+    // The full tile's field is a neutral `#1A1A1A`. Through 2026-11-19 the
+    // page painted the ladder step nearest it so the tile's edge vanished; the
+    // violet 2026-11-19 ladder has no neutral step, and the field read as a
+    // faint square on `--card` (#5695). The glyph raster is the crest alone on
+    // transparent, so there is no field to match on any ladder.
     const { container } = render(<NotFound />);
+    const crest = container.querySelector("img")!;
+    expect(crest.getAttribute("src")).toMatch(/signet-emblem-B-glyph\.png/);
+    expect(crest.className).not.toMatch(/\brounded-/);
+    expect(crest.className).not.toMatch(/\bopacity-/);
     expect(container.querySelector("main")?.className).toMatch(/\bbg-card\b/);
-    expect(container.querySelector("img")?.className).not.toMatch(/\bopacity-/);
   });
 
   it("is the only crest art in apps/web", () => {
@@ -216,7 +235,9 @@ describe("the error page", () => {
     captureException.mockClear();
     const error = new Error("boom");
     render(<RouteError error={error} retry={vi.fn()} />);
-    expect(captureException).toHaveBeenCalledWith(error);
+    expect(captureException).toHaveBeenCalledWith(error, {
+      tags: { chunk_load_error: false },
+    });
   });
 
   it("retries rather than resets", async () => {
@@ -227,6 +248,58 @@ describe("the error page", () => {
     render(<RouteError error={new Error("x")} retry={retry} />);
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retry).toHaveBeenCalledOnce();
+  });
+
+  function chunkLoadError() {
+    const error = new Error("Failed to load chunk static/chunks/x.js");
+    error.name = "ChunkLoadError";
+    return error;
+  }
+
+  it("offers Reload for a stale chunk, and reloads the document (#2200)", async () => {
+    // `React.lazy` memoises the rejection for the life of the document, so
+    // Retry would re-render into the same failure.
+    network.linkOnline = true;
+    reload.mockClear();
+    const retry = vi.fn();
+    render(<RouteError error={chunkLoadError()} retry={retry} />);
+    expect(
+      screen.getByText(
+        "This usually means a new version shipped while the tab was open. Reload to pick it up.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Reload" }));
+    expect(reload).toHaveBeenCalledOnce();
+    expect(retry).not.toHaveBeenCalled();
+    // Tagged as the degraded segment tags it.
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { chunk_load_error: true },
+    });
+  });
+
+  it("keeps Retry for a stale chunk while offline, since a reload would lose the tab", async () => {
+    network.linkOnline = false;
+    reload.mockClear();
+    const retry = vi.fn();
+    try {
+      render(<RouteError error={chunkLoadError()} retry={retry} />);
+      // Nothing broke on our side, so the title doesn't say it did.
+      expect(
+        screen.getByRole("heading", {
+          level: 1,
+          name: "This page couldn't load.",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("You're offline. Retry once you're back."),
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+      expect(retry).toHaveBeenCalledOnce();
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      network.linkOnline = true;
+    }
   });
 
   it("completes writing.md §3's three parts", () => {

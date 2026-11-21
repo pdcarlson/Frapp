@@ -2,6 +2,7 @@ import {
   User,
   UserContact,
   UserDisplayIdentity,
+  UserSharedBirthday,
 } from '../entities/user.entity';
 
 export const USER_REPOSITORY = 'USER_REPOSITORY';
@@ -25,6 +26,13 @@ export interface IUserRepository {
    * method so the display path above never gains `email`.
    */
   findContactsByIds(ids: string[]): Promise<UserContact[]>;
+  /**
+   * The birthdays of these users that are shared with their chapters
+   * (`birthday_visibility = 'chapter'`, #4959), chunked like
+   * {@link findDisplayIdentitiesByIds}. A user who keeps theirs to themselves,
+   * or set none, is left out; the year is never read.
+   */
+  findSharedBirthdaysByIds(ids: string[]): Promise<UserSharedBirthday[]>;
   findBySupabaseAuthId(authId: string): Promise<User | null>;
   create(data: Partial<User>): Promise<User>;
   update(id: string, data: Partial<User>): Promise<User>;

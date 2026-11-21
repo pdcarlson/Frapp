@@ -38,10 +38,28 @@ export interface IFinancialInvoiceRepository {
    * Returns null (without writing) when the invoice changed state underneath
    * the caller — the pay flow must then re-read and refuse, never hand out a
    * client secret for a settled or voided invoice.
+   *
+   * Each stamp starts a new payment attempt (#3460): it sets
+   * `last_payment_attempt_at` to now and clears the failure pair, so an
+   * earlier attempt's failure never ends the new attempt's pending hold.
    */
   setPaymentIntentIfOpen(
     id: string,
     chapterId: string,
     paymentIntentId: string,
+  ): Promise<FinancialInvoice | null>;
+  /**
+   * Record that the invoice's current payment attempt failed (#3460). Writes
+   * only while the invoice is OPEN, still carries `paymentIntentId`, and its
+   * current attempt began at or before `failedAt`, so a late failure for an
+   * attempt the member already retried can't mark the retry failed. Returns
+   * null (without writing) otherwise.
+   */
+  recordPaymentFailure(
+    id: string,
+    chapterId: string,
+    paymentIntentId: string,
+    failedAt: string,
+    reason: string | null,
   ): Promise<FinancialInvoice | null>;
 }

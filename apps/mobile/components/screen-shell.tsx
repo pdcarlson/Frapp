@@ -3,10 +3,19 @@ import {
   Fragment,
   type ReactElement,
   type ReactNode,
+  type RefObject,
   cloneElement,
   isValidElement,
+  useRef,
 } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type ViewStyle,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -14,22 +23,28 @@ import {
   PinnedBackRow,
   pinnedBackClearance,
 } from "@/components/back-row";
+import { DisclosureGlyph } from "@/components/control-glyphs";
 import {
   CREATE_BUTTON_SIZE,
   type CreateAction,
   FloatingCreateButton,
 } from "@/components/floating-create-button";
-import { FLOATING_TAB_BAR, useTabBarClearance } from "@/lib/floating-chrome";
+import {
+  FLOATING_TAB_BAR,
+  useBarScroll,
+  useTabBarClearance,
+} from "@/lib/floating-chrome";
 import {
   ThemedRefreshControl,
   type ScreenRefresh,
 } from "@/components/pull-to-refresh";
-import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 type ScreenShellProps = {
   title: string;
   /**
-   * The `‹ More` / `‹ Events` row above the title, on a screen reached from
+   * The `‹ You` / `‹ Calendar` row above the title, on a screen reached from
    * another one (#3022, `spec/ui/mobile/navigation.md` § Back rows). A tab's
    * own screen passes none. Every state of a screen passes the same one, so a
    * deep link that lands on an error still has a way out.
@@ -55,6 +70,24 @@ type ScreenShellProps = {
    */
   titleMark?: ReactNode;
   /**
+   * Makes the mark and title one button with a down chevron that opens a menu,
+   * as Chat home's chapter name opens the chapter menu
+   * (`components/chat/chapter-menu.tsx`), the way web's chapter row atop the
+   * nav does. `onOpen` gets the title row's frame in the window, measured at
+   * the tap, so the menu can hang under it.
+   */
+  titleMenu?: {
+    open: boolean;
+    accessibilityLabel: string;
+    onOpen: (frame: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }) => void;
+    onClose: () => void;
+  };
+  /**
    * A line under the title, for a fact about this one item that the title
    * can't carry. Optional since #3023: the board draws one only on s07, where
    * Event details passes the event's time. A line that says what the screen is
@@ -66,8 +99,8 @@ type ScreenShellProps = {
    * Trailing control rendered on the title row, right-aligned and vertically
    * centred against the title.
    *
-   * The ✦ Ask pill on s04 and s06 (`spec/ui/mobile/navigation.md` § Global
-   * entries outside the tab bar). A create action is not one of these: it
+   * Chat home's Search and bell, a screen's own actions (`spec/ui/mobile/navigation.md`
+   * § Global entries outside the tab bar). A create action is not one of these: it
    * floats bottom right (`createAction`).
    * Optional, so every existing call site is unaffected.
    */
@@ -87,6 +120,39 @@ type ScreenShellProps = {
    * hidden from screen readers. `content` renders nothing while closed.
    */
   overlay?: { open: boolean; content: ReactNode };
+  /**
+   * False holds the body still, for a screen whose own gesture moves
+   * something inside it (Arrange channels' drag handles, #3838).
+   */
+  scrollEnabled?: boolean;
+  /**
+   * "handled" for a screen with a search field over tappable rows (Messages,
+   * #4668), so a tap on a result while the keyboard is up opens it instead of
+   * only closing the keyboard, as the Directory's list does.
+   */
+  keyboardShouldPersistTaps?: "handled";
+  /**
+   * Controls pinned under the scroll view, at the bottom of the screen, for a
+   * screen whose main action belongs under the thumb (a meeting's minutes:
+   * the recorder's pause and stop, then Post; Paul, 2026-11-17: "why are the
+   * buttons all up at the top, not pushed down to the bottom?"). Off the tab
+   * screens only.
+   */
+  footer?: ReactNode;
+  /**
+   * Rises with the keyboard, so a field low on the page and the `footer`
+   * stay above it: a meeting's note, typed while the recorder's bar stays
+   * under the thumb (#5288).
+   */
+  avoidKeyboard?: boolean;
+  /**
+   * The body's scroll view, for a screen that moves it to a part of itself:
+   * Activity's week strip jumps To do to the day pressed (#5310), as
+   * Fantastical's DayTicker jumps its list. Measure the part against a host
+   * view of the screen's own (a node handle is refused under the New
+   * Architecture) and `scrollTo` it.
+   */
+  scrollRef?: RefObject<ScrollView | null>;
   children: ReactNode;
 };
 
@@ -121,10 +187,16 @@ export function ScreenShell({
   backAction,
   createAction,
   titleMark,
+  titleMenu,
   subtitle,
   headerAction,
   refresh,
   overlay,
+  scrollEnabled = true,
+  keyboardShouldPersistTaps,
+  footer,
+  avoidKeyboard = false,
+  scrollRef,
   children,
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
@@ -138,6 +210,7 @@ export function ScreenShell({
   // top level (fragments and arrays included) can be pinned. Index 0 is the
   // title block, which scrolls away.
   const body = flattenChildren(children);
+  const barScroll = useBarScroll();
   const stickyHeaderIndices = body.flatMap((child, index) =>
     child.type === StickyHeader ? [index + 1] : [],
   );
@@ -153,9 +226,15 @@ export function ScreenShell({
           edges={["top", "left", "right", "bottom"]}
         >
           {/* Unpadded, so the pinned row sits where the content starts. */}
-          <View style={styles.safeArea}>
+          <ShellBody avoidKeyboard={avoidKeyboard} style={styles.safeArea}>
             {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
             <ScrollView
+              ref={scrollRef}
+              // Folds the floating bar while the member reads down a tab
+              // screen (#4904); nothing off the tab bar.
+              {...barScroll}
+              scrollEnabled={scrollEnabled}
+              keyboardShouldPersistTaps={keyboardShouldPersistTaps}
               stickyHeaderIndices={
                 stickyHeaderIndices.length > 0 ? stickyHeaderIndices : undefined
               }
@@ -170,10 +249,25 @@ export function ScreenShell({
             >
               <View style={styles.header}>
                 <View style={styles.headerRow}>
-                  {titleMark}
-                  <Text accessibilityRole="header" style={styles.title}>
-                    {title}
-                  </Text>
+                  {titleMenu ? (
+                    <>
+                      <TitleMenuButton
+                        title={title}
+                        titleMark={titleMark}
+                        menu={titleMenu}
+                        tokens={tokens}
+                      />
+                      {/* The row's slack, outside the button. */}
+                      <View style={styles.titleSlack} />
+                    </>
+                  ) : (
+                    <>
+                      {titleMark}
+                      <Text accessibilityRole="header" style={styles.title}>
+                        {title}
+                      </Text>
+                    </>
+                  )}
                   {headerAction ? (
                     <View style={styles.headerAction}>{headerAction}</View>
                   ) : null}
@@ -184,11 +278,89 @@ export function ScreenShell({
               </View>
               {body}
             </ScrollView>
-          </View>
+            {footer ? <View style={styles.footer}>{footer}</View> : null}
+          </ShellBody>
         </SafeAreaView>
       </CoveredByOverlay>
       {overlay?.content}
     </View>
+  );
+}
+
+/**
+ * The title row's mark and title as one button that opens a menu, ending in a
+ * down chevron so it reads as one, as web's chapter row does. A screen reader
+ * hears one button named by `accessibilityLabel`; on iOS the title's header
+ * role merges into it, so the Headings rotor skips this title, as web's
+ * chapter row is a button and not a heading.
+ */
+function TitleMenuButton({
+  title,
+  titleMark,
+  menu,
+  tokens,
+}: {
+  title: string;
+  titleMark?: ReactNode;
+  menu: NonNullable<ScreenShellProps["titleMenu"]>;
+  tokens: SignetTokens;
+}) {
+  const styles = createStyles(tokens);
+  const ref = useRef<View>(null);
+  const openUnderTitle = () => {
+    const node = ref.current;
+    // No frame to measure (a renderer without layout): open at the top.
+    if (!node?.measureInWindow) {
+      return menu.onOpen({ x: 0, y: 0, width: 0, height: 0 });
+    }
+    node.measureInWindow((x, y, width, height) =>
+      menu.onOpen({ x, y, width, height }),
+    );
+  };
+  return (
+    <Pressable
+      ref={ref}
+      accessibilityRole="button"
+      accessibilityLabel={menu.accessibilityLabel}
+      accessibilityState={{ expanded: menu.open }}
+      onPress={() => (menu.open ? menu.onClose() : openUnderTitle())}
+      style={({ pressed }) => [
+        styles.titleButton,
+        pressed ? styles.titlePressed : null,
+      ]}
+    >
+      {titleMark}
+      <Text
+        accessibilityRole="header"
+        numberOfLines={1}
+        style={styles.titleInButton}
+      >
+        {title}
+      </Text>
+      <DisclosureGlyph
+        color={tokens.color.text.muted}
+        size={18}
+        direction="down"
+      />
+    </Pressable>
+  );
+}
+
+/** The shell's body, rising with the keyboard where the screen asks. */
+function ShellBody({
+  avoidKeyboard,
+  style,
+  children,
+}: {
+  avoidKeyboard: boolean;
+  style: ViewStyle;
+  children: ReactNode;
+}) {
+  if (!avoidKeyboard) return <View style={style}>{children}</View>;
+  return (
+    <KeyboardAvoidingArea atScreenBottom style={style}>
+      {children}
+    </KeyboardAvoidingArea>
   );
 }
 
@@ -263,31 +435,6 @@ function CoveredByOverlay({
 
 const coveredStyle = { flex: 1 } as const;
 
-export function InfoCard({
-  title,
-  body,
-  badge,
-}: {
-  title: string;
-  body: string;
-  badge?: string;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-
-  return (
-    <View style={styles.card}>
-      {badge ? (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{badge}</Text>
-        </View>
-      ) : null}
-      <Text style={styles.cardTitle}>{title}</Text>
-      <Text style={styles.cardBody}>{body}</Text>
-    </View>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     frame: {
@@ -296,6 +443,17 @@ function createStyles(tokens: SignetTokens) {
     },
     safeArea: {
       flex: 1,
+    },
+    footer: {
+      width: "100%",
+      maxWidth: 880,
+      alignSelf: "center",
+      paddingHorizontal: tokens.spacing.lg,
+      paddingTop: tokens.spacing.md,
+      paddingBottom: tokens.spacing.md,
+      gap: tokens.spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: tokens.color.border.hairline,
     },
     content: {
       width: "100%",
@@ -317,40 +475,26 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       ...screenTitleStyle(tokens),
     },
+    // The button hugs its title, so the space after the chevron is not a tap
+    // target, and the header actions keep their place at the far end.
+    titleButton: {
+      flexShrink: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+    },
+    titleInButton: {
+      flexShrink: 1,
+      ...screenTitleStyle(tokens),
+    },
+    titlePressed: { opacity: 0.6 },
+    titleSlack: { flex: 1 },
     headerAction: {
       flexShrink: 0,
     },
     subtitle: {
       marginTop: tokens.spacing.xs,
-      color: tokens.color.text.mutedForeground,
-      ...typeRole(tokens.typography.role.body),
-    },
-    card: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.sm,
-    },
-    badge: {
-      alignSelf: "flex-start",
-      borderRadius: tokens.radius.chip,
-      backgroundColor: tint(tokens.color.semantic.info),
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.xs,
-    },
-    badgeText: {
-      color: tokens.color.semantic.info,
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.2,
-      textTransform: "uppercase",
-    },
-    cardTitle: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
-    },
-    cardBody: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.body),
     },

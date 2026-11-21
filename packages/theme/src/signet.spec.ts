@@ -233,6 +233,11 @@ describe("Signet colors match foundations.md", () => {
     const t = tokenTable("Borders & Hairlines");
     expectColor(color.border.hairline, pin(t, "--border", "Borders & Hairlines"), "--border");
     expectColor(color.border.input, pin(t, "--input", "Borders & Hairlines"), "--input");
+    expectColor(
+      color.border.control,
+      pin(t, "--control-edge", "Borders & Hairlines"),
+      "--control-edge",
+    );
 
     // The spec does not merely pin these two values, it bans the alternative:
     // "Borders MUST be low-opacity white. Fixed-hex border colors are banned."
@@ -265,6 +270,14 @@ describe("Signet colors match foundations.md", () => {
       "--destructive",
     );
     expectColor(color.semantic.info, pin(t, "--info", "Semantic Colors"), "--info");
+    // One ink for all three solid fills (#4393): each row pins it.
+    for (const token of [
+      "--success-foreground",
+      "--warning-foreground",
+      "--destructive-foreground",
+    ]) {
+      expectColor(color.semantic.onSemantic, pin(t, token, "Semantic Colors"), token);
+    }
 
     // Locked by the Canvas header rather than panel 4h, and load-bearing: it
     // states "you were addressed" identically in every chapter, so it must not
@@ -399,11 +412,10 @@ describe("getSignetCssVars", () => {
    * `apps/mobile` reads — 63 files import it — and shipping one there would
    * claim a mobile treatment that no mobile screen implements.
    *
-   * `--info-text` is an AA text lift of a semantic hue (§5), not a semantic
-   * of its own: the solid token stays the fill and the border, and only the
-   * *text* tone moves. `--destructive-text` sat here too until 2026-11-05, when
-   * mobile's StatusChip started drawing danger text in it, so it now ships in
-   * `signetDarkTokens` and is emitted like any other semantic.
+   * `--destructive-text` sat here until 2026-11-05 and `--info-text` until
+   * 2026-11-12 (#3826), each until mobile's StatusChip started drawing that
+   * hue's text in it, so both now ship in `signetDarkTokens` and are emitted
+   * like any other semantic.
    *
    * The mention-chip pair sat here until 2026-11-06, when mobile started
    * drawing the in-body mention chip, so it now ships in `signetDarkTokens`
@@ -413,13 +425,13 @@ describe("getSignetCssVars", () => {
    * list for tokens that were forgotten.
    */
   const CSS_ONLY = [
-    "--info-text",
     // The §5 status tints (#2376). A web answer to a web problem: the alpha
     // utility's `color-mix` fallback they avoid does not exist in React Native.
     "--success-tint",
     "--warning-tint",
     "--destructive-tint",
     "--destructive-tint-hover",
+    "--info-tint",
   ];
 
   const UNDOCUMENTED_HERE = [

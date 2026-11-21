@@ -24,6 +24,7 @@ jest.mock('@sentry/nestjs', () => ({
 interface InsertCall {
   table: string;
   row: unknown;
+  options: unknown;
 }
 
 interface DeleteCall {
@@ -34,7 +35,10 @@ interface DeleteCall {
 }
 
 function fakeClient(result: {
-  insert?: { error: { code?: string; message?: string } | null };
+  insert?: {
+    data?: unknown[];
+    error: { code?: string; message?: string } | null;
+  };
   delete?: {
     count: number | null;
     error: { code?: string; message?: string } | null;
@@ -44,9 +48,14 @@ function fakeClient(result: {
   const deletes: DeleteCall[] = [];
   const client = {
     from: (table: string) => ({
-      insert: (row: unknown) => {
-        inserts.push({ table, row });
-        return Promise.resolve(result.insert ?? { error: null });
+      // `claim` is insert-or-ignore: `upsert(..., { ignoreDuplicates })`
+      // then `select`, which returns the row only when this call inserted it.
+      upsert: (row: unknown, options: unknown) => {
+        inserts.push({ table, row, options });
+        return {
+          select: () =>
+            Promise.resolve(result.insert ?? { data: [row], error: null }),
+        };
       },
       delete: (options: unknown) => ({
         lt: (column: string, value: unknown) => {
@@ -71,13 +80,27 @@ describe('SupabaseChatPushDispatchRepository', () => {
 
   describe('claim', () => {
     it('claims the message when the insert succeeds', async () => {
-      const { client, inserts } = fakeClient({ insert: { error: null } });
+      const { client, inserts } = fakeClient({});
       const repo = new SupabaseChatPushDispatchRepository(client);
 
       await expect(repo.claim('m-1')).resolves.toBe('claimed');
       expect(inserts).toEqual([
-        { table: 'chat_push_dispatches', row: { message_id: 'm-1' } },
+        {
+          table: 'chat_push_dispatches',
+          row: { message_id: 'm-1' },
+          options: { onConflict: 'message_id', ignoreDuplicates: true },
+        },
       ]);
+    });
+
+    // The ordinary lost race: `on conflict do nothing` returns no row, so the
+    // database logs no unique-violation error for it.
+    it('reads an insert that returned no row as another instance owning the message', async () => {
+      const { client } = fakeClient({ insert: { data: [], error: null } });
+      const repo = new SupabaseChatPushDispatchRepository(client);
+
+      await expect(repo.claim('m-1')).resolves.toBe('taken');
+      expect(Logger.prototype.error).not.toHaveBeenCalled();
     });
 
     it('reads a unique violation as another instance owning the message', async () => {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { channelDescription, channelStartCopy } from "./channel-start";
+import {
+  channelDescription,
+  channelMarkFor,
+  channelStartCopy,
+} from "./channel-start";
 
 describe("channelStartCopy", () => {
   it("welcomes a public channel and carries its description", () => {
@@ -58,5 +62,19 @@ describe("channelStartCopy", () => {
       .map((type) => channelStartCopy({ type, name: "n", description: "d" }))
       .flatMap((copy) => [copy.title, copy.startLine]);
     for (const line of all) expect(line).not.toContain("—");
+  });
+});
+
+describe("channelMarkFor (#4134)", () => {
+  it("draws the shield for the audit channel, a lock for private and role-gated, # for the rest", () => {
+    expect(channelMarkFor({ type: "PUBLIC", name: "general" })).toBe("hash");
+    expect(channelMarkFor({ type: "PRIVATE", name: "exec" })).toBe("private");
+    expect(channelMarkFor({ type: "ROLE_GATED", name: "officers" })).toBe(
+      "role-gated",
+    );
+    // The audit channel wins over its type, as web's rail draws it.
+    expect(channelMarkFor({ type: "PRIVATE", name: "chapter-audit" })).toBe(
+      "audit",
+    );
   });
 });

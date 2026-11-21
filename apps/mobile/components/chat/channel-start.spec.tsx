@@ -8,21 +8,14 @@ import { describe, expect, it, vi } from "vitest";
 // reads the current chapter through the client provider these specs don't
 // mount. A purple chapter's values, deliberately not house gold; the hook
 // itself has its own spec.
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
-import { AuditGlyph } from "./card-glyphs";
+import { AuditGlyph, LockGlyph } from "./card-glyphs";
 import { ChannelStart } from "./channel-start";
 
 /**
@@ -61,6 +54,14 @@ describe("ChannelStart mark", () => {
     });
     expect(tree.root.findAllByType(AuditGlyph)).toHaveLength(1);
     expect(screenText(tree)).not.toMatch(/^#$/m);
+  });
+
+  it("draws the lock its chat-home row draws for a private or role-gated channel (#4134)", () => {
+    for (const type of ["PRIVATE", "ROLE_GATED"]) {
+      const tree = render({ type, channelName: "exec", displayName: "exec" });
+      expect(tree.root.findAllByType(LockGlyph)).toHaveLength(1);
+      expect(screenText(tree)).not.toMatch(/^#$/m);
+    }
   });
 
   it("draws a DM's initials from the other member's name, not the channel's", () => {

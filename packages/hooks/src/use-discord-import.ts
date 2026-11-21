@@ -15,11 +15,11 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  */
 
 /** The contract's status union, so a status the API adds reaches here (#2860). */
-export type DiscordImportStatus =
+type DiscordImportStatus =
   components["schemas"]["DiscordImportResponseDto"]["status"];
 
 /** Statuses the worker is actively moving. Only these are worth polling. */
-export const DISCORD_IMPORT_ACTIVE_STATUSES: readonly DiscordImportStatus[] = [
+const DISCORD_IMPORT_ACTIVE_STATUSES: readonly DiscordImportStatus[] = [
   "ready",
   "running",
   "purging",
@@ -87,8 +87,10 @@ export function useDiscordImports(options?: { enabled?: boolean }) {
 
   return useQuery({
     queryKey: discordImportKeys.list(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord-imports");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/discord-imports", {
+        signal,
+      });
       if (error) throw error;
       return data ?? [];
     },
@@ -126,10 +128,10 @@ export function useDiscordImportProgress(
 
   const query = useQuery({
     queryKey: discordImportKeys.progress(chapterId, id ?? ""),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/discord-imports/{id}/progress",
-        { params: { path: { id: id as string } } },
+        { signal, params: { path: { id: id as string } } },
       );
       if (error) throw error;
       return data;
@@ -169,10 +171,10 @@ export function useDiscordImportFiles(
 
   return useQuery({
     queryKey: discordImportKeys.files(chapterId, id ?? ""),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/discord-imports/{id}/files",
-        { params: { path: { id: id as string } } },
+        { signal, params: { path: { id: id as string } } },
       );
       if (error) throw error;
       return data ?? [];

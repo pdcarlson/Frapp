@@ -20,7 +20,22 @@ export interface MemberContext {
 
 export interface RequestContext extends Request {
   requestId?: string;
+  /**
+   * The caller's Auth user as `auth.getUser` returned it, once
+   * `SupabaseAuthGuard` has checked the session with Supabase Auth. Absent on
+   * a read the guard verified locally (`locallyVerifiedAuthId`): read the
+   * caller's id with `authUserIdOf`, and never treat this as always present.
+   */
   supabaseUser?: SupabaseAuthUser;
+  /**
+   * Set by `SupabaseAuthGuard` instead of `supabaseUser` when it verified the
+   * access token locally rather than asking Auth (#5043,
+   * `@VerifySessionLocally()`): the token's `sub`, after its signature,
+   * expiry, issuer, audience and role checked out. The session itself may
+   * since have been signed out or revoked; spec/behavior/multi-tenancy.md
+   * records that bound.
+   */
+  locallyVerifiedAuthId?: string;
   /**
    * Verified claims from the caller's access token, including the
    * `active_chapter_id` claim issued by `custom_access_token_hook`.
@@ -30,7 +45,31 @@ export interface RequestContext extends Request {
    * refreshed their token yet.
    */
   jwtClaims?: JwtPayload;
+  /**
+   * The claims of this request's bearer token, set by `CustomThrottlerGuard`
+   * once it has verified the signature and `exp` (it runs first, as the
+   * global guard). **Not authentication**: the session may still be revoked,
+   * and only `SupabaseAuthGuard` decides that, with `getUser` or, on a read
+   * marked `@VerifySessionLocally()` (#5043), by verifying the token again
+   * itself. It lets that guard start the chapter lookups on a verified `sub`
+   * while it checks (#3728), and its presence is a precondition of the local
+   * check, which keeps that check to tokens whose key the project's JWKS
+   * lists. Absent when the throttler did not verify the token (a `kid` the
+   * JWKS does not list, no verifier for the `alg`, a route that skips
+   * throttling).
+   */
+  throttlerVerifiedClaims?: JwtPayload;
   appUser?: AppUserContext;
+  /**
+   * Set by `SupabaseAuthGuard`, once the session check has passed, on a route
+   * with `AuthSyncInterceptor` and no `ChapterGuard` (#3583): the caller's
+   * `users` row id for the `getUser` user. It answers with the lookup the
+   * guard started while that check was in flight, when it started one for
+   * this user; otherwise it reads when called, so a request that ends up
+   * waiting on its sync makes no extra read. `null` for no row or a failed
+   * read.
+   */
+  appUserLookup?: () => Promise<string | null>;
   member?: MemberContext;
   chapterId?: string;
   subscriptionStatus?: SubscriptionStatus;
@@ -50,7 +89,7 @@ export type WebhookRequest = RequestContext & {
  * Name of the top-level access-token claim written by
  * `public.custom_access_token_hook` (see the migration of the same name).
  */
-export const ACTIVE_CHAPTER_CLAIM = 'active_chapter_id';
+const ACTIVE_CHAPTER_CLAIM = 'active_chapter_id';
 
 /**
  * Reads the active-chapter claim, tolerating tokens issued before the hook was
@@ -90,4 +129,15 @@ export function getOptionalChapterId(
   const jwtChapterId = getActiveChapterClaim(request.jwtClaims);
   if (jwtChapterId) return jwtChapterId;
   return getHeaderValue(request.headers, 'x-chapter-id');
+}
+
+/**
+ * The Auth user id `SupabaseAuthGuard` accepted for this request, whichever
+ * way it checked the session (`supabaseUser` or `locallyVerifiedAuthId`), or
+ * undefined before that guard has run.
+ */
+export function authUserIdOf(
+  request: Pick<RequestContext, 'supabaseUser' | 'locallyVerifiedAuthId'>,
+): string | undefined {
+  return request.supabaseUser?.id ?? request.locallyVerifiedAuthId;
 }

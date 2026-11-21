@@ -7,8 +7,8 @@ This guide explains how Frapp is configured across local, staging, and productio
 We maintain three main environments:
 
 - **Local** — developer machine, Supabase CLI + Docker, secrets from Infisical `dev` (`.env.local` as fallback; see §3)
-- **Staging** — Supabase Cloud (staging project), the API on Render, web and landing on Vercel. A merge to `main` whose CI passes runs its deploy, which ships what the merge changed.
-- **Production** — Supabase Cloud (prod project), the API on Render, web and landing on Vercel. Deployed only from a named commit, by the **Deploy production** workflow.
+- **Staging** — Supabase Cloud (staging project), the API on Google Cloud Run, web and landing on Vercel. A merge to `main` whose CI passes runs its deploy, which ships what the merge changed.
+- **Production** — Supabase Cloud (prod project), the API on Google Cloud Run (#5228; Render until its cutover), web and landing on Vercel. Deployed only from a named commit, by the **Deploy production** workflow.
 
 How each deploy runs, in order: [`docs/ops/deployment/ci-cd.md` § How Deployments Are Gated](../ops/deployment/ci-cd.md#how-deployments-are-gated). Why it is shaped that way: [`spec/environments/README.md` § 6](../../spec/environments/README.md#6-continuous-deployment-cd).
 
@@ -22,7 +22,7 @@ Key principles:
 
 - **Infisical is the single source of truth** for all non-local secrets.
 - **No `.env.example` files** — the centralized `ENV_REFERENCE.md` replaces them.
-- **No placeholder secrets in CI** — CI (`ci.yml`) reads no runtime secrets. Where a job needs a value only to exist, it sets a deliberately fake stand-in that ships nowhere; what ships gets real values from Infisical (the frontends at build time, the API through its Render sync) ([`ci-cd.md` § Secrets in CI vs CD](../ops/deployment/ci-cd.md#secrets-in-ci-vs-cd)).
+- **No placeholder secrets in CI** — CI (`ci.yml`) reads no runtime secrets. Where a job needs a value only to exist, it sets a deliberately fake stand-in that ships nowhere; what ships gets real values from Infisical (the frontends at build time, the API through its sync to Google Secret Manager) ([`ci-cd.md` § Secrets in CI vs CD](../ops/deployment/ci-cd.md#secrets-in-ci-vs-cd)).
 - **Provider-native syncs** — Infisical pushes secrets to its sync destinations automatically (inventory linked above). Mobile EAS credentials are managed in Expo/EAS.
 
 ## 3. Local development setup
@@ -49,7 +49,7 @@ When adding new env vars:
 > **Warning:** Never commit real secrets. Never use placeholder secrets in CI/CD workflows.
 
 - Use `.env.local` for **local only** values (never committed).
-- All staging/production secrets live in Infisical. Render receives them through syncs; the web and landing builds (staging and production) and the deploy workflows read Infisical at job time. Nothing is set in Vercel's env settings.
+- All staging/production secrets live in Infisical. The API on Cloud Run receives them through Infisical's syncs to Google Secret Manager; the web and landing builds (staging and production) and the deploy workflows read Infisical at job time. Nothing is set in Vercel's env settings.
 - Rotate keys immediately if they are ever exposed.
 - See `docs/internal/environment/SECRETS_MANAGEMENT.md` for the rotation policy.
 

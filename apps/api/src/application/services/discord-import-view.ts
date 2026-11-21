@@ -49,8 +49,7 @@ export const DISCORD_IMPORT_VIEW_FIELDS = [
   'purged_messages',
 ] as const satisfies readonly (keyof DiscordImport)[];
 
-export type DiscordImportViewField =
-  (typeof DISCORD_IMPORT_VIEW_FIELDS)[number];
+type DiscordImportViewField = (typeof DISCORD_IMPORT_VIEW_FIELDS)[number];
 
 /** An import as the API returns it. */
 export type DiscordImportView = Pick<DiscordImport, DiscordImportViewField>;

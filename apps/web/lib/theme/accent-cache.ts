@@ -100,7 +100,7 @@
  * gold families by the brand lock, `spec/ui/brand-identity.md` §2; the
  * scrollbar because it is neutral chrome, `foundations.md` §12; both guarded
  * in `settings-accent.spec.tsx`), so a cached
- * paint cannot retint the mark, the Ask pill or the scrollbars even in
+ * paint cannot retint the mark, Ask's markers or the scrollbars even in
  * principle — it has no value for them to write. `accent-cache.spec.ts`
  * asserts both halves against the real engine rather than trusting this
  * comment.

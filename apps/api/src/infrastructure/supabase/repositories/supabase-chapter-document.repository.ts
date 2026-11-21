@@ -10,9 +10,25 @@ import type {
   ChapterDocumentFilter,
 } from '#domain/repositories/chapter-document.repository.interface';
 import type { ChapterDocument } from '#domain/entities/chapter-document.entity';
-import { escapeLikePattern } from '../supabase.utils';
+import { escapeLikePattern, fetchAllById } from '../supabase.utils';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
+
+/** Rows per page for the paged reads; a request size, not the server's cap. */
+const PAGE_SIZE = 1000;
+
+/**
+ * An upload or a file added by its own link: anything but a copy from the
+ * connected Drive folder (`drive_file_id` set, `drive_link_status` null).
+ */
+const NOT_A_FOLDER_COPY = 'drive_file_id.is.null,drive_link_status.not.is.null';
+
+/** Newest first, then by id, so files added together keep one order. */
+function newestFirst(a: ChapterDocument, b: ChapterDocument): number {
+  const byTime = Date.parse(b.created_at) - Date.parse(a.created_at);
+  if (byTime !== 0) return byTime;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
 
 @Injectable()
 export class SupabaseChapterDocumentRepository implements IChapterDocumentRepository {
@@ -35,32 +51,53 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     return data;
   }
 
+  async findByIds(
+    ids: string[],
+    chapterId: string,
+  ): Promise<ChapterDocument[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .select('*')
+      .in('id', ids)
+      .eq('chapter_id', chapterId);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  /**
+   * Every document the filter matches, read in pages (#5585): one read was
+   * cut at PostgREST's 1,000-row cap with no error, so a chapter past 1,000
+   * files lost its oldest ones and its folders looked empty. Paged by id, so
+   * a file added or deleted mid-read can't make a page repeat or skip
+   * another (`fetchAllById`), then sorted newest first.
+   */
   async findByChapter(
     chapterId: string,
     filter?: ChapterDocumentFilter,
   ): Promise<ChapterDocument[]> {
-    let query = this.supabase
-      .from('chapter_documents')
-      .select('*')
-      .eq('chapter_id', chapterId);
+    const rows = await fetchAllById((after) => {
+      let query = this.supabase
+        .from('chapter_documents')
+        .select('*')
+        .eq('chapter_id', chapterId);
 
-    if (filter?.folder !== undefined) {
-      if (filter.folder === null) {
-        query = query.is('folder', null);
-      } else {
-        query = query.eq('folder', filter.folder);
+      if (filter?.folder !== undefined) {
+        if (filter.folder === null) {
+          query = query.is('folder', null);
+        } else {
+          query = query.eq('folder', filter.folder);
+        }
       }
-    }
 
-    if (filter?.search) {
-      query = query.ilike('title', `%${escapeLikePattern(filter.search)}%`);
-    }
+      if (filter?.search) {
+        query = query.ilike('title', `%${escapeLikePattern(filter.search)}%`);
+      }
+      if (after !== null) query = query.gt('id', after);
 
-    const { data, error } = await query.order('created_at', {
-      ascending: false,
+      return query.order('id', { ascending: true }).limit(PAGE_SIZE);
     });
-    if (error) throw new SupabaseQueryError(error);
-    return data || [];
+    return rows.sort(newestFirst);
   }
 
   /**
@@ -133,6 +170,22 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     return data;
   }
 
+  async setWhoCanSee(
+    id: string,
+    chapterId: string,
+    whoCanSee: string[] | null,
+  ): Promise<ChapterDocument | null> {
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .update({ who_can_see: whoCanSee })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chapter_documents')
@@ -142,27 +195,106 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     if (error) throw new SupabaseQueryError(error);
   }
 
-  async moveToRoot(folder: string, chapterId: string): Promise<void> {
-    const patch: TablesUpdate<'chapter_documents'> = { folder: null };
-    const { error } = await this.supabase
-      .from('chapter_documents')
-      .update(patch)
-      .eq('chapter_id', chapterId)
-      .eq('folder', folder);
-    if (error) throw new SupabaseQueryError(error);
+  // Paged (#5585): sync compares Drive's tree with these, so a list cut at
+  // 1,000 rows would copy the missing ones again and leave them behind on
+  // disconnect.
+  async findDriveCopies(chapterId: string): Promise<ChapterDocument[]> {
+    return fetchAllById((after) => {
+      let query = this.supabase
+        .from('chapter_documents')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .not('drive_file_id', 'is', null)
+        .is('drive_link_status', null);
+      if (after !== null) query = query.gt('id', after);
+      return query.order('id', { ascending: true }).limit(PAGE_SIZE);
+    });
   }
 
-  async renameFolder(
-    fromFolder: string,
-    toFolder: string,
+  async findByDriveFileId(
     chapterId: string,
-  ): Promise<void> {
-    const patch: TablesUpdate<'chapter_documents'> = { folder: toFolder };
-    const { error } = await this.supabase
+    driveFileId: string,
+  ): Promise<ChapterDocument | null> {
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('drive_file_id', driveFileId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async findLinkedDriveFileIds(chapterId: string): Promise<Set<string>> {
+    const rows = await fetchAllById((after) => {
+      let query = this.supabase
+        .from('chapter_documents')
+        .select('id, drive_file_id')
+        .eq('chapter_id', chapterId)
+        .not('drive_link_status', 'is', null);
+      if (after !== null) query = query.gt('id', after);
+      return query.order('id', { ascending: true }).limit(PAGE_SIZE);
+    });
+    return new Set(
+      rows
+        .map((row) => row.drive_file_id)
+        .filter((id): id is string => id !== null),
+    );
+  }
+
+  /**
+   * Renames or refiles one document (#5563). Never a Drive folder copy,
+   * whose name and folder Drive owns: the filter refuses it even if a caller
+   * forgets to, and the method answers `null`, as for a missing row.
+   */
+  async updateFiling(
+    id: string,
+    chapterId: string,
+    patch: Pick<TablesUpdate<'chapter_documents'>, 'title' | 'folder'>,
+  ): Promise<ChapterDocument | null> {
+    const { data, error } = await this.supabase
       .from('chapter_documents')
       .update(patch)
+      .eq('id', id)
       .eq('chapter_id', chapterId)
-      .eq('folder', fromFolder);
+      .or(NOT_A_FOLDER_COPY)
+      .select('*')
+      .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  /** Refiles many documents into `folder` at once; never a Drive folder copy. */
+  async moveMany(
+    ids: string[],
+    chapterId: string,
+    folder: string | null,
+  ): Promise<ChapterDocument[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .update({ folder })
+      .in('id', ids)
+      .eq('chapter_id', chapterId)
+      .or(NOT_A_FOLDER_COPY)
+      .select('*');
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async updateDriveCopy(
+    id: string,
+    chapterId: string,
+    patch: TablesUpdate<'chapter_documents'>,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .update(patch)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .not('drive_file_id', 'is', null)
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
   }
 }

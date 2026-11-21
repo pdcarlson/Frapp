@@ -41,7 +41,7 @@ export const PUSH_PRIMER_STORAGE_KEY = "frapp.mobile.push-primer";
 export const PUSH_PRIMER_DECLINED_AT_KEY =
   "frapp.mobile.push-primer.declined-at";
 /** `"done"` once the chat home's one reminder has been answered either way. */
-export const PUSH_REMINDER_STORAGE_KEY = "frapp.mobile.push-reminder";
+const PUSH_REMINDER_STORAGE_KEY = "frapp.mobile.push-reminder";
 
 /**
  * How long after a "Not now" the chat home asks once more. Long enough that
@@ -91,7 +91,7 @@ function storedAnswerChanged() {
   for (const listener of storedAnswerListeners) listener();
 }
 
-export async function recordPrimerDecision(
+async function recordPrimerDecision(
   decision: Exclude<PrimerDecision, "unasked">,
   storage: Storage = AsyncStorage,
 ): Promise<void> {
@@ -239,7 +239,7 @@ export interface PrimerVisibilityInput {
  * s03 can make the build able to push, so a step there could only disable
  * itself and apologise, which is the placeholder App Review Guideline 2.1
  * rejects. `spec/ui/design-system/README.md` §5 rule 4 hides it, like the
- * ✦ Ask pill in a build without Ask. Settings (s16) still states the reason on
+ * Ask entry for a member without Ask. Settings (s16) still states the reason on
  * its push row, which is where a member who wonders why goes.
  */
 export function shouldOfferPrimer({

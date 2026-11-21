@@ -7,6 +7,7 @@ import { ChatNotificationPreferenceService } from '../src/application/services/c
 import { ChatMentionService } from '../src/application/services/chat-mention.service';
 import { ChannelAccessListService } from '../src/application/services/channel-access-list.service';
 import { MemberService } from '../src/application/services/member.service';
+import { MemberPhoneReachService } from '../src/application/services/member-phone-reach.service';
 import { ServiceEntryService } from '../src/application/services/service-entry.service';
 import { ChapterDocumentService } from '../src/application/services/chapter-document.service';
 import { FinancialInvoiceService } from '../src/application/services/financial-invoice.service';
@@ -65,7 +66,12 @@ describe('Route declaration order — a literal route must not be swallowed by :
   const memberServiceMock = {
     searchByChapterAndName: jest.fn().mockResolvedValue([]),
     findRosterByChapter: jest.fn().mockResolvedValue([]),
+    findBirthdaysByChapter: jest.fn().mockResolvedValue([]),
     findProfileById: jest.fn().mockResolvedValue({ id: 'wrong-handler' }),
+  };
+
+  const phoneReachServiceMock = {
+    findForViewer: jest.fn().mockResolvedValue({ scope: 'self', members: [] }),
   };
 
   const mentionServiceMock = {
@@ -83,6 +89,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
 
   const chapterDocumentServiceMock = {
     listFolders: jest.fn().mockResolvedValue([]),
+    accessOptions: jest.fn().mockResolvedValue({ options: [], always: [] }),
     listStars: jest
       .fn()
       .mockResolvedValue({ folder_ids: [], document_ids: [] }),
@@ -123,6 +130,8 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .useValue(accessListServiceMock)
       .overrideProvider(MemberService)
       .useValue(memberServiceMock)
+      .overrideProvider(MemberPhoneReachService)
+      .useValue(phoneReachServiceMock)
       .overrideProvider(ServiceEntryService)
       .useValue(serviceEntryServiceMock)
       .overrideProvider(ChapterDocumentService)
@@ -285,6 +294,33 @@ describe('Route declaration order — a literal route must not be swallowed by :
     expect(memberServiceMock.findProfileById).not.toHaveBeenCalled();
   });
 
+  it('GET /v1/members/birthdays reaches findBirthdaysByChapter, not getOne', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/members/birthdays`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(memberServiceMock.findBirthdaysByChapter).toHaveBeenCalledWith(
+      CHAPTER_ID,
+    );
+    expect(memberServiceMock.findProfileById).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/members/phone-reach reaches phoneReach, not getOne', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/members/phone-reach`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(phoneReachServiceMock.findForViewer).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      expect.any(String),
+    );
+    expect(memberServiceMock.findProfileById).not.toHaveBeenCalled();
+  });
+
   // ── service-entry.controller.ts (`/service-entries`) ──
 
   it('GET /v1/service-entries/leaderboard reaches leaderboard, not getOne', async () => {
@@ -312,6 +348,21 @@ describe('Route declaration order — a literal route must not be swallowed by :
 
     expect(chapterDocumentServiceMock.listFolders).toHaveBeenCalledWith(
       CHAPTER_ID,
+      'member-1',
+    );
+    expect(chapterDocumentServiceMock.findById).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/documents/access-options reaches accessOptions, not getOne', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/documents/access-options`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(chapterDocumentServiceMock.accessOptions).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      'member-1',
     );
     expect(chapterDocumentServiceMock.findById).not.toHaveBeenCalled();
   });

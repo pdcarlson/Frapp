@@ -11,6 +11,7 @@ import { ReduceMotion } from "react-native-reanimated";
 import type { ChapterDirectoryResult } from "@repo/hooks";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { drawnText } from "@/test/screen-text";
 import { flatStyle } from "@/test/flat-style";
 
 /**
@@ -83,8 +84,21 @@ let inviteList: { token: string; used_at: string | null }[] = [];
 let invitesOptions: { enabled?: boolean; refetchInterval?: number } | undefined;
 let currentChapter: { logo_url: string | null } | undefined;
 
+// Meet Frapp AI's answers (#4790). AI is off unless a spec turns it on, so
+// the other beats' specs run as before.
+const aiChoice = vi.hoisted(() => ({
+  consent: null as unknown,
+  consentFailed: false,
+  readConsent: () => Promise.resolve(null),
+  providers: ["Anthropic", "Google"],
+  turnOn: vi.fn(() => Promise.resolve(true)),
+  notNow: vi.fn(() => Promise.resolve()),
+  pending: false,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useFrappAiChoice: () => aiChoice,
   useChapterDirectorySearch: () => ({
     data: directoryRows,
     isFetching: false,
@@ -376,6 +390,83 @@ describe("chapter setup — step order", () => {
 
     await press(root, "Go to chat");
     expect(useRouter().dismissTo).toHaveBeenCalledWith("/");
+  });
+
+  describe("Meet Frapp AI (#4790)", () => {
+    beforeEach(() => {
+      aiChoice.consent = {
+        answer: null,
+        answered_at: null,
+        sheet_changed: false,
+        sheet: { version: 2, providers: [], data: [] },
+      };
+      aiChoice.turnOn.mockReset();
+      aiChoice.turnOn.mockImplementation(() => Promise.resolve(true));
+      aiChoice.notNow.mockClear();
+    });
+
+    afterEach(() => {
+      aiChoice.consent = null;
+    });
+
+    async function reachAi() {
+      const view = await render();
+      const { root } = view;
+      await pickRow(root, "Phi Gamma Delta");
+      await press(root, "Continue");
+      await press(root, "agree");
+      await act(async () => {
+        primary(root).props.onPress();
+      });
+      await settle();
+      await press(root, "Continue");
+      expect(title(root)).toBe(SETUP_TITLES.display);
+      await press(root, "Continue");
+      expect(title(root)).toBe(SETUP_TITLES.ai);
+      return view;
+    }
+
+    it("asks the founder after the display pick, for their own account (#5294)", async () => {
+      const { root } = await reachAi();
+      // The new chapter's switches start on, so the screen asks about the
+      // founder's own Frapp AI only and never names the chapter.
+      // Read through `drawnText`: the line nests the privacy link's Text.
+      expect(
+        root
+          .findAllByType("Text" as never, { deep: true })
+          .map((text) => drawnText(text))
+          .join("\n"),
+      ).toContain(
+        "Frapp AI works with Anthropic and Google. Continuing confirms you're 18 or older and turns it on for your account.",
+      );
+      await press(root, "Continue");
+      expect(aiChoice.turnOn).toHaveBeenCalledTimes(1);
+      expect(aiChoice.notNow).not.toHaveBeenCalled();
+      expect(title(root)).toBe(SETUP_TITLES.invite);
+    });
+
+    it("leaves Frapp AI off on Not now, and moves on", async () => {
+      const { root } = await reachAi();
+      await press(root, "Not now");
+      expect(aiChoice.notNow).toHaveBeenCalledTimes(1);
+      expect(aiChoice.turnOn).not.toHaveBeenCalled();
+      expect(title(root)).toBe(SETUP_TITLES.invite);
+    });
+
+    it("keeps the founder on the step with the reason when Continue fails", async () => {
+      aiChoice.turnOn.mockImplementation(() =>
+        Promise.reject(new Error("offline")),
+      );
+      const { root } = await reachAi();
+      await press(root, "Continue");
+      expect(title(root)).toBe(SETUP_TITLES.ai);
+      expect(
+        root
+          .findAllByType("Text" as never, { deep: true })
+          .map((text) => drawnText(text))
+          .join("\n"),
+      ).toContain("Couldn't turn on Frapp AI");
+    });
   });
 
   it("draws its ‹ Back row in house gold, not the chapter's accent", async () => {
@@ -1177,9 +1268,9 @@ describe("chapter setup — invite", () => {
     expect(fillOf(control(root, "Skip for now"))).toBeUndefined();
     const text = allText(root);
     expect(text).toContain("A new link for each person");
-    expect(text).toContain("app.frapp.live, good for 24 hours");
+    expect(text).toContain("app.frapp.live, good for 7 days");
     expect(text).toContain(
-      "Send each person their own link. A link lets one person in and lasts 24 hours.",
+      "Send each person their own link. A link lets one person in and lasts 7 days.",
     );
     expect(text).not.toContain("Create another link");
 
@@ -1429,7 +1520,7 @@ describe("chapter setup — identity fields", () => {
         ).filter(Boolean),
       ).borderColor;
 
-    expect(borderOf()).toBe(signetDarkTokens.color.border.input);
+    expect(borderOf()).toBe(signetDarkTokens.color.border.control);
     act(() => {
       field(root, "Organization").props.onFocus();
     });

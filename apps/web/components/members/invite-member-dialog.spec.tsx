@@ -1,6 +1,13 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { EVERYONE_ROLE_SYSTEM_KEY } from "@repo/validation";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
 
 const {
@@ -14,8 +21,15 @@ const {
   mockInvites,
   mockRefetchRoles,
   mockRefetchInvites,
+  mockInvitableRoleIds,
+  mockChapterLinks,
+  mockChapterLinkDefault,
+  mockCreateChapterLink,
   activeChapterId,
 } = vi.hoisted(() => ({
+  mockChapterLinks: vi.fn((): unknown[] => []),
+  mockChapterLinkDefault: vi.fn((): string | null => null),
+  mockCreateChapterLink: vi.fn(),
   activeChapterId: { current: "chapter-1" as string | null },
   mockRefetchRoles: vi.fn(),
   mockRefetchInvites: vi.fn(),
@@ -27,6 +41,8 @@ const {
   mockOrgConfig: vi.fn(),
   mockRoles: vi.fn(),
   mockToast: vi.fn(),
+  // Undefined: the list hasn't loaded, so every role is offered.
+  mockInvitableRoleIds: vi.fn((): string[] | undefined => undefined),
 }));
 
 const NOW = Date.now();
@@ -49,6 +65,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // `refetch`: opening the panel re-reads invites and roles.
   useRoles: () => ({ refetch: mockRefetchRoles, ...mockRoles() }),
   useOrgConfig: () => mockOrgConfig(),
+  useInvitableRoleIds: () => ({
+    data: mockInvitableRoleIds(),
+    refetch: vi.fn(),
+  }),
   useInvites: () => ({
     data: mockInvites(),
     isError: false,
@@ -57,11 +77,36 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateInvite: () => ({ mutateAsync: mockCreateInvite, isPending: false }),
   useEmailInvites: () => ({ mutateAsync: mockEmailInvites, isPending: false }),
   useRevokeInvite: () => ({ mutateAsync: mockRevoke, isPending: false }),
+  useChapterLinks: () => ({
+    data: { links: mockChapterLinks(), defaultRole: mockChapterLinkDefault() },
+  }),
+  useCreateChapterLink: () => ({
+    mutateAsync: mockCreateChapterLink,
+    isPending: false,
+  }),
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
     data: { permissions: ["billing:manage"] },
     isPending: false,
     isError: false,
+  }),
+}));
+
+// `useInviteRoleChoices` reads these from inside @repo/hooks, past the mock
+// above, so its own modules are mocked to the same state.
+vi.mock("@repo/hooks/use-roles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks/use-roles")>()),
+  useRoles: () => ({ refetch: mockRefetchRoles, ...mockRoles() }),
+}));
+vi.mock("@repo/hooks/use-org-config", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks/use-org-config")>()),
+  useOrgConfig: () => mockOrgConfig(),
+}));
+vi.mock("@repo/hooks/use-invites", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks/use-invites")>()),
+  useInvitableRoleIds: () => ({
+    data: mockInvitableRoleIds(),
+    refetch: vi.fn(),
   }),
 }));
 
@@ -98,12 +143,15 @@ async function revoke() {
 
 /** Default hook state every test starts from; individual tests override. */
 function primeHooks() {
+  mockInvitableRoleIds.mockReturnValue(undefined);
   mockRoles.mockReturnValue({
     data: [{ id: "r1", name: "Member" }],
     isError: false,
   });
   mockOrgConfig.mockReturnValue({ data: {}, isError: false });
   mockInvites.mockReturnValue([INVITE]);
+  mockChapterLinks.mockReturnValue([]);
+  mockChapterLinkDefault.mockReturnValue(null);
 }
 
 /**
@@ -262,6 +310,34 @@ describe("InviteMemberDialog default role", () => {
     expect(rolePicker().value).toBe("New Member");
   });
 
+  // #4546, #1830: a chair invites only roles ranked below them.
+  it("offers only the roles the sender may invite into", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({ data: {}, isError: false });
+    mockInvitableRoleIds.mockReturnValue(["role-member", "role-pledge"]);
+    await openDialog();
+    await userEvent.click(
+      screen.getByRole("combobox", { name: /role they join as/i }),
+    );
+
+    expect(
+      await screen.findByRole("option", { name: "New Member" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Alumni" })).toBeNull();
+  });
+
+  it("skips a configured default ranked above the sender", async () => {
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    mockOrgConfig.mockReturnValue({
+      data: { default_invite_role_id: "role-alumni" },
+      isError: false,
+    });
+    mockInvitableRoleIds.mockReturnValue(["role-member", "role-pledge"]);
+    await openDialog();
+
+    expect(rolePicker().value).toBe("Member");
+  });
+
   it("keeps an explicit pick over the configured default", async () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });
     mockOrgConfig.mockReturnValue({
@@ -293,11 +369,12 @@ describe("InviteMemberDialog default role", () => {
 
   // `GET /v1/roles` carries `system_key`, so a chapter that renamed Member
   // still gets it pre-selected, not the Alumni role that sorts first (#2484).
-  it("finds a renamed Member role by its system key", async () => {
+  // It is the Everyone role now, which the picker calls "No role" (#4191).
+  it("finds the Everyone role by its system key, and calls it No role", async () => {
     mockRoles.mockReturnValue({
       data: [
         { id: "role-alumni", name: "Alumni", system_key: "ALUMNI" },
-        { id: "role-member", name: "Brother", system_key: "MEMBER" },
+        { id: "role-member", name: "Brother", system_key: "EVERYONE" },
         { id: "role-pledge", name: "New Member", system_key: "NEW_MEMBER" },
       ],
       isError: false,
@@ -305,7 +382,7 @@ describe("InviteMemberDialog default role", () => {
     mockOrgConfig.mockReturnValue({ data: {}, isError: false });
     await openDialog();
 
-    expect(rolePicker().value).toBe("Brother");
+    expect(rolePicker().value).toBe("No role");
   });
 
   it("falls back to the first role only when the catalog has no Member role", async () => {
@@ -352,8 +429,8 @@ describe("InviteMemberDialog default role", () => {
     await pick("Alumni");
     expect(rolePicker().value).toBe("Alumni");
 
-    // The panel's X is its only close control now that the Done footer is
-    // gone; it goes through `handleOpenChange`, which owns the reset.
+    // A role picked with no addresses is not a draft (#4593), so the next
+    // invite starts on the default.
     await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
     await userEvent.click(screen.getByRole("button", { name: /^invite$/i }));
 
@@ -526,6 +603,29 @@ describe("InviteMemberDialog share link and list", () => {
     expect(await screen.findByText("Copied")).toBeInTheDocument();
   });
 
+  it("clears the Copied timer when the dialog goes away", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+    try {
+      await openDialog();
+      await userEvent.click(copyLink());
+      expect(await screen.findByText("Copied")).toBeInTheDocument();
+      const revert = setTimeoutSpy.mock.calls.findIndex(
+        ([, delay]) => delay === 2000,
+      );
+      expect(revert).toBeGreaterThanOrEqual(0);
+      cleanup();
+      // Left armed, it fired after the test DOM was torn down and failed the
+      // run with "window is not defined" (#5226).
+      expect(clearTimeoutSpy).toHaveBeenCalledWith(
+        setTimeoutSpy.mock.results[revert]!.value,
+      );
+    } finally {
+      setTimeoutSpy.mockRestore();
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
   it("never shows a token: rows name the address, role, when, and status", async () => {
     await openDialog();
     const list = screen.getByRole("list");
@@ -591,5 +691,294 @@ describe("InviteMemberDialog share link and list", () => {
     expect(
       screen.getByRole("button", { name: /^More for Invite link, sent / }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Leaving the panel keeps the addresses being written and the role picked for
+ * them (#4593): no "are you sure", and the panel opens on them next time.
+ */
+describe("InviteMemberDialog keeps its draft (#4593)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+    mockEmailInvites.mockResolvedValue({ invites: [], failed: [] });
+  });
+
+  const close = () =>
+    userEvent.click(screen.getByRole("button", { name: /^close$/i }));
+  const reopen = () =>
+    userEvent.click(screen.getByRole("button", { name: /^invite$/i }));
+
+  it("opens on the addresses after it was closed, and says so", async () => {
+    await openDialog();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    await userEvent.type(emailField(), "a@school.edu, b@school.edu");
+    await close();
+    await reopen();
+
+    // Leaving the field turned the address being typed into a chip.
+    expect(screen.getByText("a@school.edu")).toBeInTheDocument();
+    expect(screen.getByText("b@school.edu")).toBeInTheDocument();
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("opens on them after the Directory was left with the panel open", async () => {
+    const first = await openDialog();
+    await userEvent.type(emailField(), "a@school.edu ");
+    first.unmount();
+
+    render(<InviteMemberDialog trigger={<button>Invite</button>} />);
+    expect(await screen.findByText("Draft restored")).toBeInTheDocument();
+    expect(screen.getByText("a@school.edu")).toBeInTheDocument();
+  });
+
+  it("keeps nothing for a panel opened and left untouched", async () => {
+    await openDialog();
+    await close();
+    await reopen();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over on Discard", async () => {
+    await openDialog();
+    await userEvent.type(emailField(), "a@school.edu ");
+    await close();
+    await reopen();
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(screen.queryByText("a@school.edu")).toBeNull();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    await close();
+    await reopen();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("keeps nothing once the invites are sent", async () => {
+    await openDialog();
+    await userEvent.type(emailField(), "a@school.edu");
+    await userEvent.click(send());
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Invite sent to a@school.edu",
+      }),
+    );
+    await close();
+    await reopen();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    expect(emailField()).toHaveValue("");
+  });
+
+  it("doesn't offer a send still on its way to send again", async () => {
+    let land: (value: { invites: []; failed: [] }) => void = () => {};
+    mockEmailInvites.mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    const first = await openDialog();
+    await userEvent.type(emailField(), "a@school.edu");
+    await userEvent.click(send());
+    first.unmount();
+
+    const second = render(
+      <InviteMemberDialog trigger={<button>Invite</button>} />,
+    );
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    second.unmount();
+    land({ invites: [], failed: [] });
+  });
+
+  it("reopened while a send is on its way, shows what was sent and can't send it twice", async () => {
+    let land: (value: { invites: []; failed: [] }) => void = () => {};
+    mockEmailInvites.mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    await openDialog();
+    await userEvent.type(emailField(), "a@school.edu");
+    await userEvent.click(send());
+    await close();
+    await reopen();
+
+    expect(screen.getByText("a@school.edu")).toBeInTheDocument();
+    expect(send()).toBeDisabled();
+    land({ invites: [], failed: [] });
+    await waitFor(() => expect(screen.queryByText("a@school.edu")).toBeNull());
+    expect(mockEmailInvites).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #3353, Paul 2026-11-19: "One chapter link, 7 days"; #5633: one per role.
+describe("InviteMemberDialog chapter links", () => {
+  const ROLES = [
+    {
+      id: "r-everyone",
+      name: "Everyone",
+      system_key: EVERYONE_ROLE_SYSTEM_KEY,
+    },
+    { id: "r-brother", name: "Brother" },
+    { id: "r-pledge", name: "Pledge" },
+  ];
+  const LINK = {
+    ...INVITE,
+    id: "link-1",
+    token: "chapter-token",
+    email: null,
+    role: "Brother",
+    status: "pending",
+    reusable: true,
+    expires_at: "2026-11-26T12:00:00.000Z",
+  };
+  const section = () =>
+    within(screen.getByRole("region", { name: "Chapter links" }));
+  async function pickRole(name: string) {
+    await userEvent.click(
+      section().getByRole("combobox", { name: "Role the new link joins at" }),
+    );
+    await userEvent.click(await screen.findByRole("option", { name }));
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    mockRoles.mockReturnValue({ data: ROLES, isError: false });
+    chapter.active();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+  });
+
+  it("makes a link at the chapter's default role and copies it in one press", async () => {
+    mockCreateChapterLink.mockResolvedValue({ ...LINK, role: "Everyone" });
+    await openDialog();
+    expect(
+      section().getByRole("combobox", { name: "Role the new link joins at" }),
+    ).toHaveTextContent("No role");
+    await userEvent.click(section().getByRole("button", { name: "New link" }));
+
+    expect(mockCreateChapterLink).toHaveBeenCalledWith({ role: "Everyone" });
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/join?token=chapter-token`,
+      ),
+    );
+    expect(mockToast).toHaveBeenCalledWith({ title: "No role link copied" });
+  });
+
+  it("starts on the chapter's configured default invite role", async () => {
+    mockOrgConfig.mockReturnValue({
+      data: { default_invite_role_id: "r-pledge" },
+      isError: false,
+    });
+    await openDialog();
+    expect(
+      section().getByRole("combobox", { name: "Role the new link joins at" }),
+    ).toHaveTextContent("Pledge");
+  });
+
+  it("lists each role's link, expired ones too, and a pick for a role with one replaces it", async () => {
+    mockChapterLinks.mockReturnValue([
+      LINK,
+      {
+        ...LINK,
+        id: "link-2",
+        role: "Pledge",
+        token: "pledge-token",
+        status: "expired",
+        expires_at: "2026-11-10T12:00:00.000Z",
+      },
+    ]);
+    await openDialog();
+
+    expect(section().getByText("Brother")).toBeInTheDocument();
+    expect(
+      section().getByText(/works until thursday, november 26/i),
+    ).toBeInTheDocument();
+    // The expired one stays listed, so the officer sees why it's dead, and
+    // has nothing to copy.
+    expect(
+      section().getByText(/expired tuesday, november 10/i),
+    ).toBeInTheDocument();
+    expect(
+      section().getAllByRole("button", { name: "Copy link" }),
+    ).toHaveLength(1);
+
+    await pickRole("Pledge");
+    expect(
+      section().getByRole("button", { name: "Make a new link" }),
+    ).toBeInTheDocument();
+    await pickRole("No role");
+    expect(section().getByRole("button", { name: "New link" })).toBeEnabled();
+  });
+
+  it("starts on the role the API says a link gets, when it can't read the config", async () => {
+    // An officer without `chapter-config:view`: the configured default is
+    // unknown to the client, but the links read names it.
+    mockOrgConfig.mockReturnValue({ data: undefined, isError: true });
+    mockChapterLinkDefault.mockReturnValue("Brother");
+    await openDialog();
+
+    expect(
+      section().getByRole("combobox", { name: "Role the new link joins at" }),
+    ).toHaveTextContent("Brother");
+  });
+
+  it("offers only Turn off for a link whose role is no longer offered", async () => {
+    mockChapterLinks.mockReturnValue([{ ...LINK, role: "Rush chair" }]);
+    await openDialog();
+
+    await userEvent.click(
+      section().getByRole("button", { name: "More for the Rush chair link" }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: /turn off link/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: /make a new link/i }),
+    ).toBeNull();
+  });
+
+  it("copies, replaces or turns off a live link from its row", async () => {
+    mockChapterLinks.mockReturnValue([LINK]);
+    mockCreateChapterLink.mockResolvedValue({ ...LINK, token: "fresh-token" });
+    await openDialog();
+
+    await userEvent.click(section().getByRole("button", { name: "Copy link" }));
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        `${window.location.origin}/join?token=chapter-token`,
+      ),
+    );
+
+    await userEvent.click(
+      section().getByRole("button", { name: "More for the Brother link" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /make a new link/i }),
+    );
+    expect(mockCreateChapterLink).toHaveBeenCalledWith({ role: "Brother" });
+
+    await userEvent.click(
+      section().getByRole("button", { name: "More for the Brother link" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /turn off link/i }),
+    );
+    expect(mockRevoke).toHaveBeenCalledWith("link-1");
+    expect(mockToast).toHaveBeenCalledWith({
+      title: "Brother link turned off",
+      description: "Nobody can join with it now.",
+    });
+  });
+
+  it("is blocked with the other invites inside the grace window", async () => {
+    chapter.pastDue();
+    await openDialog();
+
+    expect(section().getByRole("button", { name: "New link" })).toBeDisabled();
   });
 });

@@ -6,7 +6,7 @@ import type {
 
 import type { SignInMethod } from '../http/sign-in-method';
 
-export const FEATURE_EVENT_KEY = 'feature_event';
+const FEATURE_EVENT_KEY = 'feature_event';
 
 /**
  * What a describer sees: the request and the handler's result.

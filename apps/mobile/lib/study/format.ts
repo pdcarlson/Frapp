@@ -4,7 +4,7 @@
  * owns that distinction).
  */
 
-import { parseInstant } from "@repo/formatting";
+import { localWeekStart } from "@repo/hooks";
 
 /** Minutes as the drawn `2.1 hrs`. Singular below 1.05 so `1.0 hrs` never ships. */
 export function formatHoursLabel(minutes: number): string {
@@ -18,43 +18,6 @@ export function formatHoursValue(minutes: number): string {
   return (Math.max(0, minutes) / 60).toFixed(1);
 }
 
-function timeOfDay(value: string): string | null {
-  const date = parseInstant(value);
-  if (!date) return null;
-  return date.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function weekday(value: string): string | null {
-  const date = parseInstant(value);
-  if (!date) return null;
-  return date.toLocaleDateString(undefined, { weekday: "short" });
-}
-
-/**
- * A history row's meta line: `Tue · 7:02 – 9:10 PM`.
- *
- * The range separator is an en dash, as drawn. An open-ended session (no
- * `end_time`, which a terminal row should never have but the API does not
- * promise) degrades to the start alone rather than rendering a dangling dash.
- *
- * These are full ISO instants, not bare `YYYY-MM-DD`, so the local-noon parse
- * `lib/more/service-hours.ts` needs does not apply — a timestamp already carries
- * its offset and `new Date` reads it correctly in every zone.
- */
-export function formatSessionRange(
-  startTime: string,
-  endTime: string | null,
-): string | null {
-  const day = weekday(startTime);
-  const from = timeOfDay(startTime);
-  if (!day || !from) return null;
-  const to = endTime ? timeOfDay(endTime) : null;
-  return to ? `${day} · ${from} – ${to}` : `${day} · ${from}`;
-}
-
 /**
  * Midnight local at the start of the member's current week (Sunday), for the
  * THIS WEEK bucket.
@@ -65,15 +28,7 @@ export function formatSessionRange(
  * `isDueUrgent`, approached from the other direction.
  */
 export function startOfWeek(now: Date): Date {
-  const start = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    0,
-    0,
-    0,
-    0,
-  );
-  start.setDate(start.getDate() - start.getDay());
-  return start;
+  // The one definition, which Activity's "Study hours, This week" also sends
+  // to the server, so the two screens never count different weeks.
+  return localWeekStart(now);
 }

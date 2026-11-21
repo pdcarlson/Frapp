@@ -46,6 +46,19 @@ const hooks = vi.hoisted(() => ({
    * provides, in place of `token`. Set for the life of one tree.
    */
   realMint: false,
+  /** What `useCheckInScreenReport` answers, and what it was asked. */
+  presence: { kind: "none" } as Record<string, unknown>,
+  reportCalls: [] as unknown[][],
+  /** The host's own attendance read; null is "not checked in". */
+  own: null as unknown,
+  checkIn: vi.fn(async () => ({})),
+}));
+
+vi.mock("@/lib/events/check-in-screen-report", () => ({
+  useCheckInScreenReport: (eventId: string, active: boolean) => {
+    hooks.reportCalls.push([eventId, active]);
+    return hooks.presence;
+  },
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
@@ -64,8 +77,17 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       hooks.attendanceCalls.push(args);
       return { data: hooks.attendance };
     },
+    useMyAttendance: () => ({
+      isSuccess: true,
+      data: hooks.own === null ? { attendance: null } : hooks.own,
+    }),
+    useCheckIn: () => ({ mutateAsync: hooks.checkIn }),
   };
 });
+
+vi.mock("@/lib/connection/use-connection", () => ({
+  useConnection: () => ({ writeBlockedReason: null }),
+}));
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
@@ -206,9 +228,96 @@ describe("Host check-in while the room fills", () => {
     ];
     hooks.mintCalls = [];
     hooks.attendanceCalls = [];
+    hooks.presence = { kind: "none" };
+    hooks.reportCalls = [];
   });
   afterEach(() => {
     for (const spy of clockSpies) spy.mockRestore();
+  });
+
+  describe("as the check-in zone (#4532)", () => {
+    const presenceText = (tree: ReactTestRenderer) =>
+      tree.root.findAllByProps({ testID: "check-in-presence" });
+
+    it("reports where it is only while a code is drawn", () => {
+      const tree = render();
+      expect(lastCall(hooks.reportCalls)).toEqual(["evt-1", true]);
+
+      // No code (it failed and nothing still redeems): no report, so the
+      // code isn't made required while members can't get one.
+      hooks.token = {
+        data: undefined,
+        error: new Error("boom"),
+        isError: true,
+        isPending: false,
+        isFetching: false,
+        refetch: vi.fn(),
+      };
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <HostCheckInScreen />
+          </FrappThemeProvider>,
+        ),
+      );
+      expect(lastCall(hooks.reportCalls)).toEqual(["evt-1", false]);
+
+      act(() => blur());
+      expect(lastCall(hooks.reportCalls)).toEqual(["evt-1", false]);
+      act(() => refocus());
+      act(() => tree.unmount());
+    });
+
+    it("tells the officer members are checked against this phone", () => {
+      hooks.presence = { kind: "screen" };
+      const tree = render();
+      expect(screenText(tree)).toContain(
+        "Members check in within about 100 yards of this phone.",
+      );
+      act(() => tree.unmount());
+    });
+
+    it("tells the officer another officer's screen is the check when this phone has no fix", () => {
+      hooks.presence = { kind: "elsewhere" };
+      const tree = render();
+      expect(screenText(tree)).toContain(
+        "Members check in near another officer's screen. This phone can't tell where it is.",
+      );
+      act(() => tree.unmount());
+    });
+
+    it("says distance isn't checked, with a way to Settings once the OS won't ask", () => {
+      hooks.presence = {
+        kind: "off",
+        reason: "permission",
+        canAskAgain: false,
+      };
+      const tree = render();
+      expect(screenText(tree)).toContain(
+        "Distance isn't checked. Allow location for Frapp to check it.",
+      );
+      expect(screenText(tree)).toContain("Open Settings");
+
+      hooks.presence = { kind: "off", reason: "imprecise" };
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <HostCheckInScreen />
+          </FrappThemeProvider>,
+        ),
+      );
+      expect(screenText(tree)).toContain(
+        "Distance isn't checked. This phone can't tell where it is.",
+      );
+      expect(screenText(tree)).not.toContain("Open Settings");
+      act(() => tree.unmount());
+    });
+
+    it("says nothing for a drawn zone or before check-in opens", () => {
+      const tree = render();
+      expect(presenceText(tree)).toHaveLength(0);
+      act(() => tree.unmount());
+    });
   });
 
   const lastCall = (calls: unknown[][]) => calls[calls.length - 1];
@@ -248,6 +357,61 @@ describe("Host check-in while the room fills", () => {
     act(() => tree.unmount());
   });
 
+  it("checks the host in with one tap, since they can't scan their own code (2026-11-17)", async () => {
+    hooks.own = null;
+    hooks.checkIn.mockClear();
+    // Inside the event's check-in window.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T18:05:00Z"));
+    try {
+      const tree = render();
+      const [self] = tree.root.findAll(
+        (node) =>
+          typeof node.props.onPress === "function" &&
+          node.findAll((text) => text.props.children === "Check myself in")
+            .length > 0,
+      );
+      await act(async () => self.props.onPress());
+      expect(hooks.checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers the host no self check-in outside the window", () => {
+    hooks.own = null;
+    // The code can go up early; the check-in itself can't.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-25T17:00:00Z"));
+    try {
+      const tree = render();
+      expect(screenText(tree)).not.toContain("Check myself in");
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says the host is in, with no button, once they are", () => {
+    hooks.own = {
+      attendance: {
+        id: "a-1",
+        status: "PRESENT",
+        check_in_time: new Date().toISOString(),
+      },
+    };
+    try {
+      const tree = render();
+      const text = screenText(tree);
+      expect(text).toContain("You're checked in");
+      expect(text).not.toContain("Check myself in");
+      act(() => tree.unmount());
+    } finally {
+      hooks.own = null;
+    }
+  });
+
   it("sizes the code to the screen, within its bounds", () => {
     const tree = render();
     const qr = () => tree.root.findByType("QRCode" as never);
@@ -258,7 +422,9 @@ describe("Host check-in while the room fills", () => {
     );
     const layout = (width: number) =>
       act(() =>
-        body.props.onLayout({ nativeEvent: { layout: { width, height: 700 } } }),
+        body.props.onLayout({
+          nativeEvent: { layout: { width, height: 700 } },
+        }),
       );
 
     // 402 wide, less the body's 32 and the card's 16 on each side.
@@ -361,7 +527,10 @@ describe("Host check-in while the room fills", () => {
     it("counts down from when it asked, whatever the phone's clock says the server's time is", () => {
       // `expiresAt` is the server's clock. A phone 45s fast would read it as
       // long gone; one far slow, as hours away. Neither moves the countdown.
-      for (const expiresAt of ["2000-01-01T00:00:00Z", "2099-01-01T00:00:00Z"]) {
+      for (const expiresAt of [
+        "2000-01-01T00:00:00Z",
+        "2099-01-01T00:00:00Z",
+      ]) {
         hooks.token = mintedAgo(0, { expiresAt });
         const tree = render();
         expect(screenText(tree)).toContain("0:20");
@@ -488,7 +657,7 @@ describe("Host check-in while the room fills", () => {
     // Nothing is under the screen in this spec (no stack), so it falls back
     // to More; on a device it pops to where the officer started.
     expect(vi.mocked(expoRouter.useRouter)().dismissTo).toHaveBeenCalledWith(
-      "/more",
+      "/you",
     );
     act(() => tree.unmount());
   });
@@ -585,7 +754,7 @@ describe("Host check-in on the real code request", () => {
 
   const MINT = {
     data: {
-      qrPayload: "frapp-checkin:v1:evt-1:signed",
+      qrPayload: "https://app.frapp.live/check-in?event=evt-1&t=signed",
       manualCode: "4KQ-88",
       expiresAt: "2099-01-01T00:00:00Z",
       rotatesInMs: ROTATES_IN_MS,
@@ -598,11 +767,29 @@ describe("Host check-in on the real code request", () => {
     error,
     response: new Response(null, { status: 502 }),
   });
-  /** Lets the request in flight answer, and the screen draw it. */
-  const settle = () =>
+  const tick = () =>
     act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
+  /**
+   * Lets the request in flight answer, and the screen draw it: a turn, then
+   * turns until no query is fetching, then one more. React Query draws a
+   * settled query on a timer of its own (its notifyManager batch), set when
+   * the request answers, so a single fixed wait can fire first when the
+   * answer takes longer than the wait to land. On a loaded merge queue runner
+   * it did (2026-11-16): the query read `error` while the screen still showed
+   * the header alone. The last turn's timer is set after that batch's, so it
+   * runs after the draw.
+   */
+  const settle = async () => {
+    await tick();
+    for (let turn = 0; turn < 100 && queryClient.isFetching() > 0; turn++) {
+      await tick();
+    }
+    // Say so when the request never answered, rather than fail on the screen.
+    expect(queryClient.isFetching()).toBe(0);
+    await tick();
+  };
 
   it("keeps the code on screen when a refetch gets an empty-bodied 5xx", async () => {
     for (const error of [undefined, ""] as const) {

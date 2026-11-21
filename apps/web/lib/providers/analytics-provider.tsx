@@ -40,7 +40,7 @@ import {
  * `subscriptionWriteState`. Web and mobile both read the flag from
  * `useCurrentChapter()` (`GET /v1/chapters/current`), the member view, which
  * every member can read. Web used to read it from `useOrgConfig()`, which needs
- * `chapter-config:view`: no seeded role below President holds it, so for them
+ * `chapter-config:view`: no seeded role below the Exec board holds it, so for them
  * the read always failed and the SDK was opted in (#2957).
  *
  * **Opted out until the member view answers** (`isChapterAnalyticsOptedOut`).

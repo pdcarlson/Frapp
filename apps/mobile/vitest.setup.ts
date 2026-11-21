@@ -1,5 +1,12 @@
 import React from "react";
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
+import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
+
+// Form drafts kept past a screen live in module memory (#4593); one test's
+// draft must not open in the next.
+afterEach(() => {
+  dropAllKeptDrafts();
+});
 
 // Mock global variables for Expo
 globalThis.expo = globalThis.expo || {};
@@ -41,6 +48,24 @@ vi.mock("expo-file-system/legacy", () => ({
   },
 }));
 
+// The keychain, in memory. `lib/query-client.ts` reaches it through
+// `clearProductQueryCache` (the first-paint copy's profile lives there,
+// #5768), so every spec that loads the query client would otherwise fail on
+// the native module. Empty at the start of every spec file; a spec that cares
+// what is in it mocks this module or `lib/supabase` itself.
+vi.mock("expo-secure-store", () => {
+  const items = new Map<string, string>();
+  return {
+    getItemAsync: vi.fn(async (key: string) => items.get(key) ?? null),
+    setItemAsync: vi.fn(async (key: string, value: string) => {
+      items.set(key, value);
+    }),
+    deleteItemAsync: vi.fn(async (key: string) => {
+      items.delete(key);
+    }),
+  };
+});
+
 // Default-denied on purpose: a spec that wants the happy path says so, and
 // nothing accidentally exercises a granted-library path it did not set up.
 vi.mock("expo-image-picker", () => ({
@@ -48,6 +73,20 @@ vi.mock("expo-image-picker", () => ({
     .fn()
     .mockResolvedValue({ granted: false, canAskAgain: true }),
   launchImageLibraryAsync: vi.fn().mockResolvedValue({ canceled: true }),
+}));
+
+// s21's Files pick (#3401). `expo` itself pulls in Metro's runtime, which
+// vitest can't load, and `lib/more/document-upload.ts` reads only
+// `requireOptionalNativeModule` from it, to ask whether the binary has the
+// file picker. Present by default; a spec for a binary without it says so.
+vi.mock("expo", () => ({
+  requireOptionalNativeModule: vi.fn(() => ({})),
+}));
+
+// Cancelled by default, as the image picker's library is denied: a spec that
+// wants a pick resolves one.
+vi.mock("expo-document-picker", () => ({
+  getDocumentAsync: vi.fn().mockResolvedValue({ canceled: true, assets: null }),
 }));
 
 // The chat event card (#3185) imports `lib/location.ts`, so every spec that
@@ -66,9 +105,13 @@ vi.mock("expo-location", () => ({
 }));
 
 // The clipboard is native; specs assert on the call (expo-clipboard).
+// No system Paste button (`UIPasteControl`) here, so Paste is Frapp's own
+// button, which reads `getStringAsync` on the tap (#5626).
 vi.mock("expo-clipboard", () => ({
   setStringAsync: vi.fn().mockResolvedValue(true),
   getStringAsync: vi.fn().mockResolvedValue(""),
+  isPasteButtonAvailable: false,
+  ClipboardPasteButton: () => null,
 }));
 
 // Chapter setup marks the chapter going live with a tap (#3351), and a
@@ -83,6 +126,12 @@ vi.mock("expo-haptics", () => ({
     Warning: "warning",
     Error: "error",
   },
+}));
+
+// expo-keep-awake is native: s10's "Keep screen on" (lib/study/keep-screen-on.ts).
+vi.mock("expo-keep-awake", () => ({
+  activateKeepAwakeAsync: vi.fn().mockResolvedValue(undefined),
+  deactivateKeepAwake: vi.fn().mockResolvedValue(undefined),
 }));
 
 // expo-image is native. A host element named "ExpoImage" stands in, so a
@@ -135,6 +184,8 @@ vi.mock("expo-router", () => {
     navigate: vi.fn(),
     dismissTo: vi.fn(),
     back: vi.fn(),
+    // s18's Scan code hands a code it read to the screen as its own params.
+    setParams: vi.fn(),
     // Nothing behind the screen unless a spec says otherwise
     // (`mockReturnValue(true)`, as the chapter picker's does).
     canGoBack: vi.fn(() => false),
@@ -164,8 +215,30 @@ vi.mock("expo-router", () => {
       focusListeners.delete(listener);
     };
   };
+  // The navigation container the launch logo reads to learn a screen is in
+  // front (`components/launch-cover.tsx`). Not ready, with no state, until a
+  // spec hands it one through `__setNavState`.
+  let navState: object | undefined;
+  const navListeners = new Set<() => void>();
+  const navContainer = {
+    isReady: () => navState !== undefined,
+    getRootState: () => navState,
+    addListener: (_event: string, listener: () => void) => {
+      navListeners.add(listener);
+      return () => {
+        navListeners.delete(listener);
+      };
+    },
+  };
   return {
+    useNavigationContainerRef: () => navContainer,
+    __setNavState: (next: object | undefined) => {
+      navState = next;
+      for (const listener of [...navListeners]) listener();
+    },
     useRouter: () => router,
+    // The imperative router (`lib/chat/open-link.ts`), the same object.
+    router,
     useIsFocused: () =>
       React.useSyncExternalStore(subscribeFocus, () => focused),
     // Runs the effect on mount and on every callback-identity change, which
@@ -204,6 +277,21 @@ vi.mock("expo-router", () => {
     usePathname: vi.fn(() => "/"),
     Link: "Link",
     Redirect: "Redirect",
+    // The navigators' theme (`lib/navigation-theme.ts`): React Navigation's
+    // dark default as data, and a provider that only renders its children.
+    DarkTheme: {
+      dark: true,
+      colors: {
+        primary: "rgb(10, 132, 255)",
+        background: "rgb(1, 1, 1)",
+        card: "rgb(18, 18, 18)",
+        text: "rgb(229, 229, 231)",
+        border: "rgb(39, 39, 41)",
+        notification: "rgb(255, 69, 58)",
+      },
+      fonts: {},
+    },
+    ThemeProvider: ({ children }: { children?: React.ReactNode }) => children,
     // A host string cannot carry `.Screen`, and the tab and app layouts
     // register their routes with `<Tabs.Screen … />` and `<Stack.Screen … />`
     // (`lib/tab-layout.spec.tsx` renders both). Each renders as a host node
@@ -260,6 +348,13 @@ vi.mock("expo-application", () => ({
   nativeBuildVersion: null,
 }));
 
+// `lib/notifications/push-device-name.ts` labels a push-token row with these
+// (#4563); a spec that pins the label mocks its own.
+vi.mock("expo-device", () => ({
+  osVersion: null,
+  modelName: null,
+}));
+
 vi.mock("expo-network", () => ({
   getNetworkStateAsync: vi
     .fn()
@@ -279,6 +374,7 @@ vi.mock("react-native-gesture-handler", () => {
       handlers: Record<string, (...args: unknown[]) => void>;
     } = { kind, handlers: {} };
     for (const method of [
+      "onBegin",
       "onStart",
       "onChange",
       "onUpdate",
@@ -297,8 +393,17 @@ vi.mock("react-native-gesture-handler", () => {
       "minDistance",
       "activeOffsetX",
       "failOffsetY",
+      "enabled",
     ]) {
-      gesture[method] = () => gesture;
+      // The argument is kept under `config`, so a spec can pin a gesture's
+      // activation (a pan that starts only one way).
+      gesture[method] = (value: unknown) => {
+        gesture.config = {
+          ...(gesture.config as Record<string, unknown> | undefined),
+          [method]: value,
+        };
+        return gesture;
+      };
     }
     return gesture;
   };
@@ -363,13 +468,35 @@ vi.mock("react-native-reanimated", () => {
           value: updater()[key as keyof T],
         }),
       }),
-    withTiming: <T>(value: T) => value,
+    // A spec can read what an animation was asked for (the tab bar fold).
+    withTiming: vi.fn(<T>(value: T) => value),
     withRepeat: vi.fn(<T>(value: T) => value),
+    // There is one thread here: a gesture's call back to JS runs at once.
+    runOnJS:
+      <A extends unknown[], R>(fn: (...args: A) => R) =>
+      (...args: A) =>
+        fn(...args),
     cancelAnimation: vi.fn(),
     useReducedMotion: vi.fn(() => false),
     Easing: {
       ease: (t: number) => t,
+      sin: (t: number) => t,
+      cubic: (t: number) => t,
       inOut: (easing: (t: number) => number) => easing,
+      out: (easing: (t: number) => number) => easing,
+      bezier: () => (t: number) => t,
+    },
+    // Linear between the stops, held at the ends, as the tab bar's fold
+    // (#4904) reads it: enough for a spec to read the drawn geometry.
+    interpolate: (value: number, input: number[], output: number[]) => {
+      if (value <= input[0]) return output[0];
+      for (let i = 1; i < input.length; i++) {
+        if (value <= input[i]) {
+          const t = (value - input[i - 1]) / (input[i] - input[i - 1]);
+          return output[i - 1] + t * (output[i] - output[i - 1]);
+        }
+      }
+      return output[output.length - 1];
     },
     // Setup's live mark zooms in; join's views and setup's steps fade in.
     ZoomIn: entering({ animation: "ZoomIn" }),
@@ -399,6 +526,10 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   // renders its props but never invokes `renderItem` — a spec needing a row
   // should render that row's component directly.
   BottomSheetFlatList: "BottomSheetFlatList",
+  // What `useInSheet` (`lib/surfaces.ts`) reads: `null` outside a sheet. The
+  // stand-ins above provide no context, so a spec that needs "in a sheet"
+  // has this return a value (`vi.mocked(useBottomSheetInternal)`).
+  useBottomSheetInternal: vi.fn(() => null),
 }));
 
 // A native module: a string stand-in for the iOS picker, and the Android
@@ -422,6 +553,8 @@ vi.mock("expo-web-browser", () => ({
 vi.mock("expo-router/react-navigation", () => ({
   NavigationContext: React.createContext(undefined),
   NavigationRouteContext: React.createContext(undefined),
+  // Asks before leaving unsaved posted minutes (#4412); a no-op off a stack.
+  usePreventRemove: () => undefined,
 }));
 
 vi.mock("expo-font", () => ({
@@ -540,6 +673,10 @@ vi.mock("@sentry/react-native", () => ({
   // Chat home's refused-channels warning (`lib/chat/channels-error.ts`).
   captureMessage: vi.fn(),
   mobileReplayIntegration: vi.fn(),
+  // Navigation timing (`app/_layout.tsx`, `lib/sentry/screen-ready.tsx`). A
+  // spy that renders nothing, so a spec can read the `ready` it was last given.
+  expoRouterIntegration: vi.fn(),
+  TimeToFullDisplay: vi.fn(() => null),
 }));
 
 // The glass layer's native pieces (`components/glass-surface.tsx`). String

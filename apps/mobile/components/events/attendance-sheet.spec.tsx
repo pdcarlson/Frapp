@@ -8,15 +8,15 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
 /**
- * The Who's coming sheet: the default for everyone, the roles that differ,
- * and a search to add one, at the scale an imported chapter brings (a
- * hundred roles).
+ * The Who's coming sheet: Everyone else first, then one row per role with the
+ * same three answers, a one-line summary on top and Done to go back, at the
+ * scale an imported chapter brings (a hundred roles).
  */
 
 const ROLES = [
   { id: "role-officers", name: "Officers" },
   { id: "role-new", name: "New Members" },
-  { id: "role-alumni", name: "Alumni" },
+  { id: "role-alumni", name: "Alumni", system_key: "ALUMNI" },
   ...Array.from({ length: 100 }, (_, i) => ({
     id: `role-${i}`,
     name: `Committee ${i}`,
@@ -40,14 +40,22 @@ import { AttendanceSheet } from "./attendance-sheet";
 
 let latest: EventAttendanceDraft;
 
-function Host() {
-  const [value, setValue] = useState<EventAttendanceDraft>({
-    everyone: "optional",
-    roles: {},
-  });
+const dismiss = vi.fn();
+
+function Host({
+  initial = { everyone: "optional", roles: {} },
+  allowRequired,
+}: {
+  initial?: EventAttendanceDraft;
+  allowRequired?: boolean;
+}) {
+  const [value, setValue] = useState<EventAttendanceDraft>(initial);
+  const ref = React.useRef(null);
   return (
     <AttendanceSheet
+      ref={ref}
       value={value}
+      allowRequired={allowRequired}
       onChange={(next) => {
         latest = next;
         setValue(next);
@@ -56,13 +64,21 @@ function Host() {
   );
 }
 
-function render(): ReactTestRenderer {
+function render(
+  initial?: EventAttendanceDraft,
+  allowRequired?: boolean,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <Host />
+        <Host initial={initial} allowRequired={allowRequired} />
       </FrappThemeProvider>,
+      // The sheet's ref lands on the modal stand-in: give it the dismiss Done calls.
+      {
+        createNodeMock: (element) =>
+          element.type === ("BottomSheetModal" as never) ? { dismiss } : {},
+      },
     );
   });
   return tree;
@@ -81,7 +97,7 @@ function list(tree: ReactTestRenderer) {
     ListHeaderComponent: React.ReactElement;
     renderItem: (info: {
       item: { id: string; name: string };
-    }) => React.ReactElement<{ onPress: () => void }>;
+    }) => React.ReactElement;
   };
   let header!: ReactTestRenderer;
   act(() => {
@@ -92,26 +108,52 @@ function list(tree: ReactTestRenderer) {
   return { props, header };
 }
 
-/** Press the control labelled `label`, inside the group labelled `within`. */
-function pressLabel(tree: ReactTestRenderer, label: string, within?: string) {
-  const scope = within
-    ? tree.root.findAll((each) => each.props.accessibilityLabel === within)[0]!
-    : tree.root;
+/** Press the answer `label` in the radio group labelled `group`. */
+function pressIn(tree: ReactTestRenderer, group: string, label: string) {
+  const scope = tree.root.findAll(
+    (each) => each.props.accessibilityLabel === group,
+  )[0];
+  if (!scope) throw new Error(`no group labelled ${group}`);
   const [node] = scope.findAll(
     (each) =>
       each.props.accessibilityLabel === label &&
       typeof each.props.onPress === "function",
   );
-  if (!node) throw new Error(`nothing labelled ${label}`);
+  if (!node) throw new Error(`nothing labelled ${label} in ${group}`);
   act(() => node.props.onPress());
 }
 
+/** A role's row, drawn the way the list would draw it. */
+function row(tree: ReactTestRenderer, id: string, name: string) {
+  let drawn!: ReactTestRenderer;
+  act(() => {
+    drawn = create(
+      <FrappThemeProvider>
+        {list(tree).props.renderItem({ item: { id, name } })}
+      </FrappThemeProvider>,
+    );
+  });
+  return drawn;
+}
+
+/** Whether a row's held answer is lit (set apart) or quiet (following). */
+function quiet(drawn: ReactTestRenderer): boolean {
+  return drawn.root.find((each) => typeof each.props.quiet === "boolean").props
+    .quiet as boolean;
+}
+
 describe("Who's coming", () => {
-  it("lists every role to add, and nothing as a control until one is set", () => {
+  it("lists every role as a row, Everyone else first, with a search at scale", () => {
     const tree = render();
     const { props, header } = list(tree);
     expect(props.data).toHaveLength(ROLES.length);
-    expect(screenText(header)).not.toContain("Roles that differ");
+    expect(screenText(header)).toContain("Everyone else");
+    expect(screenText(header)).toContain("Optional for everyone");
+    expect(
+      header.root.findAll(
+        (each) => each.props.accessibilityLabel === "Search roles",
+      ),
+    ).not.toHaveLength(0);
     act(() => tree.unmount());
   });
 
@@ -128,50 +170,118 @@ describe("Who's coming", () => {
     act(() => tree.unmount());
   });
 
-  it("adds a role as required when everyone else is optional, then lets it switch", () => {
+  it("sets a role apart from its row and says so in the summary", () => {
     const tree = render();
-    const officers = list(tree).props.renderItem({
-      item: { id: "role-officers", name: "Officers" },
-    });
-    act(() => officers.props.onPress());
+    const officers = row(tree, "role-officers", "Officers");
+    expect(quiet(officers)).toBe(true);
+    pressIn(officers, "Attendance for Officers", "Required");
     expect(latest).toEqual({
       everyone: "optional",
       roles: { "role-officers": "required" },
     });
-
-    // Its row offers the two answers that differ from the default.
-    const { header } = list(tree);
-    expect(screenText(header)).toContain("Roles that differ");
-    pressLabel(header, "Not invited", "Attendance for Officers");
-    expect(latest.roles["role-officers"]).toBe("not_invited");
-    // And a set role leaves the list to add from.
-    expect(list(tree).props.data.map((role) => role.id)).not.toContain(
-      "role-officers",
+    expect(screenText(list(tree).header)).toContain(
+      "Officers required, everyone else optional",
     );
+    expect(quiet(row(tree, "role-officers", "Officers"))).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("puts a role back with everyone else by picking the same answer", () => {
+    const tree = render({
+      everyone: "optional",
+      roles: { "role-alumni": "not_invited" },
+    });
+    pressIn(
+      row(tree, "role-alumni", "Alumni"),
+      "Attendance for Alumni",
+      "Optional",
+    );
+    expect(latest.roles).toEqual({});
     act(() => tree.unmount());
   });
 
   it("drops a role whose answer the new default matches", () => {
-    const tree = render();
-    act(() =>
-      list(tree)
-        .props.renderItem({ item: { id: "role-new", name: "New Members" } })
-        .props.onPress(),
-    );
-    pressLabel(list(tree).header, "Required", "Attendance for everyone");
+    const tree = render({
+      everyone: "optional",
+      roles: { "role-new": "required" },
+    });
+    pressIn(list(tree).header, "Attendance for everyone else", "Required");
     expect(latest).toEqual({ everyone: "required", roles: {} });
     act(() => tree.unmount());
   });
 
-  it("removes a role", () => {
-    const tree = render();
-    act(() =>
-      list(tree)
-        .props.renderItem({ item: { id: "role-alumni", name: "Alumni" } })
-        .props.onPress(),
+  it("leads with the roles set apart when it opens, and keeps the order while editing", () => {
+    const tree = render({
+      everyone: "optional",
+      roles: { "role-officers": "required" },
+    });
+    expect(list(tree).props.data[0]!.id).toBe("role-officers");
+    pressIn(
+      row(tree, "role-new", "New Members"),
+      "Attendance for New Members",
+      "Required",
     );
-    pressLabel(list(tree).header, "Remove Alumni");
-    expect(latest.roles).toEqual({});
+    // New Members is set apart now, but stays where it was this visit.
+    expect(list(tree).props.data[1]!.id).toBe("role-alumni");
+    act(() => tree.unmount());
+  });
+
+  it("closes with Done, not an X, back onto the form underneath", () => {
+    dismiss.mockClear();
+    const tree = render();
+    const { header } = list(tree);
+    const done = header.root.find(
+      (each) =>
+        each.props.accessibilityRole === "button" &&
+        typeof each.props.onPress === "function" &&
+        screenTextOf(each) === "Done",
+    );
+    expect(
+      header.root.findAll((each) => each.props.accessibilityLabel === "Close"),
+    ).toHaveLength(0);
+    act(() => done.props.onPress());
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("drops Required when it isn't allowed, but keeps a row already Required readable", () => {
+    const tree = render(
+      { everyone: "optional", roles: { "role-officers": "required" } },
+      false,
+    );
+    const radios = (drawn: ReactTestRenderer, group: string) =>
+      drawn.root
+        .findAll((each) => each.props.accessibilityLabel === group)[0]!
+        .findAll((each) => each.props.accessibilityRole === "radio")
+        .map((each) => each.props.accessibilityLabel);
+    expect(radios(list(tree).header, "Attendance for everyone else")).toEqual([
+      "Optional",
+      "Not invited",
+    ]);
+    expect(
+      radios(row(tree, "role-officers", "Officers"), "Attendance for Officers"),
+    ).toEqual(["Required", "Optional", "Not invited"]);
+    act(() => tree.unmount());
+  });
+
+  it("says the Alumni role is left out while it follows everyone else", () => {
+    const tree = render({ everyone: "required", roles: {} });
+    expect(screenText(row(tree, "role-alumni", "Alumni"))).toContain(
+      "Left out unless set here",
+    );
+    expect(screenText(row(tree, "role-new", "New Members"))).not.toContain(
+      "Left out",
+    );
     act(() => tree.unmount());
   });
 });
+
+function screenTextOf(node: { children: unknown[] }): string {
+  return node.children
+    .map((child) =>
+      typeof child === "string"
+        ? child
+        : screenTextOf(child as { children: unknown[] }),
+    )
+    .join("");
+}

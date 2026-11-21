@@ -27,14 +27,15 @@ branch. This ensures:
 
 ## Prerequisites
 
-1. A GitHub Personal Access Token (PAT) with repository administration permissions:
-   - **Fine-grained PAT:** Repository administration: Read & write
-   - **Classic PAT:** `repo` scope
-2. Provide the token using the canonical hosted-agent name, either by exporting it or by putting it in an env file at the repo root. The token must have the permissions above; do not rely on the GitHub Actions runtime token unless it has equivalent administration scope.
+1. Your own GitHub token with repository administration permissions (a person's token on a laptop;
+   cloud sessions carry none since 2026-11-15):
+   - **Fine-grained token:** Repository administration: Read & write
+   - **Classic token:** `repo` scope
+2. Provide it by exporting it or by putting it in an env file at the repo root. Do not rely on the
+   GitHub Actions runtime token unless it has equivalent administration scope.
 
 ```bash
 export GITHUB_PAT=<token>
-export GH_TOKEN="$GITHUB_PAT"   # gh/git read GH_TOKEN, not GITHUB_PAT
 ```
 
 Or, to avoid re-exporting every shell — both files are gitignored:
@@ -45,54 +46,35 @@ echo 'GITHUB_PAT=<token>' >> .env
 
 > **Which env var the script reads.** `scripts/configure-branch-protection.mjs` resolves the token from,
 > in order: `GITHUB_PAT` → `GITHUB_TOKEN` → `GH_PAT` → `GH_TOKEN` (or `--token-env <NAME>` to name a
-> custom var). `GITHUB_PAT` is the canonical name. The repo slug comes from `--repo owner/repo`,
-> `GITHUB_REPOSITORY`, or the `origin` remote.
+> custom var). The repo slug comes from `--repo owner/repo`, `GITHUB_REPOSITORY`, or the `origin`
+> remote.
 >
 > **The value may come from `.env.local` or `.env` at the repo root**, not just from an exported
 > variable — the script loads them through `scripts/lib/env-file.mjs`. Precedence is the one
 > `apps/api/src/app.module.ts` already uses for the API: an **exported variable beats both files**,
 > and `.env.local` beats `.env`. So a stale `.env` left in a checkout can never shadow a token you
-> exported deliberately. Before this loading existed, a token sitting in `.env` failed with
-> "Missing GitHub token" and only worked once exported by hand.
+> exported deliberately.
 >
 > The same files also supply `GITHUB_REPOSITORY`, since they are loaded before the slug is
 > resolved — `--repo` still overrides both.
 
-> **Reads work from a hosted session; the apply is a human step by policy.** The hosted environment
-> injects `GITHUB_PAT`, and from a Claude Code cloud sandbox node's built-in `fetch` and
-> `curl --noproxy '*'` go direct and return **200** from GitHub itself. Requests that honour
-> `HTTPS_PROXY` take the agent proxy route instead, whose results say nothing about the PAT. The
-> rule and its measurements live in
-> [`agent-infra.md` — the `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule); this
-> runbook only consumes the rule. The 2026-08-27 403 once recorded here — against
-> `GET /repos/pdcarlson/Frapp/branches/main/protection` — was a `curl` probe, so it measured the
-> proxy route, not the PAT. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table
-> records 403 and 200 for this endpoint class on the same day — but be honest about what that table
-> says: it is a **single row, and it attributes both the 403 and the 200 to `curl`**. So it does not
-> corroborate the route rule on its own; either the 200 was taken on a different route than the
-> row implies, the proxy route answered differently in two sessions, or the row is imprecise. The
-> direct measurement settles the read either way.
->
-> **Do not regenerate the PAT with broader scopes** — a proxy-route 403 is not an answer about the
-> PAT. It looked like one because `GET /user` *through* the proxy returns 200, so the token
-> appeared to work everywhere except the paths that mattered. Judge a 403 by its route, not its
-> headers: only a 403 on the direct route is a permission answer about the PAT (why:
-> [`agent-infra.md` → The `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule)). And **do not set
-> `NODE_USE_ENV_PROXY=1`** for these scripts: that puts node back on the proxy route. Check with
-> `npm run configure:branch-protection:verify`, which **fails loudly** rather than passing when a
-> read is refused — see `--verify` below for the dated result.
->
-> **Applying branch protection is still a human step with an admin PAT — by policy, not because it
+> **`:verify` is a laptop step (2026-11-16).** A cloud session carries no GitHub token and reaches
+> GitHub through the GitHub MCP only, which has no branch-protection tool, so a session doesn't run
+> `:verify`. Where one did (2026-11-16) it couldn't read live protection and failed rather than
+> reporting a match. From a session, judge
+> protection by behaviour or ask Paul
+> ([`agent-infra.md` § GitHub access policy](../ci-cd/agent-infra.md#github-access-policy), which
+> also says why each route fails).
+
+> **Applying branch protection is still a human step with an admin token — by policy, not because it
 > is unreachable.** The GitHub MCP server is the sanctioned write path for issues, PRs and comments
-> and exposes no branch-protection tool; REST is a read channel for ground truth, not a write
-> fallback. That is why promoting a check to required is filed as a `[human]` issue rather than
+> and exposes no branch-protection tool, and REST is a laptop read, never a write fallback. That is why promoting a check to required is filed as a `[human]` issue rather than
 > picked up by `/next`. What an agent owns is the preparation: confirm every intended context has
 > reported green on the target branch, and confirm the job names match the array strings exactly —
 > the preconditions that make an apply safe, both checkable through the MCP server.
 >
-> **From an agent session the only sanctioned invocation is
-> `npm run configure:branch-protection:verify`, and nothing else.** Never the bare command — with no
-> flags it is a live `PUT` of the whole payload. Never `--dry-run` without the `--` separator —
+> **An agent session runs no command in this file, `:verify` included.** On a laptop, never the
+> bare command by accident — with no flags it is a live `PUT` of the whole payload. Never `--dry-run` without the `--` separator —
 > npm swallows it and the script applies. Both traps are spelled out at the commands themselves in
 > Step 1 and Step 2; read them before running anything from this file.
 
@@ -111,9 +93,8 @@ This prints the exact configuration that will be applied without making any chan
 > `Mode: LIVE` and PUTs the entire protection payload. Reproduced on npm 10.9.7. The two spellings
 > differ by two characters and one is a governance write.
 >
-> **From an agent session, run `npm run configure:branch-protection:verify` and nothing else** —
-> never the bare command, never `--dry-run` without the `--`. Applying stays a human step with an
-> admin PAT (see **Prerequisites**).
+> **An agent session runs none of this** (see **Prerequisites**). Applying stays a human step with
+> your own admin token.
 
 A dry run also **reads live protection back and prints the difference**, so the output answers
 "what would this actually change?" rather than only "what would this write?". That read-back is a
@@ -136,15 +117,11 @@ Reads and diffs but never writes, and **exits non-zero** when live protection di
 roster. This is the mode that turns "the rollout step was run" into evidence: it produces an exit
 code and a printed delta rather than a checkmark.
 
-> **This works from an agent session as long as the environment allowlists `api.github.com`** — the
-> script reads it through node's `fetch`, which takes the direct route rather than the agent proxy
-> route (see **Prerequisites** above). It is the only agent-usable live read
-> this runbook prescribes as a *command*: the `gh api` recipes further down are for laptops and
-> Actions, because `gh` is not installed in these sandboxes and honours `HTTPS_PROXY`, so it would
-> land on the proxy route. The dated `GET` observations elsewhere in this file were taken over that
-> same direct route and can be re-taken the same way. **A successful read in one session is not
-> evidence the next will work**: the direct route depends on that environment's network allowlist,
-> which this repository does not control — so try it, but never assume it.
+> **Run it on a laptop, with a token that can read branch protection.** A session can't read live
+> protection ([`agent-infra.md` § GitHub access policy](../ci-cd/agent-infra.md#github-access-policy)).
+> The dated `GET` observations in this file were taken from sessions that still carried
+> `GITHUB_PAT` (removed 2026-11-15).
+>
 > `--verify` **fails** rather than passes when the read is refused, so an unreadable answer is
 > never mistaken for a matching one, and a refusal is never a licence to reach for the writing
 > command instead.
@@ -184,8 +161,8 @@ code and a printed delta rather than a checkmark.
 > `Mode: LIVE` and PUTs the **whole** protection payload, overwriting anything set by hand outside
 > the arrays. **An agent session must not run these commands**, and must not treat `--dry-run` as
 > the safe substitute: without the `--` separator npm swallows the flag and this same live apply is
-> what runs (Step 1). The only sanctioned agent invocation in this runbook is
-> `npm run configure:branch-protection:verify`.
+> what runs (Step 1). An agent session runs no command in this runbook
+> (see **Prerequisites**).
 
 ```bash
 npm run configure:branch-protection
@@ -211,6 +188,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Deletions                   | Blocked         |
 | Conversation resolution     | Disabled        |
 | Required approving reviews  | Disabled        |
+| Merge queue                 | Required, squash; set in the `main` ruleset, not here ([§ Merge queue](#merge-queue)) |
 
 Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requirement policy](../../CONTRIBUTING.md#pr-review-requirement-policy).
 
@@ -221,7 +199,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | Check name           | What it validates                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | `packages-build`     | Shared packages compile                                                                         |
-| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/org-archetypes`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests; the Supabase Edge Functions' Deno fmt, lint, check and tests (`npm run check:edge-functions`) |
+| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, as the API image runs it); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/org-archetypes`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests; the Supabase Edge Functions' Deno fmt, lint, check and tests (`npm run check:edge-functions`) |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
 | `api-tests`          | API Jest unit tests                                                                             |
 | `api-contract-check` | openapi.json + api-sdk freshness, and compatibility with every shipped mobile build ([`quality-gates.md` § Two comparisons, two postures](../ci-cd/quality-gates.md#two-comparisons-two-postures)) |
@@ -235,27 +213,27 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (issue #840) |
 | `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`) |
 | `changes`            | Path filter deciding whether `web-tests`, `web-responsive-floor`, `landing-fold` and `pglite-migrations` run; required only because they need it |
-| `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/pglite/`), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
+| `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/pglite/`), then the role-delete vs member-roles-save overlap run with two real connections on a Postgres service container (`scripts/db-race/`, #4862), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
 | `dependency-cruiser` | Architectural boundaries (API layer direction, package/app separation, cycles) against a committed baseline — [`quality-gates.md`](../ci-cd/quality-gates.md) |
 | `web-production-build` | Builds web and landing on a devDependency-pruned tree, matching the Vercel production install — [`agent-infra.md`](../ci-cd/agent-infra.md) |
 | `web-responsive-floor` | Every dashboard route renders without horizontal scroll at 375px ([`responsive-floor.spec.ts`](../../apps/web/tests/visual/responsive-floor.spec.ts)). Playwright, but no baseline and no pixel comparison |
 | `landing-fold` | The landing's fold holds the reskin boards' geometry, and its chat and event frames fit from phone widths up ([`fold.spec.ts`](../../apps/landing/tests/visual/fold.spec.ts); its header lists what each check measures and at which widths). Playwright, same no-baseline lane as the row above; serves a production build, because `next dev` never arms the page's reveals — added by [#2368](https://github.com/pdcarlson/Frapp/issues/2368) |
 
-**A path-gated job can still be required.** `web-tests`, `web-responsive-floor`, `landing-fold` and `pglite-migrations` run only when their `changes` filter matches (listed in `ci.yml`'s `changes` job: for the first three, `apps/web/**` or `apps/landing/**` plus the shared inputs they build from; for `pglite-migrations`, `supabase/migrations/**` and every other file the check reads; and for all four, `.github/actions/**`, since each calls a local action). `api-tests`, `mobile-validate` and `mobile-tests-tokyo` are gated the other way round: they skip a PR only when every file it changes is in an area they never read (the `apps` step, and the few files they do read from those areas in `mobile_reads` / `api_reads`, pinned by `app-filter-coverage.test.mjs`), and that is compatible with being required: GitHub reports a job skipped by a **job-level** conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. The blocking case is a whole **workflow** skipped by path or branch filtering, whose checks never report at all — `ci.yml` has no workflow-level `paths:` filter, so it cannot happen here. See [Troubleshooting required status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks).
+**A path-gated job can still be required.** `pglite-migrations` runs only when its `changes` filter matches (listed in `ci.yml`'s `changes` job: `supabase/migrations/**`, every other file the check reads, and `.github/actions/**`, since it calls a local action). `api-tests`, `mobile-validate`, `mobile-tests-tokyo`, `web-tests`, `web-responsive-floor` and `landing-fold` are gated the other way round: they skip a PR only when every file it changes is in an area they never read (the `apps` step, and the few files they do read from those areas in `mobile_reads` / `api_reads` / `web_reads`, pinned by `app-filter-coverage.test.mjs`; web and landing moved there in #5195), and that is compatible with being required: GitHub reports a job skipped by a **job-level** conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. The blocking case is a whole **workflow** skipped by path or branch filtering, whose checks never report at all — `ci.yml` has no workflow-level `paths:` filter, so it cannot happen here. The same filters gate a merge queue entry, diffed from the entry ahead (#5195), and a push to `main` the queue didn't test runs all of them. A docs-only PR or merge queue entry skips nearly every CI job the same job-level way (#5141; which jobs still run, and why: [`quality-gates.md`](../ci-cd/quality-gates.md)). See [Troubleshooting required status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks).
 
 **Not required on branches (informational):** `duplicate-detection` is advisory, for the reason in [`quality-gates.md` § The gates, and why each has the posture it does](../ci-cd/quality-gates.md#the-gates-and-why-each-has-the-posture-it-does). It is intentionally omitted from [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 
-> **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`quality-gates.md`](../ci-cd/quality-gates.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent. **That run is a live `PUT` and a human step with an admin PAT; from an agent session run `npm run configure:branch-protection:verify` and nothing else** (see **Prerequisites**).
+> **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`quality-gates.md`](../ci-cd/quality-gates.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent. **That run is a live `PUT` and a human step with an admin PAT; an agent session runs none of these commands** (see **Prerequisites**).
 
-> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. #1374 then added `web-production-build`, and the migration-correctness pass swapped `migration-drift` out for `migration-order`. This paragraph used to say no run had happened since, so live still lacked both new checks; a read on **2026-09-01** found the opposite — every roster context present, `migration-drift` absent — so an apply evidently happened in between. **Do not trust either dated observation as current state.** That is the whole point of this section: the count here is a snapshot, the arrays are the intent, and only a re-run makes intent live. Read it rather than infer it — `npm run configure:branch-protection:verify` exits non-zero on any difference (a later read, **2026-09-02**, exited 0; see the `--verify` section above), or use the `gh api` call below from a laptop or Actions.
+> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. #1374 then added `web-production-build`, and the migration-correctness pass swapped `migration-drift` out for `migration-order`. This paragraph used to say no run had happened since, so live still lacked both new checks; a read on **2026-09-01** found the opposite — every roster context present, `migration-drift` absent — so an apply evidently happened in between. **Do not trust either dated observation as current state.** That is the whole point of this section: the count here is a snapshot, the arrays are the intent, and only a re-run makes intent live. Read it rather than infer it — `npm run configure:branch-protection:verify` exits non-zero on any difference (a later read, **2026-09-02**, exited 0; see the `--verify` section above), or use the `gh api` call below, both from a laptop or Actions; a session asks Paul.
 >
 > **"Not applied yet" does NOT mean "not enforced anywhere".** `scripts/ci/validate-deploy-sha.mjs` imports `ALL_REQUIRED_CHECKS` from [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs) rather than reading GitHub's live config (until #1383 it imported the same roster from `configure-branch-protection.mjs`, which put a module that writes governance on the deploy path), so a check is **blocking on the production deploy path from the moment it is added to the array** — before any `configure:branch-protection` run, and whether or not branch protection has ever heard of it. The asymmetry is deliberate (a `workflow_dispatch` has no PR and therefore no required checks, so the deploy gate has to ask the checks API against some list) but it is easy to be surprised by: a PR can merge with `migration-order` red and then be undeployable. Read the array as the deploy gate's live config and branch protection's *intended* one. Any count written here is a dated observation, not a source of truth — the arrays are the intent, and only a re-run makes it live. Read live state from the API:
 >
 > ```sh
-> gh api repos/pdcarlson/Frapp/branches/main/protection/required_status_checks --jq '.contexts'
+> gh api repos/frapplive/Frapp/branches/main/protection/required_status_checks --jq '.contexts'
 > ```
 >
-> Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added, and PUTs the whole payload — anything set by hand outside the arrays is overwritten. Read the `-- --dry-run` output in full before applying — **the `--` separator is load-bearing**; without it npm swallows the flag and the script applies. From an agent session run `npm run configure:branch-protection:verify` and nothing else (see Prerequisites).
+> Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added, and PUTs the whole payload — anything set by hand outside the arrays is overwritten. Read the `-- --dry-run` output in full before applying — **the `--` separator is load-bearing**; without it npm swallows the flag and the script applies. An agent session runs none of these (see Prerequisites).
 
 **Docs and links checks — none of these are required:**
 
@@ -344,14 +322,38 @@ There is **no AI-review required check.** Code review is a **repository-managed 
 ([`.githooks/pre-push`](../../.githooks/pre-push), installed by the root `prepare` script; requires
 exact-pushed-commit evidence from `/diff-review` before it publishes unreviewed work) — the former `claude-review-gate` CI check was removed (2026-06-04). See [`ai-code-review-runbook.md`](../ci-cd/ai-code-review-runbook.md).
 
+## Merge queue
+
+Paul chose the merge queue on 2026-11-14 ([#4795](https://github.com/pdcarlson/Frapp/issues/4795)), to stop two PRs that are each green, but break together, from landing on `main`. With it on, merging a PR (or turning on its auto-merge) adds it to a queue; GitHub builds a commit from `main` plus every PR ahead of it, runs the required checks there, and merges only when they pass. A PR that fails in the queue is removed from it, and the ones behind are rebuilt without it.
+
+**Where it lives.** Not in classic branch protection, whose REST API has no merge queue field, so `npm run configure:branch-protection` can neither write nor erase it. It is a rule in the repository ruleset named `main` (Settings → Rules → Rulesets → `main`), beside that ruleset's deletion and pull request rules. The settings this repo depends on are `MERGE_QUEUE` in [`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs), and `npm run configure:branch-protection:verify` reads the ruleset back (`GET /repos/{repo}/rules/branches/main`) and fails when the queue is off or differs from them.
+
+**What CI does for it.** Every workflow with a required check listens for `merge_group` (pinned by [`merge-queue-triggers.test.mjs`](../../scripts/ci/__tests__/merge-queue-triggers.test.mjs)), or a queued PR would wait out the timeout on checks nobody reports. A queue run checks what a PR run checks: the path-gated jobs run when the entry's own files match their filters (#5195), and a docs-only entry skips the suite as its PR did (#5141; both in [`quality-gates.md`](../ci-cd/quality-gates.md)). The filters and the diff checks (secrets, migration safety, API contract, `migration-replay`'s did-migrations-change test) measure against `merge_group.base_sha`, the commit the entry was built on (`main` or the entry ahead), where a PR uses its own base. `migration-order` measures against `main`'s tip instead, so its introduced set includes the entries ahead ([`drift-and-ordering.md`](database/drift-and-ordering.md#migration-order--the-required-one)). `migration-drift`, which reports on staging rather than the change, skips there. Each queue entry has its own ref (`gh-readonly-queue/main/pr-<n>-<sha>`), so its runs share no concurrency group with anything. Deploy staging, PR base sync and CI wake all ignore queue runs.
+
+**Turning it on** (owner only, and only after the PR adding the `merge_group` triggers has merged): open the `main` ruleset, add **Require merge queue**, and set:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Merge method | Squash | Matches how PRs merge today; linear history forbids merge commits |
+| Only merge non-failing pull requests | On (`ALLGREEN`) | A red entry never merges on a later entry's green |
+| Status check timeout | 60 minutes | Outlasts `migration-replay`, the slowest required job (50-minute timeout). It does not cover a runner backlog: on a day when jobs wait an hour for a runner, entries time out and drop, and need re-queueing |
+| Build concurrency, group sizes, wait time | GitHub's defaults | Tuning, not correctness; not checked by `--verify` |
+
+Then run `npm run configure:branch-protection:verify` and confirm the merge queue line reads `Live merge queue matches the roster.`
+
+**Effect on deploys.** A queued PR's `main` commit is the queue's own commit, so it carries the queue run's check runs as well as the push run's. [`validate-deploy-sha.mjs`](../../scripts/ci/validate-deploy-sha.mjs) takes the latest run of each name that actually ran: since #5084 a push run for a commit the queue passed skips its jobs, and a `skipped` run gives way to the queue run's real result (`deployEvidenceByName`), except for a path-gated job the entry's own files didn't reach, which skipped in the queue too (#5195) and is accepted as `skipped`. So a refusal of such a commit names the queue run's failure, not anything on the push run, and re-running the push run tests the commit in full (a re-run never skips). When a burst of merges drops a push run from CI's per-ref group (see `ci.yml`'s concurrency comment), the queue run's green checks still stand for that commit, on the same tree. Deploy production's empty-`sha` pick still skips it, because it also requires a verified staging deploy, which that commit never got. A SHA pasted into Deploy production is checked by `validate-deploy-sha.mjs` only for ancestry and green required checks, so such a commit now passes there where it used to be refused as `missing`: check that its Deploy staging ran before pasting one from a burst of merges.
+
+**Turning it off** is removing the rule from the ruleset; nothing in CI needs to change back, since the `merge_group` triggers are inert without a queue. Do the same in an emergency where the queue itself is broken, and say so in the PR you merge.
+
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 
-Use this sequence:
+Use this sequence. From a session, step 1 is a question for Paul and step 2 is the GitHub MCP's
+`pull_request_read` with `get_check_runs`; the commands below are for a laptop.
 
 1. Inspect what branch protection currently requires:
 
 ```bash
-gh api repos/pdcarlson/Frapp/branches/main/protection
+gh api repos/frapplive/Frapp/branches/main/protection
 ```
 
 1. Inspect what the PR actually reported:
@@ -373,10 +375,11 @@ Common causes and fixes:
   **Fix:** remove the orphan context from the arrays in `scripts/ci/lib/required-checks.mjs`, then `gh api -X DELETE repos/<owner>/<repo>/branches/main/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`, and re-run the branch-protection script.
 
 > **Both fixes above are human steps.** The bare `npm run configure:branch-protection` is a live
-> `PUT`, and `gh` is a laptop/Actions tool — it is not installed in a cloud sandbox and reads
-> `HTTPS_PROXY`, so it would take the proxy route from one. An agent diagnosing a stuck check runs
-> `npm run configure:branch-protection:verify` to establish what live protection actually holds,
-> edits the roster array in the same PR, and leaves the apply to a human with an admin PAT.
+> `PUT`, and `gh` is a laptop/Actions tool that fails from a cloud session
+> ([`agent-infra.md` § GitHub access policy](../ci-cd/agent-infra.md#github-access-policy)). An
+> agent diagnosing a stuck check compares the PR's check runs (`pull_request_read`) with the roster,
+> edits the roster array in the same PR, and leaves the read of live protection and the apply to a
+> human with an admin PAT.
 
 ## Verification Checklist
 
@@ -427,7 +430,7 @@ If CI job names change (e.g., renaming a workflow job), update:
    the bare command is a live `PUT`, so an agent making the roster change in steps 1–2 opens the PR
    and stops here
 4. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was
-   missed, writes nothing, and is the one invocation an agent session may run
+   missed and writes nothing; it is a laptop step too, so the agent asks Paul to run it
 
 That is the whole list, and it is short on purpose. It used to carry three more steps, which is why
 it was the drift engine rather than a safety net: `CONTRIBUTING.md` and `spec/environments/README.md`

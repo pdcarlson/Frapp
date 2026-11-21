@@ -1,5 +1,17 @@
-import { can, canAny, isBetaOffModule } from "@repo/validation";
+import {
+  CHAPTER_LOGS_PERMISSIONS,
+  can,
+  canAll,
+  canAny,
+  isBetaOffModule,
+} from "@repo/validation";
 import { isModuleSettingsTab } from "@/components/settings/settings-modules";
+import {
+  CHAT_SETTINGS_PATH,
+  DISCORD_IMPORT_SETTINGS_PATH,
+  REPORTS_SETTINGS_PATH,
+  STUDY_ZONES_SETTINGS_PATH,
+} from "@/components/settings/settings-paths";
 
 /**
  * Who Settings is for, and what each viewer finds in it.
@@ -7,30 +19,40 @@ import { isModuleSettingsTab } from "@/components/settings/settings-modules";
  * Settings is the one door to officer setup and officer tools (#2946). The
  * sidebar used to carry a six-row Admin group (Roles, Study Zones, Reports,
  * Chat Admin, Discord Import, Settings). That group is what pushed an admin's
- * nav past a 768px window, so it folded into a single Settings row. Roles was
- * already a Settings tab. The other four keep their own full-width pages, and
- * since #4073 each is opened from its module's page in Chapter settings
- * (`page`), not from a Tools group of the rail.
+ * nav past a 768px window, so it folded into Chapter settings. Roles was
+ * already a Settings tab. The other four kept full-width pages of their own
+ * until #3837: each now opens inside its module's page in Chapter settings
+ * (`page`), so the rail stays on screen and chat does not come back beside it
+ * (Paul, 2026-11-12: "I want to phase those out").
  *
- * The nav's Settings row (`nav-config.ts`), the chapter switcher's "Chapter
- * settings" link, the Settings rail and the page's "nothing here for you" state
+ * The chapter menu's "Chapter settings" link (`chapter-nav-header.tsx`, the
+ * one door since 2026-11-19), the Settings rail and the page's "nothing here for you" state
  * all read this module, so the question "can this viewer open something in
  * Settings?" has one answer. The rules are owned by
  * `spec/behavior/settings/README.md` § Who sees what.
  */
 
-/** Officer pages that live behind Settings but keep their own routes. */
+/** Officer tools, each inside the module page of Chapter settings it belongs to. */
 export type SettingsTool = {
   id: string;
   label: string;
-  /** Shown where a viewer's Settings holds tools and no setup tabs. */
+  /** Shown on its row, and where a viewer's Settings holds tools and no setup tabs. */
   description: string;
+  /** Where the tool opens: always a Chapter settings address (`settings-paths.ts`). */
   href: string;
   permission: string;
   /** `enabled_modules` key; the tool hides when the chapter switches it off. */
   module?: string;
-  /** The module page in Chapter settings that lists it (`?tab=`). */
+  /** The module page in Chapter settings that holds it (`?tab=`). */
   page: string;
+  /**
+   * The tool is drawn on its module page itself (Study zones' zone list, the
+   * Reports form, Chat's channels and report queue), so `href` is that page
+   * and the page lists no row for it. A tool without it (Discord import) is a
+   * row on its module page that opens it in place of the page, with a way
+   * back, still inside Chapter settings.
+   */
+  embedded?: boolean;
 };
 
 export const SETTINGS_TOOLS: readonly SettingsTool[] = [
@@ -39,9 +61,10 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     label: "Chat admin",
     description:
       "Create, edit and delete channels, manage categories and pins, and work the report queue.",
-    href: "/chat-admin",
+    href: CHAT_SETTINGS_PATH,
     permission: "channels:manage",
     page: "chat",
+    embedded: true,
   },
   {
     // `channels:manage`, like Chat admin: an import creates channels, writes
@@ -49,7 +72,7 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     id: "discord-import",
     label: "Discord import",
     description: "Bring a Discord server's history in as a read-only archive.",
-    href: "/discord-import",
+    href: DISCORD_IMPORT_SETTINGS_PATH,
     permission: "channels:manage",
     page: "chat",
   },
@@ -57,19 +80,21 @@ export const SETTINGS_TOOLS: readonly SettingsTool[] = [
     id: "study-zones",
     label: "Study zones",
     description: "Draw study areas and set their reward rates.",
-    href: "/geofences",
+    href: STUDY_ZONES_SETTINGS_PATH,
     permission: "geofences:manage",
     page: "geofences",
     module: "geofences",
+    embedded: true,
   },
   {
     id: "reports",
     label: "Reports",
     description: "Export attendance, points, roster and service data.",
-    href: "/reports",
+    href: REPORTS_SETTINGS_PATH,
     permission: "reports:export",
     page: "reports",
     module: "reports",
+    embedded: true,
   },
 ];
 
@@ -90,7 +115,8 @@ const CHAPTER_CONFIG_VIEW = "chapter-config:view";
  * its own.
  */
 const TAB_EXTRA_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
-  roles: ["roles:manage"],
+  // Roles and groups: `groups:manage` alone opens it for its groups.
+  roles: ["roles:manage", "groups:manage"],
   semester: ["semester:rollover"],
 };
 
@@ -106,30 +132,11 @@ const TAB_ONLY_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
    * Plan and billing (#3827) reads `GET /v1/billing/status` and the invoice
    * list, both `billing:view`, and no chapter config. It is the gate the
    * sidebar's Billing row used, so whoever reached billing before still does,
-   * and the nav's Chapter settings row now admits a treasurer who holds only
-   * this. Plan actions stay behind `billing:manage` inside the section.
+   * and the chapter menu's Chapter settings link admits a treasurer who holds
+   * only this. Plan actions stay behind `billing:manage` inside the section.
    */
   billing: ["billing:view"],
 };
-
-/**
- * Holding any one of these means Settings has a tab or a tool for the viewer.
- * The nav's Settings row is gated on the set, and `hasSettingsDestination`
- * then drops the row when the only tools behind it are switched off.
- */
-export const SETTINGS_ENTRY_PERMISSIONS: readonly string[] = Array.from(
-  new Set([
-    CHAPTER_CONFIG_VIEW,
-    ...Object.values(TAB_EXTRA_PERMISSIONS).flat(),
-    ...Object.values(TAB_ONLY_PERMISSIONS).flat(),
-    ...SETTINGS_TOOLS.map((tool) => tool.permission),
-  ]),
-);
-
-/** Every route that sits under the nav's Settings row. */
-export const SETTINGS_TOOL_ROUTES: readonly string[] = SETTINGS_TOOLS.map(
-  (tool) => tool.href,
-);
 
 /**
  * Whether a Settings tab shows for this viewer.
@@ -163,6 +170,13 @@ export function isSettingsTabVisible(
       )
     );
   }
+  /*
+    Logs (Paul, 2026-11-21) reads `GET /v1/audit-log`, which takes both
+    `chapter-config:view` and `members:view`: entries name who removed whom.
+  */
+  if (tab === "logs") {
+    return canAll(CHAPTER_LOGS_PERMISSIONS, permissions);
+  }
   const only = TAB_ONLY_PERMISSIONS[tab];
   if (only) return canAny(only, permissions);
   return canAny(
@@ -192,10 +206,10 @@ export function visibleSettingsTools(
 
 /**
  * Whether Settings holds anything for this viewer: a tab, or a tool whose
- * module is on. The nav's Settings row and the chapter switcher's "Chapter
- * settings" link both ask this, so neither opens onto an empty page. A
- * treasurer whose only tool is Reports loses the row when the chapter switches
- * Reports off, the same way the Reports row used to hide (#2946).
+ * module is on. The chapter menu's "Chapter settings" link asks this, so it
+ * never opens onto an empty page. A treasurer whose only tool is Reports loses
+ * the link when the chapter switches Reports off, the same way the Reports row
+ * used to hide (#2946).
  *
  * False while permissions are `undefined` (in flight, or failed online): a
  * door is drawn only once the viewer's grants are known to open it (#3854), as

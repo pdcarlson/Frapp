@@ -23,6 +23,44 @@ type Case = readonly [
 
 /** `Controller.method` → event → cases. */
 const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
+  'MeetingController.start': {
+    'meeting-started': [
+      [
+        'from an event on the calendar',
+        { body: { event_id: 'e1' }, result: { meeting_type: 'exec' } },
+        { meeting_type: 'exec', from_new_event: false },
+      ],
+      [
+        'for a meeting that was not on the calendar',
+        {
+          body: { new_event: { name: 'Retreat' } },
+          result: { meeting_type: 'other' },
+        },
+        { meeting_type: 'other', from_new_event: true },
+      ],
+    ],
+  },
+  'MeetingController.post': {
+    'meeting-posted': [
+      [
+        'minutes with a decision and no action items',
+        {
+          result: {
+            meeting_type: 'chapter',
+            content: {
+              decisions: [{ text: 'd', vote: null }],
+              action_items: [],
+            },
+          },
+        },
+        {
+          meeting_type: 'chapter',
+          has_decisions: true,
+          has_action_items: false,
+        },
+      ],
+    ],
+  },
   'AttendanceController.checkIn': {
     'attendance-checked-in': [
       [
@@ -83,6 +121,24 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'AttendanceController.markByHand': {
+    'attendance-marked-by-hand': [
+      [
+        'three members present',
+        { body: { status: 'PRESENT', user_ids: ['a', 'b', 'c'] } },
+        { status: 'PRESENT', count: 3 },
+      ],
+    ],
+  },
+  'EventExcuseController.decide': {
+    'event-excuse-decided': [
+      [
+        'an approval',
+        { body: { decision: 'APPROVED' } },
+        { decision: 'APPROVED' },
+      ],
+    ],
+  },
   'BackworkController.confirmUpload': {
     'backwork-uploaded': [
       [
@@ -95,6 +151,21 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
         { body: {} },
         { assignment_type: null, is_redacted: false, tag_count: 0 },
       ],
+    ],
+  },
+  'BackworkController.publishDrafts': {
+    'backwork-drafts-published': [
+      [
+        'two filed, one refused',
+        {
+          result: {
+            published: [{ id: 'a' }, { id: 'b' }],
+            failed: [{ id: 'c', message: 'no' }],
+          },
+        },
+        { count: 2, failed_count: 1 },
+      ],
+      ['no response', {}, { count: 0, failed_count: 0 }],
     ],
   },
   'ChapterConfigController.patchConfig': {
@@ -115,6 +186,34 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
         { section: 'multiple' },
       ],
       ['an empty save', { body: {} }, null],
+    ],
+  },
+  'ChapterDocumentController.confirmUploads': {
+    'documents-imported': [
+      [
+        'a batch with one refused, one typed and one filed in a folder',
+        {
+          result: {
+            results: [
+              { storage_path: 'a', error: 'Type list is full' },
+              {
+                storage_path: 'b',
+                document: { document_type: 'Minutes', folder: ' ' },
+              },
+              {
+                storage_path: 'c',
+                document: { document_type: null, folder: 'Finance' },
+              },
+            ],
+          },
+        },
+        { count: 2, typed_count: 1, filed_count: 1 },
+      ],
+      [
+        'a result with no list, without throwing',
+        { result: { results: 'nope' } },
+        { count: 0, typed_count: 0, filed_count: 0 },
+      ],
     ],
   },
   'ChapterDocumentController.confirmUpload': {
@@ -162,6 +261,25 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
           result: { type: 'PUBLIC', is_read_only: true, category_id: 'cat' },
         },
         { type: 'PUBLIC', is_read_only: true, has_category: true },
+      ],
+    ],
+  },
+  'ChatController.forwardMessage': {
+    'message-forwarded': [
+      [
+        'a forward with a comment',
+        { result: { content: 'look at this', deduplicated: false } },
+        { has_comment: true },
+      ],
+      [
+        'a forward with only whitespace for a comment',
+        { result: { content: '  ', deduplicated: false } },
+        { has_comment: false },
+      ],
+      [
+        'a retry that answered the forward already made',
+        { result: { content: 'look at this', deduplicated: true } },
+        null,
       ],
     ],
   },
@@ -397,6 +515,11 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'InviteController.createChapterLink': {
+    'invite-created': [
+      ['a chapter link', {}, { invite_method: 'chapter-link', count: 1 }],
+    ],
+  },
   'InviteController.createWithEmails': {
     'invite-created': [
       [
@@ -553,15 +676,23 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
             assignee_id: 'u1',
             created_by: 'u1',
             point_reward: null,
+            proof_kind: 'none',
+            photos: [],
             card_posted: true,
           },
         },
         {
           assigned_to_self: true,
+          audience: 'person',
+          followed: false,
+          group_size: 1,
           has_due_time: false,
           has_point_reward: false,
+          has_reference_photo: false,
           has_subtasks: false,
+          proof_kind: 'none',
           posted_to_chat: true,
+          repeats: false,
         },
       ],
       [
@@ -573,16 +704,114 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
             created_by: 'u1',
             point_reward: 5,
             due_at: '2026-11-14T22:00:00.000Z',
+            photos: [{ storage_path: 'chapters/c1/tasks/p1/mess.jpg' }],
+            proof_kind: 'photo',
+            series_id: 's1',
           },
         },
         {
           assigned_to_self: false,
+          audience: 'person',
+          followed: false,
+          group_size: 1,
+          has_due_time: true,
+          has_point_reward: true,
+          has_reference_photo: true,
+          has_subtasks: true,
+          proof_kind: 'photo',
+          posted_to_chat: false,
+          repeats: true,
+        },
+      ],
+      [
+        'a task for everyone',
+        {
+          body: { audience: 'everyone' },
+          result: {
+            assignee_id: 'u1',
+            created_by: 'u1',
+            point_reward: null,
+            proof_kind: 'none',
+            photos: [],
+            group: {
+              id: 'g1',
+              audience: 'everyone',
+              total: 20,
+              done: 0,
+              confirmed: 0,
+            },
+          },
+        },
+        {
+          assigned_to_self: false,
+          audience: 'everyone',
+          followed: false,
+          group_size: 20,
+          has_due_time: false,
+          has_point_reward: false,
+          has_reference_photo: false,
+          has_subtasks: false,
+          proof_kind: 'none',
+          posted_to_chat: false,
+          repeats: false,
+        },
+      ],
+    ],
+  },
+  'OpenTaskController.create': {
+    'open-task-created': [
+      [
+        'for a role, with points and a due time',
+        {
+          result: {
+            scope: 'role',
+            subtask_titles: ['Bring tape'],
+            point_reward: 10,
+            due_at: '2026-11-20T22:00:00.000Z',
+            proof_kind: 'photo',
+            eligible_count: 7,
+          },
+        },
+        {
+          scope: 'role',
+          eligible_count: 7,
           has_due_time: true,
           has_point_reward: true,
           has_subtasks: true,
-          posted_to_chat: false,
+          proof_kind: 'photo',
         },
       ],
+      [
+        'for the chapter',
+        {
+          result: {
+            scope: 'chapter',
+            subtask_titles: [],
+            point_reward: null,
+            due_at: null,
+            proof_kind: 'none',
+            eligible_count: 30,
+          },
+        },
+        {
+          scope: 'chapter',
+          eligible_count: 30,
+          has_due_time: false,
+          has_point_reward: false,
+          has_subtasks: false,
+          proof_kind: 'none',
+        },
+      ],
+    ],
+  },
+  'OpenTaskController.claim': {
+    'open-task-claimed': [
+      ['claimed by a member', {}, { assigned_by_officer: false }],
+    ],
+  },
+  'OpenTaskController.assign': {
+    'open-task-claimed': [
+      ['handed out by an officer', {}, { assigned_by_officer: true }],
     ],
   },
   'TaskController.updateStatus': {
@@ -590,7 +819,57 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       [
         'in progress',
         { body: { status: 'IN_PROGRESS' } },
-        { status: 'IN_PROGRESS' },
+        {
+          status: 'IN_PROGRESS',
+          has_proof_photo: false,
+          has_proof_link: false,
+          has_completion_note: false,
+        },
+      ],
+      [
+        'done with proof',
+        {
+          body: {
+            status: 'COMPLETED',
+            proof_photo_paths: ['chapters/c1/tasks/p2/done.jpg'],
+          },
+        },
+        {
+          status: 'COMPLETED',
+          has_proof_photo: true,
+          has_proof_link: false,
+          has_completion_note: false,
+        },
+      ],
+      [
+        'done again with a link and a reply',
+        {
+          body: {
+            status: 'COMPLETED',
+            proof_link: 'https://example.com',
+            completion_note: 'Fixed',
+          },
+        },
+        {
+          status: 'COMPLETED',
+          has_proof_photo: false,
+          has_proof_link: true,
+          has_completion_note: true,
+        },
+      ],
+    ],
+  },
+  'TaskController.rejectCompletion': {
+    'task-completion-rejected': [
+      [
+        'sent back',
+        { body: { comment: 'Blurry' } },
+        { asked_for_photo: false },
+      ],
+      [
+        'sent back asking for a photo',
+        { body: { comment: 'Blurry', require_photo: true } },
+        { asked_for_photo: true },
       ],
     ],
   },

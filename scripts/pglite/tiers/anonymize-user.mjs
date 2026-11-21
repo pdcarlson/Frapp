@@ -102,10 +102,14 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   try {
     await db.exec(`
       begin;
-      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city)
-      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy');
+      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city, phone,
+                         birthday_month, birthday_day, birthday_year, birthday_visibility)
+      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy', '(518) 555-0142',
+              3, 4, 2004, 'chapter');
       insert into chapters (id, name, university) values ('${C}', 'Smoke', 'RPI');
       insert into members (user_id, chapter_id) values ('${U}', '${C}');
+      insert into birthday_posts (chapter_id, user_id, local_date) values ('${C}', '${U}', '2026-03-04');
+      insert into activity_recap_pushes (chapter_id, user_id, week_first_day) values ('${C}', '${U}', '2026-11-08');
       insert into point_transactions (chapter_id, user_id, amount, category, description)
       values ('${C}', '${U}', 5, 'SERVICE', 'helped');
       insert into chat_channels (id, chapter_id, name, type) values ('${CH}', '${C}', 'general', 'PUBLIC');
@@ -160,6 +164,21 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       -- #4186: an Important message the member has seen.
       insert into chat_message_important_seen (user_id, message_id, chapter_id)
       values ('${U}', '${EVCARD}', '${C}');
+      -- #4308: the member's answers on the AI sheet, a Yes on an older
+      -- version and a No on the current one, and someone else's Yes.
+      insert into user_ai_consents (user_id, sheet_version, accepted)
+      values ('${U}', 1, true), ('${U}', 2, false), ('${OTHER}', 1, true);
+      -- #4309: two waiting suggestions in this chapter's channel, one quoting
+      -- the member and one quoting someone else.
+      insert into ai_suggestions (chapter_id, batch_id, ordinal, kind, source_type,
+                                  source_id, payload, quote, quote_author_id,
+                                  required_permission, expires_at)
+      values ('${C}', gen_random_uuid(), 0, 'task', 'channel', '${CH}',
+              '{"title":"Book the venue"}', 'hi, Doomed User here', '${U}',
+              'tasks:manage', now() + interval '14 days'),
+             ('${C}', gen_random_uuid(), 0, 'task', 'channel', '${CH}',
+              '{"title":"Order shirts"}', 'order the shirts', '${OTHER}',
+              'tasks:manage', now() + interval '14 days');
       -- Rename before deletion: the content rewrite must key on the card's own
       -- payload snapshot ('Doomed User'), not the live display name.
       update users set display_name = 'D' where id = '${U}';
@@ -191,7 +210,8 @@ console.log("\n=== Functional smoke: anonymize_user ===");
     const FUNCTIONAL = [
       {
         name: "users row tombstoned in place, re-scrubbed on retry (PII re-added in the window is gone)",
-        sql: `select display_name, email, bio, avatar_url, graduation_year, current_city,
+        sql: `select display_name, email, bio, avatar_url, graduation_year, current_city, phone,
+                     birthday_month, birthday_day, birthday_year, birthday_visibility,
                      (deleted_at is not null) as tombstoned
                 from users where id = '${U}'`,
         ok: (rows) =>
@@ -202,6 +222,12 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows[0].avatar_url === null &&
           rows[0].graduation_year === null &&
           rows[0].current_city === null &&
+          rows[0].phone === null &&
+          // The birthday (#4959), cleared by `users_clear_birthday_on_tombstone`.
+          rows[0].birthday_month === null &&
+          rows[0].birthday_day === null &&
+          rows[0].birthday_year === null &&
+          rows[0].birthday_visibility === "nobody" &&
           rows[0].tombstoned === true,
       },
       {
@@ -212,8 +238,10 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows.length === 1 && rows[0].points === 1 && rows[0].messages === 5,
       },
       {
-        name: "current-state purged: membership, settings, push token",
+        name: "current-state purged: membership, settings, push token, birthday post and recap push claims",
         sql: `select (select count(*)::int from members where user_id = '${U}')
+                   + (select count(*)::int from birthday_posts where user_id = '${U}')
+                   + (select count(*)::int from activity_recap_pushes where user_id = '${U}')
                    + (select count(*)::int from user_settings where user_id = '${U}')
                    + (select count(*)::int from push_tokens where user_id = '${U}') as leftovers`,
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
@@ -250,6 +278,28 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         name: "current-state purged: Important messages seen",
         sql: `select count(*)::int as leftovers from chat_message_important_seen where user_id = '${U}'`,
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
+      },
+      {
+        // #4308. Its line in the delete block (20261112165040): deleting an
+        // account counts as turning AI off, and only the member's rows go.
+        name: "current-state purged: AI sheet answers, and only the member's",
+        sql: `select (select count(*)::int from user_ai_consents where user_id = '${U}') as leftovers,
+                     (select count(*)::int from user_ai_consents where user_id = '${OTHER}') as others`,
+        ok: (rows) =>
+          rows.length === 1 && rows[0].leftovers === 0 && rows[0].others === 1,
+      },
+      {
+        // #4309. Its line in the same block (20261112165040): the member's
+        // words leave waiting suggestions, which stay; others' quotes stay.
+        name: "AI suggestions drop the member's quotes, and only theirs",
+        sql: `select (select count(*)::int from ai_suggestions where quote_author_id = '${U}' or quote = 'hi, Doomed User here') as leftovers,
+                     (select count(*)::int from ai_suggestions where quote_author_id = '${OTHER}' and quote is not null) as others,
+                     (select count(*)::int from ai_suggestions where status = 'pending') as kept`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].leftovers === 0 &&
+          rows[0].others === 1 &&
+          rows[0].kept === 2,
       },
       {
         // Exact counts, not `>= 0`: an over-purge gives 0 and a spurious

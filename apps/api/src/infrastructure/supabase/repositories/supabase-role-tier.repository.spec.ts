@@ -57,4 +57,20 @@ describe('SupabaseRoleTierRepository — tenant scope', () => {
 
     expect(created.map((t) => t.chapter_id)).toEqual([CHAPTER_A, CHAPTER_A]);
   });
+
+  // #4548: the floor's refusal reads apart from a stale order, so the API
+  // answers 400 for it rather than 409.
+  it.each([
+    ['23514', 'stale'],
+    ['22023', 'below_everyone'],
+  ])('reorder maps the RPC error %s to %s', async (code, outcome) => {
+    harness = createTenantHarness({
+      tables: {},
+      rpc: { reorder_role_tiers: { error: { code, message: 'refused' } } },
+    });
+    repo = new SupabaseRoleTierRepository(harness.client);
+
+    await expect(repo.reorder(CHAPTER_B, ['b-1'], [])).resolves.toBe(outcome);
+    expect(harness.rpcCalls[0].args).toMatchObject({ p_chapter_id: CHAPTER_B });
+  });
 });

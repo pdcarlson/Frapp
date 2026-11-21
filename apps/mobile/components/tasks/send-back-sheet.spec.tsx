@@ -1,0 +1,342 @@
+/** @vitest-environment jsdom */
+import React from "react";
+import {
+  create,
+  type ReactTestInstance,
+  type ReactTestRenderer,
+} from "react-test-renderer";
+import { act } from "react";
+import { describe, expect, it, vi } from "vitest";
+import {
+  TASK_SEND_BACK_REASON_MAX,
+  type TaskProofKind,
+} from "@repo/validation";
+import { FrappThemeProvider } from "@/lib/theme";
+import { screenText } from "@/test/screen-text";
+
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#DDB844",
+    accentPrimary: "#DDB844",
+    accentOnPrimary: "#2B2009",
+  }),
+}));
+
+import { SendBackSheet, sendBackProblem } from "./send-back-sheet";
+
+function render(
+  proofKind: TaskProofKind,
+  onSubmit = vi.fn(async () => {}),
+  keptDraft?: string,
+  submittedAt: string | null = null,
+): ReactTestRenderer {
+  let tree!: ReactTestRenderer;
+  act(() => {
+    tree = create(
+      <FrappThemeProvider>
+        <SendBackSheet
+          title="Mop the kitchen"
+          proofKind={proofKind}
+          keptDraft={keptDraft}
+          submittedAt={submittedAt}
+          onSubmit={onSubmit}
+          onClosed={() => {}}
+        />
+      </FrappThemeProvider>,
+    );
+  });
+  return tree;
+}
+
+const reasonField = (tree: ReactTestRenderer) =>
+  tree.root.find(
+    (node) =>
+      node.props.accessibilityLabel === "What needs to change" &&
+      typeof node.props.onChangeText === "function",
+  );
+
+function sendBack(tree: ReactTestRenderer) {
+  const buttons = tree.root.findAll(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      node.findAll((child) => child.props?.children === "Send back").length > 0,
+  );
+  return buttons[buttons.length - 1]!;
+}
+
+async function press(node: ReactTestInstance) {
+  await act(async () => {
+    node.props.onPress();
+  });
+}
+
+describe("sendBackProblem", () => {
+  it("needs a reason that isn't blank", () => {
+    expect(sendBackProblem("   ")).toBe("Say what needs to change.");
+    expect(sendBackProblem("Still sticky")).toBeNull();
+  });
+});
+
+describe("SendBackSheet (#4635)", () => {
+  it("refuses to send without a reason", async () => {
+    const onSubmit = vi.fn(async () => {});
+    const tree = render("none", onSubmit);
+    await press(sendBack(tree));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain("Say what needs to change.");
+  });
+
+  it("sends the trimmed reason, capped and counted", async () => {
+    const onSubmit = vi.fn(async () => {});
+    const tree = render("none", onSubmit);
+    expect(reasonField(tree).props.maxLength).toBe(TASK_SEND_BACK_REASON_MAX);
+    act(() => reasonField(tree).props.onChangeText(" Floor is still sticky "));
+    expect(screenText(tree)).toContain(`23/${TASK_SEND_BACK_REASON_MAX}`);
+    await press(sendBack(tree));
+    expect(onSubmit).toHaveBeenCalledWith({ comment: "Floor is still sticky" });
+  });
+
+  it("asks for a photo next time when the toggle is on", async () => {
+    const onSubmit = vi.fn(async () => {});
+    const tree = render("link", onSubmit);
+    const toggle = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Ask for a photo next time" &&
+        typeof node.props.onValueChange === "function",
+    );
+    act(() => toggle.props.onValueChange(true));
+    act(() => reasonField(tree).props.onChangeText("Show me the floor"));
+    await press(sendBack(tree));
+    expect(onSubmit).toHaveBeenCalledWith({
+      comment: "Show me the floor",
+      require_photo: true,
+    });
+  });
+
+  it("hides the toggle on a task that already asks for a photo", () => {
+    expect(screenText(render("photo"))).not.toContain(
+      "Ask for a photo next time",
+    );
+  });
+
+  it("keeps the reason and says why when the server refuses", async () => {
+    const onSubmit = vi.fn(async () => {
+      throw { statusCode: 400, message: "Comment is required" };
+    });
+    const tree = render("none", onSubmit);
+    act(() => reasonField(tree).props.onChangeText("Sticky"));
+    await press(sendBack(tree));
+    expect(reasonField(tree).props.value).toBe("Sticky");
+    expect(screenText(tree)).toMatch(
+      /Comment is required|Couldn't send it back/,
+    );
+  });
+});
+
+/**
+ * The officer's reason outlives the sheet (#5041): the host mounts one per
+ * Send back, so a swipe, or leaving the chat, used to lose it.
+ */
+describe("SendBackSheet's kept reason (#5041)", () => {
+  let draftNo = 0;
+  const nextDraft = () => `send-back:t${++draftNo}`;
+  const cancel = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        typeof node.props.onCancel === "function" &&
+        typeof node.type === "function",
+    );
+
+  it("keeps the reason and the photo ask for the task's next Send back", () => {
+    const name = nextDraft();
+    const first = render("link", undefined, name);
+    act(() => reasonField(first).props.onChangeText("Still sticky"));
+    const toggle = first.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Ask for a photo next time" &&
+        typeof node.props.onValueChange === "function",
+    );
+    act(() => toggle.props.onValueChange(true));
+    act(() => first.unmount());
+
+    const second = render("link", undefined, name);
+    expect(reasonField(second).props.value).toBe("Still sticky");
+    expect(
+      second.root.find(
+        (node) =>
+          node.props.accessibilityLabel === "Ask for a photo next time" &&
+          typeof node.props.onValueChange === "function",
+      ).props.value,
+    ).toBe(true);
+    act(() => second.unmount());
+  });
+
+  it("keeps nothing for another task", () => {
+    const first = render("none", undefined, nextDraft());
+    act(() => reasonField(first).props.onChangeText("Still sticky"));
+    act(() => first.unmount());
+    const other = render("none", undefined, nextDraft());
+    expect(reasonField(other).props.value).toBe("");
+    act(() => other.unmount());
+  });
+
+  it("gives it up on Cancel", () => {
+    const name = nextDraft();
+    const first = render("none", undefined, name);
+    act(() => reasonField(first).props.onChangeText("Still sticky"));
+    act(() => cancel(first).props.onCancel());
+    act(() => first.unmount());
+    const second = render("none", undefined, name);
+    expect(reasonField(second).props.value).toBe("");
+    act(() => second.unmount());
+  });
+
+  it("gives it up once the Send back lands", async () => {
+    const name = nextDraft();
+    const first = render(
+      "none",
+      vi.fn(async () => {}),
+      name,
+    );
+    act(() => reasonField(first).props.onChangeText("Still sticky"));
+    await press(sendBack(first));
+    act(() => first.unmount());
+    const second = render("none", undefined, name);
+    expect(reasonField(second).props.value).toBe("");
+    act(() => second.unmount());
+  });
+
+  it("holds it out while the Send back is in flight, and puts it back when it fails", async () => {
+    const name = nextDraft();
+    let fail: (error: unknown) => void = () => {};
+    const first = render(
+      "none",
+      vi.fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            fail = reject;
+          }),
+      ),
+      name,
+    );
+    act(() => reasonField(first).props.onChangeText("Still sticky"));
+    await press(sendBack(first));
+    act(() => first.unmount());
+
+    // Reopened mid-send (#5086): it opens on the reason sent, held, so the
+    // same reason isn't offered to send twice.
+    const onSendBack = vi.fn(async () => {});
+    const during = render("none", onSendBack, name);
+    expect(reasonField(during).props.value).toBe("Still sticky");
+    expect(reasonField(during).props.editable).toBe(false);
+    const held = during.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityState?.busy === true,
+    );
+    expect(held).toHaveLength(1);
+    await press(held[0]!);
+    expect(onSendBack).not.toHaveBeenCalled();
+
+    // It fails: the reopened sheet keeps the reason, through an edit.
+    await act(async () => fail({ statusCode: 500, message: "Down" }));
+    expect(reasonField(during).props.editable).toBe(true);
+    act(() => reasonField(during).props.onChangeText("Still sticky, redo"));
+    act(() => during.unmount());
+
+    const after = render("none", undefined, name);
+    expect(reasonField(after).props.value).toBe("Still sticky, redo");
+    act(() => after.unmount());
+  });
+
+  it("closes a sheet reopened mid-send when the send lands, and keeps nothing (#5086)", async () => {
+    const name = nextDraft();
+    let land: () => void = () => {};
+    const first = render(
+      "none",
+      vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            land = resolve;
+          }),
+      ),
+      name,
+    );
+    act(() => reasonField(first).props.onChangeText("Still sticky"));
+    await press(sendBack(first));
+    act(() => first.unmount());
+
+    const modal = { present: vi.fn(), dismiss: vi.fn() };
+    let during!: ReactTestRenderer;
+    act(() => {
+      during = create(
+        <FrappThemeProvider>
+          <SendBackSheet
+            title="Mop the kitchen"
+            proofKind="none"
+            keptDraft={name}
+            submittedAt={null}
+            onSubmit={vi.fn(async () => {})}
+            onClosed={() => {}}
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal" ? modal : null,
+        },
+      );
+    });
+    act(() =>
+      during.root
+        .findByType("BottomSheetModal" as never)
+        .props.onAnimate(-1, 0),
+    );
+    await act(async () => land());
+    expect(modal.dismiss).toHaveBeenCalledTimes(1);
+    act(() => during.unmount());
+
+    const after = render("none", undefined, name);
+    expect(reasonField(after).props.value).toBe("");
+    act(() => after.unmount());
+  });
+
+  it("doesn't bring back a reason kept for an earlier submission, and drops it", () => {
+    const name = nextDraft();
+    const first = render("none", undefined, name, "2026-11-14T10:00:00Z");
+    act(() => reasonField(first).props.onChangeText("Photo is blurry"));
+    act(() => first.unmount());
+    // Sent back on web since, and submitted again: a new submission.
+    const next = render("none", undefined, name, "2026-11-15T09:00:00Z");
+    expect(reasonField(next).props.value).toBe("");
+    act(() => next.unmount());
+    const again = render("none", undefined, name, "2026-11-14T10:00:00Z");
+    expect(reasonField(again).props.value).toBe("");
+    act(() => again.unmount());
+  });
+
+  it("holds Cancel while it sends, so a failed send keeps the reason", async () => {
+    const name = nextDraft();
+    let fail: (error: unknown) => void = () => {};
+    const first = render(
+      "none",
+      vi.fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            fail = reject;
+          }),
+      ),
+      name,
+    );
+    act(() => reasonField(first).props.onChangeText("Still sticky"));
+    // Cancel handled in the same batch as the send, before it is drawn held.
+    await act(async () => {
+      sendBack(first).props.onPress();
+      cancel(first).props.onCancel();
+    });
+    act(() => first.unmount());
+    await act(async () => fail({ statusCode: 500, message: "Down" }));
+    const after = render("none", undefined, name);
+    expect(reasonField(after).props.value).toBe("Still sticky");
+    act(() => after.unmount());
+  });
+});

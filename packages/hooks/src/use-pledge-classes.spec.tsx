@@ -1,10 +1,7 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
-import { FrappClientProvider } from "./use-frapp-client";
 import {
   useAssignPledgeClasses,
   useCreatePledgeClass,
@@ -13,6 +10,7 @@ import {
   usePledgeClasses,
   useReorderPledgeClasses,
 } from "./use-pledge-classes";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const CHAPTER = "chapter-1";
 const answered = (data: unknown) => ({ data, error: undefined });
@@ -26,25 +24,17 @@ describe("pledge class hooks", () => {
   let invalidate: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
     invalidate = vi.spyOn(queryClient, "invalidateQueries");
   });
 
   const wrapperFor = (client: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={client as ReturnType<typeof createFrappClient>}
-        chapterId={CHAPTER}
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "PledgeClassHookWrapper";
-    return Wrapper;
+    return createHookWrapper({
+      client,
+      queryClient,
+      chapterId: CHAPTER,
+      displayName: "PledgeClassHookWrapper",
+    });
   };
 
   it("reads the chapter's classes in the order the API serves them", async () => {
@@ -57,7 +47,9 @@ describe("pledge class hooks", () => {
       wrapper: wrapperFor(client),
     });
     await waitFor(() => expect(result.current.data).toEqual(classes));
-    expect(client.GET).toHaveBeenCalledWith("/v1/pledge-classes");
+    expect(client.GET).toHaveBeenCalledWith("/v1/pledge-classes", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("re-reads the list after a refused reorder, so a stale editor catches up", async () => {

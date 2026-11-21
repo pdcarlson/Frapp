@@ -17,6 +17,11 @@ test("every ops doc a script names is a tracked file", () => {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     }).trim();
-    assert.equal(tracked, path, `${name} names ${path}, which git does not track`);
+    // A directory constant (MIGRATION_LEDGER_DIR) is tracked when git tracks files in it.
+    const files = tracked.split("\n");
+    assert.ok(
+      files.includes(path) || (files.length > 0 && files.every((f) => f.startsWith(`${path}/`))),
+      `${name} names ${path}, which git does not track`,
+    );
   }
 });

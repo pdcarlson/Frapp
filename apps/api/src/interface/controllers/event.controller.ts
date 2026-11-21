@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -12,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -34,9 +36,13 @@ import {
   CreateEventDto,
   CreateEventResponseDto,
   DeleteEventQueryDto,
+  EventDetailResponseDto,
+  EventResponseDto,
   UpdateEventDto,
 } from '../dtos/event.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { TIME_ZONE_HEADER } from '#domain/constants/time-zone-header';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Events')
 @ApiBearerAuth()
@@ -48,22 +54,34 @@ export class EventController {
   constructor(private readonly eventService: EventService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'List chapter events' })
+  @ApiOkResponse({ type: [EventResponseDto] })
   async list(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-  ) {
+  ): Promise<EventResponseDto[]> {
     return this.eventService.findByChapter(chapterId, userId);
   }
 
   @Get(':id')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get event by id' })
+  @ApiOkResponse({ type: EventDetailResponseDto })
   async getOne(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
-  ) {
-    return this.eventService.findById(id, chapterId, userId);
+  ): Promise<EventDetailResponseDto> {
+    const event = await this.eventService.findById(id, chapterId, userId);
+    // Additive (#4808): whether check-in now needs the officer's code, so web
+    // says to scan rather than offering a Check in the server refuses. Never
+    // fails the read (`checkInNeedsCode`).
+    const checkInNeedsCode = await this.eventService.checkInNeedsCode(
+      event,
+      userId,
+    );
+    return { ...event, check_in_needs_code: checkInNeedsCode };
   }
 
   @Post()
@@ -89,17 +107,22 @@ export class EventController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') createdBy: string,
     @Body() dto: CreateEventDto,
+    // A legacy repeat token keeps the wall clock of the device's zone (#4746).
+    @Headers(TIME_ZONE_HEADER) timeZone: string | undefined,
   ) {
-    return this.eventService.create({
-      // Server-decided keys go last so they win the spread. With the DTO
-      // spread last instead, adding a `chapter_id` property to CreateEventDto
-      // would silently let a caller write into another chapter — the whitelist
-      // pipe is what stops that today, and this ordering is what stops it if
-      // the DTO ever changes.
-      ...dto,
-      chapter_id: chapterId,
-      created_by: createdBy,
-    });
+    return this.eventService.create(
+      {
+        // Server-decided keys go last so they win the spread. With the DTO
+        // spread last instead, adding a `chapter_id` property to CreateEventDto
+        // would silently let a caller write into another chapter — the whitelist
+        // pipe is what stops that today, and this ordering is what stops it if
+        // the DTO ever changes.
+        ...dto,
+        chapter_id: chapterId,
+        created_by: createdBy,
+      },
+      timeZone,
+    );
   }
 
   @Patch(':id')
@@ -111,11 +134,19 @@ export class EventController {
     @CurrentUser('id') actorId: string,
     @Param('id') id: string,
     @Body() dto: UpdateEventDto,
+    @Headers(TIME_ZONE_HEADER) timeZone: string | undefined,
   ) {
     // `scope` is a control flag, not a column. Split it off here so it can never
     // reach the repository's update payload as a stray field.
     const { scope, ...patch } = dto;
-    return this.eventService.update(id, chapterId, patch, scope, actorId);
+    return this.eventService.update(
+      id,
+      chapterId,
+      patch,
+      scope,
+      actorId,
+      timeZone,
+    );
   }
 
   @Delete(':id')

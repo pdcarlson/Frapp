@@ -19,7 +19,7 @@
 export const NAV_COLLAPSED_COOKIE = "signet_nav_collapsed";
 
 /** A year. The preference should outlive a session without being permanent. */
-export const NAV_COLLAPSED_MAX_AGE = 60 * 60 * 24 * 365;
+const NAV_COLLAPSED_MAX_AGE = 60 * 60 * 24 * 365;
 
 /**
  * Parse the cookie value into a boolean.

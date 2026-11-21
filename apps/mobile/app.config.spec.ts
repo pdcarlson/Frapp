@@ -3,11 +3,12 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  APP_LINK_PATHS,
   PRODUCTION_API_ORIGIN as SHARED_PRODUCTION_API_ORIGIN,
   PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN,
+  STAGING_NATIVE_APP,
 } from "@repo/validation";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK_FLAG_ENV_KEY, isAskAvailable } from "./lib/ask/flag";
 
 /**
  * EAS production Android must not compile without Firebase client config.
@@ -75,14 +76,19 @@ function loadConfig() {
       easBuildProfile?: string;
       appUrl?: string;
     }) => void;
-    assertProductionAskDisabled: (opts?: {
-      easBuildProfile?: string;
-      askEnabled?: string;
-    }) => void;
-    isAskEnabledValue: (raw: unknown) => boolean;
-    PRODUCTION_ASK_ENABLED_ERROR: string;
     publicValueProfile: (env: NodeJS.Dict<string>) => string | undefined;
     PRODUCTION_UPDATE_SENTRY_DSN_ERROR: string;
+    STAGING_PROFILE: string;
+    STAGING_IDENTITY: { name: string; scheme: string; applicationId: string };
+    STAGING_GOOGLE_SIGN_IN: {
+      webClientId: string;
+      iosClientId: string;
+      androidClientId: string;
+    };
+    APP_VARIANT_VALUE_ERROR: string;
+    STAGING_RUNTIME_ERROR: string;
+    APP_VARIANT_PROFILE_ERROR: string;
+    STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR: string;
   };
 }
 
@@ -132,7 +138,6 @@ const restoredEnvKeys = [
   "EXPO_PUBLIC_API_URL",
   "EXPO_PUBLIC_SUPABASE_URL",
   "EXPO_PUBLIC_SUPABASE_ANON_KEY",
-  "EXPO_PUBLIC_ASK_ENABLED",
 ] as const;
 const initialEnv = Object.fromEntries(
   restoredEnvKeys.map((name) => [name, process.env[name]]),
@@ -432,35 +437,6 @@ describe("applyMobileConfig", () => {
     ).toThrow(PRODUCTION_APP_URL_ERROR);
   });
 
-  it("refuses iOS production when EXPO_PUBLIC_ASK_ENABLED switches Ask on", () => {
-    const { applyMobileConfig, PRODUCTION_ASK_ENABLED_ERROR } = loadConfig();
-    expect(() =>
-      applyMobileConfig(androidConfig, {
-        env: {
-          ...productionPublicEnv,
-          EAS_BUILD_PROFILE: "production",
-          EAS_BUILD_PLATFORM: "ios",
-          EXPO_PUBLIC_ASK_ENABLED: "1",
-        },
-        existsSync: missing,
-      }),
-    ).toThrow(PRODUCTION_ASK_ENABLED_ERROR);
-  });
-
-  it("lets a preview build with Ask on evaluate", () => {
-    const { applyMobileConfig } = loadConfig();
-    expect(() =>
-      applyMobileConfig(androidConfig, {
-        env: {
-          EAS_BUILD_PROFILE: "preview",
-          EAS_BUILD_PLATFORM: "ios",
-          EXPO_PUBLIC_ASK_ENABLED: "true",
-        },
-        existsSync: missing,
-      }),
-    ).not.toThrow();
-  });
-
   it("refuses production Android with a google-services file when the API origin is wrong", () => {
     const { applyMobileConfig, PRODUCTION_API_URL_ERROR } = loadConfig();
     expect(() =>
@@ -557,6 +533,271 @@ describe("native Google Sign-In plugin", () => {
     expect(appJson.expo.extra.googleSignIn.webClientId).toMatch(
       /\.apps\.googleusercontent\.com$/,
     );
+  });
+});
+
+describe("the staging variant (#2511)", () => {
+  const appJson = (
+    requireConfig("./app.json") as { expo: Record<string, unknown> }
+  ).expo;
+  const easStagingEnv = (
+    requireConfig("./eas.json") as {
+      build: { staging: { channel: string; env: Record<string, string> } };
+    }
+  ).build.staging;
+  const stagingRuntime = `${appJson.version as string}-0123456789ab`;
+  const stagingBuildEnv = {
+    EAS_BUILD_PROFILE: "staging",
+    EAS_BUILD_PLATFORM: "ios",
+    FRAPP_STAGING_RUNTIME: stagingRuntime,
+    ...easStagingEnv.env,
+    EXPO_PUBLIC_SUPABASE_URL: easStagingSupabaseOrigin,
+    EXPO_PUBLIC_SUPABASE_ANON_KEY: PUBLISHABLE_KEY_FIXTURE,
+  };
+
+  it("is what eas.json's staging profile builds, on a channel of its own", () => {
+    const { applyMobileConfig, STAGING_IDENTITY, STAGING_PROFILE } =
+      loadConfig();
+    expect(STAGING_PROFILE).toBe("staging");
+    expect(easStagingEnv.channel).toBe("staging");
+    const result = applyMobileConfig(appJson, {
+      env: stagingBuildEnv,
+      existsSync: missing,
+    }) as {
+      name: string;
+      scheme: string;
+      slug: string;
+      ios: Record<string, unknown>;
+      android: Record<string, unknown>;
+      updates: unknown;
+    };
+    expect(STAGING_IDENTITY).toEqual({
+      name: "Frapp Staging",
+      scheme: "frapp-staging",
+      applicationId: "live.frapp.mobile.staging",
+    });
+    expect(result.name).toBe("Frapp Staging");
+    expect(result.scheme).toBe("frapp-staging");
+    expect(result.ios.bundleIdentifier).toBe("live.frapp.mobile.staging");
+    expect(result.android.package).toBe("live.frapp.mobile.staging");
+    // Its own dashboard's links (2026-11-17): a staging check-in code the
+    // phone's camera reads opens Frapp Staging, on the same paths the
+    // production app claims on app.frapp.live.
+    expect(easStagingEnv.env.EXPO_PUBLIC_APP_URL).toBe(
+      "https://app.staging.frapp.live",
+    );
+    expect(result.ios.associatedDomains).toEqual([
+      "applinks:app.staging.frapp.live",
+    ]);
+    const filters = result.android.intentFilters as {
+      data: { scheme: string; host: string; path?: string }[];
+    }[];
+    const productionFilters = (
+      appJson.android as {
+        intentFilters: { data: { host: string; path?: string }[] }[];
+      }
+    ).intentFilters;
+    expect(filters.flatMap((filter) => filter.data)).toEqual(
+      productionFilters
+        .flatMap((filter) => filter.data)
+        .map((entry) => ({ ...entry, host: "app.staging.frapp.live" })),
+    );
+    // Shared with the production app, and the rest of each platform block kept.
+    expect(result.slug).toBe(appJson.slug);
+    expect(result.updates).toEqual(appJson.updates);
+    expect(result.ios.usesAppleSignIn).toBe(true);
+    expect(result.android.adaptiveIcon).toEqual(
+      (appJson.android as { adaptiveIcon: unknown }).adaptiveIcon,
+    );
+  });
+
+  it("signs in with Google through its own clients, never the store app's (#4148)", () => {
+    const { applyMobileConfig, STAGING_GOOGLE_SIGN_IN } = loadConfig();
+    // Store clients that differ from staging's, so a variant that inherits
+    // app.json's would show here.
+    const storeClients = {
+      webClientId: "store-web.apps.googleusercontent.com",
+      iosClientId: "store-ios.apps.googleusercontent.com",
+      androidClientId: "store-android.apps.googleusercontent.com",
+    };
+    const withStoreClients = {
+      ...appJson,
+      extra: { ...(appJson.extra as object), googleSignIn: storeClients },
+    } as typeof appJson;
+    const result = applyMobileConfig(withStoreClients, {
+      env: stagingBuildEnv,
+      existsSync: missing,
+    }) as { extra: { googleSignIn: Record<string, string> }; plugins: unknown[] };
+    expect(result.extra.googleSignIn).toEqual(STAGING_GOOGLE_SIGN_IN);
+    expect(result.extra.googleSignIn).not.toEqual(storeClients);
+    expect(STAGING_GOOGLE_SIGN_IN.webClientId).toMatch(
+      /\.apps\.googleusercontent\.com$/,
+    );
+    // An empty iOS client keeps the plugin, and so the native scheme, out.
+    if (!STAGING_GOOGLE_SIGN_IN.iosClientId) {
+      expect(JSON.stringify(result.plugins)).not.toContain(
+        "@react-native-google-signin/google-signin",
+      );
+    }
+    // The rest of extra (the EAS project) is kept.
+    expect(
+      (result.extra as unknown as { eas: unknown }).eas,
+    ).toEqual((appJson.extra as { eas: unknown }).eas);
+  });
+
+  it("claims no links when its dashboard is not an https origin of its own", () => {
+    const { applyMobileConfig } = loadConfig();
+    for (const appUrl of [
+      "",
+      "http://localhost:3000",
+      "https://app.frapp.live",
+    ]) {
+      const result = applyMobileConfig(appJson, {
+        env: { ...stagingBuildEnv, EXPO_PUBLIC_APP_URL: appUrl },
+        existsSync: missing,
+      }) as { ios: Record<string, unknown>; android: Record<string, unknown> };
+      expect(result.ios).not.toHaveProperty("associatedDomains");
+      expect(result.android).not.toHaveProperty("intentFilters");
+    }
+  });
+
+  it("names the same app @repo/validation hands the staging web off to", () => {
+    const { STAGING_IDENTITY } = loadConfig();
+    expect(STAGING_NATIVE_APP).toEqual({
+      id: STAGING_IDENTITY.applicationId,
+      scheme: STAGING_IDENTITY.scheme,
+      name: STAGING_IDENTITY.name,
+    });
+  });
+
+  it("takes its runtime version from the native-input hash, for a build and a guarded update", () => {
+    const { applyMobileConfig } = loadConfig();
+    const { EAS_BUILD_PROFILE: profile, ...rest } = stagingBuildEnv;
+    for (const env of [
+      stagingBuildEnv,
+      { ...rest, FRAPP_EAS_UPDATE_PROFILE: profile },
+    ]) {
+      const result = applyMobileConfig(appJson, { env, existsSync: missing });
+      expect(result.runtimeVersion).toBe(stagingRuntime);
+    }
+  });
+
+  it("refuses the staging profile with no runtime, a malformed one, or another version's", () => {
+    const { applyMobileConfig, STAGING_RUNTIME_ERROR } = loadConfig();
+    for (const value of [
+      "",
+      appJson.version as string,
+      `${appJson.version as string}-xyz`,
+      `${appJson.version as string}-0123456789AB`,
+      "0.0.1-0123456789ab",
+      ` ${stagingRuntime}`,
+    ]) {
+      expect(() =>
+        applyMobileConfig(appJson, {
+          env: { ...stagingBuildEnv, FRAPP_STAGING_RUNTIME: value },
+          existsSync: missing,
+        }),
+      ).toThrow(STAGING_RUNTIME_ERROR);
+    }
+  });
+
+  it("keeps app.json's runtime policy by hand with no profile, and never touches the production app's", () => {
+    const { applyMobileConfig } = loadConfig();
+    expect(
+      applyMobileConfig(appJson, {
+        env: { FRAPP_APP_VARIANT: "staging" },
+        existsSync: missing,
+      }).runtimeVersion,
+    ).toEqual(appJson.runtimeVersion);
+    expect(
+      applyMobileConfig(appJson, {
+        env: { FRAPP_STAGING_RUNTIME: stagingRuntime },
+        existsSync: missing,
+      }).runtimeVersion,
+    ).toEqual(appJson.runtimeVersion);
+  });
+
+  it("leaves app.json's config untouched", () => {
+    const { applyMobileConfig } = loadConfig();
+    const before = structuredClone(appJson);
+    applyMobileConfig(appJson, { env: stagingBuildEnv, existsSync: missing });
+    expect(appJson).toEqual(before);
+  });
+
+  it("is off without the variable, so every other run builds the production app", () => {
+    const { applyMobileConfig } = loadConfig();
+    const result = applyMobileConfig(appJson, {
+      env: { EAS_BUILD_PROFILE: "preview" },
+      existsSync: missing,
+    }) as { name: string; scheme: string; ios: Record<string, unknown> };
+    expect(result.name).toBe("Frapp");
+    expect(result.scheme).toBe("frapp");
+    expect(result.ios.bundleIdentifier).toBe("live.frapp.mobile");
+    expect(result.ios.associatedDomains).toEqual(["applinks:app.frapp.live"]);
+  });
+
+  it("may be set by hand on a run with no profile (expo start, a local prebuild)", () => {
+    const { applyMobileConfig } = loadConfig();
+    const result = applyMobileConfig(appJson, {
+      env: { FRAPP_APP_VARIANT: "staging" },
+      existsSync: missing,
+    });
+    expect(result.scheme).toBe("frapp-staging");
+  });
+
+  it("refuses any value but staging", () => {
+    const { applyMobileConfig, APP_VARIANT_VALUE_ERROR } = loadConfig();
+    for (const value of ["production", "Staging", "preview", "1"]) {
+      expect(() =>
+        applyMobileConfig(appJson, {
+          env: { FRAPP_APP_VARIANT: value },
+          existsSync: missing,
+        }),
+      ).toThrow(APP_VARIANT_VALUE_ERROR);
+    }
+  });
+
+  it("refuses the variant on every other profile, for a build or a guarded update", () => {
+    const { applyMobileConfig, APP_VARIANT_PROFILE_ERROR } = loadConfig();
+    for (const profile of ["production", "preview", "development", "e2e"]) {
+      for (const key of ["EAS_BUILD_PROFILE", "FRAPP_EAS_UPDATE_PROFILE"]) {
+        expect(() =>
+          applyMobileConfig(appJson, {
+            env: {
+              ...productionPublicEnv,
+              [key]: profile,
+              FRAPP_APP_VARIANT: "staging",
+            },
+            existsSync: present,
+          }),
+        ).toThrow(APP_VARIANT_PROFILE_ERROR);
+      }
+    }
+  });
+
+  it("refuses the staging profile without the variant", () => {
+    const { applyMobileConfig, APP_VARIANT_PROFILE_ERROR } = loadConfig();
+    const withoutVariant: Record<string, string> = { ...stagingBuildEnv };
+    delete withoutVariant.FRAPP_APP_VARIANT;
+    expect(() =>
+      applyMobileConfig(appJson, { env: withoutVariant, existsSync: missing }),
+    ).toThrow(APP_VARIANT_PROFILE_ERROR);
+  });
+
+  it("refuses the production API or Supabase project", () => {
+    const { applyMobileConfig, STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR } =
+      loadConfig();
+    for (const override of [
+      { EXPO_PUBLIC_API_URL: `${easProductionApiUrl}/` },
+      { EXPO_PUBLIC_SUPABASE_URL: easProductionSupabaseOrigin },
+    ]) {
+      expect(() =>
+        applyMobileConfig(appJson, {
+          env: { ...stagingBuildEnv, ...override },
+          existsSync: missing,
+        }),
+      ).toThrow(STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR);
+    }
   });
 });
 
@@ -1056,16 +1297,6 @@ describe("an OTA update through the guard (#3472)", () => {
     ).toThrow(PRODUCTION_SUPABASE_KEY_ERROR);
   });
 
-  it("runs the Ask fence", () => {
-    const { applyMobileConfig, PRODUCTION_ASK_ENABLED_ERROR } = loadConfig();
-    expect(() =>
-      applyMobileConfig(androidConfig, {
-        env: { ...productionUpdateEnv, EXPO_PUBLIC_ASK_ENABLED: "1" },
-        existsSync: missing,
-      }),
-    ).toThrow(PRODUCTION_ASK_ENABLED_ERROR);
-  });
-
   it("refuses a production update with no Sentry DSN, which a Secret EAS variable never supplies locally", () => {
     const { applyMobileConfig, PRODUCTION_UPDATE_SENTRY_DSN_ERROR } = loadConfig();
     expect(() =>
@@ -1186,90 +1417,6 @@ describe("PRODUCTION_APP_ORIGIN", () => {
 });
 
 /**
- * The store binary has no Ask (#2259), and `eas.json` can only show the half
- * of that the repo owns: a value set in the EAS `production` environment
- * reaches the bundle with no repo change. This fence is the other half — a
- * production build with Ask on fails to evaluate its config.
- */
-describe("assertProductionAskDisabled", () => {
-  /** Every spelling the flag spec exercises, on and off. */
-  const spellings = [
-    "1",
-    "true",
-    " true ",
-    "",
-    "  ",
-    "0",
-    "false",
-    "TRUE",
-    "True",
-    "yes",
-    "on",
-  ];
-
-  it("allows CI and expo start with Ask on (profile unset)", () => {
-    const { assertProductionAskDisabled } = loadConfig();
-    expect(() =>
-      assertProductionAskDisabled({ askEnabled: "1" }),
-    ).not.toThrow();
-  });
-
-  it("allows preview and development builds with Ask on", () => {
-    const { assertProductionAskDisabled } = loadConfig();
-    for (const easBuildProfile of ["preview", "development"]) {
-      expect(() =>
-        assertProductionAskDisabled({ easBuildProfile, askEnabled: "true" }),
-      ).not.toThrow();
-    }
-  });
-
-  it("allows production with the flag unset", () => {
-    const { assertProductionAskDisabled } = loadConfig();
-    expect(() =>
-      assertProductionAskDisabled({ easBuildProfile: "production" }),
-    ).not.toThrow();
-  });
-
-  it("refuses production exactly when the app would switch Ask on", () => {
-    const { assertProductionAskDisabled, PRODUCTION_ASK_ENABLED_ERROR } =
-      loadConfig();
-    for (const askEnabled of spellings) {
-      process.env[ASK_FLAG_ENV_KEY] = askEnabled;
-      const check = () =>
-        assertProductionAskDisabled({
-          easBuildProfile: "production",
-          askEnabled,
-        });
-      if (isAskAvailable()) {
-        expect(check, JSON.stringify(askEnabled)).toThrow(
-          PRODUCTION_ASK_ENABLED_ERROR,
-        );
-      } else {
-        expect(check, JSON.stringify(askEnabled)).not.toThrow();
-      }
-    }
-  });
-
-  it("parses the value the way lib/ask/flag.ts does, so the duplicate cannot drift", () => {
-    const { isAskEnabledValue } = loadConfig();
-    for (const raw of spellings) {
-      process.env[ASK_FLAG_ENV_KEY] = raw;
-      expect(isAskEnabledValue(raw), JSON.stringify(raw)).toBe(
-        isAskAvailable(),
-      );
-    }
-    delete process.env[ASK_FLAG_ENV_KEY];
-    expect(isAskEnabledValue(undefined)).toBe(isAskAvailable());
-    // Both directions are exercised, or the loop above proves nothing.
-    expect(spellings.filter((raw) => isAskEnabledValue(raw))).toEqual([
-      "1",
-      "true",
-      " true ",
-    ]);
-  });
-});
-
-/**
  * App Store compliance: the iOS privacy manifest (#2294), and the media-picker
  * dependencies #2296 removed and #2464 brought back.
  *
@@ -1383,6 +1530,11 @@ describe("iOS privacy manifest (#2294)", () => {
     // FileTimestamp / C617.1 was required by #2296's acceptance criteria. It
     // covers the app's own container reads, and sentry-cocoa's and the
     // prebuilt SDWebImage's timestamp reads, neither of which ships a manifest.
+    // 3B52.1 (#3401) covers expo-document-picker, which reads a picked
+    // file's `contentModificationDateKey` (DocumentPickerModule.swift) and
+    // ships no manifest. 3B52.1 is Apple's reason for "files or directories
+    // the user specifically granted access to, such as using a document
+    // picker view controller", which is exactly that read.
     // 0A2A.1 is NOT added: Apple reserves it for a third-party SDK wrapping
     // timestamp APIs, so it is a reason for an SDK's manifest, not the app's.
     //
@@ -1407,7 +1559,7 @@ describe("iOS privacy manifest (#2294)", () => {
         },
         {
           NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
-          NSPrivacyAccessedAPITypeReasons: ["C617.1"],
+          NSPrivacyAccessedAPITypeReasons: ["C617.1", "3B52.1"],
         },
         {
           NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
@@ -1440,8 +1592,19 @@ describe("media picker dependencies (#2296, #2464)", () => {
     expect(all["expo-image-picker"]).toBeDefined();
     expect(all["expo-image-manipulator"]).toBeDefined();
 
-    // Still absent, and for the original reason: no surface picks a document.
-    expect(all["expo-document-picker"]).toBeUndefined();
+    // Back with s21's Files pick (#3401), `lib/more/document-upload.ts`, the
+    // surface #1045 added it a month ahead of. The test below holds it to
+    // that importer.
+    expect(all["expo-document-picker"]).toBeDefined();
+  });
+
+  it("keeps a source importer for the document picker", () => {
+    const mobileRoot = path.dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(
+      path.join(mobileRoot, "lib/more/document-upload.ts"),
+      "utf8",
+    );
+    expect(source).toContain('import("expo-document-picker")');
   });
 
   it("keeps a source importer for every media picker it depends on", () => {
@@ -1479,5 +1642,109 @@ describe("media picker dependencies (#2296, #2464)", () => {
     ];
 
     expect(importers).not.toEqual([]);
+  });
+});
+
+describe("invite links open the app (#4002)", () => {
+  // The binary's half of universal links and App Links. The web's half is
+  // `/.well-known/apple-app-site-association` and `assetlinks.json` on
+  // app.frapp.live, which claim `APP_LINK_PATHS` (the invite and the
+  // check-in code); the two must agree, except a path whose Android claim
+  // waits on the next native version (an intent filter is in the binary, and
+  // a change to it would stop the installed version getting updates over the
+  // air). Such a path goes in ANDROID_CLAIMS_LATER until that version; its web
+  // page hands off with Open in Frapp meanwhile. iOS reads its paths from the
+  // web's file, so it needs no build for a new one. Empty since 0.13.0, which
+  // claimed `/check-in` (#4763).
+  const ANDROID_CLAIMS_LATER: readonly string[] = [];
+  it("claims exactly the web's app-link paths on app.frapp.live, on both platforms", () => {
+    const appJson = JSON.parse(
+      readFileSync(new URL("./app.json", import.meta.url), "utf8"),
+    ) as {
+      expo: {
+        ios: { associatedDomains?: string[] };
+        android: {
+          intentFilters?: {
+            action: string;
+            autoVerify?: boolean;
+            data: { scheme: string; host: string; path?: string }[];
+            category: string[];
+          }[];
+        };
+      };
+    };
+    expect(appJson.expo.ios.associatedDomains).toEqual([
+      "applinks:app.frapp.live",
+    ]);
+    const filters = appJson.expo.android.intentFilters ?? [];
+    expect(filters).toHaveLength(1);
+    expect(filters[0]).toMatchObject({
+      action: "VIEW",
+      autoVerify: true,
+      category: ["BROWSABLE", "DEFAULT"],
+    });
+    expect(filters[0]!.data).toEqual(
+      APP_LINK_PATHS.filter(
+        (path) => !ANDROID_CLAIMS_LATER.includes(path),
+      ).map((path) => ({
+        scheme: "https",
+        host: "app.frapp.live",
+        path,
+      })),
+    );
+  });
+});
+
+// The device pass's automated half (`.eas/workflows/device-smoke.yml`,
+// docs/mobile/testing.md § Automated flows) builds with the `e2e` profile. The
+// Maestro flows sign in with the staging smoke account and post to #general,
+// so this profile must never point at production or carry signing
+// credentials: a build from it is an emulator or simulator app only.
+describe("the e2e profile behind the Maestro flows (#808)", () => {
+  const easJson = requireConfig("./eas.json") as {
+    build: Record<
+      string,
+      {
+        environment?: string;
+        extends?: string;
+        distribution?: string;
+        withoutCredentials?: boolean;
+        ios?: { simulator?: boolean };
+        android?: { buildType?: string };
+        env?: Record<string, string>;
+      }
+    >;
+  };
+  const e2e = easJson.build.e2e;
+  const workflow = readFileSync(
+    path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      ".eas/workflows/device-smoke.yml",
+    ),
+    "utf8",
+  );
+
+  it("builds a simulator app and an emulator APK, without signing credentials", () => {
+    expect(e2e?.ios?.simulator).toBe(true);
+    expect(e2e?.android?.buildType).toBe("apk");
+    expect(e2e?.withoutCredentials).toBe(true);
+    expect(e2e?.distribution).toBe("internal");
+  });
+
+  it("points at staging, never production", () => {
+    expect(e2e?.environment).toBe("preview");
+    expect(e2e?.extends).toBeUndefined();
+    expect(e2e?.env?.EXPO_PUBLIC_API_URL).toBe(
+      "https://api-staging.frapp.live",
+    );
+    expect(e2e?.env?.EXPO_PUBLIC_API_URL).not.toBe(easProductionApiUrl);
+    expect(e2e?.env?.EXPO_PUBLIC_SENTRY_ENVIRONMENT).toBe("e2e");
+  });
+
+  it("is the only profile the workflow builds", () => {
+    const profiles = [...workflow.matchAll(/^\s*profile:\s*(\S+)\s*$/gm)].map(
+      (match) => match[1],
+    );
+    expect(profiles).toEqual(["e2e", "e2e"]);
   });
 });

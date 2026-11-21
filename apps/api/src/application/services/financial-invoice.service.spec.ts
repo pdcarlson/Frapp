@@ -18,6 +18,7 @@ import type { IBillingProvider } from '#domain/adapters/billing.interface';
 import type { FinancialInvoice } from '#domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
 import { ChapterWorkflowsService } from './chapter-workflows.service';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 
 jest.mock('@sentry/nestjs', () => ({
   captureException: jest.fn(),
@@ -27,6 +28,7 @@ const captureException = jest.mocked(Sentry.captureException);
 
 describe('FinancialInvoiceService', () => {
   let service: FinancialInvoiceService;
+  let mockMemberRepo: { findByUserAndChapter: jest.Mock };
   let mockInvoiceRepo: jest.Mocked<IFinancialInvoiceRepository>;
   let mockTransactionRepo: jest.Mocked<IFinancialTransactionRepository>;
   let mockBillingProvider: jest.Mocked<IBillingProvider>;
@@ -48,6 +50,9 @@ describe('FinancialInvoiceService', () => {
     due_date: '2026-09-15',
     paid_at: null,
     stripe_payment_intent_id: null,
+    last_payment_attempt_at: null,
+    last_payment_failed_at: null,
+    last_payment_failure_reason: null,
     created_at: '2026-08-01T00:00:00.000Z',
   };
 
@@ -61,6 +66,7 @@ describe('FinancialInvoiceService', () => {
       update: jest.fn(),
       applyPayment: jest.fn(),
       setPaymentIntentIfOpen: jest.fn(),
+      recordPaymentFailure: jest.fn(),
     };
 
     mockTransactionRepo = {
@@ -87,6 +93,12 @@ describe('FinancialInvoiceService', () => {
       getDuesGraceDays: jest.fn().mockResolvedValue(0),
     };
 
+    mockMemberRepo = {
+      findByUserAndChapter: jest
+        .fn()
+        .mockResolvedValue({ id: 'member-1', user_id: 'user-1' }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinancialInvoiceService,
@@ -101,6 +113,7 @@ describe('FinancialInvoiceService', () => {
         { provide: BILLING_PROVIDER, useValue: mockBillingProvider },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ChapterWorkflowsService, useValue: mockChapterWorkflows },
+        { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
       ],
     }).compile();
 
@@ -183,6 +196,26 @@ describe('FinancialInvoiceService', () => {
           due_date: '2026-09-15',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses a user who is not a member of the chapter, writing nothing', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          user_id: 'user-other-chapter',
+          title: 'Fall 2026 Dues',
+          amount: 15000,
+          due_date: '2026-09-15',
+        }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+        'user-other-chapter',
+        'ch-1',
+      );
+      expect(mockInvoiceRepo.create).not.toHaveBeenCalled();
     });
 
     it('should reject invalid dates', async () => {
@@ -1314,9 +1347,18 @@ describe('FinancialInvoiceService', () => {
       await service.notifyStripePaymentFailure({
         invoiceId: 'inv-1',
         chapterId: 'ch-1',
+        paymentIntentId: 'pi_1',
+        failedAt: '2026-11-15T17:00:00.000Z',
         declineReason: 'Your card was declined.',
       });
 
+      expect(mockInvoiceRepo.recordPaymentFailure).toHaveBeenCalledWith(
+        'inv-1',
+        'ch-1',
+        'pi_1',
+        '2026-11-15T17:00:00.000Z',
+        'Your card was declined.',
+      );
       expect(mockInvoiceRepo.applyPayment).not.toHaveBeenCalled();
       expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
       expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
@@ -1328,9 +1370,24 @@ describe('FinancialInvoiceService', () => {
           body: 'Your payment for "Fall 2026 Dues" was declined: Your card was declined. You can try again.',
           priority: 'NORMAL',
           category: 'billing',
-          data: { target: { screen: 'billing' } },
+          data: { target: { screen: 'billing', invoiceId: 'inv-1' } },
         },
       );
+    });
+
+    it('still notifies a real decline the attempt guard skipped (#3460)', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.recordPaymentFailure.mockResolvedValue(null);
+
+      await service.notifyStripePaymentFailure({
+        invoiceId: 'inv-1',
+        chapterId: 'ch-1',
+        paymentIntentId: 'pi_old',
+        failedAt: '2026-11-15T17:00:00.000Z',
+        declineReason: null,
+      });
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
     });
 
     it('omits the reason clause when Stripe sent none', async () => {
@@ -1339,6 +1396,8 @@ describe('FinancialInvoiceService', () => {
       await service.notifyStripePaymentFailure({
         invoiceId: 'inv-1',
         chapterId: 'ch-1',
+        paymentIntentId: 'pi_1',
+        failedAt: '2026-11-15T17:00:00.000Z',
         declineReason: null,
       });
 
@@ -1358,6 +1417,8 @@ describe('FinancialInvoiceService', () => {
         service.notifyStripePaymentFailure({
           invoiceId: 'inv-1',
           chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          failedAt: '2026-11-15T17:00:00.000Z',
           declineReason: 'declined',
         }),
       ).resolves.toBeUndefined();
@@ -1376,11 +1437,14 @@ describe('FinancialInvoiceService', () => {
         await service.notifyStripePaymentFailure({
           invoiceId: 'inv-1',
           chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          failedAt: '2026-11-15T17:00:00.000Z',
           declineReason: 'declined',
         });
 
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
         expect(mockInvoiceRepo.applyPayment).not.toHaveBeenCalled();
+        expect(mockInvoiceRepo.recordPaymentFailure).not.toHaveBeenCalled();
       },
     );
   });

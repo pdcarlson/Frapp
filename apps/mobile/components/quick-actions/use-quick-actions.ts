@@ -44,10 +44,7 @@ export function useQuickActions(): QuickActionsState {
   // The member view of the chapter: officers and members alike can read its
   // `enabled_modules`, which the org config endpoint is not (#1982).
   const chapterQuery = useCurrentChapter();
-  const enabledModules = (
-    chapterQuery.data as
-      { enabled_modules?: Record<string, boolean> } | undefined
-  )?.enabled_modules;
+  const enabledModules = chapterQuery.data?.enabled_modules;
   const userId = useViewerUserId();
   const chapterId = useActiveChapterId() ?? null;
 

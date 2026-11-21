@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo } from "react";
-import { TASK_CONFIRMED_LABEL, TASK_STATUS_LABELS } from "./task-card";
+import { formatClockShort, localIsoDate, parseInstant } from "@repo/formatting";
+import { taskNeedsSignOff } from "@repo/validation";
+import {
+  TASK_CONFIRMED_LABEL,
+  TASK_DONE_LABEL,
+  TASK_NEEDS_CHANGES_LABEL,
+  TASK_STATUS_LABELS,
+} from "./task-card";
+import type { CalendarBirthday } from "./calendar-birthdays";
 import { useTasks } from "./use-tasks";
 import { useViewerUserId } from "./use-user";
 
@@ -19,6 +27,10 @@ import { useViewerUserId } from "./use-user";
  * A due date is a calendar date (`tasks.due_date` is a `date` column), so a
  * task sits on that day for every viewer, with no time zone shift. Every
  * task has one: the column is `NOT NULL`, so there is no "no due date" case.
+ *
+ * A task due at a time (`tasks.due_at`, #4003) sits on that moment's local
+ * day instead, as the Tasks page files it (`taskDueBucket`), and says its
+ * time; the Week and Day hour grids draw it at that time (#5116).
  */
 
 /**
@@ -28,33 +40,69 @@ import { useViewerUserId } from "./use-user";
  */
 export type CalendarTaskState = "open" | "overdue" | "waiting" | "confirmed";
 
-/** Which kinds of thing the calendar is showing. */
-export type CalendarLayer = "events" | "mine" | "assigned";
+/**
+ * The calendar's per-item layers: `calendarTasksByDay` files a task by whose
+ * it is. The phone's Calendar reads every layer; the web Events colour key
+ * switches whole kinds ({@link CalendarKind}), not layers.
+ */
+export type CalendarLayer = "events" | "mine" | "assigned" | "birthdays";
 
-export const CALENDAR_LAYERS: ReadonlyArray<{
-  value: CalendarLayer;
+export const ALL_CALENDAR_LAYERS: ReadonlySet<CalendarLayer> = new Set([
+  "events",
+  "mine",
+  "assigned",
+  "birthdays",
+]);
+
+/**
+ * A kind of thing on the web Events agenda (#5560): each has one hue
+ * (`CALENDAR_KIND_HUE` in `activity-agenda.ts`), drawn the same on its rows,
+ * its navigator dots and its colour key swatch. My tasks and Assigned by me
+ * are both Tasks.
+ */
+export type CalendarKind = "events" | "tasks" | "birthdays";
+
+/** The colour key's order and words. */
+export const CALENDAR_KINDS: ReadonlyArray<{
+  value: CalendarKind;
   label: string;
 }> = [
   { value: "events", label: "Events" },
-  { value: "mine", label: "My tasks" },
-  { value: "assigned", label: "Assigned by me" },
+  { value: "tasks", label: "Tasks" },
+  { value: "birthdays", label: "Birthdays" },
 ];
 
-export const ALL_CALENDAR_LAYERS: ReadonlySet<CalendarLayer> = new Set(
-  CALENDAR_LAYERS.map((layer) => layer.value),
+const KNOWN_KINDS = new Set<CalendarKind>(
+  CALENDAR_KINDS.map((kind) => kind.value),
 );
 
-/** Reads a stored layer list back, keeping only names it knows. */
-export function parseCalendarLayers(
+/** The kind a non-event item is drawn as. */
+export function calendarKindOf(item: CalendarItem): CalendarKind {
+  return item.kind === "birthdays" ? "birthdays" : "tasks";
+}
+
+/**
+ * The kinds a member switched off, read back from storage as
+ * `{ "hidden": [...] }`, so a kind added later starts on. Unknown names are
+ * dropped; `null` when nothing readable is stored, which means all on.
+ */
+export function parseHiddenCalendarKinds(
   raw: string | null | undefined,
-): Set<CalendarLayer> | null {
+): Set<CalendarKind> | null {
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !Array.isArray((parsed as { hidden?: unknown }).hidden)
+    ) {
+      return null;
+    }
     return new Set(
-      parsed.filter((value): value is CalendarLayer =>
-        ALL_CALENDAR_LAYERS.has(value as CalendarLayer),
+      (parsed as { hidden: unknown[] }).hidden.filter(
+        (value): value is CalendarKind =>
+          KNOWN_KINDS.has(value as CalendarKind),
       ),
     );
   } catch {
@@ -62,7 +110,18 @@ export function parseCalendarLayers(
   }
 }
 
-export interface CalendarTaskAssignee {
+/** The stored form of the kinds switched off. */
+export function serializeHiddenCalendarKinds(
+  hidden: ReadonlySet<CalendarKind>,
+): string {
+  return JSON.stringify({
+    hidden: CALENDAR_KINDS.map((kind) => kind.value).filter((kind) =>
+      hidden.has(kind),
+    ),
+  });
+}
+
+interface CalendarTaskAssignee {
   taskId: string;
   userId: string;
   state: CalendarTaskState;
@@ -74,13 +133,22 @@ interface CalendarTaskBase {
   /** Unique across the calendar. */
   key: string;
   title: string;
-  /** The due day, `YYYY-MM-DD`, the same key the calendar files events by. */
+  /**
+   * The due day, `YYYY-MM-DD`, the same key the calendar files events by:
+   * the local day of `dueAt` when the task has a time.
+   */
   day: string;
+  /** The due moment (`due_at`) for a task due at a time, else `null`. */
+  dueAt: string | null;
+  /** `dueAt` in minutes from the local day's midnight, for the hour grid. */
+  dueMinute: number | null;
+  /** `dueAt` as a due field writes it ("5 PM", "9:30 AM"). */
+  timeLabel: string | null;
   state: CalendarTaskState;
 }
 
 /** A task assigned to the viewer. */
-export interface CalendarOwnTask extends CalendarTaskBase {
+interface CalendarOwnTask extends CalendarTaskBase {
   kind: "mine";
   taskId: string;
   /** The shared task word for its status. */
@@ -104,6 +172,13 @@ export interface CalendarAssignedTask extends CalendarTaskBase {
 
 export type CalendarTask = CalendarOwnTask | CalendarAssignedTask;
 
+/**
+ * Anything on the calendar that isn't an event, filed by day: a task, or a
+ * member's birthday (#4959). The day lists and the layer toggles take them
+ * together, so every view that draws a task draws a birthday beside it.
+ */
+export type CalendarItem = CalendarTask | CalendarBirthday;
+
 function str(row: Record<string, unknown>, key: string): string | null {
   const value = row[key];
   return typeof value === "string" && value.length > 0 ? value : null;
@@ -114,7 +189,7 @@ function str(row: Record<string, unknown>, key: string): string | null {
  * status (the server synthesizes `OVERDUE`); a confirm leaves it at
  * `COMPLETED` and sets `points_awarded` / `confirmed_at`.
  */
-export function calendarTaskState(row: Record<string, unknown>): {
+function calendarTaskState(row: Record<string, unknown>): {
   state: CalendarTaskState;
   label: string;
 } | null {
@@ -122,15 +197,34 @@ export function calendarTaskState(row: Record<string, unknown>): {
   if (status === "COMPLETED") {
     const confirmed =
       row.points_awarded === true || str(row, "confirmed_at") !== null;
+    // No points and no proof: Done as marked, no sign-off (#4635).
+    const kind = str(row, "proof_kind");
+    const done =
+      kind !== null &&
+      !taskNeedsSignOff({
+        point_reward:
+          typeof row.point_reward === "number" ? row.point_reward : null,
+        proof_kind: kind,
+      });
     return confirmed
-      ? { state: "confirmed", label: TASK_CONFIRMED_LABEL }
+      ? {
+          state: "confirmed",
+          label: done ? TASK_DONE_LABEL : TASK_CONFIRMED_LABEL,
+        }
       : { state: "waiting", label: TASK_STATUS_LABELS.COMPLETED };
   }
   if (status === "OVERDUE") {
     return { state: "overdue", label: TASK_STATUS_LABELS.OVERDUE };
   }
   if (status === "TODO" || status === "IN_PROGRESS") {
-    return { state: "open", label: TASK_STATUS_LABELS[status] };
+    // A sent-back task reads Needs changes here too (#4635).
+    return {
+      state: "open",
+      label:
+        status === "IN_PROGRESS" && str(row, "sent_back_at") !== null
+          ? TASK_NEEDS_CHANGES_LABEL
+          : TASK_STATUS_LABELS[status],
+    };
   }
   return null;
 }
@@ -151,6 +245,41 @@ function groupState(assignees: CalendarTaskAssignee[]): CalendarTaskState {
     }
   }
   return worst;
+}
+
+type DueTimeFields = Pick<
+  CalendarTaskBase,
+  "dueAt" | "dueMinute" | "timeLabel"
+>;
+
+const NO_TIME: DueTimeFields = {
+  dueAt: null,
+  dueMinute: null,
+  timeLabel: null,
+};
+
+/**
+ * A task's due moment on this device's clock: its local day, its minute of
+ * that day and its time as the Tasks rows write it (`formatClockShort`: "5 PM"
+ * on a 12-hour clock, "17" on a 24-hour one, as the grid's hours read).
+ * `null` for a task with no time, or one whose time can't be read, which
+ * falls back to its due day.
+ */
+function dueTimeOf(
+  dueAt: string | null,
+): { day: string; fields: DueTimeFields } | null {
+  const at = dueAt ? parseInstant(dueAt) : null;
+  if (!at) return null;
+  return {
+    day: localIsoDate(at),
+    fields: {
+      // One spelling per moment, so two copies of a task due at the same
+      // time group together however the API wrote the offset.
+      dueAt: at.toISOString(),
+      dueMinute: at.getHours() * 60 + at.getMinutes(),
+      timeLabel: formatClockShort(at),
+    },
+  };
 }
 
 /**
@@ -176,7 +305,8 @@ export function selectCalendarTasks(
     const createdBy = str(row, "created_by");
     const status = calendarTaskState(row);
     if (!id || !title || !due || !status || !assigneeId) continue;
-    const day = due.slice(0, 10);
+    const time = dueTimeOf(str(row, "due_at"));
+    const day = time?.day ?? due.slice(0, 10);
 
     if (assigneeId === viewerUserId) {
       items.push({
@@ -185,6 +315,7 @@ export function selectCalendarTasks(
         taskId: id,
         title,
         day,
+        ...(time ? time.fields : NO_TIME),
         state: status.state,
         label: status.label,
         createdBy,
@@ -193,7 +324,9 @@ export function selectCalendarTasks(
     }
     if (createdBy !== viewerUserId) continue;
 
-    const groupKey = `${day}\u0000${title.trim().toLowerCase()}`;
+    // The same task handed to many is one item per moment: the same title
+    // and day at another time is another task.
+    const groupKey = `${day}\u0000${time?.fields.dueAt ?? ""}\u0000${title.trim().toLowerCase()}`;
     let group = groups.get(groupKey);
     if (!group) {
       group = {
@@ -201,6 +334,7 @@ export function selectCalendarTasks(
         key: `assigned:${day}:${id}`,
         title,
         day,
+        ...(time ? time.fields : NO_TIME),
         state: "confirmed",
         assignees: [],
         doneCount: 0,
@@ -236,15 +370,49 @@ export function selectCalendarTasks(
 }
 
 /**
- * The tasks shown, by due day, in the order a day lists them: the viewer's
- * own before what they assigned, then most in need of attention first
- * (overdue, open, waiting, confirmed), then by title.
+ * A day's birthdays first, all-day as Google Calendar lists them, then the
+ * viewer's own tasks, then what they assigned.
+ */
+const KIND_ORDER: Record<CalendarItem["kind"], number> = {
+  birthdays: 0,
+  mine: 1,
+  assigned: 2,
+};
+
+function itemStateOrder(item: CalendarItem): number {
+  return item.kind === "birthdays" ? 0 : STATE_ORDER[item.state];
+}
+
+/**
+ * Birthdays first, then the tasks due at a time by their minute, then the
+ * tasks due by the end of the day, as the Tasks views order a day
+ * (`spec/behavior/tasks.md`, #4003).
+ */
+function timedOrder(item: CalendarItem): number {
+  if (item.kind === "birthdays") return -1;
+  return item.dueMinute ?? MINUTES_IN_DAY;
+}
+
+const MINUTES_IN_DAY = 24 * 60;
+
+/** A task's minute of its day when it is due at a time, else `null`. */
+export function calendarItemDueMinute(item: CalendarItem): number | null {
+  return item.kind === "birthdays" ? null : item.dueMinute;
+}
+
+/**
+ * The items shown, by day, in the order a day lists them: birthdays, then
+ * the tasks due at a time, earliest first (#5116), then the tasks due by the
+ * end of the day, the order the Tasks views give a day
+ * (`spec/behavior/tasks.md`). Within each, the viewer's own before what they
+ * assigned, each most in need of attention first (overdue, open, waiting,
+ * confirmed), then by title.
  */
 export function calendarTasksByDay(
-  items: CalendarTask[],
+  items: readonly CalendarItem[],
   layers: ReadonlySet<CalendarLayer>,
-): Map<string, CalendarTask[]> {
-  const map = new Map<string, CalendarTask[]>();
+): Map<string, CalendarItem[]> {
+  const map = new Map<string, CalendarItem[]>();
   for (const item of items) {
     if (!layers.has(item.kind)) continue;
     const bucket = map.get(item.day);
@@ -254,8 +422,9 @@ export function calendarTasksByDay(
   for (const bucket of map.values()) {
     bucket.sort(
       (first, second) =>
-        (first.kind === second.kind ? 0 : first.kind === "mine" ? -1 : 1) ||
-        STATE_ORDER[first.state] - STATE_ORDER[second.state] ||
+        timedOrder(first) - timedOrder(second) ||
+        KIND_ORDER[first.kind] - KIND_ORDER[second.kind] ||
+        itemStateOrder(first) - itemStateOrder(second) ||
         first.title.localeCompare(second.title),
     );
   }
@@ -264,31 +433,24 @@ export function calendarTasksByDay(
 
 /**
  * The words a task item says to a screen reader, and on web as its title:
- * "Dues form, your task, overdue" / "Dues form, assigned by you, 4 of 12 done".
+ * "Dues form, your task, overdue" / "Dues form, assigned by you, 4 of 12 done",
+ * with its time after the title when it has one ("Dues form, due 5 PM, …").
  */
 export function calendarTaskAccessibleLabel(item: CalendarTask): string {
+  const title = item.timeLabel
+    ? `${item.title}, due ${item.timeLabel}`
+    : item.title;
   return item.kind === "mine"
-    ? `${item.title}, your task, ${item.label.toLowerCase()}`
-    : `${item.title}, assigned by you, ${item.progress.toLowerCase()}`;
-}
-
-/** What the layer toggles can offer: a kind with nothing in it is not shown. */
-export interface CalendarTasksResult {
-  items: CalendarTask[];
-  hasMine: boolean;
-  hasAssigned: boolean;
+    ? `${title}, your task, ${item.label.toLowerCase()}`
+    : `${title}, assigned by you, ${item.progress.toLowerCase()}`;
 }
 
 /** The calendar's tasks for the signed-in member, from the shared tasks query. */
-export function useCalendarTasks(): CalendarTasksResult {
+export function useCalendarTasks(): { items: CalendarTask[] } {
   const tasksQuery = useTasks();
   const viewerUserId = useViewerUserId();
-  return useMemo(() => {
-    const items = selectCalendarTasks(tasksQuery.data, viewerUserId);
-    return {
-      items,
-      hasMine: items.some((item) => item.kind === "mine"),
-      hasAssigned: items.some((item) => item.kind === "assigned"),
-    };
-  }, [tasksQuery.data, viewerUserId]);
+  return useMemo(
+    () => ({ items: selectCalendarTasks(tasksQuery.data, viewerUserId) }),
+    [tasksQuery.data, viewerUserId],
+  );
 }

@@ -37,7 +37,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { isRecord, str } from "../more/narrow";
 
 /** Where the registered row lives between launches. */
-export const PUSH_TOKEN_STORAGE_KEY = "frapp.mobile.push-token-row";
+const PUSH_TOKEN_STORAGE_KEY = "frapp.mobile.push-token-row";
 
 export interface PushTokenRow {
   /** `null` when the register response could not be narrowed. */

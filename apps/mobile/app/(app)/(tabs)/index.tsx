@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import {
   Alert,
@@ -12,6 +19,7 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import {
   arrangeChannelSidebar,
+  countsLookUnread,
   foldedSectionAnnouncement,
   groupChannelsByCategory,
   NO_MATCHING_CHANNELS,
@@ -21,8 +29,12 @@ import {
   sidebarMutedChannelIds,
   sidebarSections,
   sidebarUnreadCounts,
+  withUnreadThreadChannels,
+  channelsWithUnreadThreads,
   useCategories,
+  useChannelLatestMessages,
   useChannelNotificationPreferences,
+  landingChannelId,
   lastChannelLandingId,
   useActiveChapterId,
   useChannels,
@@ -46,35 +58,48 @@ import {
   useTasks,
   useViewerUserId,
   channelRowActions,
-  deleteChannelConfirmTitle,
-  DELETE_CHANNEL_CONFIRM_BODY,
-  DELETE_CHANNEL_LABEL,
+  errorCopy,
+  MANAGE_CHANNELS_PERMISSION,
+  useChannelAccessOptions,
+  useCreateChannel,
   useDeleteChannel,
+  useUpdateChannel,
   useMarkChannelRead,
   usePermissionList,
   useSetChannelNotificationLevel,
   type ChannelRowActionKey,
   type ChatNotificationLevel,
-  useOwnAvatarTint,
+  resolveAuthorLabel,
+  resolveAuthorName,
 } from "@repo/hooks";
+import { channelPreviewLine } from "@repo/chat-core/channel-preview";
+import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
+import { useAnchoredMenu } from "@/components/anchored-menu";
+import { ChapterMenu, chapterMenuAnchor } from "@/components/chat/chapter-menu";
+import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
-import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
-import { AskSheet } from "@/components/ask/ask-sheet";
-import { StatusSheet } from "@/components/account/status-sheet";
-import { AskPill } from "@/components/chat/ask-pill";
 import { selectFromChapterLevel } from "@/components/chat/notification-level-control";
 import {
-  AccountButton,
-  AccountMenu,
-  MessagesButton,
-  useAccountMenu,
+  NotificationsButton,
+  SearchButton,
 } from "@/components/chat/home-header";
-import { DisclosureGlyph } from "@/components/control-glyphs";
-import { selectViewerProfile } from "@/lib/more/profile";
+import {
+  ChannelThreadRows,
+  useChannelThreads,
+} from "@/components/chat/channel-thread-rows";
+import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
+import { IconButton } from "@/components/icon-button";
+import { selectChannelAccessOptions } from "@repo/hooks/channel-access";
+import {
+  ChannelFormSheet,
+  type ChannelFormMode,
+  type ChannelFormValues,
+} from "@/components/chat/channel-form-sheet";
+import { DeleteChannelSheet } from "@/components/chat/delete-channel-sheet";
 import {
   ChannelFilterButton,
   ChannelFilterMenu,
@@ -85,14 +110,22 @@ import {
   ChannelRow,
   UnreadBadge,
 } from "@/components/chat/channel-row";
+import { channelMarkFor } from "@repo/hooks/channel-start";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { ErrorState, NoChapterState } from "@/components/state-block";
 import {
   MOBILE_SETUP_CHECKLIST_OMIT,
   SetupChecklistView,
 } from "@/components/chat/setup-checklist";
+import { NowCard } from "@/components/now-card";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
-import { isAskAvailable } from "@/lib/ask/flag";
+import { AwayCard } from "@/components/chat/away-card";
+import {
+  announcementChannelIds,
+  awayRows,
+  awaySinceLabel,
+} from "@/lib/chat/away-updates";
+import { useChatAway } from "@/lib/chat/use-chat-away";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   displayChannelName,
@@ -113,6 +146,10 @@ import {
   readLastChannel,
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
+import {
+  claimWelcomeLanding,
+  isWelcomeDue,
+} from "@/lib/onboarding/welcome-due";
 import { useShownUnreadCounts } from "@/lib/chat/unread-first-paint";
 import { saveChatBackgroundPick } from "@/lib/chat/chat-background-photo";
 import {
@@ -121,20 +158,23 @@ import {
 } from "@/components/chat/channel-actions-menu";
 import { useConnection } from "@/lib/connection/use-connection";
 import { pressHaptic } from "@/lib/haptics";
+import { focusReturnOf } from "@/lib/overlay";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
+import { usePrefetchUnreadChannels } from "@/lib/chat/prefetch-channel";
 
 /**
  * s04 — Chat home. Chat is home, so this is the tab bar's `index` route.
  *
- * Three surfaces, top to bottom: the ✦ Ask pill in the header
- * (`navigation.md` § Global entries — only in a build that has Ask), the UP
- * NEXT pulse strip, then the channel list with unread and mention badges.
+ * Two surfaces, top to bottom: the UP NEXT pulse strip, then the channel
+ * list with unread and mention badges. (Ask opens from the tab bar's +:
+ * `navigation.md` § Global entries.)
  *
  * `ScreenShell` is the right host here even though it wraps its children in a
  * `ScrollView`: a chapter's channel list is tens of rows, not thousands, so
- * windowing buys nothing, and the shell already carries the `headerAction` slot
- * S2 added for this exact pill. The thread (s05) is the screen that genuinely
+ * windowing buys nothing, and the shell already carries the `headerAction`
+ * slot. The thread (s05) is the screen that genuinely
  * needs to escape the shell.
  *
  * **Unread and mention counts are read, never computed** — `GET /v1/channels/unread`
@@ -154,17 +194,9 @@ function filterLineText(filters: { unreadOnly: boolean; hideMuted: boolean }) {
 
 export default function ChatHomeScreen() {
   const { tokens } = useFrappTheme();
-  // Your initials wear the color the chapter sees on them (#3860).
-  const ownTint = useOwnAvatarTint();
   const styles = createStyles(tokens);
   const router = useRouter();
   const { height: windowHeight } = useWindowDimensions();
-  // s17 is a sheet hosted by its parent screen, not a route
-  // (`spec/ui/mobile/patterns.md` § Bottom sheets), so this screen owns the
-  // modal and the ✦ pill only presents it — the arrangement `tasks.tsx` uses
-  // for s19.
-  const askSheetRef = useRef<BottomSheetModal>(null);
-  const statusSheetRef = useRef<BottomSheetModal>(null);
   // Chat home is titled by the chapter, its mark and name, not by the word
   // "Chat" (`components/chapter-mark.tsx`).
   const { chapterName } = useChapterBranding();
@@ -180,10 +212,6 @@ export default function ChatHomeScreen() {
   useEffect(() => {
     if (channelsQuery.isError) reportChannelsRefused(channelsQuery.error);
   }, [channelsQuery.isError, channelsQuery.error]);
-  // The first-run tour waits for the list, so its first spot lands on rows
-  // (`components/onboarding/tour.tsx`).
-  useTourReady(!channelsQuery.isPending, chapterName);
-  const channelsAnchor = useTourAnchor("channels");
   const categoriesQuery = useCategories();
   // The server's counts, with what the phone already holds laid over until
   // they answer (`lib/chat/unread-first-paint.ts`, #4006).
@@ -196,7 +224,7 @@ export default function ChatHomeScreen() {
   // boot the outbox flush from this screen. The badges stay live without it:
   // the realtime manager is bound app-wide (`useChatRealtimeBinding`, #3698).
   const viewerId = useViewerUserId();
-  const { byId: memberNames } = useMemberDisplayNames();
+  const { byId: memberNames, nameFor } = useMemberDisplayNames();
 
   // A DM the member hid (#2303) is still in the payload, so a thread opened by
   // id keeps resolving. The list leaves it out.
@@ -209,17 +237,13 @@ export default function ChatHomeScreen() {
   useEffect(() => {
     if (channelsQuery.data) syncLockedChannels(allChannels);
   }, [channelsQuery.data, allChannels]);
-  // Chat home lists channels only; direct messages live behind the Messages
-  // door at the top right (owner, 2026-11-07).
+  // Chat home lists channels only; direct messages have their own tab,
+  // Messages (#5310; a door at the top right from 2026-11-07 until then).
   const channels = useMemo(
     () =>
       listedChannels(allChannels).filter(
         (channel) => !isDirectChannel(channel),
       ),
-    [allChannels],
-  );
-  const directChannels = useMemo(
-    () => listedChannels(allChannels).filter(isDirectChannel),
     [allChannels],
   );
   // One map for the rows' badges and the arrangement alike, so a folded
@@ -234,7 +258,6 @@ export default function ChatHomeScreen() {
       }),
     [unread.data, unread.isError],
   );
-  const accountMenu = useAccountMenu();
 
   // The member's own arrangement (#2877): pins, folded sections and the two
   // filters, stored server-side so they match web. A failed read leaves the
@@ -255,6 +278,22 @@ export default function ChatHomeScreen() {
     useSetSidebarSectionCollapsed(sidebarWriteOptions);
   const { mutate: setSidebarFilter } = useSetSidebarFilter(sidebarWriteOptions);
   const notificationPrefsQuery = useChannelNotificationPreferences();
+  // The Recent sort (#2877) reads each channel's latest message time, the
+  // read the Messages screen orders by. Only while the member sorts by it.
+  const recentSort = preferences.sort === "recent";
+  const latestQuery = useChannelLatestMessages({ enabled: recentSort });
+  // Unknown until the read answers, and kept through a failed refetch, as
+  // TanStack keeps `data`: the shared arrangement holds the chapter's order
+  // until then rather than sorting on nothing.
+  const latestAtByChannelId = useMemo(
+    () =>
+      recentSort && latestQuery.data
+        ? new Map(
+            latestQuery.data.map((row) => [row.channel_id, row.created_at]),
+          )
+        : undefined,
+    [recentSort, latestQuery.data],
+  );
 
   // A row's long-press menu (owner, 2026-11-06): web's right-click actions in
   // our own glass menu. Which rows show is `channelRowActions`, scoped to the
@@ -263,6 +302,86 @@ export default function ChatHomeScreen() {
   const markRead = useMarkChannelRead();
   const setNotificationLevel = useSetChannelNotificationLevel();
   const deleteChannel = useDeleteChannel();
+  const createChannel = useCreateChannel();
+  const updateChannel = useUpdateChannel();
+  const canManageChannels = can(MANAGE_CHANNELS_PERMISSION, permissions);
+  // New channel and Edit channel (#3838): one sheet, mounted fresh for each
+  // opening (`formKey`), so a draft never carries to another channel.
+  const channelFormRef = useRef<BottomSheetModal>(null);
+  const [channelForm, setChannelForm] = useState<{
+    mode: ChannelFormMode;
+    key: number;
+  } | null>(null);
+  // What who-can-see and who-can-post can name (#3702), read only while the
+  // form is open: the route needs `channels:manage` anyway.
+  const accessOptionsQuery = useChannelAccessOptions(
+    canManageChannels && channelForm !== null,
+  );
+  const accessOptions = useMemo(
+    () => selectChannelAccessOptions(accessOptionsQuery.data),
+    [accessOptionsQuery.data],
+  );
+  const openChannelForm = useCallback((mode: ChannelFormMode) => {
+    setChannelForm((current) => ({ mode, key: (current?.key ?? 0) + 1 }));
+  }, []);
+  // Presented once the new sheet has mounted and its ref is the new one.
+  const channelFormKey = channelForm?.key;
+  useEffect(() => {
+    if (channelFormKey !== undefined) channelFormRef.current?.present?.();
+  }, [channelFormKey]);
+  const deleteSheetRef = useRef<BottomSheetModal>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const submitChannelForm = useCallback(
+    async (values: ChannelFormValues) => {
+      const mode = channelForm?.mode;
+      if (!mode) return;
+      try {
+        if (mode.kind === "create") {
+          const created = (await createChannel.mutateAsync({
+            name: values.name,
+            description: values.description || undefined,
+            type: values.isPrivate ? "PRIVATE" : "PUBLIC",
+            category_id: values.categoryId ?? undefined,
+            ...values.access,
+          })) as { id?: unknown } | undefined;
+          // Open it, as Discord does, so the first message is one tap away.
+          if (typeof created?.id === "string") openChannel(created.id);
+          return;
+        }
+        const channel = mode.channel;
+        await updateChannel.mutateAsync({
+          id: channel.id,
+          body: {
+            ...(values.name !== channel.name ? { name: values.name } : {}),
+            // Sent only when changed: a blank never-set description must
+            // not become '' (see Chat settings on web).
+            ...(values.description !== (channel.description ?? "")
+              ? { description: values.description }
+              : {}),
+            ...(values.categoryId !== channel.category_id
+              ? { category_id: values.categoryId }
+              : {}),
+            ...values.access,
+          },
+        });
+      } catch (error) {
+        throw new Error(
+          errorCopy(
+            error,
+            mode.kind === "create"
+              ? "Couldn't create the channel. Check your connection and try again."
+              : "Couldn't save the channel. Check your connection and try again.",
+          ),
+        );
+      }
+    },
+    // `openChannel` is a plain function of this render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [channelForm, createChannel, updateChannel],
+  );
   // A level pick is a queueless write, so the menu locks it offline the way
   // the thread header's level control does (connection-state.md).
   const { writeBlockedReason } = useConnection();
@@ -289,32 +408,23 @@ export default function ChatHomeScreen() {
       case "toggle-pin":
         target.onTogglePin();
         return;
+      case "edit": {
+        const channel = channels.find((c) => c.id === target.channelId);
+        if (channel) openChannelForm({ kind: "edit", channel });
+        return;
+      }
+      case "arrange":
+        router.push("/arrange-channels");
+        return;
       case "delete":
-        Alert.alert(
-          deleteChannelConfirmTitle(target.name),
-          DELETE_CHANNEL_CONFIRM_BODY,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: DELETE_CHANNEL_LABEL,
-              style: "destructive",
-              onPress: () => {
-                deleteChannel
-                  .mutateAsync(target.channelId)
-                  .catch(() =>
-                    Alert.alert(
-                      "Couldn't delete the channel",
-                      "Nothing changed. Check your connection and try again.",
-                    ),
-                  );
-              },
-            },
-          ],
-        );
+        // A sheet, not a system alert: the name has to be typed (#3838),
+        // and Android's alert holds no text field.
+        setDeleteTarget({ id: target.channelId, name: target.name });
+        deleteSheetRef.current?.present?.();
         return;
       default:
-        // Copy link and Edit channel are web's (the surface below leaves
-        // them out), and Notifications opens in the menu itself.
+        // Copy link is web's (the surface below leaves it out), and
+        // Notifications opens in the menu itself.
         return;
     }
   }
@@ -324,16 +434,17 @@ export default function ChatHomeScreen() {
   const sidebarRefetch = useSidebarPreferencesRefetch();
   const rosterQuery = useChapterRoster();
   const viewerQuery = useCurrentUser();
-  const viewerProfile = useMemo(
-    () => selectViewerProfile(viewerQuery.data),
-    [viewerQuery.data],
-  );
   const inboxQuery = useNotifications();
   // The officer setup checklist. Held here, not in its view, so the pull below
   // re-reads the lists it counts.
   const setup = useChapterSetupChecklist({
     omit: MOBILE_SETUP_CHECKLIST_OMIT,
   });
+  // Threads under their channel (#5277, Paul 2026-11-17, after Discord's):
+  // the member's active threads, indented under each channel row. They were
+  // a Threads row and sheet (#4960, #5139) until then. The pull re-reads them.
+  const { byChannel: threadsByChannel, query: memberThreadsQuery } =
+    useChannelThreads();
   const refresh = useRefetchAll([
     { refetch: setup.refetch },
     viewerQuery,
@@ -346,6 +457,7 @@ export default function ChatHomeScreen() {
     notificationPrefsQuery,
     sidebarRefetch,
     rosterQuery,
+    memberThreadsQuery,
   ]);
 
   // Categories are grouping only. While they load, or if the read fails,
@@ -367,14 +479,28 @@ export default function ChatHomeScreen() {
       }),
     [notificationPrefsQuery.data, notificationPrefsQuery.isError],
   );
-  // The Messages door's badge: conversations with anything unread. A muted
-  // DM counts too: anything unread in a DM addresses the member, and that
-  // gets past a mute, as it does on the row and for push (§ Sidebar
-  // arrangement, Hide muted).
-  const unreadConversations = directChannels.filter(
-    (channel) => (unreadByChannelId?.get(channel.id)?.unreadCount ?? 0) > 0,
-  ).length;
+  // Channels whose threads have replies new to the member (#5277).
+  const unreadThreadChannelIds = useMemo(
+    () => channelsWithUnreadThreads(threadsByChannel),
+    [threadsByChannel],
+  );
+  // What the arrangement reads as unread: the server's counts, plus one for a
+  // channel whose thread has new replies (#5277), so Unread only keeps that
+  // channel and its thread rows, and a folded section reads unread over it.
+  // The rows' own badges still read the server's counts alone.
+  const arrangementUnread = useMemo(
+    () => withUnreadThreadChannels(unreadByChannelId, unreadThreadChannelIds),
+    [unreadByChannelId, unreadThreadChannelIds],
+  );
+  const threadAuthorName = useCallback(
+    (userId: string) => memberNames[userId] ?? null,
+    [memberNames],
+  );
   const filterMenu = useChannelFilterMenu();
+  // The chapter name atop the screen opens the chapter menu: Chapter settings
+  // and Switch chapter, as web's chapter row does (Paul, 2026-11-19).
+  const chapterMenu = useAnchoredMenu();
+  const showChapterSettings = chapterSettingsAccess(permissions).any;
   const titleOf = useCallback(
     (channel: ChannelSummary) =>
       displayChannelName(channel, viewerId, memberNames),
@@ -395,9 +521,11 @@ export default function ChatHomeScreen() {
       filters: unread.provisional
         ? { ...preferences.filters, unreadOnly: false }
         : preferences.filters,
+      sort: preferences.sort,
+      latestAtByChannelId,
       activeChannelId: null,
       titleOf,
-      unreadByChannelId,
+      unreadByChannelId: arrangementUnread,
       mutedChannelIds,
     });
   }, [
@@ -405,9 +533,10 @@ export default function ChatHomeScreen() {
     categories,
     preferences,
     unread.provisional,
-    unreadByChannelId,
+    arrangementUnread,
     mutedChannelIds,
     titleOf,
+    latestAtByChannelId,
   ]);
   const filtersOn =
     preferences.filters.unreadOnly || preferences.filters.hideMuted;
@@ -460,14 +589,25 @@ export default function ChatHomeScreen() {
     }
     // No cancellation on cleanup: the claim is spent either way, and a
     // cancelled read would lose the jump for good (Strict Mode re-runs this).
-    if (!claimChatLaunch()) {
+    // A new member fresh from s03 lands in the chapter's default channel,
+    // where the welcome card waits (#5627), whenever chat home first shows.
+    const launching = claimChatLaunch();
+    const welcoming = claimWelcomeLanding(viewerId, chapterId);
+    if (!launching && !welcoming) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- the launch claim is a one-shot module flag outside React; nothing to hold for once it is spent
       setHoldingForLaunch(false);
       return;
     }
-    void readLastChannel(viewerId, chapterId)
-      .then((stored) => {
-        const target = lastChannelLandingId(allChannels, stored);
+    void Promise.all([
+      readLastChannel(viewerId, chapterId),
+      welcoming ? isWelcomeDue(viewerId, chapterId) : Promise.resolve(false),
+    ])
+      .then(([stored, welcomeDue]) => {
+        const target = welcomeDue
+          ? landingChannelId(allChannels, stored)
+          : launching
+            ? lastChannelLandingId(allChannels, stored)
+            : null;
         if (target) openChannel(target, { landing: true });
       })
       .finally(() => {
@@ -478,6 +618,111 @@ export default function ChatHomeScreen() {
     // changing afterwards never re-opens anything.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listAnswered, viewerId]);
+
+  // Read ahead the unread channels and DMs the member is likely to open next
+  // (#3699), so the thread paints rows as it slides in rather than its
+  // skeleton. Muted ones are skipped unless they address the member (a
+  // mention, or a DM): their rows draw them as read. Held while the launch
+  // jump may still open the last channel, whose own read must not queue
+  // behind these.
+  const unreadChannelIds = useMemo(
+    () =>
+      listedChannels(allChannels)
+        .filter((channel) =>
+          // The rows' own rule (#3999), so a muted DM, which its row draws
+          // unread, is read ahead too.
+          countsLookUnread(
+            isDirectChannel(channel),
+            unreadByChannelId?.get(channel.id) ?? {
+              unreadCount: 0,
+              mentionCount: 0,
+            },
+            mutedChannelIds?.has(channel.id) ?? false,
+          ),
+        )
+        .map((channel) => channel.id),
+    [allChannels, unreadByChannelId, mutedChannelIds],
+  );
+  usePrefetchUnreadChannels(
+    unreadChannelIds,
+    isFocused && listAnswered && !!viewerId && !holdingForLaunch,
+  );
+
+  // "While you were away" (#5464): after hours off Chat, the few channels
+  // with something new since (`lib/chat/use-chat-away.ts`). It opens on the
+  // channels it found, leaves once those are read or on its close mark, and
+  // waits for the launch jump, as the checklist below does.
+  const away = useChatAway({ viewerId, chapterId, focused: isFocused });
+  const awayStretch = away.stretch;
+  const announcementIds = useMemo(
+    () => announcementChannelIds(channelsQuery.data),
+    [channelsQuery.data],
+  );
+  const awayLatest = useChannelLatestMessages({
+    enabled: awayStretch !== null && !awayStretch.closed,
+  });
+  const awayList = useMemo(() => {
+    if (!awayStretch || awayStretch.closed || !unreadByChannelId) return null;
+    if (!awayLatest.data) return null;
+    const latestById = new Map(
+      awayLatest.data.map((row) => [row.channel_id, row]),
+    );
+    return awayRows({
+      channels,
+      unread: unreadByChannelId,
+      announcementIds,
+      mutedIds: mutedChannelIds,
+      latestAt: new Map(
+        awayLatest.data.map((row) => [row.channel_id, row.created_at]),
+      ),
+      since: awayStretch.since,
+      onlyIds: awayStretch.ids,
+      previewOf: (channelId) => {
+        const latest = latestById.get(channelId);
+        return latest
+          ? channelPreviewLine(latest, {
+              isOneToOne: false,
+              viewerId,
+              nameOf: (author) => resolveAuthorName(author, nameFor),
+              fallbackLabel: (author) =>
+                resolveAuthorLabel(author, nameFor, null),
+            })
+          : null;
+      },
+    });
+  }, [
+    awayStretch,
+    unreadByChannelId,
+    awayLatest.data,
+    channels,
+    announcementIds,
+    mutedChannelIds,
+    viewerId,
+    nameFor,
+  ]);
+  const { freeze: freezeAway, end: endAway } = away;
+  useEffect(() => {
+    if (!awayStretch || awayList === null) return;
+    // The first rows fix what the card is about; none left ends the stretch.
+    if (awayList.length === 0) endAway();
+    else if (awayStretch.ids === null) {
+      freezeAway(awayList.map((row) => row.channelId));
+    }
+  }, [awayStretch, awayList, freezeAway, endAway]);
+  const awayCard =
+    awayStretch &&
+    !awayStretch.closed &&
+    awayList &&
+    awayList.length > 0 &&
+    !channelsQuery.isPending &&
+    !holdingForLaunch ? (
+      <AwayCard
+        rows={awayList}
+        sinceLabel={awaySinceLabel(awayStretch.since, Date.now())}
+        onOpen={(channelId) => openChannel(channelId)}
+        onClose={away.close}
+      />
+    ) : null;
 
   function openChannel(channelId: string, options?: { landing?: boolean }) {
     // Object form, because the route takes a param. Note this is invisible to
@@ -497,51 +742,66 @@ export default function ChatHomeScreen() {
     const togglePin = () =>
       setChannelPinned({ channelId: channel.id, pinned: !pinned });
     return (
-      <ChannelRow
-        key={channel.id}
-        name={name}
-        isPinned={pinned}
-        isMuted={mutedChannelIds?.has(channel.id) ?? false}
-        unreadCount={counts?.unreadCount ?? 0}
-        mentionCount={counts?.mentionCount ?? 0}
-        onPress={() => openChannel(channel.id)}
-        onTogglePin={togglePin}
-        onLongPress={(event) => {
-          pressHaptic();
-          setMenuTarget({
-            channelId: channel.id,
-            name,
-            // A screen reader's "Channel actions" has no press point, so the
-            // menu opens a third of the way down.
-            pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
-            pinned,
-            level: levelFor(channel.id),
-            fromChapterLevel: selectFromChapterLevel(
-              notificationPrefsQuery.data,
-              channel.id,
-            ),
-            actions: channelRowActions({
-              channel,
-              unread:
-                (counts?.unreadCount ?? 0) > 0 ||
-                (counts?.mentionCount ?? 0) > 0,
+      <Fragment key={channel.id}>
+        <ChannelRow
+          name={name}
+          mark={channelMarkFor(channel)}
+          isPinned={pinned}
+          isMuted={mutedChannelIds?.has(channel.id) ?? false}
+          unreadCount={counts?.unreadCount ?? 0}
+          mentionCount={counts?.mentionCount ?? 0}
+          onPress={() => openChannel(channel.id)}
+          onTogglePin={togglePin}
+          onLongPress={(event, trigger) => {
+            pressHaptic();
+            setMenuTarget({
+              channelId: channel.id,
+              name,
+              // A screen reader's "Channel actions" has no press point, so the
+              // menu opens a third of the way down.
+              pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
+              // The row, for a screen reader's focus back on close.
+              trigger: focusReturnOf(event) ?? trigger ?? null,
               pinned,
-              permissions,
-              surface: { copyLink: false, edit: false },
-            }),
-            canSetDisplayLock: canSetChannelDisplayLock(
-              channel,
-              viewerId,
-              permissions,
-            ),
-            canSetBackground: canSetChannelBackground(channel, permissions),
-            onTogglePin: togglePin,
-          });
-        }}
-      />
+              level: levelFor(channel.id),
+              fromChapterLevel: selectFromChapterLevel(
+                notificationPrefsQuery.data,
+                channel.id,
+              ),
+              actions: channelRowActions({
+                channel,
+                unread:
+                  (counts?.unreadCount ?? 0) > 0 ||
+                  (counts?.mentionCount ?? 0) > 0,
+                pinned,
+                permissions,
+                surface: { copyLink: false, edit: true, arrange: true },
+              }),
+              canSetDisplayLock: canSetChannelDisplayLock(
+                channel,
+                viewerId,
+                permissions,
+              ),
+              canSetBackground: canSetChannelBackground(channel, permissions),
+              onTogglePin: togglePin,
+            });
+          }}
+        />
+        <ChannelThreadRows
+          threads={threadsByChannel.get(channel.id)}
+          channelLabel={`#${name}`}
+          nameFor={threadAuthorName}
+          viewerId={viewerId}
+        />
+      </Fragment>
     );
   }
 
+  // Which headings carry New channel (#3838): Channels and each category's,
+  // for `channels:manage`. Never Pinned.
+  const sectionHasNewChannel = (sectionKey: string) =>
+    canManageChannels &&
+    (sectionKey === "channels" || sectionKey.startsWith("category:"));
   const filterButton = (
     <ChannelFilterButton menu={filterMenu} active={filtersOn} />
   );
@@ -585,45 +845,50 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
+      // Always a menu, even before the chapter's name is known: with no
+      // chapter claim, or a chapter the API now refuses, Switch chapter in
+      // it is the member's way out (the picker's empty state offers joining).
+      titleMenu={{
+        open: chapterMenu.visible,
+        accessibilityLabel: chapterName
+          ? `Chapter menu (currently ${chapterName})`
+          : "Chapter menu",
+        onOpen: (frame) => chapterMenu.open(chapterMenuAnchor(tokens, frame)),
+        onClose: chapterMenu.close,
+      }}
       refresh={refresh}
       overlay={{
-        open: filterMenu.visible || accountMenu.visible,
-        content: accountMenu.visible ? (
-          <AccountMenu
-            menu={accountMenu}
-            onStatus={() => statusSheetRef.current?.present()}
+        open: filterMenu.visible || chapterMenu.visible,
+        content: chapterMenu.visible ? (
+          <ChapterMenu
+            menu={chapterMenu}
+            showChapterSettings={showChapterSettings}
           />
         ) : (
           <ChannelFilterMenu
             menu={filterMenu}
             unreadOnly={preferences.filters.unreadOnly}
             hideMuted={preferences.filters.hideMuted}
+            sort={preferences.sort}
             onChange={setSidebarFilter}
           />
         ),
       }}
       headerAction={
         <View style={styles.headerActions}>
-          {/* No pill at all in a build without Ask (#2259): `AskSheet`
-              renders nothing then, so the pill would be a control with
-              nothing behind it. */}
-          {isAskAvailable() ? (
-            <AskPill onPress={() => askSheetRef.current?.present()} />
-          ) : null}
-          {/* The Messages door, then the member's avatar, whose menu holds
-              Profile, Notifications (the inbox, #3362) and Settings
-              (owner, 2026-11-07). */}
-          <MessagesButton unreadConversations={unreadConversations} />
-          <AccountButton
-            menu={accountMenu}
-            initials={viewerProfile?.initials ?? "?"}
-            photoUrl={viewerProfile?.photoUrl ?? null}
-            fetchedAt={viewerQuery.dataUpdatedAt}
-            tint={ownTint}
-          />
+          {/* Search (#5139), then the inbox's bell (#3362). The member's
+              avatar is the You tab since #3839, threads sit under their
+              channels since #5277, and the Messages door became the
+              Messages tab in #5310. */}
+          <SearchButton />
+          <NotificationsButton />
         </View>
       }
     >
+      {/* What's on right now, above everything else (#5777): Up next only
+          ever looks ahead, so a meeting in progress lives here. */}
+      <NowCard />
+      {awayCard}
       <UpNextStrip
         events={eventsQuery.data}
         tasks={tasksQuery.data}
@@ -639,7 +904,7 @@ export default function ChatHomeScreen() {
       {setup.checklist &&
       !channelsQuery.isPending &&
       !holdingForLaunch &&
-      !channelsQuery.isError ? (
+      !(channelsQuery.isError && channelsQuery.data === undefined) ? (
         <SetupChecklistView
           checklist={setup.checklist}
           onHide={setup.hide}
@@ -654,7 +919,7 @@ export default function ChatHomeScreen() {
       */}
       {!channelsQuery.isPending &&
       !holdingForLaunch &&
-      !channelsQuery.isError ? (
+      !(channelsQuery.isError && channelsQuery.data === undefined) ? (
         <PushReminder />
       ) : null}
 
@@ -669,7 +934,20 @@ export default function ChatHomeScreen() {
           Unread counts are unavailable right now, so badges may be missing.
         </Text>
       ) : null}
+      {/* The same for the threads read (#5277): no rows must not read as
+          "no threads". */}
+      {memberThreadsQuery.isError && memberThreadsQuery.data === undefined ? (
+        <Text style={styles.unreadWarning}>
+          Threads couldn&apos;t load. Pull down to try again.
+        </Text>
+      ) : null}
 
+      <ScreenReady
+        ready={
+          chapterScope === "none" ||
+          (!channelsQuery.isPending && !holdingForLaunch)
+        }
+      />
       {chapterScope === "none" ? (
         // A member with no membership is on their way to `/join`
         // (`useOnboardingRedirect`); this is what a member of several
@@ -677,7 +955,7 @@ export default function ChatHomeScreen() {
         <NoChapterState noun="its channels" />
       ) : channelsQuery.isPending || holdingForLaunch ? (
         <ChannelListSkeleton />
-      ) : channelsQuery.isError ? (
+      ) : channelsQuery.isError && channelsQuery.data === undefined ? (
         // An explicit retry as well as the pull (#3385): this tab stays
         // mounted for the session, and a button is the recovery a member
         // sees without knowing the gesture. A *connectivity* blip
@@ -695,16 +973,29 @@ export default function ChatHomeScreen() {
         />
       ) : channels.length === 0 ? (
         // No line saying channels appear here, which would only restate what
-        // Chat is for; the one line says what to do, since mobile has no way
-        // to create a channel (writing.md §4, as amended 2026-11-05).
-        <InlineNote>No channels yet. Ask an admin to add one.</InlineNote>
+        // Chat is for; the one line says what to do (writing.md §4, as
+        // amended 2026-11-05): an officer starts one here (#3838), and
+        // anyone else asks.
+        canManageChannels ? (
+          <InlineNote
+            action={{
+              label: "New channel",
+              onPress: () =>
+                openChannelForm({ kind: "create", categoryId: null }),
+            }}
+          >
+            No channels yet.
+          </InlineNote>
+        ) : (
+          <InlineNote>No channels yet. Ask an admin to add one.</InlineNote>
+        )
       ) : (
         <>
           {/*
             The list (2026-11-06 redesign): the member's sections, each row
             with its latest message and time. The filters sit behind the
-            button at the end of the first heading, as web's rail keeps them
-            behind its Channels header; they used to be two chips above the
+            button on the first heading (before its +, #4679), as web's rail
+            keeps them behind its Channels header; they used to be two chips above the
             list.
           */}
           {arranged.sections.length === 0
@@ -765,31 +1056,75 @@ export default function ChatHomeScreen() {
                         >
                           {section.label}
                         </Text>
-                        {section.collapsed && section.addressed ? (
-                          <UnreadBadge
-                            unreadCount={section.addressedCount}
-                            mentionCount={section.mentionCount}
-                          />
-                        ) : null}
-                        {/* Drawn, at the right edge where a thumb expects
-                            it; the typed ▸ ▾ sat low and read as noise. */}
+                        {/* Drawn (the typed ▸ ▾ sat low and read as noise),
+                            and beside the name, as Slack and Discord draw a
+                            section's fold, so the heading's right side is
+                            one column of controls down the list (owner pick
+                            2026-11-13, #4679; it sat at the right edge
+                            until then). The whole heading still folds. */}
                         <DisclosureGlyph
                           color={tokens.color.text.mutedForeground}
                           size={18}
                           direction={section.collapsed ? "right" : "down"}
                         />
+                        {section.collapsed && section.addressed ? (
+                          <View style={styles.headingBadge}>
+                            <UnreadBadge
+                              unreadCount={section.addressedCount}
+                              mentionCount={section.mentionCount}
+                            />
+                          </View>
+                        ) : null}
                       </PressableRow>
                       {/* Outside the fold control, so a screen reader
-                          reaches it as its own button. */}
-                      {index === 0 ? filterButton : null}
+                          reaches each as its own button. The filter comes
+                          first, so the + is the last thing on every heading
+                          and runs in one column down the list (#4679). */}
+                      {index === 0 ? (
+                        <ChannelFilterButton
+                          menu={filterMenu}
+                          active={filtersOn}
+                          atEdge={!sectionHasNewChannel(section.key)}
+                        />
+                      ) : null}
+                      {/* New channel (#3838): beside the Channels heading
+                          and each category's, for `channels:manage`, as
+                          Discord and Slack draw it. Never on Pinned. */}
+                      {sectionHasNewChannel(section.key) ? (
+                        <View style={styles.headingAction}>
+                          <IconButton
+                            label={
+                              section.key === "channels"
+                                ? "New channel"
+                                : `New channel in ${section.label}`
+                            }
+                            onPress={() =>
+                              openChannelForm({
+                                kind: "create",
+                                // The section key lowercases the id
+                                // (`categorySectionKey`); send the server's.
+                                categoryId: section.key.startsWith("category:")
+                                  ? (categories.find(
+                                      (c) =>
+                                        `category:${c.id.toLowerCase()}` ===
+                                        section.key,
+                                    )?.id ?? null)
+                                  : null,
+                              })
+                            }
+                          >
+                            <PlusGlyph
+                              color={tokens.color.text.mutedForeground}
+                              size={HEADING_PLUS_SIZE}
+                            />
+                          </IconButton>
+                        </View>
+                      ) : null}
                     </View>
                   </StickyHeader>,
                   line || section.rows.length > 0 ? (
                     <View
                       key={`${section.key}:rows`}
-                      // The first-run tour's first stop: the top section.
-                      ref={index === 0 ? channelsAnchor : undefined}
-                      collapsable={false}
                       style={[styles.section, styles.sectionRows]}
                     >
                       {line}
@@ -813,8 +1148,50 @@ export default function ChatHomeScreen() {
         </>
       )}
 
-      <AskSheet ref={askSheetRef} />
-      <StatusSheet ref={statusSheetRef} />
+      {channelForm ? (
+        <ChannelFormSheet
+          key={channelForm.key}
+          ref={channelFormRef}
+          mode={channelForm.mode}
+          categories={categories}
+          onSubmit={submitChannelForm}
+          accessOptions={accessOptions}
+          accessOptionsState={
+            accessOptionsQuery.isSuccess
+              ? "ready"
+              : accessOptionsQuery.isError
+                ? "error"
+                : "loading"
+          }
+          onDelete={
+            channelForm.mode.kind === "edit"
+              ? () => {
+                  const { id, name } = (
+                    channelForm.mode as Extract<
+                      ChannelFormMode,
+                      { kind: "edit" }
+                    >
+                  ).channel;
+                  setDeleteTarget({ id, name });
+                  // Stacks over the form (`push`), so Cancel goes back to it.
+                  deleteSheetRef.current?.present?.();
+                }
+              : undefined
+          }
+        />
+      ) : null}
+      {/* Only an officer can delete, so only theirs carries the sheet. */}
+      {canManageChannels ? (
+        <DeleteChannelSheet
+          ref={deleteSheetRef}
+          channel={deleteTarget}
+          onDelete={async (channelId) => {
+            await deleteChannel.mutateAsync(channelId);
+            // The form it may have come from is about a channel that's gone.
+            channelFormRef.current?.dismiss?.();
+          }}
+        />
+      ) : null}
       <ChannelActionsMenu
         target={menuTarget}
         onClose={closeMenu}
@@ -869,8 +1246,25 @@ export default function ChatHomeScreen() {
   );
 }
 
+/** A heading's + (New channel), a step under the row glyphs' 20. */
+const HEADING_PLUS_SIZE = 18;
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    // The last thing on a heading: its glyph's right edge sits on the
+    // gutter, like the rows' trailing badges under it, so every heading's +
+    // is in one column (#4679).
+    headingAction: {
+      width: tokens.touch.minimum,
+      alignItems: "center",
+      justifyContent: "center",
+      marginRight: -(tokens.touch.minimum - HEADING_PLUS_SIZE) / 2,
+    },
+    // A folded section's count, at the fold control's right end, where the
+    // rows' badges sit.
+    headingBadge: {
+      marginLeft: "auto",
+    },
     headerActions: {
       flexDirection: "row",
       alignItems: "center",
@@ -908,10 +1302,11 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.minimum,
       ...gutterBleed(tokens),
     },
-    // Inside the fold control the label gives up width to the badge and the
-    // chevron.
+    // Inside the fold control the label is as wide as its name, so the
+    // chevron sits beside it, and gives up width to the chevron and the
+    // badge when the name is long.
     headingInHeader: {
-      flex: 1,
+      flexShrink: 1,
     },
     headingRow: {
       flexDirection: "row",

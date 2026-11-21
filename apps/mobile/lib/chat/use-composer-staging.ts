@@ -38,7 +38,11 @@
 
 import { errorCopy } from "@repo/hooks/error-copy";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { hiddenQuoteText, type BlockState } from "@repo/chat-core/blocks";
+import {
+  hiddenQuoteText,
+  withForwardedMasked,
+  type BlockState,
+} from "@repo/chat-core/blocks";
 import {
   canActOnMessage,
   replyTargetId,
@@ -49,6 +53,11 @@ import {
 } from "@repo/chat-core/reply-preview";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { resolveAuthorLabel } from "@repo/hooks";
+import {
+  withMentionPick,
+  mentionPicksIn,
+  type MentionPick,
+} from "@repo/validation";
 import type { ComposerContext } from "@/components/chat/chat-composer";
 import type { SendOptions } from "./use-chat-channel";
 
@@ -124,7 +133,12 @@ export interface ComposerStagingInput {
    * in flight (`UseChatChannelResult.sendInFlight`), read on the tap.
    */
   sendInFlight: () => boolean;
-  edit: (messageId: string, content: string) => Promise<void>;
+  /** `mentionPicks`: the members picked into the edit (#3835). */
+  edit: (
+    messageId: string,
+    content: string,
+    mentionPicks?: readonly MentionPick[],
+  ) => Promise<void>;
   /**
    * Runs on the tap, synchronously, once `submit` has decided a message goes
    * out and just before it hands that message to `send`: not for an edit, a
@@ -139,6 +153,11 @@ export interface ComposerStagingInput {
 export interface ComposerStaging {
   /** The strip above the input, or `null` for an ordinary send. */
   context: ComposerContext | null;
+  /**
+   * The message the staged reply answers, root-normalized as a send's
+   * `replyToId` is: what a schedule carries (#4971). `null` with no reply.
+   */
+  replyToId: string | null;
   /** What the input shows: the text being edited, or the draft. */
   value: string;
   onChangeText: (next: string) => void;
@@ -150,6 +169,17 @@ export interface ComposerStaging {
   editError: string | null;
   startReply: (messageId: string) => void;
   startEdit: (messageId: string) => void;
+  /**
+   * A member the `@` picker (or the message menu's Mention) wrote into the
+   * text (#3835). The next send or save carries each one its text still
+   * writes, so a picked name reaches that member or nobody.
+   */
+  addMentionPick: (pick: MentionPick) => void;
+  /**
+   * The picks `text` still writes, for a message sent another way than
+   * `submit`: a scheduled one (#4956).
+   */
+  picksFor: (text: string) => MentionPick[];
 }
 
 /** The reply strip for a staged parent: its author and one line of it. */
@@ -171,7 +201,11 @@ export function replyContextFor(
   if (hidden !== null) return { title: REPLYING_TO_A_MESSAGE, preview: hidden };
   return {
     title: `Replying to ${resolveAuthorLabel(parent, nameFor, viewerId)}`,
-    preview: replyPreviewText(parent),
+    // A forward's copy the block list hides quotes as "Forwarded a message",
+    // never its text, as the card draws it (#4864).
+    preview: replyPreviewText(
+      withForwardedMasked(parent, blockState, viewerId),
+    ),
   };
 }
 
@@ -216,6 +250,20 @@ export function useComposerStaging({
    * put back a reply the first tap already sent.
    */
   const replyInFlightRef = useRef<StagedTarget | null>(null);
+  // The members picked into this composer (#3835), newest first and one per
+  // label: a re-pick of a label replaces the member it named. Shared by the
+  // draft and an open edit, and never emptied by a send or a save: each
+  // takes the picks its own text still writes (`mentionPicksIn`), so saving
+  // an edit leaves the draft's picks, and a send or save that fails and is
+  // tried again still carries them.
+  const picksRef = useRef<MentionPick[]>([]);
+  const addMentionPick = useCallback((pick: MentionPick) => {
+    picksRef.current = withMentionPick(picksRef.current, pick);
+  }, []);
+  const picksFor = useCallback(
+    (text: string) => mentionPicksIn(text, picksRef.current),
+    [],
+  );
 
   const activeReply = (channelId && replies[channelId]) || null;
   const editing = (channelId && edits[channelId]) || null;
@@ -342,7 +390,7 @@ export function useComposerStaging({
       );
       savingRef.current.add(messageId);
       setSavingIds(new Set(savingRef.current));
-      void edit(messageId, content)
+      void edit(messageId, content, picksFor(content))
         .then(() => {
           // Only the edit this save was for: the member may have cancelled it
           // and opened another while the request was out.
@@ -389,20 +437,20 @@ export function useComposerStaging({
       setReplies((current) => withoutKey(current, staged.channelId));
     }
     onSending?.();
-    void send(draft, { replyToId: staged?.messageId ?? null }).then(
-      (dispatched) => {
-        if (!staged) return;
-        if (replyInFlightRef.current === staged)
-          replyInFlightRef.current = null;
-        if (!dispatched) {
-          setReplies((current) =>
-            current[staged.channelId]
-              ? current
-              : { ...current, [staged.channelId]: staged },
-          );
-        }
-      },
-    );
+    void send(draft, {
+      replyToId: staged?.messageId ?? null,
+      mentionPicks: picksFor(draft),
+    }).then((dispatched) => {
+      if (!staged) return;
+      if (replyInFlightRef.current === staged) replyInFlightRef.current = null;
+      if (!dispatched) {
+        setReplies((current) =>
+          current[staged.channelId]
+            ? current
+            : { ...current, [staged.channelId]: staged },
+        );
+      }
+    });
   }, [
     activeEdit,
     activeReply,
@@ -414,6 +462,7 @@ export function useComposerStaging({
     onSending,
     send,
     sendInFlight,
+    picksFor,
   ]);
 
   // An edit emptied of the text it had can't be saved, and the composer greys
@@ -429,6 +478,7 @@ export function useComposerStaging({
 
   return {
     context,
+    replyToId: activeEdit ? null : (activeReply?.messageId ?? null),
     value: activeEdit ? activeEdit.value : draft,
     onChangeText,
     submit,
@@ -439,5 +489,7 @@ export function useComposerStaging({
     editError: shownEditError,
     startReply,
     startEdit,
+    addMentionPick,
+    picksFor,
   };
 }

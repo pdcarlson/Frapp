@@ -1,23 +1,49 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { chunkIds } from '#domain/utils/chunk-ids';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type {
   FrappSupabaseClient,
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { ITaskRepository } from '#domain/repositories/task.repository.interface';
+import type {
+  CreateTaskGroupInput,
+  CreateTaskSeriesInput,
+  ITaskRepository,
+  ReopenCompletionOptions,
+  TaskListFilter,
+  TaskListQuery,
+} from '#domain/repositories/task.repository.interface';
 import {
   Task,
   TaskStatus,
+  type TaskGroup,
+  type TaskGroupCopyState,
+  type TaskPhoto,
+  type TaskSeries,
   type TaskSubtask,
 } from '#domain/entities/task.entity';
+import { reportCaughtFailure } from '../../observability/report-caught-failure';
 import { SupabaseQueryError } from '../supabase-query-error';
+import {
+  escapeFilterValue,
+  fetchAllPages,
+  fetchCountedPages,
+} from '../supabase.utils';
 
 /** Task ids per subtask read: 100 uuids keep the URL near 4 KB. */
 const SUBTASK_READ_BATCH = 100;
 
+/**
+ * Rows per request. PostgREST's default cap; a hosted project set lower still
+ * reads every row, in more trips (`fetchAllPages`).
+ */
+const TASK_PAGE_SIZE = 1000;
+
 @Injectable()
 export class SupabaseTaskRepository implements ITaskRepository {
+  private readonly logger = new Logger(SupabaseTaskRepository.name);
+
   constructor(
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
@@ -34,25 +60,159 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return data;
   }
 
-  async findByChapter(chapterId: string): Promise<Task[]> {
+  async findByIds(chapterId: string, ids: string[]): Promise<Task[]> {
+    if (ids.length === 0) return [];
     const { data, error } = await this.supabase
       .from('tasks')
       .select('*')
       .eq('chapter_id', chapterId)
-      .order('created_at', { ascending: false });
+      .in('id', ids);
     if (error) throw new SupabaseQueryError(error);
-    return data || [];
+    return data ?? [];
   }
 
-  async findByAssignee(chapterId: string, assigneeId: string): Promise<Task[]> {
-    const { data, error } = await this.supabase
-      .from('tasks')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .eq('assignee_id', assigneeId)
-      .order('created_at', { ascending: false });
+  async findByChapter(
+    chapterId: string,
+    query: TaskListQuery = {},
+  ): Promise<Task[]> {
+    // Paged even under a `limit`: only an empty page proves the rows ran out
+    // (`fetchAllPages`), so a hosted row cap below `limit` still returns a full
+    // page, and a caller can read a short page as the last one.
+    return fetchAllPages(
+      (from, to) => this.listQuery(chapterId, query, false).range(from, to),
+      {
+        pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
+        limit: query.limit,
+      },
+    );
+  }
+
+  /**
+   * The chapter's tasks that match `query`, filtered and in its order, for
+   * {@link findByChapter} and {@link findByChapterCounted}; `count` asks
+   * PostgREST for the exact number of matching rows.
+   */
+  private listQuery(chapterId: string, query: TaskListQuery, count: boolean) {
+    const q = this.filtered(
+      this.supabase
+        .from('tasks')
+        .select('*', count ? { count: 'exact' } : undefined),
+      chapterId,
+      query,
+    );
+    if (query.order === 'longest_waiting') {
+      return q
+        .order('completed_at', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
+    }
+    return q
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
+  }
+
+  async findSince(
+    chapterId: string,
+    since: { dueFrom: string; createdFrom: string },
+  ): Promise<Task[]> {
+    return fetchAllPages<Task>(
+      (from, to) =>
+        this.supabase
+          .from('tasks')
+          .select('*')
+          .eq('chapter_id', chapterId)
+          .or(
+            `due_date.gte.${since.dueFrom},created_at.gte."${since.createdFrom}"`,
+          )
+          // A total order: `id` breaks ties, so no row repeats across pages.
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: 1000 },
+    );
+  }
+
+  async findByChapterCounted(
+    chapterId: string,
+    query: TaskListQuery = {},
+    { withTotal = false }: { withTotal?: boolean } = {},
+  ): Promise<{ tasks: Task[]; total: number | null }> {
+    // Counted when the caller wants the total, or the read is uncapped, which
+    // the count ends without an empty page; a capped read stops at its limit
+    // anyway, and counting it is a second pass for nothing
+    // (`fetchCountedPages`).
+    const { rows, total } = await fetchCountedPages<Task>(
+      (from, to, withCount) =>
+        this.listQuery(chapterId, query, withCount).range(from, to),
+      {
+        pageSize: Math.min(query.limit ?? TASK_PAGE_SIZE, TASK_PAGE_SIZE),
+        limit: query.limit,
+        count: withTotal || query.limit === undefined,
+      },
+    );
+    return { tasks: rows, total };
+  }
+
+  async countByChapter(
+    chapterId: string,
+    query: TaskListFilter = {},
+  ): Promise<number> {
+    const { count, error } = await this.filtered(
+      this.supabase.from('tasks').select('id', { count: 'exact', head: true }),
+      chapterId,
+      query,
+    );
     if (error) throw new SupabaseQueryError(error);
-    return data || [];
+    return count ?? 0;
+  }
+
+  /** The chapter predicate, then every filter `query` sets, in SQL (#4037). */
+  private filtered<
+    Q extends {
+      eq(column: string, value: unknown): Q;
+      neq(column: string, value: unknown): Q;
+      is(column: string, value: null): Q;
+      not(column: string, operator: string, value: unknown): Q;
+      lte(column: string, value: unknown): Q;
+      gte(column: string, value: unknown): Q;
+      or(filters: string): Q;
+    },
+  >(q: Q, chapterId: string, query: TaskListFilter & TaskListQuery): Q {
+    q = q.eq('chapter_id', chapterId);
+    if (query.assigneeId && query.orFollowedBy?.length) {
+      // Their own tasks, or one a tier, role or group they're in follows
+      // (#5473). Entries hold a colon, so each is quoted.
+      q = q.or(
+        `assignee_id.eq.${escapeFilterValue(query.assigneeId)},followed_by.in.(${query.orFollowedBy
+          .map(escapeFilterValue)
+          .join(',')})`,
+      );
+    } else if (query.assigneeId) {
+      q = q.eq('assignee_id', query.assigneeId);
+    }
+    if (query.notAssigneeId) q = q.neq('assignee_id', query.notAssigneeId);
+    if (query.createdBy) q = q.eq('created_by', query.createdBy);
+    if (query.groupless) q = q.is('group_id', null);
+    if (query.status) q = q.eq('status', query.status);
+    if (query.confirmed === true) q = q.not('confirmed_at', 'is', null);
+    if (query.confirmed === false) q = q.is('confirmed_at', null);
+    if (query.completedSince) q = q.gte('completed_at', query.completedSince);
+    if (query.unconfirmedOrCompletedSince) {
+      q = q.or(
+        `confirmed_at.is.null,completed_at.gte.${escapeFilterValue(query.unconfirmedOrCompletedSince)}`,
+      );
+    }
+    if (query.after) {
+      // Strictly after the cursor in (created_at desc, id desc): an earlier
+      // `created_at`, or the same one and a lower `id`. Spelled without a
+      // nested `and()`: at or before its time, and then either earlier or
+      // lower.
+      const at = escapeFilterValue(query.after.created_at);
+      q = q
+        .lte('created_at', query.after.created_at)
+        .or(`created_at.lt.${at},id.lt.${escapeFilterValue(query.after.id)}`);
+    }
+    return q;
   }
 
   async create(data: TablesInsert<'tasks'>): Promise<Task> {
@@ -83,6 +243,44 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return updated;
   }
 
+  async setGroupFollower(
+    chapterId: string,
+    groupId: string,
+    followedBy: string | null,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('tasks')
+      .update({ followed_by: followedBy })
+      .eq('chapter_id', chapterId)
+      .eq('group_id', groupId);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async updateIfMatches(
+    id: string,
+    chapterId: string,
+    match: Partial<Task>,
+    data: TablesUpdate<'tasks'>,
+  ): Promise<Task | null> {
+    let query = this.supabase
+      .from('tasks')
+      .update(data)
+      .eq('id', id)
+      .eq('chapter_id', chapterId);
+    for (const [column, value] of Object.entries(match) as [
+      keyof Task,
+      Task[keyof Task],
+    ][]) {
+      query =
+        value === null || value === undefined
+          ? query.is(column, null)
+          : query.eq(column, value);
+    }
+    const { data: updated, error } = await query.select().maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
+  }
+
   async confirmCompletionAtomic(
     id: string,
     chapterId: string,
@@ -99,24 +297,48 @@ export class SupabaseTaskRepository implements ITaskRepository {
   async reopenCompletion(
     id: string,
     chapterId: string,
-    sentBackAt?: string,
+    options: ReopenCompletionOptions = {},
   ): Promise<Task | null> {
     // The filters are the compare-and-set: a confirm that lands first sets
     // `points_awarded`, and then this matches no row rather than leaving a
     // confirmed, point-awarded task back in progress.
-    const { data, error } = await this.supabase
+    const query = this.supabase
       .from('tasks')
       .update({
         status: TaskStatus.IN_PROGRESS,
         completed_at: null,
-        ...(sentBackAt ? { sent_back_at: sentBackAt } : {}),
+        completed_by: null,
+        // A completion's link and reply go with it (#4635); its photo rows
+        // are the caller's to delete.
+        proof_link: null,
+        completion_note: null,
+        // A task that needed no sign-off was confirmed as it was marked
+        // done, with nothing paid (#4635); reopening it unconfirms it.
+        ...(options.pointsAwarded
+          ? { confirmed_at: null, points_awarded: false }
+          : {}),
+        ...(options.sentBackAt
+          ? {
+              sent_back_at: options.sentBackAt,
+              sent_back_reason: options.sentBackReason ?? null,
+            }
+          : {}),
+        ...(options.proofKind ? { proof_kind: options.proofKind } : {}),
       })
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .eq('status', TaskStatus.COMPLETED)
-      .eq('points_awarded', false)
-      .select()
-      .maybeSingle();
+      .eq('points_awarded', options.pointsAwarded ?? false);
+    // A take-back or send-back racing a newer completion must not clear (and
+    // the caller then not delete) that completion's proof (#4565).
+    const expected = options.expectedCompletedAt;
+    const guarded =
+      expected === undefined
+        ? query
+        : expected === null
+          ? query.is('completed_at', null)
+          : query.eq('completed_at', expected);
+    const { data, error } = await guarded.select().maybeSingle();
 
     if (error) throw new SupabaseQueryError(error);
     return data;
@@ -164,6 +386,336 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId);
 
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async createSeries(input: CreateTaskSeriesInput): Promise<Task> {
+    const { data, error } = await this.supabase.rpc('create_task_series', {
+      p_chapter_id: input.chapter_id,
+      p_created_by: input.created_by,
+      p_title: input.title,
+      p_description: input.description,
+      p_assignee_id: input.assignee_id,
+      p_point_reward: input.point_reward,
+      p_proof_kind: input.proof_kind,
+      p_subtask_titles: input.subtask_titles,
+      p_due_time: input.due_time,
+      p_recurrence_rule: input.recurrence_rule,
+      p_first_due_date: input.first_due_date,
+      p_first_due_at: input.first_due_at,
+      p_latest_due_at: input.latest_due_at,
+      p_next_due_date: input.next_due_date,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    const [task] = data ?? [];
+    if (!task) {
+      throw new Error('create_task_series returned no task');
+    }
+    return task;
+  }
+
+  async createGroup(input: CreateTaskGroupInput): Promise<Task[]> {
+    const { data, error } = await this.supabase.rpc('create_task_group', {
+      p_chapter_id: input.chapter_id,
+      p_created_by: input.created_by,
+      p_audience: input.audience,
+      p_target_id: input.target_id,
+      p_target_name: input.target_name,
+      p_assignee_ids: input.assignee_ids,
+      p_title: input.title,
+      p_description: input.description,
+      p_due_date: input.due_date,
+      p_due_at: input.due_at,
+      p_point_reward: input.point_reward,
+      p_proof_kind: input.proof_kind,
+      p_subtask_titles: input.subtask_titles,
+      p_followed_by: input.followed_by ?? null,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    const copies = data ?? [];
+    if (copies.length === 0) {
+      throw new Error('create_task_group returned no task');
+    }
+    const meetingId = input.meeting_id ?? null;
+    const groupId = copies[0]?.group_id;
+    if (!meetingId || !groupId) return copies;
+    // The minutes it came from (#5562), on every copy. The function predates
+    // the column, so it is set here rather than in its signature. The copies
+    // are already made, so a failed link is reported and the copies stand:
+    // throwing would put the suggestion back and a second accept would make
+    // the whole group again. A copy without its link only loses its Minutes
+    // row.
+    const { data: linked, error: linkError } = await this.supabase
+      .from('tasks')
+      .update({ meeting_id: meetingId })
+      .eq('chapter_id', input.chapter_id)
+      .eq('group_id', groupId)
+      .select();
+    if (linkError) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-group-meeting-link',
+        message: `group ${groupId} made without its minutes link`,
+        error: linkError,
+      });
+      return copies;
+    }
+    const byId = new Map((linked ?? []).map((task) => [task.id, task]));
+    return copies.map((copy) => byId.get(copy.id) ?? copy);
+  }
+
+  async findGroups(chapterId: string, ids: string[]): Promise<TaskGroup[]> {
+    if (ids.length === 0) return [];
+    const groups: TaskGroup[] = [];
+    for (let i = 0; i < ids.length; i += SUBTASK_READ_BATCH) {
+      const { data, error } = await this.supabase
+        .from('task_groups')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .in('id', ids.slice(i, i + SUBTASK_READ_BATCH));
+      if (error) throw new SupabaseQueryError(error);
+      groups.push(...(data ?? []));
+    }
+    return groups;
+  }
+
+  async findGroupCopies(
+    chapterId: string,
+    groupIds: string[],
+  ): Promise<Task[]> {
+    return this.inGroupBatches(groupIds, (batch) =>
+      fetchAllPages(
+        (from, to) =>
+          this.supabase
+            .from('tasks')
+            .select('*')
+            .eq('chapter_id', chapterId)
+            .in('group_id', batch)
+            .order('id', { ascending: true })
+            .range(from, to),
+        { pageSize: TASK_PAGE_SIZE },
+      ),
+    );
+  }
+
+  async findGroupCopyStates(
+    chapterId: string,
+    groupIds: string[],
+  ): Promise<TaskGroupCopyState[]> {
+    return this.inGroupBatches(groupIds, (batch) =>
+      fetchAllPages(
+        (from, to) =>
+          this.supabase
+            .from('tasks')
+            .select(
+              'id, group_id, assignee_id, status, points_awarded, due_date, due_at',
+            )
+            .eq('chapter_id', chapterId)
+            .in('group_id', batch)
+            .order('id', { ascending: true })
+            .range(from, to),
+        { pageSize: TASK_PAGE_SIZE },
+      ),
+    );
+  }
+
+  /**
+   * `read` over `groupIds` in batches that keep the URL short, every row of
+   * each: a chapter's group can outgrow one response, so `read` pages.
+   */
+  private async inGroupBatches<T>(
+    groupIds: string[],
+    read: (batch: string[]) => Promise<T[]>,
+  ): Promise<T[]> {
+    const rows: T[] = [];
+    for (let i = 0; i < groupIds.length; i += SUBTASK_READ_BATCH) {
+      rows.push(...(await read(groupIds.slice(i, i + SUBTASK_READ_BATCH))));
+    }
+    return rows;
+  }
+
+  async findUnfinishedGroupsByCreator(
+    chapterId: string,
+    createdBy: string,
+    limit: number,
+  ): Promise<TaskGroup[]> {
+    // A group with at least one copy not yet confirmed: `!inner` with the
+    // filter on the embed keeps only the groups that have such a copy, and
+    // one is all it takes, so the embed carries at most one id per group.
+    const { data, error } = await this.supabase
+      .from('task_groups')
+      .select('*, tasks!inner(id)')
+      .eq('chapter_id', chapterId)
+      .eq('created_by', createdBy)
+      .eq('tasks.points_awarded', false)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(1, { referencedTable: 'tasks' })
+      .limit(limit);
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map(withoutCopyEmbed);
+  }
+
+  async deleteGroup(chapterId: string, groupId: string): Promise<void> {
+    const { error: copiesError } = await this.supabase
+      .from('tasks')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('group_id', groupId);
+    if (copiesError) throw new SupabaseQueryError(copiesError);
+    const { error } = await this.supabase
+      .from('task_groups')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('id', groupId);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async deleteGroupCopies(
+    chapterId: string,
+    groupId: string,
+    ids: string[],
+  ): Promise<string[]> {
+    const deleted: string[] = [];
+    // In batches: a whole chapter's ids in one `in` list overflows the URL.
+    for (const batch of chunkIds(ids)) {
+      const { data, error } = await this.supabase
+        .from('tasks')
+        .delete()
+        .eq('chapter_id', chapterId)
+        .eq('group_id', groupId)
+        .eq('points_awarded', false)
+        .in('id', batch)
+        .select('id');
+      if (error) throw new SupabaseQueryError(error);
+      deleted.push(...(data ?? []).map((row) => row.id));
+    }
+    return deleted;
+  }
+
+  async findSeries(chapterId: string, ids: string[]): Promise<TaskSeries[]> {
+    if (ids.length === 0) return [];
+    const series: TaskSeries[] = [];
+    for (let i = 0; i < ids.length; i += SUBTASK_READ_BATCH) {
+      const { data, error } = await this.supabase
+        .from('task_series')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .in('id', ids.slice(i, i + SUBTASK_READ_BATCH));
+      if (error) throw new SupabaseQueryError(error);
+      series.push(...(data ?? []));
+    }
+    return series;
+  }
+
+  async findLatestSeriesCopy(
+    chapterId: string,
+    seriesId: string,
+  ): Promise<Task | null> {
+    const { data, error } = await this.supabase
+      .from('tasks')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('series_id', seriesId)
+      .order('occurrence_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async updateSeriesIfNext(
+    chapterId: string,
+    id: string,
+    expectedNext: string,
+    data: TablesUpdate<'task_series'>,
+  ): Promise<TaskSeries | null> {
+    const { data: updated, error } = await this.supabase
+      .from('task_series')
+      .update(data)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('next_due_date', expectedNext)
+      .is('ended_at', null)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
+  }
+
+  async hasCheckedSubtask(chapterId: string, taskId: string): Promise<boolean> {
+    const { count, error } = await this.supabase
+      .from('task_subtasks')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq('task_id', taskId)
+      .not('done_at', 'is', null);
+    if (error) throw new SupabaseQueryError(error);
+    return (count ?? 0) > 0;
+  }
+
+  async isPhotoPathInUse(chapterId: string, path: string): Promise<boolean> {
+    const { count, error } = await this.supabase
+      .from('task_photos')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq('storage_path', path);
+    if (error) throw new SupabaseQueryError(error);
+    return (count ?? 0) > 0;
+  }
+
+  async findPhotos(chapterId: string, taskIds: string[]): Promise<TaskPhoto[]> {
+    const rows: TaskPhoto[] = [];
+    for (let i = 0; i < taskIds.length; i += SUBTASK_READ_BATCH) {
+      const { data, error } = await this.supabase
+        .from('task_photos')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .in('task_id', taskIds.slice(i, i + SUBTASK_READ_BATCH))
+        .order('task_id', { ascending: true })
+        .order('kind', { ascending: false })
+        .order('position', { ascending: true })
+        .order('created_at', { ascending: true });
+      if (error) throw new SupabaseQueryError(error);
+      rows.push(...(data || []));
+    }
+    return rows;
+  }
+
+  async createPhotos(
+    rows: Pick<
+      TaskPhoto,
+      | 'task_id'
+      | 'chapter_id'
+      | 'kind'
+      | 'storage_path'
+      | 'position'
+      | 'created_by'
+    >[],
+  ): Promise<TaskPhoto[]> {
+    if (rows.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('task_photos')
+      .insert(rows)
+      .select();
+    if (error) throw new SupabaseQueryError(error);
+    return (data || []).sort((a, b) => a.position - b.position);
+  }
+
+  async deletePhotos(
+    chapterId: string,
+    taskId: string,
+    photoIds: string[],
+  ): Promise<TaskPhoto[]> {
+    if (photoIds.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('task_photos')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('task_id', taskId)
+      .in('id', photoIds)
+      .select();
+    if (error) throw new SupabaseQueryError(error);
+    return data || [];
   }
 
   async findSubtasks(
@@ -233,4 +785,11 @@ export class SupabaseTaskRepository implements ITaskRepository {
     if (error) throw new SupabaseQueryError(error);
     return (data ?? []).length > 0;
   }
+}
+
+/** A group row without the copy its read embedded to filter on. */
+function withoutCopyEmbed(row: TaskGroup & { tasks?: unknown }): TaskGroup {
+  const rest = { ...row };
+  delete rest.tasks;
+  return rest;
 }

@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
+import { StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { setChatDensity } from "@/lib/chat/chat-density";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -48,6 +50,8 @@ vi.mock("@repo/hooks", async () => {
     // The event and task cards' reads and writes (#3185); their own specs
     // cover what each one does. Here they only have to draw.
     usePermissionList: () => [],
+    useEventCardExcuse: () => ({ kind: "none" }),
+    useRequiredOfViewer: () => () => false,
     // The hours and rush cards read the query itself (#3383).
     useMyPermissions: () => ({
       data: { permissions: rowPermissions.current },
@@ -55,6 +59,7 @@ vi.mock("@repo/hooks", async () => {
     useTask: () => ({ data: undefined }),
     useEvent: () => ({ data: undefined, isError: false }),
     useAttendance: () => ({ data: undefined }),
+    useMyAttendance: () => ({ data: undefined }),
     useCheckIn: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useUpdateTaskStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -65,20 +70,33 @@ vi.mock("@repo/hooks", async () => {
     useRushCandidate: () => ({ data: undefined, isError: false }),
     useVoteRushCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useBidRushCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    // A posted answer's document sources (#4713); its own spec covers them.
+    useDocumentDownloadUrl: () => ({ mutateAsync: vi.fn() }),
+    useFetchBackworkResource: () => vi.fn(),
+    // The role picker card's reads and write (#4958); its own spec covers them.
+    usePickableRoles: () => ({
+      roles: [],
+      heldKnown: true,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    }),
+    useRoles: () => ({ data: [] }),
+    useSetPickedRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
 });
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#C49A3A",
-    accentPrimary: "#C49A3A",
-    accentOnPrimary: "#2B2009",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-  }),
+// The form card's own read of the viewer's answers (#3926 step 3); its own
+// spec covers what the card does with it.
+vi.mock("@/lib/chat/use-own-form-response", () => ({
+  useOwnFormResponse: () => ({ data: undefined }),
 }));
+
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, MUTED_GOLD_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(MUTED_GOLD_BRANDING);
+});
 
 import {
   JUMP_TO_PARENT_A11Y_LABEL,
@@ -141,6 +159,7 @@ function renderRow(
     replyParent?: ChatMessage | null;
     onOpenActions?: (message: ChatMessage) => void;
     onClosePoll?: (messageId: string) => void;
+    onCloseCard?: (messageId: string, kind: "signup" | "form") => void;
     onJumpToMessage?: (messageId: string) => void;
     onUnblock?: (userId: string) => void;
     maskedRefresh?: ReadonlyMap<string, MaskedRefreshState>;
@@ -166,6 +185,7 @@ function renderRow(
           blockState={overrides.blockState ?? READY_WITH_BLOCKED}
           onVote={vi.fn()}
           onClosePoll={overrides.onClosePoll ?? vi.fn()}
+          onCloseCard={overrides.onCloseCard ?? vi.fn()}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
@@ -1033,6 +1053,27 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
       },
       eyebrow: "Poll",
     },
+    signup: {
+      payload: {
+        title: "Sober drivers",
+        slots: [{ id: "fri", label: "Friday", capacity: 2 }],
+      },
+      eyebrow: "Sign-up",
+    },
+    form: {
+      payload: {
+        title: "Formal housing",
+        questions: [
+          {
+            id: "q1",
+            type: "short_answer",
+            title: "Which room?",
+            required: true,
+          },
+        ],
+      },
+      eyebrow: "Form",
+    },
     event: {
       payload: {
         event_id: "evt-1",
@@ -1070,14 +1111,50 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
       // The IFC word: the mocked chapter names no archetype.
       eyebrow: "Rush",
     },
+    role_picker: {
+      payload: { title: "Pick your roles", role_ids: ["role-1"] },
+      eyebrow: "Role picker",
+    },
   };
-  /** Card kinds mobile draws as their text on purpose (`cardFor`). */
-  const TEXT_ON_MOBILE = ["dues", "loading"];
+  /**
+   * Card kinds mobile draws as their text on purpose (`cardFor`). A form
+   * (#3926 step 3) reads as its title until the phone's form card lands.
+   */
+  const TEXT_ON_MOBILE = ["dues", "loading", "form"];
+  /**
+   * A posted Ask answer (#4713) is the one card whose `content` is drawn:
+   * the answer's words are the row's text, under who asked and what.
+   */
+  const ANSWER_ON_MOBILE = ["ask_answer"];
+
+  it("draws a posted answer under who asked and what they asked", () => {
+    const text = allDrawnText(
+      renderRow(
+        visible(
+          message({
+            kind: "ask_answer",
+            content: "Quorum is half.",
+            payload: {
+              v: 1,
+              ask_id: "ask-1",
+              asked_by: "user-9",
+              question: "What is quorum?",
+              citations: [],
+              sources: [],
+            } as ChatMessage["payload"],
+          }),
+        ),
+      ),
+    );
+    expect(text).toContain("asked Frapp");
+    expect(text).toContain("What is quorum?");
+    expect(text).toContain("Quorum is half.");
+  });
 
   it("draws every card kind as a card, but the ones it means to leave as text", () => {
-    expect(new Set([...Object.keys(CARDS), ...TEXT_ON_MOBILE])).toEqual(
-      new Set(CARD_KINDS),
-    );
+    expect(
+      new Set([...Object.keys(CARDS), ...TEXT_ON_MOBILE, ...ANSWER_ON_MOBILE]),
+    ).toEqual(new Set(CARD_KINDS));
     for (const [kind, { payload, eyebrow }] of Object.entries(CARDS)) {
       const text = allDrawnText(
         renderRow(
@@ -1338,6 +1415,61 @@ describe("ThreadMessageRow Close poll wiring (#3794)", () => {
     act(() => close.props.onPress());
     expect(onClosePoll).toHaveBeenCalledWith("poll-1");
   });
+
+  it("closes a form card as a form, and a sign-up card as a sign-up (#3926)", () => {
+    const onCloseCard = vi.fn();
+    const closeOf = (tree: ReactTestRenderer, label: string) =>
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityRole === "button" &&
+          node.props.accessibilityLabel === label &&
+          typeof node.props.onPress === "function",
+      )[0]!;
+    const form = renderRow(
+      {
+        message: message({
+          id: "form-1",
+          sender_id: VIEWER,
+          kind: "form",
+          content: "Formal housing",
+          payload: {
+            title: "Formal housing",
+            questions: [
+              {
+                id: "q1",
+                type: "short_answer",
+                title: "Room?",
+                required: false,
+              },
+            ],
+          },
+        }),
+        visibility: "visible",
+      },
+      { onCloseCard },
+    );
+    act(() => closeOf(form, "Close form").props.onPress());
+    expect(onCloseCard).toHaveBeenLastCalledWith("form-1", "form");
+
+    const signup = renderRow(
+      {
+        message: message({
+          id: "signup-1",
+          sender_id: VIEWER,
+          kind: "signup",
+          content: "Drivers",
+          payload: {
+            title: "Drivers",
+            slots: [{ id: "fri", label: "Friday", capacity: null }],
+          },
+        }),
+        visibility: "visible",
+      },
+      { onCloseCard },
+    );
+    act(() => closeOf(signup, "Close sign-ups").props.onPress());
+    expect(onCloseCard).toHaveBeenLastCalledWith("signup-1", "signup");
+  });
 });
 
 describe("ThreadMessageRow — message thread chip (#3785)", () => {
@@ -1429,5 +1561,74 @@ describe("ThreadMessageRow flags", () => {
       visibility: "visible",
     });
     expect(caption(tree)[0]?.props.accessibilityLabel).toBe("Important");
+  });
+});
+
+describe("ThreadMessageRow — the thread card's preview (#4297)", () => {
+  const withPreview = (sender: string, evaluated: boolean) =>
+    message({
+      _blockEvaluated: evaluated,
+      thread: {
+        reply_count: 2,
+        last_reply_at: null,
+        recent_sender_ids: [sender],
+        last_reply: {
+          id: "reply-9",
+          sender_id: sender,
+          content: "see you at the lot",
+          kind: "text",
+          attachment_count: 0,
+          created_at: "2026-11-11T20:00:00.000Z",
+          sender_blocked: false,
+        },
+      },
+    });
+
+  it("shows a cleared replier's words on the card", () => {
+    const tree = renderRow(
+      { message: withPreview(FRIEND, true), visibility: "visible" },
+      { onOpenThread: vi.fn() },
+    );
+    expect(flat(tree)).toContain("see you at the lot");
+  });
+
+  it("never shows a blocked replier's words, even off the parent's raw echo", () => {
+    const tree = renderRow(
+      { message: withPreview(BLOCKED, false), visibility: "visible" },
+      { onOpenThread: vi.fn() },
+    );
+    expect(flat(tree)).not.toContain("see you at the lot");
+    expect(tree.root.findAllByProps({ testID: "thread-preview" })).toHaveLength(
+      0,
+    );
+  });
+
+  it("puts the card under the viewer's own poll on their side in Bubbles", () => {
+    act(() => setChatDensity("bubbles"));
+    const poll = message({
+      sender_id: VIEWER,
+      kind: "poll",
+      payload: {
+        question: "Formal theme?",
+        options: [{ id: "o1", label: "Masquerade" }],
+      },
+      thread: { reply_count: 1, last_reply_at: null, recent_sender_ids: [] },
+    });
+    const tree = renderRow(
+      { message: poll, visibility: "visible" },
+      { onOpenThread: vi.fn() },
+    );
+    const card = tree.root.find(
+      (node) =>
+        node.props.testID === "thread-chip" &&
+        typeof node.props.style === "function",
+    );
+    const style = StyleSheet.flatten(
+      (card.props.style as (s: { pressed: boolean }) => unknown)({
+        pressed: false,
+      }) as StyleProp<ViewStyle>,
+    );
+    expect(style.alignSelf).toBe("flex-end");
+    act(() => setChatDensity("cozy"));
   });
 });

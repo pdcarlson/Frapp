@@ -146,9 +146,10 @@ function ChatThread({ animate }: { animate: boolean }) {
 
       {row.kind === "self" && (
         /*
-          The time and nothing else: read receipts are a channel cursor that
-          feeds unread counts (`spec/behavior/chat/README.md` § Read
-          Receipts), so no message is ever marked "read".
+          The time and nothing else: this is a channel, and a sent or read
+          check is drawn only on a direct message's row in the Messages
+          list (`spec/behavior/chat/README.md` § Read Receipts → Shown to the
+          sender), never in a thread.
         */
         <RunStart initials="AK" author="You" self time="6:24 PM">
           <p className={BODY}>On it. Roster is pulled, 42 for food.</p>

@@ -1,9 +1,5 @@
-import {
-  RELEASE_NOTES,
-  formatReleaseNoteDate,
-  type ReleaseNote,
-} from "@repo/validation";
-import { SectionLabel } from "@/components/shared/section-label";
+import { RELEASE_NOTES } from "@repo/validation";
+import { ReleaseNoteEntry } from "@/components/whats-new/release-note-entry";
 import { WhatsNewSeen } from "@/components/whats-new/whats-new-seen";
 
 /**
@@ -23,30 +19,5 @@ export function WhatsNew() {
         <ReleaseNoteEntry key={note.date} note={note} idPrefix="whats-new" />
       ))}
     </div>
-  );
-}
-
-/**
- * One entry: its date label, title and lines. `idPrefix` keeps the label ids
- * apart when the page and the dialog (`whats-new-host.tsx`) are both mounted.
- */
-export function ReleaseNoteEntry({
-  note,
-  idPrefix,
-}: {
-  note: ReleaseNote;
-  idPrefix: string;
-}) {
-  const labelId = `${idPrefix}-${note.date}`;
-  return (
-    <section aria-labelledby={labelId} className="space-y-3">
-      <SectionLabel id={labelId}>{formatReleaseNoteDate(note.date)}</SectionLabel>
-      <h3 className="text-sm font-semibold text-foreground">{note.title}</h3>
-      <ul className="list-disc space-y-1.5 pl-5 text-sm text-muted-foreground marker:text-muted">
-        {note.changes.map((change) => (
-          <li key={change}>{change}</li>
-        ))}
-      </ul>
-    </section>
   );
 }

@@ -33,7 +33,7 @@ describe("hasExistingInstallKey", () => {
     expect(
       hasExistingInstallKey([
         "frapp.mobile.push-primer",
-        "frapp.mobile.tour-due",
+        "frapp.mobile.welcome-due",
         WHATS_NEW_SEEN_STORAGE_KEY,
       ]),
     ).toBe(false);

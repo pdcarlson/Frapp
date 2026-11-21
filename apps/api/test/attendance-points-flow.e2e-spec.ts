@@ -12,6 +12,8 @@ import { configureApp } from '../src/bootstrap';
 import { createGuardStubs, AllowAllGuard } from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
+/** Route ids are checked as uuids before the handler runs. */
+const EVENT_ID = '5a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
 
 const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
   authUserId: 'auth-user-1',
@@ -26,7 +28,7 @@ describe('Attendance + points flow (e2e)', () => {
   const attendanceServiceMock = {
     checkIn: jest.fn().mockResolvedValue({
       id: 'att-1',
-      event_id: 'evt-1',
+      event_id: EVENT_ID,
       user_id: 'user-1',
       status: 'PRESENT',
       check_in_time: new Date().toISOString(),
@@ -82,7 +84,7 @@ describe('Attendance + points flow (e2e)', () => {
 
   it('checks in and forwards chapter/user/event context to attendance service', async () => {
     await request(app.getHttpServer())
-      .post(`${V1}/events/evt-1/attendance/check-in`)
+      .post(`${V1}/events/${EVENT_ID}/attendance/check-in`)
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
       .send({})
@@ -92,7 +94,7 @@ describe('Attendance + points flow (e2e)', () => {
     // is the plain self check-in surface (the web chat event card), so every
     // field arrives undefined and the service applies no token or zone check.
     expect(attendanceServiceMock.checkIn).toHaveBeenCalledWith(
-      'evt-1',
+      EVENT_ID,
       'user-1',
       'chapter-1',
       {
@@ -108,14 +110,14 @@ describe('Attendance + points flow (e2e)', () => {
     attendanceServiceMock.checkIn.mockClear();
 
     await request(app.getHttpServer())
-      .post(`${V1}/events/evt-1/attendance/check-in`)
+      .post(`${V1}/events/${EVENT_ID}/attendance/check-in`)
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
       .send({ token: 'scanned-token', lat: 42.7298, lng: -73.678 })
       .expect(201);
 
     expect(attendanceServiceMock.checkIn).toHaveBeenCalledWith(
-      'evt-1',
+      EVENT_ID,
       'user-1',
       'chapter-1',
       {

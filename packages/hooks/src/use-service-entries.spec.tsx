@@ -1,38 +1,27 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
-import { FrappClientProvider } from "./use-frapp-client";
+import type { QueryClient } from "@tanstack/react-query";
 import { useReviewServiceEntry, useServiceEntry } from "./use-service-entries";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 function createWrapper(
   queryClient: QueryClient,
   mockClient: unknown,
   chapterId: string | null = "chapter-1",
 ) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      chapterId={chapterId}
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId,
+    displayName: "Wrapper",
+  });
 }
 
 describe("useServiceEntry", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   it("reads one entry by id", async () => {
@@ -45,6 +34,7 @@ describe("useServiceEntry", () => {
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(GET).toHaveBeenCalledWith("/v1/service-entries/{id}", {
+      signal: expect.any(AbortSignal),
       params: { path: { id: "entry-1" } },
     });
     expect(result.current.data).toEqual({ id: "entry-1", status: "APPROVED" });
@@ -149,4 +139,39 @@ describe("useServiceEntry", () => {
       }),
     );
   });
+});
+
+describe("useReviewServiceEntry points refresh", () => {
+  it.each([
+    ["APPROVED", true],
+    ["REJECTED", false],
+  ] as const)(
+    "re-reads points after a %s review only when it awards them",
+    async (status, refreshesPoints) => {
+      const queryClient = createTestQueryClient();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const PATCH = vi.fn(async () => ({
+        data: { id: "entry-1" },
+        error: null,
+      }));
+      const { result } = renderHook(() => useReviewServiceEntry(), {
+        wrapper: createWrapper(queryClient, { PATCH }),
+      });
+
+      await act(async () => {
+        await result.current.mutateAsync({ id: "entry-1", body: { status } });
+      });
+
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["service-entries"],
+      });
+      // Approval awards the submitter's SERVICE points in the same
+      // transaction; the leaderboard must not keep the old total.
+      if (refreshesPoints) {
+        expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
+      } else {
+        expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["points"] });
+      }
+    },
+  );
 });

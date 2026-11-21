@@ -149,15 +149,33 @@ updates:
         patterns:
           - "@stripe/stripe-js"
           - "@stripe/react-stripe-js"
+      # `@electric-sql/pglite-pgvector` peer-requires `@electric-sql/pglite` at
+      # an EXACT version (0.0.17 -> 0.5.16, `npm view` 2026-11-12), the same
+      # shape as the vitest pair above, so it carries no `update-types` either.
+      # Moving pglite alone fails `npm ci` with ERESOLVE in every install: #4522
+      # arrived as a lone pglite patch and went red at install.
+      pglite:
+        patterns:
+          - "@electric-sql/pglite"
+          - "@electric-sql/pglite-pgvector"
       npm-minor-and-patch:
         patterns:
           - "*"
-        # Kept in lockstep with the `vitest` group above — see its comment.
-        # Names, not `@vitest/*`: `@vitest/eslint-plugin` must stay in this
-        # group if it is ever adopted.
+        # Kept in lockstep with the `vitest` and `pglite` groups above — see
+        # the vitest comment. Names, not `@vitest/*`: `@vitest/eslint-plugin`
+        # must stay in this group if it is ever adopted.
+        #
+        # `@sentry/react-native` is excluded so it arrives as its own PR: any
+        # bump of it, even a patch, fails `apps/mobile/lib/sentry/options.spec.ts`
+        # until its native breadcrumbs are re-read (#3342), and needs an
+        # `expo.version` bump once the current version has shipped. Inside
+        # this group it held the other ~36 updates red (#4520).
         exclude-patterns:
           - "vitest"
           - "@vitest/coverage-v8"
+          - "@electric-sql/pglite"
+          - "@electric-sql/pglite-pgvector"
+          - "@sentry/react-native"
         update-types:
           - minor
           - patch
@@ -240,12 +258,14 @@ updates:
       # (#2329), like the React family above.
       - dependency-name: "expo-apple-authentication"
       - dependency-name: "expo-application"
+      - dependency-name: "expo-audio"
       - dependency-name: "expo-blur"
       - dependency-name: "expo-camera"
       - dependency-name: "expo-clipboard"
       - dependency-name: "expo-constants"
       - dependency-name: "expo-crypto"
       - dependency-name: "expo-device"
+      - dependency-name: "expo-document-picker"
       - dependency-name: "expo-file-system"
       - dependency-name: "expo-font"
       - dependency-name: "expo-glass-effect"
@@ -253,6 +273,7 @@ updates:
       - dependency-name: "expo-image"
       - dependency-name: "expo-image-manipulator"
       - dependency-name: "expo-image-picker"
+      - dependency-name: "expo-keep-awake"
       - dependency-name: "expo-linking"
       - dependency-name: "expo-localization"
       - dependency-name: "expo-location"
@@ -261,6 +282,9 @@ updates:
       - dependency-name: "expo-router"
       - dependency-name: "expo-secure-store"
       - dependency-name: "expo-sharing"
+      # Third-party (jamsch), but its major tracks the Expo SDK (57.x for SDK 57);
+      # an SDK upgrade moves it by hand (docs/ci-cd/dependency-updates.md).
+      - dependency-name: "expo-speech-recognition"
       - dependency-name: "expo-splash-screen"
       - dependency-name: "expo-status-bar"
       - dependency-name: "expo-updates"

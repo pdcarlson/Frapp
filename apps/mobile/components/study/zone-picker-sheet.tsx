@@ -1,129 +1,95 @@
-import { forwardRef } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetFlatList, BottomSheetModal } from "@gorhom/bottom-sheet";
+import { forwardRef, useMemo } from "react";
+import { StyleSheet, Text } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
-import { typeRole, useFrappTheme } from "@/lib/theme";
-import { useChapterBranding } from "@/lib/chapter-branding";
-import {
-  SheetGrabber,
-  SheetHeader,
-  SheetScrim,
-  useSheetBackgroundStyle,
-  SheetBackToClose,
-  useSheetClose,
-  SHEET_STACK_BEHAVIOR,
-} from "@/components/sheet-scaffold";
+import { useFrappTheme } from "@/lib/theme";
+import { OptionSheet, type SheetOption } from "@/components/option-sheet";
 import type { StudyZoneModel } from "@/lib/study/zones";
 import { zoneRewardCopy } from "@/lib/study/zones";
+import {
+  proximityCopy,
+  sortByProximity,
+  type ProximityMap,
+} from "@/lib/study/proximity";
 
 /**
- * Zone picker for s10 — the same shape as the s19 assignee picker.
+ * Zone picker for s10, on the shared pick-one sheet (`OptionSheet`, #5318),
+ * which owns the sizing: content height for a chapter's handful of zones, a
+ * fixed detent that scrolls past that. The zone sheet had its own copy of
+ * that switch until then, from the day it opened cut off (2026-11-12,
+ * `spec/ui/mobile/patterns.md` § Bottom sheets).
  *
- * A list, so it snaps rather than sizing to content: `spec/ui/mobile/patterns.md`
- * § Bottom sheets requires the sheet-aware scrollable as a direct child with
- * fixed snap points, because a `BottomSheetFlatList` under `enableDynamicSizing`
- * gives two writers to the same content height.
+ * **Nearest first, with how far.** With a location fix the rows sort by
+ * distance and each says "You're here" or how far away it is, the way a store
+ * picker lists the closest location first. Without one they stay alphabetical
+ * and say only what the zone pays.
  */
-const SNAP_POINTS = ["55%"];
-
 export interface ZonePickerSheetProps {
   zones: StudyZoneModel[];
   selectedZoneId: string | null;
+  /** Null until the screen has a fix (location not allowed, or still reading). */
+  proximity?: ProximityMap | null;
+  /** The pick. The sheet closes itself after it. */
   onSelect: (zoneId: string) => void;
+  /** The sheet closed, however it closed. The screen holds its distances still while it's up. */
+  onDismiss?: () => void;
 }
 
-export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps>(
-  function ZonePickerSheet({ zones, selectedZoneId, onSelect }, ref) {
-    const closeSheet = useSheetClose(ref);
-    const { tokens } = useFrappTheme();
-    const { accent } = useChapterBranding();
-    const styles = createStyles(tokens);
-    const backgroundStyle = useSheetBackgroundStyle();
-
-    return (
-      <BottomSheetModal
-        ref={ref}
-        stackBehavior={SHEET_STACK_BEHAVIOR}
-        snapPoints={SNAP_POINTS}
-        backgroundStyle={backgroundStyle}
-        handleComponent={SheetGrabber}
-        backdropComponent={SheetScrim}
-      >
-        <SheetBackToClose onClose={closeSheet} />
-        <View onAccessibilityEscape={closeSheet} style={styles.header}>
-          <SheetHeader title="Study zone" />
-        </View>
-
-        <BottomSheetFlatList
-          onAccessibilityEscape={closeSheet}
-          data={zones}
-          keyExtractor={(zone: StudyZoneModel) => zone.id}
-          contentContainerStyle={styles.list}
-          renderItem={({ item }: { item: StudyZoneModel }) => {
-            const selected = item.id === selectedZoneId;
-            return (
-              <Pressable
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                accessibilityLabel={item.name}
-                accessibilityHint={zoneRewardCopy(item)}
-                onPress={() => onSelect(item.id)}
-                style={({ pressed }) => [
-                  styles.row,
-                  pressed ? styles.rowPressed : null,
-                ]}
-              >
-                <View style={styles.rowText}>
-                  <Text style={styles.name}>{item.name}</Text>
-                  <Text style={styles.meta}>{zoneRewardCopy(item)}</Text>
-                </View>
-                {selected ? (
-                  <Text style={[styles.check, { color: accent }]}>✓</Text>
-                ) : null}
-              </Pressable>
-            );
-          }}
-        />
-      </BottomSheetModal>
-    );
-  },
-);
+export const ZonePickerSheet = forwardRef<
+  BottomSheetModal,
+  ZonePickerSheetProps
+>(function ZonePickerSheet(
+  { zones, selectedZoneId, proximity = null, onSelect, onDismiss },
+  ref,
+) {
+  const { tokens } = useFrappTheme();
+  const styles = useMemo(() => createStyles(tokens), [tokens]);
+  const options: SheetOption[] = sortByProximity(zones, proximity).map(
+    (zone) => {
+      const where = proximity?.get(zone.id) ?? null;
+      const reward = zoneRewardCopy(zone);
+      return {
+        value: zone.id,
+        label: zone.name,
+        detail: (
+          <>
+            {where ? (
+              <Text style={where.inside ? styles.here : styles.away}>
+                {proximityCopy(where)}
+                {" · "}
+              </Text>
+            ) : null}
+            {reward}
+          </>
+        ),
+        accessibilityLabel: where
+          ? `${zone.name}, ${proximityCopy(where)}`
+          : zone.name,
+        accessibilityHint: reward,
+      };
+    },
+  );
+  return (
+    <OptionSheet
+      ref={ref}
+      title="Study zone"
+      options={options}
+      selected={selectedZoneId}
+      onSelect={(value) => {
+        if (value) onSelect(value);
+      }}
+      onDismiss={onDismiss}
+    />
+  );
+});
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    header: {
-      paddingHorizontal: tokens.spacing.lg,
+    here: {
+      color: tokens.color.semantic.success,
     },
-    list: {
-      paddingHorizontal: tokens.spacing.lg,
-      paddingBottom: tokens.spacing.xl,
-    },
-    row: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-      paddingVertical: tokens.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: tokens.color.border.hairline,
-    },
-    rowPressed: {
-      opacity: 0.7,
-    },
-    rowText: {
-      flex: 1,
-    },
-    name: {
-      ...typeRole(tokens.typography.role.label),
+    away: {
       color: tokens.color.text.foreground,
-    },
-    meta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      marginTop: 2,
-    },
-    check: {
-      ...typeRole(tokens.typography.role.title),
     },
   });
 }

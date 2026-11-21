@@ -35,6 +35,18 @@ version-update lane only. See
 [The vitest 5 major is held on jest-dom's matcher types](#the-vitest-5-major-is-held-on-jest-doms-matcher-types)
 below for the measured trees and why one of the two PRs went green anyway.
 
+**The `pglite` group** has the vitest group's shape for the same reason:
+`@electric-sql/pglite-pgvector` peer-requires `@electric-sql/pglite` at an exact version, so both
+are grouped at every update type and excluded from `npm-minor-and-patch`. Here the half-move fails
+loudly instead: Dependabot resolves with `--force` (see the next section), so it writes a lockfile
+that `npm ci` then refuses with `ERESOLVE` in every job that installs. #4522 was a lone pglite patch
+that went red that way (2026-11-12).
+
+**`@sentry/react-native` is excluded from `npm-minor-and-patch`**, so it arrives as its own PR. Any
+bump of it fails `apps/mobile/lib/sentry/options.spec.ts` until its native breadcrumbs are re-read
+([why](#the-ignore-list-is-a-runtime-constraint-not-a-preference)), which is real work, and inside
+the weekly group it held every other update red with it (#4520, 2026-11-12).
+
 The limit went 5 → 6 with that group, and the 6th slot is *its*, not new headroom: the group fires
 on every week vitest ships, and Dependabot drops overflow past the cap **silently** — no error, no
 comment, nothing saying a PR was withheld. Security PRs are exempt from the limit and never counted
@@ -196,6 +208,12 @@ check:expo-sdk-line` checks it mechanically in the required `mobile-validate` jo
   Installed Expo packages the map doesn't list (`expo-modules-jsi`, `expo-modules-autolinking`, the
   `@expo/*` tooling on its own version lines) aren't checked; `expo`'s own dependency ranges pin
   them.
+- **Third-party `expo-*` packages.** A declared package that only shares the prefix, which the map
+  can't know, is named with its reason in the script's `UNBUNDLED_EXPO_PACKAGES` instead of failing
+  the gate. It still needs its Dependabot entry, and nothing checks its version, so **an SDK upgrade
+  moves it by hand** to the release for the new SDK. Today that is `expo-speech-recognition`
+  (Ask's dictation, #5276), whose major follows the SDK (`57.x` for SDK 57, per its GitHub
+  README's install table and its `sdk-*` npm tags).
 
 It asserts SDK-line coherence only: a package inside its range can still fail to compile.
 `@sentry/react-native` and `@stripe/stripe-react-native` are in that map but left out of the check
@@ -469,9 +487,10 @@ file. **The read half is answered as of 2026-09-02: alerts are DISABLED on this 
 `GET /repos/pdcarlson/Frapp/vulnerability-alerts` returns **404 `"disabled"`** when called direct
 (node `fetch`) — not the `403` this paragraph used to record, which was the agent proxy's
 GitHub-credential layer answering rather than GitHub, and therefore said nothing about the toggle
-either way (see [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)). A session can now read this
-setting; it still cannot flip it — the GitHub MCP exposes no repo-security-settings tool and the
-REST route above is a read channel. So #921 stays open as `[human]`, now scoped to the write half:
+either way (see [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)). Sessions could read this
+setting until they lost `GITHUB_PAT` on 2026-11-15; since then it is a laptop read (corrected
+2026-11-16, [`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)). Nobody
+flips it from a session — the GitHub MCP exposes no repo-security-settings tool. So #921 stays open as `[human]`, now scoped to the write half:
 turning alerts (and security updates) on in repo Settings. The alerts toggle is the half that was
 read directly; the security-updates toggle follows from it (alerts are a prerequisite) but was not
 itself read. Read that alongside § *The ignore list is a runtime constraint, not a preference*

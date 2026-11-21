@@ -1,28 +1,59 @@
-import { can, checkInZoneLine, statusLabel } from "@repo/validation";
-import { useRequiredOfViewer } from "@/lib/events/viewer-roles";
-import { useMemo, useRef } from "react";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { statusOf } from "@repo/api-sdk";
+import {
+  agendaCheckOffOpen,
+  attendanceFromEvent,
+  can,
+  checkInZoneLine,
+  describeAttendance,
+  EVENT_FORM_ROW_LABELS,
+  statusLabel,
+} from "@repo/validation";
+import type { EventFormGlyphName } from "@repo/theme/event-form-glyphs";
+import { formatDayTime, formatPointsChip } from "@repo/formatting";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  type ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  eventNowPill,
   eventSeriesKey,
+  seriesCadenceOf,
   useEvent,
   useEvents,
   useMyAttendance,
   useNowDate,
   usePermissionList,
+  useRequiredOfViewer,
+  useRoles,
+  useViewerUserId,
 } from "@repo/hooks";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
+import {
+  ExcuseReviewSection,
+  MyExcuse,
+} from "@/components/events/event-excuses";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { EventNowPill } from "@/components/now-card";
 import { PencilGlyph } from "@/components/control-glyphs";
-import { IconButton } from "@/components/icon-button";
+import { HeaderButton } from "@/components/header-button";
 import {
   NewEventSheet,
   useEventEditGrants,
 } from "@/components/events/new-event-sheet";
-import { seriesRuleOf, type EventEditTarget } from "@/lib/events/edit-event";
-import { BACK_TO_EVENTS } from "@/components/back-row";
+import { useEventEditTarget } from "@/lib/events/use-event-edit";
+import { useOneTapCheckIn } from "@/lib/events/use-one-tap-check-in";
+import { SelfCheckInLink } from "@/components/events/self-check-in-link";
+import { BACK_TO_EVENTS, pinnedBackClearance } from "@/components/back-row";
 import { goBackTo } from "@/lib/href";
+import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   ErrorState,
@@ -30,7 +61,7 @@ import {
   SkeletonRegion,
   SkeletonText,
 } from "@/components/state-block";
-import { AccentChip, StatusChip } from "@/components/status-chip";
+import { AccentChip, HairlineChip } from "@/components/status-chip";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   formatCheckInOpens,
@@ -44,15 +75,22 @@ import {
   selectAllEventRows,
   selectEventDetail,
   selectMyAttendance,
-  selectSeriesCadence,
-  selectSeriesName,
   selectSeriesOccurrences,
   type EventDetail,
 } from "@/lib/events/select";
-import { PressableRow } from "@/components/list-section";
-import { createEventRowStyles } from "@/components/events/event-rows";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
+import { pageSurfaces } from "@/lib/surfaces";
 import { InlineNote } from "@/components/inline-note";
+import { ListPanel } from "@/components/list-section";
+import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
+import { EventMeetingLists } from "@/components/events/event-agenda";
+import { EventFormGlyph } from "@/components/events/event-form-rows";
+import { useMeetingsOn, useNotesLabel } from "@/lib/minutes/meetings-on";
+import {
+  ScrollRevealProvider,
+  useScrollReveal,
+} from "@/lib/keep-above-keyboard";
 
 /**
  * s07 — Event detail (`canvas-screens.dc.html:246`).
@@ -77,6 +115,9 @@ import { InlineNote } from "@/components/inline-note";
  * shape App Review Guideline 2.1 rejects (#2300), so it comes back only with
  * the endpoint (#1035). A line that used to stand in for it ("Check in at the
  * event to be counted.") is gone too: the check-in card above already says it.
+ * On an event that requires the viewer, "Can't make it" is an excuse, not an
+ * RSVP, and has a server (#3735): `MyExcuse` under the check-in card, and
+ * the receiver's `ExcuseReviewSection` below it.
  *
  * ## Editing
  *
@@ -95,14 +136,34 @@ import { InlineNote } from "@/components/inline-note";
  * line here too. The chips sit under it, because `ScreenShell` draws the title
  * first and is frozen; they used to share a row with the place, which wrapped
  * a long location beside them.
+ *
+ * ## The keyboard
+ *
+ * An editor types agenda items, a link or a Chapter Files search, and a
+ * member their excuse, in fields on the page itself, the agenda's well down
+ * it. The body rises with the keyboard (`avoidKeyboard`), and the screen
+ * scrolls the focused field into view above it and keeps it there as items
+ * are added (`lib/keep-above-keyboard.tsx`, #5463): on a 3-item agenda the
+ * field used to open under the keyboard, and each item added went under it
+ * too. A tap on a row's control while the keyboard is up works on the first
+ * tap (`keyboardShouldPersistTaps`), so an officer can reorder or check off
+ * between items without closing it.
  */
 
 export default function EventDetailsScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const requiredOf = useRequiredOfViewer();
-  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const viewerId = useViewerUserId();
+  const canDecideExcuses = can("events:update", usePermissionList());
+  const params = useLocalSearchParams<{
+    id?: string | string[];
+    excuse?: string | string[];
+  }>();
   const eventId = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
+  // `excuse=1`: the chat card's Can't make it, which opens the line (#4660).
+  const startExcuse =
+    (Array.isArray(params.excuse) ? params.excuse[0] : params.excuse) === "1";
 
   const eventQuery = useEvent(eventId);
   const event = useMemo(
@@ -114,29 +175,24 @@ export default function EventDetailsScreen() {
   const { accent } = useChapterBranding();
   const grants = useEventEditGrants();
   const editSheetRef = useRef<BottomSheetModal>(null);
-  // Read only for a generated occurrence an editor may open: the series'
-  // rule and start live on its parent.
-  const parentQuery = useEvent(
-    grants.edit && event?.parent_event_id ? event.parent_event_id : "",
-  );
-  const parent = useMemo(
-    () => selectEventDetail(parentQuery.data),
-    [parentQuery.data],
-  );
-  const parentSettled = !event?.parent_event_id || !parentQuery.isPending;
-  const editTarget = useMemo<EventEditTarget | null>(() => {
-    if (!event) return null;
-    return {
-      event,
-      seriesRule: seriesRuleOf(event, parent),
-      parent: event.parent_event_id ? parent : null,
-    };
-  }, [event, parent]);
-  // The sheet's draft is seeded from the event when it mounts, so a save
-  // (or anyone else's) remounts it with what the server now holds.
-  const editSheetKey = editTarget
-    ? JSON.stringify([eventQuery.data, parentQuery.data ?? null])
-    : "";
+  // The series' rule, head and next meetings, read for an editor; the
+  // sheet remounts on what the server holds after a save (`sheetKey`).
+  const {
+    target: editTarget,
+    ready: parentSettled,
+    sheetKey: editSheetKey,
+  } = useEventEditTarget(event, eventQuery.data);
+
+  // An edit kept past this screen (#4872) goes with its event: one deleted
+  // since has no sheet to open it in.
+  const editDraftName = eventId ? `event-edit:${eventId}` : null;
+  // The event was deleted: its read now 404s, though a refetch keeps the
+  // event it loaded before on screen.
+  const eventGone =
+    !eventQuery.isPending &&
+    eventQuery.isError &&
+    statusOf(eventQuery.error) === 404;
+  useDropKeptSheetDraft(editDraftName, eventGone);
 
   /*
     A ticking clock, not one frozen at mount: this screen is often opened
@@ -151,11 +207,21 @@ export default function EventDetailsScreen() {
     server enforces the real window regardless — this is UX only.
   */
   const now = useNowDate();
+  const meetingsOn = useMeetingsOn();
+  const [dragging, setDragging] = useState(false);
+  const notesLabel = useNotesLabel();
+  // The body's scroll view, which keeps a focused field above the keyboard.
+  const scrollRef = useRef<ScrollView>(null);
+  const reveal = useScrollReveal(scrollRef, {
+    // The pinned back row floats over the top of the scroll view.
+    top: pinnedBackClearance(tokens),
+    margin: tokens.spacing.md,
+  });
 
   if (!eventId) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <InlineNote>Open an event from the Events tab.</InlineNote>
+        <InlineNote>Open an event from the Calendar.</InlineNote>
       </ScreenShell>
     );
   }
@@ -168,12 +234,12 @@ export default function EventDetailsScreen() {
     );
   }
 
-  if (eventQuery.isError || !event) {
+  if (!event) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
         <ErrorState
           title="Couldn't load this event"
-          body="It may have been cancelled, or the server is unreachable."
+          body={describeLoadFailure(eventQuery.error)}
           onRetry={() => void eventQuery.refetch()}
           isRetrying={eventQuery.isFetching}
         />
@@ -190,20 +256,27 @@ export default function EventDetailsScreen() {
   const requiredOfViewer = requiredOf(event.attendance);
 
   return (
-    <>
+    // Around the shell, not inside it: a provider in the body would fold the
+    // whole body into one child and lose the shell's gap between sections.
+    <ScrollRevealProvider value={reveal}>
       <ScreenShell
         back={BACK_TO_EVENTS}
+        scrollRef={scrollRef}
+        avoidKeyboard
+        keyboardShouldPersistTaps="handled"
+        // A held agenda row: the drag, not the page, follows the finger.
+        scrollEnabled={!dragging}
         backAction={
           grants.edit ? (
             // A pencil, as Profile's edit: the same back-row slot.
-            <IconButton
+            <HeaderButton
               label="Edit event"
               hint="Opens a sheet to change this event."
               disabled={!parentSettled}
               onPress={() => editSheetRef.current?.present()}
             >
               <PencilGlyph color={accent} />
-            </IconButton>
+            </HeaderButton>
           ) : undefined
         }
         title={event.name}
@@ -214,39 +287,80 @@ export default function EventDetailsScreen() {
           .filter(Boolean)
           .join(" · ")}
       >
-        {requiredOfViewer || event.point_value ? (
+        {requiredOfViewer || event.point_value || eventNowPill(event, now) ? (
           <View style={styles.badgeRow}>
+            {/* Where it stands, first (#5777): on now, or ended today. */}
+            <EventNowPill event={event} now={now} />
             {requiredOfViewer ? (
-              <StatusChip
-                label="Mandatory"
-                hue={tokens.color.semantic.destructive}
-              />
+              // The hairline kind, as the list and the chat card draw it
+              // (#4132): one look for Mandatory on every screen.
+              <HairlineChip label="Mandatory" />
             ) : null}
             {event.point_value ? (
-              <AccentChip label={`+${event.point_value} pts`} />
+              <AccentChip label={formatPointsChip(event.point_value)} />
             ) : null}
           </View>
         ) : null}
 
+        {/* Details first, then the agenda, then attendance (Paul
+            2026-11-19: "details should come first, followed by the agenda
+            and the attendance"), web's event page in the same order. */}
+        <DetailsSection event={event} now={now} />
+
+        {/* The member's own part, checking in or saying they can't
+            come, reads right under the details, where web's sheet puts its
+            check-in row and excuse. */}
         <CheckInCard event={event} window={window} now={now} />
 
-        {event.description ? (
-          <DetailSection
-            label="DETAILS"
-            body={event.description}
-            styles={styles}
+        <MyExcuse
+          eventId={event.id}
+          required={requiredOfViewer}
+          start={event.start_time}
+          end={event.end_time}
+          opensMinutes={event.check_in_opens_minutes}
+          now={now}
+          startWriting={startExcuse}
+        />
+
+        {/* Keyed by meeting: a half-typed item, or a change still waiting
+            to save, must not carry over to another occurrence opened from
+            the Repeat row's Next link (the old one's is sent as it goes). */}
+        <EventMeetingLists
+          key={`lists-${event.id}`}
+          eventId={event.id}
+          lists={{ agenda: event.agenda, attachments: event.attachments }}
+          // A real events:update answer, and an event still there: every
+          // write to one deleted since would 404.
+          canEdit={canDecideExcuses && !eventGone}
+          // Items are ticked off during the meeting, not before it.
+          checkOffOpen={agendaCheckOffOpen(event.start_time, now)}
+          // Suggested draws on minutes, so it waits for them to be on.
+          upcoming={meetingsOn && Date.parse(event.end_time) > now.getTime()}
+          onDragging={setDragging}
+        />
+
+        {/* The event's creator receives its excuses; an events:update
+            holder may decide them too (§ Excuses). */}
+        {canDecideExcuses ||
+        (viewerId !== null && event.created_by === viewerId) ? (
+          <ExcuseReviewSection
+            eventId={event.id}
+            viewerId={viewerId}
+            canUpdateEvents={canDecideExcuses}
           />
         ) : null}
 
+        <EventMinutesRow eventId={event.id} eventName={event.name} />
+
         {event.notes ? (
+          // Every member the event invites reads these, so never "internal"
+          // (#4934); labeled as web's sheet labels them.
           <DetailSection
-            label="INTERNAL NOTES"
+            label={notesLabel.toUpperCase()}
             body={event.notes}
             styles={styles}
           />
         ) : null}
-
-        <SeriesSection event={event} now={now} />
       </ScreenShell>
       {grants.edit && editTarget ? (
         <NewEventSheet
@@ -254,15 +368,18 @@ export default function EventDetailsScreen() {
           ref={editSheetRef}
           now={now}
           editing={editTarget}
+          // Kept past this screen (#4872): going back and opening this
+          // event's Edit again brings back what was typed.
+          keptDraft={editDraftName ?? undefined}
           onSaved={({ leave }) => {
             // A series save can replace the occurrence on screen with a new
-            // one; the Events list shows where it went.
+            // one; the Calendar shows where it went.
             if (leave) goBackTo(router, BACK_TO_EVENTS.href);
           }}
           onDeleted={() => goBackTo(router, BACK_TO_EVENTS.href)}
         />
       ) : null}
-    </>
+    </ScrollRevealProvider>
   );
 }
 
@@ -298,13 +415,18 @@ export default function EventDetailsScreen() {
  *   opens too, so the QR can be up when the first member arrives. Events have
  *   no creator or hosts list (#3762), so "host" is the permission. A host who
  *   attends still earns the points, so while the window is open and they
- *   aren't in yet, a quieter "Check myself in" under the button opens the
- *   scanner.
- * - **Open, for a guest.** "Scan QR to check in". Held back while their own
- *   row is first being read, so a checked-in member never sees it flash. Not
- *   while that read is paused offline: the scanner says what offline means
- *   for a check-in, and a card with no button would say nothing. A failed
- *   read shows it too (the server refuses a second check-in anyway).
+ *   aren't in yet, a quieter "Check myself in" under the button checks them
+ *   in right there (2026-11-17, `useHostSelfCheckIn`): the API needs no code
+ *   from a host, whose own phone is showing it and can't scan it.
+ * - **Open, for a guest.** One line saying to scan the code here or with the
+ *   phone's camera (2026-11-13: the QR is a link the camera opens), and
+ *   **Scan code** as the card's button (2026-11-17; it was a quiet link),
+ *   which opens s18 with its viewport up, where the typed code is one tap
+ *   further for a camera that won't read it.
+ *   Held back while their own row is first being read, so a checked-in
+ *   member never sees it flash. Not while that read is paused offline: s18
+ *   says what offline means for a check-in. A failed read shows it too (the
+ *   server refuses a second check-in anyway).
  *
  * A check-in zone is said here, on the card it constrains, as one muted line
  * while check-in is open. It used to be its own box painted in
@@ -339,15 +461,15 @@ function CheckInCard({
     : marked
       ? `Marked ${statusLabel("attendance", marked).toLowerCase()}`
       : isOpen
-      ? "Check-in is open"
-      : window.state === "upcoming" && window.opensAt
-        ? `Check-in opens ${formatCheckInOpens(window.opensAt, now)}`
-        : window.state === "closed"
-          ? "Check-in is closed"
-          : "Check-in is unavailable";
+        ? "Check-in is open"
+        : window.state === "upcoming" && window.opensAt
+          ? `Check-in opens ${formatCheckInOpens(window.opensAt, now)}`
+          : window.state === "closed"
+            ? "Check-in is closed"
+            : "Check-in is unavailable";
   const trailing = checkedInAt
     ? event.point_value
-      ? `+${event.point_value} pts`
+      ? formatPointsChip(event.point_value)
       : null
     : isOpen && !own
       ? `closes ${formatEventClock(window.closesAt)}`
@@ -362,11 +484,19 @@ function CheckInCard({
   // The accent fill marks a card with something to do now.
   const active = (isOpen && !own) || hostable;
   const showScan = canScan && !canHost;
-  const openScanner = () =>
-    router.push({
-      pathname: "/check-in",
-      params: { eventId: event.id },
-    });
+  // s18 with Scan code's viewport already up: the member tapped Scan code.
+  const openScanner = useCallback(
+    () =>
+      router.push({
+        pathname: "/check-in",
+        params: { eventId: event.id, scan: "1" },
+      }),
+    [event.id, router],
+  );
+  // A drawn zone needs the member's location, which s18 gathers; anything
+  // else checks in from here in one tap unless a code is needed now.
+  const oneTap = !event.hasCheckInZone;
+  const tap = useOneTapCheckIn(event.id, openScanner);
 
   return (
     <View
@@ -418,30 +548,47 @@ function CheckInCard({
             }
           />
           {canScan ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={openScanner}
-              style={({ pressed }) => [
-                styles.selfCheckIn,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[styles.selfCheckInText, { color: accent }]}>
-                Check myself in
-              </Text>
-            </Pressable>
+            <SelfCheckInLink
+              accent={accent}
+              pending={tap.pending}
+              message={tap.message}
+              onPress={
+                oneTap
+                  ? tap.checkIn
+                  : () =>
+                      router.push({
+                        pathname: "/check-in",
+                        params: { eventId: event.id },
+                      })
+              }
+            />
+          ) : null}
+        </>
+      ) : showScan && oneTap && !event.checkInNeedsCode ? (
+        <>
+          <SheetPrimaryButton
+            label={tap.pending ? "Checking you in…" : "Check in"}
+            accent={accent}
+            onAccent={tokens.color.gold.onHouse}
+            onPress={tap.checkIn}
+          />
+          {tap.message ? (
+            <Text style={styles.zoneText}>{tap.message}</Text>
           ) : null}
         </>
       ) : showScan ? (
-        // The app's one primary button (`sheet-scaffold.tsx`): 48pt, the
-        // control radius, the chapter accent under `gold.onHouse` ink, as the
-        // dues Pay button and every sheet's CTA draw it.
-        <SheetPrimaryButton
-          label="Scan QR to check in"
-          accent={accent}
-          onAccent={tokens.color.gold.onHouse}
-          onPress={openScanner}
-        />
+        <>
+          <Text style={styles.cameraHint}>
+            Scan the code on the officer&apos;s screen, here or with your
+            phone&apos;s camera.
+          </Text>
+          <SheetPrimaryButton
+            label="Scan code"
+            accent={accent}
+            onAccent={tokens.color.gold.onHouse}
+            onPress={openScanner}
+          />
+        </>
       ) : null}
     </View>
   );
@@ -450,7 +597,7 @@ function CheckInCard({
 /**
  * The screen's loading state, on the loaded screen's own styles: the check-in
  * card's frame and header line (components.md §10). The badge row and the
- * DETAILS and INTERNAL NOTES sections are left out: each draws only when the
+ * DETAILS and NOTES sections are left out: each draws only when the
  * event carries one, and a placeholder for one would leave a gap when it
  * doesn't land.
  *
@@ -484,84 +631,136 @@ export function EventDetailSkeleton() {
 }
 
 /**
- * The rest of a repeating series under the occurrence on screen (#3707): the
- * Events list draws a series once, so this is where its other dates are. Its
- * caption is the cadence ("EVERY SUNDAY"), read off the series head, and each
- * date opens that occurrence; one renamed on its own carries its name. Read from the cached Events list (`useEvents`), which already
- * holds every occurrence; nothing draws for a one-time event, or until the
- * list has loaded.
+ * DETAILS: the event form's rows read back (`EVENT_FORM_ROWS`, the same
+ * marks and words), as web's event page lists them, so the page reads as
+ * the form that made it. When and the place are the subtitle and the points
+ * a chip, so the rows here are how it repeats, who's coming and what it's
+ * about.
+ *
+ * A series is one row with a link to its next meeting, not a list of every
+ * date (Paul 2026-11-19: "don't need to see all the upcoming series events
+ * when I click on one"): the calendar holds the rest. Read from the cached
+ * chapter events (`useEvents`), which already hold every occurrence.
  */
-function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
+function DetailsSection({ event, now }: { event: EventDetail; now: Date }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const rowStyles = createEventRowStyles(tokens);
   const router = useRouter();
   const key = eventSeriesKey(event);
   const eventsQuery = useEvents({ enabled: !!key });
+  const rolesQuery = useRoles();
   // Parsed once per payload; only the upcoming filter follows the clock.
   const rows = useMemo(
     () => selectAllEventRows(eventsQuery.data),
     [eventsQuery.data],
   );
-  const occurrences = useMemo(
-    () => selectSeriesOccurrences(rows, event, now),
-    [rows, event, now],
-  );
-  // The series as a whole: its cadence, and the name most of its occurrences
-  // carry, which a renamed one is told apart from.
-  const series = useMemo(() => {
+  const cadence = useMemo(() => {
+    if (!key) return null;
     const all = rows.some((row) => row.id === event.id)
       ? rows
       : sortEventsByStart([event, ...rows]);
-    return {
-      cadence: selectSeriesCadence(all, event),
-      name: (key ? selectSeriesName(all, key) : null) ?? event.name,
-    };
+    return seriesCadenceOf(all, event);
   }, [rows, event, key]);
-  const { cadence } = series;
-  if (!key || occurrences.length === 0) return null;
+  // The series' next meeting after this one.
+  const next = useMemo(() => {
+    const start = Date.parse(event.start_time);
+    return (
+      selectSeriesOccurrences(rows, event, now).find(
+        (row) => Date.parse(row.start_time) > start,
+      ) ?? null
+    );
+  }, [rows, event, now]);
+  const roleName = useMemo(() => {
+    const byId = new Map(
+      toRoleOptions(rolesQuery.data, "keep").map((role) => [
+        role.id,
+        role.name,
+      ]),
+    );
+    return (id: string) =>
+      byId.get(id) ?? (rolesQuery.isSuccess ? "Removed role" : undefined);
+  }, [rolesQuery.data, rolesQuery.isSuccess]);
 
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionLabel}>{cadence ?? "Also in this series"}</Text>
-      <View>
-        {occurrences.map((occurrence, index) => {
-          const when = formatEventWindow(
-            occurrence.start_time,
-            occurrence.end_time,
-            now,
-          );
-          return (
-            <PressableRow
-              key={occurrence.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${occurrence.name}, ${when}`}
-              onPress={() =>
-                router.push({
-                  pathname: "/event-details",
-                  params: { id: occurrence.id },
-                })
-              }
-              style={[
-                rowStyles.flatRow,
-                index === 0 ? null : rowStyles.flatDivider,
-              ]}
-            >
-              <Text style={styles.sectionBody}>
-                {/* An occurrence renamed on its own says so. */}
-                {occurrence.name === series.name
-                  ? when
-                  : `${occurrence.name} · ${when}`}
+    <View style={styles.section} accessibilityLabel="Details">
+      <Text style={styles.sectionLabel}>DETAILS</Text>
+      <ListPanel>
+        {key ? (
+          <DetailRow glyph="repeat" label={EVENT_FORM_ROW_LABELS.repeat}>
+            <View style={styles.detailInline}>
+              <Text style={styles.detailValue}>
+                {cadence ?? "Part of a series"}
               </Text>
-            </PressableRow>
-          );
-        })}
-      </View>
+              {next ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`Next meeting, ${formatDayTime(next.start_time, now) ?? ""}`}
+                  hitSlop={8}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/event-details",
+                      params: { id: next.id },
+                    })
+                  }
+                  style={({ pressed }) => (pressed ? styles.pressed : null)}
+                >
+                  <Text style={styles.detailLink}>
+                    Next {formatDayTime(next.start_time, now) ?? ""}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </DetailRow>
+        ) : null}
+        <DetailRow glyph="attendance" label={EVENT_FORM_ROW_LABELS.attendance}>
+          <Text style={styles.detailValue}>
+            {describeAttendance(
+              attendanceFromEvent(event.attendance),
+              roleName,
+            )}
+          </Text>
+        </DetailRow>
+        {event.description ? (
+          <DetailRow
+            glyph="description"
+            label={EVENT_FORM_ROW_LABELS.description}
+          >
+            <Text style={styles.detailValue}>{event.description}</Text>
+          </DetailRow>
+        ) : null}
+      </ListPanel>
     </View>
   );
 }
 
-/** DETAILS and INTERNAL NOTES share this shape; only the label and body differ. */
+/** One detail: the form row's mark and word, then its value. */
+function DetailRow({
+  glyph,
+  label,
+  children,
+}: {
+  glyph: EventFormGlyphName;
+  label: string;
+  children: ReactNode;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View style={styles.detailRow} accessible={false}>
+      <View style={styles.detailMark}>
+        <EventFormGlyph
+          name={glyph}
+          color={tokens.color.text.mutedForeground}
+          size={16}
+        />
+      </View>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <View style={styles.detailBody}>{children}</View>
+    </View>
+  );
+}
+
+/** DETAILS and NOTES share this shape; only the label and body differ. */
 function DetailSection({
   label,
   body,
@@ -574,12 +773,15 @@ function DetailSection({
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>{label}</Text>
-      <Text style={styles.sectionBody}>{body}</Text>
+      <ListPanel>
+        <Text style={styles.sectionBody}>{body}</Text>
+      </ListPanel>
     </View>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     // `ScreenShell`'s gap, which spaces the loaded screen's blocks.
     skeletonStack: {
@@ -595,7 +797,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.sm,
     },
@@ -624,34 +826,60 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.caption),
     },
-    // A text action under the card's button, centred, at the 44pt floor.
-    selfCheckIn: {
-      minHeight: tokens.touch.minimum,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    selfCheckInText: {
-      ...typeRole(tokens.typography.role.label),
-    },
-    pressed: {
-      opacity: 0.7,
-    },
     zoneText: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.caption),
+    },
+    cameraHint: {
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.body),
     },
     section: {
       gap: tokens.spacing.xs,
     },
     sectionLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      letterSpacing: 0.8,
-      textTransform: "uppercase",
+      ...eyebrowStyle(tokens),
       color: tokens.color.text.muted,
     },
     sectionBody: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.body),
+    },
+    detailRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
+    },
+    // The mark centred on the first line of text beside it.
+    detailMark: {
+      height: tokens.typography.role.body.lineHeight,
+      justifyContent: "center",
+    },
+    detailLabel: {
+      width: 104,
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.body),
+    },
+    detailBody: {
+      flex: 1,
+    },
+    detailInline: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      columnGap: tokens.spacing.sm,
+    },
+    detailValue: {
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.body),
+    },
+    detailLink: {
+      color: tokens.color.text.mutedForeground,
+      textDecorationLine: "underline",
+      ...typeRole(tokens.typography.role.body),
+    },
+    pressed: {
+      opacity: 0.7,
     },
   });
 }

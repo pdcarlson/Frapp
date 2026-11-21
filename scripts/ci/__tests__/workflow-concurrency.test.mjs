@@ -72,6 +72,7 @@ const workflows = workflowFiles()
   .map((name) => ({ name, text: readFileSync(join(WORKFLOWS, name), "utf8") }));
 
 const GUARD = "${{ github.ref != 'refs/heads/main' }}";
+const MAIN_PER_COMMIT = "${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}";
 
 describe("workflow concurrency — a main push run must never cancel another", () => {
   it("reads the workflow directory at all", () => {
@@ -114,6 +115,34 @@ describe("workflow concurrency — a main push run must never cancel another", (
       assert.ok(wf, `${name} must exist`);
       assert.equal(concurrencyOf(wf.text)?.cancel, GUARD, `${name} must carry the guard`);
     }
+  });
+
+  it("gives each migration-drift-gate main run its own group; CI stays per-ref", () => {
+    // `cancel-in-progress: false` stops a RUNNING run from being cancelled, not
+    // a PENDING one: GitHub keeps one running and one pending run per group and
+    // cancels the older pending run when a newer one queues. Keyed on the bare
+    // ref, merges arriving while one run waited dropped migration-drift-gate's
+    // pending runs, so
+    // `migration-order` and `migration-replay` never reported on 14 of 15
+    // commits and Deploy production's empty-`sha` pick found nothing
+    // (2026-11-11, run 43110385644 attempt 1). Nothing in that workflow writes anything
+    // shared, so its main runs go in parallel, one group per commit.
+    const gate = workflows.find((w) => w.name === "migration-drift-gate.yml");
+    assert.ok(gate, "migration-drift-gate.yml must exist");
+    assert.equal(
+      concurrencyOf(gate.text)?.group,
+      `migration-drift-gate-${MAIN_PER_COMMIT}`,
+      "migration-drift-gate.yml must key a main run's group on its commit",
+    );
+
+    // CI stays one at a time on main, deliberately: Deploy staging fires on CI
+    // completion and applies migrations from the commit's tree, so CI runs
+    // finishing out of order would have an older commit's deploy fail against
+    // migrations a newer one already applied. Keying ci.yml on the commit is a
+    // decision, not a cleanup: change this assertion only with Deploy staging.
+    const ci = workflows.find((w) => w.name === "ci.yml");
+    assert.ok(ci, "ci.yml must exist");
+    assert.equal(concurrencyOf(ci.text)?.group, "ci-${{ github.ref }}");
   });
 
   it("documents why the two push-to-main exemptions are not this bug", () => {

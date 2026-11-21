@@ -59,7 +59,7 @@ export function AdjustGlyph({ className, active }: PointsGlyphProps) {
  * Flagged transaction.
  *
  * The pennant is the silhouette, the staff is detail. Distinct from chat's
- * `AuditGlyph`, which means "the `#chapter-audit` channel" — this one means
+ * `AuditGlyph`, which meant "the `#chapter-audit` channel" — this one means
  * "this row tripped the anomaly threshold". Two intents that happen to live
  * near each other are still two intents, and importing chat's into a finance
  * screen would be an edge worth nothing.

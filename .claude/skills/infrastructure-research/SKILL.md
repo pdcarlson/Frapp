@@ -1,7 +1,7 @@
 ---
 name: infrastructure-research
 description: >
-  Gather runtime truth from provider APIs (GitHub, Supabase, Render, Vercel, Infisical) when
+  Gather runtime truth from provider APIs (GitHub, Supabase, Vercel, Infisical, Google Cloud) when
   investigating deployment state, CI failures, environment configuration, secret sync, or service
   health. Use before proposing any infrastructure change, when reviewing PRs that touch CI or
   deploys, when debugging staging/production issues, or when checking whether secrets are in sync.
@@ -24,19 +24,18 @@ changes, update it there, not here.
 
 ## Which channel to use
 
-From a cloud session, use the provider's MCP connector (GitHub, Supabase, Render, Vercel) whenever
+From a cloud session, use the provider's MCP connector (GitHub, Supabase, Vercel) whenever
 it has a tool for the question:
 
-- Direct `fetch` to Render, Vercel, Sentry, PostHog and the Supabase Management API is blocked by
+- Direct `fetch` to Vercel, Sentry, PostHog and the Supabase Management API is blocked by
   the sandbox allowlist. MCP doesn't go through the allowlist.
 - The GitHub MCP is the only sanctioned write path for issues, PRs, and comments.
 
 The `curl`, `gh`, and CLI recipes below are for laptops and Actions. These also work from a session:
-the GitHub REST reads, Infisical (which has no MCP), the local-stack Supabase commands, and the
-staging `/health` check when live-staging egress is on
-([`live-verification`](../live-verification/SKILL.md)). `gh` isn't installed in cloud sandboxes. On
-a laptop, run `export GH_TOKEN="$GITHUB_PAT"` first, because `gh` doesn't read `GITHUB_PAT` (node
-scripts do).
+Infisical (which has no MCP), the local-stack Supabase commands, and the staging `/health` check
+when live-staging egress is on ([`live-verification`](../live-verification/SKILL.md)). GitHub is the
+MCP only, apart from one read-only search exception: sessions carry no GitHub token and don't use
+`gh` ([`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy)).
 
 ## GitHub
 
@@ -47,68 +46,32 @@ scripts do).
 | PR status, checks, reviews | `pull_request_read` | `gh pr view <number>`, `gh pr checks <number>` |
 | Recent PRs touching a path | `search_pull_requests` / `list_pull_requests` | `gh pr list --search "supabase/migrations" --state merged --limit 5` |
 
-### The `api.github.com` route rule
+### Repo settings the MCP has no tool for
 
-From a cloud sandbox:
+Branch protection, rulesets, environments and their required reviewers, repo visibility and
+`vulnerability-alerts` have no MCP tool, and a session doesn't read them over `gh` or REST. From a
+session, judge them by behaviour or ask Paul; the canonical list of signals, and why `gh` fails, is
+[`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy).
+Applying branch protection is a human step with a person's own admin token by policy, whatever the
+access.
 
-- **Read GitHub through the MCP** (the table above).
-- **For a settings read the MCP has no tool for** (branch protection, environments, rulesets,
-  vulnerability alerts), use the direct route with `GITHUB_PAT`: node's built-in `fetch`, which
-  ignores `HTTPS_PROXY` (`/root/.ccr/README.md`), or `curl --noproxy '*'`. Recipes below.
-- **Don't treat a proxy-route result as evidence about permissions.** Anything that honours
-  `HTTPS_PROXY` (plain `curl`, `gh`) takes the proxy route, and what passes there varies by
-  session and path. A 403 on it says nothing about the PAT, so don't regenerate the PAT with
-  broader scopes, and don't set `NODE_USE_ENV_PROXY=1` for these scripts: it puts node back on
-  the proxy route.
-
-Measurements and the canonical statement:
-[`agent-infra.md` → The `api.github.com` route rule](../../../docs/ci-cd/agent-infra.md#the-apigithubcom-route-rule).
-
-### Repo settings the MCP has no tool for (direct REST read)
-
-Use direct REST only to read settings that no MCP tool exposes: branch protection, environments and
-their protection rules, rulesets, repo visibility, and `vulnerability-alerts`.
-
-- It isn't a write fallback. Issue and PR writes still go through the MCP.
-- Applying branch protection is a human step with an admin PAT. That's policy. Access isn't the
-  reason.
-
-The probe below prints the status for each path. Add `await r.json()` if you need a body:
+On a laptop with a token that can read them:
 
 ```bash
-node -e '(async () => {
-  const h = { Authorization: `Bearer ${process.env.GITHUB_PAT}`, Accept: "application/vnd.github+json" };
-  for (const p of [
-    "/repos/pdcarlson/Frapp/branches/main/protection",
-    "/repos/pdcarlson/Frapp/environments",
-    "/repos/pdcarlson/Frapp/environments/production",
-    "/repos/pdcarlson/Frapp/rulesets",
-    "/repos/pdcarlson/Frapp/vulnerability-alerts",
-  ]) {
-    const r = await fetch(`https://api.github.com${p}`, { headers: h });
-    // node's fetch ignores HTTPS_PROXY, so this is the direct route and a 403 is GitHub's
-    // verdict on the PAT. (On the proxy route GitHub headers prove nothing about the PAT.)
-    console.log(r.status, r.headers.get("x-github-request-id") ? "github" : "no-github-headers", p);
-  }
-})()'
-```
-
-With curl, keep `--noproxy '*'`. Without it, you're on the proxy route, and its 403 can be
-mistaken for an auth failure:
-
-```bash
-curl -sS --noproxy '*' -H "Authorization: Bearer $GITHUB_PAT" \
-  -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/pdcarlson/Frapp/environments/production" | python3 -m json.tool
+for p in branches/main/protection rulesets rules/branches/main environments vulnerability-alerts; do
+  printf '%s ' "$p"; gh api -i "repos/frapplive/Frapp/$p" 2>&1 | head -1
+done
+gh api repos/frapplive/Frapp/rules/branches/main --jq '.[].type'   # merge_queue present = queue on
 ```
 
 How to read the results:
 
-- **`vulnerability-alerts` returns 404 `"disabled"`.** Dependabot alerts are off
-  ([#921](https://github.com/pdcarlson/Frapp/issues/921)). The request wasn't blocked.
+- **`vulnerability-alerts` returns 404 `"disabled"`**.
+  Dependabot alerts are off ([#921](https://github.com/pdcarlson/Frapp/issues/921)).
 - **`branches/production` returns 404.** That's expected. The branch was retired in #1340.
 - **Required reviewers for production.** Read them from the protection rules on
-  `environments/production`. Don't infer them from approval timing.
+  `environments/production` on a laptop with an admin token. From a session, say the reviewers are
+  unverified rather than inferring them from approval timing.
 - **Required contexts.** The list is `ALL_REQUIRED_CHECKS` in `scripts/ci/lib/required-checks.mjs`.
   Don't trust a count quoted in a doc.
 
@@ -119,8 +82,9 @@ npm run configure:branch-protection:verify           # reads live and diffs; wri
 npm run configure:branch-protection -- --dry-run     # same read, prints the diff; the `--` is mandatory
 ```
 
-From an agent session, run only `npm run configure:branch-protection:verify`. The other forms can
-write:
+Both are laptop steps; a session runs neither
+([`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy)).
+Prefer `:verify`, because the other forms can write:
 
 - Bare `npm run configure:branch-protection` prints `Mode: LIVE` and `PUT`s the whole protection
   payload.
@@ -128,9 +92,7 @@ write:
   flag, so the script sees no arguments, and `assertKnownArgs` never sees the flag to refuse it.
 - `:verify` sets its own flag and takes no others, so a typo can't turn it into a write.
 
-`:verify` reads through node's `fetch` (`ghRequest` in `scripts/ci/lib/github.mjs`), so it works
-from a cloud sandbox. Its coverage has limits, so a green `:verify` doesn't mean every live field
-matches:
+Its coverage has limits, so a green `:verify` doesn't mean every live field matches:
 
 - It covers only the fields `buildProtectionPayload` manages on `main`.
 - It skips `allow_fork_syncing` while `lock_branch` is false.
@@ -159,40 +121,25 @@ From a session, use the Supabase MCP (`list_projects`, `list_migrations`). A ref
 project it belongs to, so look up refs by project name with `list_projects`. Never use one from
 memory.
 
-## Render: API deployment status and logs
+## Cloud Run: API deployment status and logs
 
-From a session, use the Render MCP (`list_services`, `list_deploys`, `get_deploy`, `list_logs`)
-and pass `workspaceId` on every call. It starts with no workspace selected, and `list_workspaces`
-returns two: Frapp's is **Paul's workspace**, `tea-d6lqqdpaae7s73f60uj0`; the other (`Web Sci 2G`)
-is unrelated, so never pick one by position. Frapp's services in it:
+The API runs on Google Cloud Run since [#5228](https://github.com/frapplive/Frapp/issues/5228)
+(2026-11-17): service `frapp-api` in each environment's Google Cloud project, which
+[`.github/environments.json`](../../../.github/environments.json) names under `cloudRun`. A session
+has no Google connector or key, so it can't read revisions or logs itself:
 
-| Service | Id |
-| --- | --- |
-| `frapp-api-prod` | `srv-d6lqu41aae7s73f62df0` |
-| `frapp-api-staging` | `srv-d6lqsq75r7bs73c2fdc0` |
+- **What a deploy did** is in its GitHub Actions run (`actions_list`, `get_job_logs`): the
+  "Deploy the API to Cloud Run" step logs the revision it made, the candidate check and the
+  traffic move.
+- **Logs and revisions** are read by Paul, in the console (**Cloud Run → frapp-api**, or
+  **Logging → Logs Explorer**) or Cloud Shell (`gcloud logging read …`). Give him the exact query;
+  [`cloud-run.md` § Observability](../../../docs/ops/deployment/cloud-run.md#observability) has the
+  log names and fields.
 
-(Read 2026-11-11 with `list_workspaces` and `list_services`.)
+Until 2026-11-17 the API ran on Render. Frapp has nothing there now, even if a Render connector is
+still attached.
 
-**Logs** ([#4096](https://github.com/pdcarlson/Frapp/issues/4096)). `list_logs` takes
-`resource: [<service id>]` and the same `workspaceId`. Narrow it with `type: ["app"]` (the API's
-own lines), `text` (a Sentry event's `request_id` tag, such as `req_…`, finds that request's line),
-`level`, `statusCode`, `path`, and `startTime` / `endTime` (RFC 3339, within the last 30 days);
-`limit` is at most 100, and while `hasMore` is true, pass back `nextStartTime` / `nextEndTime` for
-the next page. A request line carries `requestId`, `method`, `path`, `statusCode` and `latencyMs`,
-not the error's message. Lines hold raw user and chapter ids, so quote ids from them only in this
-chat, never in an issue or PR. Checked 2026-11-11: a `text` filter on four production request ids
-returned their four lines.
-
-On a laptop, with a Render API key of your own in `RENDER_API_KEY`:
-
-```bash
-curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
-  "https://api.render.com/v1/services?type=web_service&limit=10" | python3 -m json.tool
-curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
-  "https://api.render.com/v1/services/<service_id>/deploys?limit=5" | python3 -m json.tool
-```
-
-Health checks. The `commit` field is the build Render serves:
+Health checks. The `commit` field is the commit the API serves:
 
 ```bash
 curl -s https://api-staging.frapp.live/health   # Staging; also from a session with live-staging egress
@@ -310,8 +257,8 @@ done
 
 ## Infisical sync map
 
-The sync map shows which Infisical environment feeds which Render service (the Vercel syncs are
-deleted; web and landing builds inject Infisical themselves). It lives
+The sync map shows which Infisical environment feeds which Google project's Secret Manager, for
+the API (the Vercel syncs are deleted; web and landing builds inject Infisical themselves). It lives
 in [`SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md) under
 "5. Configure Secret Syncs". Read and update it there. It's a dated copy of the dashboard, so if the
 two disagree, the doc is wrong: fix it and update its date.
@@ -329,7 +276,7 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
      `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`.
 - **Is staging healthy?**
   1. Read `https://api-staging.frapp.live/health`, including `commit`.
-  2. Check Render deploys for recent failures.
+  2. Check recent **Deploy staging** runs for failures (`actions_list`).
   3. Check that the newest web and landing Vercel deployments match the latest green CI on `main`.
      CI runs first, then both projects build, so allow time before calling a host stale.
   4. Compare Infisical `staging` key names against
@@ -341,11 +288,12 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
      deploys a named commit on `main` via `.github/workflows/deploy-production.yml`. Gates:
      [`ci-cd.md` § How Deployments Are Gated](../../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).
   3. Steps 1-2 are the answer.
-     [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) is not a status record: a
-     migration's entry lands with its PR, before any promotion. Read it only for that migration's
+     A migration's ledger page ([`docs/ops/database/migrations/`](../../../docs/ops/database/migrations/README.md),
+     or [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) before 2026-11-12) is not a
+     status record: it lands with its PR, before any promotion. Read it only for that migration's
      promoter notes and post-apply checks.
 - **Are secrets in sync?**
   1. List key names per Infisical environment. The scope traps above apply.
   2. Compare them against `ENV_REFERENCE.md`.
-  3. Confirm that each Render sync is active. There is no Vercel sync to check: both pairs were
+  3. Confirm that each Secret Manager sync is active. There is no Vercel sync to check: both pairs were
      deleted on 2026-09-28 (`SECRETS_MANAGEMENT.md` §5).

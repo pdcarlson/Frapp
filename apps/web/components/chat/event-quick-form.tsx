@@ -2,15 +2,16 @@
 
 import { useId, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { addMinutesToTime, timeSpanMinutes } from "@repo/formatting";
 import {
   localDateTimeToIso,
   type DispatchResult,
   type EventInput,
 } from "@repo/chat-core/dispatch";
-import type { EventFormPrefill } from "@repo/chat-core/integrations";
-import { localIsoDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TimeField } from "@/components/ui/time-field";
+import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
 import {
   SubscriptionNotice,
@@ -24,66 +25,39 @@ import {
   useReportDraft,
 } from "@/components/shared/short-form";
 
-/**
- * Everything the card's Event form holds. Location and points come only from
- * a typed `/event`; the card has no field for them, but carries them to the
- * post and to More options so nothing typed is dropped.
- */
-export interface EventQuickDraft {
-  name: string;
-  /** `YYYY-MM-DD` */
-  date: string;
-  /** `HH:MM` */
-  startTime: string;
-  endTime: string;
-  location?: string;
-  pointValue?: number;
-}
+// The draft lives in its own module so the chat shell can build one without
+// loading this form, which it loads only when the + card opens it (#3716).
+import { eventQuickDraftFrom, type EventQuickDraft } from "./event-quick-draft";
 
 /** `CreateEventDto`'s cap, the one-liner's too. */
 const EVENT_MAX_NAME_LENGTH = 255;
 
-const pad = (value: number) => String(value).padStart(2, "0");
+type Problems = { name?: string; date?: string; time?: string };
+
+/** A first start's end: an hour on, as a calendar's quick create fills it. */
+const FIRST_LENGTH_MINUTES = 60;
+
+/** Minutes from `HH:MM` to midnight: the card's event ends the day it starts. */
+function minutesLeftInDay(time: string): number {
+  return 24 * 60 - timeSpanMinutes("00:00", time);
+}
 
 /**
- * A blank draft: today, from the next whole hour for an hour, as Google
- * Calendar's quick create starts. Late in the evening that runs past
- * midnight, so it starts tomorrow at 9 instead.
+ * The end when the start moves to `startTime`: it keeps the event's length,
+ * as Google Calendar's does, and a first start fills an hour, while the end
+ * still falls on the same day; otherwise it stays as typed.
  */
-export function eventQuickDraftFrom(
-  prefill: EventFormPrefill = {},
-  now: Date = new Date(),
-): EventQuickDraft {
-  const start = new Date(now);
-  start.setMinutes(0, 0, 0);
-  start.setHours(start.getHours() + 1);
-  if (start.getHours() >= 23 || start.getDate() !== now.getDate()) {
-    start.setTime(now.getTime());
-    start.setDate(start.getDate() + 1);
-    start.setHours(9, 0, 0, 0);
+function endFollowing(draft: EventQuickDraft, startTime: string): string {
+  if (!startTime) return draft.endTime;
+  const length =
+    draft.startTime && draft.endTime
+      ? timeSpanMinutes(draft.startTime, draft.endTime)
+      : FIRST_LENGTH_MINUTES;
+  if (length <= 0 || length >= minutesLeftInDay(startTime)) {
+    return draft.endTime;
   }
-  const startTime = `${pad(start.getHours())}:00`;
-  const endTime = `${pad(start.getHours() + 1)}:00`;
-  return {
-    name: prefill.name ?? "",
-    date: prefill.date ?? localIsoDate(start),
-    startTime: normalizeTime(prefill.startTime) ?? startTime,
-    endTime: normalizeTime(prefill.endTime) ?? endTime,
-    ...(prefill.location ? { location: prefill.location } : {}),
-    ...(prefill.pointValue !== undefined
-      ? { pointValue: prefill.pointValue }
-      : {}),
-  };
+  return addMinutesToTime(startTime, length);
 }
-
-/** `9:00` → `09:00`, the time input's value. */
-function normalizeTime(time: string | undefined): string | undefined {
-  if (!time) return undefined;
-  const [hours = "", minutes = ""] = time.split(":");
-  return `${hours.padStart(2, "0")}:${minutes}`;
-}
-
-type Problems = { name?: string; date?: string; time?: string };
 
 export interface EventQuickFormProps {
   initialDraft?: EventQuickDraft;
@@ -104,8 +78,9 @@ export interface EventQuickFormProps {
  * The + card's Event form (#3983): the four fields every event needs, name,
  * date, start and end, as Google Calendar's quick create asks for. The event
  * is created as the one-liner creates it (10 points unless typed, not
- * required, everyone invited), and More options opens the full editor for
- * everything else.
+ * required, everyone invited; a member without `events:update` gets no
+ * points, which the API decides, #3709), and More options opens the full
+ * editor for everything else.
  */
 export function EventQuickForm({
   initialDraft,
@@ -184,7 +159,11 @@ export function EventQuickForm({
   }
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="grid gap-3" noValidate>
+    <form
+      onSubmit={(event) => void submit(event)}
+      className="grid gap-3"
+      noValidate
+    >
       <SubscriptionNotice gate={gate} feature="creating events" />
       <div className="grid gap-1">
         <Label htmlFor={`${ids}-name`}>Event name</Label>
@@ -207,15 +186,16 @@ export function EventQuickForm({
       </div>
       <div className="grid gap-1">
         <Label htmlFor={`${ids}-date`}>Date</Label>
-        <Input
+        <DateField
           ref={dateRef}
           id={`${ids}-date`}
-          type="date"
+          lean="ahead"
+          placeholder="e.g. Friday"
           className={field}
           value={draft.date}
           aria-invalid={problems.date ? true : undefined}
-          onChange={(event) => {
-            edit({ date: event.target.value });
+          onChange={(date) => {
+            edit({ date });
             clear("date");
           }}
           {...gate.controlProps()}
@@ -225,16 +205,15 @@ export function EventQuickForm({
       <div className="grid grid-cols-2 gap-3">
         <div className="grid min-w-0 grid-cols-1 gap-1">
           <Label htmlFor={`${ids}-start`}>Starts</Label>
-          <Input
+          <TimeField
             ref={startRef}
             id={`${ids}-start`}
-            type="time"
-            step={300}
+            placeholder="7 PM"
             className={field}
             value={draft.startTime}
             aria-invalid={problems.time ? true : undefined}
-            onChange={(event) => {
-              edit({ startTime: event.target.value });
+            onChange={(startTime) => {
+              edit({ startTime, endTime: endFollowing(draft, startTime) });
               clear("time");
             }}
             {...gate.controlProps()}
@@ -242,15 +221,17 @@ export function EventQuickForm({
         </div>
         <div className="grid min-w-0 grid-cols-1 gap-1">
           <Label htmlFor={`${ids}-end`}>Ends</Label>
-          <Input
+          <TimeField
             id={`${ids}-end`}
-            type="time"
-            step={300}
+            placeholder="8 PM"
             className={field}
             value={draft.endTime}
+            anchor={draft.startTime || undefined}
+            from={draft.startTime || undefined}
+            span={draft.startTime ? minutesLeftInDay(draft.startTime) : undefined}
             aria-invalid={problems.time ? true : undefined}
-            onChange={(event) => {
-              edit({ endTime: event.target.value });
+            onChange={(endTime) => {
+              edit({ endTime });
               clear("time");
             }}
             {...gate.controlProps()}

@@ -1,7 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
+import { QueryClient } from "@tanstack/react-query";
 import {
   chatReportKeys,
   readsRemovedMessage,
@@ -14,18 +13,9 @@ import {
   type ReportedMessageTimeline,
 } from "./use-chat-reports";
 import { bookmarkKeys } from "./use-chat";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const CHAPTER = "chap-1";
-
-function createTestQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-}
 
 /**
  * A client that retries every failed mutation twice, with no delay so a retry
@@ -48,20 +38,12 @@ function createWrapper(
   mockClient: unknown,
   chapterId: string | null = CHAPTER,
 ) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      chapterId={chapterId}
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId,
+    displayName: "Wrapper",
+  });
 }
 
 describe("useChatReportAttachments", () => {
@@ -96,6 +78,7 @@ describe("useChatReportAttachments", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockGet).toHaveBeenCalledWith("/v1/chat/reports/{id}/attachments", {
+      signal: expect.any(AbortSignal),
       params: { path: { id: "r-1" } },
     });
     expect(result.current.data).toEqual(signed);
@@ -135,6 +118,7 @@ describe("useChatReports", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockGet).toHaveBeenCalledWith("/v1/chat/reports", {
+      signal: expect.any(AbortSignal),
       params: { query: { status: "open" } },
     });
   });
@@ -148,6 +132,7 @@ describe("useChatReports", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockGet).toHaveBeenCalledWith("/v1/chat/reports", {
+      signal: expect.any(AbortSignal),
       params: { query: { status: "dismissed" } },
     });
     expect(

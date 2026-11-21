@@ -1,4 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
+import { readUnverifiedJwtPayload } from '#domain/utils/jwt-segment';
 import type {
   AuthFailureDetail,
   AuthFailureReason,
@@ -21,6 +22,14 @@ export class AuthRejectedException extends UnauthorizedException {
     super(message);
   }
 }
+
+/**
+ * The `message` of every 401 refusing a bearer token that was sent but is not
+ * a live session: the auth guard's, and the throttler's when a rate limit
+ * refuses a request whose token it found invalid (`custom-throttler.guard.ts`).
+ * One string, so a client cannot tell the two apart and recovers the same way.
+ */
+export const INVALID_TOKEN_MESSAGE = 'Invalid or expired token';
 
 /** The refusal detail, when `exception` is the auth guard's 401. */
 export function authFailureDetail(
@@ -57,19 +66,9 @@ export function tokenExpired(
   token: string,
   now: number = Date.now(),
 ): boolean | undefined {
-  const parts = token.split('.');
-  if (parts.length !== 3) return undefined;
-  try {
-    const payload: unknown = JSON.parse(
-      Buffer.from(parts[1], 'base64url').toString('utf8'),
-    );
-    if (!payload || typeof payload !== 'object') return undefined;
-    const { exp } = payload as { exp?: unknown };
-    if (typeof exp !== 'number' || !Number.isFinite(exp)) return undefined;
-    return exp * 1000 <= now;
-  } catch {
-    return undefined;
-  }
+  const exp = readUnverifiedJwtPayload(token)?.exp;
+  if (typeof exp !== 'number' || !Number.isFinite(exp)) return undefined;
+  return exp * 1000 <= now;
 }
 
 export function authRejected(

@@ -71,7 +71,8 @@ export const SETUP_CHECKLIST_WEB_PATH: Readonly<
 > = {
   invite: "/members",
   event: "/events",
-  "study-zone": "/geofences",
+  // Zones are listed and drawn on Chapter settings' Study zones page.
+  "study-zone": "/settings?tab=geofences",
   document: "/documents",
   // Member invoices sit in Plan and billing since #3827.
   dues: "/settings?tab=billing",
@@ -89,9 +90,11 @@ export const SETUP_CHECKLIST_LINES: readonly SetupChecklistDefinition[] = [
   {
     key: "event",
     label: "Schedule the first event",
-    // `EventController` also requires `members:view` at class level, so
+    // An officer's line: since #3709 every member holds `events:create`, so
+    // it also takes `events:update`, which the officers who run the calendar
+    // hold. `EventController` requires `members:view` at class level, so
     // `events:create` alone can't save one, on the web or the phone.
-    permissions: EVENT_CREATE_PERMISSIONS,
+    permissions: [...EVENT_CREATE_PERMISSIONS, "events:update"],
     module: "events",
     doneAt: 1,
   },
@@ -120,7 +123,7 @@ export const SETUP_CHECKLIST_LINES: readonly SetupChecklistDefinition[] = [
   },
 ];
 
-export interface SetupChecklistLine {
+interface SetupChecklistLine {
   key: SetupChecklistKey;
   label: string;
   done: boolean;
@@ -231,10 +234,7 @@ export function useChapterSetupChecklist(options: SetupChecklistOptions = {}): {
   const permissions = permissionsPayload?.permissions as
     readonly string[] | undefined;
   const chapterQuery = useCurrentChapter();
-  const enabledModules = (
-    chapterQuery.data as
-      { enabled_modules?: Record<string, boolean> | null } | undefined
-  )?.enabled_modules;
+  const enabledModules = chapterQuery.data?.enabled_modules;
   const chaptersQuery = useAccessibleChapters();
   const dismissMutation = useDismissOpsNudge();
   // The chapters hidden in this session, ahead of the server write. Keyed by

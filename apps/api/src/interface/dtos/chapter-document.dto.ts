@@ -1,16 +1,57 @@
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsDateString,
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { POSITION_MAX } from '#domain/constants/field-limits';
-import { DOCUMENT_TITLE_MAX_LENGTH } from '@repo/validation';
+import {
+  CHANNEL_ACCESS_ENTRY_PATTERN,
+  CHANNEL_ACCESS_LIST_MAX,
+  DOCUMENT_TITLE_MAX_LENGTH,
+  DOCUMENT_TYPE_NAME_MAX_LENGTH,
+} from '@repo/validation';
+import { ChannelAccessOptionDto } from './chat.dto';
+
+const ACCESS_ENTRY_MESSAGE =
+  'each entry must be tier:<id>, role:<id> or group:<id>, as GET /v1/documents/access-options lists them';
+
+/** The decorators every who-can-see field shares (#3642), as a channel's list. */
+export function WhoCanSee(description: string): PropertyDecorator {
+  return (target, key) => {
+    ApiPropertyOptional({
+      type: [String],
+      nullable: true,
+      maxItems: CHANNEL_ACCESS_LIST_MAX,
+      description,
+    })(target, key);
+    IsOptional()(target, key);
+    IsArray()(target, key);
+    ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)(target, key);
+    IsString({ each: true })(target, key);
+    Matches(CHANNEL_ACCESS_ENTRY_PATTERN, {
+      each: true,
+      message: ACCESS_ENTRY_MESSAGE,
+    })(target, key);
+  };
+}
+
+export const FILE_WHO_CAN_SEE =
+  "Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept.";
+const FOLDER_WHO_CAN_SEE =
+  "Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept.";
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RequestDocumentUploadUrlDto {
@@ -91,11 +132,12 @@ export class ConfirmDocumentUploadDto {
   byte_size?: number;
 
   @ApiPropertyOptional({
-    description: 'Free-text document category (bylaws, budget, minutes, ...)',
+    description:
+      "One of the chapter's document types, matched ignoring case and stored in the list's spelling. A name the chapter doesn't have yet is added to its list.",
   })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(DOCUMENT_TYPE_NAME_MAX_LENGTH)
   document_type?: string;
 
   @ApiPropertyOptional({
@@ -105,6 +147,126 @@ export class ConfirmDocumentUploadDto {
   @IsOptional()
   @IsDateString()
   effective_date?: string;
+
+  @WhoCanSee(FILE_WHO_CAN_SEE)
+  who_can_see?: string[] | null;
+}
+
+/**
+ * Rename or refile one document (`PATCH /v1/documents/:id`, #5563). Send
+ * either or both. `folder: null` files it at the top level, outside every
+ * folder; left out, the folder stays as it is.
+ */
+export class UpdateDocumentDto {
+  @ApiPropertyOptional({
+    description:
+      "New title. Refused for a file added by its Google Drive link, which keeps Drive's name.",
+    maxLength: DOCUMENT_TITLE_MAX_LENGTH,
+  })
+  // `null` is not a title; `@IsOptional` would let it through as one.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(DOCUMENT_TITLE_MAX_LENGTH)
+  title?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description:
+      'Folder name to move it into; null for no folder. A name the chapter has no folder for makes one, as an upload does.',
+    maxLength: 100,
+  })
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  @MaxLength(100)
+  folder?: string | null;
+}
+
+/** Files one move takes (`POST /v1/documents/move`): a screen of selected rows. */
+export const DOCUMENT_MOVE_MAX = 200;
+
+/** Refile many documents into one folder (`POST /v1/documents/move`, #5563). */
+export class MoveDocumentsDto {
+  @ApiProperty({ type: [String], maxItems: DOCUMENT_MOVE_MAX })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DOCUMENT_MOVE_MAX)
+  @IsUUID('all', { each: true })
+  document_ids: string[];
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Folder name to move them into; null for no folder.',
+    maxLength: 100,
+  })
+  @ValidateIf((_object, value) => value !== null)
+  @IsString()
+  @MaxLength(100)
+  folder: string | null;
+}
+
+export class SetDocumentAccessDto {
+  @WhoCanSee(FILE_WHO_CAN_SEE)
+  who_can_see: string[] | null;
+}
+
+/** What the who-can-see picker offers (`GET /v1/documents/access-options`). */
+export class DocumentAccessOptionsDto {
+  @ApiProperty({ type: ChannelAccessOptionDto, isArray: true })
+  options: ChannelAccessOptionDto[];
+  @ApiProperty({
+    type: [String],
+    nullable: true,
+    description:
+      "The tiers every list the caller sets keeps (their own and those above), shown fixed; empty for the President, null when the caller ranks outside the tiers and can't set a list",
+  })
+  always: string[] | null;
+}
+
+/**
+ * Files one batch call takes: a folder import (#2242) mints its upload links
+ * and files its documents 25 at a time, so the fan-out throttle (10 calls a
+ * minute) still lets it move up to 250 files a minute: it mints links ahead
+ * in full batches and gathers filings into batches.
+ */
+const DOCUMENT_BATCH_MAX = 25;
+
+export class RequestDocumentUploadUrlsDto {
+  @ApiProperty({
+    type: [RequestDocumentUploadUrlDto],
+    description: `One to ${DOCUMENT_BATCH_MAX} files, each checked as the single upload-url route checks it`,
+    maxItems: DOCUMENT_BATCH_MAX,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DOCUMENT_BATCH_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => RequestDocumentUploadUrlDto)
+  files: RequestDocumentUploadUrlDto[];
+}
+
+export class DocumentUploadUrlsResponseDto {
+  @ApiProperty({
+    type: [DocumentUploadUrlResponseDto],
+    description: 'One ticket per file, in the order sent',
+  })
+  tickets: DocumentUploadUrlResponseDto[];
+}
+
+export class ConfirmDocumentUploadsDto {
+  @ApiProperty({
+    type: [ConfirmDocumentUploadDto],
+    description: `One to ${DOCUMENT_BATCH_MAX} uploads to file, each as the single confirm route takes it`,
+    maxItems: DOCUMENT_BATCH_MAX,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(DOCUMENT_BATCH_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => ConfirmDocumentUploadDto)
+  documents: ConfirmDocumentUploadDto[];
 }
 
 export class CreateDocumentFolderDto {
@@ -123,6 +285,9 @@ export class CreateDocumentFolderDto {
   @Min(0)
   @Max(POSITION_MAX)
   sort_order?: number;
+
+  @WhoCanSee(FOLDER_WHO_CAN_SEE)
+  who_can_see?: string[] | null;
 }
 
 export class UpdateDocumentFolderDto {
@@ -145,6 +310,64 @@ export class UpdateDocumentFolderDto {
   @Min(0)
   @Max(POSITION_MAX)
   sort_order?: number;
+
+  @WhoCanSee(
+    `${FOLDER_WHO_CAN_SEE} Left out, it stays as it is; null opens it to everyone.`,
+  )
+  who_can_see?: string[] | null;
+}
+
+export class CreateDocumentTypeDto {
+  @ApiProperty({
+    description: 'Type name (unique within the chapter, ignoring case)',
+    maxLength: DOCUMENT_TYPE_NAME_MAX_LENGTH,
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(DOCUMENT_TYPE_NAME_MAX_LENGTH)
+  name: string;
+
+  @ApiPropertyOptional({
+    description: 'Display position. Defaults to the end of the list.',
+    maximum: POSITION_MAX,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(POSITION_MAX)
+  sort_order?: number;
+}
+
+export class UpdateDocumentTypeDto {
+  @ApiPropertyOptional({
+    description:
+      'New type name. Renaming renames the type on every document of that type.',
+    maxLength: DOCUMENT_TYPE_NAME_MAX_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(DOCUMENT_TYPE_NAME_MAX_LENGTH)
+  name?: string;
+
+  @ApiPropertyOptional({
+    description: 'New display position',
+    maximum: POSITION_MAX,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(POSITION_MAX)
+  sort_order?: number;
+}
+
+/** A document type as the type routes return it (#3642). */
+export class DocumentTypeDto {
+  @ApiProperty() id: string;
+  @ApiProperty() chapter_id: string;
+  @ApiProperty() name: string;
+  @ApiProperty() sort_order: number;
+  @ApiProperty() created_at: string;
 }
 
 /** The caller's own starred folders and documents (#3934). */
@@ -185,6 +408,54 @@ export class ChapterDocumentDto {
     description: 'When an officer pinned it for the whole chapter, or null',
   })
   pinned_at: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The Google Drive file this is a copy of, or null for an upload. Drive owns a copy: it cannot be deleted in Frapp (#5157)',
+  })
+  drive_file_id: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "The Drive file's modified time when it was last copied",
+  })
+  drive_modified_at: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "The file's page in Google Drive",
+  })
+  drive_url: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`).",
+  })
+  drive_held_folder_id: string | null;
+  @ApiProperty({
+    enum: ['active', 'no_access'],
+    nullable: true,
+    description:
+      "Set on a Google Drive file added by its link (#5434), which Frapp keeps matching Drive: `active`, or `no_access` once Google answers that Frapp can't see it any more (the copy stays as it was). Null on an upload or a folder copy.",
+  })
+  drive_link_status: 'active' | 'no_access' | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    format: 'date-time',
+    description:
+      'When a linked document last matched its Google Drive file. Null unless `drive_link_status` is set.',
+  })
+  drive_synced_at: string | null;
+  @ApiProperty({
+    type: [String],
+    nullable: true,
+    description:
+      "Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's",
+  })
+  who_can_see: string[] | null;
 }
 
 /** A folder as the folder list and pin routes return it (#3934). */
@@ -200,4 +471,49 @@ export class DocumentFolderDto {
     description: 'When an officer pinned it for the whole chapter, or null',
   })
   pinned_at: string | null;
+  @ApiProperty({
+    type: [String],
+    nullable: true,
+    description:
+      'Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents',
+  })
+  who_can_see: string[] | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The Google Drive folder it mirrors, or null (#5220). Its name follows Drive, so it is renamed and deleted there, not here.',
+  })
+  drive_folder_id: string | null;
+}
+
+/** One grid preview link (#4647): the document and its inline signed URL. */
+export class DocumentPreviewUrlDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ description: 'Inline signed URL, valid for an hour' })
+  url: string;
+}
+
+export class DocumentConfirmResultDto {
+  @ApiProperty({ description: 'The storage path this result is for' })
+  storage_path: string;
+
+  @ApiPropertyOptional({
+    type: ChapterDocumentDto,
+    description: 'The filed document, when it was filed',
+  })
+  document?: ChapterDocumentDto;
+
+  @ApiPropertyOptional({
+    description: 'Why it was not filed, when it was not',
+  })
+  error?: string;
+}
+
+export class DocumentConfirmResultsDto {
+  @ApiProperty({
+    type: [DocumentConfirmResultDto],
+    description: 'One result per upload, in the order sent',
+  })
+  results: DocumentConfirmResultDto[];
 }

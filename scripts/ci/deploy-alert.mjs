@@ -283,7 +283,7 @@ export const OUTCOME_COPY = {
 // The default for the pure functions below, so a test or a caller reasoning
 // about the original watchdog need not thread a config through every call. It
 // is deliberately NOT a fallback for the CLI — see `resolveAlertConfig`.
-export const DEFAULT_ALERT_CONFIG = DEPLOY_STAGING_CONFIG;
+const DEFAULT_ALERT_CONFIG = DEPLOY_STAGING_CONFIG;
 
 /**
  * Throws on a missing OR unknown name, through lib/alert-issue.mjs's

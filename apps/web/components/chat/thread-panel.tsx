@@ -1,6 +1,15 @@
 "use client";
 
-import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { ArrowLeft } from "lucide-react";
 import {
   applyBlockList,
@@ -10,8 +19,16 @@ import {
   type BlockState,
 } from "@repo/chat-core/blocks";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import { TypingLine } from "./typing-line";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { resolveAuthorAvatar } from "@repo/hooks";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
+import {
+  gifToSend,
+  resolveAuthorAvatar,
+  useGifAvailability,
+  useRosterCatchUp,
+  type GifResult,
+} from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -20,15 +37,32 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useMessageThread } from "@/lib/chat/use-message-thread";
 import { cn } from "@/lib/utils";
 import { PanelCloseButton } from "@/components/layout/tool-page-header";
+import { SendArrowGlyph } from "./chat-glyphs";
+import {
+  SCHEDULE_COPY,
+  ScheduleSendButton,
+  ScheduledMessagesBar,
+} from "./schedule-send";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import { ChatBackground } from "./chat-background";
+import { GifPickerButton } from "./gif-picker";
 import {
   ImageViewer,
   ImageViewerProvider,
   useImageViewer,
 } from "./image-viewer";
 import { MessageItem } from "./message-item";
-import { MessageTimeline, type MessageTimelineProps } from "./message-timeline";
+import {
+  MessageTimeline,
+  type MessageTimelineHandle,
+  type MessageTimelineProps,
+} from "./message-timeline";
+import {
+  CHAT_CATCH_UP_COPY,
+  CHAT_CATCH_UP_MIN_MESSAGES,
+  type MentionPick,
+} from "@repo/validation";
+import { errorCopy } from "@repo/hooks/error-copy";
 
 /**
  * The row writes the shell's channel hook makes (`useChatChannel`), each
@@ -53,10 +87,17 @@ export interface ThreadRowWrites {
     messageId: string,
     content: string,
     threadRootId: string | null,
+    /** Members picked while editing (#3835). */
+    mentionPicks?: readonly MentionPick[],
   ) => Promise<void>;
   /** Settles once the member has answered the confirm and the write is done. */
   delete: (messageId: string, threadRootId: string | null) => Promise<void>;
   closePoll: (messageId: string, threadRootId: string | null) => Promise<void>;
+  closeCard: (
+    messageId: string,
+    threadRootId: string | null,
+    kind: ClosableCardKind,
+  ) => Promise<void>;
   act: (
     messageId: string,
     actionType: string,
@@ -75,14 +116,18 @@ export interface ThreadPanelProps extends Pick<
   | "maskedRefresh"
   | "bookmarkedMessageIds"
   | "onToggleBookmark"
+  | "onRemind"
   | "canManageChannel"
   | "onReport"
   | "onBlock"
+  | "onForward"
   | "onOpenProfile"
   | "isMember"
 > {
   channelId: string;
   channelName: string | null;
+  /** The typing line's names (`useMemberDisplayNames().typistLabelFor`). */
+  typistLabelFor: (userId: string) => string | null;
   rootId: string;
   viewerId: string | null;
   blockState: BlockState;
@@ -107,14 +152,74 @@ export interface ThreadPanelProps extends Pick<
    * thread covers, so the thread carries its own. Only beside a tool page.
    */
   onClosePanel?: () => void;
+  /**
+   * Summarize this thread (#3946). Passed only where summaries are on and the
+   * channel is one a summary may read; shown once the thread is long enough
+   * to be worth shortening.
+   */
+  onCatchUp?: () => void;
+  /** The thread's open summary (`catch-up-panel.tsx`), shown above it. */
+  catchUpBlock?: ReactNode;
+  /**
+   * A reply to bring on screen, from a summary line. A new `nonce` asks
+   * again for the same reply. A reply not loaded yet is left where it is.
+   */
+  jumpTo?: { messageId: string; nonce: number } | null;
+  /**
+   * Why a reply's text can't be sent because it names `@Frapp` (#4713), or
+   * `null`: Frapp answers in the channel and a thread has nowhere to draw
+   * it, so a member with Ask is told to ask there, and one whose Ask is not
+   * yet known is told to wait (`replyAskRefusal`). Absent for a member
+   * without Ask.
+   */
+  askRefusal?: (text: string) => string | null;
+  /**
+   * Schedules a reply into this thread to post later (#5005), as the channel
+   * composer's chevron does (`ScheduleSendButton`). Rejects when it couldn't
+   * be scheduled. Absent where the member can't reply.
+   */
+  onSchedule?: (content: string, at: Date) => Promise<void>;
+  /**
+   * Drawn beside the chat on a wide window (#4297) rather than over it: the
+   * channel stays in view, so the header closes the thread (X) rather than
+   * going back to it.
+   */
+  beside?: boolean;
   className?: string;
+}
+
+/**
+ * Unsent replies, by thread, for this tab (#4297). The panel remounts when it
+ * moves between beside the chat and over it (the window crossing 1280px, a
+ * tool page opening), and a reply being typed survives that, and closing and
+ * reopening the thread, as Slack's and Discord's thread drafts do. Cleared
+ * when sent.
+ */
+const threadDrafts = new Map<string, string>();
+
+export function resetThreadDraftsForTests(): void {
+  threadDrafts.clear();
+}
+
+/**
+ * Beside the chat the panel is outside the chat column's drop target, so it
+ * refuses a file dragged from the desktop itself, as that target does for a
+ * thread over the column: otherwise the browser opens the file in place of
+ * the app. A thread reply takes no files.
+ */
+function refuseFileDrop(event: DragEvent<HTMLElement>) {
+  const types = event.dataTransfer?.types;
+  if (!types || !Array.from(types).includes("Files")) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "none";
 }
 
 /**
  * A message thread (#3785, `spec/behavior/chat/README.md` § Message threads):
  * the parent at the top, a reply divider, the replies, Follow and a
- * "Reply in thread…" composer. Inside the docked chat it replaces the message
- * list and Back returns to it.
+ * "Reply in thread…" composer. On a wide window it is a column beside the
+ * chat that X closes (#4297); narrower, or in the docked chat, it replaces the
+ * message list and Back returns to it.
  *
  * The replies are the channel's own rows (#4034): `MessageTimeline` draws
  * them, so a reply carries everything a timeline row does (attachments,
@@ -130,6 +235,7 @@ export function ThreadPanel({
   rootId,
   viewerId,
   nameFor,
+  typistLabelFor,
   avatarFor,
   roleColorFor,
   blockState,
@@ -140,21 +246,50 @@ export function ThreadPanel({
   maskedRefresh,
   bookmarkedMessageIds,
   onToggleBookmark,
+  onRemind,
   canManageChannel,
   onReport,
   onBlock,
+  onForward,
   onOpenProfile,
   isMember,
   canReply,
   canPost,
   onClose,
   onClosePanel,
+  onCatchUp,
+  catchUpBlock,
+  jumpTo,
+  askRefusal,
+  onSchedule,
+  beside = false,
   className,
 }: ThreadPanelProps) {
   const thread = useMessageThread(channelId, rootId, viewerId);
+  const timeline = useRef<MessageTimelineHandle | null>(null);
+  const jumped = useRef<number | null>(null);
+  const loadedReplies = thread.messages.length;
+  useEffect(() => {
+    if (!jumpTo || jumped.current === jumpTo.nonce) return;
+    // Asked again once the replies land, when the thread was only just opened.
+    if (timeline.current?.scrollToMessage(jumpTo.messageId)) {
+      jumped.current = jumpTo.nonce;
+    }
+  }, [jumpTo, loadedReplies]);
   const { toast } = useToast();
   const { isOffline } = useNetwork();
-  const [draft, setDraft] = useState("");
+  const draftKey = `${channelId}:${rootId}`;
+  const [draft, setDraftState] = useState(
+    () => threadDrafts.get(draftKey) ?? "",
+  );
+  const setDraft = useCallback(
+    (value: string) => {
+      setDraftState(value);
+      if (value) threadDrafts.set(draftKey, value);
+      else threadDrafts.delete(draftKey);
+    },
+    [draftKey],
+  );
   const [followBusy, setFollowBusy] = useState(false);
   const [olderError, setOlderError] = useState(false);
 
@@ -170,8 +305,8 @@ export function ThreadPanel({
     root?.thread?.reply_count ?? 0,
   );
 
-  // Escape inside the panel returns to the channel, like Back, and goes no
-  // further: the shell's own Escape (back to the channel list below `lg`)
+  // Escape inside the panel returns to the channel, like Back (or closes the
+  // thread beside it, like X), and goes no further: the shell's own Escape (back to the channel list below `lg`)
   // must not also run. A reply being typed keeps it, as the composer does.
   function onPanelKey(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -184,7 +319,7 @@ export function ThreadPanel({
   }
 
   const typists = visibleTypingUsers(thread.typingUsers, blockState, viewerId);
-  const typing = typingLabel(typists, nameFor);
+  const typing = typingLabel(typists, typistLabelFor);
   const following = thread.followState === "following";
 
   const notSent = useCallback(
@@ -202,9 +337,70 @@ export function ThreadPanel({
   async function submit() {
     const content = draft.trim();
     if (!content) return;
+    // `@Frapp` in a reply (#4713). Frapp answers in the channel, for the
+    // asker alone, and a thread has no place to draw that. Refused, not
+    // posted: a member who expects a private answer must not find their
+    // question in the thread for everyone. The words stay to be moved.
+    const refusal = askRefusal?.(content) ?? null;
+    if (refusal !== null) {
+      toast({ title: refusal });
+      return;
+    }
     setDraft("");
     const { error } = await thread.send(content);
     notSent(error);
+  }
+
+  // Scheduling the reply to post later (#5005), with the channel composer's
+  // own chevron and refusals. The box clears as the request goes, as a send
+  // does, and the words come back on a failure if nothing new was typed.
+  const scheduling = useRef(false);
+  async function schedule(at: Date) {
+    if (!onSchedule) return;
+    const content = draft.trim();
+    // The chevron is greyed offline and with no text, but a Custom time
+    // dialog opened before either can still submit.
+    const refusal = scheduling.current
+      ? SCHEDULE_COPY.busy
+      : isOffline
+        ? SCHEDULE_COPY.offline
+        : !content
+          ? SCHEDULE_COPY.empty
+          : (askRefusal?.(content) ?? null) !== null
+            ? SCHEDULE_COPY.askFrapp
+            : null;
+    if (refusal) {
+      toast({ title: refusal });
+      throw new Error(refusal);
+    }
+    scheduling.current = true;
+    setDraft("");
+    try {
+      await onSchedule(content, at);
+    } catch (error) {
+      const untouched = !threadDrafts.get(draftKey);
+      if (untouched) setDraft(content);
+      toast({
+        title: SCHEDULE_COPY.failed,
+        description: untouched
+          ? errorCopy(error)
+          : SCHEDULE_COPY.notPutBack(errorCopy(error), "reply box"),
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      scheduling.current = false;
+    }
+    toast({ title: SCHEDULE_COPY.scheduled(at) });
+  }
+
+  // The channel composer's GIF button, in the thread's too (#4657): a GIF is
+  // its own reply, so the typed draft stays where it is.
+  const gifs = useGifAvailability();
+  function sendGif(gif: GifResult) {
+    void thread.sendGif(gifToSend(gif, gifs.provider)).then(({ error }) => {
+      notSent(error);
+    });
   }
 
   function onComposerKey(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -277,9 +473,13 @@ export function ThreadPanel({
   );
   const { edit } = writes;
   const editRow = useCallback(
-    async (messageId: string, content: string) => {
+    async (
+      messageId: string,
+      content: string,
+      mentionPicks?: readonly MentionPick[],
+    ) => {
       // Rejects on failure, so the row stays in edit mode with the draft.
-      await edit(messageId, content, targetOf(messageId));
+      await edit(messageId, content, targetOf(messageId), mentionPicks);
       if (messageId === rootId && parentUnheld) refreshRoot();
     },
     [edit, targetOf, rootId, parentUnheld, refreshRoot],
@@ -293,6 +493,15 @@ export function ThreadPanel({
   const onClosePoll = useCallback(
     (messageId: string) => {
       void settle(messageId, writes.closePoll(messageId, targetOf(messageId)));
+    },
+    [writes, targetOf, settle],
+  );
+  const onCloseCard = useCallback(
+    (messageId: string, kind: ClosableCardKind) => {
+      void settle(
+        messageId,
+        writes.closeCard(messageId, targetOf(messageId), kind),
+      );
     },
     [writes, targetOf, settle],
   );
@@ -328,6 +537,9 @@ export function ThreadPanel({
     () => (root ? [root, ...thread.messages] : thread.messages),
     [root, thread.messages],
   );
+  // Replies live in the thread's own cache, not the channel's, so the panel
+  // asks after its own typists and authors (#4493).
+  useRosterCatchUp(thread.typingUsers, lookup);
 
   // One tap-reveal state for the parent and the replies, so tapping one row
   // closes the other's action bar (`components.md` § Per-message actions).
@@ -363,11 +575,14 @@ export function ThreadPanel({
                 onEdit={canPost ? editRow : undefined}
                 onDelete={onDelete}
                 onClosePoll={onClosePoll}
+                onCloseCard={onCloseCard}
                 isBookmarked={bookmarkedMessageIds?.has(root.id)}
                 onToggleBookmark={onToggleBookmark}
+                onRemind={onRemind}
                 canManageChannel={canManageChannel}
                 onReport={onReport}
                 onBlock={onBlock}
+                onForward={onForward}
                 onOpenProfile={onOpenProfile}
                 isMember={isMember}
                 isTapRevealed={rootReveal.isRevealed(root)}
@@ -417,18 +632,27 @@ export function ThreadPanel({
         className,
       )}
       onKeyDown={onPanelKey}
+      onDragOver={beside ? refuseFileDrop : undefined}
+      onDrop={beside ? refuseFileDrop : undefined}
     >
       <ChatBackground channelId={channelId} />
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Back to channel"
-          title="Back to channel"
-          onClick={onClose}
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        </Button>
+      <header
+        className={cn(
+          "flex h-12 shrink-0 items-center gap-2 border-b border-border",
+          beside ? "pl-4 pr-2" : "px-2",
+        )}
+      >
+        {beside ? null : (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Back to channel"
+            title="Back to channel"
+            onClick={onClose}
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        )}
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-body font-semibold">Thread</h2>
           {channelName ? (
@@ -437,6 +661,11 @@ export function ThreadPanel({
             </p>
           ) : null}
         </div>
+        {onCatchUp && root && shownReplies + 1 >= CHAT_CATCH_UP_MIN_MESSAGES ? (
+          <Button variant="ghost" size="sm" onClick={onCatchUp}>
+            {CHAT_CATCH_UP_COPY.thread_action}
+          </Button>
+        ) : null}
         {root ? (
           <Button
             variant="ghost"
@@ -448,7 +677,9 @@ export function ThreadPanel({
             {following ? "Following" : "Follow"}
           </Button>
         ) : null}
-        {onClosePanel ? (
+        {beside ? (
+          <PanelCloseButton label="Close thread" onClick={onClose} />
+        ) : onClosePanel ? (
           <PanelCloseButton
             label="Close chat"
             onClick={onClosePanel}
@@ -457,8 +688,10 @@ export function ThreadPanel({
         ) : null}
       </header>
 
+      {catchUpBlock}
       <div className="min-h-0 flex-1 pb-2">
         <MessageTimeline
+          ref={timeline}
           channelId={channelId}
           messages={lookup}
           blockList={{ blockState, thread: blockedReplies }}
@@ -488,22 +721,24 @@ export function ThreadPanel({
           onEdit={canReply ? editRow : undefined}
           onDelete={onDelete}
           onClosePoll={onClosePoll}
+          onCloseCard={onCloseCard}
           bookmarkedMessageIds={bookmarkedMessageIds}
           onToggleBookmark={onToggleBookmark}
+          onRemind={onRemind}
           canManageChannel={canManageChannel}
           onReport={onReport}
           onBlock={onBlock}
+          onForward={onForward}
           onOpenProfile={onOpenProfile}
           isMember={isMember}
         />
       </div>
       <ImageViewer viewer={rootViewer} />
 
-      {typing ? (
-        <p className="shrink-0 px-4 pb-1 text-caption text-muted-foreground">
-          {typing}
-        </p>
-      ) : null}
+      <TypingLine label={typing} />
+      {/* This thread's scheduled replies (#5005), wherever the member can
+          read: one that failed for lost posting is the one to delete. */}
+      <ScheduledMessagesBar channelId={channelId} threadRootId={rootId} />
       <div className="shrink-0 border-t border-border p-3">
         {canReply ? (
           <>
@@ -515,10 +750,37 @@ export function ThreadPanel({
               disabled={isOffline}
               onChange={(event) => {
                 setDraft(event.target.value);
-                if (event.target.value) thread.emitTyping();
+                // An emptied box is nobody typing, as in the channel's.
+                if (event.target.value.trim()) thread.emitTyping();
               }}
               onKeyDown={onComposerKey}
             />
+            <div className="mt-1 flex items-center gap-1">
+              {gifs.available && !isOffline ? (
+                <GifPickerButton provider={gifs.provider} onPick={sendGif} />
+              ) : null}
+              {/* Send and its schedule chevron, as the channel composer
+                  draws them (#5005); Enter still sends. */}
+              <div className="ml-auto flex items-center">
+                <Button
+                  type="button"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
+                  onClick={() => void submit()}
+                  aria-label="Send reply"
+                  title="Send (Enter)"
+                  disabled={isOffline || !draft.trim()}
+                >
+                  <SendArrowGlyph className="h-4 w-4" />
+                </Button>
+                {onSchedule ? (
+                  <ScheduleSendButton
+                    disabled={isOffline || !draft.trim()}
+                    onSchedule={schedule}
+                  />
+                ) : null}
+              </div>
+            </div>
             {isOffline ? (
               <p className="mt-1 text-caption text-muted-foreground">
                 You&apos;re offline. You can reply once you&apos;re back online.

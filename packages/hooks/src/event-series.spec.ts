@@ -2,12 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   collapseSeries,
   eventSeriesKey,
-  horizonEnd,
   isSeriesEvent,
   seriesCadenceLabel,
+  seriesCadenceOf,
   ruleTokenLabel,
   seriesHeadOf,
-  splitByHorizon,
 } from "./event-series";
 
 type Row = {
@@ -102,39 +101,38 @@ describe("collapseSeries", () => {
   });
 });
 
-describe("splitByHorizon", () => {
-  it("holds today through the end of the fourteenth day after it", () => {
-    const end = new Date(horizonEnd(NOW));
-    expect(end.getHours()).toBe(0);
-    const today = new Date(NOW);
-    today.setHours(0, 0, 0, 0);
-    expect(Math.round((end.getTime() - today.getTime()) / 86_400_000)).toBe(15);
-  });
-
-  it("puts what starts past the horizon behind Later", () => {
-    const end = horizonEnd(NOW);
-    const at = (ms: number) => ({
-      event: { id: String(ms), start_time: new Date(ms).toISOString() },
-      series: null,
-    });
-    const { soon, later } = splitByHorizon(
-      [at(NOW + 3600_000), at(end - 1), at(end), at(end + 86_400_000)],
-      NOW,
-    );
-    expect(soon).toHaveLength(2);
-    expect(later).toHaveLength(2);
-  });
-
-  it("keeps an unreadable start in view", () => {
-    const { soon } = splitByHorizon(
-      [{ event: { id: "x", start_time: "nope" }, series: null }],
-      NOW,
-    );
-    expect(soon).toHaveLength(1);
-  });
-});
-
 describe("seriesCadenceLabel", () => {
+  it("reads a structured rule from its own days (#4488)", () => {
+    expect(
+      seriesCadenceLabel(
+        "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=10;TZID=America/New_York",
+        // Noon in New York: the same day on the test device's calendar.
+        "2027-01-04T17:00:00Z",
+      ),
+    ).toBe("Every Mon and Thu");
+    expect(
+      seriesCadenceLabel(
+        "FREQ=MONTHLY;INTERVAL=1;BYDAY=-1FR;COUNT=4;TZID=America/New_York",
+        "2027-01-29T17:00:00Z",
+      ),
+    ).toBe("Every month on the last Friday");
+  });
+
+  it("names a by-date structured rule's usual day, not a clamped row's", () => {
+    // Built from local parts so the day holds in any test zone.
+    const on31 = [
+      new Date(2027, 0, 31, 12).toISOString(),
+      new Date(2027, 2, 31, 12).toISOString(),
+    ];
+    const feb28 = new Date(2027, 1, 28, 12).toISOString();
+    expect(
+      seriesCadenceLabel("FREQ=MONTHLY;INTERVAL=1;COUNT=6;TZID=UTC", feb28, [
+        ...on31,
+        feb28,
+      ]),
+    ).toBe("Every month on the 31st");
+  });
+
   // Built from local parts so the weekday holds in any test zone.
   const sunday = new Date(2026, 10, 15, 18, 48).toISOString();
   it("names the weekday most meetings fall on, not one moved meeting's", () => {
@@ -198,5 +196,86 @@ describe("seriesCadenceLabel", () => {
     expect(seriesCadenceLabel(null, sunday)).toBeNull();
     expect(seriesCadenceLabel("", sunday)).toBeNull();
     expect(seriesCadenceLabel("WEEKLY", "nope")).toBeNull();
+  });
+});
+
+describe("seriesCadenceOf", () => {
+  // Built from local parts so the day holds in any test zone.
+  const row = (id: string, start: Date, extra: Partial<Row> = {}): Row => ({
+    id,
+    name: "Chapter",
+    start_time: start.toISOString(),
+    recurrence_rule: id === "head" ? "WEEKLY" : null,
+    parent_event_id: id === "head" ? null : "head",
+    ...extra,
+  });
+
+  it("keeps the series' weekday when the head alone is moved", () => {
+    // The head moved to Monday Nov 9 on its own; the rest meet Sundays.
+    const rows = [
+      row("head", new Date(2026, 10, 9, 18)),
+      row("c1", new Date(2026, 10, 15, 18)),
+      row("c2", new Date(2026, 10, 22, 18)),
+    ];
+    expect(rows.map((event) => seriesCadenceOf(rows, event))).toEqual([
+      "Every Sunday",
+      "Every Sunday",
+      "Every Sunday",
+    ]);
+  });
+
+  it("counts only the series' own meetings toward its weekday", () => {
+    // Three Sunday meetings, among more Monday rows from a one-time event and
+    // another series: the Mondays must not outvote the series' own Sundays.
+    const rows = [
+      row("head", new Date(2026, 10, 8, 18)),
+      row("c1", new Date(2026, 10, 15, 18)),
+      row("c2", new Date(2026, 10, 22, 18)),
+      row("solo", new Date(2026, 10, 9, 18), { parent_event_id: null }),
+      row("other", new Date(2026, 10, 16, 18), {
+        parent_event_id: null,
+        recurrence_rule: "WEEKLY",
+      }),
+      row("o1", new Date(2026, 10, 23, 18), { parent_event_id: "other" }),
+      row("o2", new Date(2026, 10, 30, 18), { parent_event_id: "other" }),
+    ];
+    expect(seriesCadenceOf(rows, rows[1]!)).toBe("Every Sunday");
+    expect(seriesCadenceOf(rows, rows[5]!)).toBe("Every Monday");
+  });
+
+  it("reads a monthly occurrence clamped to the 30th as the 31st", () => {
+    const rows = [
+      row("head", new Date(2027, 2, 31, 18), { recurrence_rule: "MONTHLY" }),
+      row("c1", new Date(2027, 3, 30, 18)),
+      row("c2", new Date(2027, 4, 31, 18)),
+    ];
+    expect(seriesCadenceOf(rows, rows[1]!)).toBe("Every month on the 31st");
+  });
+
+  it("reads the rule off the head itself, even when the head isn't listed", () => {
+    const head = row("head", new Date(2026, 10, 15, 18), {
+      recurrence_rule: "BIWEEKLY",
+    });
+    expect(seriesCadenceOf([], head)).toBe("Every other Sunday");
+  });
+
+  it("says nothing for a one-time event or a series without its head", () => {
+    const solo = row("solo", new Date(2026, 10, 12, 18), {
+      parent_event_id: null,
+    });
+    const orphan = row("orphan", new Date(2026, 10, 15, 18), {
+      parent_event_id: "gone",
+    });
+    const rows = [solo, orphan];
+    expect(seriesCadenceOf(rows, solo)).toBeNull();
+    expect(seriesCadenceOf(rows, orphan)).toBeNull();
+  });
+
+  it("says nothing when the head has lost its rule", () => {
+    const rows = [
+      row("head", new Date(2026, 10, 15, 18), { recurrence_rule: null }),
+      row("c1", new Date(2026, 10, 22, 18)),
+    ];
+    expect(seriesCadenceOf(rows, rows[1]!)).toBeNull();
   });
 });

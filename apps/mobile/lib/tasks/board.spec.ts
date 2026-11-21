@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { selectTaskRows } from "./board";
+import {
+  rowIsSentBack,
+  rowNeedsSignOff,
+  selectTaskRows,
+  toTaskRow,
+} from "./board";
 
 function at(year: number, month: number, day: number, hour = 12): Date {
   return new Date(year, month - 1, day, hour, 0, 0, 0);
@@ -30,8 +35,7 @@ describe("selectTaskRows — identity", () => {
     // Not "no tasks" — /v1/users/me has not answered. The screen renders this
     // as still-loading, or every cold start flashes an empty state.
     expect(selectTaskRows([task()], null, NOW)).toEqual({
-      dueThisWeek: [],
-      later: [],
+      groups: { today: [], week: [], later: [] },
       total: 0,
     });
   });
@@ -47,7 +51,91 @@ describe("selectTaskRows — identity", () => {
       NOW,
     );
     expect(board.total).toBe(1);
-    expect(titles(board.dueThisWeek)).toEqual(["Mine"]);
+    expect(titles(board.groups.week)).toEqual(["Mine"]);
+  });
+});
+
+describe("toTaskRow — photos, proof and send-back (#4635)", () => {
+  it("carries the new fields off the wire", () => {
+    const row = toTaskRow(
+      task({
+        status: "IN_PROGRESS",
+        stored_status: "IN_PROGRESS",
+        proof_kind: "link",
+        proof_link: "https://example.com",
+        sent_back_at: "2026-08-16T12:00:00Z",
+        sent_back_reason: "Floor is still sticky",
+        completion_note: "",
+        photos: [
+          { id: "p1", kind: "reference", storage_path: "a/1.jpg", position: 0 },
+          { id: "bad", kind: "other", storage_path: "a/2.jpg" },
+        ],
+      }),
+    )!;
+    expect(row).toMatchObject({
+      proofKind: "link",
+      proofLink: "https://example.com",
+      sentBackAt: "2026-08-16T12:00:00Z",
+      sentBackReason: "Floor is still sticky",
+      completionNote: null,
+      photos: [{ id: "p1", kind: "reference", storage_path: "a/1.jpg" }],
+    });
+    expect(rowIsSentBack(row)).toBe(true);
+    expect(rowNeedsSignOff(row)).toBe(true);
+  });
+
+  it("reads a pre-#4635 row as asking for nothing, never sent back", () => {
+    const row = toTaskRow(task({ point_reward: null }))!;
+    expect(row.proofKind).toBe("none");
+    expect(row.photos).toEqual([]);
+    expect(rowIsSentBack(row)).toBe(false);
+    expect(rowNeedsSignOff(row)).toBe(false);
+  });
+
+  it("stops reading Needs changes once it is marked done again", () => {
+    const row = toTaskRow(
+      task({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        sent_back_at: "2026-08-16T12:00:00Z",
+      }),
+    )!;
+    expect(rowIsSentBack(row)).toBe(false);
+  });
+});
+
+describe("toTaskRow — groups and Up for grabs (tasks.md § Up for grabs)", () => {
+  it("reads a group copy's summary and the posting it was claimed from", () => {
+    const row = toTaskRow(
+      task({
+        group: {
+          audience: "role",
+          target_id: "role-1",
+          target_name: "Recruitment",
+          total: 6,
+          done: 2,
+          confirmed: 1,
+        },
+        group_id: "g1",
+        open_task_id: "open-1",
+      }),
+    )!;
+    expect(row.group).toEqual({
+      audience: "role",
+      targetId: "role-1",
+      targetName: "Recruitment",
+      total: 6,
+      done: 2,
+      confirmed: 1,
+    });
+    expect(row.groupId).toBe("g1");
+    expect(row.openTaskId).toBe("open-1");
+  });
+
+  it("reads a one-person task as no group, claimed from nothing", () => {
+    const row = toTaskRow(task({ group: { total: 3 } }))!;
+    expect(row.group).toBeNull();
+    expect(row.openTaskId).toBeNull();
   });
 });
 
@@ -75,17 +163,23 @@ describe("selectTaskRows — narrowing", () => {
     // The server derives OVERDUE in UTC; a local recomputation would disagree
     // with it every evening west of Greenwich.
     const board = selectTaskRows(
-      [task({ status: "OVERDUE", stored_status: "TODO", due_date: "2026-08-15" })],
+      [
+        task({
+          status: "OVERDUE",
+          stored_status: "TODO",
+          due_date: "2026-08-15",
+        }),
+      ],
       ME,
       NOW,
     );
-    expect(board.dueThisWeek[0]?.isOverdue).toBe(true);
-    expect(board.dueThisWeek[0]?.storedStatus).toBe("TODO");
+    expect(board.groups.today[0]?.isOverdue).toBe(true);
+    expect(board.groups.today[0]?.storedStatus).toBe("TODO");
   });
 });
 
 describe("selectTaskRows — grouping", () => {
-  it("puts today through six days out in DUE THIS WEEK", () => {
+  it("puts today in TODAY and the next six days in THIS WEEK (#4295 step 5)", () => {
     const board = selectTaskRows(
       [
         task({ id: "a", title: "Today", due_date: "2026-08-17" }),
@@ -95,8 +189,9 @@ describe("selectTaskRows — grouping", () => {
       ME,
       NOW,
     );
-    expect(titles(board.dueThisWeek)).toEqual(["Today", "Tomorrow", "Six"]);
-    expect(board.later).toEqual([]);
+    expect(titles(board.groups.today)).toEqual(["Today"]);
+    expect(titles(board.groups.week)).toEqual(["Tomorrow", "Six"]);
+    expect(board.groups.later).toEqual([]);
   });
 
   it("puts seven days out and beyond in LATER", () => {
@@ -108,21 +203,32 @@ describe("selectTaskRows — grouping", () => {
       ME,
       NOW,
     );
-    expect(board.dueThisWeek).toEqual([]);
-    expect(titles(board.later)).toEqual(["Seven", "Far"]);
+    expect(board.groups.today).toEqual([]);
+    expect(board.groups.week).toEqual([]);
+    expect(titles(board.groups.later)).toEqual(["Seven", "Far"]);
   });
 
-  it("leads with the most overdue row, above anything still ahead", () => {
+  it("leads TODAY with the most overdue row", () => {
     const board = selectTaskRows(
       [
         task({ id: "a", title: "Today", due_date: "2026-08-17" }),
-        task({ id: "b", title: "Late", due_date: "2026-08-16", status: "OVERDUE" }),
-        task({ id: "c", title: "Latest", due_date: "2026-07-20", status: "OVERDUE" }),
+        task({
+          id: "b",
+          title: "Late",
+          due_date: "2026-08-16",
+          status: "OVERDUE",
+        }),
+        task({
+          id: "c",
+          title: "Latest",
+          due_date: "2026-07-20",
+          status: "OVERDUE",
+        }),
       ],
       ME,
       NOW,
     );
-    expect(titles(board.dueThisWeek)).toEqual(["Latest", "Late", "Today"]);
+    expect(titles(board.groups.today)).toEqual(["Latest", "Late", "Today"]);
   });
 
   it("keeps an undateable row in LATER rather than dropping it", () => {
@@ -136,7 +242,7 @@ describe("selectTaskRows — grouping", () => {
       NOW,
     );
     // Hiding a task the member owes is worse than an odd-looking row.
-    expect(titles(board.later)).toEqual(["Dated", "Blank", "Garbage"]);
+    expect(titles(board.groups.later)).toEqual(["Dated", "Blank", "Garbage"]);
   });
 
   it("orders same-day rows stably by title", () => {
@@ -148,7 +254,7 @@ describe("selectTaskRows — grouping", () => {
       ME,
       NOW,
     );
-    expect(titles(board.dueThisWeek)).toEqual(["Alpha", "Beta"]);
+    expect(titles(board.groups.week)).toEqual(["Alpha", "Beta"]);
   });
 });
 
@@ -170,13 +276,14 @@ describe("selectTaskRows — completed rows", () => {
           due_date: "2026-08-14",
           completed_at: at(2026, 8, 15).toISOString(),
         }),
-        task({ id: "b", title: "Open", due_date: "2026-08-18" }),
+        task({ id: "b", title: "Open", due_date: "2026-08-17" }),
       ],
       ME,
       NOW,
     );
-    expect(titles(board.dueThisWeek)).toEqual(["Open", "Paid dues"]);
-    expect(board.dueThisWeek[1]?.isDone).toBe(true);
+    // A finished row whose day passed stays in TODAY, under open work.
+    expect(titles(board.groups.today)).toEqual(["Open", "Paid dues"]);
+    expect(board.groups.today[1]?.isDone).toBe(true);
   });
 
   it("retires a task finished more than a week ago", () => {
@@ -251,7 +358,14 @@ describe("selectTaskRows — completed rows", () => {
   it("keeps a finished task whose completion time cannot be read", () => {
     // Retiring on a timestamp this module never saw is the worse failure.
     const board = selectTaskRows(
-      [done({ id: "a", title: "Undated", due_date: "2026-07-01", completed_at: null })],
+      [
+        done({
+          id: "a",
+          title: "Undated",
+          due_date: "2026-07-01",
+          completed_at: null,
+        }),
+      ],
       ME,
       NOW,
     );

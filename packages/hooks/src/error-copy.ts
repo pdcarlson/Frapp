@@ -1,7 +1,15 @@
-import { codeOf, serverMessageOf, statusOf } from "@repo/api-sdk";
+import {
+  codeOf,
+  isDefinitiveClientError,
+  isServerBusy,
+  responseStatusOf,
+  serverMessageOf,
+  statusOf,
+} from "@repo/api-sdk";
 import {
   OFFLINE_COPY,
   refusalCopy,
+  SERVER_BUSY_COPY,
   STATUS_ERROR_COPY,
   TRY_AGAIN,
 } from "@repo/validation";
@@ -46,10 +54,12 @@ export function errorCopy(
     return error.status === 413 ? STATUS_ERROR_COPY[413]! : error.message;
   }
 
+  if (isServerBusy(error)) return SERVER_BUSY_COPY;
+
   const known = serverCopyOf(error);
   if (known) return known;
 
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   const message = serverMessageOf(error);
   if (status !== undefined && message) {
     if (
@@ -76,7 +86,7 @@ export function errorCopy(
  */
 export function serverCopyOf(error: unknown): string | null {
   const code = codeOf(error);
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   // A message on something with no status is a client `Error`'s, not the
   // server's, so only a code is read from it.
   const message = status === undefined ? null : serverMessageOf(error);
@@ -122,20 +132,6 @@ function isMemberSentence(message: string): boolean {
 }
 
 /**
- * The status `@repo/chat-core` hangs on the `Error` it wraps a refusal in
- * (`throwApiError`: `response.status`, or `context.status`), where
- * {@link statusOf} doesn't look.
- */
-function wrappedStatusOf(error: unknown): number | undefined {
-  const candidate = error as {
-    response?: { status?: unknown };
-    context?: { status?: unknown };
-  } | null;
-  const status = candidate?.response?.status ?? candidate?.context?.status;
-  return typeof status === "number" ? status : undefined;
-}
-
-/**
  * Whether a failure with no status is a dropped connection: `fetch`'s
  * `TypeError` (`Failed to fetch` in Chrome, `Load failed` in Safari,
  * `NetworkError…` in Firefox, `Network request failed` in React Native), or
@@ -152,9 +148,66 @@ function isNetworkFailure(error: unknown): boolean {
 
 export { TRY_AGAIN };
 
+/**
+ * Whether a failed write earns a **Try again** button beside its message: the
+ * same call, sent again, may go through. True for a request that got no
+ * answer (a dropped connection or a timeout, read by message as `errorCopy`
+ * reads it), a 5xx, and an intermediary's 408, 460 or 499; false for any
+ * other statusless failure (location denied, a client bug, an abort), for a
+ * refusal the API decided (any other 4xx, the throttler's 429 included), which
+ * would only be refused again (a busy server's 429 is not one: `isServerBusy`),
+ * and for an error the client wrote for members. It is the API retry policy's one predicate
+ * (`isDefinitiveClientError`, `spec/ui/resilience/api-retry.md`), read through
+ * chat-core's wrapped status too.
+ *
+ * The client's own retries have already run by the time a write reaches its
+ * failure message, so this is the member's retry, not another automatic one.
+ */
+export function canTryAgain(error: unknown): boolean {
+  if (
+    error instanceof MemberFacingError ||
+    error instanceof SignedUploadError
+  ) {
+    return false;
+  }
+  if (isServerBusy(error)) return true;
+  const status = statusOf(error) ?? responseStatusOf(error);
+  if (status !== undefined) return !isDefinitiveClientError(status);
+  // No status: only a request that got no answer. A device refusal (location
+  // denied, no geolocation) or a bug thrown in client code fails the same way
+  // every time, and an abort was the member's own doing.
+  return isDeadRequest(error);
+}
+
+/** `expo/fetch`'s rejection when no answer came: `fetch failed: <native>`. */
+const EXPO_FETCH_FAILED = /^fetch failed: /;
+
+function isDeadRequest(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name === "AbortError") return false;
+  if (EXPO_FETCH_FAILED.test(error.message)) {
+    return !/aborted/i.test(error.message);
+  }
+  // Safari's dead fetch, which Sentry's fetch instrumentation suffixes with
+  // the host (`Load failed (api.frapp.live)`) where `isNetworkFailure`
+  // expects it bare.
+  if (/^load failed \([^()]*\)$/i.test(error.message)) return true;
+  return isNetworkFailure(error);
+}
+
 /** writing.md § copy rules: the server failed, and nothing more is known. */
 export const LOAD_FAILURE_SERVER_COPY =
   "Something went wrong on our side. Retry in a moment.";
+
+/**
+ * A read refused for its sign-in token. On mobile that means the token lapsed
+ * while the app was suspended and a fresh one is on its way: the screen
+ * retries by itself when it lands (`apps/mobile/lib/query-client.ts`), and an
+ * account that really is gone is signed out by `onUnauthorized`, which takes
+ * the member off this screen. "You've been signed out" was untrue in both
+ * cases (FRAPP-API-E, 2026-11-12).
+ */
+export const LOAD_FAILURE_SIGN_IN_COPY =
+  "Refreshing your sign-in. This reloads in a moment.";
 
 /**
  * The second line of a screen's "Couldn't load …" state, by what actually
@@ -166,11 +219,12 @@ export const LOAD_FAILURE_SERVER_COPY =
  *
  * One fixed line used to cover every load failure, and whichever cause it
  * named was wrong for the others ("Confirm your chapter access" sent a member
- * on a dropped connection to their officers). A 401 normally never reaches a
- * screen, because the client signs a refused session out (`onUnauthorized`).
+ * on a dropped connection to their officers). A 401 says the sign-in is being
+ * refreshed ({@link LOAD_FAILURE_SIGN_IN_COPY}).
  */
 export function describeLoadFailure(error: unknown): string {
-  const status = statusOf(error) ?? wrappedStatusOf(error);
+  const status = statusOf(error) ?? responseStatusOf(error);
   if (status === undefined) return OFFLINE_COPY;
+  if (status === 401) return LOAD_FAILURE_SIGN_IN_COPY;
   return errorCopy(error, LOAD_FAILURE_SERVER_COPY);
 }

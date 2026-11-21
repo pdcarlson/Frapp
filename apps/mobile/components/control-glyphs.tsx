@@ -1,14 +1,14 @@
 import { Platform } from "react-native";
 import { Circle, Path } from "react-native-svg";
-import { Frame, paint } from "@/components/more/more-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
  * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, mark
- * all read, try again, share, and back. Share also leads a labelled button (setup's
+ * all read, try again, share, back, and List / Grid's two layouts. Share also leads a labelled button (setup's
  * `Share invite`), and the invite link's own mark, `LinkGlyph`, lives here
  * beside it. Control furniture, so they draw only the §1 stroke recipe's
- * detail strokes, with no silhouette fill, from `more-glyphs.tsx`'s `Frame`
+ * detail strokes, with no silhouette fill, from `glyph-recipe.tsx`'s `Frame`
  * and `paint`, so a change to the recipe reaches them too. Back keeps the
  * recipe but draws a heavier stroke.
  *
@@ -27,6 +27,32 @@ interface ControlGlyphProps {
 }
 
 const DEFAULT_SIZE = 20;
+
+/**
+ * The List / Grid toggle's two pictures: Lucide's `LayoutGrid` and `List`,
+ * as Google Drive and Files draw their layout switch. The toggle shows the
+ * layout a tap switches to.
+ */
+export function GridGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
+        {...detail}
+      />
+    </Frame>
+  );
+}
+
+export function ListGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" {...detail} />
+    </Frame>
+  );
+}
 
 export function CloseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
@@ -96,6 +122,238 @@ export function PencilGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/**
+ * Edit details, a thing's facts rather than its words: web draws Lucide's
+ * `SlidersHorizontal` beside Edit minutes' `Pencil` in the minutes' ⋯ menu.
+ */
+export function SlidersGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3" {...detail} />
+      <Path d="M14 2v4M8 10v4M16 18v4" {...detail} />
+    </Frame>
+  );
+}
+
+/** Copy: web draws Lucide's `Copy` for the same intent. */
+export function CopyGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M10 8h10a2 2 0 012 2v10a2 2 0 01-2 2H10a2 2 0 01-2-2V10a2 2 0 012-2z"
+        {...detail}
+      />
+      <Path d="M4 16a2 2 0 01-2-2V4a2 2 0 012-2h10a2 2 0 012 2" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Paste: Lucide's `ClipboardPaste`, for the Paste that stands in where the
+ * system's own button isn't available (Android, iOS before 16, #5626).
+ */
+export function PasteGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M9 2h6a1 1 0 011 1v2a1 1 0 01-1 1H9a1 1 0 01-1-1V3a1 1 0 011-1z"
+        {...detail}
+      />
+      <Path
+        d="M8 4H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 001.8-1.1"
+        {...detail}
+      />
+      <Path d="M16 4h2a2 2 0 012 2v1.3" {...detail} />
+      <Path d="M11 14h10M17 18l4-4-4-4" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * A file that downloads when tapped: a backwork file Frapp found (#5209).
+ * Web draws Lucide's `Download` there.
+ */
+export function DownloadGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M12 3v12M7 10l5 5 5-5M4 21h16" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Take out: the task screen's Remove people (#5492). Web draws Lucide's
+ * `UserMinus` for a member taken out; on a 40pt round button the minus alone
+ * reads as the verb, as Reminders' and Mail's edit modes draw it.
+ */
+export function MinusGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M5 12h14" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Hand it to someone else: a task's Reassign in its long-press menu (#5492).
+ * Lucide's `User`, a head over shoulders, as web's assignee field draws it.
+ */
+export function PersonGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Circle cx={12} cy={8} r={4} {...detail} />
+      <Path d="M4 21a8 8 0 0116 0" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Delete, in a long-press menu (#5492): Lucide's `Trash2`, as web's row
+ * menus draw it beside Delete.
+ */
+export function TrashGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" {...detail} />
+      <Path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" {...detail} />
+      <Path d="M10 11v6M14 11v6" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * More: a screen's other actions in the glass menu (the task screen, #5492).
+ * Web draws Lucide's `Ellipsis` for the same intent; three dots, filled, as
+ * iOS's own More draws them.
+ */
+export function MoreGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Circle cx={5} cy={12} r={1.6} fill={color} />
+      <Circle cx={12} cy={12} r={1.6} fill={color} />
+      <Circle cx={19} cy={12} r={1.6} fill={color} />
+    </Frame>
+  );
+}
+
+/** Done, where a control confirms in place (Copy turning to Copied). */
+export function CheckGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M20 6L9 17l-5-5" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Private to the viewer, beside "Only you can see this" on a turn asked of
+ * Frapp from a channel (#4713): web draws Lucide's `EyeOff` there.
+ */
+export function EyeOffGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M10.733 5.076a10.744 10.744 0 0111.205 6.575 1 1 0 010 .696 10.747 10.747 0 01-1.444 2.49"
+        {...detail}
+      />
+      <Path d="M14.084 14.158a3 3 0 01-4.242-4.242" {...detail} />
+      <Path
+        d="M17.479 17.499a10.75 10.75 0 01-15.417-5.151 1 1 0 010-.696 10.75 10.75 0 014.446-5.143"
+        {...detail}
+      />
+      <Path d="M2 2l20 20" {...detail} />
+    </Frame>
+  );
+}
+
+/** Report: web draws Lucide's `Flag` for the same intent. */
+export function FlagGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"
+        {...detail}
+      />
+      <Path d="M4 22v-7" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Good answer and bad answer under an Ask answer (#4904): web draws Lucide's
+ * `ThumbsUp` and `ThumbsDown`. `chosen` fills the hand in its own colour, the
+ * way ChatGPT's and Claude's apps mark the thumb a member picked.
+ */
+export function ThumbUpGlyph({
+  color,
+  size = DEFAULT_SIZE,
+  chosen = false,
+}: ControlGlyphProps & { chosen?: boolean }) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M7 10v12" {...detail} />
+      <Path
+        d="M15 5.88L14 10h5.83a2 2 0 011.92 2.56l-2.33 8A2 2 0 0117.5 22H4a2 2 0 01-2-2v-8a2 2 0 012-2h2.76a2 2 0 001.79-1.11L12 2a3.13 3.13 0 013 3.88z"
+        {...detail}
+        fill={chosen ? color : "none"}
+      />
+    </Frame>
+  );
+}
+
+export function ThumbDownGlyph({
+  color,
+  size = DEFAULT_SIZE,
+  chosen = false,
+}: ControlGlyphProps & { chosen?: boolean }) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M17 14V2" {...detail} />
+      <Path
+        d="M9 18.12L10 14H4.17a2 2 0 01-1.92-2.56l2.33-8A2 2 0 016.5 2H20a2 2 0 012 2v8a2 2 0 01-2 2h-2.76a2 2 0 00-1.79 1.11L12 22a3.13 3.13 0 01-3-3.88z"
+        {...detail}
+        fill={chosen ? color : "none"}
+      />
+    </Frame>
+  );
+}
+
+/** Think harder under an Ask answer (#4904): web draws Lucide's `Lightbulb`. */
+export function LightbulbGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 006 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"
+        {...detail}
+      />
+      <Path d="M9 18h6" {...detail} />
+      <Path d="M10 22h4" {...detail} />
+    </Frame>
+  );
+}
+
 /** Mark all read: web draws Lucide's `CheckCheck` for the same intent. */
 export function CheckAllGlyph({
   color,
@@ -156,9 +414,14 @@ export function LinkGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/** A chevron pointing right, shared by the two glyphs that draw one. */
+const RIGHT_CHEVRON = "M9.5 6l6 6-6 6";
+
 /**
- * A disclosure chevron: down while what it opens is shown, right while it is
- * hidden, as a "More options" row or a row that opens a picker draws it.
+ * A disclosure chevron, for something that opens in place: down while what
+ * it opens is shown, right while it is hidden, as a "More options" row and a
+ * collapsed channel section draw it. A row that goes somewhere else (a
+ * screen, a sheet, a picker) ends in {@link ForwardGlyph} instead.
  */
 export function DisclosureGlyph({
   color,
@@ -168,7 +431,7 @@ export function DisclosureGlyph({
   const { detail } = paint({ color });
   const d =
     direction === "right"
-      ? "M9.5 6l6 6-6 6"
+      ? RIGHT_CHEVRON
       : direction === "down"
         ? "M6 9.5l6 6 6-6"
         : "M6 14.5l6-6 6 6";
@@ -188,7 +451,7 @@ const BACK_STROKE_WIDTH = 2.2;
 
 /**
  * Back: a left chevron. The chat thread header draws it at 20, and every
- * `BackRow` capsule (`‹ More`, `‹ Events`, `‹ Chat`) at 18, so the two
+ * `BackRow` capsule (`‹ You`, `‹ Calendar`, `‹ Chat`) at 18, so the two
  * kinds of back control show one arrow. Drawn, never typed: a `‹` character
  * sits on the text's x-height, so in a centered row its ink lands below the
  * title's middle (foundations.md §7, Aligning a row).
@@ -198,6 +461,168 @@ export function BackGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   return (
     <Frame size={size}>
       <Path d="M14.5 6l-6 6 6 6" {...detail} strokeWidth={BACK_STROKE_WIDTH} />
+    </Frame>
+  );
+}
+
+/** The row chevron's side: smaller than a control, it only marks a row. */
+const FORWARD_GLYPH_SIZE = 16;
+
+/**
+ * Forward: the right chevron at the end of a row that opens a screen, a sheet
+ * or a picker (`ListRow`, the Activity rows, `ChoiceRow`, the study zone
+ * picker, the event and channel forms' option rows). The mirror of
+ * {@link BackGlyph} at the same stroke, drawn for the same reason:
+ * a typed `›` sits on the text's x-height and scales with the type role, so
+ * its ink landed below the middle of every row (#3628; foundations.md §7,
+ * Aligning a row).
+ */
+export function ForwardGlyph({
+  color,
+  size = FORWARD_GLYPH_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d={RIGHT_CHEVRON} {...detail} strokeWidth={BACK_STROKE_WIDTH} />
+    </Frame>
+  );
+}
+
+/**
+ * Search, leading a search field (#4137): web's toolbar search draws the same
+ * lens and handle (`apps/web/components/layout/nav-glyphs.tsx` `SearchGlyph`),
+ * as iOS's own search bar, Slack and Discord lead theirs.
+ */
+export function SearchGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Circle cx="10.5" cy="10.5" r="6.2" {...detail} />
+      <Path d="M15.2 15.2l4.3 4.3" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Add one (New channel, #3838): the + beside a Chat home section heading,
+ * as Discord and Slack draw it beside a channel group.
+ */
+export function PlusGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M12 5v14M5 12h14" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Put on your calendar (#3322): the Events header's Subscribe control, the
+ * same mark web's toolbar button draws (Lucide's `CalendarPlus`).
+ */
+export function CalendarPlusGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M8 2v4M16 2v4M3 10h18" {...detail} />
+      <Path
+        d="M21 13V6a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h8"
+        {...detail}
+      />
+      <Path d="M16 19h6M19 16v6" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * The grip a row is dragged by (Arrange channels, #3838): three lines, the
+ * handle iOS's own list reorder draws.
+ */
+export function DragHandleGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M5 8h14M5 12h14M5 16h14" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * The recorder's three controls on a meeting's minutes (#5381 follow-up,
+ * Paul 2026-11-17: "maybe instead of using words to describe actions, maybe
+ * you use icons, like a pause button and a play button"), drawn solid as
+ * Voice Memos and Otter draw them: two bars to pause, a triangle to carry on,
+ * a rounded square to stop.
+ */
+export function PauseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M7 5h3v14H7zM14 5h3v14h-3z"
+        fill={color}
+        stroke={color}
+        strokeWidth={1}
+        strokeLinejoin="round"
+      />
+    </Frame>
+  );
+}
+
+export function PlayGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M8 5.5v13l10.5-6.5z"
+        fill={color}
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+      />
+    </Frame>
+  );
+}
+
+export function StopGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"
+        fill={color}
+      />
+    </Frame>
+  );
+}
+
+/**
+ * Put back what was there before: Lucide's `Undo2`. Ask's Original chip
+ * (#5276), which puts back the words as spoken in place of the tidied ones.
+ */
+export function UndoGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M9 14 4 9l5-5" {...detail} />
+      <Path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" {...detail} />
+    </Frame>
+  );
+}
+
+/** A microphone, leading Record, and Ask's dictation (#5276). */
+export function MicGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM19 11a7 7 0 0 1-14 0M12 18v3"
+        {...detail}
+      />
     </Frame>
   );
 }

@@ -56,6 +56,18 @@ Keys match by prefix in `useMutationState`, `isMutating` and
 `["channels", "read"]` and `["notifications", "read"]` (mobile's retry defaults
 and the pending-read state) and `["chapter-config", chapterId, "patch"]`.
 
+## Query cancellation
+
+Every `queryFn` takes TanStack's `signal` and passes it in its client call's
+init (`client.GET(path, { signal, params })`), so a cancelled query (a
+`refetch()` over one in flight, an `invalidateQueries`, the last observer
+unmounting) aborts its request instead of leaving it open beside the next one
+([#3433](https://github.com/pdcarlson/Frapp/issues/3433)). A helper handed
+`client` is handed `signal` too. `src/query-signal.spec.ts` parses the package
+and fails on a `queryFn` call that drops it. Every file is converted; its
+`PENDING` list, empty since [#5029](https://github.com/pdcarlson/Frapp/issues/5029),
+can exempt a file only while an open PR rewrites it.
+
 ## Optimistic mutations
 
 `useUpdateNotificationPreference` (`use-notifications.ts`) and the three task
@@ -99,14 +111,14 @@ narrower there — but it is the same race, and neither is the shape to imitate.
 Hooks in `packages/hooks/src` are tested with Vitest, React Testing Library, and a
 real `QueryClient` wrapped with `FrappClientProvider` and `QueryClientProvider`.
 
-## Event query keys
-
-`useEvent` caches each event under `["events", chapterId, id]` (see `use-events.ts`), not `["events", id]`. Any TanStack Query invalidation that should refresh the event detail after related data changes (for example realtime attendance updates in the web app) must include the same `chapterId` segment from `useActiveChapterId()` so prefix matching hits the mounted query.
-
 - Vitest (`packages/hooks/vitest.config.ts`)
 - `@testing-library/react` `renderHook`
-- `FrappClientProvider` + `QueryClientProvider` wrappers for realistic hook context
-- Query retries disabled in tests for deterministic assertions
+- The wrapper and client come from `src/test-utils.tsx`: `createHookWrapper`
+  (`FrappClientProvider` outside `QueryClientProvider`, with an optional chapter
+  id, or a function read on each render for a spec that switches chapter, and
+  an optional user id) and `createTestQueryClient` (query and mutation retries off, for
+  deterministic assertions). A new spec uses them rather than building its own;
+  older specs still being moved over are tracked in #815.
 
 Core expectations for mutation hooks:
 
@@ -114,6 +126,10 @@ Core expectations for mutation hooks:
 - assert mutation state transitions (`isSuccess` / `isError`)
 - verify cache invalidation side effects on success
 - verify invalidation does not run on failure
+
+## Event query keys
+
+`useEvent` caches each event under `["events", chapterId, id]` (see `use-events.ts`), not `["events", id]`. Any TanStack Query invalidation that should refresh the event detail after related data changes (for example realtime attendance updates in the web app) must include the same `chapterId` segment from `useActiveChapterId()` so prefix matching hits the mounted query.
 
 ## Current focused hook coverage
 

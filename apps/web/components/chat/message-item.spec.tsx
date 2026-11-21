@@ -18,6 +18,74 @@ import { SYSTEM_SENDER_ID } from "@repo/validation";
 // The real list resolves signed URLs through `useFrappClient`, a provider this
 // suite does not stand up; a stand-in is enough to say where the list sits.
 const attachmentProps = vi.hoisted(() => [] as Record<string, unknown>[]);
+// The inline editor is Tiptap (`inline-message-editor.tsx`), whose
+// ProseMirror view renders no document into jsdom here (see composer.spec's
+// note). The row's contract with it is props: the text, Enter to save, Escape
+// to cancel, disabled while saving, focus handed back, and a reload when a
+// newer copy arrives untouched. This double keeps that contract on a textarea
+// so the row's own behavior stays testable; the editor's document and keys
+// are tested in `inline-message-editor.spec.tsx`.
+vi.mock("./inline-message-editor", async () => {
+  const React = await import("react");
+  type Props = {
+    value: string;
+    chips?: unknown;
+    resetKey?: number;
+    disabled?: boolean;
+    onChange: (
+      text: string,
+      picks: Array<{ user_id: string; label: string }>,
+    ) => void;
+    onSave: () => void;
+    onCancel: () => void;
+  };
+  const InlineMessageEditor = React.forwardRef<{ focus: () => void }, Props>(
+    function InlineMessageEditorDouble(props, ref) {
+      const field = React.useRef<HTMLTextAreaElement | null>(null);
+      const [text, setText] = React.useState(props.value);
+      const [loaded, setLoaded] = React.useState(props.resetKey ?? 0);
+      if ((props.resetKey ?? 0) !== loaded) {
+        setLoaded(props.resetKey ?? 0);
+        setText(props.value);
+      }
+      React.useImperativeHandle(ref, () => ({
+        focus: () => field.current?.focus(),
+      }));
+      return (
+        <textarea
+          ref={field}
+          aria-label="Edit message"
+          autoFocus
+          data-chips={props.chips ? "passed" : "missing"}
+          value={text}
+          disabled={props.disabled}
+          onChange={(event) => {
+            setText(event.target.value);
+            // The real editor reports the members picked from its `@` list;
+            // the double treats a written "@Jane Doe" as one (#3835).
+            props.onChange(
+              event.target.value,
+              event.target.value.includes("@Jane Doe")
+                ? [{ user_id: "u-jane", label: "Jane Doe" }]
+                : [],
+            );
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              props.onCancel();
+            }
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              props.onSave();
+            }
+          }}
+        />
+      );
+    },
+  );
+  return { InlineMessageEditor };
+});
 vi.mock("./message-attachments", () => ({
   MessageAttachments: (props: Record<string, unknown>) => {
     attachmentProps.push(props);
@@ -479,8 +547,21 @@ describe("MessageItem mentions the viewer", () => {
     );
   });
 
-  it("leaves the viewer's own message plain", () => {
-    renderItem(message({ sender_id: VIEWER, mentions: [VIEWER] }));
+  it("lights the viewer's own message when it reaches them, as their own @here does", () => {
+    renderItem(
+      message({
+        sender_id: VIEWER,
+        content: "@here build",
+        mentions: [VIEWER],
+      }),
+    );
+    expect(screen.getByRole("listitem")).toHaveAttribute(
+      "data-mentions-viewer",
+    );
+  });
+
+  it("leaves the viewer's own message plain when it reaches only others", () => {
+    renderItem(message({ sender_id: VIEWER, mentions: [OTHER] }));
     expect(screen.getByRole("listitem")).not.toHaveAttribute(
       "data-mentions-viewer",
     );
@@ -988,6 +1069,11 @@ describe("MessageItem edited marker", () => {
     expect(
       container.querySelector('[data-slot="message-body"]'),
     ).toContainElement(pinned);
+    // A pinned message's pin is solid, as every on pin is (#4292).
+    expect(pinned.querySelector("svg path")).toHaveAttribute(
+      "fill-opacity",
+      "1",
+    );
     // A marker, not an action: the trailing captions' muted tone, never the
     // chapter accent (`foundations.md` §6).
     expect(pinned.closest("span")!.className).not.toContain("accent");
@@ -1036,16 +1122,16 @@ describe("MessageItem edited marker", () => {
     expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
   });
 
-  it("sizes a card to its content, not the thread's width", () => {
-    // The body column stretches its children, as the bubble's column did not.
+  it("draws every card one width: the column, up to 28rem (#4136)", () => {
+    // Filling, not hugging: a column of cards lines up, as the phone's do.
     renderItem(message({ kind: "announcement", content: "Formal is Friday" }));
     expect(
       screen.getByText("Formal is Friday").closest(".rounded-lg"),
-    ).toHaveClass("w-fit", "max-w-full");
+    ).toHaveClass("w-[28rem]", "max-w-full");
     renderItem(message({ id: "dues-1", kind: "dues", content: "Pay up" }));
     expect(
       screen.getByText(/not built yet/).closest(".rounded-lg"),
-    ).toHaveClass("w-fit", "max-w-full");
+    ).toHaveClass("w-[28rem]", "max-w-full");
   });
 
   it("marks an edited card under the card, not inside it", () => {
@@ -1187,9 +1273,21 @@ describe("MessageItem edit and delete", () => {
     await user.type(textbox, "hello, edited");
     await user.click(screen.getByRole("button", { name: /save/i }));
 
-    expect(onEdit).toHaveBeenCalledWith("msg-2", "hello, edited");
+    expect(onEdit).toHaveBeenCalledWith("msg-2", "hello, edited", []);
     // The editor closes once the save resolves.
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("hands the row's chip test to the editor, so its mentions open as chips (#2236)", async () => {
+    const user = userEvent.setup();
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER, content: "@Paul hi" }),
+      onEdit: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+
+    expect(screen.getByRole("textbox")).toHaveAttribute("data-chips", "passed");
   });
 
   it("cancels without calling onEdit and restores the original content", async () => {
@@ -1328,7 +1426,7 @@ describe("MessageItem edit and delete", () => {
     await user.type(screen.getByRole("textbox"), " world");
     await user.click(screen.getByRole("button", { name: /save/i }));
 
-    expect(onEdit).toHaveBeenCalledWith("msg-1", "hello world");
+    expect(onEdit).toHaveBeenCalledWith("msg-1", "hello world", []);
     expect(screen.getByRole("textbox")).toHaveValue("hello world");
   });
 
@@ -1473,6 +1571,11 @@ describe("MessageItem bookmark toggle (#462)", () => {
 
     const button = screen.getByRole("button", { name: "Save" });
     expect(button).toHaveAttribute("aria-pressed", "true");
+    // The ribbon reads as on: solid, not the outline (#4292).
+    expect(button.querySelector("svg path")).toHaveAttribute(
+      "fill-opacity",
+      "1",
+    );
     expect(button).toHaveAttribute("title", "Saved");
   });
 
@@ -1507,6 +1610,34 @@ describe("MessageItem bookmark toggle (#462)", () => {
     expect(
       screen.queryByRole("button", { name: /^Save$|^Saved$/ }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * "Remind me about this" (#4957): Slack's presets and Custom… beside Save.
+ * The menu itself is `message-reminder-menu.spec.tsx`'s; the row owes the
+ * control, gated on its callback, and the message id with the pick.
+ */
+describe("MessageItem reminder (#4957)", () => {
+  it("offers no reminder control on a surface that doesn't wire one", () => {
+    renderItemWithProps();
+    expect(
+      screen.queryByRole("button", { name: "Remind me about this" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hands the picked time on with the message id", async () => {
+    const onRemind = vi.fn();
+    renderItemWithProps({ onRemind });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remind me about this" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "In 1 hour" }),
+    );
+
+    expect(onRemind).toHaveBeenCalledWith("msg-1", expect.any(Date));
   });
 });
 
@@ -1883,13 +2014,8 @@ describe("MessageItem inline editor", () => {
     await openEditor();
 
     expect(editSurface().className).not.toContain("rounded-[18px]");
-    // Grows with the draft instead of scrolling a fixed box, on the body's
-    // 25px line box so the draft wraps near where the message wrapped.
-    expect(screen.getByRole("textbox").className).toContain(
-      "field-sizing-content",
-    );
-    expect(screen.getByRole("textbox").className).toContain("leading-[25px]");
-    expect(screen.getByRole("textbox").className).toContain("max-h-40");
+    // The field's own type and growth are the editor's:
+    // `inline-message-editor.spec.tsx`.
   });
 
   it("gives the body back when the editor closes", async () => {
@@ -2051,7 +2177,16 @@ describe("MessageItem inline editor keyboard", () => {
 
     await user.keyboard("{Enter}");
 
-    expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello one\ntwo");
+    expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello one\ntwo", []);
+  });
+
+  it("saves the members picked in the edit beside the text (#3835)", async () => {
+    const { user, onEdit } = await openEditor();
+    await user.type(screen.getByRole("textbox"), " @Jane Doe");
+    await user.keyboard("{Enter}");
+    expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello @Jane Doe", [
+      { user_id: "u-jane", label: "Jane Doe" },
+    ]);
   });
 });
 
@@ -2107,6 +2242,105 @@ describe("MessageItem reaction chip ownership (#2243)", () => {
 
     expect(onReact).toHaveBeenCalledWith("msg-1", "👍");
     expect(onUnreact).not.toHaveBeenCalled();
+  });
+});
+
+// #3909: the audit log's record can't be altered or erased. Frapp's entries
+// offer no Delete, and nothing there offers a new flag; a flag already on a
+// line can still come off, and a member's post from before it was read-only
+// keeps its Delete.
+describe("MessageItem in the audit log (#3909)", () => {
+  const entry = () =>
+    message({
+      sender_id: SYSTEM_SENDER_ID,
+      kind: "system_audit",
+      content: "Role updated",
+    });
+
+  it("offers no Delete on Frapp's entries, even with channels:manage", () => {
+    renderItemWithProps({
+      message: entry(),
+      onDelete: vi.fn(),
+      canManageChannel: true,
+      inAuditLog: true,
+    });
+    expect(
+      screen.queryByRole("button", { name: /delete/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps Delete on a member's own post there", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onDelete: vi.fn(),
+      inAuditLog: true,
+    });
+    expect(screen.getByRole("button", { name: /delete/i })).toBeInTheDocument();
+  });
+
+  it("offers no Flag on a line with no flag", () => {
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onFlag: vi.fn(),
+      inAuditLog: true,
+    });
+    expect(
+      screen.queryByRole("button", { name: "Flag" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers only Remove flag on a flagged line", async () => {
+    const onFlag = vi.fn();
+    renderItemWithProps({
+      message: { ...entry(), flag: "important", flagged_by: OTHER },
+      onFlag,
+      canManageChannel: true,
+      inAuditLog: true,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Flag" }));
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["Remove flag"]);
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Remove flag" }),
+    );
+    expect(onFlag).toHaveBeenCalledWith("msg-1", null);
+  });
+});
+
+describe("MessageItem Forward (#4907)", () => {
+  it("offers Forward first behind More, on the viewer's own message too", async () => {
+    const onForward = vi.fn();
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onForward,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getAllByRole("menuitem")[0]).toHaveTextContent("Forward");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Forward" }));
+    expect(onForward).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "msg-1" }),
+    );
+  });
+
+  it("puts Forward above Report and Block", async () => {
+    renderItemWithProps({
+      onForward: vi.fn(),
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: () => true,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["Forward", "Report message", "Block Alice Chen"]);
+  });
+
+  it("isn't offered without a handler, so the viewer's own row keeps no More", () => {
+    renderItemWithProps({ message: message({ sender_id: VIEWER }) });
+    expect(
+      screen.queryByRole("button", { name: "More actions" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -2289,12 +2523,12 @@ describe("MessageItem opens profiles", () => {
     const name = screen.getByRole("button", { name: "Alice Chen" });
     expect(name.tagName).toBe("BUTTON");
     fireEvent.click(name);
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
 
     onOpenProfile.mockClear();
     name.focus();
     await userEvent.keyboard("{Enter}");
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
   });
 
   it("opens the author's profile from their photo, which is not a second Tab stop", () => {
@@ -2306,7 +2540,7 @@ describe("MessageItem opens profiles", () => {
     )!;
     expect(photo.tabIndex).toBe(-1);
     fireEvent.click(photo);
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
   });
 
   it("does not toggle the row's action bar when the name is clicked", () => {
@@ -2355,12 +2589,12 @@ describe("MessageItem opens profiles", () => {
     // The mark still paints the chip; the button sits inside it.
     expect(chip.closest("mark")).toHaveAttribute("data-mention", "AliceChen");
     fireEvent.click(chip);
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
 
     onOpenProfile.mockClear();
     chip.focus();
     await userEvent.keyboard(" ");
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
   });
 
   it("opens nothing from a role mention", () => {
@@ -2570,6 +2804,67 @@ describe("MessageItem thread entry points", () => {
     expect(onOpenThread).toHaveBeenCalledWith(parent);
   });
 
+  describe("the card's latest-reply preview (#4297)", () => {
+    const BLOCKED_REPLIER = "33333333-3333-4333-8333-333333333333";
+    const parentWith = (sender_id: string, evaluated = true) =>
+      message({
+        _blockEvaluated: evaluated,
+        thread: {
+          reply_count: 2,
+          last_reply_at: null,
+          recent_sender_ids: [sender_id],
+          last_reply: {
+            id: "reply-9",
+            sender_id,
+            content: "grill is in my **garage**",
+            kind: "text",
+            attachment_count: 0,
+            created_at: "2026-11-11T20:00:00.000Z",
+            sender_blocked: false,
+          },
+        },
+      } as Partial<ChatMessage>);
+
+    it("shows the replier's first name and words, flattened", () => {
+      const { container } = renderItemWithProps({
+        message: parentWith(OTHER),
+        onOpenThread: vi.fn(),
+      });
+      const line = container.querySelector('[data-slot="thread-preview"]');
+      expect(line).toHaveTextContent("Alicegrill is in my garage");
+      expect(
+        screen.getByRole("button", {
+          name: "2 replies, latest from Alice: grill is in my garage. Open thread",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("says You for the viewer's own reply", () => {
+      const { container } = renderItemWithProps({
+        message: parentWith(VIEWER),
+        onOpenThread: vi.fn(),
+      });
+      expect(
+        container.querySelector('[data-slot="thread-preview"]'),
+      ).toHaveTextContent(/Yougrill/);
+    });
+
+    it("draws none for a replier the viewer blocked, and keeps the card", () => {
+      const { container } = renderItemWithProps({
+        message: parentWith(BLOCKED_REPLIER, false),
+        onOpenThread: vi.fn(),
+        blockState: { ...NOBODY_BLOCKED, ids: new Set([BLOCKED_REPLIER]) },
+      });
+      expect(
+        container.querySelector('[data-slot="thread-preview"]'),
+      ).toBeNull();
+      expect(screen.queryByText(/garage/)).not.toBeInTheDocument();
+      expect(
+        container.querySelector('[data-slot="thread-card"]'),
+      ).toBeInTheDocument();
+    });
+  });
+
   it("passes the viewer's new replies to the card (#4297)", () => {
     renderItemWithProps({
       message: message({
@@ -2593,7 +2888,11 @@ describe("MessageItem thread entry points", () => {
       act(() => setChatDensity(density));
       const { container } = renderItemWithProps({
         message: message({
-          thread: { reply_count: 3, last_reply_at: null, recent_sender_ids: [] },
+          thread: {
+            reply_count: 3,
+            last_reply_at: null,
+            recent_sender_ids: [],
+          },
         } as Partial<ChatMessage>),
         onOpenThread: vi.fn(),
       });

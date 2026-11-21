@@ -47,12 +47,6 @@ export interface PushDecisionInput {
   /** Pref rows for the (user, chapter). Empty means "no preference set". */
   preferences: ChatNotificationPreferenceRow[];
   /**
-   * The row is an audit-log mirror in `#chapter-audit` (`isAuditMirrorRow`),
-   * not one of the server's own `system_audit` notices. Mirrors are delivered
-   * silently: no preference turns them back on.
-   */
-  isAuditMirror?: boolean;
-  /**
    * Set when the row is a reply inside a message thread (#3785): the
    * recipient's follow state for that thread, `null` when they do not follow
    * it. Absent for a timeline message.
@@ -168,6 +162,9 @@ export function defaultLevelFor(
   // The level is still stated here so anything reading a level directly agrees
   // with the decision the chain makes.
   if (messageKind === 'imported') return 'off';
+  // An Ask Frapp answer posted to the channel (#4713) is absolute the same
+  // way: it notifies nobody, whatever the channel or the member chose.
+  if (messageKind === 'ask_answer') return 'off';
   if (isDirectChannel(channel)) return 'all';
   if (channel.default_notification_level) {
     return channel.default_notification_level;
@@ -181,7 +178,8 @@ export type PushOutcome =
 /**
  * Apply the full chain. Order matters: presence is the cheapest skip and the
  * one that protects users from notifications they don't need (they're
- * actively reading). Level filtering follows.
+ * actively reading), except for an announcement, which presence never quiets
+ * (see below). Level filtering follows.
  *
  * @mentions override a muted channel: an explicit (or default) `off` level is
  * bypassed when the recipient is mentioned (spec `behavior/notifications.md`,
@@ -199,16 +197,24 @@ export type PushOutcome =
  * setting anyone wants, and `ChatPushWorkerService.handleMessage` already exits
  * before it gets here.
  *
- * An audit mirror is refused the same way (owner decision 2026-11-06: audit
- * entries arrive silently). A member's `all` on `#chapter-audit`, or the
- * `system_audit` kind opt-in, would otherwise page them for every settings
- * save. The kind opt-in still reaches the server's own `system_audit` notices.
+ * A posted Ask Frapp answer (`ask_answer`, #4713) is refused the same way and
+ * for a plainer reason: the member who asked chose to put it in the channel,
+ * and nobody else asked for it (`spec/behavior/ai.md` § Posting an answer to the channel). A
+ * name in the answer is not a mention; the row is written with none.
  */
 export function decidePush(input: PushDecisionInput): PushOutcome {
-  if (input.messageKind === 'imported' || input.isAuditMirror) {
+  if (input.messageKind === 'imported' || input.messageKind === 'ask_answer') {
     return 'skip-level';
   }
-  if (input.recipientIsPresent) return 'skip-presence';
+  // Presence is published by the readers' own clients on a topic any reader
+  // of the channel may publish to, so it can't prove who is reading. It still
+  // quiets every other push, sparing active readers the noise (ADR-04),
+  // but never an announcement: one forged entry per member would
+  // otherwise silence the chapter's URGENT push.
+  // Decided by the channel, as the worker's URGENT label is; a thread reply
+  // under an announcement is not one (2026-11-17).
+  const announcement = !input.thread && isAnnouncementChannel(input.channel);
+  if (input.recipientIsPresent && !announcement) return 'skip-presence';
   const level = resolveLevel(
     input.channel,
     input.messageKind,

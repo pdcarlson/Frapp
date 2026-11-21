@@ -92,7 +92,7 @@ export const DEFAULT_LINE_DURATION: LineDuration = "today";
  * sync), so a member who turns DND on for the night is reachable again at the
  * hour they'd expect.
  */
-export const TOMORROW_HOUR = 8;
+const TOMORROW_HOUR = 8;
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -128,16 +128,19 @@ export function tomorrowMorning(now: Date): Date {
 export function dndEndsAt(duration: DndDuration, now: Date): string | null {
   if (duration === null) return null;
   if (duration === "1h") return new Date(now.getTime() + HOUR).toISOString();
-  if (duration === "8h") return new Date(now.getTime() + 8 * HOUR).toISOString();
+  if (duration === "8h")
+    return new Date(now.getTime() + 8 * HOUR).toISOString();
   return tomorrowMorning(now).toISOString();
 }
 
 /** The end time to send for a custom line's "Clear after", or `null`. */
 export function lineEndsAt(duration: LineDuration, now: Date): string | null {
   if (duration === null) return null;
-  if (duration === "30m") return new Date(now.getTime() + 30 * MINUTE).toISOString();
+  if (duration === "30m")
+    return new Date(now.getTime() + 30 * MINUTE).toISOString();
   if (duration === "1h") return new Date(now.getTime() + HOUR).toISOString();
-  if (duration === "4h") return new Date(now.getTime() + 4 * HOUR).toISOString();
+  if (duration === "4h")
+    return new Date(now.getTime() + 4 * HOUR).toISOString();
   return endOfToday(now).toISOString();
 }
 
@@ -147,7 +150,7 @@ export function lineEndsAt(duration: LineDuration, now: Date): string | null {
  * break) and the Unicode line and paragraph separators.
  */
 // eslint-disable-next-line no-control-regex
-export const LINE_BREAKERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+const LINE_BREAKERS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 /** A custom line's length the way the API counts it: code points. */
 export function codePointLength(value: string): number {
@@ -211,7 +214,7 @@ const TIME = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
 });
 const DAY_TIME = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
+  weekday: "long",
   hour: "numeric",
   minute: "2-digit",
 });
@@ -221,7 +224,7 @@ export function clockTime(at: Date | number): string {
   return TIME.format(at);
 }
 
-/** "Until 3:45 PM" today, "Until Tue 8:00 AM" past today. */
+/** "Until 3:45 PM" today, "Until Tuesday 8:00 AM" past today. */
 export function untilLabel(endsAt: number, now: Date): string {
   const end = new Date(endsAt);
   const sameDay = end.toDateString() === now.toDateString();

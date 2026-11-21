@@ -161,14 +161,19 @@ describe("ChapterNavHeader", () => {
     // Unmarked on purpose: `/join?from=sign-in` would skip a member straight
     // back to /chat, so this link could never join a second chapter (#3850).
     expect(
-      screen.getByRole("menuitem", { name: "Join another chapter" }).getAttribute("href"),
+      screen
+        .getByRole("menuitem", { name: "Join another chapter" })
+        .getAttribute("href"),
     ).toBe("/join");
-    expect(screen.getByText("Chapter settings")).toBeInTheDocument();
+    // Chapter settings leads: this menu is its only door (2026-11-19).
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["Chapter settings", "Join another chapter"]);
   });
 
   it("offers chapter settings only to a viewer Settings has something for", async () => {
-    // It is the second door into Settings, so it asks the nav row's question
-    // (#2946): an ordinary member would find nothing there they could use.
+    // It is the one door into Chapter settings (2026-11-19), and an ordinary
+    // member would find nothing there they could use (#2946).
     chaptersQuery.current = {
       data: [membership("chap-1", "Alpha Chapter")],
       isSuccess: true,
@@ -307,7 +312,9 @@ describe("ChapterNavHeader", () => {
 
     openMenu();
     fireEvent.click(await screen.findByText("Beta Chapter"));
-    fireEvent.click(await screen.findByRole("button", { name: "Switch chapters" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Switch chapters" }),
+    );
     await waitFor(() => expect(selectChapter).toHaveBeenCalledWith("chap-2"));
   });
 

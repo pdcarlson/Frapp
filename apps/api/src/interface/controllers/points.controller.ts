@@ -1,10 +1,11 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Body,
-  Query,
   Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -39,6 +40,7 @@ import {
 } from '../dtos/points.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { parseBooleanQueryParam } from '../utils/query-boolean';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Points')
 @ApiBearerAuth()
@@ -50,6 +52,7 @@ export class PointsController {
   constructor(private readonly pointsService: PointsService) {}
 
   @Get('me')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get current user point summary' })
   async getMe(
     @CurrentChapterId() chapterId: string,
@@ -66,6 +69,7 @@ export class PointsController {
   }
 
   @Get('leaderboard')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get chapter leaderboard' })
   async getLeaderboard(
     @CurrentChapterId() chapterId: string,
@@ -104,7 +108,7 @@ export class PointsController {
   @ApiOperation({ summary: 'Get point summary for a member' })
   async getMember(
     @CurrentChapterId() chapterId: string,
-    @Param('userId') userId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @Query() query: PointsWindowQueryDto,
   ) {
     const window: PointsWindow = query.window ?? 'all';

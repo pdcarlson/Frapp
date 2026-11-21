@@ -91,9 +91,13 @@ describe("replyPreviewText", () => {
   });
 
   it("stays fast on a hostile body", () => {
-    const started = performance.now();
-    replyPreviewText(preview({ content: "[".repeat(10_000) }));
-    expect(performance.now() - started).toBeLessThan(20);
+    // The link pattern backtracks quadratically on unmatched `[`, so only the
+    // start of a body is flattened. Checked by what is read, not by a clock,
+    // which false-fails on a loaded runner: nothing past the cap reaches the
+    // preview.
+    expect(replyPreviewText(preview({ content: "[".repeat(10_000) }))).toBe(
+      "[".repeat(500),
+    );
   });
 
   it("leaves bare asterisks alone rather than eating them", () => {
@@ -135,6 +139,17 @@ describe("replyPreviewText", () => {
     );
     expect(replyPreviewText(preview({ content: "", kind: "event" }))).toBe(
       "Event",
+    );
+  });
+
+  it("quotes a posted Ask answer by its words, and names it when it has none (#4713)", () => {
+    expect(
+      replyPreviewText(
+        preview({ content: "Quorum is half.", kind: "ask_answer" }),
+      ),
+    ).toBe("Quorum is half.");
+    expect(replyPreviewText(preview({ content: "", kind: "ask_answer" }))).toBe(
+      "Answer from Frapp",
     );
   });
 

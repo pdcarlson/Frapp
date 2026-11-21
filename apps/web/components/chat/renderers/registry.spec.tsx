@@ -1,4 +1,6 @@
 import { render } from "@testing-library/react";
+import { useState, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { CHAT_MESSAGE_KINDS } from "@repo/chat-core/types";
 import type { ChatMessage } from "@repo/chat-core/types";
@@ -62,7 +64,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
         if (prop === "useNow") return target[prop as keyof typeof target];
         if (prop.startsWith("use")) {
           return () =>
-            /^use(Update|Confirm|Reject|Check|Create|Delete|Mark|Send|Request|Upload)/.test(prop)
+            /^use(Update|Confirm|Reject|Check|Create|Delete|Mark|Send|Request|Upload)/.test(
+              prop,
+            )
               ? mutation
               : query;
         }
@@ -72,7 +76,23 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   );
 });
 
-function message(kind: string, overrides: Partial<ChatMessage> = {}): ChatMessage {
+/**
+ * A form card reads the viewer's own answers with `useQuery` directly
+ * (`@repo/chat-core/forms`, which `@repo/hooks` can't import), so it needs a
+ * client. `useFrappClient` is stubbed above, so that read fails at once and
+ * the card draws its Open state; nothing here reaches the network.
+ */
+function WithQueryClient({ children }: { children: ReactNode }) {
+  const [client] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+function message(
+  kind: string,
+  overrides: Partial<ChatMessage> = {},
+): ChatMessage {
   return {
     id: `msg-${kind}`,
     channel_id: "chan-1",
@@ -114,6 +134,7 @@ describe("the renderer registry and the layout predicate agree", () => {
           isConfirmed
           onAct={vi.fn()}
         />,
+        { wrapper: WithQueryClient },
       );
       expect(hasTextBody(container)).toBe(!isCardMessage(message(kind)));
     });
@@ -131,10 +152,10 @@ describe("the renderer registry and the layout predicate agree", () => {
           isConfirmed
           onAct={vi.fn()}
         />,
+        { wrapper: WithQueryClient },
       );
       expect(hasTextBody(container), `${kind} deleted`).toBe(true);
       unmount();
     }
   });
-
 });

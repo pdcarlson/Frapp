@@ -26,7 +26,8 @@
  * Mounting above the auth gate means this starts before anyone is routed. That
  * is handled rather than avoided: a cold-start target is **held pending** until
  * the session has restored, and dropped if the member signs out first. It waits
- * on the chapter claim having been *read*, never on it having a value — see the
+ * on the chapter having been settled (`isChapterResolving`), never on the
+ * claim having a value — see the
  * comment on the release effect, and `lib/auth-gate.ts` for why the difference
  * is the whole ballgame: a missing claim is a normal working state, not a
  * reason to hold a deep link forever (`lib/auth-gate.ts`).
@@ -56,8 +57,11 @@ import {
   useRef,
   useState,
 } from "react";
+import { AccessibilityInfo, Alert, AppState } from "react-native";
 import { useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import {
+  useActiveChapterId,
+  useDecideEventExcuse,
   useMarkNotificationRead,
   useRegisterPushToken,
   useRemovePushToken,
@@ -68,12 +72,22 @@ import {
   addNotificationResponseListener,
   addPushTokenListener,
   configureForegroundPresentation,
+  clearLocalNotification,
   ensureAndroidChannel,
   getExpoPushToken,
   isPushAvailable,
+  registerPushActionCategories,
   takeLastNotificationResponse,
 } from "./push";
+import {
+  claimActionPress,
+  EXCUSE_OTHER_CHAPTER_NOTICE,
+  excuseDecisionFrom,
+  excuseDecisionNotice,
+  type ExcuseDecisionAction,
+} from "./push-actions";
 import { settleChatLaunch } from "@/lib/chat/last-channel";
+import { useLaunchHold } from "@/lib/launch/launch-gate";
 import {
   clearStoredPushTokenRow,
   readStoredPushTokenRow,
@@ -84,7 +98,25 @@ import {
   onPushPermissionGranted,
   registerCurrentPushToken,
   sessionOwnsPushRegistration,
+  shouldReportOnForeground,
+  type RegisterPushTokenBody,
 } from "./push-token-lifecycle";
+import { readPushDeviceName } from "./push-device-name";
+import { pushIsOn, readPushState } from "./push-state";
+
+/**
+ * What the phone's push switch reads, for the register body (officers'
+ * Directory "Phone app" filter). `undefined` when it can't be read, so the
+ * server keeps what it had rather than storing a guess.
+ */
+async function readNotificationsEnabled(): Promise<boolean | undefined> {
+  try {
+    const state = await readPushState();
+    return state ? pushIsOn(state) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 import {
   NOTIFICATION_FALLBACK_PATHNAME,
   notificationIdFrom,
@@ -141,29 +173,62 @@ export function usePushRuntime(): void {
   const [pendingTap, setPendingTap] = useState<{
     target: NotificationTarget;
     notificationId: string | null;
+    /** Approve or Decline pressed on an excuse push (#4686). */
+    decision: ExcuseDecisionAction | null;
   } | null>(null);
+
+  // A tap that launched the app opens its screen once the session is back,
+  // and the launch logo stays up until it has (`lib/launch/launch-gate.ts`),
+  // rather than lifting onto chat home first.
+  useLaunchHold(pendingTap !== null);
 
   // Mutation objects are new every render; the effects below must not re-run on
   // that, only on the auth edges they actually care about.
   const registerRef = useRef(registerToken);
   const removeRef = useRef(removeToken);
   const markReadRef = useRef(markRead);
+  const decideExcuse = useDecideEventExcuse();
+  const decideRef = useRef(decideExcuse);
+  const activeChapterId = useActiveChapterId();
+  const activeChapterRef = useRef(activeChapterId);
   const authRef = useRef({ isAuthenticated, status });
   useLayoutEffect(() => {
     registerRef.current = registerToken;
     removeRef.current = removeToken;
     markReadRef.current = markRead;
+    decideRef.current = decideExcuse;
+    activeChapterRef.current = activeChapterId;
     authRef.current = { isAuthenticated, status };
-  }, [registerToken, removeToken, markRead, isAuthenticated, status]);
+  }, [
+    registerToken,
+    removeToken,
+    markRead,
+    decideExcuse,
+    activeChapterId,
+    isAuthenticated,
+    status,
+  ]);
 
   const handleResponse = useCallback((response: PushNotificationResponse) => {
     // A tap decides where the member goes, so chat home's launch jump to the
     // last channel stands aside (`lib/chat/last-channel.ts`).
     settleChatLaunch();
     const data = response.notification.request.content.data;
+    const identifier = response.notification.request.identifier;
+    const decision = excuseDecisionFrom(response);
+    if (decision) {
+      // The launch read and the listener can both hand over the same press.
+      // The repeat changes nothing: the first already holds the decision
+      // and the event to open, and overwriting it with a copy would erase
+      // the decision while the session is still restoring.
+      if (!claimActionPress(identifier)) return;
+      // Android leaves the push in the tray after an action press.
+      void clearLocalNotification(identifier);
+    }
     setPendingTap({
       target: resolveNotificationTarget(data),
       notificationId: notificationIdFrom(data),
+      decision,
     });
   }, []);
 
@@ -188,6 +253,8 @@ export function usePushRuntime(): void {
     // nothing — the "channel before permission" ordering in `patterns.md` is
     // satisfied a fortiori by doing it at boot.
     void ensureAndroidChannel();
+    // Before any push that names one can arrive while the app runs (#4686).
+    void registerPushActionCategories();
   }, []);
 
   // The tap that launched the app. Read once — `takeLastNotificationResponse`
@@ -217,7 +284,7 @@ export function usePushRuntime(): void {
       setPendingTap(null);
       return;
     }
-    // Wait on the claim *read*, never on the claim's value. `lib/auth-gate.ts`
+    // Wait on the chapter being settled, never on the claim's value. `lib/auth-gate.ts`
     // spells out why at length: a token with no `active_chapter_id` is a
     // normal working state (no membership yet, or the hook disabled as
     // incident mitigation), so `chapterId` can be `null` for a signed-in
@@ -228,9 +295,41 @@ export function usePushRuntime(): void {
     if (status === "hydrating" || isChapterResolving || !isAuthenticated)
       return;
 
-    const { target, notificationId } = pendingTap;
+    const { target, notificationId, decision } = pendingTap;
     setPendingTap(null);
     if (notificationId) markReadRef.current.mutate(notificationId);
+    // The press decides, and the event opens below either way, so the
+    // officer sees the decision land (the write refreshes the event's
+    // excuses) or can make it there when it didn't take.
+    const activeChapter = activeChapterRef.current;
+    if (
+      decision?.chapterId &&
+      activeChapter &&
+      decision.chapterId !== activeChapter
+    ) {
+      Alert.alert(
+        EXCUSE_OTHER_CHAPTER_NOTICE.title,
+        EXCUSE_OTHER_CHAPTER_NOTICE.body,
+      );
+    } else if (decision) {
+      decideRef.current
+        .mutateAsync({
+          eventId: decision.eventId,
+          userId: decision.userId,
+          decision: decision.decision,
+        })
+        .then(() => {
+          AccessibilityInfo.announceForAccessibility(
+            decision.decision === "APPROVED"
+              ? "Excuse approved."
+              : "Excuse declined.",
+          );
+        })
+        .catch((error: unknown) => {
+          const notice = excuseDecisionNotice(error);
+          Alert.alert(notice.title, notice.body);
+        });
+    }
     // The same fallback check `app/(app)/notifications.tsx` makes: an
     // unrecognized payload resolves to the notification list, and pushing that
     // from a tap that arrived *as* a notification stacks the list on itself.
@@ -243,7 +342,9 @@ export function usePushRuntime(): void {
 
   const tokenLifecycleDeps = {
     getToken: getExpoPushToken,
-    register: (body: { token: string }) =>
+    getDeviceName: readPushDeviceName,
+    getNotificationsEnabled: readNotificationsEnabled,
+    register: (body: RegisterPushTokenBody) =>
       registerRef.current.mutateAsync(body),
     remove: (id: string) => removeRef.current.mutateAsync(id),
     readStored: readStoredPushTokenRow,
@@ -324,10 +425,21 @@ export function usePushRuntime(): void {
     };
     const subscription = addPushTokenListener(reregister);
     const unsubscribeGrant = onPushPermissionGranted(reregister);
+    // Back from the background: the member may have turned Frapp's
+    // notifications on or off in the OS settings. Re-register only when the
+    // answer differs from the one last sent, so an ordinary app switch posts
+    // nothing.
+    const appState = AppState.addEventListener("change", (next) => {
+      if (next !== "active") return;
+      void readNotificationsEnabled().then((enabled) => {
+        if (shouldReportOnForeground(enabled)) reregister();
+      });
+    });
     return () => {
       cancelled = true;
       subscription?.remove();
       unsubscribeGrant();
+      appState.remove();
     };
     // Subscribe once; the handler reads authRef / mutation refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above

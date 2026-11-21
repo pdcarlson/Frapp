@@ -22,6 +22,19 @@ describe("activityCountChip (#3897)", () => {
     ).toEqual({ label: "2+", spoken: "at least 2 waiting on you" });
   });
 
+  it("says at least when sign-ups and forms couldn't load (#3926)", () => {
+    expect(
+      activityCountChip({ needs_you_count: 2, unavailable: ["cards"] })?.label,
+    ).toBe("2+");
+  });
+
+  it("says at least when reminders couldn't load, since due ones count (#4957)", () => {
+    expect(
+      activityCountChip({ needs_you_count: 2, unavailable: ["reminders"] })
+        ?.label,
+    ).toBe("2+");
+  });
+
   it("keeps the plain count when only an uncounted section failed", () => {
     expect(
       activityCountChip({ needs_you_count: 2, unavailable: ["made_events"] })

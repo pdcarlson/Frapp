@@ -161,9 +161,10 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
     // `#8B4513` and `#BF0A30`. Since #2541 the engine holds the fill to 3:1 on
     // every ladder surface (accent-engine.md §8), so it no longer fails here.
     // It is still the wrong token for the whole indicator: the floor guarantees
-    // 3:1 and nothing more, and its worst seed, `#BF0A30` (`#D83144`), is at
-    // 4.19:1 with none of the 8:1 headroom the margin test above demands.
-    // (`#800000`'s `#F42F22` at 4.70:1 was the worst before engine v2.)
+    // 3:1 and nothing more, and its worst seed, `#4B1A7E` (`#9B70D9`), is at
+    // 5.55:1 with none of the 8:1 headroom the margin test above demands.
+    // (`#BF0A30`'s `#D83144` at 4.19:1 on the 2026-11-05 ladder, `#800000`'s
+    // `#F42F22` at 4.70:1 before engine v2.)
     expect(failingSeeds("--primary")).toEqual([]);
     expect(worstOn("--primary", SURFACE.background)).toBeLessThan(8);
 
@@ -172,12 +173,12 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
     // achromatic seeds, which all derive the same `#606060` ring, failed it.
     // `#4B0082` failed too until #2541 lifted its fill, which moved its whole
     // scale. (neutral ladder, 2026-11-05) The darker `#0A0A0A` floor brings
-    // `#606060` back over 3:1, but only to 3.15:1: no seed fails, and the
-    // worst is one palette nudge from failing again, which is the tripwire the
-    // margin test refuses to be. It is still wrong here for the same reason
-    // accent-9 is.
+    // `#606060` back over 3:1, but only to 3.15:1 (3.24:1 on the 2026-11-12
+    // `#050505` floor): no seed fails, and the worst is one palette nudge from
+    // failing again, which is the tripwire the margin test refuses to be. It
+    // is still wrong here for the same reason accent-9 is.
     expect(failingSeeds("--ring")).toEqual([]);
-    expect(worstOn("--ring", SURFACE.background)).toBeLessThan(3.2);
+    expect(worstOn("--ring", SURFACE.background)).toBeLessThan(3.3);
   });
 });
 
@@ -248,10 +249,11 @@ describe("FOCUS_RING, FOCUS_RING_ALWAYS and FOCUS_RING_WITHIN carry focus on the
       ),
     );
 
-    // accent-11's tightest pair is `#BF0A30` over `--popover`, at 7.56:1.
-    // The bound sits well under the measurement for the reason the offset
-    // recipe's margin test gives.
-    expect(worst).toBeGreaterThan(6);
+    // accent-11's tightest pair is `#BF0A30` (`#FF8E8F`) over `--popover`, at
+    // 5.90:1 since the 2026-11-12 ladder lightened `--popover` (#3826; 7.56:1
+    // before). The bound sits under the measurement, and still near twice the
+    // 3:1 floor, for the reason the offset recipe's margin test gives.
+    expect(worst).toBeGreaterThan(5.5);
   });
 
   it("records why --primary was the wrong border, so the swap is not undone as cosmetic", () => {

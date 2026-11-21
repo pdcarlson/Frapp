@@ -8,7 +8,7 @@ name: Release
 # one PR number out of the promotion merge-commit message. With the `production`
 # branch retired there is no such push and no such message, so the trigger is
 # now `workflow_call` — `deploy-production.yml` invokes it as its last job,
-# after Render and Vercel have both reported healthy.
+# after the API and Vercel have both reported healthy.
 #
 # The ordering change matters more than the plumbing: a tag is now created only
 # once the commit is actually serving traffic. `vX.Y.Z` means "this is live",
@@ -112,7 +112,7 @@ jobs:
       # it is NOT what reads a PR's labels: `resolve-release-bump.mjs` calls
       # `GET /repos/{repo}/pulls/{n}`, which is gated on `pull-requests`. Without
       # this line the default `bump: auto` path is the one that breaks, and it
-      # breaks after Render and Vercel have already deployed.
+      # breaks after the API and Vercel have already deployed.
       #
       # `issues: read` is the #1839 classifier: a 404 on /pulls/{n} is checked
       # against GET /issues/{n} so a squash trailer that named an issue does

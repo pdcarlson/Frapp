@@ -1,6 +1,5 @@
-import { StyleSheet, Text, View } from "react-native";
-import { SignetTokens } from "@repo/theme/signet";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useFrappTheme } from "@/lib/theme";
+import { HistoryRow } from "@/components/history-row";
 import { StatusChip } from "@/components/status-chip";
 import {
   dueChip,
@@ -17,8 +16,8 @@ import {
  * whole. With two or more open, the card can only say "3 invoices open" and
  * name the one Pay settles, and HISTORY holds settled rows only, so without
  * this list the others (what each is for, what it costs, when it's due)
- * appeared nowhere. Built from HISTORY's row anatomy so the two lists read as
- * one family.
+ * appeared nowhere. Drawn by the shared `HistoryRow`, HISTORY's own row, so the
+ * two lists read as one family.
  */
 export interface OpenInvoiceRowProps {
   invoice: InvoiceRowModel;
@@ -38,7 +37,6 @@ export function OpenInvoiceRow({
   isLast,
 }: OpenInvoiceRowProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
   const due = dueChip(invoice, now);
   // The balance card's own rule, shared rather than restated.
   const hue = dueChipHue(
@@ -47,43 +45,13 @@ export function OpenInvoiceRow({
   );
 
   return (
-    <View style={[styles.row, isLast ? null : styles.rowDivided]}>
-      <View style={styles.text}>
-        <Text style={styles.title}>{invoice.title}</Text>
-        <Text style={styles.meta}>{formatAmount(invoice.amountCents)}</Text>
-      </View>
-      <StatusChip label={isConfirming ? "Pending" : due.label} hue={hue} />
-    </View>
+    <HistoryRow
+      title={invoice.title}
+      meta={formatAmount(invoice.amountCents)}
+      trailing={
+        <StatusChip label={isConfirming ? "Pending" : due.label} hue={hue} />
+      }
+      isLast={isLast}
+    />
   );
-}
-
-// HISTORY's row geometry (`invoice-row.tsx`), restated because that file's
-// styles are private. A copy until #3454 renders this row through the shared
-// `HistoryRow` that `invoice-row.tsx` is moving onto.
-function createStyles(tokens: SignetTokens) {
-  return StyleSheet.create({
-    row: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      paddingVertical: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-    },
-    rowDivided: {
-      borderBottomWidth: 1,
-      borderBottomColor: tokens.color.border.hairline,
-    },
-    text: {
-      flex: 1,
-    },
-    title: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
-    meta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      marginTop: 2,
-    },
-  });
 }

@@ -38,19 +38,18 @@ const UNREAD_QUERY_HASH = hashKey(CHANNEL_UNREAD_COUNTS_KEY);
 export function useUnreadFirstPaintRuntime(): void {
   const queryClient = useQueryClient();
   const { status, userId, chapterId, isChapterResolving } = useAuthSession();
-  // No key until the chapter claim has been read: before that `null` means
-  // "not known yet", not "no chapter".
+  // No key until the chapter is settled (a token is in hand): before that
+  // `null` means "not known yet", not "no chapter".
   const memoryKey =
     status === "authenticated" && userId && !isChapterResolving
       ? unreadMemoryKey(userId, chapterId)
       : null;
 
   // The tray, at launch and on each return from the background. At launch it
-  // is read at once, signed in or not: on Android, badging the icon to zero
-  // cancels every notification (`use-badge-sync.ts` does that while it has
-  // nothing to count), so a read that waited for the session would find the
-  // tray already empty. `background`, not `inactive`, the line
-  // `useChatRealtimeBinding` draws for its resume.
+  // is read at once, signed in or not. That was first needed because badging
+  // the icon to zero on Android cancelled every notification; #4011 stopped
+  // that, and only read channels' chat pushes leave the tray now. `background`,
+  // not `inactive`, the line `useChatRealtimeBinding` draws for its resume.
   useEffect(() => {
     let cancelled = false;
     const isCancelled = () => cancelled;

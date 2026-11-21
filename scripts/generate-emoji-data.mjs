@@ -1,21 +1,22 @@
 #!/usr/bin/env node
 /**
- * Writes `apps/mobile/lib/chat/emoji-data.ts`, the mobile emoji picker's
- * catalog, from an unpacked `emojibase-data` package.
+ * Writes `packages/chat-core/src/emoji-data.ts`, the catalog both emoji
+ * pickers draw (web's popover and mobile's sheet), from an unpacked
+ * `emojibase-data` package.
  *
  *   npm pack emojibase-data@16 && tar xzf emojibase-data-*.tgz
  *   node scripts/generate-emoji-data.mjs ./package
- *   npx prettier --write apps/mobile/lib/chat/emoji-data.ts
+ *   npx prettier --write packages/chat-core/src/emoji-data.ts
  *
  * Why a generated file and not the package: the package's smallest English
  * file is ~540 KB of JSON, and the picker needs only the emoji, its group
  * and the words a search matches. Bundling the package would ship all of it
- * in every OTA update. Web's picker (`frimousse`) reads emojibase too, so the
- * names match; web offers newer emoji where the browser draws them.
+ * in every OTA update, and web used to fetch it from a CDN on every new tab
+ * (`frimousse`), which is why its picker opened on "Loading…".
  *
- * Emoji newer than `MAX_VERSION` are left out: a phone whose OS predates
- * them draws an empty box, and a reaction nobody can see is worse than one
- * missing from the picker.
+ * Emoji newer than `MAX_VERSION` are left out on both surfaces: a phone or
+ * a Windows machine whose OS predates them draws an empty box, and a
+ * reaction nobody can see is worse than one missing from the picker.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -48,6 +49,9 @@ const groups = messages.groups
     entries: [],
   }));
 const byOrder = new Map(groups.map((g) => [g.order, g]));
+/** Emoji from `NEWEST_FROM` on, by version, for web's per-browser check. */
+const NEWEST_FROM = 13;
+const newer = new Map();
 
 for (const e of [...data].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))) {
   if (typeof e.group !== "number" || e.version > MAX_VERSION) continue;
@@ -57,6 +61,9 @@ for (const e of [...data].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))) {
   const label = clean(e.label);
   const tags = clean((e.tags ?? []).join(" "));
   group.entries.push(`${e.emoji}|${label}|${tags}`);
+  if (e.version >= NEWEST_FROM) {
+    newer.set(e.version, [...(newer.get(e.version) ?? []), e.emoji]);
+  }
 }
 
 const body = groups
@@ -83,11 +90,28 @@ export interface EmojiGroup {
 export const EMOJI_GROUPS: readonly EmojiGroup[] = [
 ${body}
 ];
+
+/**
+ * The catalog's newest emoji (Emoji ${NEWEST_FROM} on), by the version that added
+ * them, so a picker can leave out what the device's font predates.
+ */
+export const NEWER_EMOJI: readonly {
+  version: number;
+  emojis: readonly string[];
+}[] = [
+${[...newer.entries()]
+  .sort((a, b) => a[0] - b[0])
+  .map(
+    ([v, list]) =>
+      `  {\n    version: ${v},\n    emojis: [${list.map((x) => JSON.stringify(x)).join(", ")}],\n  },`,
+  )
+  .join("\n")}
+];
 `;
 writeFileSync(
   join(
     dirname(fileURLToPath(import.meta.url)),
-    "../apps/mobile/lib/chat/emoji-data.ts",
+    "../packages/chat-core/src/emoji-data.ts",
   ),
   out,
 );

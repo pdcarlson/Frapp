@@ -7,17 +7,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as expoRouter from "expo-router";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Platform } from "react-native";
-import { signetDarkTokens } from "@repo/theme/signet";
-import { FrappThemeProvider, tint } from "@/lib/theme";
+import { ACCENT_SUBTLE_HOVER_MIX, signetDarkTokens } from "@repo/theme/signet";
+import { FrappThemeProvider, fontFamilyFor, tint } from "@/lib/theme";
+import { mixHex } from "@/components/tinted-control";
 import { flatStyle } from "@/test/flat-style";
 import { drawnText } from "@/test/screen-text";
 
 /**
- * The chapter picker, opened from More (`app/(app)/(tabs)/more.tsx`). It draws
- * `‹ More` like every screen opened from a More row (navigation.md § Back
- * rows), but only when More's row says it opened it: a link has sign-in
- * anchored under it, so "something to go back to" doesn't mean More. The row
- * goes back rather than opening More again, and holds while a switch runs. The
+ * The chapter picker, opened from Chat home's chapter menu
+ * (`components/chat/chapter-menu.tsx`). It draws `‹ Chat` like every screen
+ * opened from Chat home (navigation.md § Back rows), but only when the menu
+ * says it opened it: a link has sign-in anchored under it, so "something to
+ * go back to" doesn't mean Chat. The row
+ * goes back rather than opening You again, and holds while a switch runs. The
  * chapter that's open now is marked, and a tap on it selects it again like any
  * row, since the mark reads a token claim that can lag the server. Whether a
  * failed select leaves is `handleSelect`'s exit rule (its comment states it);
@@ -90,7 +92,7 @@ function moreRow(root: Node): Node | undefined {
     .findAll(
       (node) =>
         (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === "Back to More",
+        node.props.accessibilityLabel === "Back to Chat",
     )
     .at(0);
 }
@@ -150,24 +152,24 @@ beforeEach(() => {
   vi.clearAllMocks();
   chapters = [TAU_NU, ETA];
   selectChapter.mockResolvedValue(true);
-  // Something is under the picker either way: the More tab, or sign-in,
+  // Something is under the picker either way: the Chat tab, or sign-in,
   // which `(auth)/_layout.tsx` anchors under a screen a link opens.
   vi.mocked(router.canGoBack).mockReturnValue(true);
-  // As More's Switch chapter row opens it.
-  vi.mocked(useLocalSearchParams).mockReturnValue({ from: "more" });
+  // As Chat home's chapter menu opens it.
+  vi.mocked(useLocalSearchParams).mockReturnValue({ from: "chat" });
 });
 
-describe("chapter picker, opened from More", () => {
-  it("draws ‹ More, which goes back to the tabs underneath", () => {
+describe("chapter picker, opened from Chat", () => {
+  it("draws ‹ Chat, which goes back to the tabs underneath", () => {
     const tree = render();
     const back = moreRow(tree.root)!;
     const column = tree.root.findByType("ScrollView" as never);
 
-    expect(drawnText(back)).toBe("More");
+    expect(drawnText(back)).toBe("Chat");
     // House gold (`gold.askText`), not the chapter's accent, as all of
     // `(auth)` is.
     expect(backArrowColor(back)).toBe(signetDarkTokens.color.gold.askText);
-    // At the top of the column, where every screen opened from More puts its
+    // At the top of the column, where every screen opened from Chat puts its
     // row and title, rather than floating above a centred list.
     expect(
       Object.assign({}, ...column.props.contentContainerStyle).justifyContent,
@@ -193,7 +195,7 @@ describe("chapter picker, opened from More", () => {
     ).toBe("center");
   });
 
-  it("holds ‹ More while a switch is in flight", async () => {
+  it("holds ‹ Chat while a switch is in flight", async () => {
     const settle = pendingSwitch();
     const tree = render();
     expect(moreRow(tree.root)?.props.disabled).toBe(false);
@@ -347,13 +349,53 @@ describe("chapter picker, opened from More", () => {
     expect(drawnText(tree.root)).toContain(REFUSED);
   });
 
+  it("draws Join as the tinted control in house gold, at 44pt (#4811)", async () => {
+    chapters = [TAU_NU];
+    refusedSwitch();
+    refetchChapters.mockImplementationOnce(() => {
+      chapters = [];
+    });
+    const tree = render();
+    await act(async () => {
+      rowFor(tree.root, "FIJI Tau Nu").props.onPress();
+    });
+
+    const gold = signetDarkTokens.color.gold;
+    const join = rowFor(tree.root, "Join or start a chapter");
+    const held = mixHex(gold.askBorder, ACCENT_SUBTLE_HOVER_MIX, gold.askFill);
+    expect(flatStyle(join.props.style)).toMatchObject({
+      backgroundColor: gold.askFill,
+      borderColor: gold.askBorder,
+      borderWidth: 1,
+      borderRadius: signetDarkTokens.radius.control,
+      minHeight: signetDarkTokens.touch.button,
+      paddingHorizontal: signetDarkTokens.spacing.lg,
+      paddingVertical: signetDarkTokens.spacing.md,
+    });
+    // Pressed steps the fill up one: held on iOS, the ripple on Android.
+    expect(flatStyle(join.props.style, true).backgroundColor).toBe(held);
+    expect(held).not.toBe(gold.askFill);
+    expect(join.props.android_ripple).toEqual({ color: held });
+
+    const label = join.find(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        drawnText(node) === "Join or start a chapter",
+    );
+    expect(flatStyle(label.props.style)).toMatchObject({
+      color: gold.house,
+      fontSize: signetDarkTokens.typography.role.label.size,
+      fontFamily: fontFamilyFor(signetDarkTokens.typography.weight.bold),
+    });
+  });
+
   it("offers Join once a refused chapter was the member's only one", async () => {
     chapters = [TAU_NU];
     refusedSwitch();
     refetchChapters.mockImplementationOnce(() => {
       chapters = [];
     });
-    // A link opened it: no ‹ More, so before the refetch Sign out was the
+    // A link opened it: no ‹ Chat, so before the refetch Sign out was the
     // only way off.
     vi.mocked(useLocalSearchParams).mockReturnValue({});
     const tree = render();

@@ -17,14 +17,49 @@ describe('DEFAULT_SYSTEM_ROLES', () => {
   });
 });
 
-// #4071: tiers arrived without changing what a new chapter's roles can do.
-// The lists are spelled out as they stood before tiers (Member with the
-// recruitment keys #4070 gave it) so that a change to a
-// starting tier or a seeded role fails here and has to be meant. Beside its
-// wildcard the President now also lists its tier's two permissions, which the
-// wildcard already covered.
+// #4071: what a new chapter's seeded roles hold, spelled out so that a change
+// to a starting tier or a seeded role fails here and has to be meant. The
+// exec roles carry the officer defaults Paul set on 2026-11-10 (#4068
+// decision 9). Since #3709 (social trust) every tier but New members also
+// carries what any member can do, events:create among it, so an officer can
+// do what the members they lead can, and the Exec board edits and deletes any
+// event, which is what makes one required or worth points. Every tier also
+// gives `ai:use` (#4308).
+const MEMBER = [
+  'ai:use',
+  'backwork:upload',
+  'events:create',
+  'members:view',
+  'polls:create',
+  'predictions:create',
+  'rush:add',
+  'rush:bid',
+  'rush:notes',
+  'rush:view',
+  'rush:view_results',
+  'rush:vote',
+  'service:log',
+];
+const EXEC_BOARD = [
+  ...MEMBER,
+  'announcements:post',
+  'channels:create',
+  'channels:manage',
+  'chapter-config:manage',
+  'chapter-config:view',
+  'events:delete',
+  'events:update',
+  'groups:manage',
+  'meetings:record',
+  'polls:view_all',
+  'predictions:manage',
+  'roles:manage',
+  'service:approve',
+  'tasks:manage',
+].sort();
+
 describe('DEFAULT_SYSTEM_ROLES permissions', () => {
-  it('gives each seeded role what it held before tiers', () => {
+  it('gives each seeded role its tier plus its own', () => {
     expect(
       Object.fromEntries(
         DEFAULT_SYSTEM_ROLES.map((role) => [
@@ -33,35 +68,90 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
         ]),
       ),
     ).toEqual({
-      PRESIDENT: ['*', 'members:view', 'polls:view_all'],
+      PRESIDENT: ['*', ...EXEC_BOARD],
       TREASURER: [
+        ...EXEC_BOARD,
         'billing:manage',
         'billing:view',
-        'events:create',
-        'events:update',
-        'members:view',
         'points:adjust',
         'points:view_all',
-        'polls:view_all',
         'reports:export',
-      ],
-      VICE_PRESIDENT: ['members:view', 'polls:view_all'],
-      SECRETARY: ['members:view', 'polls:view_all'],
-      MEMBER: [
-        'backwork:upload',
-        'members:view',
-        'polls:create',
-        'rush:add',
-        'rush:bid',
-        'rush:notes',
-        'rush:view',
-        'rush:view_results',
-        'rush:vote',
-        'service:log',
-      ],
-      NEW_MEMBER: ['backwork:upload', 'members:view'],
+      ].sort(),
+      VICE_PRESIDENT: EXEC_BOARD,
+      SECRETARY: EXEC_BOARD,
+      MEMBER,
+      NEW_MEMBER: ['ai:use', 'backwork:upload', 'members:view'],
       ALUMNI: ['alumni:post', 'members:view'],
+      // The floor every member holds (2026-11-21): the directory and the
+      // channels open to the whole chapter, nothing else.
+      EVERYONE: ['members:view'],
     });
+  });
+
+  // #4068 decision 9: the top two starting tiers approve service hours, post
+  // announcements and manage tasks and channels; only the top one manages
+  // roles and chapter settings.
+  it('gives the officer defaults to the top two starting tiers only', () => {
+    const officer = [
+      'announcements:post',
+      'channels:create',
+      'channels:manage',
+      'groups:manage',
+      'service:approve',
+      'tasks:manage',
+    ];
+    const [exec, chairs, members, newMembers] = STARTING_ROLE_TIERS.map(
+      (tier) => new Set<string>(tier.permissions),
+    );
+    for (const permission of officer) {
+      expect(exec.has(permission)).toBe(true);
+      expect(chairs.has(permission)).toBe(true);
+      expect(members.has(permission)).toBe(false);
+      expect(newMembers.has(permission)).toBe(false);
+    }
+    for (const permission of [
+      'roles:manage',
+      'chapter-config:view',
+      'chapter-config:manage',
+    ]) {
+      expect(exec.has(permission)).toBe(true);
+      expect(chairs.has(permission)).toBe(false);
+    }
+  });
+
+  // #4308: every active member may use the AI features a president turns on,
+  // once they say yes on the AI sheet. Alumni sit outside the tiers and do
+  // not; nobody is seeded `ai:act`.
+  it('gives ai:use to every starting tier, and ai:act to none', () => {
+    for (const tier of STARTING_ROLE_TIERS) {
+      expect(tier.permissions).toContain(SystemPermissions.AI_USE);
+      expect(tier.permissions).not.toContain(SystemPermissions.AI_ACT);
+    }
+    const alumni = DEFAULT_SYSTEM_ROLES.find(
+      (role) => role.system_key === 'ALUMNI',
+    );
+    expect(alumni?.permissions).not.toContain(SystemPermissions.AI_USE);
+  });
+
+  // #3709: every member can create an event and upload backwork, whatever
+  // tier their role sits in, but only an events:update holder makes anyone
+  // required or attaches points: of the starting tiers, the Exec board only.
+  it('lets every tier but New members create events, and only the Exec board edit them', () => {
+    const [exec, chairs, members, newMembers] = STARTING_ROLE_TIERS.map(
+      (tier) => new Set<string>(tier.permissions),
+    );
+    for (const tier of [exec, chairs, members]) {
+      expect(tier.has('events:create')).toBe(true);
+      expect(tier.has('backwork:upload')).toBe(true);
+    }
+    expect(exec.has('events:update')).toBe(true);
+    expect(exec.has('events:delete')).toBe(true);
+    for (const tier of [chairs, members, newMembers]) {
+      expect(tier.has('events:update')).toBe(false);
+      expect(tier.has('events:delete')).toBe(false);
+    }
+    expect(newMembers.has('events:create')).toBe(false);
+    expect(newMembers.has('backwork:upload')).toBe(true);
   });
 
   it('never puts the wildcard on a starting tier', () => {
@@ -76,7 +166,7 @@ describe('DEFAULT_SYSTEM_ROLES permissions', () => {
 // migration 20261105200000_role_color_palette_defaults.sql carries the same
 // values for existing chapters.
 describe('DEFAULT_SYSTEM_ROLES colors', () => {
-  it('seeds the palette defaults, and none for Member and New Member', () => {
+  it('seeds the palette defaults, and none for Actives, New Member and Everyone', () => {
     const colors = Object.fromEntries(
       DEFAULT_SYSTEM_ROLES.map((role) => [role.system_key, role.color]),
     );
@@ -88,6 +178,7 @@ describe('DEFAULT_SYSTEM_ROLES colors', () => {
       MEMBER: null,
       NEW_MEMBER: null,
       ALUMNI: '#A9B4C2',
+      EVERYONE: null,
     });
   });
 });

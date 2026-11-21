@@ -30,6 +30,14 @@ enable_signup = true
 double_confirm_changes = false
 enable_confirmations = false
 
+# Prints the 6-digit code beside the link, as the hosted templates do
+# (docs/ops/deployment/supabase.md § Both templates print the 6-digit code), so
+# the invite card's email code works on the local stack. Local confirmations are
+# off, so Magic Link is the only template a sign-in sends here.
+[auth.email.template.magic_link]
+subject = "Sign in to Frapp"
+content_path = "./supabase/templates/magic-link.html"
+
 # Stamps the active chapter into every issued access token as the
 # `active_chapter_id` claim, which ChapterGuard treats as authoritative per
 # spec/behavior/multi-tenancy.md. Local only -- hosted projects enable this in
@@ -43,11 +51,12 @@ enabled = false
 
 [storage]
 enabled = true
-file_size_limit = "104857600" # 100MB -- the chat-archive bucket ceiling (Discord boosted-server per-file max).
+file_size_limit = "209715200" # 200MB -- the meeting-audio bucket ceiling (MAX_MEETING_RECORDING_BYTES, #712).
 # This is a GLOBAL cap for the local stack and overrides a higher per-bucket
 # `storage.buckets.file_size_limit`; member-upload buckets stay pinned at 25MB
 # (MAX_UPLOAD_BYTES) by their own column and by `@repo/validation`, except
-# `backwork` at 100MB (MAX_BACKWORK_UPLOAD_BYTES), so this must stay >= 100MB.
+# `backwork` and `chat-archive` at 100MB and `meeting-audio` at 200MB, so this
+# must stay >= 200MB. The hosted projects' equivalent is a dashboard setting.
 
 [realtime]
 enabled = true

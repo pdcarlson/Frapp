@@ -30,14 +30,7 @@ vi.mock("@/lib/auth-session", () => ({
   }),
 }));
 
-// The first-run tour wraps the navigator and reads the signed-in member; it
-// has its own spec (`components/onboarding/tour.spec.tsx`).
-vi.mock("@/components/onboarding/tour", () => ({
-  TourHost: ({ children }: { children: React.ReactNode }) => children,
-  useTourAnchor: () => undefined,
-  useTourReady: () => undefined,
-}));
-// So does What's new's host beside it (`components/whats-new/whats-new-host.spec.tsx`).
+// What's new's host has its own spec (`components/whats-new/whats-new-host.spec.tsx`).
 vi.mock("@/components/whats-new/whats-new-host", () => ({
   WhatsNewHost: "WhatsNewHost",
 }));
@@ -48,6 +41,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import TabLayout from "@/app/(app)/(tabs)/_layout";
 import AppLayout, { unstable_settings } from "@/app/(app)/_layout";
 import { TAB_ROUTES } from "@/components/glass-tab-bar";
+import { YouTabAvatar } from "@/components/you-tab-avatar";
 import { stackScreenLayout } from "@/components/route-error";
 
 type Node = ReactTestRenderer["root"];
@@ -140,6 +134,23 @@ describe("tab bar", () => {
     expect(visible).toEqual([...TAB_ROUTES]);
   });
 
+  // #3839: the You tab's glyph is the member's own avatar, ringed in the
+  // accent while active, not a nav-set glyph.
+  it("draws the member's avatar as the You tab's glyph", () => {
+    const you = hosts(render().root, "Tabs.Screen").find(
+      (screen) => screen.props.name === "you",
+    )!;
+    const options = resolved(you.props.options);
+    expect(options.title).toBe("You");
+    const icon = (
+      options.tabBarIcon as (props: object) => React.ReactElement<{
+        focused: boolean;
+      }>
+    )({ focused: true, color: "#000", size: 24 });
+    expect(icon.type).toBe(YouTabAvatar);
+    expect(icon.props.focused).toBe(true);
+  });
+
   it("draws the glass pill and + in place of the navigator's bar", () => {
     const [tabs] = hosts(render().root, "Tabs");
     expect(typeof tabs.props.tabBar).toBe("function");
@@ -191,6 +202,15 @@ describe("app stack", () => {
     }
   });
 
+  // #5310: Messages is a tab and the Calendar a pushed screen, with its one
+  // day's hour grid pushed over it.
+  it("registers the Calendar and its day on the stack, and Messages not", () => {
+    const names = stack().screens.map((screen) => screen.props.name);
+    expect(names).toContain("events");
+    expect(names).toContain("calendar-day");
+    expect(names).not.toContain("messages");
+  });
+
   it("puts the tabs under a screen opened by link", () => {
     // A cold `frapp://event-details` or a notification tap still has Chat
     // home under it, so its swipe and its back capsule land somewhere.
@@ -217,11 +237,27 @@ describe("app stack", () => {
     );
     const pushed = stack()
       .screens.map((screen) => screen.props.name as string)
-      // `ask` only redirects to Chat home.
-      .filter((name) => name !== "(tabs)" && name !== "ask");
+      // `ask` only redirects to Chat home, and `chat` (a message's link,
+      // #3723) only hands off to the thread: neither draws a screen.
+      .filter((name) => !["(tabs)", "ask", "chat"].includes(name));
+
+    // A route that only re-exports a screen kept outside `app/` (so its
+    // spec can sit beside it, as the member profile's does, #5568) is read
+    // through to that screen's file.
+    const screenSource = (route: string): string => {
+      const own = readFileSync(join(appGroup, `${route}.tsx`), "utf8");
+      if (/<[A-Z]/.test(own)) return own;
+      const reexported = [...own.matchAll(/from "@\/(components\/[^"]+)"/g)];
+      return [
+        own,
+        ...reexported.map((match) =>
+          readFileSync(join(appGroup, "..", "..", `${match[1]}.tsx`), "utf8"),
+        ),
+      ].join("\n");
+    };
 
     for (const name of pushed) {
-      const source = readFileSync(join(appGroup, `${name}.tsx`), "utf8");
+      const source = screenSource(name);
       const edges = [...source.matchAll(/edges=\{\[([^\]]*)\]\}/g)].map(
         (match) => match[1],
       );

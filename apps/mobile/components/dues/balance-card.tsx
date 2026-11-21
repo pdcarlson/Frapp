@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { StatusChip } from "@/components/status-chip";
 import { SkeletonBlock, SkeletonText } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -226,6 +227,7 @@ export function BalanceCardSkeleton() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   // Shared by the card's lines and its skeleton's, so the two can't drift.
   const margin = { amount: tokens.spacing.sm, button: tokens.spacing.lg };
   return StyleSheet.create({
@@ -233,7 +235,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     metaRow: {

@@ -5,17 +5,16 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { circleToPolygon } from '@repo/validation';
+import { pointInPolygon } from '#domain/utils/geofence';
 import { StudyService } from './study.service';
 import { RbacService } from './rbac.service';
 import { STUDY_GEOFENCE_REPOSITORY } from '#domain/repositories/study.repository.interface';
 import type { IStudyGeofenceRepository } from '#domain/repositories/study.repository.interface';
 import { STUDY_SESSION_REPOSITORY } from '#domain/repositories/study.repository.interface';
 import type { IStudySessionRepository } from '#domain/repositories/study.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '#domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '#domain/repositories/point-transaction.repository.interface';
 import type { StudyGeofence } from '#domain/entities/study.entity';
 import type { StudySession } from '#domain/entities/study.entity';
-import type { PointTransaction } from '#domain/entities/point-transaction.entity';
 
 // `pointInPolygon` moved to `domain/utils/geofence.ts` with #994, when event
 // check-in became its second consumer. Its cases live in `geofence.spec.ts`.
@@ -24,7 +23,6 @@ describe('StudyService', () => {
   let service: StudyService;
   let mockGeofenceRepo: jest.Mocked<IStudyGeofenceRepository>;
   let mockSessionRepo: jest.Mocked<IStudySessionRepository>;
-  let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
   let mockRbac: { isAlumni: jest.Mock };
 
   const baseGeofence: StudyGeofence = {
@@ -37,6 +35,7 @@ describe('StudyService', () => {
       { lat: 10, lng: 10 },
       { lat: 10, lng: 0 },
     ],
+    circle: null,
     is_active: true,
     minutes_per_point: 30,
     points_per_interval: 1,
@@ -61,16 +60,9 @@ describe('StudyService', () => {
     created_at: '2026-02-26T10:00:00.000Z',
   };
 
-  const basePointTxn: PointTransaction = {
-    id: 'pt-1',
-    chapter_id: 'ch-1',
-    user_id: 'user-1',
-    amount: 2,
-    category: 'STUDY',
-    description: 'Study session: Library',
-    metadata: {},
-    created_at: '2026-02-26T10:30:00.000Z',
-  };
+  /** Points the service asked `finish` to award: 0 when it awarded none or never finished. */
+  const awarded = (): number =>
+    mockSessionRepo.finish.mock.calls.at(-1)?.[2].points ?? 0;
 
   beforeEach(async () => {
     mockGeofenceRepo = {
@@ -85,16 +77,8 @@ describe('StudyService', () => {
       findActiveByUserAndChapter: jest.fn(),
       findByUserAndChapter: jest.fn(),
       create: jest.fn(),
-      update: jest.fn(),
-    };
-
-    mockPointTxnRepo = {
-      create: jest.fn(),
-      findByClientMessageId: jest.fn().mockResolvedValue(null),
-      findByUser: jest.fn(),
-      leaderboard: jest.fn(),
-      findByChapterFiltered: jest.fn(),
-      countRecentAdjustments: jest.fn(),
+      updateIfUnchanged: jest.fn(),
+      finish: jest.fn(),
     };
 
     // Default to an active (non-alumni) member so existing cases are unaffected.
@@ -105,7 +89,6 @@ describe('StudyService', () => {
         StudyService,
         { provide: STUDY_GEOFENCE_REPOSITORY, useValue: mockGeofenceRepo },
         { provide: STUDY_SESSION_REPOSITORY, useValue: mockSessionRepo },
-        { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
         { provide: RbacService, useValue: mockRbac },
       ],
     }).compile();
@@ -136,7 +119,7 @@ describe('StudyService', () => {
         ForbiddenException,
       );
 
-      expect(mockSessionRepo.update).not.toHaveBeenCalled();
+      expect(mockSessionRepo.updateIfUnchanged).not.toHaveBeenCalled();
     });
 
     // stopSession is deliberately NOT denied: nothing else moves a session out
@@ -150,7 +133,7 @@ describe('StudyService', () => {
       };
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(longSession);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-      mockSessionRepo.update.mockResolvedValue({
+      mockSessionRepo.finish.mockResolvedValue({
         ...longSession,
         status: 'COMPLETED',
       });
@@ -158,14 +141,14 @@ describe('StudyService', () => {
       const result = await service.stopSession('user-1', 'ch-1');
 
       // Session is closed out...
-      expect(mockSessionRepo.update).toHaveBeenCalledWith(
-        longSession.id,
+      expect(mockSessionRepo.finish).toHaveBeenCalledWith(
+        expect.objectContaining({ id: longSession.id }),
         'ch-1',
-        expect.objectContaining({ status: 'COMPLETED', points_awarded: false }),
+        expect.objectContaining({ status: 'COMPLETED', points: 0 }),
       );
       expect(result.status).toBe('COMPLETED');
       // ...but the STUDY award is withheld, despite clearing min_session_minutes.
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(awarded()).toBe(0);
     });
 
     it('still awards points when an active member stops the same session', async () => {
@@ -177,14 +160,12 @@ describe('StudyService', () => {
       };
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(longSession);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-      mockSessionRepo.update.mockResolvedValue(longSession);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
+      mockSessionRepo.finish.mockResolvedValue(longSession);
 
       await service.stopSession('user-1', 'ch-1');
 
-      expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ category: 'STUDY' }),
-      );
+      // 120 min / 30 per point = 4 points.
+      expect(awarded()).toBe(4);
     });
 
     it('still allows an active member to start a session', async () => {
@@ -226,6 +207,7 @@ describe('StudyService', () => {
           chapter_id: 'ch-1',
           name: 'Library',
           coordinates: baseGeofence.coordinates,
+          circle: null,
           is_active: true,
           minutes_per_point: 30,
           points_per_interval: 1,
@@ -233,6 +215,61 @@ describe('StudyService', () => {
         }),
       );
       expect(result).toEqual(baseGeofence);
+    });
+
+    it('stores a circle with the polygon derived from it, never a client polygon', async () => {
+      mockGeofenceRepo.create.mockResolvedValue(baseGeofence);
+      const circle = { lat: 42.7298, lng: -73.6826, radius_m: 75 };
+
+      await service.createGeofence('ch-1', { name: 'Folsom Library', circle });
+
+      const written = mockGeofenceRepo.create.mock.calls[0][0];
+      expect(written.circle).toEqual(circle);
+      expect(written.coordinates).toEqual(circleToPolygon(circle));
+      // The member at the center is inside the stored zone, one 100 m out is not.
+      const polygon = written.coordinates as { lat: number; lng: number }[];
+      expect(pointInPolygon(circle.lat, circle.lng, polygon)).toBe(true);
+      expect(pointInPolygon(circle.lat + 0.0009, circle.lng, polygon)).toBe(
+        false,
+      );
+    });
+
+    it('refuses a circle and an outline together', async () => {
+      await expect(
+        service.createGeofence('ch-1', {
+          name: 'Both',
+          coordinates: baseGeofence.coordinates,
+          circle: { lat: 0, lng: 0, radius_m: 75 },
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockGeofenceRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('answers a null circle with no outline as a missing shape, not a crash', async () => {
+      await expect(
+        service.createGeofence('ch-1', { name: 'Null', circle: null }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockGeofenceRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('reads a null circle beside an outline as an outline', async () => {
+      mockGeofenceRepo.create.mockResolvedValue(baseGeofence);
+      await service.createGeofence('ch-1', {
+        name: 'Echoed',
+        coordinates: baseGeofence.coordinates,
+        circle: null,
+      });
+      expect(mockGeofenceRepo.create.mock.calls[0][0]).toMatchObject({
+        coordinates: baseGeofence.coordinates,
+        circle: null,
+      });
+    });
+
+    it('refuses a zone with no shape at all', async () => {
+      await expect(
+        service.createGeofence('ch-1', { name: 'Nothing' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockGeofenceRepo.create).not.toHaveBeenCalled();
     });
 
     it('throws BadRequestException when coordinates have fewer than 3 points', async () => {
@@ -281,6 +318,50 @@ describe('StudyService', () => {
           coordinates: [{ lat: 0, lng: 0 }],
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('redraws a zone as a circle, replacing its polygon', async () => {
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockGeofenceRepo.update.mockResolvedValue(baseGeofence);
+      const circle = { lat: 5, lng: 5, radius_m: 200 };
+
+      await service.updateGeofence('geo-1', 'ch-1', { circle });
+
+      expect(mockGeofenceRepo.update).toHaveBeenCalledWith('geo-1', 'ch-1', {
+        coordinates: circleToPolygon(circle),
+        circle,
+      });
+    });
+
+    it('leaves the shape alone when an update sends only a null circle', async () => {
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockGeofenceRepo.update.mockResolvedValue(baseGeofence);
+
+      await service.updateGeofence('geo-1', 'ch-1', {
+        name: 'Renamed',
+        circle: null,
+      });
+
+      expect(mockGeofenceRepo.update).toHaveBeenCalledWith('geo-1', 'ch-1', {
+        name: 'Renamed',
+      });
+    });
+
+    it('clears the circle when a circle zone is retraced as an outline', async () => {
+      mockGeofenceRepo.findById.mockResolvedValue({
+        ...baseGeofence,
+        circle: { lat: 5, lng: 5, radius_m: 200 },
+      });
+      mockGeofenceRepo.update.mockResolvedValue(baseGeofence);
+
+      await service.updateGeofence('geo-1', 'ch-1', {
+        coordinates: baseGeofence.coordinates,
+      });
+
+      expect(mockGeofenceRepo.update).toHaveBeenCalledWith('geo-1', 'ch-1', {
+        coordinates: baseGeofence.coordinates,
+        circle: null,
+      });
     });
   });
 
@@ -345,6 +426,11 @@ describe('StudyService', () => {
       await expect(
         service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
       ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'study.zone_inactive' }),
+      });
     });
 
     it('throws BadRequestException when location is outside geofence', async () => {
@@ -353,6 +439,16 @@ describe('StudyService', () => {
       await expect(
         service.startSession('user-1', 'ch-1', 'geo-1', 15, 15),
       ).rejects.toThrow(BadRequestException);
+      // Coded, so the clients leave it out of Sentry; the message is what
+      // their error map words.
+      await expect(
+        service.startSession('user-1', 'ch-1', 'geo-1', 15, 15),
+      ).rejects.toMatchObject({
+        response: {
+          code: 'study.outside_zone',
+          message: 'Location is outside the geofence',
+        },
+      });
       expect(mockSessionRepo.create).not.toHaveBeenCalled();
     });
 
@@ -376,15 +472,15 @@ describe('StudyService', () => {
       };
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(baseSession);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-      mockSessionRepo.update.mockResolvedValue(updated);
+      mockSessionRepo.updateIfUnchanged.mockResolvedValue(updated);
 
       jest.useFakeTimers();
       jest.setSystemTime(new Date('2026-02-26T10:10:00.000Z'));
 
       const result = await service.heartbeat('user-1', 'ch-1', 5, 5);
 
-      expect(mockSessionRepo.update).toHaveBeenCalledWith(
-        'sess-1',
+      expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'sess-1' }),
         'ch-1',
         expect.objectContaining({
           last_heartbeat_at: '2026-02-26T10:10:00.000Z',
@@ -400,15 +496,15 @@ describe('StudyService', () => {
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(baseSession);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
       const expired = { ...baseSession, status: 'EXPIRED' as const };
-      mockSessionRepo.update.mockResolvedValue(expired);
+      mockSessionRepo.updateIfUnchanged.mockResolvedValue(expired);
 
       jest.useFakeTimers();
       jest.setSystemTime(new Date('2026-02-26T10:20:00.000Z')); // 15 min since last heartbeat
 
       const result = await service.heartbeat('user-1', 'ch-1', 5, 5);
 
-      expect(mockSessionRepo.update).toHaveBeenCalledWith(
-        'sess-1',
+      expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'sess-1' }),
         'ch-1',
         expect.objectContaining({
           status: 'EXPIRED',
@@ -429,15 +525,15 @@ describe('StudyService', () => {
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(baseSession);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
       const expired = { ...baseSession, status: 'EXPIRED' as const };
-      mockSessionRepo.update.mockResolvedValue(expired);
+      mockSessionRepo.updateIfUnchanged.mockResolvedValue(expired);
 
       jest.useFakeTimers();
       jest.setSystemTime(new Date('2026-02-26T10:07:00.000Z'));
 
       const result = await service.heartbeat('user-1', 'ch-1', 15, 15);
 
-      expect(mockSessionRepo.update).toHaveBeenCalledWith(
-        'sess-1',
+      expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'sess-1' }),
         'ch-1',
         expect.objectContaining({
           status: 'EXPIRED',
@@ -473,15 +569,15 @@ describe('StudyService', () => {
           baseSession,
         );
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue(updated);
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue(updated);
 
         jest.useFakeTimers();
         jest.setSystemTime(new Date('2026-02-26T10:10:00.000Z'));
 
         const result = await service.heartbeat('user-1', 'ch-1', 5, 5, 12);
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({
             last_heartbeat_at: '2026-02-26T10:10:00.000Z',
@@ -500,7 +596,7 @@ describe('StudyService', () => {
         );
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
         const flagged = { ...baseSession, location_reject_streak: 1 };
-        mockSessionRepo.update.mockResolvedValue(flagged);
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue(flagged);
 
         jest.useFakeTimers();
         jest.setSystemTime(new Date('2026-02-26T10:10:00.000Z'));
@@ -509,9 +605,13 @@ describe('StudyService', () => {
         // to prove the accuracy check, not the location check, drove this.
         const result = await service.heartbeat('user-1', 'ch-1', 5, 5, 150);
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
-          location_reject_streak: 1,
-        });
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
+          'ch-1',
+          {
+            location_reject_streak: 1,
+          },
+        );
         expect(result.status).toBe('ACTIVE');
         expect(result.location_reject_streak).toBe(1);
 
@@ -529,15 +629,15 @@ describe('StudyService', () => {
           status: 'LOCATION_INVALID' as const,
           location_reject_streak: 2,
         };
-        mockSessionRepo.update.mockResolvedValue(invalid);
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue(invalid);
 
         jest.useFakeTimers();
         jest.setSystemTime(new Date('2026-02-26T10:15:00.000Z'));
 
         const result = await service.heartbeat('user-1', 'ch-1', 5, 5, 150);
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({
             status: 'LOCATION_INVALID',
@@ -555,7 +655,7 @@ describe('StudyService', () => {
           onceRejected,
         );
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue({
           ...onceRejected,
           location_reject_streak: 0,
         });
@@ -565,8 +665,8 @@ describe('StudyService', () => {
 
         await service.heartbeat('user-1', 'ch-1', 5, 5, 20);
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({ location_reject_streak: 0 }),
         );
@@ -586,7 +686,7 @@ describe('StudyService', () => {
         );
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
         const expired = { ...baseSession, status: 'EXPIRED' as const };
-        mockSessionRepo.update.mockResolvedValue(expired);
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue(expired);
 
         jest.useFakeTimers();
         // 15 min since the 10:05 watermark — past the 10-minute stale window.
@@ -594,10 +694,14 @@ describe('StudyService', () => {
 
         const result = await service.heartbeat('user-1', 'ch-1', 5, 5, 150);
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
-          status: 'EXPIRED',
-          end_time: '2026-02-26T10:20:00.000Z',
-        });
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
+          'ch-1',
+          {
+            status: 'EXPIRED',
+            end_time: '2026-02-26T10:20:00.000Z',
+          },
+        );
         expect(result.status).toBe('EXPIRED');
 
         jest.useRealTimers();
@@ -616,7 +720,6 @@ describe('StudyService', () => {
         sessionWithMinutes,
       );
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
 
       const completed = {
         ...sessionWithMinutes,
@@ -625,7 +728,7 @@ describe('StudyService', () => {
         total_foreground_minutes: 40,
         points_awarded: true,
       };
-      mockSessionRepo.update.mockResolvedValue(completed);
+      mockSessionRepo.finish.mockResolvedValue(completed);
 
       jest.useFakeTimers();
       jest.setSystemTime(new Date('2026-02-26T10:40:00.000Z'));
@@ -633,14 +736,17 @@ describe('StudyService', () => {
       const result = await service.stopSession('user-1', 'ch-1');
 
       // 40 min / 30 min_per_point = 1, * 1 = 1 point
-      expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          chapter_id: 'ch-1',
-          user_id: 'user-1',
-          amount: 1,
-          category: 'STUDY',
+      expect(mockSessionRepo.finish).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'sess-1' }),
+        'ch-1',
+        {
+          status: 'COMPLETED',
+          end_time: '2026-02-26T10:40:00.000Z',
+          last_heartbeat_at: '2026-02-26T10:40:00.000Z',
+          total_foreground_minutes: 40,
+          points: 1,
           description: 'Study session: Library',
-        }),
+        },
       );
       expect(result.status).toBe('COMPLETED');
       expect(result.points_awarded).toBe(true);
@@ -666,23 +772,27 @@ describe('StudyService', () => {
         total_foreground_minutes: 6,
         points_awarded: false,
       };
-      mockSessionRepo.update.mockResolvedValue(completed);
+      mockSessionRepo.finish.mockResolvedValue(completed);
 
       jest.useFakeTimers();
       jest.setSystemTime(new Date('2026-02-26T10:06:00.000Z'));
 
       const result = await service.stopSession('user-1', 'ch-1');
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(awarded()).toBe(0);
       expect(result.points_awarded).toBe(false);
 
       jest.useRealTimers();
     });
 
     it('does not double-award when points_awarded is already true', async () => {
+      // A timely heartbeat, so the stop reaches the award rather than the
+      // stale-heartbeat expiry (which awards nothing on its own).
+      jest.useFakeTimers().setSystemTime(new Date('2026-02-26T11:01:00.000Z'));
       const alreadyAwarded = {
         ...baseSession,
         total_foreground_minutes: 60,
+        last_heartbeat_at: '2026-02-26T11:00:00.000Z',
         points_awarded: true,
       };
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
@@ -695,11 +805,13 @@ describe('StudyService', () => {
         status: 'COMPLETED' as const,
         end_time: '2026-02-26T11:00:00.000Z',
       };
-      mockSessionRepo.update.mockResolvedValue(completed);
+      mockSessionRepo.finish.mockResolvedValue(completed);
 
       await service.stopSession('user-1', 'ch-1');
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(mockSessionRepo.finish).toHaveBeenCalled();
+      expect(awarded()).toBe(0);
+      jest.useRealTimers();
     });
 
     it('calculates points correctly: floor(total/minutes_per_point)*points_per_interval', async () => {
@@ -715,7 +827,6 @@ describe('StudyService', () => {
       };
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(session);
       mockGeofenceRepo.findById.mockResolvedValue(geofence);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
 
       const completed = {
         ...session,
@@ -724,7 +835,7 @@ describe('StudyService', () => {
         total_foreground_minutes: 90,
         points_awarded: true,
       };
-      mockSessionRepo.update.mockResolvedValue(completed);
+      mockSessionRepo.finish.mockResolvedValue(completed);
 
       jest.useFakeTimers();
       jest.setSystemTime(new Date('2026-02-26T11:30:00.000Z'));
@@ -732,11 +843,7 @@ describe('StudyService', () => {
       await service.stopSession('user-1', 'ch-1');
 
       // floor(90/30) * 2 = 3 * 2 = 6
-      expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          amount: 6,
-        }),
-      );
+      expect(awarded()).toBe(6);
 
       jest.useRealTimers();
     });
@@ -746,6 +853,201 @@ describe('StudyService', () => {
 
       await expect(service.stopSession('user-1', 'ch-1')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  // Two requests that both read the session as ACTIVE used to both award: a
+  // double-tapped Stop, or the app coming back to the foreground and firing a
+  // heartbeat and a history read at the same grace-expired session. Every
+  // write is now a compare-and-set on the row the request read, and a request
+  // that loses recomputes from a fresh read. This fake holds one row and
+  // applies the compare-and-set the way `updateIfUnchanged` and
+  // `finish_study_session` do.
+  describe('two requests on the same session at once', () => {
+    let row: StudySession;
+    let ledger: number[];
+
+    const matches = (read: StudySession) =>
+      row.status === 'ACTIVE' &&
+      row.last_heartbeat_at === read.last_heartbeat_at &&
+      row.paused_at === read.paused_at;
+
+    const holdRow = (initial: StudySession) => {
+      row = { ...initial };
+      ledger = [];
+      mockSessionRepo.findActiveByUserAndChapter.mockImplementation(async () =>
+        row.status === 'ACTIVE' ? { ...row } : null,
+      );
+      mockSessionRepo.findByUserAndChapter.mockImplementation(async () => [
+        { ...row },
+      ]);
+      mockSessionRepo.updateIfUnchanged.mockImplementation(
+        async (read, _chapterId, data) => {
+          if (!matches(read as StudySession)) return null;
+          row = { ...row, ...data };
+          return { ...row };
+        },
+      );
+      mockSessionRepo.finish.mockImplementation(async (read, _chapterId, f) => {
+        if (!matches(read as StudySession)) return null;
+        row = {
+          ...row,
+          status: f.status,
+          end_time: f.end_time,
+          last_heartbeat_at: f.last_heartbeat_at,
+          total_foreground_minutes: f.total_foreground_minutes,
+          paused_at: f.status === 'COMPLETED' ? null : row.paused_at,
+          points_awarded: row.points_awarded || f.points > 0,
+        };
+        if (f.points > 0) ledger.push(f.points);
+        return { ...row };
+      });
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+    };
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('awards a double-tapped Stop once and answers the second tap as a stop that came late', async () => {
+      holdRow({
+        ...baseSession,
+        total_foreground_minutes: 60,
+        last_heartbeat_at: '2026-02-26T11:00:00.000Z',
+      });
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T11:01:00.000Z'));
+
+      const [first, second] = await Promise.allSettled([
+        service.stopSession('user-1', 'ch-1'),
+        service.stopSession('user-1', 'ch-1'),
+      ]);
+
+      // 61 min / 30 per point = 2 points, written once.
+      expect(ledger).toEqual([2]);
+      expect(first).toMatchObject({
+        status: 'fulfilled',
+        value: { status: 'COMPLETED', points_awarded: true },
+      });
+      expect(second).toMatchObject({ status: 'rejected' });
+      expect((second as PromiseRejectedResult).reason).toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('settles a grace-expired session once when a heartbeat and a history read race', async () => {
+      holdRow({
+        ...baseSession,
+        total_foreground_minutes: 40,
+        last_heartbeat_at: '2026-02-26T10:40:00.000Z',
+        paused_at: '2026-02-26T10:40:00.000Z',
+      });
+      // Grace is 5 minutes; this is 20 minutes after the pause.
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T11:00:00.000Z'));
+
+      const [heartbeat, history] = await Promise.allSettled([
+        service.heartbeat('user-1', 'ch-1', 5, 5),
+        service.listSessions('user-1', 'ch-1'),
+      ]);
+
+      expect(ledger).toEqual([1]);
+      expect(row).toMatchObject({
+        status: 'PAUSED_EXPIRED',
+        end_time: '2026-02-26T10:40:00.000Z',
+        points_awarded: true,
+      });
+      // The history read always answers with the settled row.
+      expect(history).toMatchObject({
+        status: 'fulfilled',
+        value: [{ status: 'PAUSED_EXPIRED' }],
+      });
+      // The heartbeat either settled it itself or, having lost, found no
+      // active session left, which is what a heartbeat a moment later gets.
+      if (heartbeat.status === 'rejected') {
+        expect(heartbeat.reason).toBeInstanceOf(NotFoundException);
+      } else {
+        expect(heartbeat.value.status).toBe('PAUSED_EXPIRED');
+      }
+    });
+
+    it('does not let an out-of-zone heartbeat overwrite a session a Stop just completed', async () => {
+      holdRow({
+        ...baseSession,
+        total_foreground_minutes: 60,
+        last_heartbeat_at: '2026-02-26T11:00:00.000Z',
+      });
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T11:01:00.000Z'));
+
+      const [stop, heartbeat] = await Promise.allSettled([
+        service.stopSession('user-1', 'ch-1'),
+        // Outside the 0..10 square.
+        service.heartbeat('user-1', 'ch-1', 50, 50),
+      ]);
+
+      expect(stop).toMatchObject({ status: 'fulfilled' });
+      expect(heartbeat).toMatchObject({ status: 'rejected' });
+      expect(row.status).toBe('COMPLETED');
+      expect(ledger).toEqual([2]);
+    });
+
+    it('recomputes a pause from the fresh row when a heartbeat banked minutes first', async () => {
+      holdRow({
+        ...baseSession,
+        total_foreground_minutes: 10,
+        last_heartbeat_at: '2026-02-26T10:00:00.000Z',
+      });
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T10:05:00.000Z'));
+
+      await Promise.all([
+        service.heartbeat('user-1', 'ch-1', 5, 5),
+        service.pauseSession('user-1', 'ch-1'),
+      ]);
+
+      // Five minutes credited once, not once per request, whichever landed
+      // first. (If the pause won, the heartbeat then reads a paused session
+      // and resumes it, as any foreground heartbeat does.)
+      expect(row.total_foreground_minutes).toBe(15);
+      expect(row.last_heartbeat_at).toBe('2026-02-26T10:05:00.000Z');
+    });
+
+    it('gives up with 409 when the session keeps changing under it', async () => {
+      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue({
+        ...baseSession,
+        last_heartbeat_at: '2026-02-26T11:00:00.000Z',
+      });
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockSessionRepo.updateIfUnchanged.mockResolvedValue(null);
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-02-26T11:01:00.000Z'));
+
+      await expect(service.heartbeat('user-1', 'ch-1', 5, 5)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledTimes(3);
+    });
+
+    it('answers a double-tapped Start that both passed the check with a 409, not two sessions', async () => {
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(null);
+      mockSessionRepo.create
+        .mockResolvedValueOnce(baseSession)
+        .mockRejectedValueOnce(
+          Object.assign(new Error('duplicate key'), { code: '23505' }),
+        );
+
+      const [first, second] = await Promise.allSettled([
+        service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
+        service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
+      ]);
+
+      expect(first).toMatchObject({ status: 'fulfilled' });
+      expect(second).toMatchObject({ status: 'rejected' });
+      expect((second as PromiseRejectedResult).reason).toBeInstanceOf(
+        ConflictException,
       );
     });
   });
@@ -776,7 +1078,7 @@ describe('StudyService', () => {
 
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-      mockSessionRepo.update.mockResolvedValue({
+      mockSessionRepo.finish.mockResolvedValue({
         ...paused,
         status: 'PAUSED_EXPIRED',
       });
@@ -784,8 +1086,8 @@ describe('StudyService', () => {
 
       await service.listSessions('user-1', 'ch-1');
 
-      expect(mockSessionRepo.update).toHaveBeenCalledWith(
-        paused.id,
+      expect(mockSessionRepo.finish).toHaveBeenCalledWith(
+        expect.objectContaining({ id: paused.id }),
         'ch-1',
         expect.objectContaining({ status: 'PAUSED_EXPIRED' }),
       );
@@ -799,7 +1101,7 @@ describe('StudyService', () => {
 
       await service.listSessions('user-1', 'ch-1');
 
-      expect(mockSessionRepo.update).not.toHaveBeenCalled();
+      expect(mockSessionRepo.updateIfUnchanged).not.toHaveBeenCalled();
     });
   });
 
@@ -834,19 +1136,23 @@ describe('StudyService', () => {
           runningAt1005,
         );
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue(runningAt1005);
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue(runningAt1005);
 
         await service.pauseSession('user-1', 'ch-1');
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
-          paused_at: '2026-02-26T10:12:30.000Z',
-          // 7m30s elapsed since the 10:05 watermark -> 7 whole minutes banked
-          // on top of the existing 5...
-          total_foreground_minutes: 12,
-          // ...and the watermark advances by exactly those 7 minutes, so the
-          // leftover 30s carries forward instead of being truncated away.
-          last_heartbeat_at: '2026-02-26T10:12:00.000Z',
-        });
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
+          'ch-1',
+          {
+            paused_at: '2026-02-26T10:12:30.000Z',
+            // 7m30s elapsed since the 10:05 watermark -> 7 whole minutes banked
+            // on top of the existing 5...
+            total_foreground_minutes: 12,
+            // ...and the watermark advances by exactly those 7 minutes, so the
+            // leftover 30s carries forward instead of being truncated away.
+            last_heartbeat_at: '2026-02-26T10:12:00.000Z',
+          },
+        );
       });
 
       it('does not restart the grace clock on a duplicate pause', async () => {
@@ -859,7 +1165,7 @@ describe('StudyService', () => {
 
         const result = await service.pauseSession('user-1', 'ch-1');
 
-        expect(mockSessionRepo.update).not.toHaveBeenCalled();
+        expect(mockSessionRepo.updateIfUnchanged).not.toHaveBeenCalled();
         expect(result.paused_at).toBe('2026-02-26T10:12:00.000Z');
       });
 
@@ -870,7 +1176,7 @@ describe('StudyService', () => {
         const stale = pausedAt('2026-02-26T10:12:00.000Z');
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(stale);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.finish.mockResolvedValue({
           ...stale,
           status: 'PAUSED_EXPIRED',
         });
@@ -901,7 +1207,7 @@ describe('StudyService', () => {
           runningAt1005,
         );
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue({
           ...runningAt1005,
           status: 'EXPIRED',
         });
@@ -909,18 +1215,18 @@ describe('StudyService', () => {
         const result = await service.pauseSession('user-1', 'ch-1');
 
         expect(result.status).toBe('EXPIRED');
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({ status: 'EXPIRED' }),
         );
         // Critically, the 60-minute gap was never credited.
-        expect(mockSessionRepo.update).not.toHaveBeenCalledWith(
+        expect(mockSessionRepo.updateIfUnchanged).not.toHaveBeenCalledWith(
           'sess-1',
           'ch-1',
           expect.objectContaining({ total_foreground_minutes: 65 }),
         );
-        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+        expect(awarded()).toBe(0);
       });
     });
 
@@ -934,7 +1240,7 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue({
           ...paused,
           paused_at: null,
         });
@@ -943,12 +1249,16 @@ describe('StudyService', () => {
 
         // Paused time never accrues: the watermark restarts at the resume
         // instant and the 12 banked minutes are left untouched.
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
-          paused_at: null,
-          last_heartbeat_at: '2026-02-26T10:15:00.000Z',
-          location_reject_streak: 0,
-        });
-        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
+          'ch-1',
+          {
+            paused_at: null,
+            last_heartbeat_at: '2026-02-26T10:15:00.000Z',
+            location_reject_streak: 0,
+          },
+        );
+        expect(awarded()).toBe(0);
       });
 
       it('expires past grace and awards points for pre-pause foreground time only', async () => {
@@ -962,29 +1272,25 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.finish.mockResolvedValue({
           ...paused,
           status: 'PAUSED_EXPIRED',
         });
-        mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
 
         const result = await service.resumeSession('user-1', 'ch-1', 5, 5);
 
         expect(result.status).toBe('PAUSED_EXPIRED');
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.finish).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({
             status: 'PAUSED_EXPIRED',
             // The session ends at the pause, not at the late return.
             end_time: '2026-02-26T10:12:00.000Z',
             total_foreground_minutes: 60,
-            points_awarded: true,
+            // 60 / 30 * 1 — the 8 paused minutes earn nothing.
+            points: 2,
           }),
-        );
-        // 60 / 30 * 1 — the 8 paused minutes earn nothing.
-        expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
-          expect.objectContaining({ amount: 2, category: 'STUDY' }),
         );
       });
 
@@ -997,20 +1303,20 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.finish.mockResolvedValue({
           ...paused,
           status: 'PAUSED_EXPIRED',
         });
 
         await service.resumeSession('user-1', 'ch-1', 5, 5);
 
-        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(awarded()).toBe(0);
+        expect(mockSessionRepo.finish).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({
             status: 'PAUSED_EXPIRED',
-            points_awarded: false,
+            points: 0,
           }),
         );
       });
@@ -1026,15 +1332,15 @@ describe('StudyService', () => {
         const paused = pausedAt('2026-02-26T10:12:00.000Z');
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue({
           ...paused,
           status: 'EXPIRED',
         });
 
         const result = await service.resumeSession('user-1', 'ch-1', 99, 99);
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({
             status: 'EXPIRED',
@@ -1062,19 +1368,23 @@ describe('StudyService', () => {
         };
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue({
           ...paused,
           paused_at: null,
         });
 
         await service.resumeSession('user-1', 'ch-1', 5, 5);
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
-          paused_at: null,
-          // 10:15:00 minus the 30s owed — not 10:15:00 flat.
-          last_heartbeat_at: '2026-02-26T10:14:30.000Z',
-          location_reject_streak: 0,
-        });
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
+          'ch-1',
+          {
+            paused_at: null,
+            // 10:15:00 minus the 30s owed — not 10:15:00 flat.
+            last_heartbeat_at: '2026-02-26T10:14:30.000Z',
+            location_reject_streak: 0,
+          },
+        );
       });
 
       it('is a no-op on a session that was never paused', async () => {
@@ -1085,7 +1395,7 @@ describe('StudyService', () => {
 
         const result = await service.resumeSession('user-1', 'ch-1', 5, 5);
 
-        expect(mockSessionRepo.update).not.toHaveBeenCalled();
+        expect(mockSessionRepo.updateIfUnchanged).not.toHaveBeenCalled();
         expect(result).toEqual(runningAt1005);
       });
     });
@@ -1108,7 +1418,7 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(patientGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue({
           ...paused,
           paused_at: null,
         });
@@ -1118,8 +1428,8 @@ describe('StudyService', () => {
         const result = await service.resumeSession('user-1', 'ch-1', 5, 5);
 
         expect(result.status).not.toBe('EXPIRED');
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({ paused_at: null }),
         );
@@ -1136,7 +1446,7 @@ describe('StudyService', () => {
         const paused = pausedAt('2026-02-26T10:12:00.000Z');
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(legacyGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.finish.mockResolvedValue({
           ...paused,
           status: 'PAUSED_EXPIRED',
         });
@@ -1157,7 +1467,7 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue({
           ...paused,
           paused_at: null,
         });
@@ -1166,11 +1476,15 @@ describe('StudyService', () => {
 
         // The 3 paused minutes are not credited — a client that never called
         // /resume still cannot bank background time.
-        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
-          paused_at: null,
-          last_heartbeat_at: '2026-02-26T10:15:00.000Z',
-          location_reject_streak: 0,
-        });
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
+          'ch-1',
+          {
+            paused_at: null,
+            last_heartbeat_at: '2026-02-26T10:15:00.000Z',
+            location_reject_streak: 0,
+          },
+        );
       });
 
       // The implicit resume is the path taken by a client that never calls
@@ -1187,7 +1501,7 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.updateIfUnchanged.mockResolvedValue({
           ...paused,
           status: 'EXPIRED',
         });
@@ -1195,8 +1509,8 @@ describe('StudyService', () => {
         const result = await service.heartbeat('user-1', 'ch-1', 99, 99);
 
         expect(result.status).toBe('EXPIRED');
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({
             status: 'EXPIRED',
@@ -1214,7 +1528,7 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.finish.mockResolvedValue({
           ...paused,
           status: 'PAUSED_EXPIRED',
         });
@@ -1237,19 +1551,18 @@ describe('StudyService', () => {
         };
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.finish.mockResolvedValue({
           ...paused,
           status: 'COMPLETED',
         });
 
         await service.stopSession('user-1', 'ch-1');
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.finish).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({
             status: 'COMPLETED',
-            paused_at: null,
             // 5 banked + 7 whole minutes to the pause instant. The 3.5
             // paused minutes before the stop earn nothing.
             total_foreground_minutes: 12,
@@ -1266,11 +1579,10 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.finish.mockResolvedValue({
           ...paused,
           status: 'PAUSED_EXPIRED',
         });
-        mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
 
         const result = await service.stopSession('user-1', 'ch-1');
 
@@ -1288,7 +1600,7 @@ describe('StudyService', () => {
         });
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(abandoned);
-        mockSessionRepo.update.mockResolvedValue({
+        mockSessionRepo.finish.mockResolvedValue({
           ...abandoned,
           status: 'PAUSED_EXPIRED',
         });
@@ -1305,8 +1617,8 @@ describe('StudyService', () => {
           5,
         );
 
-        expect(mockSessionRepo.update).toHaveBeenCalledWith(
-          'sess-1',
+        expect(mockSessionRepo.finish).toHaveBeenCalledWith(
+          expect.objectContaining({ id: 'sess-1' }),
           'ch-1',
           expect.objectContaining({ status: 'PAUSED_EXPIRED' }),
         );
@@ -1342,7 +1654,7 @@ describe('StudyService', () => {
       });
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-      mockSessionRepo.update.mockResolvedValue({
+      mockSessionRepo.finish.mockResolvedValue({
         ...paused,
         status: 'PAUSED_EXPIRED',
       });
@@ -1350,7 +1662,7 @@ describe('StudyService', () => {
       const result = await service.pauseSession('user-1', 'ch-1');
 
       expect(result.status).toBe('PAUSED_EXPIRED');
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(awarded()).toBe(0);
     });
   });
 
@@ -1366,31 +1678,81 @@ describe('StudyService', () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-02-26T10:12:30.000Z'));
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(baseSession);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-      mockSessionRepo.update.mockResolvedValue(baseSession);
+      mockSessionRepo.updateIfUnchanged.mockResolvedValue(baseSession);
 
       await service.heartbeat('user-1', 'ch-1', 5, 5);
 
-      expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
-        total_foreground_minutes: 12,
-        // Not 10:12:30 — the leftover 30s stays owed to the member.
-        last_heartbeat_at: '2026-02-26T10:12:00.000Z',
-        location_reject_streak: 0,
-      });
+      expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'sess-1' }),
+        'ch-1',
+        {
+          total_foreground_minutes: 12,
+          // Not 10:12:30 — the leftover 30s stays owed to the member.
+          last_heartbeat_at: '2026-02-26T10:12:00.000Z',
+          location_reject_streak: 0,
+        },
+      );
     });
 
     it('credits nothing for a heartbeat under a minute after the last', async () => {
       jest.useFakeTimers().setSystemTime(new Date('2026-02-26T10:05:40.000Z'));
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(baseSession);
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-      mockSessionRepo.update.mockResolvedValue(baseSession);
+      mockSessionRepo.updateIfUnchanged.mockResolvedValue(baseSession);
 
       await service.heartbeat('user-1', 'ch-1', 5, 5);
 
-      expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', 'ch-1', {
-        total_foreground_minutes: 5,
-        last_heartbeat_at: '2026-02-26T10:05:00.000Z',
-        location_reject_streak: 0,
-      });
+      expect(mockSessionRepo.updateIfUnchanged).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'sess-1' }),
+        'ch-1',
+        {
+          total_foreground_minutes: 5,
+          last_heartbeat_at: '2026-02-26T10:05:00.000Z',
+          location_reject_streak: 0,
+        },
+      );
     });
+  });
+
+  // Heartbeat, pause, resume and stop each reload the active session and its
+  // geofence; they answer a missing one with the same two 404s.
+  describe('active session reload', () => {
+    const calls: Array<[string, (svc: StudyService) => Promise<unknown>]> = [
+      ['heartbeat', (svc) => svc.heartbeat('user-1', 'ch-1', 5, 5)],
+      ['pauseSession', (svc) => svc.pauseSession('user-1', 'ch-1')],
+      ['resumeSession', (svc) => svc.resumeSession('user-1', 'ch-1', 5, 5)],
+      ['stopSession', (svc) => svc.stopSession('user-1', 'ch-1')],
+    ];
+
+    it.each(calls)(
+      '%s 404s when the member has no active session',
+      async (_name, call) => {
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(null);
+
+        await expect(call(service)).rejects.toThrow(
+          new NotFoundException('No active study session found'),
+        );
+        expect(mockSessionRepo.findActiveByUserAndChapter).toHaveBeenCalledWith(
+          'user-1',
+          'ch-1',
+        );
+        expect(mockGeofenceRepo.findById).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(calls)(
+      "%s 404s when the session's geofence is gone",
+      async (_name, call) => {
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+          baseSession,
+        );
+        mockGeofenceRepo.findById.mockResolvedValue(null);
+
+        await expect(call(service)).rejects.toThrow(
+          new NotFoundException('Geofence not found'),
+        );
+        expect(mockGeofenceRepo.findById).toHaveBeenCalledWith('geo-1', 'ch-1');
+      },
+    );
   });
 });

@@ -157,3 +157,19 @@ export async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path,
   }
   return first;
 }
+
+/**
+ * A `ghRequest` bound to one token that returns the data or throws naming the
+ * call, for a sequence of calls that stands or falls together (the base-sync
+ * sweep's git data writes). GETs retry; writes make one attempt.
+ */
+export function ghCaller({ token, fetchImpl = fetch }) {
+  return async (method, path, body) => {
+    const res = await ghRequest({ token, fetchImpl, method, path, body, retry: method === "GET" });
+    if (!res.ok) {
+      const detail = typeof res.data === "string" ? res.data : res.data?.message ?? "";
+      throw new Error(`${method} ${path.split("?")[0]} failed (HTTP ${res.status}${detail ? `: ${detail}` : ""})`);
+    }
+    return res.data;
+  };
+}

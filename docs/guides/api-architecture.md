@@ -33,7 +33,7 @@ Whitelisting already blocks a hostile `chapter_id` today, so the ordering is a s
 
 The two halves need two different tests, because the ordering is **unreachable over HTTP**: whitelisting rejects a colliding key before the controller runs, so an end-to-end request cannot tell `{ ...dto, chapter_id }` from `{ chapter_id, ...dto }`. `apps/api/test/mass-assignment.e2e-spec.ts` covers the whitelisting half (and imports `VALIDATION_PIPE_OPTIONS` from `apps/api/src/interface/pipes/validation-pipe.options.ts`, the same object `configureApp()` uses, so loosening a flag there fails that suite rather than a local copy of it). `apps/api/src/interface/controllers/write-payload-ordering.spec.ts` covers the ordering half by calling the controller methods directly with a DTO that carries the hostile key — the shape a future DTO change would produce. Both were verified to fail when their respective regression is reintroduced.
 
-Zod schemas in `packages/validation` are shared with the web and mobile forms for UX. They are **not** enforcement — a curl request never runs them — so any rule that matters server-side must also exist on the DTO. The package is on Zod 4; `z.record` takes a key schema and a value schema (`z.record(z.string(), z.boolean())`). The one-argument form was Zod 3 and does not type-check. The same package also owns the four shared **client gates** — `can` / `canAll` / `canAny` (`src/permissions.ts`), `isModuleEnabled` (`src/index.ts`), `subscriptionWriteState` (`src/subscription.ts`), and `isAnalyticsOptedOut` (`src/analytics-opt-out.ts`) — so a surface cannot drift from the server's permission, module, subscription, or analytics-opt-out rules. The gates are UX only; the API remains the trust boundary.
+Zod schemas in `packages/validation` are shared with the web and mobile forms for UX. They are **not** enforcement — a curl request never runs them — so any rule that matters server-side must also exist on the DTO. The package is on Zod 4; `z.record` takes a key schema and a value schema (`z.record(z.string(), z.boolean())`). The one-argument form was Zod 3 and does not type-check. The same package also owns the four shared **client gates** — `can` / `canAll` / `canAny` (`src/permissions.ts`), `isModuleEnabled` (`src/module-enablement.ts`), `subscriptionWriteState` (`src/subscription.ts`), and `isAnalyticsOptedOut` (`src/analytics-opt-out.ts`) — so a surface cannot drift from the server's permission, module, subscription, or analytics-opt-out rules. The gates are UX only; the API remains the trust boundary.
 
 Every boolean **body** field uses `@IsStrictBoolean()` from `apps/api/src/interface/decorators/is-strict-boolean.decorator.ts`, never a bare `@IsBoolean()`. The pipe's `enableImplicitConversion` turns a `boolean`-typed field's `"false"` into `true` (#2612); the decorator validates the value as sent, so only a JSON `true` or `false` passes. `apps/api/src/interface/dtos/boolean-dto-fields.spec.ts` finds every validated `boolean` field in any `*.dto.ts` under `apps/api/src` and fails on one that still takes a string.
 
@@ -44,12 +44,20 @@ src/
   main.ts
   app.module.ts
 
+  config/           # env parsing and boot-time configuration
+
   interface/
     controllers/
     dtos/
     guards/
     interceptors/
     filters/
+    decorators/
+    pipes/
+    middleware/
+    http/
+    types/
+    utils/
 
   application/
     services/
@@ -58,17 +66,30 @@ src/
   infrastructure/
     supabase/
       repositories/
+    ai/
+    analytics/
     billing/
+    discord/
+    email/
+    extraction/
+    gifs/
+    google/
+    link-title/
     notifications/
+    observability/
+    pdf/
     storage/
 
   domain/
     entities/
     repositories/
     adapters/
-    constants/permissions.ts
+    constants/      # permissions.ts and other shared rules
+    utils/
 
-  modules/          # Nest wiring only: *.module.ts files and their specs
+  modules/          # Nest wiring only: every *.module.ts and its spec, including
+                    # the @Global() SupabaseModule and modules several others
+                    # import (channel-cache/)
 ```
 
 > **Note:** Controllers only handle HTTP concerns (routing, status codes, DTOs). They never talk to Supabase directly — they call application services instead.
@@ -102,7 +123,7 @@ Both hard locks are scoped to the **guarded surface**. Two sets of routes surviv
 Route markers live in `src/interface/decorators/subscription.decorator.ts`: `@FreeTier()` (free wedge), `@GraceBlocked()` (free-tier route that must still be blocked during `past_due`, e.g. invite create), and `@SubscriptionExempt()` (bypass entirely). The exempt list has exactly two rationales, and only the first is about money:
 
 - **Billing recovery** — `BillingController`, and `POST /v1/invoices/:id/payment-intent` (dues collection *is* the recovery path for a locked chapter).
-- **Member safety** — `POST|GET|PATCH /v1/chat/reports`, `GET /v1/chat/reports/{id}/attachments` (#2481), `POST /v1/chat/reports/{id}/remove-message` (#2311) and `GET|POST|DELETE /v1/chat/blocks` (#2257). App Store Guideline 1.2 expects a UGC app to offer reporting and blocking, and has no billing exception: a member being harassed in a chapter whose card failed needs them exactly as much as one in a paying chapter. `@FreeTier()` would not hold — it lapses with the `past_due` grace window and never applies under `canceled`.
+- **Member safety** — `POST|GET|PATCH /v1/chat/reports`, `GET /v1/chat/reports/{id}/attachments` (#2481), `POST /v1/chat/reports/{id}/remove-message` (#2311) and `GET|POST|DELETE /v1/chat/blocks` (#2257), and `POST /v1/calendar-feed/reset` (#3322), so a member can cut off a calendar link that got out while the chapter is locked: the link's fetch has no subscription check. `DELETE /v1/google-drive` (#5157) is the same kind of cut-off: an officer can always stop Frapp copying the chapter's Drive folder. App Store Guideline 1.2 expects a UGC app to offer reporting and blocking, and has no billing exception: a member being harassed in a chapter whose card failed needs them exactly as much as one in a paying chapter. `@FreeTier()` would not hold — it lapses with the `past_due` grace window and never applies under `canceled`.
 
 `subscription.decorator.spec.ts` pins every class-level marker and every route-level one (`@FreeTier()` and `@SubscriptionExempt()` alike); keep it exhaustive against `grep -rnE '^\s*@(FreeTier|SubscriptionExempt)\(\)' src/interface/controllers`, run from `apps/api`: an unindented hit is a class marker, an indented one a route marker. The `past_due_since` clock is set/cleared on Stripe webhook transitions in `BillingService` (set only on the into-`past_due` transition, so repeated events don't reset it; cleared on recovery).
 
@@ -110,10 +131,22 @@ Interceptors:
 
 - **requestIdMiddleware** — Express middleware (not an interceptor) that honours or mints `x-request-id`, binds it on AsyncLocalStorage for Nest `Logger` records, and echoes it on the response. `sentry-trace` / `baggage` are a different identifier space.
 - **LoggingInterceptor** — structured JSON logging with latency and status code.
+- **requestReadsMiddleware** and **RequestReadsInterceptor** — global. Within one request, the
+  caller's membership row and roles are read once and shared by the guards and the handler; a write's
+  handler reads afresh. Across requests, only a burst of reads joins one in-flight lookup, for at most
+  250 ms (#3752). What is shared, between which requests, and the bound:
+  [`authorization-model.md` § The model in short](../security/authorization-model.md#1-the-model-in-short).
 - **AuthSyncInterceptor** — auto-creates/syncs the `users` row from Supabase Auth on first
-  authenticated request. Parallel first requests can both miss the row and collide on
+  authenticated request. Where `ChapterGuard` already resolved the row, the sync runs in the
+  background, at most once per session per ten minutes, unless the session's email or metadata
+  changed. On a route without `ChapterGuard`, a session the process has already synced and that has
+  not changed gets the same treatment: `SupabaseAuthGuard` looks its row up while `auth.getUser` is
+  in flight and hands the interceptor the id (`request.appUserLookup`, #3583). Any other session waits
+  on the sync. Parallel first requests can both miss the row and collide on
   `users_supabase_auth_id_key`; `AuthService.syncUser` treats that unique violation as
-  "the other request won" and returns the existing id (Sentry FRAPP-API-3). Not global:
+  "the other request won" and returns the existing id (Sentry FRAPP-API-3). On a read whose
+  session `SupabaseAuthGuard` verified locally (#5043) there is no Auth user to sync from, only
+  claims that can be an hour stale, so it syncs nothing and only records the time zone. Not global:
   applied per-controller/per-route via `@UseInterceptors` — see
   [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
   § "Auth and guard chain" for where.
@@ -124,19 +157,22 @@ Interceptors:
 
 ### Rate limiting
 
-`CustomThrottlerGuard` is registered as the global `APP_GUARD`, so it runs **before** the chain above — that is why it reads the bearer token itself (verifying the HS256 signature) instead of using `request.supabaseUser`, which is not populated yet.
+`CustomThrottlerGuard` is registered as the global `APP_GUARD`, so it runs **before** the chain above — that is why it reads the bearer token itself (verifying its signature: ES256/RS256 through `getClaims` against the key the project's JWKS lists for the token's `kid`, which the guard reads itself at boot and again when a token names a key it does not hold, at most once every 10 s; HS256 against `SUPABASE_JWT_SECRET`) instead of using `request.supabaseUser`, which is not populated yet. It leaves the verified claims on `request.throttlerVerifiedClaims`, which `SupabaseAuthGuard` uses to start the chapter lookups while `getUser` runs (#3728); they authenticate nothing. On a read marked `@VerifySessionLocally()` (#5043), their presence is one of the conditions for verifying locally, so a token the throttler did not verify (a `kid` the project's JWKS does not list, among others) never reaches a verifier from the auth guard either; the auth guard then verifies the token itself rather than trusting them ([`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) has the bound).
 
-Two named buckets are registered in `AppModule`: `read` at 100/min and `write` at 30/min. The guard's `handleRequest` gates them by method, so `read` applies to `GET`/`HEAD`/`OPTIONS` and `write` to everything else.
+Three named buckets are registered in `AppModule`; `app.module.throttlers.spec.ts` pins them:
 
-**These are per-endpoint, not app-wide.** The storage key is `sha256(ClassName-HandlerName-throttlerName-tracker)`, so each handler counts independently for each caller. It is a common misreading of the config — worth knowing before you reason about a limit.
+- **`read`** at 100/min and **`write`** at 30/min. The guard's `handleRequest` gates them by method, so `read` applies to `GET`/`HEAD`/`OPTIONS` and `write` to everything else. **These two are per-endpoint, not app-wide.** Their storage key is `sha256(ClassName-HandlerName-throttlerName-tracker)`, so each handler counts independently for each caller. It is a common misreading of the config — worth knowing before you reason about a limit.
+- **`unverified`** at 200/min (`UNVERIFIED_BEARER_LIMIT`) **is app-wide**: one counter per address across every route, every method (`generateKey` leaves the handler out). The guard runs it only for a request whose bearer token it found invalid, or could not check while its key list is working (a `kid` the project's JWKS does not list); a verified member, a request with no token, and a token it could not check because the JWKS is unreachable pass it untouched. When this or any other bucket refuses a request whose token the guard found invalid, the answer is the auth guard's own `401` (`Invalid or expired token`, recorded as `claims_rejected` with `authErrorCode` `unverified_limit`), because clients recover a dead or stale session only through a `401`; every other refusal, a token it could not check included, is the usual `429`. [`spec/architecture/README.md` § Security Note](../../spec/architecture/README.md#security-note-2024-03-26) has the reasoning.
 
-**Stricter per-route limits** live in `src/interface/decorators/throttle-profiles.decorator.ts` as three named profiles, applied at the handler:
+**Stricter per-route limits** live in `src/interface/decorators/throttle-profiles.decorator.ts` as five named profiles, applied at the handler:
 
 | Profile | Limit | For |
 | --- | --- | --- |
 | `@ThrottleExpensiveWrite()` | 5/min | Full-chapter aggregation, export rendering, bulk token minting. |
 | `@ThrottleFanOutWrite()` | 10/min | Cheap request, expensive consequence — chapter-wide push, signed storage URLs, credential guesses. |
 | `@ThrottleExpensiveRead()` | 20/min | Reads whose database cost is superlinear in caller input. |
+| `@ThrottlePublicTokenRead()` | 120/min | A lookup by an unguessable token that needs no account, counted per address. Raised, not lowered, because many people on one network open the same link at once. |
+| `@ThrottlePersonalNudge()` | 3/hour | A push to one person who never asked to hear from the caller. |
 
 The canonical list of which routes carry which profile is [`spec/behavior/README.md` § Per-route rate limits](../../spec/behavior/README.md#per-route-rate-limits).
 
@@ -144,10 +180,10 @@ When you throttle a new route:
 
 - **Match the profile to the HTTP method.** A `read` profile on a `POST` route is silently inert — the `read` bucket is method-gated off, so the route quietly keeps the 30/min default. `custom-throttler.guard.spec.ts` asserts the increment call count precisely to catch this.
 - **Add a row to the table in that spec section**, and a case to the table-driven suite in `custom-throttler.guard.spec.ts`. The suite names real controller handlers, so a decorator deleted in a later refactor fails the build rather than silently restoring the default.
-- **Prefer overriding `read`/`write` to registering a new named throttler.** A new named bucket is registered globally and therefore runs on every route in the app; keeping it off the other handlers means teaching `CustomThrottlerGuard` another gating rule.
+- **Prefer overriding `read`/`write` to registering a new named throttler.** A new named bucket is registered globally and therefore runs on every route in the app, as `unverified` does; keeping it off the other handlers means teaching `CustomThrottlerGuard` another gating rule (`handleRequest` holds the three it has), and every route that opts out of throttling must then name it too.
 - **Do not stack a throttle on a route that already has a domain-level limit.** `POST /v1/points/adjust` already carries a domain-level adjustments/hour limit inside `PointsService` (owned by [`spec/behavior/points.md`](../../spec/behavior/points.md) § Anti-Fraud, which states its exact scoping and default); a second control with different semantics on the same route makes the effective limit unreadable.
 
-Opting a route **out** requires the named-key form — `@SkipThrottle({ read: true, write: true })`. A bare `@SkipThrottle()` sets only the `default` key, which matches neither registered bucket, and skips nothing. `POST /v1/webhooks/stripe` is the only route that does this; its abuse control is Stripe signature verification.
+Opting a route **out** requires the named-key form, naming every registered bucket: `@SkipThrottle({ read: true, write: true, [UNVERIFIED_BEARER_THROTTLER]: true })`. A bare `@SkipThrottle()` sets only the `default` key, which matches no registered bucket, and skips nothing; leaving `unverified` out leaves the route in the app-wide unverified-token bucket. Two routes do this, and their specs fail if a key goes missing. `POST /v1/webhooks/stripe`, whose abuse control is Stripe signature verification, and `GET /v1/calendar-feed/feed.ics` (#3322), which Google's and Apple's calendar servers fetch from shared address pools; its control is a 256-bit token, shape-checked before one indexed lookup, a per-address limit on lookups that find no link, and a five-minute reuse of each link's render ([`spec/behavior/events.md` § Calendar subscription](../../spec/behavior/events.md#calendar-subscription)).
 
 ## 3. Adding a new module
 
@@ -207,7 +243,7 @@ When adding new modules:
 The API surface is instrumented for observability:
 
 - Structured logging with request ID, user ID, chapter ID, method, path, status, latency. Nest `Logger` records from services include the request id via `RequestContextLogger` + ALS (`spec/behavior/observability.md` § Structured Logging / Request Tracing).
-- Health routes, what each returns, and which one Render and the deploy smoke checks poll: [`spec/behavior/observability.md` § Health Check](../../spec/behavior/observability.md#health-check).
+- Health routes, what each returns, and which one the deploy checks and the uptime check poll: [`spec/behavior/observability.md` § Health Check](../../spec/behavior/observability.md#health-check).
 - Sentry init in `apps/api/src/instrument.ts` (first import from `main.ts`); 5xx via `AllExceptionsFilter` + `toReportableError`. Sentry owns tracing with no OpenTelemetry tracer provider (`enableOpenTelemetrySetup: false`, ADR-22). Do not add `SentryGlobalFilter`.
 
 When you add new modules:
@@ -259,3 +295,16 @@ await Promise.allSettled(items.map((i) => repo.create(i)));
 // GOOD: Single bulk atomic request
 await repo.createMany(items);
 ```
+
+## 7. Calling a model
+
+Every model call goes through `AiGatewayService` (`application/services/ai/ai-gateway.service.ts`, [ADR-28](../../spec/architecture/adr/adr-28.md)). A feature module imports `AiModule` and injects the gateway. It never imports a provider SDK (the `ai-provider-sdks-only-in-adapters` dependency-cruiser rule fails the build) and never injects an adapter.
+
+- **Name a task, not a model.** Add the task to `domain/constants/ai-model-catalog.ts` with its kind, model, output ceiling and prices. Changing a feature's model is an edit to that file, and the bake-off says whether the edit is safe: `npm run ai:bake-off -w apps/api` runs a task's eval cases against any candidate model ([`test/ai-evals/README.md`](../../apps/api/test/ai-evals/README.md#the-bake-off-4311)).
+- **Pick the call by what comes back.** `generateObject(task, { schema, ... })` returns a value parsed by your zod schema. `generateCited(task, { sources, ... })` and `streamCited` return prose plus citations, and only the citations whose quote is word for word in the source they name. A provider cannot do both in one request, so a feature that needs both makes two calls. A quote inside a structured result is checked by the caller with `isQuoteGrounded` (`#domain/utils/quote-grounding`). `embed` returns vectors at the catalog's width.
+- **Handle every result.** `unavailable` (the server switch, no credential, consent, a spend cap), `refused` and `invalid_output` are ordinary results with something to show the member. Only a provider failure throws, as a `LanguageModelError` with a `retryable` flag and no provider text. A consent refusal (`reason: 'consent'`) is answered with `aiConsentRefusal(detail)` (`application/services/ai/ai-consent-refusal.ts`), so every route says `ai.consent.required` (show the AI sheet) or `ai.chapter_off` (hide the feature) the same way.
+- **Put `AiEnabledGuard` first on every AI route**, ahead of authentication, so a server with `AI_ENABLED` off answers `404 ai.not_available`.
+- **Log no text.** No prompt, source or answer goes in a log line, an error message, a span attribute or an analytics property. The gateway's own telemetry is described in [`observability.md` § AI call telemetry](../../spec/behavior/observability.md#ai-call-telemetry).
+- **Test with the scripted adapter.** `new ScriptedLanguageModel({ 'your.task': (request) => ({ ... }) })` plays a completion, a refusal or a failure with no network. Locally, `AI_ENABLED=true` with `AI_PROVIDER=scripted` runs a whole flow on the replies in `infrastructure/ai/scripted-replies.ts`.
+
+Consent, the spend caps and the usage ledger are three interfaces the gateway calls around each provider call, each bound in its own module file under `modules/ai/`. A feature does not call them. Consent is `AiConsentService` (#4308): the chapter's switch for the task's family, and the acting member's Yes on the current AI sheet. A feature that reads chat as a source asks it which authors said yes (`chatAuthorsWhoSaidYes`), and reads nobody else's messages.

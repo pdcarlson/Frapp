@@ -124,13 +124,14 @@ describe('PollService', () => {
       findLatestPerChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
       findPollsByChapter: jest.fn(),
-      findPollCardsByChapter: jest.fn(),
+      findCardsByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       findByClientMessageId: jest.fn(),
       findAuthorAvatarPaths: jest.fn(),
       insertIdempotent: jest.fn(),
       compareAndSetFlag: jest.fn(),
+      updateIfLive: jest.fn(),
     };
 
     mockChannelRepo = {
@@ -165,6 +166,7 @@ describe('PollService', () => {
     };
 
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUser: jest.fn(),
       findByUserAndChapter: jest.fn(),
@@ -175,6 +177,9 @@ describe('PollService', () => {
       findChapterMemberIdentities: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
+      setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
+      countByChapter: jest.fn(),
     };
 
     mockRbac = {
@@ -561,6 +566,25 @@ describe('PollService', () => {
       expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
 
+    it("lets a member who manages channels close someone else's poll (#4046)", async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.update.mockResolvedValue(basePollMessage);
+
+      await service.close('msg-1', 'user-2', 'ch-1', async () => true);
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            closed_at: expect.any(String),
+            // The moderator who closed it, not the creator.
+            closed_by: 'user-2',
+          }),
+        }),
+      );
+    });
+
     it('rejects closing an already-expired poll', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...basePollMessage,
@@ -656,12 +680,12 @@ describe('PollService', () => {
 
       it('lets the creator close it, stamping payload.closed_at and closed_by and keeping the card', async () => {
         mockMessageRepo.findById.mockResolvedValue(cardPoll);
-        mockMessageRepo.update.mockResolvedValue(cardPoll);
+        mockMessageRepo.updateIfLive.mockResolvedValue(cardPoll);
 
         await service.close('msg-1', 'user-1', 'ch-1');
 
-        expect(mockMessageRepo.update).toHaveBeenCalledTimes(1);
-        const [id, patch] = mockMessageRepo.update.mock.calls[0];
+        expect(mockMessageRepo.updateIfLive).toHaveBeenCalledTimes(1);
+        const [id, patch] = mockMessageRepo.updateIfLive.mock.calls[0];
         expect(id).toBe('msg-1');
         expect(patch).toEqual({
           payload: {
@@ -680,11 +704,11 @@ describe('PollService', () => {
           payload: { ...cardPoll.payload, closes_at: null },
         };
         mockMessageRepo.findById.mockResolvedValue(openEnded);
-        mockMessageRepo.update.mockResolvedValue(openEnded);
+        mockMessageRepo.updateIfLive.mockResolvedValue(openEnded);
 
         await service.close('msg-1', 'user-1', 'ch-1');
 
-        expect(mockMessageRepo.update.mock.calls[0][1]).toEqual({
+        expect(mockMessageRepo.updateIfLive.mock.calls[0][1]).toEqual({
           payload: {
             ...openEnded.payload,
             closed_at: expect.any(String),
@@ -693,13 +717,32 @@ describe('PollService', () => {
         });
       });
 
-      it('refuses anyone but the creator with 403', async () => {
+      it('refuses anyone but the creator or a moderator with 403', async () => {
         mockMessageRepo.findById.mockResolvedValue(cardPoll);
 
         await expect(service.close('msg-1', 'user-2', 'ch-1')).rejects.toThrow(
           ForbiddenException,
         );
-        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
+      });
+
+      it('lets a moderator close an open-ended card whose creator can no longer close it, keeping the tally (#4046)', async () => {
+        const openEnded = {
+          ...cardPoll,
+          payload: { ...(cardPoll.payload as object), closes_at: null },
+        };
+        mockMessageRepo.findById.mockResolvedValue(openEnded);
+        mockMessageRepo.updateIfLive.mockResolvedValue(openEnded);
+
+        await service.close('msg-1', 'user-2', 'ch-1', async () => true);
+
+        expect(mockMessageRepo.updateIfLive).toHaveBeenCalledWith('msg-1', {
+          payload: {
+            ...(openEnded.payload as object),
+            closed_at: expect.any(String),
+            closed_by: 'user-2',
+          },
+        });
       });
 
       it('refuses a card already closed early', async () => {
@@ -715,7 +758,7 @@ describe('PollService', () => {
         await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
           'Poll is already closed',
         );
-        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
       });
 
       it('refuses a card whose deadline has passed', async () => {
@@ -727,7 +770,7 @@ describe('PollService', () => {
         await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
           'Poll has expired',
         );
-        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
       });
 
       it('refuses a deleted card', async () => {
@@ -735,6 +778,18 @@ describe('PollService', () => {
           ...cardPoll,
           is_deleted: true,
         });
+
+        await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
+          'Cannot close a deleted poll',
+        );
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
+      });
+
+      it('does not write a card deleted while the close was in flight back onto its tombstone (#1575)', async () => {
+        // Read live, deleted before the write: the conditional update matches
+        // nothing, so the cleared question and options stay cleared.
+        mockMessageRepo.findById.mockResolvedValue(cardPoll);
+        mockMessageRepo.updateIfLive.mockResolvedValue(null);
 
         await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
           'Cannot close a deleted poll',
@@ -751,7 +806,7 @@ describe('PollService', () => {
         await expect(service.close('msg-1', 'user-1', 'ch-1')).rejects.toThrow(
           'Malformed poll card',
         );
-        expect(mockMessageRepo.update).not.toHaveBeenCalled();
+        expect(mockMessageRepo.updateIfLive).not.toHaveBeenCalled();
       });
 
       it('still refuses a card to the other poll operations, which read the REST shape', async () => {
@@ -940,9 +995,10 @@ describe('PollService', () => {
 
     it('tallies a poll whose id reaches the route in non-canonical case', async () => {
       // Regression: the tally is keyed on the id the database returned, never
-      // on the route parameter. `polls/:messageId` has no `ParseUUIDPipe`, and
-      // Postgres compares `uuid` case-insensitively while PostgREST renders it
-      // canonically lower-case — so an upper-case id matches the row in
+      // on the route parameter. `ParseUUIDPipe` on `polls/:messageId` accepts
+      // any case and passes the raw string through, and Postgres compares
+      // `uuid` case-insensitively while PostgREST renders it canonically
+      // lower-case — so an upper-case id matches the row in
       // `findById` and matches the votes in the RPC, then arrives back
       // lower-cased. Comparing it to the raw parameter dropped every row and
       // rendered a real poll as every option at zero.
@@ -1649,7 +1705,7 @@ describe('PollService', () => {
     });
 
     it('still lets an alumni member close their own open-ended poll', async () => {
-      // close() is gated as a `vote`, not a `post`, precisely so this never
+      // close() is gated as a `close`, not a `post`, precisely so this never
       // regresses: an open-ended (no expires_at) poll whose creator later
       // becomes Alumni must stay closeable by them, not get stuck open
       // forever the moment they lose post rights in the channel.
@@ -1661,6 +1717,41 @@ describe('PollService', () => {
       await service.close('msg-1', 'user-2', 'ch-1');
 
       expect(mockMessageRepo.update).toHaveBeenCalled();
+    });
+
+    // #4046: a `vote` checks who can post, so a creator dropped from a
+    // read-only channel's posters could vote nowhere there, and was refused
+    // the close too. `close` reads only who can see.
+    it('lets a creator dropped from the posters close their poll, though they can no longer vote there', async () => {
+      const readOnly = { ...baseChannel, who_can_post: ['tier:exec'] };
+      const ownPoll = { ...basePollMessage, sender_id: 'user-2' };
+      mockMessageRepo.findById.mockResolvedValue(ownPoll);
+      mockChannelRepo.findById.mockResolvedValue(readOnly);
+      mockMessageRepo.update.mockResolvedValue(ownPoll);
+
+      await expect(
+        service.vote('msg-1', 'user-2', 'ch-1', [1]),
+      ).rejects.toThrow(ForbiddenException);
+      const canModerate = jest.fn(async () => false);
+      await service.close('msg-1', 'user-2', 'ch-1', canModerate);
+
+      expect(mockMessageRepo.update).toHaveBeenCalled();
+      // The creator needs no permission, so none is looked up.
+      expect(canModerate).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a close in an archived channel', async () => {
+      const ownPoll = { ...basePollMessage, sender_id: 'user-2' };
+      mockMessageRepo.findById.mockResolvedValue(ownPoll);
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        archived_at: '2026-01-01T00:00:00.000Z',
+      });
+
+      await expect(service.close('msg-1', 'user-2', 'ch-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
   });
 });

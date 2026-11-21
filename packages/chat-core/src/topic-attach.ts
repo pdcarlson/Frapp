@@ -10,6 +10,11 @@
  */
 
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
+import {
+  isJoinDenied,
+  onAccessTokenChange,
+  REFUSAL_CONFIRM_MS,
+} from "./join-denied";
 import { isTopicOccupied, releaseTopic } from "./topic-registry";
 
 /**
@@ -65,7 +70,10 @@ export type TopicAttachOptions = {
   onSubscribed?: (channel: RealtimeChannel) => void;
   /**
    * Called when the channel stops delivering — `CHANNEL_ERROR`, `TIMED_OUT`
-   * or `CLOSED`.
+   * or `CLOSED`. A join Realtime refused because the member may not read the
+   * topic reports `CHANNEL_ERROR` here too, and once the refusals have gone
+   * on for `REFUSAL_CONFIRM_MS` the channel is let go rather than left to
+   * rejoin (#5765).
    *
    * The counterpart to `onSubscribed`, and it exists because the silent
    * version of this is dangerous: a dropped channel that never re-joins looks
@@ -93,8 +101,47 @@ export function attachTopicChannel(
 ): () => void {
   let detached = false;
   let attached: RealtimeChannel | null = null;
+  /** Ends the wait for a new token after a refused join, if one is armed. */
+  let stopAuthWait = () => {};
+  /**
+   * When Realtime first refused this topic since it last let a join through,
+   * and whether the refusal has since counted as final (#5765). They outlive
+   * any one channel instance: the attach after a new token is still the same
+   * question, and a refusal there is final at once.
+   */
+  let firstRefusedAt: number | null = null;
+  let givenUp = false;
 
-  void enqueue(topic, async () => {
+  /*
+    A refused join (#5765): the member may not read this topic. Phoenix would
+    ask again on its own timer (1, 2, 5, then every 10 s) for as long as the
+    channel stays registered, so once the refusals have gone on for
+    `REFUSAL_CONFIRM_MS` the channel is released, and the topic is asked for
+    again once, when the session's token becomes a different one
+    (`onAccessTokenChange`): a new token can carry access the old one didn't,
+    or belong to another member. Unmounting cancels the wait; a remount asks
+    afresh.
+  */
+  const waitForNewToken = () => {
+    stopAuthWait();
+    const stop = onAccessTokenChange(client, () => {
+      stop();
+      stopAuthWait = () => {};
+      if (!detached) void enqueue(topic, attach);
+    });
+    stopAuthWait = stop;
+  };
+
+  /** True when this refusal is final (see `REFUSAL_CONFIRM_MS`). */
+  const refusalHolds = (): boolean => {
+    if (givenUp) return true;
+    const now = Date.now();
+    firstRefusedAt ??= now;
+    givenUp = now - firstRefusedAt >= REFUSAL_CONFIRM_MS;
+    return givenUp;
+  };
+
+  async function attach(): Promise<void> {
     if (detached) return;
     if (isTopicOccupied(client, topic)) {
       await releaseTopic(client, topic);
@@ -120,15 +167,24 @@ export function attachTopicChannel(
     // Observe the join result. `private: true` introduces an authorization step
     // that can DENY, and a denied channel is otherwise completely silent:
     // phoenix flips to `errored` and re-joins on a backoff loop for the rest of
-    // the session with nothing logged and nothing shown.
+    // the session with nothing logged and nothing shown. A denial is therefore
+    // logged and the channel let go (#5765), below.
     //
     // That is the same "joins, reports SUBSCRIBED, never fires" shape that hid
     // the empty-publication bug (#867) for months, so it gets a log line rather
     // than a comment. The concrete case: `activeChapterId` is persisted to
     // localStorage, so a member removed from a chapter still asks for
-    // `events:<that chapter>` on their next login and is denied forever.
-    channel.subscribe((status) => {
+    // `events:<that chapter>` on their next login, and until #5765 was
+    // denied forever.
+    // Set once the join is refused for good and the channel let go: its own
+    // teardown, or a rejoin phoenix already had in flight, can still report
+    // after that.
+    let refused = false;
+    channel.subscribe((status, error) => {
+      if (refused) return;
       if (status === "SUBSCRIBED") {
+        firstRefusedAt = null;
+        givenUp = false;
         // Contained: this runs inside a library callback, so a throw here has
         // no owner and would surface as an unhandled error mid-commit.
         try {
@@ -136,6 +192,27 @@ export function attachTopicChannel(
         } catch (error) {
           console.warn(`realtime: topic "${topic}" onSubscribed failed`, error);
         }
+        return;
+      }
+      if (status === "CHANNEL_ERROR" && isJoinDenied(error) && refusalHolds()) {
+        refused = true;
+        console.warn(
+          `realtime: topic "${topic}" join refused; not asking again until the session's token changes`,
+        );
+        try {
+          options.onDisconnected?.(status);
+        } catch (failure) {
+          console.warn(
+            `realtime: topic "${topic}" onDisconnected failed`,
+            failure,
+          );
+        }
+        void enqueue(topic, async () => {
+          if (attached !== channel) return;
+          attached = null;
+          await releaseTopic(client, topic);
+        });
+        if (!detached) waitForNewToken();
         return;
       }
       if (
@@ -158,10 +235,13 @@ export function attachTopicChannel(
         }
       }
     });
-  });
+  }
+
+  void enqueue(topic, attach);
 
   return () => {
     detached = true;
+    stopAuthWait();
     void enqueue(topic, async () => {
       // Null when the attach never ran (cleanup overtook it) or already
       // released — either way there is nothing registered to free.

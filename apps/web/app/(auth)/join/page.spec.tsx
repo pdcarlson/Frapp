@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 /**
- * #2302. A user who hasn't accepted the current Terms can't join without
- * ticking the box, and one who has isn't asked again. Mobile's
- * `lib/onboarding/join-screen.spec.tsx` pins the same rules.
+ * `/join` with no invite in the link: the emailed invites and the paste
+ * field. An invite link gets the card instead, pinned in
+ * `components/join/join-with-invite.spec.tsx` (#5625).
  */
 
 const {
@@ -42,8 +42,6 @@ const perms = vi.hoisted(() => ({
   isLoading: false,
 }));
 
-// The Terms checkbox runs the real `useJoinTermsCheckbox` against a mock API
-// client (`statusClient`), so this pins the page and the shared rule together.
 const actualHooks = vi.hoisted(() => ({}) as typeof import("@repo/hooks"));
 vi.mock("@repo/hooks", async (importOriginal) => {
   Object.assign(
@@ -82,6 +80,17 @@ vi.mock("next/navigation", () => ({
 const searchParams = vi.hoisted(() => ({
   current: new URLSearchParams(),
 }));
+/** `usePhonePlatform`'s answer: the phone this browser runs on (#4002). */
+const STORE_APP = { id: "live.frapp.mobile", scheme: "frapp", name: "Frapp" };
+const device = vi.hoisted(() => ({
+  phone: null as "ios" | "android" | null,
+  // The store app, as on app.frapp.live (`nativeAppForOrigin`).
+  app: null as { id: string; scheme: string; name: string } | null,
+}));
+vi.mock("@/lib/use-phone-platform", () => ({
+  usePhonePlatform: () => device.phone,
+  useNativeApp: () => device.app,
+}));
 vi.mock("@/lib/auth/session", () => ({
   signOutCurrentSession: signOut,
 }));
@@ -101,7 +110,6 @@ vi.mock("@/lib/providers/network-provider", () => ({
 import type { ComponentProps } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FrappClientProvider } from "@repo/hooks";
-import { LEGAL_ACCEPTANCE_REQUIRED_MESSAGE } from "@repo/validation";
 import JoinPage from "./page";
 
 /** Answers `GET /v1/users/me/legal-acceptance`; `undefined` never answers. */
@@ -153,6 +161,55 @@ beforeEach(() => {
   perms.isLoading = false;
   pending.isLoading = false;
   searchParams.current = new URLSearchParams();
+  device.phone = null;
+  device.app = STORE_APP;
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe("web join — no invite in the link", () => {
+  function renderPage() {
+    legal.data = { required: false };
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <FrappClientProvider
+          client={
+            statusClient as unknown as ComponentProps<
+              typeof FrappClientProvider
+            >["client"]
+          }
+          chapterId={null}
+        >
+          <JoinPage />
+        </FrappClientProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("goes straight to the form on a phone with no invite in the link", async () => {
+    device.phone = "ios";
+    renderPage();
+
+    expect(await screen.findByLabelText("Invite")).toBeTruthy();
+    expect(screen.queryByText("Join in the Frapp app")).toBeNull();
+  });
+
+  it("marks Create a chapter so chapter setup opens without bouncing back here (#5077)", async () => {
+    renderPage();
+
+    await screen.findByLabelText("Invite");
+    // Bare `/chat` would loop an account with an emailed invite: the wizard
+    // gate would find the invite and send it straight back to this page.
+    expect(
+      screen
+        .getByRole("link", { name: "Create a chapter" })
+        .getAttribute("href"),
+    ).toBe("/chat?setup=chapter");
+  });
 });
 
 describe("web join — a member already in a chapter (#3850)", () => {
@@ -331,15 +388,6 @@ describe("web join — a member already in a chapter (#3850)", () => {
     expect(replace).not.toHaveBeenCalledWith("/chat");
   });
 
-  it("keeps the page when that visit carries an invite, which may be for another chapter", async () => {
-    chapters.data = [northfield];
-    searchParams.current = new URLSearchParams("from=sign-in&token=abc");
-    renderPage();
-
-    expect(await screen.findByLabelText("Invite")).toBeTruthy();
-    expect(replace).not.toHaveBeenCalledWith("/chat");
-  });
-
   it("decides once, so a join on this page never triggers the skip mid-redeem", async () => {
     chapters.data = [];
     searchParams.current = new URLSearchParams("from=sign-in");
@@ -367,39 +415,18 @@ describe("web join — a member already in a chapter (#3850)", () => {
   });
 });
 
-describe("web join — the Terms checkbox (#2302)", () => {
+describe("web join — the Terms line (#2302, #5625)", () => {
   beforeEach(() => {
     redeemMutate.mockReset();
     redeemMutate.mockResolvedValue({ chapterId: "ch-1", memberId: "m-1" });
   });
 
-  it("doesn't ask a user who already accepted the current Terms", async () => {
+  it("shows the line under Join, with no checkbox, and every join carries the acceptance", async () => {
     legal.data = { required: false };
     await renderReady();
-    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.getByText(/By joining you agree to the/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
-
-    await waitFor(() =>
-      expect(redeemMutate).toHaveBeenCalledWith({ token: "invite-token-1" }),
-    );
-  });
-
-  it("asks, and won't join until the box is ticked", async () => {
-    legal.data = { required: true };
-    await renderReady();
-
-    fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
-
-    expect(redeemMutate).not.toHaveBeenCalled();
-    expect(screen.getByText(/Agree to the Terms of Service/)).toBeTruthy();
-  });
-
-  it("sends the checkbox once it is ticked", async () => {
-    legal.data = { required: true };
-    await renderReady();
-
-    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
 
     await waitFor(() =>
@@ -409,36 +436,14 @@ describe("web join — the Terms checkbox (#2302)", () => {
       }),
     );
   });
-
-  it("asks while the status is still unknown", async () => {
-    legal.data = undefined;
-    await renderReady();
-    expect(screen.getByRole("checkbox")).toBeTruthy();
-  });
-
-  it("shows the checkbox when the server refuses a join for want of it", async () => {
-    legal.data = { required: false };
-    // No `code`, as an API older than #1020 sends it: the message fallback.
-    redeemMutate.mockRejectedValueOnce({
-      statusCode: 403,
-      error: "FORBIDDEN",
-      message: LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
-      requestId: "req_1",
-    });
-    await renderReady();
-    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
-
-    fireEvent.click(screen.getByRole("button", { name: "Join chapter" }));
-
-    await screen.findByRole("checkbox");
-  });
 });
 
 function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  // A fresh tree each call, so a rerender reaches the page itself.
+  const build = () => (
     <QueryClientProvider client={queryClient}>
       <FrappClientProvider
         client={
@@ -450,8 +455,10 @@ function renderPage() {
       >
         <JoinPage />
       </FrappClientProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const ui = build();
+  return { ...render(ui), ui, build };
 }
 
 const OFFER = {
@@ -466,17 +473,15 @@ const OFFER = {
 };
 
 describe("web join — signed out (#3776)", () => {
-  it("sends a visitor with no live session to sign in, keeping the invite", async () => {
+  it("sends a visitor with no live session and no invite to sign in", async () => {
     sessionUser.mockResolvedValue(null);
-    searchParams.current = new URLSearchParams("token=abc");
-    window.history.replaceState(null, "", "/join?token=abc");
+    searchParams.current = new URLSearchParams("from=sign-in");
     renderPage();
     await waitFor(() =>
       expect(replace).toHaveBeenCalledWith(
-        "/sign-in?redirectTo=%2Fjoin%3Ftoken%3Dabc",
+        "/sign-in?redirectTo=%2Fjoin%3Ffrom%3Dsign-in",
       ),
     );
-    window.history.replaceState(null, "", "/");
   });
 
   it("offers a retry, not a bounce, when Auth can't be asked", async () => {
@@ -508,39 +513,46 @@ describe("web join — invites for the verified address (#3776)", () => {
     expect(
       screen.getByText("State University · from Paul Carlson · Member"),
     ).toBeTruthy();
-    // The Terms status is read first; until then the box is asked for.
-    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull());
 
     fireEvent.click(
       screen.getByRole("button", { name: "Join Sigma Chi Alpha" }),
     );
 
     await waitFor(() =>
-      expect(redeemMutate).toHaveBeenCalledWith({ token: "emailed-token" }),
+      expect(redeemMutate).toHaveBeenCalledWith({
+        token: "emailed-token",
+        accept_terms_privacy: true,
+      }),
     );
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/welcome"));
   });
 
-  it("asks for the Terms before an offered Join, too", async () => {
-    legal.data = { required: true };
+  it("shows one Join, with the Terms line under it, and keeps the paste field behind a link (#5076)", async () => {
     pending.data = [OFFER];
     renderPage();
-    await screen.findByText("You've been invited to Sigma Chi Alpha");
+    const join = await screen.findByRole("button", {
+      name: "Join Sigma Chi Alpha",
+    });
+    expect(screen.queryByRole("button", { name: "Join chapter" })).toBeNull();
+    expect(screen.queryByLabelText("Invite")).toBeNull();
+    const line = screen.getByText(/By joining you agree to the/);
+    expect(
+      join.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
 
+  it("opens the paste field on Have a different invite?, sharing the one Terms line (#5076)", async () => {
+    pending.data = [OFFER];
+    renderPage();
     fireEvent.click(
-      screen.getByRole("button", { name: "Join Sigma Chi Alpha" }),
+      await screen.findByRole("button", { name: "Have a different invite?" }),
     );
-
-    await screen.findByRole("alert");
-    expect(redeemMutate).not.toHaveBeenCalled();
-  });
-
-  it("shows only the invite a link brought", async () => {
-    pending.data = [OFFER];
-    searchParams.current = new URLSearchParams("token=link-token");
-    renderPage();
-    await screen.findByLabelText("Invite");
-    expect(screen.queryByText(/You've been invited to/)).toBeNull();
+    expect(screen.getByLabelText("Invite")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Join chapter" })).toBeTruthy();
+    expect(screen.getAllByText(/By joining you agree to the/)).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: "Have a different invite?" }),
+    ).toBeNull();
   });
 
   it("offers nothing when none is pending, and the form is the primary", async () => {
@@ -558,8 +570,8 @@ describe("web join — who is signed in (#3776)", () => {
     expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   });
 
-  it("signs out and comes back to this invite after signing in again", async () => {
-    searchParams.current = new URLSearchParams("token=abc");
+  it("signs out and comes back to this page after signing in again", async () => {
+    searchParams.current = new URLSearchParams("from=switcher");
     const assign = vi.fn();
     const original = window.location;
     Object.defineProperty(window, "location", {
@@ -572,7 +584,7 @@ describe("web join — who is signed in (#3776)", () => {
       fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
       await waitFor(() =>
         expect(assign).toHaveBeenCalledWith(
-          "/sign-in?redirectTo=%2Fjoin%3Ftoken%3Dabc",
+          "/sign-in?redirectTo=%2Fjoin%3Ffrom%3Dswitcher",
         ),
       );
       expect(signOut).toHaveBeenCalled();
@@ -582,6 +594,108 @@ describe("web join — who is signed in (#3776)", () => {
         value: original,
       });
     }
+  });
+});
+
+describe("web join — Already in a chapter? (replaced /new-account)", () => {
+  const LINE = "Use a different account";
+
+  it("offers a quiet way to switch accounts to someone with no chapter and no invite", async () => {
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(
+      screen.getByText("Already in a chapter?", { exact: false }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: LINE })).toBeTruthy();
+  });
+
+  it("signs out and comes back to /join", async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...original, origin: "http://localhost", assign },
+    });
+    try {
+      renderPage();
+      await screen.findByLabelText("Invite");
+      fireEvent.click(screen.getByRole("button", { name: LINE }));
+      await waitFor(() =>
+        // Back through `/join?from=sign-in`, which sends a member on to
+        // their chapter (#3850).
+        expect(assign).toHaveBeenCalledWith(
+          "/sign-in?redirectTo=%2Fjoin%3Ffrom%3Dsign-in",
+        ),
+      );
+      expect(signOut).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: original,
+      });
+    }
+  });
+
+  it("still shows when the emailed-invites read failed: it is the way out", async () => {
+    pending.data = undefined as never;
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.getByRole("button", { name: LINE })).toBeTruthy();
+  });
+
+  it("isn't shown to a member", async () => {
+    chapters.data = [{ chapter_id: "c1", chapter: { name: "Northfield" } }];
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("isn't shown when an invite was emailed to this account", async () => {
+    pending.data = [
+      {
+        token: "offer-1",
+        chapter_name: "Southfield",
+        university: "State",
+        mark_text: null,
+        accent_color: null,
+        invited_by: null,
+        role: "member",
+      },
+    ];
+    renderPage();
+    await screen.findByRole("button", { name: "Join Southfield" });
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("isn't shown while the chapters are still being read", async () => {
+    chapters.data = undefined;
+    chapters.isLoading = true;
+    chapters.isPending = true;
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("isn't shown while the emailed invites are still being read", async () => {
+    pending.isLoading = true;
+    pending.data = undefined as never;
+    renderPage();
+    await screen.findByText("Checking for your invites…");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("holds the field until the emailed invites are read, so it never folds away mid-paste (#5076)", async () => {
+    pending.isLoading = true;
+    pending.data = undefined as never;
+    const view = renderPage();
+    await screen.findByText("Checking for your invites…");
+    expect(screen.queryByLabelText("Invite")).toBeNull();
+
+    pending.isLoading = false;
+    pending.data = [OFFER];
+    view.rerender(view.build());
+    await screen.findByRole("button", { name: "Join Sigma Chi Alpha" });
+    expect(screen.queryByLabelText("Invite")).toBeNull();
   });
 });
 
@@ -625,7 +739,7 @@ describe("web join — one join at a time (#3776)", () => {
 
     // And it stays locked once the navigation to chat has started.
     switched(true);
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/chat"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/welcome"));
     const after = screen.getByRole("button", { name: "Join Theta Chi Beta" });
     expect(after).toHaveProperty("disabled", true);
     fireEvent.click(after);

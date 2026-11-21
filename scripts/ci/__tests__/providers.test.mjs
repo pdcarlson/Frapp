@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 
 import {
   fetchJson,
-  fetchRenderDeploys,
   fetchVercelDeployments,
   findVercelDeploymentBySha,
   vercelDeploymentState,
@@ -20,10 +19,10 @@ function recorder(response) {
 
 const jsonOk = (body) => ({ ok: true, status: 200, json: async () => body });
 
-// The shared ok-check-throw-json wrapper `fetchRenderDeploys`,
-// `fetchVercelDeployments`, and `production-guardrails.mjs` all built
+// The shared ok-check-throw-json wrapper that several readers, among them
+// `fetchVercelDeployments` and `production-guardrails.mjs`, built
 // independently before this (#1351). This suite covers the wrapper itself;
-// the two below cover only their URL-building and error-message wrapping.
+// the one below covers only its URL-building and error-message wrapping.
 describe("fetchJson", () => {
   it("returns the parsed JSON body on a 2xx response", async () => {
     const { calls, fetchImpl } = recorder(jsonOk({ hello: "world" }));
@@ -44,37 +43,6 @@ describe("fetchJson", () => {
       () => fetchJson({ url: "https://example.com/x", headers: {}, what: "Example API", fetchImpl }),
       /Example API returned HTTP 404/,
     );
-  });
-});
-
-describe("fetchRenderDeploys", () => {
-  it("asks for the service's deploys and returns the parsed body", async () => {
-    const { calls, fetchImpl } = recorder(jsonOk([{ deploy: { id: "d1" } }]));
-    const body = await fetchRenderDeploys({ apiKey: "k", serviceId: "srv-1", fetchImpl });
-    assert.deepEqual(body, [{ deploy: { id: "d1" } }]);
-    assert.ok(calls[0].url.startsWith("https://api.render.com/v1/services/srv-1/deploys"));
-  });
-
-  it("authenticates with a bearer token", async () => {
-    const { calls, fetchImpl } = recorder(jsonOk([]));
-    await fetchRenderDeploys({ apiKey: "k", serviceId: "srv-1", fetchImpl });
-    assert.equal(calls[0].init.headers.Authorization, "Bearer k");
-  });
-
-  // Naming the service in the error is what makes a red deploy log actionable
-  // rather than a bare status code.
-  it("throws naming the service and the status on a non-ok response", async () => {
-    const { fetchImpl } = recorder({ ok: false, status: 503, json: async () => ({}) });
-    await assert.rejects(
-      () => fetchRenderDeploys({ apiKey: "k", serviceId: "srv-1", fetchImpl }),
-      /Render API for service srv-1 returned HTTP 503/,
-    );
-  });
-
-  it("passes `cursor` through as the pagination param", async () => {
-    const { calls, fetchImpl } = recorder(jsonOk([]));
-    await fetchRenderDeploys({ apiKey: "k", serviceId: "srv-1", cursor: "cur-abc", fetchImpl });
-    assert.match(calls[0].url, /cursor=cur-abc/);
   });
 });
 

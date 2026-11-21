@@ -237,7 +237,7 @@ export const FOCUS_RING_WITHIN =
 /**
  * The shell's focus recipe: the ring alone, with no border swap.
  *
- * Several shell controls (the nav row, the Ask pill, the account avatar)
+ * Several shell controls (the nav row, the account avatar)
  * already encode state in their border, so `FOCUS_RING`'s border swap would
  * fight that state rather than add to it.
  *

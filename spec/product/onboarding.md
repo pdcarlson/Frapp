@@ -6,12 +6,12 @@
 2. Redirected to app.frapp.live sign-up (Supabase Auth).
 3. After authentication, enters chapter details (name, university).
 4. **Accepts Terms of Service and Privacy Policy** (required checkbox), which records the chapter's acceptance and the founder's own ([`legal.md`](../behavior/legal.md#acceptance-record) § Acceptance record).
-5. API creates chapter with `subscription_status: incomplete`.
+5. API creates chapter with `subscription_status: incomplete` (`active` while chapter billing is off for the beta, 2026-11-15).
 6. Default system roles and default channels are seeded. Full seeded definitions: [`spec/behavior/rbac.md` § Role Lifecycle](../behavior/rbac.md#role-lifecycle) (roles) and [`spec/behavior/chat/README.md` § Channels](../behavior/chat/README.md#channels) (channels).
 
-Payment is **not** part of chapter *creation*: nothing in steps 1-6 touches Stripe, and the chapter lands at `incomplete`. Since [#2297](https://github.com/pdcarlson/Frapp/issues/2297) the **web** wizard then routes the founder to `/billing` so checkout is on the path rather than after it — a landing, not a gate, and #913's 14-day trial means it costs nothing on day zero. Mobile's wizard still ends on the tabs. Destination and rationale are owned by [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § First-Officer Onboarding Wizard; what follows is the checkout flow itself, wherever it is entered from:
+Payment is **not** part of chapter *creation*: nothing in steps 1-6 touches Stripe, and the chapter lands at `incomplete` (at `active`, ending on chat, while chapter billing is off for the beta: [`../behavior/onboarding.md`](../behavior/onboarding.md) § First-Officer Onboarding Wizard, 2026-11-15). Since [#2297](https://github.com/pdcarlson/Frapp/issues/2297) the **web** wizard then routes the founder to `/billing` so checkout is on the path rather than after it — a landing, not a gate, and #913's 14-day trial means it costs nothing on day zero. Mobile's wizard still ends on the tabs. Destination and rationale are owned by [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § First-Officer Onboarding Wizard; what follows is the checkout flow itself, wherever it is entered from:
 
-7. An officer with `billing:manage` is on `/billing` (the web wizard's destination, or reached from the nav later) and starts checkout from the subscription card. `POST /v1/billing/checkout` creates the Stripe Customer (storing `stripe_customer_id`) if the chapter has none, then returns a Checkout URL carrying `chapter_id` in metadata.
+7. An officer with `billing:manage` is on `/billing` (the web wizard's destination with billing on, or reached from the nav later) and starts checkout from the subscription card. `POST /v1/billing/checkout` creates the Stripe Customer (storing `stripe_customer_id`) if the chapter has none, then returns a Checkout URL carrying `chapter_id` in metadata.
 8. User completes payment on Stripe and is returned to `/billing?checkout=success`.
 9. Stripe webhook (`checkout.session.completed`) fires; API activates chapter (`subscription_status: active`). The redirect does **not** activate the chapter — the client polls for the webhook rather than assuming it has landed.
 
@@ -28,8 +28,8 @@ Checkout is offered at `incomplete` and again at `canceled`; `past_due` recovers
 
 ## Invite System
 
-1. Admin generates an invite token (valid for 24 hours, assigned a role).
+1. Admin generates an invite token (valid for 7 days, assigned a role).
 2. Token is shared as a link (e.g. `app.frapp.live/join?token=abc123`), or the admin enters a list of email addresses and the API emails each one its own token's join link directly.
-3. New user signs up (Supabase Auth) and enters the token. A user who hasn't accepted the current Terms of Service and Privacy Policy also ticks the Terms checkbox; one who has isn't asked again.
-4. API validates the token (not expired, not used), refuses a user who hasn't accepted the current Terms and didn't tick the box (403, and the token stays usable), and links the user to the chapter with the token's role. The full rules, including 409 and the subscription lock, are [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Invite Token Rules.
+3. The link opens the chapter's invite card, and the new user signs in with Apple, Google or an emailed code from it, which joins in the same tap (#5625). The Terms line under the buttons is the acceptance, so every join sends it.
+4. API validates the token (not expired, not used), refuses a user who hasn't accepted the current Terms and didn't send the acceptance (403, and the token stays usable), and links the user to the chapter with the token's role. The full rules, including 409 and the subscription lock, are [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Invite Token Rules.
 5. Token is marked as used.

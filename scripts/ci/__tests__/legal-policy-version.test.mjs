@@ -33,8 +33,45 @@
 //   Naming the document-photo upload as a photo-library use was ruled
 //   non-material on 2026-11-04 too (#3399), so it moved only the Privacy pin.
 //   Naming the service-hour proof photo (s20, 2026-11-05) moved only the
-//   Privacy pin as well, on that precedent; whether that is material, and
+//   Privacy pin as well, on that precedent. Naming the location of an
+//   officer's phone showing a check-in code (#4532) was ruled non-material by
+//   the owner on 2026-11-12, so it moved only the Privacy pin too. Naming the
+//   meeting recorder's microphone in the permissions clause, and the camera
+//   for s18's Scan code (#4763; the camera was dropped and restored the same
+//   day, before any 0.13.0 build), moved only the Privacy pin on those
+//   precedents. The 2026-11-16 privacy-copy pass (#5129 push-token device
+//   label, #4611 task photos, #4530 the study zone map's providers, #4914
+//   Ask's 90-day trace, #4787 groups, class year, service hours and study time in the AI data
+//   list) moved only the Privacy pin on those precedents too,
+//   pending the owner's ruling in its PR; whether each of these is material, and
 //   what each ruling does, is spec/behavior/legal.md § Acceptance record's.
+//   Nudge notes on by default (2026-11-17, #5309) is the owner's material
+//   change: Privacy moved to November 2026 and the constant to 2026-11, so
+//   every member accepts again once.
+//   Every AI feature on by default (2026-11-17, #5294) was ruled non-material
+//   by the owner the same day, so it moved only the Privacy pin.
+//   Meeting audio kept until the minutes are posted (2026-11-17, #5381) is the
+//   owner's material change, picked on his decision card: Privacy keeps
+//   November 2026 and the constant takes the next suffix, 2026-11.2.
+//   Naming the microphone and speech recognition for Ask's dictation in the
+//   permissions clause, with Apple or Google as the recogniser where the
+//   phone has none of its own (2026-11-17, #5276), was ruled non-material by
+//   the owner the same day, in the wording he approved, so it moved only the
+//   Privacy pin. Its added end, that Frapp AI then tidies the text before the
+//   member chooses whether to send it (same day, from the PR's review), was
+//   approved and ruled non-material by the owner too.
+//   The read-receipts sentence in section 1 (2026-11-18, #5519, in the
+//   wording Paul approved) moved only the Privacy pin on those precedents,
+//   pending the owner's material-or-not ruling in its PR.
+//   The Terms' Eligibility section moving the minimum age to 17, with Frapp
+//   AI for 18 and older (2026-11-19, #5627, Paul's pick of both ages) moved
+//   only the Terms pin: ruled non-material by the owner on his decision card
+//   (2026-11-20), since every member who accepted before it confirmed 18,
+//   which covers both ages.
+//   The dictation clause naming chat messages too, with Frapp AI tidying the
+//   words for Ask Frapp and chapter channels, never direct messages
+//   (2026-11-21, #5772), moved only the Privacy pin on the #5276 precedent,
+//   pending the owner's material-or-not ruling in its PR.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -58,7 +95,7 @@ const ACCEPTED_PAGES = ["terms", "privacy"];
  * `LEGAL_POLICY_VERSION` as last decided. It moves only with a material change
  * to Terms or Privacy, in the same commit as that page's row below.
  */
-export const PINNED_POLICY_VERSION = "2026-09.2";
+export const PINNED_POLICY_VERSION = "2026-11.2";
 
 /**
  * Each legal page's served date and text fingerprint. Update a row only
@@ -68,12 +105,12 @@ export const PINNED_PAGES = {
   terms: {
     path: "apps/landing/app/terms/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "3e73b4406a9956c2",
+    fingerprint: "3d5e3fc5be3e148b",
   },
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
-    lastUpdated: "September 2026",
-    fingerprint: "52c6da839f70a037",
+    lastUpdated: "November 2026",
+    fingerprint: "98e31cdc03fa1ed4",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

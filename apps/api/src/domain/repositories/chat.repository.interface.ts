@@ -77,6 +77,22 @@ export class ChatMessageActionDuplicateError extends Error {
   }
 }
 
+/**
+ * Why `claimSignupSlots` refused a claim (#3926): the card is gone or isn't a
+ * sign-up card (`missing`), it lists no slot by that id (`unknown_slot`), the
+ * slot is at its limit (`full`), or sign-ups are closed (`closed`, step 2).
+ * `slotId` names the slot when there is one.
+ */
+export class SignupClaimRefusedError extends Error {
+  constructor(
+    public readonly reason: 'missing' | 'unknown_slot' | 'full' | 'closed',
+    public readonly slotId: string | null,
+  ) {
+    super(`Sign-up claim refused: ${reason}`);
+    this.name = 'SignupClaimRefusedError';
+  }
+}
+
 export interface IChatChannelRepository {
   findById(id: string, chapterId: string): Promise<ChatChannel | null>;
   findByChapter(chapterId: string): Promise<ChatChannel[]>;
@@ -218,6 +234,9 @@ export interface IChatCategoryRepository {
   ): Promise<string[]>;
 }
 
+/** The chat card kinds Activity lists (`findCardsByChapter`). */
+export type ChatCardKind = 'poll' | 'signup' | 'form';
+
 export interface IChatMessageRepository {
   findById(id: string): Promise<ChatMessage | null>;
   /**
@@ -267,17 +286,19 @@ export interface IChatMessageRepository {
     options?: { channelId?: string; limit?: number; active?: boolean },
   ): Promise<ChatMessage[]>;
   /**
-   * Newest-first poll **cards** (`kind = 'poll'`, the format every client
-   * posts) across the chapter, deleted rows left out. `senderId` keeps one
+   * Newest-first chat **cards** of one kind across the chapter: poll cards
+   * (`kind = 'poll'`, the format every client posts), sign-up sheets and
+   * headcounts (`'signup'`) or forms (`'form'`), deleted rows left out.
+   * `senderId` keeps one
    * member's. Whether a card is still open is not decided here: its deadline
    * is an ISO string inside `payload`, and comparing those as text is wrong
    * across offsets, so the caller parses it. Every channel's rows come back,
    * readable or not; the caller filters by access, as with
    * {@link findPollsByChapter}.
    */
-  findPollCardsByChapter(
+  findCardsByChapter(
     chapterId: string,
-    options: { senderId?: string; limit: number },
+    options: { kind: ChatCardKind; senderId?: string; limit: number },
   ): Promise<ChatMessage[]>;
   /**
    * Locate an already-persisted message by its idempotency triple. Used by
@@ -346,6 +367,17 @@ export interface IChatMessageRepository {
     },
     data: Pick<ChatMessage, 'flag' | 'flagged_by' | 'flagged_at'>,
   ): Promise<ChatMessage | null>;
+
+  /**
+   * `update`, but only while the message is not deleted: `null` when it is
+   * (or is gone). For a write built from a row read earlier, so a delete that
+   * lands in between is not undone — a poll close would otherwise write a
+   * removed card's question and options back onto its tombstone (#1575).
+   */
+  updateIfLive(
+    id: string,
+    data: Partial<ChatMessage>,
+  ): Promise<ChatMessage | null>;
 }
 
 export interface IChatMessageActionRepository {
@@ -390,7 +422,41 @@ export interface IChatMessageActionRepository {
     messageIds: string[],
     userId: string,
     actionType: string,
-  ): Promise<Pick<ChatMessageAction, 'message_id' | 'payload'>[]>;
+  ): Promise<
+    Pick<ChatMessageAction, 'message_id' | 'payload' | 'created_at'>[]
+  >;
+  /**
+   * Every member's `actionType` rows on `messageIds`, for Activity's
+   * sign-up sheets (#3926): whether the caller holds a slot, and whether a
+   * sheet is full. Only for action types the whole channel already reads
+   * (a sign-up claim names its holder on the card); never for anything
+   * private. The caller passes ids it has already scoped and authorized.
+   */
+  findAllActionsOnMessages(
+    messageIds: string[],
+    actionType: string,
+  ): Promise<
+    Pick<
+      ChatMessageAction,
+      'message_id' | 'user_id' | 'payload' | 'created_at'
+    >[]
+  >;
+  /**
+   * Set this member's slots on a sign-up card (#3926) in one atomic step:
+   * the `claim_signup_slots` RPC locks the card's message row, refuses a slot
+   * that is full of other members' claims, and writes the member's one
+   * `signup` row (inserted, or updated in place as a vote change is, ADR-07).
+   * `note` is a headcount answer's note (null for none). Throws
+   * {@link SignupClaimRefusedError} on a refusal, including a closed card. No
+   * chapter argument: the caller has already authorized the member against
+   * the card's channel.
+   */
+  claimSignupSlots(
+    messageId: string,
+    userId: string,
+    slotIds: string[],
+    note: string | null,
+  ): Promise<{ action: ChatMessageAction; updated: boolean }>;
 }
 
 export interface IMessageReactionRepository {
@@ -539,6 +605,23 @@ export interface IChatMessageAttachmentRepository {
     messageId: string,
     chapterId: string,
   ): Promise<ChatMessageAttachment[]>;
+
+  /**
+   * Attachments for several messages of one channel in one read, each row
+   * carrying its message's `sender_id` so the caller can apply the block mask
+   * (`ChatAttachmentService.listAttachmentsForMessages`, #5667). Oldest first
+   * within each message, as {@link findByMessage}.
+   *
+   * Rows of a deleted message, of a message in another channel, or of a
+   * channel in another chapter are left out by the same statement, not by the
+   * caller: a soft-deleted message keeps its attachment rows, so the filter on
+   * the message is what keeps its files from being signed again.
+   */
+  findByMessages(
+    channelId: string,
+    messageIds: readonly string[],
+    chapterId: string,
+  ): Promise<(ChatMessageAttachment & { sender_id: string | null })[]>;
 
   /**
    * Which of `candidates` some message *other than* `excludingMessageId` still

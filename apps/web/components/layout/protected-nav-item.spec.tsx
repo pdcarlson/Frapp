@@ -117,8 +117,6 @@ describe("isNavItemVisible", () => {
       requireAnyOf: ["backwork:upload", "backwork:admin"],
     };
     expect(isNavItemVisible(anyOfItem, undefined, () => true)).toBe(false);
-    const showWhenItem: NavItem = { ...coreItem, showWhen: () => true };
-    expect(isNavItemVisible(showWhenItem, undefined)).toBe(false);
   });
 
   it("shows a gated row when the offline dashboard can't ask (null)", async () => {
@@ -126,7 +124,11 @@ describe("isNavItemVisible", () => {
     expect(isNavItemVisible(permissionItem, null)).toBe(true);
     // The module gate still applies.
     expect(
-      isNavItemVisible({ ...moduleItem, requirePermission: "x" }, null, () => false),
+      isNavItemVisible(
+        { ...moduleItem, requirePermission: "x" },
+        null,
+        () => false,
+      ),
     ).toBe(false);
   });
 
@@ -136,14 +138,20 @@ describe("isNavItemVisible", () => {
     expect(isNavItemVisible(moduleItem, undefined, undefined)).toBe(true);
   });
 
-  it("hides the real Directory and Chapter settings rows until permissions resolve", async () => {
+  it("hides the real Directory and Backwork rows until permissions resolve", async () => {
     const { isNavItemVisible } = await import("./protected-nav-item");
     const { DASHBOARD_NAV_ITEMS } = await import("./nav-config");
-    for (const id of ["members", "settings", "backwork"]) {
+    for (const id of ["members", "backwork"]) {
       const row = DASHBOARD_NAV_ITEMS.find((item) => item.id === id);
       expect(row, id).toBeDefined();
-      expect(isNavItemVisible(row!, undefined, () => true), id).toBe(false);
-      expect(isNavItemVisible(row!, ["*"], () => true), id).toBe(true);
+      expect(
+        isNavItemVisible(row!, undefined, () => true),
+        id,
+      ).toBe(false);
+      expect(
+        isNavItemVisible(row!, ["*"], () => true),
+        id,
+      ).toBe(true);
     }
   });
 
@@ -192,12 +200,11 @@ describe("isNavItemVisible", () => {
 // The restructure's whole point is that a member sees a short list of things
 // they can actually open. These pin the shape rather than the wording.
 describe("DASHBOARD_NAV structure", () => {
-  it("has no officer-only section: officer setup and tools sit behind one Settings row", async () => {
+  it("has no officer-only section, and no Chapter settings row: it opens from the chapter menu", async () => {
     const { DASHBOARD_NAV } = await import("./nav-config");
     const { isNavItemVisible } = await import("./protected-nav-item");
-    const { SETTINGS_ENTRY_PERMISSIONS, SETTINGS_TOOL_ROUTES } = await import(
-      "@/components/settings/settings-access"
-    );
+    const { SETTINGS_TOOLS } =
+      await import("@/components/settings/settings-access");
 
     // The six-row Admin group is what pushed a President's nav past a 768px
     // window (#2946). A section whose every row is officer-gated is that group
@@ -210,21 +217,23 @@ describe("DASHBOARD_NAV structure", () => {
     }
 
     const items = DASHBOARD_NAV.flatMap((section) => section.items);
-    const settings = items.find((item) => item.id === "settings");
-    expect(settings?.requireAnyOf).toEqual(SETTINGS_ENTRY_PERMISSIONS);
-    expect(isNavItemVisible(settings!, ["members:view"])).toBe(false);
-    // Every officer tool route is owned by the Settings row, and none of them
-    // is a row of its own.
-    expect(settings?.activeFor).toEqual(SETTINGS_TOOL_ROUTES);
-    for (const route of SETTINGS_TOOL_ROUTES) {
-      expect(items.some((item) => item.href === route)).toBe(false);
+    // One door into Chapter settings, the chapter menu (Paul, 2026-11-19).
+    expect(items.some((item) => item.href.startsWith("/settings"))).toBe(false);
+    // Every officer tool opens inside Chapter settings (#3837), and none of
+    // them is a row of its own.
+    for (const tool of SETTINGS_TOOLS) {
+      expect(tool.href.startsWith("/settings?"), tool.id).toBe(true);
+      expect(items.some((item) => item.href === tool.href)).toBe(false);
     }
   });
 
-  it("leads with Chat as an anchor that renders no heading", async () => {
+  it("leads with Chat, then Direct messages, as an anchor that renders no heading (#3774)", async () => {
     const { DASHBOARD_NAV } = await import("./nav-config");
     expect(DASHBOARD_NAV[0]?.anchor).toBe(true);
-    expect(DASHBOARD_NAV[0]?.items.map((i) => i.href)).toEqual(["/chat"]);
+    expect(DASHBOARD_NAV[0]?.items.map((i) => i.href)).toEqual([
+      "/chat",
+      "/chat?view=direct",
+    ]);
   });
 
   it("keeps Profile out of the chapter nav — it lives in the account menu", async () => {

@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { throwUnlessOk } from "@repo/api-sdk";
+import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -18,8 +18,8 @@ export function useBackworkResources() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["backwork", chapterId, "list"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork", { signal });
       if (error) throw error;
       return data;
     },
@@ -45,8 +45,9 @@ export function useFetchBackworkResource() {
     (id: string) =>
       queryClient.fetchQuery({
         queryKey: ["backwork", id],
-        queryFn: async () => {
+        queryFn: async ({ signal }) => {
           const { data, error } = await client.GET("/v1/backwork/{id}", {
+            signal,
             params: { path: { id } },
           });
           if (error) throw error;
@@ -74,8 +75,10 @@ export function useDepartments(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "departments"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/departments");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/departments", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -93,8 +96,10 @@ export function useBackworkCourses(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "courses"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/courses");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/courses", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -132,19 +137,29 @@ export function useSaveBackworkCourse() {
       // In the cache at once (replacing by id, or appended when new), for the
       // reason `patchNamedRow` gives; the refetch stays as the fallback.
       if (saved && typeof saved === "object" && "id" in saved) {
-        queryClient.setQueryData(["backwork", "courses"], (current: unknown) => {
-          if (!Array.isArray(current)) return current;
-          const found = current.some(
-            (row) => row && typeof row === "object" && "id" in row && row.id === saved.id,
-          );
-          return found
-            ? current.map((row) =>
-                row && typeof row === "object" && "id" in row && row.id === saved.id
-                  ? saved
-                  : row,
-              )
-            : [...current, saved];
-        });
+        queryClient.setQueryData(
+          ["backwork", "courses"],
+          (current: unknown) => {
+            if (!Array.isArray(current)) return current;
+            const found = current.some(
+              (row) =>
+                row &&
+                typeof row === "object" &&
+                "id" in row &&
+                row.id === saved.id,
+            );
+            return found
+              ? current.map((row) =>
+                  row &&
+                  typeof row === "object" &&
+                  "id" in row &&
+                  row.id === saved.id
+                    ? saved
+                    : row,
+                )
+              : [...current, saved];
+          },
+        );
       }
       queryClient.invalidateQueries({ queryKey: ["backwork", "courses"] });
     },
@@ -155,8 +170,10 @@ export function useProfessors() {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "professors"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/professors");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/professors", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -257,6 +274,14 @@ export function useConfirmBackworkUpload() {
       document_variant?: "Student Copy" | "Blank Copy" | "Answer Key";
       tags?: string[];
       is_redacted: boolean;
+      /** Save as a draft only the uploader sees, to publish later (#5208). */
+      draft?: boolean;
+      /**
+       * `false` for a draft saved with suggested boxes nobody looked at
+       * (#5252): it waits for its uploader's check before the AI fill reads
+       * it or it can be published.
+       */
+      pages_checked?: boolean;
     }) => {
       const result = await client.POST("/v1/backwork", { body });
       // On the status (see `throwUnlessOk`): an empty-bodied failure must not
@@ -266,6 +291,259 @@ export function useConfirmBackworkUpload() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["backwork"] });
+    },
+  });
+}
+
+/**
+ * A draft's fields as the API keeps them (#5208): names, not ids, and only
+ * the ones that were set. The same shape a draft edit sends.
+ */
+export type BackworkDraftFields = components["schemas"]["BackworkFieldsDto"];
+
+/** One of the caller's backwork drafts (`GET /v1/backwork/drafts`). */
+export type BackworkDraft = {
+  id: string;
+  storage_path: string;
+  is_redacted: boolean;
+  created_at: string;
+  draft_fields: BackworkDraftFields & {
+    /** Fields an AI fill set that nobody has edited since (#5233). */
+    ai_filled?: string[];
+    /** How the last AI fill ended, when one ran. */
+    ai_fill?: "filled" | "nothing_found" | "unreadable";
+    /**
+     * Saved from a folder with suggested boxes nobody has looked at yet
+     * (#5252): no AI fill and no publish until its uploader checks the pages.
+     */
+    pages_unchecked?: true;
+  };
+};
+
+/** How one AI fill of a draft ended (`POST /v1/backwork/drafts/{id}/fill`). */
+type BackworkDraftFillStatus =
+  components["schemas"]["BackworkDraftFillResponseDto"]["status"];
+
+/**
+ * The caller's own backwork drafts in the active chapter, in upload order
+ * (#5208). Nobody else sees them; publishing files them in the library.
+ */
+export function useBackworkDrafts(options: { enabled?: boolean } = {}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["backwork", chapterId, "drafts"],
+    queryFn: async ({ signal }) => {
+      const result = await client.GET("/v1/backwork/drafts", { signal });
+      // On the status: an empty-bodied failure must not read as "no drafts",
+      // which would hide a saved batch.
+      throwUnlessOk(result);
+      return (result.data ?? []) as unknown as BackworkDraft[];
+    },
+    staleTime: 30_000,
+    enabled: !!chapterId && (options.enabled ?? true),
+  });
+}
+
+/**
+ * Sets the same fields on several drafts at once; a field sent as `null`
+ * clears it. Patches the cached list from the response at once, so an edited
+ * cell doesn't flash back to its old value while the refetch runs.
+ */
+export function useUpdateBackworkDrafts() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "update-backwork-drafts"],
+    mutationFn: async (body: { ids: string[]; fields: BackworkDraftFields }) => {
+      const result = await client.PATCH("/v1/backwork/drafts", {
+        body,
+      });
+      throwUnlessOk(result);
+      return (result.data ?? []) as unknown as BackworkDraft[];
+    },
+    onSuccess: (updated) => {
+      const byId = new Map(updated.map((row) => [row.id, row]));
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.map((row: BackworkDraft) => byId.get(row.id) ?? row)
+            : current,
+      );
+    },
+  });
+}
+
+/**
+ * Files drafts in the library. One that can't be filed stays a draft and
+ * comes back in `failed` with a message to show.
+ */
+export function usePublishBackworkDrafts() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["backwork", "publish-backwork-drafts"],
+    mutationFn: async (ids: string[]) => {
+      const result = await client.POST("/v1/backwork/drafts/publish", {
+        body: { ids },
+      });
+      throwUnlessOk(result);
+      return result.data as {
+        published: Array<{ id: string }>;
+        failed: Array<{ id: string; message: string }>;
+      };
+    },
+    onSettled: () => {
+      // The library, its departments and professors (a publish can create
+      // them), and the drafts list all change.
+      queryClient.invalidateQueries({ queryKey: ["backwork"] });
+    },
+  });
+}
+
+/** Deletes one of the caller's drafts and its stored file. */
+export function useDeleteBackworkDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "delete-backwork-draft"],
+    mutationFn: async (id: string) => {
+      const result = await client.DELETE("/v1/backwork/drafts/{id}", {
+        params: { path: { id } },
+      });
+      throwUnlessOk(result);
+      return id;
+    },
+    onSuccess: (id) => {
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.filter((row: BackworkDraft) => row.id !== id)
+            : current,
+      );
+      queryClient.invalidateQueries({
+        queryKey: ["backwork", chapterId, "drafts"],
+      });
+    },
+  });
+}
+
+/**
+ * Asks the upload AI to fill one draft's empty fields from its redacted text
+ * (#5233). Puts the filled draft in the cached list as soon as it answers.
+ * Throws on 403 (`ai.consent.required`, `ai.chapter_off`) and 404 (AI off on
+ * this server, or the draft is gone), so a caller can stop asking, and on 409
+ * while another fill of the draft is still running.
+ */
+export function useFillBackworkDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "fill-backwork-draft"],
+    // No retry. The web client retries a failure that may be transient, a
+    // lost response or a 5xx included (`retryMutation` in
+    // `apps/web/lib/providers/query-provider.tsx`), and a fill holds its
+    // draft for as long as it runs: a retry sent while the first attempt is
+    // still reading the file is refused with 409, and one sent after it ended
+    // would pay for a second model call on a draft already filled. The caller
+    // decides instead (`use-draft-autofill.ts` asks again after a pause).
+    retry: false,
+    mutationFn: async (id: string) => {
+      const result = await client.POST("/v1/backwork/drafts/{id}/fill", {
+        params: { path: { id } },
+      });
+      throwUnlessOk(result);
+      const data = result.data as unknown as {
+        status: BackworkDraftFillStatus;
+        draft?: BackworkDraft;
+      };
+      return { id, status: data.status, draft: data.draft ?? null };
+    },
+    onSuccess: async ({ draft }) => {
+      if (!draft) return;
+      // As in `useCheckBackworkDraft`: an older refetch mustn't land after.
+      await queryClient.cancelQueries({
+        queryKey: ["backwork", chapterId, "drafts"],
+      });
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.map((row: BackworkDraft) =>
+                row.id === draft.id ? draft : row,
+              )
+            : current,
+      );
+    },
+  });
+}
+
+/**
+ * A five-minute link to one of the caller's drafts' stored file, for showing
+ * its pages to check (#5252). Fetched on demand rather than cached: it
+ * expires, and the page reads it once.
+ */
+export function useFetchBackworkDraftFileUrl() {
+  const client = useFrappClient();
+  return useCallback(
+    async (id: string, signal?: AbortSignal) => {
+      const result = await client.GET("/v1/backwork/drafts/{id}/file", {
+        params: { path: { id } },
+        signal,
+      });
+      throwUnlessOk(result);
+      return (result.data as { url: string }).url;
+    },
+    [client],
+  );
+}
+
+/**
+ * Marks a draft's pages checked (#5252), so the AI fill may read it and it
+ * can be published. When the uploader added boxes, `replacement` is the file
+ * flattened again and uploaded through `upload-url`, which replaces the
+ * stored one. Puts the checked draft in the cached list at once.
+ */
+export function useCheckBackworkDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "check-backwork-draft"],
+    mutationFn: async ({
+      id,
+      replacement,
+    }: {
+      id: string;
+      replacement?: { storage_path: string; file_hash: string };
+    }) => {
+      const result = await client.POST("/v1/backwork/drafts/{id}/check", {
+        params: { path: { id } },
+        body: replacement ?? {},
+      });
+      throwUnlessOk(result);
+      return result.data as unknown as BackworkDraft;
+    },
+    onSuccess: async (draft) => {
+      // A list refetch that started before the check (Save all the rest
+      // refetches as each draft lands) would put the unchecked row back.
+      await queryClient.cancelQueries({
+        queryKey: ["backwork", chapterId, "drafts"],
+      });
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.map((row: BackworkDraft) =>
+                row.id === draft.id ? draft : row,
+              )
+            : current,
+      );
     },
   });
 }
@@ -293,7 +571,10 @@ function patchNamedRow(
   queryClient.setQueryData(key, (current: unknown) => {
     if (!Array.isArray(current)) return current;
     return current.map((row) =>
-      row && typeof row === "object" && "id" in row && row.id === (updated as { id: unknown }).id
+      row &&
+      typeof row === "object" &&
+      "id" in row &&
+      row.id === (updated as { id: unknown }).id
         ? { ...row, ...updated }
         : row,
     );
@@ -355,13 +636,7 @@ export function useMergeDepartments() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["backwork", "merge-departments"],
-    mutationFn: async ({
-      id,
-      targetId,
-    }: {
-      id: string;
-      targetId: string;
-    }) => {
+    mutationFn: async ({ id, targetId }: { id: string; targetId: string }) => {
       const { data, error } = await client.POST(
         "/v1/backwork/departments/{id}/merge",
         { params: { path: { id } }, body: { target_id: targetId } },
@@ -432,13 +707,7 @@ export function useMergeProfessors() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["backwork", "merge-professors"],
-    mutationFn: async ({
-      id,
-      targetId,
-    }: {
-      id: string;
-      targetId: string;
-    }) => {
+    mutationFn: async ({ id, targetId }: { id: string; targetId: string }) => {
       const { data, error } = await client.POST(
         "/v1/backwork/professors/{id}/merge",
         { params: { path: { id } }, body: { target_id: targetId } },

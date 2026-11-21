@@ -36,7 +36,7 @@ const TAB_ID =
  * picked up within this long. One small `GET /v1/settings` a minute per
  * visible tab; a hidden tab waits until it is shown, and re-reads then.
  */
-export const STATUS_RESYNC_MS = 60 * 1000;
+const STATUS_RESYNC_MS = 60 * 1000;
 
 /** The last settings this browser saw for a member, for a failed read. */
 const lastKnownKey = (userId: string) => `frapp:own-status:${userId}`;

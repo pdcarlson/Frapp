@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { ChatService } from '../../application/services/chat.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
@@ -14,9 +15,20 @@ import { ChatImportantController } from '../../interface/controllers/chat-import
 import { SupabaseChatImportantSeenRepository } from '../../infrastructure/supabase/repositories/supabase-chat-important-seen.repository';
 import { CHAT_IMPORTANT_SEEN_REPOSITORY } from '#domain/repositories/chat-important.repository.interface';
 import { ChatThreadController } from '../../interface/controllers/chat-thread.controller';
+import { MemberThreadController } from '../../interface/controllers/member-thread.controller';
 import { SupabaseChatThreadRepository } from '../../infrastructure/supabase/repositories/supabase-chat-thread.repository';
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
 import { ChatController } from '../../interface/controllers/chat.controller';
+import { ChatFormController } from '../../interface/controllers/chat-form.controller';
+import { ChatFormService } from '../../application/services/chat-form.service';
+import { SupabaseChatFormResponseRepository } from '../../infrastructure/supabase/repositories/supabase-chat-form-response.repository';
+import { CHAT_FORM_RESPONSE_REPOSITORY } from '#domain/repositories/chat-form-response.repository.interface';
+import { GifController } from '../../interface/controllers/gif.controller';
+import { GifService } from '../../application/services/gif.service';
+import { GIF_FAVORITE_REPOSITORY } from '#domain/repositories/gif-favorite.repository.interface';
+import { SupabaseGifFavoriteRepository } from '../../infrastructure/supabase/repositories/supabase-gif-favorite.repository';
+import { KlipyGifSearch } from '../../infrastructure/gifs/klipy-gif-search';
+import { GIF_SEARCH } from '#domain/adapters/gif-search.interface';
 import { ChatBackgroundController } from '../../interface/controllers/chat-background.controller';
 import { ChatOrderController } from '../../interface/controllers/chat-order.controller';
 import { ChatChannelOrderService } from '../../application/services/chat-channel-order.service';
@@ -57,8 +69,14 @@ import { ChapterModule } from '../chapter/chapter.module';
 import { SupabaseChatNotificationPreferenceRepository } from '../../infrastructure/supabase/repositories/supabase-chat-notification-preference.repository';
 import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
 import { ChatMentionService } from '../../application/services/chat-mention.service';
-import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
+import { ChapterPresenceReader } from '../../application/services/chapter-presence-reader.service';
+import { ChannelCacheModule } from '../channel-cache/channel-cache.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
+import { ChatScheduledMessageController } from '../../interface/controllers/chat-scheduled-message.controller';
+import { ChatScheduledMessageService } from '../../application/services/chat-scheduled-message.service';
+import { ChatScheduledMessageSweepService } from '../../application/workers/chat-scheduled-message-sweep.service';
+import { SupabaseChatScheduledMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-scheduled-message.repository';
+import { CHAT_SCHEDULED_MESSAGE_REPOSITORY } from '#domain/repositories/chat-scheduled-message.repository.interface';
 
 @Module({
   // RbacModule → RbacService, which the delete-message route uses to resolve
@@ -85,9 +103,13 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     ChapterModule,
     ChannelCacheModule,
     ChatBlockModule,
+    // `USER_REPOSITORY`: a forward's copy names the original's author (#4864).
+    AuthModule,
   ],
   controllers: [
     ChatController,
+    // A member's own answers to a form card (#3926 step 3).
+    ChatFormController,
     ChatBookmarkController,
     // Report and block (#2257) live beside chat rather than in a module of
     // their own: both need `ChannelAccessService` and `MEMBER_REPOSITORY`,
@@ -99,11 +121,17 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // reason bookmarks are.
     ChatSidebarController,
     ChatThreadController,
+    MemberThreadController,
     // Chat backgrounds (#3973), at their own root for the reason bookmarks are.
     ChatBackgroundController,
     ChatOrderController,
     // The Important strip (#4186), for the reason bookmarks are separate.
     ChatImportantController,
+    // GIF search for the composer's picker (#4631).
+    GifController,
+    // A member's own scheduled messages (#4956), for the reason bookmarks are
+    // separate.
+    ChatScheduledMessageController,
   ],
   providers: [
     // Provided directly rather than by importing `ChatPushWorkerModule`, which
@@ -116,8 +144,17 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
       useClass: SupabaseChatNotificationPreferenceRepository,
     },
     ChatService,
+    // Scheduled messages (#4956): the send goes through `ChatService`, so the
+    // service and its minute sweep live beside it.
+    ChatScheduledMessageService,
+    ChatScheduledMessageSweepService,
+    {
+      provide: CHAT_SCHEDULED_MESSAGE_REPOSITORY,
+      useClass: SupabaseChatScheduledMessageRepository,
+    },
     // `@`-mention resolution and the picker's roles (2026-11-06).
     ChatMentionService,
+    ChapterPresenceReader,
     // Split out of `ChatService` (#1380): the chat buckets' objects, and a
     // member's own notification levels. Neither touches the send hot path's
     // ordering; `ChatService.sendMessage` calls into the first.
@@ -132,6 +169,12 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // The chapter's channel and category order (owner, 2026-11-11).
     ChatChannelOrderService,
     ChatReactionService,
+    // Form cards' private answers (#3926 step 3).
+    ChatFormService,
+    {
+      provide: CHAT_FORM_RESPONSE_REPOSITORY,
+      useClass: SupabaseChatFormResponseRepository,
+    },
     // Bookmarks (#462) share this module's wiring but not `ChatService` — see
     // the service's own docblock for why they are a separate class.
     ChatBookmarkService,
@@ -151,6 +194,18 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     },
     // Chat backgrounds (#3973): the chapter default and channel overrides.
     ChatBackgroundService,
+    // GIFs (#4631): the picker's search, and the check a GIF message's URL
+    // passes on send. KLIPY behind the port; unset key, the picker is hidden.
+    GifService,
+    {
+      provide: GIF_FAVORITE_REPOSITORY,
+      useClass: SupabaseGifFavoriteRepository,
+    },
+    {
+      provide: GIF_SEARCH,
+      useFactory: () =>
+        new KlipyGifSearch(process.env.KLIPY_API_KEY?.trim() || null),
+    },
     // The Important strip (#4186): what a member has seen.
     ChatImportantService,
     {
@@ -201,6 +256,18 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
   ],
   // ChatReportService for `ScheduledJobsModule`'s hourly sweep of report
   // evidence whose release did not finish (#2481).
-  exports: [ChatService, ChatReportService],
+  // The chat services `BootstrapModule` reads the first screen from
+  // (#4709).
+  exports: [
+    ChatService,
+    ChatReportService,
+    ChatCategoryService,
+    ChatNotificationPreferenceService,
+    ChatSidebarService,
+    ChatMentionService,
+    GifService,
+    ChatBackgroundService,
+    ChatBookmarkService,
+  ],
 })
 export class ChatModule {}

@@ -1,4 +1,8 @@
-import { isClientContractErrorCode } from "./api-error-codes";
+import {
+  isClientContractErrorCode,
+  isUnreportedRefusalCode,
+} from "./api-error-codes";
+import { createKeyedRateLimiter } from "./rate-limit";
 import { httpStatusClass } from "./sentry-http";
 
 /**
@@ -19,7 +23,11 @@ import { httpStatusClass } from "./sentry-http";
  * (`api-error-codes.ts`), which is a bug and goes at `error` (#4096). Not
  * reported at all:
  * - a 401 or 403, which is the auth flow answering, not a bug;
- * - a cancelled query, or an error named `AbortError`;
+ * - a 4xx whose `code` is a member-caused code (`api-error-codes.ts`): the
+ *   API refusing something a member did in normal use, which the screen
+ *   words and nobody needs to fix;
+ * - a cancelled query, an error named `AbortError`, or `expo/fetch`'s
+ *   already-aborted rejection (see {@link EXPO_FETCH_FAILED_PREFIX});
  * - a failure with no HTTP status while the app reads offline. A response, any
  *   response, means the device reached the API, so a status is reported
  *   whatever the online reading says.
@@ -54,8 +62,11 @@ import { httpStatusClass } from "./sentry-http";
  * what it is.
  *
  * **Grouping.** `react-query`, the kind, the key root, then the status class
- * (`4xx`, `5xx`) or `network`, then the API's `code` when there is one: one
- * Sentry issue per feature and kind of failure. A client-contract failure ends
+ * (`4xx`, `5xx`), then the API's `code` when there is one: one Sentry issue
+ * per feature and kind of failure. A dead fetch (`network`) is grouped by kind
+ * alone, with the root as a tag: one dropped connection fails every query in
+ * flight at once, and per root it opened an issue for each (#3746). Its rate
+ * limit stays per root, so those reads are events in one issue. A client-contract failure ends
  * its fingerprint with `client-contract`, so it opens an issue of its own at
  * `error` level rather than joining a `warning` one an older build opened. An `exception` keeps Sentry's
  * own grouping (`{{ default }}`) ahead of the kind and root, so two different
@@ -112,6 +123,26 @@ const DEAD_FETCH_MESSAGES: readonly RegExp[] = [
   "Network request timed out",
 ].map((message) => new RegExp(`^${message}${HOST_SUFFIX}$`));
 
+/**
+ * What `expo/fetch`, mobile's global `fetch` since Expo SDK 57, rejects with
+ * when no response arrived: a `FetchError` (expo
+ * `src/winter/fetch/FetchErrors.ts`, checked at expo 57.0.13), which extends
+ * `Error` without renaming it, so its name is `Error`, and whose message is
+ * `fetch failed: ` plus the native one (`UnexpectedException: The network
+ * connection was lost. (at ExpoModulesCore/Promise.swift:56)` on iOS). The
+ * prefix is the class's own contract; the native text after it is
+ * expo-modules-core's and varies by platform, so nothing here reads it.
+ *
+ * Its abort shape is the one `fetch` throws when the signal was already
+ * aborted at the start. A native `cancelled` mid-flight stays `network`: when
+ * TanStack cancels a query itself, `onError` gets its `CancelledError`
+ * (skipped by `isCancelled`), not the fetch's rejection, so a native cancel
+ * that reaches here is the OS tearing the request down, which is what a
+ * connection drop on resume looks like (#3746).
+ */
+const EXPO_FETCH_FAILED_PREFIX = "fetch failed: ";
+const EXPO_FETCH_ABORTED = `${EXPO_FETCH_FAILED_PREFIX}The operation was aborted.`;
+
 /** A query-key root or a mutation-key root, as the hooks write them. */
 const KEY_ROOT_RE = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 /** The API's machine codes: `chapter.module.disabled`, `DEGRADED`. */
@@ -120,9 +151,9 @@ const ERROR_CODE_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
 const REQUEST_ID_RE = /^req_[A-Za-z0-9-]{1,64}$/;
 
 /** The root an event names when the key has none worth naming. */
-export const UNKEYED_ROOT = "unkeyed";
+const UNKEYED_ROOT = "unkeyed";
 
-export type QueryErrorKind = "query" | "mutation";
+type QueryErrorKind = "query" | "mutation";
 
 /** What each app's Sentry binding passes to `captureException`. */
 export interface QueryErrorReport {
@@ -149,14 +180,14 @@ export interface QueryErrorReporterOptions {
 }
 
 /** The part of TanStack's `Query` read here. */
-export interface ReportedQuery {
+interface ReportedQuery {
   readonly queryKey: readonly unknown[];
   /** Read only to remove it from a TanStack error's message, never sent. */
   readonly queryHash?: string;
 }
 
 /** The part of TanStack's `Mutation` read here. */
-export interface ReportedMutation {
+interface ReportedMutation {
   readonly options: { readonly mutationKey?: readonly unknown[] | undefined };
 }
 
@@ -180,8 +211,11 @@ export function createQueryErrorReporter(
   options: QueryErrorReporterOptions,
 ): QueryErrorReporter {
   const intervalMs = options.intervalMs ?? DEFAULT_REPORT_INTERVAL_MS;
-  const now = options.now ?? (() => Date.now());
-  const lastReportedAt = new Map<string, number>();
+  const allow = createKeyedRateLimiter({
+    intervalMs,
+    maxKeys: MAX_REMEMBERED_RATE_KEYS,
+    now: options.now ?? (() => Date.now()),
+  });
 
   const report = (
     error: unknown,
@@ -194,18 +228,7 @@ export function createQueryErrorReporter(
       if (!failure) return;
       const root = keyRoot(key);
       const built = buildReport(failure, error, kind, root, queryHash);
-      const at = now();
-      const last = lastReportedAt.get(built.rateKey);
-      if (last !== undefined && at - last < intervalMs) return;
-      // Recorded before the capture, so a capture that throws is not retried
-      // on every refetch either. Deleted first so the newest is last in the
-      // Map's order and the oldest is the one forgotten.
-      lastReportedAt.delete(built.rateKey);
-      lastReportedAt.set(built.rateKey, at);
-      if (lastReportedAt.size > MAX_REMEMBERED_RATE_KEYS) {
-        const oldest = lastReportedAt.keys().next();
-        if (!oldest.done) lastReportedAt.delete(oldest.value);
-      }
+      if (!allow(built.rateKey)) return;
       options.capture(built.report);
     } catch {
       // Reporting is a side channel: a broken reporter loses the report, never
@@ -227,10 +250,26 @@ function classify(
   error: unknown,
   options: Pick<QueryErrorReporterOptions, "isOnline" | "isCancelled">,
 ): Failure | null {
-  if (options.isCancelled(error) || nameOf(error) === "AbortError") return null;
+  if (
+    options.isCancelled(error) ||
+    nameOf(error) === "AbortError" ||
+    fieldOf(error, "message") === EXPO_FETCH_ABORTED
+  ) {
+    return null;
+  }
   const status = statusOf(error);
   if (status !== undefined) {
-    return AUTH_FLOW_STATUSES.has(status) ? null : { kind: "http", status };
+    if (AUTH_FLOW_STATUSES.has(status)) return null;
+    // The API naming a refusal a member meets in normal use (outside the
+    // study zone, check-in not open yet): the screen words it, and Sentry
+    // has nothing to fix. A 5xx is reported whatever its code.
+    if (
+      httpStatusClass(status) === "4xx" &&
+      isUnreportedRefusalCode(codeOf(error))
+    ) {
+      return null;
+    }
+    return { kind: "http", status };
   }
   if (!options.isOnline()) return null;
   const deadFetch = deadFetchMessage(error);
@@ -286,7 +325,13 @@ function buildReport(
   }
 
   if (failure.kind === "network") {
-    const fingerprint = ["react-query", kind, root, "network"];
+    // One issue per kind, not per root: a dropped connection fails every
+    // query in flight at once, so a per-root fingerprint opened one Sentry
+    // issue per screen's read for a single drop (14 from one resume, #3746).
+    // The root stays a tag, and stays in the rate key, so a route whose
+    // fetches keep dying (a CORS fault) still reports while other roots'
+    // drops are being reported.
+    const fingerprint = ["react-query", kind, "network"];
     return {
       report: {
         error: namedError(
@@ -297,7 +342,7 @@ function buildReport(
         fingerprint,
         tags,
       },
-      rateKey: fingerprint.join("\u0000"),
+      rateKey: [...fingerprint, root].join("\u0000"),
     };
   }
 
@@ -363,9 +408,13 @@ function requestIdOf(error: unknown): string | undefined {
 }
 
 function deadFetchMessage(error: unknown): string | undefined {
-  if (nameOf(error) !== "TypeError") return undefined;
+  const name = nameOf(error);
   const message = fieldOf(error, "message");
   if (typeof message !== "string") return undefined;
+  if (name === "Error" && message.startsWith(EXPO_FETCH_FAILED_PREFIX)) {
+    return message;
+  }
+  if (name !== "TypeError") return undefined;
   return DEAD_FETCH_MESSAGES.some((pattern) => pattern.test(message))
     ? message
     : undefined;

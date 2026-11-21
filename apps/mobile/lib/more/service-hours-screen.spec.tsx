@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -386,7 +387,8 @@ describe("Service hours on a module-off refusal (#2718)", () => {
  * screen, which lists the entries and totals them as the viewer's own hours,
  * must ask for the viewer's entries. It once didn't, and an
  * officer saw the chapter's entries, unnamed, totalled as their own.
- * `profile-screen.spec.tsx` pins the same for s12.
+ * `packages/hooks/src/profile-stats.hook.spec.tsx` pins the same for the
+ * Profile cards (s15) on both apps.
  */
 describe("Service hours reads only the viewer's entries", () => {
   beforeEach(() => {
@@ -447,13 +449,13 @@ describe("Service hours pull to refresh (#3385)", () => {
 });
 
 /**
- * #3022. The board never drew this screen, but it opens from a More row like
- * s10–s16, so it draws the same `‹ More`.
+ * #3022. The board never drew this screen, but it opens from a You row like
+ * s10–s16, so it draws the same `‹ You`.
  */
 describe("Service hours back row (#3022)", () => {
-  it("draws ‹ More above the title", () => {
+  it("draws ‹ You above the title", () => {
     const tree = render();
-    expectBackRow(tree, "More", "/more");
+    expectBackRow(tree, "You", "/you");
     tree.unmount();
   });
 });
@@ -638,6 +640,35 @@ describe("Log service hours sheet", () => {
       }),
     );
     act(() => tree.unmount());
+  });
+
+  // Paul, 2026-11-13 (#4593): "keep the draft". The screen's sheet goes when
+  // the member goes back, and the entry is there next time.
+  it("keeps the entry past the screen, until Cancel gives it up", () => {
+    const first = render();
+    fill(first);
+    act(() => stepButton(first, "Half an hour more").props.onPress());
+    act(() => first.unmount());
+
+    const second = render();
+    expect(descriptionField(second).props.value).toBe("Food bank");
+    act(() => cancelButton(second).props.onPress());
+    act(() => second.unmount());
+
+    const third = render();
+    expect(descriptionField(third).props.value).toBe("");
+    act(() => third.unmount());
+  });
+
+  it("doesn't offer an entry whose save was running when the screen was left", () => {
+    mutate.mockImplementation(() => {});
+    const first = render();
+    submitEntry(first);
+    act(() => first.unmount());
+
+    const second = render();
+    expect(descriptionField(second).props.value).toBe("");
+    act(() => second.unmount());
   });
 
   it("gives the entry up on Cancel", () => {
@@ -847,7 +878,7 @@ describe("Log service hours date across a day", () => {
   }
 
   const weekday = (day: Date) =>
-    day.toLocaleDateString(undefined, { weekday: "short" });
+    day.toLocaleDateString(undefined, { weekday: "long" });
   const chip = (tree: ReactTestRenderer, label: string) =>
     pressable(tree, label);
   const isSelected = (tree: ReactTestRenderer, label: string) =>
@@ -1435,6 +1466,8 @@ describe("Log service hours photo proof", () => {
     expect(screenText(tree)).toContain(TRY_AGAIN);
 
     chapterId = "chapter-b";
+    // As `FrappProvider` does on a chapter switch: no kept entry crosses it.
+    dropAllKeptDrafts();
     rerender(tree);
 
     expect(screenText(tree)).not.toContain("receipt.jpg");

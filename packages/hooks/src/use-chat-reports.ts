@@ -81,8 +81,9 @@ export function useChatReports(
       chapterId!,
       channelId ? { status, channelId } : { status },
     ),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/chat/reports", {
+        signal,
         params: {
           query: channelId ? { status, channel_id: channelId } : { status },
         },
@@ -93,14 +94,6 @@ export function useChatReports(
     enabled: !!chapterId,
   });
 }
-
-/**
- * One attachment an open report holds, with a short-lived signed URL (#2481).
- * The queue row already carries each file's name and size
- * (`ChatReport["reported_attachments"]`); this is what opens them.
- */
-export type ChatReportAttachment =
-  components["schemas"]["ChatReportAttachmentDto"];
 
 /**
  * The files an open report holds, signed for the officer reviewing it
@@ -124,10 +117,10 @@ export function useChatReportAttachments(reportId: string, enabled: boolean) {
       ...chatReportKeys.detail(chapterId!, reportId),
       "attachments",
     ] as const,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/chat/reports/{id}/attachments",
-        { params: { path: { id: reportId } } },
+        { signal, params: { path: { id: reportId } } },
       );
       if (error) throw error;
       return data;

@@ -1,8 +1,12 @@
 import { forwardRef, useCallback, useRef, type ComponentType } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
-import { Circle, Path, Rect } from "react-native-svg";
-import type { PlusMenuCommand, PlusMenuModel } from "@repo/chat-core/plus-menu";
+import { Rect, Text as SvgText } from "react-native-svg";
+import type {
+  PlusMenuCommand,
+  PlusMenuModel,
+  PlusMenuRowCommand,
+} from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
@@ -12,24 +16,25 @@ import {
   SheetScrim,
   SHEET_STACK_BEHAVIOR,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
 } from "@/components/sheet-scaffold";
 import {
   EventsGlyph,
   GlyphFrame,
   glyphPaint,
-  STROKE_WIDTH,
+  PhotoGlyph,
   TabGlyph,
   TasksGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
-import { ServiceHoursGlyph } from "./card-glyphs";
+import { STROKE_WIDTH } from "@/components/glyph-recipe";
 
 /**
- * The composer's **+** on the phone (#3865): Photo, then a row per form the
- * member can open here (Poll, Event, Task, Service hours), in web's + menu
- * order. What it offers, greys and explains is `plusMenuModel` in
- * `@repo/chat-core/plus-menu`, web's own rule, so the two can't drift:
+ * The composer's **+** on the phone (#3865): Photo and GIF, then Poll, Event
+ * and Task (#5772, Paul's cut on 2026-11-20), in web's + menu order. What it
+ * offers, greys and explains is `plusMenuModel` in `@repo/chat-core/plus-menu`,
+ * web's own rule, so the two can't drift:
  *
  * - a row the role can't use, or whose module the chapter turned off, is left
  *   out, and a line at the bottom says why;
@@ -37,8 +42,7 @@ import { ServiceHoursGlyph } from "./card-glyphs";
  *   greyed with the reason beside it. A poll queues like a message, so
  *   offline doesn't grey it.
  *
- * It always opens, even with Photo alone, so that line can show. Points has no
- * phone form yet, so the host doesn't list it.
+ * It always opens, even with Photo alone, so that line can show.
  *
  * A row's action runs once this sheet has finished closing, not on the tap:
  * presenting the photo library or another sheet while this one animates out
@@ -53,28 +57,36 @@ export interface ComposerPlusSheetProps {
    */
   photoDisabledReason: string | null;
   onPhoto: () => void;
+  /**
+   * Opens the GIF picker (#4631); omitted when the server has no GIF search
+   * set up, which leaves the row out.
+   */
+  onGif?: () => void;
+  /** Why GIF can't be used this second (offline, a reply staged). */
+  gifDisabledReason?: string | null;
   onOpenForm: (command: PlusMenuCommand) => void;
 }
 
-const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<TabGlyphProps>> = {
+const ROW_GLYPH: Record<PlusMenuRowCommand, ComponentType<TabGlyphProps>> = {
   poll: PollGlyph,
   event: EventsGlyph,
   task: TasksGlyph,
-  hours: ServiceHoursGlyph,
-  points: PointsRowGlyph,
 };
 
 export const ComposerPlusSheet = forwardRef<
   BottomSheetModal,
   ComposerPlusSheetProps
 >(function ComposerPlusSheet(
-  { model, photoDisabledReason, onPhoto, onOpenForm },
+  { model, photoDisabledReason, onPhoto, onGif, gifDisabledReason, onOpenForm },
   ref,
 ) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const closeSheet = useSheetClose(ref);
+  // The composer dismisses it on every blur and channel switch, up or not
+  // (#5059): the ref it holds only reaches a sheet that is up.
+  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
   // The chosen row's action, run on dismiss (see the header).
   const chosen = useRef<(() => void) | null>(null);
 
@@ -86,22 +98,24 @@ export const ComposerPlusSheet = forwardRef<
     [closeSheet],
   );
   const dismissed = useCallback(() => {
+    markClosed();
     const run = chosen.current;
     chosen.current = null;
     run?.();
-  }, []);
+  }, [markClosed]);
 
   const photoReason = photoDisabledReason ?? model.attachDisabledReason;
   const muted = tokens.color.text.mutedForeground;
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
+      onAnimate={onAnimate}
       onDismiss={dismissed}
     >
       <SheetBackToClose onClose={closeSheet} />
@@ -115,6 +129,16 @@ export const ComposerPlusSheet = forwardRef<
           muted={muted}
           styles={styles}
         />
+        {onGif ? (
+          <PlusRow
+            label="GIF"
+            glyph={GifRowGlyph}
+            reason={gifDisabledReason ?? null}
+            onPress={() => choose(onGif)}
+            muted={muted}
+            styles={styles}
+          />
+        ) : null}
         {model.rows.map((row) => (
           <PlusRow
             key={row.command}
@@ -177,48 +201,41 @@ function PlusRow({
   );
 }
 
-/** Photo: a framed picture, sun and hill, in the card eyebrows' stroke recipe. */
-function PhotoGlyph(props: TabGlyphProps) {
-  const { stroke, fill } = glyphPaint(props);
+/**
+ * GIF (#4631): "GIF" lettered in a rounded frame, as Discord and Slack label
+ * it, since no pictogram reads as a GIF on its own. Text in the SVG, so it
+ * scales and takes the row's stroke color like every other row glyph.
+ */
+function GifRowGlyph(props: TabGlyphProps) {
+  const { stroke } = glyphPaint(props);
   return (
     <GlyphFrame size={props.size}>
       <Rect
-        x={3.5}
-        y={5}
-        width={17}
-        height={14}
-        rx={2.4}
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-      />
-      <Circle
-        cx={9}
-        cy={10}
-        r={1.6}
+        x={2.8}
+        y={6}
+        width={18.4}
+        height={12}
+        rx={3}
         fill="none"
         stroke={stroke}
         strokeWidth={STROKE_WIDTH}
       />
-      <Path
-        d="M4 17l5-4.6 3.2 2.8 3.3-3.4L20 16"
-        fill="none"
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <SvgText
+        x={12}
+        y={14.6}
+        fontSize={7.4}
+        fontWeight="700"
+        fill={stroke}
+        textAnchor="middle"
+      >
+        GIF
+      </SvgText>
     </GlyphFrame>
   );
 }
 
 function PollGlyph(props: TabGlyphProps) {
   return <TabGlyph name="polls" {...props} />;
-}
-
-// Points isn't offered on the phone yet (no form); the map stays total.
-function PointsRowGlyph(props: TabGlyphProps) {
-  return <TabGlyph name="points" {...props} />;
 }
 
 function createStyles(tokens: SignetTokens) {

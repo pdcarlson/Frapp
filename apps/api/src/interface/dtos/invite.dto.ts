@@ -7,14 +7,24 @@ import {
   ArrayMinSize,
   ArrayMaxSize,
   Equals,
+  IsIn,
+  IsUUID,
   ValidateBy,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  INVITE_CARD_STATES,
+  INVITE_FUNNEL_STEPS,
+  INVITE_JOIN_FAILURE_REASONS,
+  INVITE_SIGN_IN_METHODS,
   isInviteEmail,
-  LEGAL_ACCEPTANCE_LABEL,
   MAX_INVITE_EMAILS,
+  type InviteCardState,
+  type InviteFunnelStep,
+  type InviteFunnelStepInput,
+  type InviteJoinFailureReason,
+  type InviteSignInMethod,
 } from '@repo/validation';
 import type {
   BulkEmailInviteResult,
@@ -22,6 +32,8 @@ import type {
   InviteStatus,
 } from '../../application/services/invite.service';
 import type {
+  InviteDetails,
+  InviteLinkState,
   InvitePreview,
   PendingInvite,
 } from '../../application/services/invite.service';
@@ -29,13 +41,13 @@ import type {
 /**
  * #422: `role` is optional on all three create routes. Omitting it falls back
  * to the chapter's configured `default_invite_role_id`, then to the seeded
- * Member role — so a caller that never learned about roles still issues a
- * sensible invite, and a chapter that set a default does not have to restate
- * it on every call. Naming a role still wins, so no existing caller changes
+ * Everyone role (the floor every member holds, #5802), so a caller that never learned about
+ * roles still issues a sensible invite, and a chapter that set a default does
+ * not have to restate it on every call. Naming a role still wins, so no existing caller changes
  * behaviour.
  */
 const ROLE_DESCRIPTION =
-  "Role name to assign. Omit to use the chapter's configured default invite role.";
+  "Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role.";
 
 export class CreateInviteDto {
   @ApiPropertyOptional({ description: ROLE_DESCRIPTION })
@@ -97,13 +109,17 @@ export class RedeemInviteDto {
   token: string;
 
   /**
-   * The join screen's Terms checkbox (#2302). Required, as `true`, only when
-   * the caller hasn't accepted the current Terms; `GET
+   * The user's agreement to the current Terms (#2302). Required, as `true`,
+   * only when the caller hasn't accepted the current Terms; `GET
    * /v1/users/me/legal-acceptance` says which. The server stamps the record,
-   * so this is the user's claim that they ticked it, not the record itself.
+   * so this is the user's claim, not the record itself. The join screens send
+   * it on every join (#5625): their Terms line under the buttons ("By joining
+   * you agree to…", `termsLine` in `@repo/validation`) is the agreement, and
+   * the old checkbox (`LEGAL_ACCEPTANCE_LABEL`) is gone from them.
    */
   @ApiPropertyOptional({
-    description: `True when the user ticked "${LEGAL_ACCEPTANCE_LABEL}" Needed only if they haven't accepted the current version.`,
+    description:
+      'True when the user agreed to the current Terms of Service and Privacy Policy: the join screens send it on every join, under their one-line Terms notice. Needed only if they have not accepted the current version.',
   })
   @IsOptional()
   @IsStrictBoolean()
@@ -111,6 +127,61 @@ export class RedeemInviteDto {
     message: 'Terms of Service and Privacy Policy must be accepted',
   })
   accept_terms_privacy?: boolean;
+}
+
+/**
+ * A step of the invite card funnel (#5663), `POST /v1/invites/funnel`. The
+ * optional fields belong to one step each; the API keeps only the ones the
+ * step may carry (`inviteFunnelProperties`).
+ */
+export class InviteFunnelStepDto implements InviteFunnelStepInput {
+  @ApiProperty({ description: 'The invite token, as the join link carries it' })
+  @IsString()
+  token: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'A random id the card mints once per visit, so the steps of one visit form one funnel.',
+  })
+  @IsUUID()
+  visit_id: string;
+
+  @ApiProperty({ enum: INVITE_FUNNEL_STEPS })
+  @IsIn(INVITE_FUNNEL_STEPS)
+  step: InviteFunnelStep;
+
+  @ApiPropertyOptional({
+    enum: INVITE_SIGN_IN_METHODS,
+    description: 'The way in tapped, for `sign-in-started`.',
+  })
+  @IsOptional()
+  @IsIn(INVITE_SIGN_IN_METHODS)
+  method?: InviteSignInMethod;
+
+  @ApiPropertyOptional({
+    enum: INVITE_CARD_STATES,
+    description: 'The state the card showed, for `card-viewed`.',
+  })
+  @IsOptional()
+  @IsIn(INVITE_CARD_STATES)
+  state?: InviteCardState;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether the visitor was already signed in, for `card-viewed`.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  signed_in?: boolean;
+
+  @ApiPropertyOptional({
+    enum: INVITE_JOIN_FAILURE_REASONS,
+    description: 'Why the join failed, for `join-failed`.',
+  })
+  @IsOptional()
+  @IsIn(INVITE_JOIN_FAILURE_REASONS)
+  reason?: InviteJoinFailureReason;
 }
 
 export class PreviewInviteDto {
@@ -149,12 +220,46 @@ export class InvitePreviewResponseDto implements InvitePreview {
     nullable: true,
     type: String,
     description:
-      'The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role)',
+      'The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to',
   })
   role: string | null;
 
   @ApiProperty()
   expires_at: string;
+}
+
+/** `InviteDetails` in `invite.service.ts`: the invite screen's card (#5625). */
+export class InviteDetailsResponseDto
+  extends InvitePreviewResponseDto
+  implements InviteDetails
+{
+  @ApiProperty({
+    enum: ['live', 'expired', 'used', 'off', 'locked'],
+    description:
+      "Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role); `locked` (a working link into a chapter whose subscription is inactive, so it can't take new members until it's restored). Only `live` can be joined.",
+  })
+  state: InviteLinkState;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      "The invite's chapter, so a signed-in visitor already in it is told so instead of offered Join.",
+  })
+  chapter_id: string;
+
+  @ApiProperty({
+    description:
+      'How many members the chapter has now. 0 when the link does not work: only a live link earns the count.',
+    example: 41,
+  })
+  member_count: number;
+
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'When the invite was made, for a dead card ("sent it on Friday, November 14").',
+  })
+  sent_at: string;
 }
 
 /** One row of `GET /v1/invites/mine` (`PendingInvite`, #3776). */
@@ -221,6 +326,59 @@ export class InviteListItemDto implements InviteListItem {
 
   @ApiProperty()
   created_at: string;
+
+  @ApiProperty({
+    description:
+      'True for the chapter link (#3353): anyone with it joins until it expires or an officer turns it off, so it never reads joined.',
+  })
+  reusable: boolean;
+}
+
+/** `GET /v1/invites/chapter-link` (#3353; a link per role since #5633). */
+export class ChapterLinkResponseDto {
+  @ApiProperty({
+    type: InviteListItemDto,
+    nullable: true,
+    description:
+      "For builds from before #5633, which showed one link and replaced it with a body-less POST: the link that POST turns off, the default role's (`default_role`). Null when that role has none.",
+  })
+  link: InviteListItemDto | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "The role a POST with no role makes a link for: the chapter default invite role, or the caller's own rank's member role when the default is above them. The role picker starts on it. Null when the caller can invite into neither.",
+  })
+  default_role: string | null;
+
+  @ApiProperty({
+    type: InviteListItemDto,
+    isArray: true,
+    description:
+      "The chapter's links that no officer has turned off, expired or not (status says which), at most one per role, newest first. Only those granting a role the caller could invite someone into.",
+  })
+  links: InviteListItemDto[];
+}
+
+/** `POST /v1/invites/chapter-link`'s body (#5633). */
+export class CreateChapterLinkDto {
+  @ApiPropertyOptional({
+    description: `The role the link grants. ${ROLE_DESCRIPTION} Making a link for a role turns off that role's old link only.`,
+  })
+  @IsOptional()
+  @IsString()
+  role?: string;
+}
+
+/** `GET /v1/invites/roles` (#4546). */
+export class InvitableRolesDto {
+  @ApiProperty({
+    type: [String],
+    description:
+      'Ids of the roles the caller may invite someone into. Match them against GET /v1/roles for names.',
+  })
+  role_ids: string[];
 }
 
 /** `POST /v1/invites/email`'s answer (`BulkEmailInviteResult`). */

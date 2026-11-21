@@ -1,5 +1,5 @@
 /**
- * The balance + house-rank card at the top of s08.
+ * The balance + house-rank line at the top of s08 (a card until #5570).
  *
  * This is the surviving half of the deleted `points.tsx` / `points-details.tsx`
  * routes — `spec/ui/mobile/screens.md` records that their leaderboard UI
@@ -39,8 +39,8 @@ export interface HouseRank {
 /**
  * The viewer's balance, or `null` when the payload cannot be read.
  *
- * `null` and `0` are different answers and the card draws them differently: a
- * real zero renders "0", while `null` renders an em dash. Headlining a "0" at a
+ * `null` and `0` are different answers and the line draws them differently:
+ * a real zero says "0", while `null` leaves the balance out. Headlining a "0" at a
  * member who has 1,240 points is the failure the `hasEntries` discipline in
  * `app/(app)/service-hours.tsx` exists to prevent.
  */

@@ -1,6 +1,14 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  createEvent,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { normalizeRow, reactionActionType } from "@repo/chat-core/types";
 import type { BlockState } from "@repo/chat-core/blocks";
@@ -19,12 +27,34 @@ const thread = {
   typingUsers: [] as readonly string[],
   setFollow: vi.fn(async () => undefined),
   send: vi.fn(async () => ({ error: null as string | null })),
+  sendGif: vi.fn(async () => ({ error: null as string | null })),
   retry: vi.fn(async () => ({ error: null as string | null })),
   discard: vi.fn(),
   refreshRoot: vi.fn(),
   emitTyping: vi.fn(),
 };
 let offline = false;
+let gifs = { available: false, provider: "" };
+
+// The picker's own spec covers search; here a button picks one GIF.
+const PICKED_GIF = {
+  id: "g1",
+  title: "wave",
+  token: "signed",
+  full: { url: "https://static.klipy.com/g1.webp", width: 200, height: 150 },
+  preview: {
+    url: "https://static.klipy.com/g1-s.webp",
+    width: 100,
+    height: 75,
+  },
+};
+vi.mock("./gif-picker", () => ({
+  GifPickerButton: ({ onPick }: { onPick: (gif: unknown) => void }) => (
+    <button type="button" onClick={() => onPick(PICKED_GIF)}>
+      Send a GIF
+    </button>
+  ),
+}));
 
 // Chat backgrounds (#3973) read their own query; decoration, not under test here.
 vi.mock("./chat-background", () => ({ ChatBackground: () => null }));
@@ -61,9 +91,28 @@ vi.mock("react-virtuoso", async () => {
 });
 
 // `useAuthorAvatars` needs `FrappClientProvider`, which a bare render lacks.
+const rosterCatchUp = vi.hoisted(() =>
+  vi.fn<(typists: readonly string[], rows?: readonly unknown[]) => void>(),
+);
+
+const scheduled = vi.hoisted(() => ({
+  rows: [] as unknown[],
+  listFor: vi.fn(),
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, useAuthorAvatars: () => ({ data: {} }) };
+  return {
+    ...actual,
+    useAuthorAvatars: () => ({ data: {} }),
+    // The roster catch-up has its own spec in `@repo/hooks`.
+    useRosterCatchUp: rosterCatchUp,
+    useGifAvailability: () => gifs,
+    useScheduledMessages: (channelId: string, threadRootId?: string) => {
+      scheduled.listFor(channelId, threadRootId);
+      return { data: scheduled.rows };
+    },
+  };
 });
 
 // Radix mounts an avatar's `<img>` only once the browser loads it, which
@@ -84,11 +133,18 @@ vi.mock("@/lib/chat/use-message-thread", () => ({
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ isOffline: offline }),
 }));
+const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: toastSpy }),
 }));
 
-import { ThreadPanel, type ThreadRowWrites } from "./thread-panel";
+import {
+  ThreadPanel,
+  resetThreadDraftsForTests,
+  type ThreadRowWrites,
+} from "./thread-panel";
+
+beforeEach(() => resetThreadDraftsForTests());
 
 function row(id: string, senderId: string, content: string): ChatMessage {
   return normalizeRow({
@@ -121,6 +177,7 @@ function makeWrites() {
     edit: vi.fn(async () => undefined),
     delete: vi.fn(async () => undefined),
     closePoll: vi.fn(async () => undefined),
+    closeCard: vi.fn(async () => undefined),
     act: vi.fn(async () => undefined),
   } satisfies ThreadRowWrites;
 }
@@ -132,6 +189,9 @@ function renderPanel(
     heldRoot: ChatMessage | null;
     avatarFor: (id: string) => string | null;
     onClosePanel: () => void;
+    beside: boolean;
+    askRefusal: (text: string) => string | null;
+    onSchedule: (content: string, at: Date) => Promise<void>;
   }> = {},
 ) {
   const onClose = vi.fn();
@@ -144,6 +204,7 @@ function renderPanel(
       rootId="root"
       viewerId="me"
       nameFor={(id) => names[id] ?? null}
+      typistLabelFor={(id) => names[id] ?? null}
       avatarFor={overrides.avatarFor ?? (() => null)}
       blockState={readyBlocks}
       heldRoot={overrides.heldRoot ?? null}
@@ -155,6 +216,9 @@ function renderPanel(
       canPost={overrides.canPost ?? true}
       onClose={onClose}
       onClosePanel={overrides.onClosePanel}
+      beside={overrides.beside}
+      askRefusal={overrides.askRefusal}
+      onSchedule={overrides.onSchedule}
     />,
   );
   return { onClose, writes, onUnblock };
@@ -189,6 +253,247 @@ describe("ThreadPanel (#3785)", () => {
       "Me too{Enter}",
     );
     expect(thread.send).toHaveBeenCalledWith("Me too");
+  });
+
+  it("sends a reply from the Send button", async () => {
+    renderPanel();
+    const user = userEvent.setup();
+    const send = screen.getByRole("button", { name: "Send reply" });
+    expect(send).toBeDisabled();
+    await user.type(
+      screen.getByRole("textbox", { name: "Reply in thread" }),
+      "Me too",
+    );
+    await user.click(send);
+    expect(thread.send).toHaveBeenCalledWith("Me too");
+  });
+
+  describe("scheduling a reply (#5005)", () => {
+    afterEach(() => {
+      scheduled.rows = [];
+      toastSpy.mockClear();
+    });
+
+    it("schedules the reply with the channel's chevron, clearing the box", async () => {
+      const onSchedule = vi.fn(async () => undefined);
+      renderPanel({ onSchedule });
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      await user.type(box, "  Leaving at 6  ");
+      await user.click(
+        screen.getByRole("button", { name: "Schedule message" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: /Tomorrow at 9/ }),
+      );
+      expect(onSchedule).toHaveBeenCalledWith("Leaving at 6", expect.any(Date));
+      expect(box).toHaveValue("");
+      expect(thread.send).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith({
+        title: expect.stringMatching(/^Scheduled for /),
+      });
+    });
+
+    it("puts the reply back when it can't be scheduled", async () => {
+      const onSchedule = vi.fn(async () => {
+        throw new Error("Too many scheduled");
+      });
+      renderPanel({ onSchedule });
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      await user.type(box, "Leaving at 6");
+      await user.click(
+        screen.getByRole("button", { name: "Schedule message" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: /Tomorrow at 9/ }),
+      );
+      expect(box).toHaveValue("Leaving at 6");
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't schedule it",
+          variant: "destructive",
+        }),
+      );
+    });
+
+    it("won't schedule a question for Frapp", async () => {
+      const onSchedule = vi.fn(async () => undefined);
+      renderPanel({ onSchedule, askRefusal: () => "Ask in the channel." });
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      await user.type(box, "@Frapp when?");
+      await user.click(
+        screen.getByRole("button", { name: "Schedule message" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: /Tomorrow at 9/ }),
+      );
+      expect(onSchedule).not.toHaveBeenCalled();
+      expect(box).toHaveValue("@Frapp when?");
+      expect(toastSpy).toHaveBeenCalledWith({
+        title: "Questions for Frapp can't be scheduled. Send them now.",
+      });
+    });
+
+    it("refuses a second schedule while the first is still out, keeping the text", async () => {
+      let finish!: () => void;
+      const onSchedule = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      renderPanel({ onSchedule });
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      const pick = async () => {
+        await user.click(
+          screen.getByRole("button", { name: "Schedule message" }),
+        );
+        await user.click(
+          await screen.findByRole("menuitem", { name: /Tomorrow at 9/ }),
+        );
+      };
+      await user.type(box, "First");
+      await pick();
+      await user.type(box, "Second");
+      await pick();
+      expect(onSchedule).toHaveBeenCalledTimes(1);
+      expect(box).toHaveValue("Second");
+      expect(toastSpy).toHaveBeenCalledWith({
+        title: "Wait for the last message to finish scheduling.",
+      });
+      finish();
+    });
+
+    it("offers no chevron without a way to schedule", () => {
+      renderPanel();
+      expect(
+        screen.queryByRole("button", { name: "Schedule message" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("lists this thread's scheduled replies above the reply box", () => {
+      scheduled.rows = [{ id: "s1", status: "pending" }];
+      renderPanel({ onSchedule: vi.fn(async () => undefined) });
+      expect(scheduled.listFor).toHaveBeenLastCalledWith("c1", "root");
+      expect(
+        screen.getByRole("button", { name: /1 scheduled message/ }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe("GIFs (#4657)", () => {
+    afterEach(() => {
+      gifs = { available: false, provider: "" };
+      offline = false;
+    });
+
+    it("offers the GIF button and sends a GIF as its own reply, keeping the draft", async () => {
+      gifs = { available: true, provider: "KLIPY" };
+      thread.sendGif.mockClear();
+      renderPanel();
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      await user.type(box, "half typed");
+      await user.click(screen.getByRole("button", { name: "Send a GIF" }));
+      expect(thread.sendGif).toHaveBeenCalledWith({
+        provider: "klipy",
+        id: "g1",
+        title: "wave",
+        url: PICKED_GIF.full.url,
+        width: 200,
+        height: 150,
+        token: "signed",
+      });
+      expect(box).toHaveValue("half typed");
+    });
+
+    it("says why a GIF reply didn't send", async () => {
+      gifs = { available: true, provider: "KLIPY" };
+      toastSpy.mockClear();
+      thread.sendGif.mockResolvedValueOnce({ error: "No posting here" });
+      renderPanel();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Send a GIF" }));
+      await waitFor(() =>
+        expect(toastSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ description: "No posting here" }),
+        ),
+      );
+    });
+
+    it("hides it where GIFs aren't set up, and offline", () => {
+      renderPanel();
+      expect(screen.queryByRole("button", { name: "Send a GIF" })).toBeNull();
+      cleanup();
+      gifs = { available: true, provider: "KLIPY" };
+      offline = true;
+      renderPanel();
+      expect(screen.queryByRole("button", { name: "Send a GIF" })).toBeNull();
+    });
+  });
+
+  it("refuses a reply that is a question for Frapp, and keeps its words (#4713)", async () => {
+    toastSpy.mockClear();
+    renderPanel({
+      askRefusal: (text) =>
+        text.includes("@Frapp")
+          ? "Ask Frapp from the channel, not from a reply."
+          : null,
+    });
+    const user = userEvent.setup();
+    const box = screen.getByRole("textbox", { name: "Reply in thread" });
+    await user.type(box, "@Frapp who is driving{Enter}");
+    // Nothing is posted to the thread, where everyone would read it.
+    expect(thread.send).not.toHaveBeenCalled();
+    expect(toastSpy).toHaveBeenCalledWith({
+      title: "Ask Frapp from the channel, not from a reply.",
+    });
+    expect(box).toHaveValue("@Frapp who is driving");
+    // A reply that is not a question is sent as ever.
+    await user.clear(box);
+    await user.type(box, "see you there{Enter}");
+    expect(thread.send).toHaveBeenCalledWith("see you there");
+  });
+
+  it("keeps an unsent reply when the panel remounts, and clears it once sent (#4297)", async () => {
+    renderPanel();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "Reply in thread" }),
+      "on my way",
+    );
+    // Moving between beside the chat and over it remounts the panel.
+    cleanup();
+    renderPanel({ beside: true });
+    const box = screen.getByRole("textbox", { name: "Reply in thread" });
+    expect(box).toHaveValue("on my way");
+    await user.type(box, "{Enter}");
+    expect(thread.send).toHaveBeenCalledWith("on my way");
+    cleanup();
+    renderPanel();
+    expect(
+      screen.getByRole("textbox", { name: "Reply in thread" }),
+    ).toHaveValue("");
+  });
+
+  it("refuses a file dropped on it beside the chat, so the browser can't open it (#4297)", () => {
+    renderPanel({ beside: true });
+    const panel = screen.getByRole("region", { name: "Thread" });
+    const files = { types: ["Files"], dropEffect: "copy" };
+    const over = createEvent.dragOver(panel, { dataTransfer: files });
+    fireEvent(panel, over);
+    expect(over.defaultPrevented).toBe(true);
+    expect(files.dropEffect).toBe("none");
+    // Text dragged into the reply box is the browser's to handle.
+    const text = createEvent.dragOver(panel, {
+      dataTransfer: { types: ["text/plain"], dropEffect: "copy" },
+    });
+    fireEvent(panel, text);
+    expect(text.defaultPrevented).toBe(false);
   });
 
   it("follows and unfollows", async () => {
@@ -242,6 +547,34 @@ describe("ThreadPanel (#3785)", () => {
     expect(screen.getByText("Paul and Shawn are typing…")).toBeInTheDocument();
   });
 
+  it("asks the roster after its own typists and authors, since replies aren't in the channel's cache (#4493)", () => {
+    thread.typingUsers = ["new-joiner"];
+    renderPanel();
+    const [typists, rows] = rosterCatchUp.mock.lastCall ?? [];
+    expect(typists).toEqual(["new-joiner"]);
+    expect(rows).toEqual(expect.arrayContaining(thread.messages));
+  });
+
+  it("keeps the typing line's place when nobody types, so the reply box never moves", () => {
+    thread.typingUsers = [];
+    renderPanel();
+    const line = screen.getByTestId("typing-line");
+    expect(line).toBeEmptyDOMElement();
+    expect(line.className).toContain("h-5");
+    expect(line).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("announces typing only while the reply box holds text", async () => {
+    const user = userEvent.setup();
+    thread.emitTyping.mockClear();
+    renderPanel();
+    const box = screen.getByRole("textbox", { name: "Reply in thread" });
+    await user.type(box, "  ");
+    expect(thread.emitTyping).not.toHaveBeenCalled();
+    await user.type(box, "hi");
+    expect(thread.emitTyping).toHaveBeenCalled();
+  });
+
   it("disables the composer offline and says why", () => {
     offline = true;
     renderPanel();
@@ -268,6 +601,17 @@ describe("ThreadPanel (#3785)", () => {
     await userEvent.setup().click(close);
     expect(onClosePanel).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("closes with an X, and has no Back, beside the chat (#4297)", async () => {
+    const { onClose } = renderPanel({ beside: true });
+    expect(
+      screen.queryByRole("button", { name: "Back to channel" }),
+    ).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Close thread" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("draws no Close chat X with chat alone", () => {

@@ -96,10 +96,63 @@ export async function fetchAllPages<T>(
   page: (from: number, to: number) => PromiseLike<PagedQueryResult<T>>,
   { pageSize, limit }: { pageSize: number; limit?: number },
 ): Promise<T[]> {
-  const ceiling = limit ?? Number.POSITIVE_INFINITY;
-  const rows: T[] = [];
+  const { rows } = await fetchCountedPages((from, to) => page(from, to), {
+    pageSize,
+    limit,
+    count: false,
+  });
+  return rows;
+}
 
-  for (let from = 0; from < ceiling;) {
+/**
+ * The one paging loop: {@link fetchAllPages}, and with `count` a read that
+ * also learns its total (#5746). Both rules of `fetchAllPages` hold: it
+ * advances by what arrived, and without a count only an empty page (or
+ * `limit`) ends the read.
+ *
+ * With `count`, the first page asks PostgREST for the exact count of the
+ * matching rows (`withCount`), so the loop stops once it holds them all, or
+ * `limit` of them, however short the server's cap makes each page, with no
+ * empty page after. A page that comes back empty still ends the read. When
+ * to count:
+ *
+ * - **The caller wants the total**, which then costs no request of its own.
+ * - **An uncapped read**, to save its terminating empty page.
+ * - **Not** a capped read whose total is thrown away: it already stops once
+ *   `limit` rows arrived, and the count is a second pass over every matching
+ *   row on the database.
+ *
+ * The trade-off: the read stops at a count taken with the first page, so on a
+ * read of several pages, a row inserted before the window between two pages
+ * shifts it and the last row is dropped, where `fetchAllPages` would read
+ * one row twice. Count only a read that tolerates that, as a list a member
+ * reloads does.
+ *
+ * `total` is how many rows matched when the first page was read, before
+ * `limit`; null when the read was not counted (or the backend sent no count,
+ * which none here does).
+ */
+export async function fetchCountedPages<T>(
+  page: (
+    from: number,
+    to: number,
+    withCount: boolean,
+  ) => PromiseLike<PagedQueryResult<T> & { count?: number | null }>,
+  {
+    pageSize,
+    limit,
+    count = true,
+  }: { pageSize: number; limit?: number; count?: boolean },
+): Promise<{ rows: T[]; total: number | null }> {
+  const rows: T[] = [];
+  let total: number | null = null;
+  const ceiling = () =>
+    Math.min(
+      limit ?? Number.POSITIVE_INFINITY,
+      total ?? Number.POSITIVE_INFINITY,
+    );
+
+  for (let from = 0; from < ceiling();) {
     // Terminating only on an empty page means a backend that ignored the
     // window would hand back a full page forever, so the loop is bounded too —
     // the same guard, for the same reason, as `listEntries` in
@@ -111,18 +164,55 @@ export async function fetchAllPages<T>(
         `Paged read exceeded ${MAX_PAGED_ROWS} rows; refusing to page further`,
       );
     }
-    const to = Math.min(from + pageSize, ceiling) - 1;
-    const { data, error } = await page(from, to);
+    const withCount = count && from === 0;
+    const to = Math.min(from + pageSize, limit ?? Number.POSITIVE_INFINITY) - 1;
+    const result = await page(from, to, withCount);
     // Wrapped like every other query failure (#1264). The wrapper keeps `code`
     // and `hint`, which is what a caller branching on the failure reads, and
     // drops `details`, the row values.
-    if (error) throw new SupabaseQueryError(error);
+    if (result.error) throw new SupabaseQueryError(result.error);
+    if (withCount && typeof result.count === 'number') total = result.count;
 
-    const batch = data ?? [];
+    const batch = result.data ?? [];
     rows.push(...batch);
     if (batch.length === 0) break;
     from += batch.length;
   }
 
-  return rows;
+  return { rows, total };
+}
+
+/**
+ * Read a query's full result set by its `id`, one page at a time: each page is
+ * the rows after the last id read (`id > last`, ordered by id, see `page`'s
+ * `after`), until a page comes back empty. Prefer it to `fetchAllPages` for a
+ * table that can change while it is read: an offset shifts when a row is added
+ * or deleted before it, so the next page repeats a row or skips one, where a
+ * row after the last id is read once or not at all. A row added during the
+ * read may or may not be in the result; no row that was there throughout is
+ * missed or read twice. The caller sorts the result if it wants another order.
+ *
+ * `page` must filter `id > after` when `after` is set, order by `id`
+ * ascending, and limit the page. The same two rules as `fetchAllPages` hold:
+ * only an empty page ends the read, since a server cap below the asked-for
+ * size makes every page short.
+ */
+export async function fetchAllById<T extends { id: string }>(
+  page: (after: string | null) => PromiseLike<PagedQueryResult<T>>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  let after: string | null = null;
+  for (;;) {
+    if (rows.length > MAX_PAGED_ROWS) {
+      throw new Error(
+        `Paged read exceeded ${MAX_PAGED_ROWS} rows; refusing to page further`,
+      );
+    }
+    const { data, error } = await page(after);
+    if (error) throw new SupabaseQueryError(error);
+    const batch = data ?? [];
+    if (batch.length === 0) return rows;
+    rows.push(...batch);
+    after = batch[batch.length - 1].id;
+  }
 }

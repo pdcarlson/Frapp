@@ -189,8 +189,8 @@ describe("the redirect chain survives the rebuild", () => {
   });
 
   it("kicks off Apple OAuth toward the callback with redirectTo intact, tagged as a sign-in", async () => {
-    // The tag is how `/auth/callback` tells a sign-in that created a new
-    // account from a deliberate sign-up (#3786).
+    // The tag marks a provider return, so a failed code isn't read as an
+    // email confirmation.
     const user = userEvent.setup();
     signInWithOAuth.mockClear();
     searchParams.value = new URLSearchParams("redirectTo=%2Fjoin%3Ftoken%3Dinv-1");

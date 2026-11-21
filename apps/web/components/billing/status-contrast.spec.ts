@@ -9,7 +9,6 @@ import {
   SURFACE,
   statusTint,
   tint,
-  INDISTINGUISHABLE,
 } from "@/tests/signet-contrast";
 
 /**
@@ -69,11 +68,11 @@ describe("the Semantic badge kinds", () => {
     }
   });
 
-  it("records that --info would need a lift before it gets a first call site", () => {
-    // There is no `info` badge kind, because there is no `info` call site — and
-    // a variant with no call sites is what slice 2 deleted seven of. This is
-    // here so whoever adds the first one inherits the number instead of the
-    // defect: `--info` behaves exactly as `--destructive` did.
+  it("records why the info badge's text is the lifted --info-text", () => {
+    // Solid `--info` misses the gate on its own tint, exactly as
+    // `--destructive` did, so the `info` badge kind (first call site: a task
+    // In progress on the chat card, #4133) draws `--info-text` on
+    // `--info-tint`, measured in `shared/status-tint-contrast.spec.ts`.
     expect(
       ratio(SEMANTIC.info, tint(SEMANTIC.info, SURFACE.popover)),
       "--info on its own tint over --popover",
@@ -91,10 +90,13 @@ describe("status colour is never decorative", () => {
     const successTint = statusTint("success", SURFACE.card);
     const dangerTint = statusTint("destructive", SURFACE.card);
 
+    // Same bound as the red seeds below: both badges are the same hue, so a
+    // luminance step this small (1.16:1 since engine v3 took the tint from
+    // step 5, #3826) does not tell them apart the way two neutrals would.
     expect(
       ratio(accentSubtleFor("#006400"), successTint),
       "a green chapter's accent badge vs the success badge",
-    ).toBeLessThan(INDISTINGUISHABLE);
+    ).toBeLessThan(1.2);
 
     for (const seed of ["#8B0000", "#BF0A30", "#CC0000"] as const) {
       expect(

@@ -91,7 +91,7 @@ describe("ChapterShowcase", () => {
         "In progress",
         "Waiting on an officer",
         "Confirmed",
-        "Someone is typing…",
+        "Sam Okafor is typing…",
       ]) {
         if (container.textContent?.includes(label)) seen.add(label);
       }
@@ -101,7 +101,7 @@ describe("ChapterShowcase", () => {
         "Waiting on an officer",
         "Confirmed",
         "In progress",
-        "Someone is typing…",
+        "Sam Okafor is typing…",
         "To do",
       ].sort(),
     );

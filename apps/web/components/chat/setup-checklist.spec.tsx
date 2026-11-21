@@ -56,7 +56,7 @@ describe("SetupChecklistSection", () => {
     expect(links.map((a) => a.getAttribute("href"))).toEqual([
       "/members",
       "/events",
-      "/geofences",
+      "/settings?tab=geofences",
       "/documents",
       "/settings?tab=billing",
     ]);

@@ -2,6 +2,7 @@
 
 import { formatDay } from "@repo/formatting";
 import type { MarkedItem as LibraryMarkedItem } from "@repo/hooks/document-library";
+import { folderCardText } from "@repo/hooks/document-folder-tree";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
 import { SectionLabel } from "@/components/shared/section-label";
@@ -17,6 +18,7 @@ import type {
   FolderRow,
 } from "@/components/documents/document-types";
 import type { DocumentMarks } from "@/components/documents/use-document-marks";
+import { LimitedMark } from "@/components/documents/document-access";
 import { cn } from "@/lib/utils";
 
 /** A pinned or starred thing: a folder or a single file. */
@@ -43,6 +45,8 @@ export function MarkedStrip({
   gate,
   onOpenFolder,
   onOpenDocument,
+  isLimited,
+  folderNames,
 }: {
   pinned: readonly MarkedItem[];
   starred: readonly MarkedItem[];
@@ -50,6 +54,10 @@ export function MarkedStrip({
   gate: SubscriptionGate;
   onOpenFolder: (name: string) => void;
   onOpenDocument: (doc: ChapterDocument) => void;
+  /** Whether not everyone can see this card's folder or file: a lock. */
+  isLimited: (item: MarkedItem) => boolean;
+  /** Every folder the member has, so a deep folder's card reads its own name (#5337). */
+  folderNames: ReadonlySet<string>;
 }) {
   if (pinned.length === 0 && starred.length === 0) return null;
   return (
@@ -72,6 +80,8 @@ export function MarkedStrip({
                   gate={gate}
                   onOpenFolder={onOpenFolder}
                   onOpenDocument={onOpenDocument}
+                  limited={isLimited(item)}
+                  folderNames={folderNames}
                 />
               ))}
             </ul>
@@ -88,8 +98,12 @@ function MarkedCard({
   gate,
   onOpenFolder,
   onOpenDocument,
+  limited,
+  folderNames,
 }: {
   item: MarkedItem;
+  limited: boolean;
+  folderNames: ReadonlySet<string>;
   pinnedGroup: boolean;
   marks: DocumentMarks;
   gate: SubscriptionGate;
@@ -101,10 +115,19 @@ function MarkedCard({
       ? ({ kind: "folder", id: item.folder.id } as const)
       : ({ kind: "document", id: item.doc.id } as const);
   const name = item.kind === "folder" ? item.folder.name : item.doc.title;
+  /*
+    A folder card reads the folder's own name and says where it sits, as the
+    rail's Pinned and Starred rows do (#5337): a synced folder's whole path
+    ("Town in Fiji / Rush / 2024") would truncate before its own name.
+  */
+  const card =
+    item.kind === "folder"
+      ? folderCardText(item.folder.name, item.count, folderNames)
+      : null;
   const starred = marks.isStarred(target);
   const meta =
     item.kind === "folder"
-      ? `Folder · ${item.count} ${item.count === 1 ? "file" : "files"}`
+      ? (card?.meta ?? "")
       : [
           item.doc.document_type,
           `Uploaded ${formatDay(item.doc.created_at)}`,
@@ -156,7 +179,10 @@ function MarkedCard({
           />
         )}
         <span className="block min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">{name}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+            <span className="truncate">{card ? card.title : name}</span>
+            {limited ? <LimitedMark className="text-muted" /> : null}
+          </span>
           <span className="block truncate text-caption text-muted">{meta}</span>
         </span>
       </button>

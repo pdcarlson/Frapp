@@ -1,14 +1,17 @@
+import { folderCardText } from "@repo/hooks/document-folder-tree";
 import { StyleSheet, Text, View } from "react-native";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { formatDay } from "@repo/formatting";
 import type { MarkedItem } from "@repo/hooks/document-library";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { NavGlyph } from "@/components/nav-glyph";
 import { PressableRow, SectionHeader } from "@/components/list-section";
 import type { DocumentFolder, MobileDocument } from "@/lib/more/documents";
 import { StarGlyph } from "./document-glyphs";
+import { LIMITED_LABEL, LimitedMark } from "./limited-mark";
 
 /** A pinned or starred thing on s12: a folder, or a single file (#3934). */
 export type MarkedCardItem = MarkedItem<DocumentFolder, MobileDocument>;
@@ -27,16 +30,20 @@ export function MarkedCards({
   pinned,
   starred,
   isStarred,
+  isLimited,
   openingId,
   deletingIds,
   actionsLabel,
   onOpenFolder,
   onOpenDocument,
   onActions,
+  folderNames,
 }: {
   pinned: readonly MarkedCardItem[];
   starred: readonly MarkedCardItem[];
   isStarred: (item: MarkedCardItem) => boolean;
+  /** Whether not everyone can see the card's folder or file: a lock (#5216). */
+  isLimited: (item: MarkedCardItem) => boolean;
   /** The file whose link is being fetched, which shows its spinner. */
   openingId: string | null;
   /** Files being deleted: their cards take no press, as their rows don't. */
@@ -46,6 +53,8 @@ export function MarkedCards({
   onOpenFolder: (name: string) => void;
   onOpenDocument: (id: string) => void;
   onActions: (item: MarkedCardItem) => void;
+  /** Every folder the member has, so a deep folder's card reads its own name (#5337). */
+  folderNames: ReadonlySet<string>;
 }) {
   if (pinned.length === 0 && starred.length === 0) return null;
   return (
@@ -57,12 +66,14 @@ export function MarkedCards({
             items={pinned}
             accented
             isStarred={isStarred}
+            isLimited={isLimited}
             openingId={openingId}
             deletingIds={deletingIds}
             actionsLabel={actionsLabel}
             onOpenFolder={onOpenFolder}
             onOpenDocument={onOpenDocument}
             onActions={onActions}
+            folderNames={folderNames}
           />
         </>
       ) : null}
@@ -73,12 +84,14 @@ export function MarkedCards({
             items={starred}
             accented={false}
             isStarred={isStarred}
+            isLimited={isLimited}
             openingId={openingId}
             deletingIds={deletingIds}
             actionsLabel={actionsLabel}
             onOpenFolder={onOpenFolder}
             onOpenDocument={onOpenDocument}
             onActions={onActions}
+            folderNames={folderNames}
           />
         </>
       ) : null}
@@ -90,22 +103,26 @@ function CardList({
   items,
   accented,
   isStarred,
+  isLimited,
   openingId,
   deletingIds,
   actionsLabel,
   onOpenFolder,
   onOpenDocument,
   onActions,
+  folderNames,
 }: {
   items: readonly MarkedCardItem[];
   accented: boolean;
   isStarred: (item: MarkedCardItem) => boolean;
+  isLimited: (item: MarkedCardItem) => boolean;
   openingId: string | null;
   deletingIds: ReadonlySet<string>;
   actionsLabel: string;
   onOpenFolder: (name: string) => void;
   onOpenDocument: (id: string) => void;
   onActions: (item: MarkedCardItem) => void;
+  folderNames: ReadonlySet<string>;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -116,11 +133,23 @@ function CardList({
       {items.map((item) => {
         const key =
           item.kind === "folder" ? `f:${item.folder.id}` : `d:${item.doc.id}`;
-        const title =
-          item.kind === "folder" ? item.folder.name : item.doc.title;
+        /*
+          A folder card reads the folder's own name and says where it sits,
+          as web's cards and the folder chips do (#5337): a synced folder's
+          whole path would truncate before its own name.
+        */
+        const card =
+          item.kind === "folder"
+            ? folderCardText(item.folder.name, item.count, folderNames)
+            : null;
+        const title = card
+          ? card.title
+          : item.kind === "document"
+            ? item.doc.title
+            : "";
         const meta =
           item.kind === "folder"
-            ? `Folder · ${item.count} ${item.count === 1 ? "file" : "files"}`
+            ? (card?.meta ?? "")
             : [
                 item.doc.document_type,
                 formatDay(item.doc.created_at || null)
@@ -131,6 +160,7 @@ function CardList({
                 .filter(Boolean)
                 .join(" · ");
         const starred = isStarred(item);
+        const limited = isLimited(item);
         // A file on its way out takes no second press or long press, as its
         // row doesn't (`ListRow` while busy): a second Delete would fail.
         const deleting =
@@ -142,15 +172,20 @@ function CardList({
             key={key}
             onCard
             accessibilityRole="button"
-            accessibilityLabel={title}
+            accessibilityLabel={
+              card?.where ? `${title}, in ${card.where}` : title
+            }
+            accessibilityValue={limited ? { text: LIMITED_LABEL } : undefined}
             accessibilityHint={
               item.kind === "folder"
                 ? "Shows this folder's files."
-                : "Opens in your browser."
+                : "Opens the share sheet to save it or open it in another app."
             }
             accessibilityState={busy ? { busy: true } : undefined}
             accessibilityActions={
-              deleting ? undefined : [{ name: "longpress", label: actionsLabel }]
+              deleting
+                ? undefined
+                : [{ name: "longpress", label: actionsLabel }]
             }
             onAccessibilityAction={(event) => {
               if (!deleting && event.nativeEvent.actionName === "longpress") {
@@ -186,6 +221,12 @@ function CardList({
                 </Text>
               ) : null}
             </View>
+            {limited ? (
+              <LimitedMark
+                color={tokens.color.text.mutedForeground}
+                size={16}
+              />
+            ) : null}
             {starred ? <StarGlyph color={accent} on size={16} /> : null}
           </PressableRow>
         );
@@ -195,12 +236,14 @@ function CardList({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     list: {
       gap: tokens.spacing.sm,
     },
-    // The board's card: `card` fill at radius 14 with a hairline, as
-    // `ListSection` draws its grouped list, one card per item.
+    // The board's card: a screen's card fill (`lib/surfaces.ts`) at radius 14
+    // with a hairline, as `ListSection` draws its grouped list, one card per
+    // item.
     card: {
       flexDirection: "row",
       alignItems: "center",
@@ -211,7 +254,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     text: {
       flex: 1,

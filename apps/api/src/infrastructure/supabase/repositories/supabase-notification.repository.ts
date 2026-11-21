@@ -9,7 +9,7 @@ import type { INotificationRepository } from '#domain/repositories/notification.
 import type { Notification } from '#domain/entities/notification.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { escapeFilterValue } from '../supabase.utils';
-import { IN_FILTER_CHAR_BUDGET } from '#domain/utils/chunk-ids';
+import { IN_FILTER_CHAR_BUDGET, chunkIds } from '#domain/utils/chunk-ids';
 
 function toNotificationInsert(
   data: TablesInsert<'notifications'>,
@@ -20,6 +20,7 @@ function toNotificationInsert(
     title: data.title,
     body: data.body,
     data: data.data ?? {},
+    ...(data.chat_message_id ? { chat_message_id: data.chat_message_id } : {}),
   };
 }
 
@@ -30,12 +31,16 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async create(data: TablesInsert<'notifications'>): Promise<Notification> {
+  async create(
+    data: TablesInsert<'notifications'>,
+  ): Promise<Notification | null> {
+    // `maybeSingle`: a chat row about a message deleted meanwhile is dropped
+    // by a trigger, and the insert then returns no row rather than failing.
     const { data: created, error } = await this.supabase
       .from('notifications')
       .insert(toNotificationInsert(data))
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw new SupabaseQueryError(error);
     return created;
@@ -158,6 +163,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     chapterId: string,
     readThrough: string,
     screens?: readonly string[],
+    ids?: readonly string[],
   ): Promise<number> {
     const patch: TablesUpdate<'notifications'> = { read_at: readThrough };
     // `read_at is null` and the `created_at` bound, as in `markChatChannelRead`:
@@ -175,10 +181,107 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       // quoting inside the `in (...)` list.
       query = query.in('data->target->>screen', [...screens]);
     }
+    if (ids && ids.length > 0) {
+      // One inbox entry's rows (#3948); the DTO admits only UUIDs.
+      query = query.in('id', [...ids]);
+    }
     const { data, error } = await query.select('id');
 
     if (error) throw new SupabaseQueryError(error);
     return data?.length ?? 0;
+  }
+
+  async deleteMany(
+    userId: string,
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<number> {
+    // Scoped to the caller and the chapter as well as the ids: the table is
+    // RLS-on with no policy, so this filter is the whole of the check. The
+    // statement-level delete trigger pings `notif:<user>`, so the member's
+    // other devices refetch.
+    const { data, error } = await this.supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .in('id', [...ids])
+      .select('id');
+
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
+  }
+
+  async deleteTaskCompletionRows(
+    chapterId: string,
+    taskId: string,
+  ): Promise<number> {
+    // Every member's completion rows for this task: the creator's and a
+    // follower's alike, any round's. No time bound: the task is open now,
+    // so none of them is true, and the database's clock never meets the
+    // API's. `notifications_chapter_task_idx` serves the lookup. The
+    // statement-level delete trigger pings each member's `notif:<user>`, so
+    // their lists refetch.
+    const { data, error } = await this.supabase
+      .from('notifications')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('data->target->>taskId', taskId)
+      .or('data->target->>view.eq.review,data->>about.eq.task-completed')
+      .select('id');
+
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
+  }
+
+  async deleteConversation(
+    userId: string,
+    chapterId: string,
+    conversation: { channelId: string; threadRootId?: string },
+    through: string,
+  ): Promise<number> {
+    // The same conversation `notificationSourceKey` groups in the inbox: one
+    // channel's own rows, or one thread's (as `markChatChannelRead` splits
+    // them), never a row that mentions the member, which is its own entry.
+    // `data->>mentioned` is absent on most rows, hence the `is.null` arm.
+    const query = this.supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .eq('data->target->>screen', 'chat')
+      .eq('data->target->>channelId', conversation.channelId)
+      .lte('created_at', through)
+      .or('data->>mentioned.is.null,data->>mentioned.neq.true');
+    const scoped = conversation.threadRootId
+      ? query.eq('data->target->>threadRootId', conversation.threadRootId)
+      : query.is('data->target->>threadRootId', null);
+    const { data, error } = await scoped.select('id');
+
+    if (error) throw new SupabaseQueryError(error);
+    return data?.length ?? 0;
+  }
+
+  async rewriteChatMessageBody(
+    chapterId: string,
+    messageId: string,
+    body: string,
+    userIds: readonly string[],
+  ): Promise<void> {
+    const patch: TablesUpdate<'notifications'> = { body };
+    // A channel's readers can be a whole chapter, so the list is chunked to
+    // keep each request's URL inside the `in (...)` budget.
+    for (const chunk of chunkIds([...userIds])) {
+      const { error } = await this.supabase
+        .from('notifications')
+        .update(patch)
+        .eq('chapter_id', chapterId)
+        .eq('chat_message_id', messageId)
+        .in('user_id', chunk)
+        .neq('body', body);
+
+      if (error) throw new SupabaseQueryError(error);
+    }
   }
 }
 

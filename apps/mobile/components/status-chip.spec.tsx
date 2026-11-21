@@ -9,7 +9,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { getSignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, fontFamilyFor } from "@/lib/theme";
-import { AccentChip, StatusChip } from "./status-chip";
+import { AccentChip, HairlineChip, StatusChip } from "./status-chip";
 
 // A purple stand-in, so a chip painted house gold or a hairline grey fails.
 vi.mock("@/lib/chapter-branding", () => ({
@@ -91,7 +91,15 @@ describe("StatusChip text tone (components.md §5)", () => {
       ),
     );
     expect(label.color).toBe(tokens.color.semantic.destructiveText);
-    expect(chip.backgroundColor).toBe("rgba(248,81,73,0.13)");
+    expect(chip.backgroundColor).toBe("rgba(255,102,92,0.13)");
+  });
+
+  it("lifts info text too, which an in-progress task's chip draws on a card (#3826)", () => {
+    const { chip, label } = parts(
+      render(<StatusChip label="In progress" hue={tokens.color.semantic.info} />),
+    );
+    expect(label.color).toBe(tokens.color.semantic.infoText);
+    expect(chip.backgroundColor).toBe("rgba(47,129,247,0.13)");
   });
 
   it("draws success and warning in the hue itself", () => {
@@ -102,5 +110,16 @@ describe("StatusChip text tone (components.md §5)", () => {
       const { label } = parts(render(<StatusChip label="Paid" hue={hue} />));
       expect(label.color).toBe(hue);
     }
+  });
+});
+
+describe("HairlineChip (components.md §5 Hairline, #4132)", () => {
+  it("draws no fill, a 1px hairline border and muted text, at the chip step", () => {
+    const { chip, label } = parts(render(<HairlineChip label="Mandatory" />));
+    expect(chip.backgroundColor).toBeUndefined();
+    expect(chip.borderWidth).toBe(1);
+    expect(chip.borderColor).toBe(tokens.color.border.hairline);
+    expect(chip.height).toBe(24);
+    expect(label.color).toBe(tokens.color.text.mutedForeground);
   });
 });

@@ -11,10 +11,13 @@ import {
   Text,
   View,
   type ViewStyle,
+  type GestureResponderEvent,
 } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { SkeletonText } from "@/components/state-block";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { useRaisedSurfaces } from "@/lib/surfaces";
+import { ForwardGlyph } from "@/components/control-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 
 /**
@@ -45,16 +48,17 @@ export function SectionHeader({
   /**
    * How many rows the section holds, drawn after the caption as a separate
    * muted count, as web's `SectionLabel` draws it, rather than inside the
-   * caption's own text. Omit it (or pass `null`) for nothing to count.
+   * caption's own text: a number, or a counted phrase ("3 events") where web
+   * names the noun. Omit it (or pass `null`) for nothing to count.
    */
-  count?: number | null;
+  count?: number | string | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   if (count == null)
     return <Text style={styles.sectionHeader}>{children}</Text>;
   return (
-    // One element to a screen reader, "Needs you, 8", as the caption and its
+    // One element to a screen reader, "To do, 8", as the caption and its
     // count were when the count was part of the caption's text.
     <View
       accessible
@@ -68,12 +72,30 @@ export function SectionHeader({
 }
 
 /**
+ * A day's heading over a list of what happens on it ("Today", "Tomorrow",
+ * "Sunday", `formatDayHeading`): sentence case in the caption role at 600, in
+ * the foreground tone, as web's Events list draws its day headings and as
+ * iOS Calendar's and Google Calendar's lists set their days. A day is the
+ * content's own label, not a category, so it doesn't take the uppercase
+ * section eyebrow ({@link SectionHeader}; #4138).
+ */
+export function DayHeading({ children }: { children: string }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <Text accessibilityRole="header" style={styles.dayHeading}>
+      {children}
+    </Text>
+  );
+}
+
+/**
  * A section's count, drawn beside its heading as a separate muted number, the
  * way web's `SectionLabel` draws it. {@link SectionHeader}'s `count` draws
  * one; a smaller heading inside a section (Activity's "Now" and "Later")
  * draws its own with this, so the count's tone and size live in one place.
  */
-export function SectionCount({ count }: { count: number }) {
+export function SectionCount({ count }: { count: number | string }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return <Text style={styles.sectionHeaderCount}>{String(count)}</Text>;
@@ -150,12 +172,13 @@ export function ListRowSkeleton({
 /** A rounded container whose children are separated by inset hairlines. */
 export function ListSection({ children }: { children: ReactNode }) {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   const styles = createStyles(tokens);
   const items = Array.isArray(children) ? children.flat() : [children];
   const visible = items.filter(Boolean);
 
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, { backgroundColor: surfaces.card }]}>
       {/* Keyed by position: these rows are a fixed, ordered list declared per
           screen, never reordered at runtime, and carry no id of their own. */}
       {visible.map((child, index) => (
@@ -164,6 +187,25 @@ export function ListSection({ children }: { children: ReactNode }) {
           {child}
         </View>
       ))}
+    </View>
+  );
+}
+
+/**
+ * A record's section body on the same raised surface as {@link ListSection},
+ * for content that isn't a list of rows: an event's details, agenda,
+ * attachments and notes (Paul 2026-11-20: "use a raised surface for content",
+ * not content sitting on the black page). The eyebrow stays above it, outside.
+ */
+export function ListPanel({ children }: { children: ReactNode }) {
+  const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
+  const styles = createStyles(tokens);
+  return (
+    <View
+      style={[styles.section, styles.panel, { backgroundColor: surfaces.card }]}
+    >
+      {children}
     </View>
   );
 }
@@ -210,11 +252,15 @@ export function listRowHint(
  * which adds that parent; `ListRow` gets it from `ListSection`. A square row
  * can take the hook directly.
  *
- * The default lift is `surface.card`: a row on the screen background rises to
- * it. A row that sits on a `surface.card` fill (a `ListRow` in its
- * `ListSection`, the More profile card, or an event card) passes `onCard` and
- * lifts to `surface.popover` instead: a card lifted to its
- * own colour shows nothing.
+ * The lift is one step above what the row sits on (`lib/surfaces.ts`). A row
+ * on the screen background rises to the card step. A row that sits on a card
+ * (a `ListRow` in its `ListSection`, the You profile card, or an event card)
+ * passes `onCard` and lifts to the step above the card instead: a card lifted
+ * to its own colour shows nothing. A control that is filled with the input
+ * step wherever it is drawn (a filter chip) passes `onControl` and lifts to
+ * `surface.card`, the step above that fill, for the same reason. A chip drawn
+ * on a card passes both: its fill is the step above the card, so it lifts to
+ * `surface.popover`, the one above that.
  */
 export type PressFeedback = {
   ripple: PressableAndroidRippleConfig;
@@ -223,22 +269,28 @@ export type PressFeedback = {
 
 export function usePressFeedback({
   onCard = false,
-}: { onCard?: boolean } = {}): PressFeedback {
+  onControl = false,
+}: { onCard?: boolean; onControl?: boolean } = {}): PressFeedback {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   return useMemo(() => {
     const lifted: ViewStyle | null =
       Platform.OS === "android"
         ? null
         : {
-            backgroundColor: onCard
-              ? tokens.color.surface.popover
-              : tokens.color.surface.card,
+            backgroundColor: onControl
+              ? onCard
+                ? tokens.color.surface.popover
+                : tokens.color.surface.card
+              : onCard
+                ? surfaces.raised
+                : surfaces.card,
           };
     return {
       ripple: { color: tint(tokens.color.text.foreground, 0.12) },
       lift: (pressed: boolean) => (pressed ? lifted : null),
     };
-  }, [tokens, onCard]);
+  }, [tokens, surfaces, onCard, onControl]);
 }
 
 /**
@@ -247,8 +299,8 @@ export function usePressFeedback({
  * stays on the gutter line while its press feedback (ripple or lift) clears
  * the content on both sides instead of stopping flush with it. One value for
  * every such row, because the alignment holds only while they all bleed the
- * same: Chat home's section header and Hidden toggle, its channel rows and UP
- * NEXT rows line their captions, sigils and glyphs up on that line, and the
+ * same: Chat home's section header and Hidden toggle and its channel rows
+ * line their captions, sigils and glyphs up on that line, and the
  * Directory's member rows keep the gutter Chat home does.
  *
  * `rounded` adds the control radius a rounded row's lift and clip take; a
@@ -272,6 +324,8 @@ export type PressableRowProps = Omit<
   style?: StyleProp<ViewStyle>;
   /** The row is itself a card: see {@link usePressFeedback}'s `onCard`. */
   onCard?: boolean;
+  /** The row is a control on the input step: see `onControl` there. */
+  onControl?: boolean;
   /**
    * `false` keeps the iOS lift off, for a control whose fill is its state (an
    * on chip): the lift would paint over it. The Android ripple still answers.
@@ -295,11 +349,12 @@ export type PressableRowProps = Omit<
 export function PressableRow({
   style,
   onCard = false,
+  onControl = false,
   lifts = true,
   children,
   ...pressable
 }: PressableRowProps) {
-  const feedback = usePressFeedback({ onCard });
+  const feedback = usePressFeedback({ onCard, onControl });
   const { clip, row } = splitRowStyle(style);
   return (
     // The clip takes the row's `hitSlop` too: Android hands a touch to a
@@ -352,7 +407,7 @@ function splitRowStyle(style: StyleProp<ViewStyle>): {
 export type ListRowProps = {
   label: string;
   /**
-   * A leading glyph, drawn before the label. The More hub's rows carry one
+   * A leading glyph, drawn before the label. The You tab's rows carry one
    * (s09); the other grouped lists draw none.
    */
   leading?: ReactNode;
@@ -368,7 +423,8 @@ export type ListRowProps = {
   descriptionTone?: "default" | "destructive";
   /** Trailing control (a switch, a swatch) instead of, or beside, `value`. */
   trailing?: ReactNode;
-  onPress?: () => void;
+  /** Gets the press, so a menu it opens can sit beside it. */
+  onPress?: (event?: GestureResponderEvent) => void;
   /**
    * A secondary action behind a long press (Documents' Delete, #3938), as
    * chat's channel rows put theirs. A screen reader reaches it as a named
@@ -377,6 +433,13 @@ export type ListRowProps = {
   onLongPress?: () => void;
   /** The spoken name of `onLongPress`'s action, e.g. "Delete document". */
   longPressLabel?: string;
+  /**
+   * Named screen-reader actions that replace the single long-press one, for a
+   * row whose long press opens a menu: each menu entry is offered by name
+   * (`itemMenuAccessibility`), as the other menu rows do.
+   */
+  accessibilityActions?: PressableProps["accessibilityActions"];
+  onAccessibilityAction?: PressableProps["onAccessibilityAction"];
   accessibilityHint?: string;
   /**
    * What a screen reader reads as the row's value when the trailing status is
@@ -414,6 +477,16 @@ export type ListRowProps = {
    * way round, because there the label names what a tap does.
    */
   variant?: "default" | "detail";
+  /**
+   * A switch that only matters under the row above it, drawn indented under
+   * it (`components.md` § Toggle, "A switch that only matters under another").
+   */
+  nested?: boolean;
+  /**
+   * The label in muted foreground: a nested row while the switch it depends
+   * on is off. Unlike `disabled`, the row's own control still works.
+   */
+  muted?: boolean;
 };
 
 export function ListRow({
@@ -426,6 +499,8 @@ export function ListRow({
   onPress,
   onLongPress,
   longPressLabel,
+  accessibilityActions,
+  onAccessibilityAction,
   accessibilityHint,
   accessibilityValue,
   destructive = false,
@@ -433,6 +508,8 @@ export function ListRow({
   disabled = false,
   busy = false,
   variant = "default",
+  nested = false,
+  muted = false,
 }: ListRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -440,7 +517,7 @@ export function ListRow({
   const detail = variant === "detail";
 
   const content = (
-    <View style={styles.row}>
+    <View style={[styles.row, nested ? styles.rowNested : null]}>
       {leading}
       <View style={[styles.rowText, detail ? styles.rowTextDetail : null]}>
         <Text
@@ -448,6 +525,7 @@ export function ListRow({
             styles.rowLabel,
             detail ? styles.rowLabelDetail : null,
             destructive ? styles.rowLabelDestructive : null,
+            muted ? styles.rowLabelMuted : null,
             disabled ? styles.rowLabelDisabled : null,
           ]}
         >
@@ -480,7 +558,7 @@ export function ListRow({
           style={styles.trailingSlot}
         />
       ) : onPress && !disabled && !action ? (
-        <Text style={styles.chevron}>›</Text>
+        <ForwardGlyph color={tokens.color.text.mutedForeground} />
       ) : null}
     </View>
   );
@@ -507,16 +585,23 @@ export function ListRow({
       // Offered only while the row takes presses: `disabled` doesn't reach a
       // custom action, so a busy row would otherwise take a second one.
       accessibilityActions={
-        onLongPress && !disabled && !busy
-          ? [{ name: "longpress", label: longPressLabel ?? "More actions" }]
-          : undefined
+        disabled || busy
+          ? undefined
+          : (accessibilityActions ??
+            (onLongPress
+              ? [{ name: "longpress", label: longPressLabel ?? "More actions" }]
+              : undefined))
       }
       onAccessibilityAction={
-        onLongPress && !disabled && !busy
-          ? (event) => {
-              if (event.nativeEvent.actionName === "longpress") onLongPress();
-            }
-          : undefined
+        disabled || busy
+          ? undefined
+          : (onAccessibilityAction ??
+            (onLongPress
+              ? (event) => {
+                  if (event.nativeEvent.actionName === "longpress")
+                    onLongPress();
+                }
+              : undefined))
       }
       // `usePressFeedback`: a ripple on Android, bounded by the row because
       // `ListSection` clips its children, and a one-rung lift on iOS.
@@ -538,6 +623,15 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
       marginTop: sectionHeaderMarginTop,
     },
+    // Web's Events day heading: caption / 600 in `--foreground`, sentence case.
+    dayHeading: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
+      color: tokens.color.text.foreground,
+      marginTop: sectionHeaderMarginTop,
+    },
     // The caption and its count on one baseline. The caption keeps its own
     // top margin, so a counted header sits where an uncounted one does.
     sectionHeaderRow: {
@@ -556,15 +650,21 @@ function createStyles(tokens: SignetTokens) {
       marginTop: sectionHeaderMarginTop,
     },
     section: {
-      // `card` at radius 14, the fill and radius web's grouped lists take
-      // (`rounded-[14px] border bg-card`), and foundations §2's step for
-      // "cards and list rows". It was `surface1` at 16 until 2026-11-05;
-      // `surface1` is the nav and input step.
+      // Radius 14, the radius web's grouped lists take (`rounded-[14px]`).
+      // The fill is not here: it is the card step for where the section sits
+      // (`useRaisedSurfaces`), one step above the page on a screen and
+      // `surface.card` in a sheet. On a screen it was `surface.card` from
+      // 2026-11-05 until #4682, two steps above the page once the ladder was
+      // spread on 2026-11-12.
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
       overflow: "hidden",
+    },
+    panel: {
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.md,
+      gap: tokens.spacing.xs,
     },
     divider: {
       height: StyleSheet.hairlineWidth,
@@ -617,6 +717,13 @@ function createStyles(tokens: SignetTokens) {
     rowLabelDisabled: {
       color: tokens.color.text.disabled,
     },
+    rowLabelMuted: {
+      color: tokens.color.text.mutedForeground,
+    },
+    rowNested: {
+      // The row's own inset (lg) plus one more step.
+      paddingLeft: tokens.spacing["2xl"],
+    },
     rowDescription: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
@@ -634,11 +741,6 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
       flex: 1,
       textAlign: "right",
-    },
-    chevron: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.muted,
-      flexShrink: 0,
     },
     trailingSlot: {
       flexShrink: 0,

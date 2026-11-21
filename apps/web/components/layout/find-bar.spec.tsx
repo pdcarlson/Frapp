@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   render,
@@ -24,25 +24,27 @@ const {
   permissionList,
   debounced,
 } = vi.hoisted(() => ({
-    push: vi.fn(),
-    searchQuery: {
-      current: {
-        data: undefined as unknown,
-        isFetching: false,
-        isError: false,
-        dataUpdatedAt: 1,
-      },
+  push: vi.fn(),
+  searchQuery: {
+    current: {
+      data: undefined as unknown,
+      isFetching: false,
+      isError: false,
+      dataUpdatedAt: 1,
     },
-    channelsQuery: { current: { data: [] as unknown[] } },
-    departmentsQuery: { current: { data: [] as unknown[] } },
-    departmentsOptions: { current: undefined as { enabled?: boolean } | undefined },
-    moduleGate: {
-      current: undefined as ((key: string) => boolean) | undefined,
-    },
-    permissionList: { current: [] as string[] },
-    // `null` passes the live value through; a string pins the debounced one.
-    debounced: { current: null as string | null },
-  }));
+  },
+  channelsQuery: { current: { data: [] as unknown[] } },
+  departmentsQuery: { current: { data: [] as unknown[] } },
+  departmentsOptions: {
+    current: undefined as { enabled?: boolean } | undefined,
+  },
+  moduleGate: {
+    current: undefined as ((key: string) => boolean) | undefined,
+  },
+  permissionList: { current: [] as string[] },
+  // `null` passes the live value through; a string pins the debounced one.
+  debounced: { current: null as string | null },
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
@@ -56,6 +58,8 @@ vi.mock("@repo/hooks", () => ({
     return departmentsQuery.current;
   },
   usePermissionList: () => permissionList.current,
+  useAiConsent: () => ({ data: null }),
+  aiAvailableFrom: () => false,
   SEARCH_MIN_QUERY_LENGTH: 3,
   SEARCH_COMPLETED_EVENT: "search-completed",
 }));
@@ -78,7 +82,9 @@ import { FIND_PLACEHOLDER } from "./find-dialog";
 function searchPayload() {
   return {
     payload: {
-      members: [{ user_id: "u1", display_name: "Ada Lovelace", email: "ada@x.co" }],
+      members: [
+        { user_id: "u1", display_name: "Ada Lovelace", email: "ada@x.co" },
+      ],
       messages: [
         {
           id: "m1",
@@ -283,11 +289,11 @@ describe("FindBar", () => {
     await openAndType(user, "announce");
 
     const backwork = screen.getByRole("option", { name: /announcements 101/ });
-    expect(backwork).toHaveTextContent(/COGS 101 · Fall 2025 · added Sep 14/);
+    expect(backwork).toHaveTextContent(/COGS 101 · Fall 2025 · added September 14/);
     const message = screen.getByRole("option", { name: /announce the thing/ });
-    expect(message).toHaveTextContent(/#announcements · Oct 28/);
+    expect(message).toHaveTextContent(/#announcements · October 28/);
     const event = screen.getByRole("option", { name: /announce party/ });
-    expect(event).toHaveTextContent(/Nov 9/);
+    expect(event).toHaveTextContent(/November 9/);
   });
 
   it("hides a group whose module the chapter switched off", async () => {
@@ -457,8 +463,29 @@ describe("FindBar", () => {
         ]),
       );
       // Only heights split by pointer; padding never does (§9).
-      expect(classes.filter((c) => /^pointer-coarse:p[xytrbl]?-/.test(c))).toEqual([]);
+      expect(
+        classes.filter((c) => /^pointer-coarse:p[xytrbl]?-/.test(c)),
+      ).toEqual([]);
     }
+  });
+
+  it("lists the settings the member can change, after Channels", async () => {
+    channelsQuery.current = { data: [] };
+    searchQuery.current = searchState({ data: searchPayload() });
+    const user = userEvent.setup();
+    render(<FindBar />);
+    await openAndType(user, "quiet hours");
+    const option = await screen.findByRole("option", { name: /Quiet hours/ });
+    expect(option).toHaveTextContent("Settings · Notifications");
+    expect(
+      screen.getByRole("button", { name: "Settings", pressed: false }),
+    ).toBeInTheDocument();
+    await user.click(option);
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith(
+        "/preferences?section=notifications&setting=quiet-hours",
+      ),
+    );
   });
 
   it("lists nothing under the minimum query length", async () => {
@@ -544,7 +571,11 @@ describe("FindBar", () => {
   it("says it stopped looking even when it has results to show", async () => {
     channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
     searchQuery.current = searchState({
-      data: { ...searchPayload(), timedOut: true, timedOutSources: ["messages"] },
+      data: {
+        ...searchPayload(),
+        timedOut: true,
+        timedOutSources: ["messages"],
+      },
       dataUpdatedAt: 6000,
     });
     const user = userEvent.setup();
@@ -553,7 +584,9 @@ describe("FindBar", () => {
 
     expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
     expect(
-      within(screen.getByRole("listbox")).getByText(/stopped looking in messages/i),
+      within(screen.getByRole("listbox")).getByText(
+        /stopped looking in messages/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -586,7 +619,8 @@ describe("FindBar", () => {
 
   it("emits search-completed with the find-bar surface", async () => {
     // `spec/behavior/observability.md` § Search Telemetry.
-    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> =
+      [];
     searchQuery.current = searchState({
       data: searchPayload(),
       dataUpdatedAt: 4000,
@@ -616,7 +650,8 @@ describe("FindBar", () => {
     // `observability.md` cites this as the proof that the raw query is never
     // sent: `"query"` is not a forbidden key, so the shared gate alone would
     // let a property holding the raw text through.
-    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> =
+      [];
     searchQuery.current = searchState({
       data: searchPayload(),
       dataUpdatedAt: 5000,
@@ -658,7 +693,8 @@ describe("FindBar", () => {
   });
 
   it("counts a search once, not again when the dialog reopens on it", async () => {
-    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> =
+      [];
     searchQuery.current = searchState({
       data: searchPayload(),
       dataUpdatedAt: 7000,
@@ -688,7 +724,8 @@ describe("FindBar", () => {
   });
 
   it("measures the trimmed query", async () => {
-    const events: Array<{ name: string; properties?: AnalyticsProperties }> = [];
+    const events: Array<{ name: string; properties?: AnalyticsProperties }> =
+      [];
     searchQuery.current = searchState({
       data: searchPayload(),
       dataUpdatedAt: 9000,
@@ -704,5 +741,28 @@ describe("FindBar", () => {
       query_length: 4,
       query_word_count: 1,
     });
+  });
+});
+
+/**
+ * Find only finds (#5476, Paul, 2026-11-18). From #4904 its first row asked
+ * Frapp; Ask has its own floating bar now (`ask/ask-bar.tsx`).
+ */
+describe("FindBar and Ask (#5476)", () => {
+  beforeEach(() => {
+    push.mockClear();
+    debounced.current = null;
+    moduleGate.current = () => true;
+    channelsQuery.current = { data: [{ id: "c1", name: "announcements" }] };
+    searchQuery.current = searchState({ data: searchPayload() });
+  });
+
+  it("offers no Ask row, even for words that read as a question", async () => {
+    const user = userEvent.setup();
+    render(<FindBar />);
+    expect(trigger()).not.toHaveAttribute("data-ask-entry");
+    const input = await openAndType(user, "when is the announce party?");
+    expect(input).toHaveAttribute("placeholder", FIND_PLACEHOLDER);
+    expect(screen.queryByRole("option", { name: /Ask Frapp/ })).toBeNull();
   });
 });

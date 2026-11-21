@@ -2,15 +2,20 @@
 
 import type { ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import type { NameResolver } from "@repo/hooks";
 import { AnnouncementCard } from "./announcement-card";
+import { AskAnswerCard } from "./ask-answer-card";
 import { ComingSoonCard } from "./coming-soon-card";
 import { EventCard } from "./event-card";
+import { FormCard } from "./form-card";
 import { HoursCard } from "./hours-card";
 import { RushCard } from "./rush-card";
 import { LoadingCard } from "./loading-card";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
+import { RolePickerCard } from "./role-picker-card";
+import { SignupCard } from "./signup-card";
 import { SystemAuditCard } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 import { TextRenderer } from "./text-renderer";
@@ -57,8 +62,13 @@ export interface MessageRendererProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
-  /** A poll card's Close poll, on the viewer's own open poll (#3794). */
+  /** A poll card's Close poll: the creator's, or a `channels:manage` holder's (#3794, #4046). */
   onClosePoll?: (messageId: string) => void;
+  /**
+   * A sign-up card's Close sign-ups or a form card's Close form: the
+   * creator's, or a `channels:manage` holder's (#3926).
+   */
+  onCloseCard?: (messageId: string, kind: ClosableCardKind) => void;
 }
 
 /**
@@ -78,6 +88,7 @@ export function MessageRenderer({
   isConfirmed,
   onAct,
   onClosePoll,
+  onCloseCard,
   trailing,
   muted,
 }: MessageRendererProps) {
@@ -86,7 +97,9 @@ export function MessageRenderer({
   }
   switch (message.kind) {
     case "text":
-      return <TextRenderer message={message} trailing={trailing} muted={muted} />;
+      return (
+        <TextRenderer message={message} trailing={trailing} muted={muted} />
+      );
     case "poll":
       return (
         <PollCard
@@ -95,6 +108,31 @@ export function MessageRenderer({
           isConfirmed={isConfirmed}
           onVote={onAct}
           onClosePoll={onClosePoll}
+        />
+      );
+    case "ask_answer":
+      return <AskAnswerCard message={message} nameFor={nameFor} />;
+    case "signup":
+      return (
+        <SignupCard
+          message={message}
+          viewerId={viewerId}
+          nameFor={nameFor}
+          isConfirmed={isConfirmed}
+          onClaim={onAct}
+          onCloseCard={onCloseCard}
+        />
+      );
+    case "role_picker":
+      return <RolePickerCard message={message} isConfirmed={isConfirmed} />;
+    case "form":
+      return (
+        <FormCard
+          message={message}
+          viewerId={viewerId}
+          nameFor={nameFor}
+          isConfirmed={isConfirmed}
+          onCloseCard={onCloseCard}
         />
       );
     case "announcement":
@@ -122,6 +160,8 @@ export function MessageRenderer({
     case "dues":
       return <ComingSoonCard message={message} />;
     default:
-      return <TextRenderer message={message} trailing={trailing} muted={muted} />;
+      return (
+        <TextRenderer message={message} trailing={trailing} muted={muted} />
+      );
   }
 }

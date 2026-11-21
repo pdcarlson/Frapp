@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
+import {
+  editRepeatDraft,
+  isEmptyEventPatch,
+  pickRepeatPreset,
+} from "@repo/validation";
+import { describe, expect, it, vi } from "vitest";
 import {
   draftFromEvent,
-  isEmptyPatch,
-  leavesAfterSave,
-  saveRequestFor,
-  saveScopeFor,
-  seriesRuleOf,
+  duplicateEventTemplate,
   validateEventEdit,
   type EventEditTarget,
 } from "./edit-event";
@@ -30,9 +31,13 @@ const EVENT: EventDetail = {
   },
   description: null,
   notes: null,
+  agenda: [],
+  attachments: [],
   check_in_zone_name: null,
   event_type_id: null,
+  created_by: null,
   hasCheckInZone: false,
+  checkInNeedsCode: false,
   recurrence_rule: null,
   parent_event_id: null,
 };
@@ -68,7 +73,7 @@ function patchOf(
 
 describe("validateEventEdit", () => {
   it("sends nothing for an untouched form", () => {
-    expect(isEmptyPatch(patchOf(single, () => {}))).toBe(true);
+    expect(isEmptyEventPatch(patchOf(single, () => {}))).toBe(true);
   });
 
   it("sends the check-in lead only when it changed", () => {
@@ -139,7 +144,7 @@ describe("validateEventEdit", () => {
       ...single,
       event: { ...EVENT, name: "Chapter ", location: "Sanctuary " },
     };
-    expect(isEmptyPatch(patchOf(target, () => {}))).toBe(true);
+    expect(isEmptyEventPatch(patchOf(target, () => {}))).toBe(true);
   });
 
   it("clears a description emptied out", () => {
@@ -153,130 +158,144 @@ describe("validateEventEdit", () => {
   });
 
   it("ends a series with a null rule", () => {
-    expect(patchOf(occurrence, (d) => (d.recurrenceRule = null))).toEqual({
-      recurrence_rule: null,
-    });
+    expect(
+      patchOf(
+        occurrence,
+        (d) => (d.repeat = pickRepeatPreset(d.repeat, "NONE")),
+      ),
+    ).toEqual({ recurrence_rule: null });
   });
-});
 
-describe("saveScopeFor", () => {
-  it("asks for an event in a series", () => {
-    expect(saveScopeFor(occurrence, { name: "x" }, NOW)).toBe("ask");
+  it("leaves a legacy rule alone until Repeat is changed", () => {
+    expect(patchOf(occurrence, (d) => (d.name = "Renamed"))).toEqual({
+      name: "Renamed",
+    });
+    expect(
+      patchOf(
+        occurrence,
+        (d) => (d.repeat = editRepeatDraft(d.repeat, { countInput: "4" })),
+      ).recurrence_rule,
+    ).toMatch(/^FREQ=WEEKLY;INTERVAL=1;BYDAY=\w\w;COUNT=4;TZID=/);
+  });
+
+  it("steps a changed rule from the parent, not an occurrence on another weekday", () => {
+    // A Monday series, its head still ahead; the occurrence opened was moved
+    // by hand to Thursday.
+    const rule =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=10;TZID=America/New_York";
+    const parent = {
+      id: "evt-parent",
+      start_time: "2026-11-09T23:45:00.000Z",
+      end_time: "2026-11-10T01:15:00.000Z",
+    };
+    const thursday: EventEditTarget = {
+      event: {
+        ...EVENT,
+        id: "evt-3",
+        parent_event_id: parent.id,
+        start_time: "2026-11-26T23:45:00.000Z",
+        end_time: "2026-11-27T01:15:00.000Z",
+      },
+      seriesRule: rule,
+      parent,
+    };
+    expect(
+      patchOf(
+        thursday,
+        (d) => (d.repeat = editRepeatDraft(d.repeat, { countInput: "6" })),
+      ).recurrence_rule,
+    ).toBe(rule.replace("COUNT=10", "COUNT=6"));
+    // Moved a day later in the same save, the stored Monday moves with it.
+    expect(
+      patchOf(thursday, (d) => {
+        d.start = new Date("2026-11-27T23:45:00.000Z");
+        d.end = new Date("2026-11-28T01:15:00.000Z");
+        d.repeat = editRepeatDraft(d.repeat, { countInput: "6" });
+      }).recurrence_rule,
+    ).toBe(rule.replace("MO;COUNT=10", "TU;COUNT=6"));
+  });
+
+  it("checks a started series' new end against its next meeting", () => {
+    // The head (Sep 7) has started; the next meeting is Nov 9. An end date
+    // between them would leave the new first meeting alone.
+    const rule =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=20;TZID=America/New_York";
+    const started: EventEditTarget = { ...occurrence, seriesRule: rule };
+    const draft = draftFromEvent(started);
+    draft.repeat = editRepeatDraft(
+      { ...draft.repeat, endKind: "until" },
+      { until: "2026-11-12" },
+    );
+    const result = validateEventEdit(draft, started, NOW);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors.repeat).toBeTruthy();
+  });
+
+  it("reads a structured series rule back without a change", () => {
+    const rule =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York";
     const head = {
       ...single,
-      event: { ...EVENT, recurrence_rule: "WEEKLY" },
-      seriesRule: "WEEKLY" as const,
+      event: { ...EVENT, recurrence_rule: rule },
+      seriesRule: rule,
     };
-    expect(saveScopeFor(head, { name: "x" }, NOW)).toBe("ask");
-  });
-
-  it("doesn't ask for a one-time event", () => {
-    expect(saveScopeFor(single, { name: "x" }, NOW)).toBe("instance");
-  });
-
-  it("doesn't offer All upcoming for an event already under way", () => {
-    // The server never edits a started event with the series, so the choice
-    // would skip the event on screen.
-    const during = new Date("2026-11-10T00:00:00Z");
-    expect(saveScopeFor(occurrence, { name: "x" }, during)).toBe("instance");
-  });
-
-  it("doesn't offer All upcoming when the series parent couldn't be read", () => {
-    const orphan = { ...occurrence, parent: null };
-    expect(saveScopeFor(orphan, { name: "x" }, NOW)).toBe("instance");
-  });
-
-  it("treats a Repeat change as a series change", () => {
-    expect(saveScopeFor(single, { recurrence_rule: "WEEKLY" }, NOW)).toBe(
-      "series",
-    );
-    expect(saveScopeFor(occurrence, { recurrence_rule: null }, NOW)).toBe(
-      "series",
-    );
-  });
-});
-
-describe("saveRequestFor", () => {
-  it("sends this-event edits to the event", () => {
-    expect(saveRequestFor(occurrence, { name: "x" }, "instance")).toEqual({
-      id: "evt-1",
-      scope: "instance",
-      body: { name: "x" },
-    });
-  });
-
-  it("moves the whole series by the same shift, through the parent", () => {
-    // 6:45 PM → 7:00 PM on this occurrence, and 15 minutes longer.
-    const request = saveRequestFor(
-      occurrence,
-      {
-        name: "Chapter",
-        start_time: "2026-11-10T00:00:00.000Z",
-        end_time: "2026-11-10T01:45:00.000Z",
-      },
-      "series",
-    );
-    expect(request).toEqual({
-      id: "evt-parent",
-      scope: "series",
-      body: {
-        name: "Chapter",
-        start_time: "2026-09-07T23:00:00.000Z",
-        end_time: "2026-09-08T00:45:00.000Z",
-      },
-    });
-  });
-
-  it("sends a series rename to the parent without times", () => {
-    expect(saveRequestFor(occurrence, { name: "x" }, "series")).toEqual({
-      id: "evt-parent",
-      scope: "series",
-      body: { name: "x" },
-    });
-  });
-
-  it("falls back to the occurrence when its parent can't be read", () => {
-    const orphan = { ...occurrence, parent: null };
-    expect(saveRequestFor(orphan, { name: "x" }, "series").id).toBe("evt-1");
-  });
-});
-
-describe("leavesAfterSave", () => {
-  it("stays for a this-event edit", () => {
-    const request = saveRequestFor(occurrence, { name: "x" }, "instance");
-    expect(leavesAfterSave(request, occurrence, "evt-1")).toBe(false);
-  });
-
-  it("stays for a series rename, patched in place", () => {
-    const request = saveRequestFor(occurrence, { name: "x" }, "series");
-    expect(leavesAfterSave(request, occurrence, "evt-parent")).toBe(false);
-  });
-
-  it("leaves when a series move rebuilds the occurrence on screen", () => {
-    const request = saveRequestFor(
-      occurrence,
-      { start_time: "2026-11-10T00:00:00.000Z" },
-      "series",
-    );
-    expect(leavesAfterSave(request, occurrence, "evt-parent")).toBe(true);
-  });
-
-  it("leaves when a started series moves onto its next event", () => {
-    const head = { ...single, seriesRule: "WEEKLY" as const };
-    const request = saveRequestFor(head, { name: "x" }, "series");
-    expect(leavesAfterSave(request, head, "evt-next")).toBe(true);
-    expect(leavesAfterSave(request, head, "evt-1")).toBe(false);
-  });
-});
-
-describe("seriesRuleOf", () => {
-  it("reads a parent's own rule and an occurrence's parent's", () => {
-    expect(seriesRuleOf({ ...EVENT, recurrence_rule: "MONTHLY" }, null)).toBe(
-      "MONTHLY",
-    );
     expect(
-      seriesRuleOf(occurrence.event, { recurrence_rule: "BIWEEKLY" }),
-    ).toBe("BIWEEKLY");
-    expect(seriesRuleOf(occurrence.event, null)).toBeNull();
+      isEmptyEventPatch(
+        patchOf(head, (d) => (d.repeat = editRepeatDraft(d.repeat, {}))),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("duplicateEventTemplate (#5492)", () => {
+  it("keeps an event still ahead as it is, as a one-time event", () => {
+    const draft = duplicateEventTemplate(
+      { ...EVENT, recurrence_rule: "WEEKLY" },
+      NOW,
+    );
+    expect(draft.name).toBe("Chapter");
+    expect(draft.start?.toISOString()).toBe(EVENT.start_time);
+    expect(draft.end?.toISOString()).toBe(EVENT.end_time);
+    expect(draft.repeat.preset).toBe("NONE");
+  });
+
+  it("moves an event that has started on by whole weeks, keeping its length", () => {
+    // Three weeks and a day after the start.
+    const later = new Date(
+      new Date(EVENT.start_time).getTime() + 22 * 24 * 60 * 60 * 1000,
+    );
+    const draft = duplicateEventTemplate(EVENT, later);
+    const start = draft.start!;
+    expect(start > later).toBe(true);
+    expect(
+      (start.getTime() - new Date(EVENT.start_time).getTime()) /
+        (24 * 60 * 60 * 1000),
+    ).toBe(28);
+    expect(draft.end!.getTime() - start.getTime()).toBe(90 * 60 * 1000);
+  });
+
+  it("lands ahead of now, at the same hour, across a spring-forward", () => {
+    // A zone with a spring-forward; CI runs in UTC and Asia/Tokyo, which
+    // have none. Node reads the zone afresh when it changes.
+    vi.stubEnv("TZ", "America/New_York");
+    try {
+      // Saturday 7 PM EST; now is the next Saturday 7:30 PM EDT, a week
+      // less half an hour later by the clock that changed in between.
+      const start = new Date(2026, 2, 7, 19, 0);
+      const now = new Date(2026, 2, 14, 19, 30);
+      const draft = duplicateEventTemplate(
+        {
+          ...EVENT,
+          start_time: start.toISOString(),
+          end_time: new Date(start.getTime() + 3_600_000).toISOString(),
+        },
+        now,
+      );
+      expect(draft.start! > now).toBe(true);
+      expect(draft.start!.getHours()).toBe(19);
+      expect(draft.start!.getDate()).toBe(21);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

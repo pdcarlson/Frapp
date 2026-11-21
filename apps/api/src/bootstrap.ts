@@ -3,6 +3,8 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { json } from 'express';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
 import { corsOptionsFor } from './interface/http/cors.options';
@@ -11,10 +13,14 @@ import {
   type DeploymentEnvironment,
 } from './interface/http/deployment-environment';
 import { createProxyChainTripwire } from './interface/middleware/proxy-chain-tripwire.middleware';
+import { bodyParserErrorMiddleware } from './interface/middleware/body-parser-errors.middleware';
 import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
+import { requestReadsMiddleware } from './interface/middleware/request-reads.middleware';
+import { RequestReadsInterceptor } from './interface/interceptors/request-reads.interceptor';
 import { VALIDATION_PIPE_OPTIONS } from './interface/pipes/validation-pipe.options';
 import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
 import { RequestContextLogger } from './infrastructure/observability/request-context-logger';
+import { runsOnCloudRun } from './config/runtime-platform';
 
 /**
  * Everything that shapes a request or a response, in one place.
@@ -48,38 +54,44 @@ import { RequestContextLogger } from './infrastructure/observability/request-con
 /**
  * Express `trust proxy` hop count, per deployment.
  *
- * **Measured, not assumed, and measured per service**, because the two Render
- * services do not have the same chain:
+ * **Measured, not assumed, and measured per service**, because services on
+ * different hosts do not have the same chain:
  *
- * - **Staging: 3** (#864). Probes against `api-staging.frapp.live` on
- *   2026-08-28 returned an `x-forwarded-for` length of 3, 4 and 5 for 0, 1 and
- *   2 forged entries: exactly linear, so the infrastructure contribution is a
- *   constant three. Evidence, with the raw log lines:
- *   https://github.com/pdcarlson/Frapp/issues/864#issuecomment-5457812781.
- *   Staging's dashboard traffic still logs `xffCount` 3 (2026-09-30).
- * - **Production: 2** (#2972). `frapp-api-prod` logs `xffCount` 2 for callers
- *   that send no chain of their own (Stripe's webhook deliveries, a scanner;
- *   Render logs, 2026-09-29 and 30). This value used to be the staging figure
- *   applied to production unobserved, which left one entry of production's
- *   chain client-supplied: a single forged `X-Forwarded-For` value set `req.ip`
- *   and with it the caller's own rate-limit bucket. The likely difference is
- *   Render's free plan (staging) adding a proxy that the starter plan
- *   (production) does not. That is inferred, not confirmed with Render, so a
- *   plan change on either service means re-measuring (#1947 moves staging off
- *   free).
+ * - **Staging: 2** (#5269). Cloud Run behind Google's global external
+ *   Application Load Balancer (the service's ingress is
+ *   internal-and-cloud-load-balancing, so `run.app` refuses the internet).
+ *   Google documents the balancer's header as `[SUPPLIED_VALUE,] CLIENT_IP,
+ *   LOAD_BALANCER_IP`, and the forged-entry probe in
+ *   `docs/ops/deployment/cloud-run.md` § Address measured exactly that on
+ *   2026-11-17: a request with no `X-Forwarded-For` logged `xffCount` 2 and
+ *   one with a single forged entry logged 3, so the balancer appends two
+ *   entries and the forged one stays untrusted. Before the move, on Render
+ *   behind Cloudflare, staging was 3 (#864: probes on 2026-08-28 with 0, 1
+ *   and 2 forged entries returned 3, 4 and 5).
+ * - **Production: 2** (#2972). `frapp-api-prod` on Render logs `xffCount` 2
+ *   for callers that send no chain of their own (Stripe's webhook deliveries,
+ *   a scanner; Render logs, 2026-09-29 and 30). This value used to be the
+ *   staging figure applied to production unobserved, which left one entry of
+ *   production's chain client-supplied: a single forged `X-Forwarded-For`
+ *   value set `req.ip` and with it the caller's own rate-limit bucket.
+ *   Production moved to Cloud Run behind its own balancer of the same shape
+ *   on 2026-11-17 (#5228), which documents the same two entries; the probe in
+ *   `cloud-run.md` § Address re-checks `xffCount` there.
  *
  * Why a count rather than `true`: `true` trusts the entire chain, so any client
  * can prepend a forged address and rotate it to evade the very rate limit this
  * restores — strictly worse than leaving the setting off. And why not a
- * smaller number than the measured one: on staging, `1` resolves `req.ip` to a
- * Render-internal address and `2` to Cloudflare's edge, so both keep every
- * unauthenticated caller in one shared bucket while looking like a fix.
+ * smaller number than the measured one: behind the balancer, `1` resolves
+ * `req.ip` to the balancer's own address (on Render it was Render's or
+ * Cloudflare's), which keeps every unauthenticated caller in one shared bucket
+ * while looking like a fix.
  *
- * On staging, both public hostnames — `api-staging.frapp.live` and the default
- * `frapp-api-staging.onrender.com` — share one DNS record pointing at the same
- * Cloudflare-fronted Render addresses, so neither public path is a shorter
- * chain that would leave this over-trusting. Production's two hostnames have
- * not been compared that way; the tripwire below covers a shorter one.
+ * Each environment must have one public path, or the shorter chain
+ * over-trusts. Staging's Cloud Run service has one, the balancer, with both
+ * of its hosts (`api-staging.frapp.live` and the deploy's `candidate.` host)
+ * the same chain. Production's balancer is built the same way (#5228). The
+ * Render services each environment used before are suspended and being
+ * deleted; the tripwire below covers any shorter chain that appears.
  *
  * **The limit of a hop count, stated rather than left sharp:** it trusts N
  * entries whether or not N proxies actually appended them. Where the real
@@ -87,8 +99,8 @@ import { RequestContextLogger } from './infrastructure/observability/request-con
  * returns the leftmost entry, so a client can set `req.ip` by sending one
  * `X-Forwarded-For` header (pinned by a test in `bootstrap.spec.ts`). That is
  * inert for the rate limiter locally and correct in the deployed environments
- * measured above, but a new ingress that bypasses Render's edge would need
- * this re-measured, not inherited. Trusting by address range instead of a
+ * measured above, but a new ingress (another host, a second public path, a
+ * proxy in front of the balancer) would need this re-measured, not inherited. Trusting by address range instead of a
  * count would remove the assumption entirely — considered in #1341. Until then
  * `createProxyChainTripwire` reports the first deployed request whose chain is
  * shorter than the count, which is how a stale count shows itself.
@@ -99,8 +111,8 @@ import { RequestContextLogger } from './infrastructure/observability/request-con
 export const TRUST_PROXY_HOPS: Readonly<Record<DeploymentEnvironment, number>> =
   {
     production: 2,
-    staging: 3,
-    local: 3,
+    staging: 2,
+    local: 2,
   };
 
 /** The one Express method used here — narrower than importing express types. */
@@ -136,6 +148,48 @@ interface ExpressSettable {
 const HELMET_OPTIONS = {
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 } as const;
+
+/**
+ * The largest JSON body the API reads, on every route but the ones below:
+ * Express's own default, stated so it reads as a choice. Each DTO still caps
+ * its own fields; this is only the ceiling the parser enforces before any of
+ * them is read, or any guard has run.
+ */
+const JSON_BODY_LIMIT = '100kb';
+
+/**
+ * The routes that take a larger body (#4504), and how large:
+ *
+ * - Meetings. A recording's transcript becomes an officer's notes (#712), and
+ *   `MEETING_NOTES_MAX_LENGTH` is 160,000 characters, where a character can
+ *   take three bytes; a full set of minutes (four 20,000-character sections
+ *   and up to 200 items) can pass 100 KB too.
+ * - AI reports. "Report this" on an Ask answer hands back the answer's sealed
+ *   receipt, up to `AI_REPORT_RECEIPT_MAX_LENGTH` (200,000) characters.
+ * - Discord imports. The web client confirms uploaded export files 500 paths
+ *   at a time (`CONFIRM_BATCH`), each path around 200 bytes, and the channel
+ *   map can list up to 1,000 channels: both pass 100 KB on a large server.
+ * - A form card in chat, and a member's answers to one (#3926). A form within
+ *   the `FORM_*` limits can carry 40 questions of 30 options at 200
+ *   characters each, and its answers 40 paragraphs of 4,000, where a
+ *   character can take three bytes. Only the send route and the answers
+ *   route, not the rest of `/v1/channels`; `:id` matches one path segment,
+ *   so a send's attachment routes under it share the ceiling.
+ *
+ * Every route under these prefixes needs a signed-in member. The parser runs
+ * before the guards, so a caller with no token can still send these
+ * prefixes a 1 MB body before the 401, but not the sign-in, invite and
+ * webhook routes, nor any other. A new route that needs more than 100 KB is
+ * added here, not by raising the general limit.
+ */
+const LARGE_JSON_BODY_LIMIT = '1mb';
+export const LARGE_JSON_BODY_PATHS = [
+  '/v1/meetings',
+  '/v1/ai/reports',
+  '/v1/discord-imports',
+  '/v1/channels/:id/messages',
+  '/v1/channels/messages/:messageId/form-response',
+];
 
 /**
  * `environment` defaults to this process's own (`NODE_ENV`). Tests pass one to
@@ -174,15 +228,45 @@ export function configureApp(
   app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
 
   // Same ConsoleLogger format as Nest's default, with requestId on the
-  // context. Lives here so e2e and production share it — a copy in `main.ts`
-  // would leave the suite asserting a logger production does not use.
-  app.useLogger(new RequestContextLogger());
+  // context; on Cloud Run, one JSON record per line for Cloud Logging. Lives
+  // here so e2e and production share it — a copy in `main.ts` would leave the
+  // suite asserting a logger production does not use.
+  app.useLogger(
+    new RequestContextLogger({ json: runsOnCloudRun(process.env) }),
+  );
 
   // Before the Nest pipeline, so guard rejections carry a request id too — see
   // the middleware's own note on why this cannot be an interceptor.
   app.use(requestIdMiddleware);
 
-  app.useGlobalInterceptors(new LoggingInterceptor());
+  // Also before the guards, which make the first membership and role reads
+  // the rest of the request shares (#3728). `RequestReadsInterceptor` below
+  // ends that sharing at a write's handler.
+  app.use(requestReadsMiddleware);
+
+  // Here, not in `main.ts`, so the e2e suite parses bodies as production does.
+  // After the request id: these register at once, and a body they refuse
+  // (malformed, or over the limit) must still answer with an id. The larger
+  // parser goes first; a body it has read is marked read, and the general
+  // parser after it passes over that request.
+  app.use(LARGE_JSON_BODY_PATHS, json({ limit: LARGE_JSON_BODY_LIMIT }));
+  (app as NestExpressApplication).useBodyParser('json', {
+    limit: JSON_BODY_LIMIT,
+  });
+  // Nest's own form parser, registered here rather than left to `init()`,
+  // which adds it after everything below (it skips a parser by this name that
+  // is already in place). Same options as Nest's default.
+  (app as NestExpressApplication).useBodyParser('urlencoded', {
+    extended: true,
+  });
+  // After every parser: their refusals answer 4xx with a fixed message, not
+  // 500 or the parser's own text (#4404).
+  app.use(bodyParserErrorMiddleware);
+
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(),
+    new RequestReadsInterceptor(),
+  );
 
   app.useGlobalFilters(new AllExceptionsFilter());
 

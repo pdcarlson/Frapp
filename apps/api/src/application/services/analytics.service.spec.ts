@@ -4,6 +4,7 @@ import { ForbiddenException, Logger } from '@nestjs/common';
 import { ContentFreePropertyError } from '@repo/validation';
 import {
   hashChapterIdForAnalytics,
+  hashInviteVisitForAnalytics,
   hashUserIdForAnalytics,
 } from '#domain/utils/analytics-keying';
 import { isPseudonymHex } from '@repo/observability';
@@ -51,6 +52,7 @@ function makeChapterRepo(result: {
 /** A fully-stubbed member repository; tests wire only the methods they use. */
 function makeMemberRepo(): jest.Mocked<IMemberRepository> {
   return {
+    completeOnboarding: jest.fn(),
     findById: jest.fn(),
     findByUser: jest.fn(),
     findByUserAndChapter: jest.fn(),
@@ -61,6 +63,9 @@ function makeMemberRepo(): jest.Mocked<IMemberRepository> {
     findChapterMemberIdentities: jest.fn(),
     transferPresidencyAtomic: jest.fn(),
     claimPresidencyAtomic: jest.fn(),
+    setRoleIds: jest.fn(),
+    setSelfAssignedRole: jest.fn(),
+    countByChapter: jest.fn(),
   };
 }
 
@@ -284,6 +289,34 @@ describe('AnalyticsService', () => {
       );
     });
 
+    it('stamps the mobile build as $app_version and $app_build', async () => {
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+      const service = await buildService({ salt: SALT, chapters, provider });
+
+      await service.track('opened-app', USER_ID, {
+        app: 'mobile',
+        appVersion: { version: '0.11.0', build: '19' },
+      });
+      await service.track('opened-app', USER_ID, {
+        appVersion: { version: '0.11.0', build: null },
+      });
+
+      expect(provider.capture).toHaveBeenNthCalledWith(1, {
+        name: 'opened-app',
+        distinctId: hashUserIdForAnalytics(SALT, USER_ID),
+        properties: {
+          app: 'mobile',
+          $app_version: '0.11.0',
+          $app_build: '19',
+        },
+      });
+      expect(provider.capture).toHaveBeenNthCalledWith(2, {
+        name: 'opened-app',
+        distinctId: hashUserIdForAnalytics(SALT, USER_ID),
+        properties: { $app_version: '0.11.0' },
+      });
+    });
+
     it('sends no group without a chapter, and no app when none is named', async () => {
       const { repo: chapters } = makeChapterRepo({ data: null, error: null });
       const service = await buildService({ salt: SALT, chapters, provider });
@@ -400,6 +433,78 @@ describe('AnalyticsService', () => {
       });
 
       // Privacy-safe default: don't emit when opt-out state is unknown.
+      expect(provider.capture).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('trackInviteVisit (invite card funnel, #5663)', () => {
+    const VISIT = '6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718';
+
+    it('keys the event by the hashed visit, personless and labelled', async () => {
+      const { repo: chapters } = makeChapterRepo({
+        data: { analytics_opt_out: false },
+        error: null,
+      });
+      const service = await buildService({ salt: SALT, chapters, provider });
+
+      await service.trackInviteVisit('invite-card-viewed', 'chapter-1', VISIT, {
+        properties: { state: 'live', signed_in: false },
+        app: 'mobile',
+        appVersion: { version: '0.14.0', build: '21' },
+      });
+
+      // No chapter group, so the provider sends it personless.
+      expect(provider.capture).toHaveBeenCalledWith({
+        name: 'invite-card-viewed',
+        distinctId: hashInviteVisitForAnalytics(SALT, VISIT),
+        properties: {
+          state: 'live',
+          signed_in: false,
+          app: 'mobile',
+          $app_version: '0.14.0',
+          $app_build: '21',
+        },
+      });
+      const sent = JSON.stringify(provider.capture.mock.calls[0][0]);
+      expect(sent).not.toContain(VISIT);
+      expect(sent).not.toContain('chapter-1');
+    });
+
+    it("never lands on a user's or a chapter's digest", () => {
+      expect(hashInviteVisitForAnalytics(SALT, VISIT)).not.toBe(
+        hashChapterIdForAnalytics(SALT, VISIT),
+      );
+    });
+
+    it("honours the invite chapter's opt-out", async () => {
+      const { repo: chapters } = makeChapterRepo({
+        data: { analytics_opt_out: true },
+        error: null,
+      });
+      const service = await buildService({ salt: SALT, chapters, provider });
+
+      await service.trackInviteVisit('invite-joined', 'chapter-1', VISIT);
+
+      expect(provider.capture).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the opt-out lookup errors', async () => {
+      const { repo: chapters } = makeChapterRepo({
+        error: new Error('db down'),
+      });
+      const service = await buildService({ salt: SALT, chapters, provider });
+
+      await service.trackInviteVisit('invite-card-viewed', 'chapter-1', VISIT);
+
+      expect(provider.capture).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when analytics is unconfigured (no salt)', async () => {
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+      const service = await buildService({ chapters, provider });
+
+      await service.trackInviteVisit('invite-card-viewed', 'chapter-1', VISIT);
+
       expect(provider.capture).not.toHaveBeenCalled();
     });
   });
@@ -522,6 +627,54 @@ describe('AnalyticsService', () => {
         }),
       ).rejects.toBeInstanceOf(ContentFreePropertyError);
       expect(provider.capture).not.toHaveBeenCalled();
+    });
+  });
+
+  // GET /v1/analytics/identity can take its chapter from the unverified
+  // x-chapter-id header, so the chapter pseudonym needs a membership check.
+  describe('getMemberChapterGroupId', () => {
+    it('returns the group id for a chapter the caller belongs to', async () => {
+      const members = makeMemberRepo();
+      members.findByUserAndChapter.mockResolvedValue(makeMember(CHAPTER_ID));
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        chapters,
+        provider,
+        members,
+      });
+
+      await expect(
+        service.getMemberChapterGroupId(USER_ID, CHAPTER_ID),
+      ).resolves.toBe(hashChapterIdForAnalytics(SALT, CHAPTER_ID));
+      expect(members.findByUserAndChapter).toHaveBeenCalledWith(
+        USER_ID,
+        CHAPTER_ID,
+      );
+    });
+
+    it('returns null for another chapter, a failed lookup, or no chapter', async () => {
+      const members = makeMemberRepo();
+      members.findByUserAndChapter.mockResolvedValueOnce(null);
+      members.findByUserAndChapter.mockRejectedValueOnce(new Error('db down'));
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        chapters,
+        provider,
+        members,
+      });
+
+      await expect(
+        service.getMemberChapterGroupId(USER_ID, OTHER_CHAPTER_ID),
+      ).resolves.toBeNull();
+      await expect(
+        service.getMemberChapterGroupId(USER_ID, OTHER_CHAPTER_ID),
+      ).resolves.toBeNull();
+      await expect(
+        service.getMemberChapterGroupId(USER_ID, undefined),
+      ).resolves.toBeNull();
+      expect(members.findByUserAndChapter).toHaveBeenCalledTimes(2);
     });
   });
 

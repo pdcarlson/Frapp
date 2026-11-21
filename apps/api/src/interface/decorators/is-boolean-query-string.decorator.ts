@@ -5,7 +5,7 @@ import {
 } from 'class-validator';
 import { isBooleanQueryStringValue } from '../utils/query-boolean';
 
-export const IS_BOOLEAN_QUERY_STRING = 'isBooleanQueryString';
+const IS_BOOLEAN_QUERY_STRING = 'isBooleanQueryString';
 
 /**
  * Validates optional query booleans as the literal strings `true`, `false`, `1`, or `0`

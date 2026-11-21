@@ -1,15 +1,13 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
 import {
   discordConnectionKeys,
   useBeginDiscordConnect,
   useDiscordAvailability,
 } from "./use-discord-connection";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const CHAPTER = "chapter-1";
 
@@ -17,24 +15,16 @@ describe("Discord availability", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   const wrapperFor = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={mockClient as ReturnType<typeof createFrappClient>}
-        chapterId={CHAPTER}
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "DiscordConnectionHookWrapper";
-    return Wrapper;
+    return createHookWrapper({
+      client: mockClient,
+      queryClient,
+      chapterId: CHAPTER,
+      displayName: "DiscordConnectionHookWrapper",
+    });
   };
 
   it("goes stale after a minute, not ten: the API withdraws and restores the flow at runtime", async () => {

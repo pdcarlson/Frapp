@@ -149,6 +149,24 @@ describe('ExpoPushProvider', () => {
       expect(stacked[0]).toMatchObject({ threadId: 'chat:channel-1' });
       expect(plain[0]).not.toHaveProperty('threadId');
     });
+
+    it('sends categoryId for the action buttons, and leaves it off when unset (#4686)', async () => {
+      mockSendPushNotificationsAsync.mockResolvedValue([
+        { status: 'ok', id: 'r-1' },
+      ]);
+
+      await provider.sendToUser([VALID_A], {
+        title: 'Hi',
+        body: 'There',
+        categoryId: 'event-excuse',
+      });
+      await provider.sendToUser([VALID_A], { title: 'Hi', body: 'There' });
+
+      const [[actionable], [plain]] = mockSendPushNotificationsAsync.mock
+        .calls as [Record<string, unknown>[]][];
+      expect(actionable[0]).toMatchObject({ categoryId: 'event-excuse' });
+      expect(plain[0]).not.toHaveProperty('categoryId');
+    });
   });
 
   // #3846: a push with no text tells the reader nothing on a lock screen.

@@ -306,10 +306,13 @@ export class ReportController {
   /**
    * Single dispatch point for the three export formats.
    *
-   * CSV behaviour is byte-for-byte what it was before PDF existed — same
-   * headers, same filename, same inline body. The dashboard does not use it
-   * (it builds CSV client-side from the preview), so the contract is kept for
-   * external callers, who are exactly the ones a silent change would break.
+   * CSV keeps the shape it had before PDF existed — same headers, same
+   * filename, same inline body — with one deliberate change (#3976): a text
+   * cell a spreadsheet would run as a formula carries a leading apostrophe,
+   * and a cell holding a semicolon is quoted (`toCSV`). The dashboard does not
+   * use it (it builds CSV client-side from the preview, through the same cell
+   * writer), so the contract is kept for external callers, who are exactly the
+   * ones a silent change would break.
    * `subtitle` is a thunk so the scope line is only built when a PDF needs it.
    */
   private async respond<T extends Record<string, any>>(

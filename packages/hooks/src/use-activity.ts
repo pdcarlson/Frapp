@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { localWeekStart } from "./activity-standing";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -15,7 +16,7 @@ export const activityKeys = createChapterQueryKeys("activity");
  *
  * A poll row carries no tallies; draw chat's own card from the message it
  * points at. Invalidate `activityKeys.chapter(chapterId)` after acting on a row (a vote, a
- * task transition, an approval) so the row leaves "Needs you".
+ * task transition, an approval) so the row leaves the list.
  */
 export function useActivity(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
@@ -24,8 +25,13 @@ export function useActivity(options: { enabled?: boolean } = {}) {
     // `enabled` holds the query until there is a chapter, so the key is never
     // built without one.
     queryKey: activityKeys.chapter(chapterId!),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/activity");
+    queryFn: async ({ signal }) => {
+      // The member's week on this device, for the read's `week`: the same
+      // Sunday the standing read counts study from.
+      const { data, error } = await client.GET("/v1/activity", {
+        signal,
+        params: { query: { week_start: localWeekStart().toISOString() } },
+      });
       if (error) throw error;
       return data;
     },

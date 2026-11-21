@@ -21,7 +21,7 @@ export function InlineNote({
   className?: string;
 }) {
   return (
-    <p className={cn("py-1 text-sm text-muted-foreground", className)}>
+    <p className={cn("py-1 text-body text-muted-foreground", className)}>
       {children}
     </p>
   );
@@ -33,7 +33,9 @@ export function InlineNote({
  */
 export const inlineNoteActionClassName = cn(
   buttonVariants({ variant: "link" }),
-  "inline h-auto p-0 align-baseline text-sm",
+  // The sentence's own size and line, whether that is the note's body or a
+  // caption it sits in (#4138), not the button's 14px.
+  "inline h-auto p-0 align-baseline text-[length:inherit] leading-[inherit]",
 );
 
 /**

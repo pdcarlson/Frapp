@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   useMutation,
   useQuery,
@@ -10,7 +9,6 @@ import {
 import { codeOf, serverMessageOf, statusOf } from "@repo/api-sdk";
 import type { components } from "@repo/api-sdk";
 import {
-  JOIN_TERMS_REQUIRED_COPY,
   LEGAL_ACCEPTANCE_REQUIRED_CODE,
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
   TERMS_PROMPT_COPY,
@@ -48,9 +46,10 @@ export function useLegalAcceptance(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: legalAcceptanceQueryKey(),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/users/me/legal-acceptance",
+        { signal },
       );
       if (error) throw error;
       return data;
@@ -132,38 +131,16 @@ export function termsPromptErrorCopy(error: unknown): string {
 }
 
 /**
- * The join screens' Terms checkbox (#2302), shared by web `/join` and mobile
- * s02 so the rule for when to ask lives once.
- *
- * - **When to ask.** Unless the server has said this user already accepted
- *   the current Terms. A status still loading, or one that failed, asks:
- *   ticking is harmless for someone who had accepted, and leaving the box off
- *   would only earn a refusal.
- * - **A refusal asks again.** If the server refuses the join anyway (its
- *   answer changed since the status was read), `onJoinError` shows the box
- *   and clears any stale tick.
+ * The redeem body for a join from a screen showing the Terms line (#5625).
+ * The line ("By joining you agree to the Terms and Privacy Policy...",
+ * `termsLine` in `@repo/validation`) replaced the checkbox the join screens
+ * had (#2302) on Paul's 2026-11-19 pick, so the tap under it is the
+ * acceptance and every such join carries it. The server records it only when
+ * the user hasn't accepted the current version already.
  */
-export function useJoinTermsCheckbox(options: { enabled: boolean }) {
-  const status = useLegalAcceptance({ enabled: options.enabled });
-  const [accepted, setAccepted] = useState(false);
-  const [demanded, setDemanded] = useState(false);
-  const needed = demanded || status.data?.required !== false;
-  return {
-    /** Show the checkbox. */
-    needed,
-    accepted,
-    setAccepted,
-    /** The copy to show instead of joining, or `null` when the join may go ahead. */
-    blocker: needed && !accepted ? JOIN_TERMS_REQUIRED_COPY : null,
-    /** The redeem body: the checkbox goes with it whenever it is shown. */
-    redeemBody(token: string): { token: string; accept_terms_privacy?: true } {
-      return needed ? { token, accept_terms_privacy: true } : { token };
-    },
-    /** Hand a failed join's error here; it asks again if the server wanted the box. */
-    onJoinError(error: unknown): void {
-      if (!isTermsRequiredError(error)) return;
-      setDemanded(true);
-      setAccepted(false);
-    },
-  };
+export function joinRedeemBody(token: string): {
+  token: string;
+  accept_terms_privacy: true;
+} {
+  return { token, accept_terms_privacy: true };
 }

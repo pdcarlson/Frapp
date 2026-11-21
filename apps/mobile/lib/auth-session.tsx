@@ -15,13 +15,23 @@ import {
 import { AppState } from "react-native";
 import { signInWithNativeApple } from "./apple-auth";
 import { signInWithNativeGoogle } from "./google-auth";
+import { MemberFacingError } from "@repo/hooks/error-copy";
+import { describeEmailCodeError } from "@repo/hooks/auth-error-copy";
 import {
+  describeAuthReturnError,
   describeOAuthKickoffError,
+  FINISH_FAILED_COPY,
+  START_FAILED_COPY,
   type OAuthProvider,
 } from "./auth-providers";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
+import { accessTokenPayload } from "./fresh-auth-token";
 import { resetObservabilityOnLogout } from "./observability/reset";
-import { clearProductQueryCache } from "./query-client";
+import { reportAuthFailure } from "./sentry/auth-failures";
+import {
+  clearProductQueryCache,
+  noteRefreshedSignInToken,
+} from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -33,6 +43,31 @@ WebBrowser.maybeCompleteAuthSession();
  * because the mobile app must not import from the API workspace.
  */
 const ACTIVE_CHAPTER_CLAIM = "active_chapter_id";
+
+/** The token's own chapter claim, read without verifying it. */
+function chapterClaimOf(token: string): unknown {
+  return accessTokenPayload(token)?.[ACTIVE_CHAPTER_CLAIM];
+}
+
+/**
+ * The chapter the token names, or `null` when it names none.
+ *
+ * Decoded on the phone, never verified, and never sent anywhere: it picks
+ * which chapter the app renders and which `x-chapter-id` it sends, and the
+ * API re-reads the same claim from the verified token on every request
+ * (`ChapterGuard`, `spec/behavior/multi-tenancy.md`). Web reads it the same
+ * way (`apps/web/lib/auth/active-chapter-claim.ts`).
+ *
+ * It used to come from `supabase.auth.getClaims()`, which on Hermes (no
+ * WebCrypto `subtle`) falls back to `getUser()`: a round trip to Supabase Auth
+ * that every launch waited on before the first screen could mount, for up to
+ * eight seconds on a bad connection, to learn what the token in hand already
+ * said (#5768).
+ */
+function chapterIdOf(token: string): string | null {
+  const claim = chapterClaimOf(token);
+  return typeof claim === "string" && claim.length > 0 ? claim : null;
+}
 
 export type AuthMethod = "password" | "magic_link";
 
@@ -50,16 +85,17 @@ type AuthSessionContextValue = {
   /** Resolved from the access token's `active_chapter_id` claim; see below. */
   chapterId: string | null;
   /**
-   * True while the first claim read for the current token is still in flight.
+   * True while the member is signed in but no access token is in hand yet, so
+   * the chapter claim can't be read.
    *
-   * `chapterId` is `null` both before the claim has been read and after it has
-   * resolved to "no chapter", and a caller that treats those alike will act on
+   * `chapterId` is `null` both before the claim can be read and when the
+   * token names no chapter, and a caller that treats those alike will act on
    * a not-yet-known answer. Anything gating on `chapterId === null` MUST wait
    * for this to be false — `lib/auth-gate.ts` is the one place that does, and
    * it is where the consequences are documented.
    *
-   * It goes false on a bounded timeout as well as on settle, so a hung network
-   * cannot leave a caller waiting forever.
+   * The claim is decoded from the token on the phone, so this never waits on
+   * the network (#5768).
    */
   isChapterResolving: boolean;
   /** False when `EXPO_PUBLIC_SUPABASE_*` are missing — sign-in cannot work. */
@@ -72,6 +108,20 @@ type AuthSessionContextValue = {
   }) => Promise<void>;
   sendMagicLink: (input: { email: string }) => Promise<void>;
   /**
+   * Signs in with the six-digit code from the same email a magic link sends
+   * (#5625), so the invite card never has to leave the app. Needs the Auth
+   * email template to print `{{ .Token }}`; until it does, the link is the
+   * way in.
+   */
+  verifyEmailCode: (input: { email: string; code: string }) => Promise<void>;
+  /**
+   * Sends the sign-up confirmation email again, for a password account that
+   * was never confirmed (`email_not_confirmed`, #3833). Its link opens the app
+   * through the same `frapp:///?` redirect as a magic link, so opening it on
+   * this phone signs the member in.
+   */
+  resendConfirmation: (input: { email: string }) => Promise<void>;
+  /**
    * Google, or Apple. Native SIWA is tried first on iOS; otherwise an Expo
    * auth session opens the provider and the returned URL is exchanged here.
    */
@@ -80,12 +130,6 @@ type AuthSessionContextValue = {
 };
 
 const AuthSessionContext = createContext<AuthSessionContextValue | null>(null);
-
-/**
- * How long the routing gate will wait on the first chapter-claim read before
- * letting the app through without it.
- */
-const CLAIM_READ_TIMEOUT_MS = 8_000;
 
 const NOT_CONFIGURED_MESSAGE =
   "Supabase is not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.";
@@ -120,6 +164,8 @@ function readAuthParams(url: string): {
   otpType: string | null;
   errorDescription: string | null;
   errorCode: string | null;
+  /** The bare `error` identifier (`access_denied`), kept apart from the sentence. */
+  error: string | null;
 } {
   const hashIndex = url.indexOf("#");
   const queryIndex = url.indexOf("?");
@@ -146,10 +192,18 @@ function readAuthParams(url: string): {
     // sign in the provider's message into a space.
     errorDescription: read("error_description") ?? read("error"),
     errorCode: read("error_code"),
+    error: read("error"),
   };
 }
 
-function oauthRedirectTo(): string {
+/**
+ * Where an email link (magic link, the confirmation resend) or a provider
+ * return sends the member back into the app. The hosted Magic Link template
+ * appends `&token_hash=…&type=magiclink` onto `{{ .RedirectTo }}`. Web's
+ * callback already has `?next=`; this URL must also carry `?` or the `&`
+ * produces `frapp:///&token_hash=`.
+ */
+function appRedirectTo(): string {
   const redirectTo = Linking.createURL("/");
   return redirectTo.includes("?") ? redirectTo : `${redirectTo}?`;
 }
@@ -174,10 +228,23 @@ async function createSessionFromUrl(
     otpType,
     errorDescription,
     errorCode,
+    error: errorIdentifier,
   } = readAuthParams(url);
+  // A link or provider return that didn't become a session (#3832). Only the
+  // code is read, never the URL, which holds the code or token itself.
+  const reportCallback = (error: unknown, linkCode?: string) =>
+    reportAuthFailure({
+      flow: "auth_callback",
+      screen: "/sign-in",
+      error,
+      code: linkCode,
+    });
 
   if (errorDescription || errorCode) {
-    return describeOAuthKickoffError({
+    // `error_code` is GoTrue's, `error` the provider's identifier
+    // (`access_denied`); `error_description` is a sentence and never sent.
+    reportCallback(undefined, errorCode ?? errorIdentifier ?? undefined);
+    return describeAuthReturnError({
       message: errorDescription ?? errorCode ?? undefined,
       code: errorCode ?? undefined,
     });
@@ -186,31 +253,37 @@ async function createSessionFromUrl(
 
   try {
     if (accessToken && refreshToken) {
+      // The implicit flow's return, and the one a new address's link takes
+      // today: the hosted Confirm signup template still links
+      // `ConfirmationURL` (#1925), which lands tokens in the fragment.
       const { error } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
       });
-      return error ? describeOAuthKickoffError(error) : null;
+      if (error) reportCallback(error);
+      return error ? describeAuthReturnError(error) : null;
     }
     if (tokenHash) {
       if (!otpType || !isEmailOtpType(otpType)) {
-        return "That sign-in link could not be used. Request a new one.";
+        reportCallback(undefined, "verify_failed");
+        return FINISH_FAILED_COPY;
       }
       const { error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
         type: otpType,
       });
-      return error ? describeOAuthKickoffError(error) : null;
+      if (error) reportCallback(error);
+      return error ? describeAuthReturnError(error) : null;
     }
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
-      return error ? describeOAuthKickoffError(error) : null;
+      if (error) reportCallback(error);
+      return error ? describeAuthReturnError(error) : null;
     }
     return null;
   } catch (error) {
-    return error instanceof Error
-      ? describeOAuthKickoffError(error)
-      : "That sign-in link could not be used. Request a new one.";
+    reportCallback(error);
+    return describeAuthReturnError(error);
   }
 }
 
@@ -226,36 +299,6 @@ export function AuthSessionProvider({
     supabase ? "hydrating" : "unauthenticated",
   );
   const [session, setSession] = useState<Session | null>(null);
-  /**
-   * Last successfully read chapter claim, tagged with the user it belongs to.
-   *
-   * Chapter id and "has the first claim been read" are *derived* from this plus
-   * the current session. An effect that `setState(null)` on user change would
-   * lag one paint behind a magic-link account swap; deriving means the previous
-   * member's chapter cannot appear on the new member's first render.
-   */
-  const [claimedChapter, setClaimedChapter] = useState<{
-    userId: string | null;
-    chapterId: string | null;
-  }>({ userId: null, chapterId: null });
-  /**
-   * User id for whom the *first* chapter-claim read has finished.
-   *
-   * Deliberately not "a read is in flight". The claim is re-read on every token
-   * change — the hourly auto-refresh, every foreground, every chapter switch —
-   * and the routing gate renders nothing while resolving. Gating on in-flight
-   * would therefore blank and remount the whole tab navigator about once an
-   * hour, losing composer drafts and scroll position. A re-read only ever
-   * confirms or changes a chapter, so only the first one is worth waiting for.
-   *
-   * The distinction is load-bearing rather than theoretical: `chapterId` is
-   * null whenever the claim is absent — no membership yet, or an incident that
-   * disabled the hook — so "we already have a chapter" cannot be the thing
-   * that skips the wait — this has to be.
-   */
-  const [claimReadForUserId, setClaimReadForUserId] = useState<string | null>(
-    null,
-  );
   const [callbackError, setCallbackError] = useState<string | null>(null);
   /**
    * Last auth uid observed in `applySession`.
@@ -269,6 +312,7 @@ export function AuthSessionProvider({
    * clear. A first uid (`null` → A) is a sign-in, not a swap.
    */
   const previousAuthUserIdRef = useRef<string | null>(null);
+  const previousAccessTokenRef = useRef<string | null>(null);
   /**
    * Last deep-link URL we already exchanged. OAuth `openAuthSessionAsync`
    * returns the same URL that `Linking.useURL` then delivers; exchanging a
@@ -280,24 +324,12 @@ export function AuthSessionProvider({
   const accessToken = session?.access_token ?? null;
   const userId = session?.user?.id ?? null;
   /**
-   * Key for the derived claim store. Prefer `user.id` so a magic-link account
-   * swap drops the previous chapter on the same render. When the session has a
-   * token but no user id (tests, some hydrations), a stable sentinel still
-   * lets the claim read run — using the access token itself would re-key on
-   * every refresh and re-block the routing gate.
+   * Derived from the token on every render, so a magic-link account swap or a
+   * chapter switch's refreshed token changes the chapter on the same render as
+   * the session, with no read to wait on and nothing of the previous member's
+   * to retain.
    */
-  const claimKey = accessToken ? (userId ?? "__no_user_id__") : null;
-  const chapterId =
-    claimKey && claimedChapter.userId === claimKey
-      ? claimedChapter.chapterId
-      : null;
-  /**
-   * Whether the *first* chapter-claim read for the current account has finished.
-   * False with no token (do not treat the pre-`getSession()` mount as resolved)
-   * and false the moment `claimKey` changes, even before the claim effect re-runs.
-   */
-  const hasReadChapterClaim =
-    Boolean(claimKey) && claimReadForUserId === claimKey;
+  const chapterId = accessToken ? chapterIdOf(accessToken) : null;
 
   // Hydrate from persisted storage, then follow every subsequent change.
   useEffect(() => {
@@ -327,6 +359,23 @@ export function AuthSessionProvider({
         clearProductQueryCache();
       }
       previousAuthUserIdRef.current = nextUserId;
+      // A refreshed token for the same member in the same chapter: retry what
+      // the API refused while the old one was lapsing (`noteRefreshedSignInToken`).
+      // A chapter switch also refreshes the token, but its refetch has to wait
+      // for the new chapter id to commit (`lib/frapp-client.tsx`), and the
+      // chapter change's cache clear does it.
+      const nextToken = nextSession?.access_token ?? null;
+      const previousToken = previousAccessTokenRef.current;
+      previousAccessTokenRef.current = nextToken;
+      if (
+        nextToken &&
+        previousToken &&
+        nextToken !== previousToken &&
+        previousUserId === nextUserId &&
+        chapterClaimOf(nextToken) === chapterClaimOf(previousToken)
+      ) {
+        noteRefreshedSignInToken();
+      }
       setSession(nextSession ?? null);
       setStatus(nextSession ? "authenticated" : "unauthenticated");
       if (opts.clearCallbackError && nextSession) setCallbackError(null);
@@ -367,95 +416,15 @@ export function AuthSessionProvider({
     }
   }, [accessToken, status]);
 
-  /**
-   * Chapter context comes from the token claim, never from a local pick.
-   *
-   * Per `spec/behavior/multi-tenancy.md`, the `active_chapter_id` claim is
-   * authoritative and `x-chapter-id` is only a fallback — if the two disagree
-   * the API rejects *every* request with 403 `chapter.context.mismatch`.
-   * Reading the claim makes disagreement impossible by construction.
-   *
-   * `null` is a safe resolution, not a failure: the API resolves a sole
-   * membership server-side when no claim is present, so single-chapter members
-   * work regardless. A multi-chapter member with no selection reaches the
-   * picker from the More hub (#764) — see `lib/auth-gate.ts` for why that is
-   * not a forced redirect.
-   *
-   * Selecting a chapter goes through `lib/select-chapter.ts`, which activates
-   * server-side and then refreshes the session — the new token arrives here as
-   * a changed `accessToken` and this effect re-reads the claim. That is why
-   * there is still no local override: the claim stays the only source.
-   *
-   * Retention on a failed *read* is scoped to `claimedChapter.userId`. A magic
-   * link can swap accounts with no sign-out; deriving `chapterId` from that tag
-   * drops the previous member's chapter on the same render as the new session,
-   * without an effect `setState(null)` that would lag one paint.
-   */
-  useEffect(() => {
-    if (!supabase) return;
-
-    if (!accessToken || !claimKey) {
-      // Do NOT mark the claim as read here. This branch runs on mount, before
-      // `getSession()` has resolved, and marking it read would let the gate
-      // commit a render of the whole tab navigator on the next tick — which
-      // then blanks and remounts the moment the real read starts. `chapterId`
-      // and `hasReadChapterClaim` already derive to "not ready" without token.
-      return;
-    }
-
-    const claimUserId = claimKey;
-    let cancelled = false;
-
-    // Stop *waiting* on the claim after a bounded delay — but keep listening.
-    //
-    // The routing gate renders nothing while the first read is in flight, and
-    // this read is a real network call with no timeout of its own (React
-    // Native's fetch has no default, and auth-js falls back to `getUser` here
-    // because Hermes has no WebCrypto `subtle`). A captive portal accepts the
-    // connection and then never answers, which would otherwise leave a blank
-    // screen behind an already-hidden splash for as long as the socket hangs.
-    //
-    // Proceeding without the claim is safe by design — see `lib/auth-gate.ts`.
-    // The request is deliberately not aborted: if it lands later, the claim
-    // still applies.
-    const resolveTimer = setTimeout(() => {
-      if (!cancelled) setClaimReadForUserId(claimUserId);
-    }, CLAIM_READ_TIMEOUT_MS);
-
-    supabase.auth
-      .getClaims()
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        // A failed *read* is not a resolved absence, and the two must not
-        // collapse: the gate evicts a member with no chapter to the picker, so
-        // nulling here on a network blip would throw someone out of the app
-        // mid-use. `getClaims` is a real round trip on this platform — Hermes
-        // has no WebCrypto `subtle`, so auth-js falls back to `getUser()` — and
-        // it re-runs on every hourly refresh and every foreground. Keep the
-        // last known chapter and let the next token try again.
-        if (error || !data?.claims) return;
-        const claim = data.claims[ACTIVE_CHAPTER_CLAIM];
-        setClaimedChapter({
-          userId: claimUserId,
-          chapterId:
-            typeof claim === "string" && claim.length > 0 ? claim : null,
-        });
-      })
-      .catch(() => {
-        // Same reasoning as above — retain, do not demote.
-      })
-      .finally(() => {
-        // Each run owns its own `cancelled`, so a superseded read can never
-        // clear the flag out from under the newer one that replaced it.
-        if (!cancelled) setClaimReadForUserId(claimUserId);
-        clearTimeout(resolveTimer);
-      });
-
-    return () => {
-      cancelled = true;
-      clearTimeout(resolveTimer);
-    };
-  }, [supabase, accessToken, claimKey]);
+  // Chapter context comes from the token claim, never from a local pick
+  // (`chapterId` above). Per `spec/behavior/multi-tenancy.md` the claim is
+  // authoritative and `x-chapter-id` only a fallback, and the API rejects
+  // every request with 403 `chapter.context.mismatch` when they disagree, so
+  // reading the claim makes disagreement impossible by construction. `null` is
+  // a safe resolution, not a failure: the API resolves a sole membership
+  // server-side when no claim is present (`lib/auth-gate.ts`). Selecting a
+  // chapter goes through `lib/select-chapter.ts`, which activates server-side
+  // and refreshes the session; the new token's claim is the new chapter.
 
   // supabase-js refreshes tokens on a timer, and the OS suspends timers in the
   // background. Restart the loop whenever the app is foregrounded, or a session
@@ -504,7 +473,14 @@ export function AuthSessionProvider({
         email,
         password,
       });
-      if (error) throw error;
+      if (error) {
+        reportAuthFailure({
+          flow: "password_sign_in",
+          screen: "/sign-in",
+          error,
+        });
+        throw error;
+      }
     },
     [supabase],
   );
@@ -514,37 +490,97 @@ export function AuthSessionProvider({
       if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
       // A fresh request supersedes whatever the last dead link reported.
       setCallbackError(null);
-      // The hosted Magic Link template appends `&token_hash=…&type=magiclink`
-      // onto `{{ .RedirectTo }}`. Web's callback already has `?next=`; this
-      // URL must also carry `?` or the `&` produces `frapp:///&token_hash=`.
-      const redirectTo = Linking.createURL("/");
-      const emailRedirectTo = redirectTo.includes("?")
-        ? redirectTo
-        : `${redirectTo}?`;
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo },
+        options: { emailRedirectTo: appRedirectTo() },
       });
-      if (error) throw error;
+      if (error) {
+        reportAuthFailure({
+          flow: "magic_link_send",
+          screen: "/sign-in",
+          error,
+        });
+        throw error;
+      }
+    },
+    [supabase],
+  );
+
+  const verifyEmailCode = useCallback(
+    async ({ email, code }: { email: string; code: string }) => {
+      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      setCallbackError(null);
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token: code,
+        type: "email",
+      });
+      if (error) {
+        // A mistyped code is the member's, not a failure to report.
+        if (!describeEmailCodeError(error).wrongCode) {
+          reportAuthFailure({
+            flow: "email_code_verify",
+            screen: "/join",
+            error,
+          });
+        }
+        throw error;
+      }
+    },
+    [supabase],
+  );
+
+  const resendConfirmation = useCallback(
+    async ({ email }: { email: string }) => {
+      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      setCallbackError(null);
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: appRedirectTo() },
+      });
+      if (error) {
+        reportAuthFailure({
+          flow: "confirmation_resend",
+          screen: "/sign-in",
+          error,
+        });
+        throw error;
+      }
     },
     [supabase],
   );
 
   const signInWithOAuthProvider = useCallback(
     async (provider: OAuthProvider) => {
-      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      // Each failure below is reported once, here, as `oauth_start` with the
+      // error it came from (#3832). A return that reached the app but didn't
+      // become a session was already reported by `createSessionFromUrl` as
+      // `auth_callback`, so its rethrow is not reported again. A cancel is
+      // not a failure.
+      const startFailed = (error: unknown): unknown => {
+        reportAuthFailure({ flow: "oauth_start", screen: "/sign-in", error });
+        return error;
+      };
+      if (!supabase) throw startFailed(new Error(NOT_CONFIGURED_MESSAGE));
       setCallbackError(null);
 
-      if (provider === "apple") {
-        const native = await signInWithNativeApple(supabase);
-        if (native === "completed" || native === "cancelled") return;
+      let native: "completed" | "cancelled" | "unavailable" = "unavailable";
+      try {
+        if (provider === "apple") {
+          native = await signInWithNativeApple(supabase);
+        } else if (provider === "google") {
+          native = await signInWithNativeGoogle(supabase);
+        }
+      } catch (error) {
+        throw startFailed(error);
       }
-      if (provider === "google") {
-        const native = await signInWithNativeGoogle(supabase);
-        if (native === "completed" || native === "cancelled") return;
+      if (native === "cancelled") return;
+      if (native === "completed") {
+        return;
       }
 
-      const redirectTo = oauthRedirectTo();
+      const redirectTo = appRedirectTo();
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
@@ -555,12 +591,14 @@ export function AuthSessionProvider({
         },
       });
       if (error) {
-        throw Object.assign(new Error(describeOAuthKickoffError(error)), {
-          code: error.code,
-        });
+        startFailed(error);
+        throw Object.assign(
+          new MemberFacingError(describeOAuthKickoffError(error)),
+          { code: error.code },
+        );
       }
       if (!data.url) {
-        throw new Error("Unable to start sign-in. Retry in a moment.");
+        throw startFailed(new MemberFacingError(START_FAILED_COPY));
       }
 
       const result = await WebBrowser.openAuthSessionAsync(
@@ -569,7 +607,7 @@ export function AuthSessionProvider({
       );
       if (result.type === "cancel" || result.type === "dismiss") return;
       if (result.type !== "success") {
-        throw new Error("Unable to finish sign-in. Retry in a moment.");
+        throw startFailed(new MemberFacingError(FINISH_FAILED_COPY));
       }
 
       // `openAuthSessionAsync` returning success and `Linking.useURL`
@@ -584,7 +622,7 @@ export function AuthSessionProvider({
       lastHandledCallbackUrl.current = result.url;
       const message = await createSessionFromUrl(supabase, result.url);
       if (message) {
-        throw new Error(message);
+        throw new MemberFacingError(message);
       }
     },
     [supabase],
@@ -596,7 +634,7 @@ export function AuthSessionProvider({
         await supabase.auth.signOut();
       }
     } catch {
-      // Never propagate. Callers navigate away on return (`profile.tsx`), so a
+      // Never propagate. Callers navigate away on return (`preferences.tsx`), so a
       // thrown network error would strand the member on an authenticated screen
       // while the local session below is already gone.
     }
@@ -623,15 +661,13 @@ export function AuthSessionProvider({
     clearProductQueryCache();
     previousAuthUserIdRef.current = null;
     setSession(null);
-    setClaimedChapter({ userId: null, chapterId: null });
-    setClaimReadForUserId(null);
     setStatus("unauthenticated");
     resetObservabilityOnLogout();
   }, [supabase]);
 
-  // Only the first read blocks, and only while signed in — see the state's own
-  // comment for why an in-flight re-read must not.
-  const isChapterResolving = status === "authenticated" && !hasReadChapterClaim;
+  // Signed in with no token yet: the claim can't be read. Decoding is
+  // synchronous, so this is false on the same render the session arrives.
+  const isChapterResolving = status === "authenticated" && !accessToken;
 
   const value = useMemo<AuthSessionContextValue>(
     () => ({
@@ -644,6 +680,8 @@ export function AuthSessionProvider({
       callbackError,
       signInWithPassword,
       sendMagicLink,
+      verifyEmailCode,
+      resendConfirmation,
       signInWithOAuthProvider,
       signOut,
     }),
@@ -652,6 +690,7 @@ export function AuthSessionProvider({
       chapterId,
       configured,
       isChapterResolving,
+      resendConfirmation,
       sendMagicLink,
       session?.user?.email,
       signInWithPassword,
@@ -659,6 +698,7 @@ export function AuthSessionProvider({
       signOut,
       status,
       userId,
+      verifyEmailCode,
     ],
   );
 

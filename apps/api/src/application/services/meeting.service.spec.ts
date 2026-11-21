@@ -1,0 +1,1555 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { EMPTY_MEETING_CONTENT } from '@repo/validation';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import type { IMeetingRepository } from '#domain/repositories/meeting.repository.interface';
+import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type { Meeting } from '#domain/entities/meeting.entity';
+import type { Event } from '#domain/entities/event.entity';
+import type { Member } from '#domain/entities/member.entity';
+import { MeetingService } from './meeting.service';
+import type { EventService } from './event.service';
+import type { RbacService } from './rbac.service';
+import type { NotificationService } from './notification.service';
+import { isInvited } from './event-role-targeting';
+
+const CHAPTER = 'ch-1';
+const EXEC_ROLE = 'role-exec';
+const MEMBER_ROLE = 'role-member';
+
+// The secretary holds the exec role and writes minutes; the president holds
+// everything; Jake is an ordinary member.
+const SECRETARY = 'user-secretary';
+const PRESIDENT = 'user-president';
+const JAKE = '00000000-0000-4000-8000-00000000000a';
+const VP = 'user-vp';
+
+const PERMISSIONS: Record<string, string[]> = {
+  [SECRETARY]: ['members:view', 'meetings:record', 'events:create'],
+  [VP]: ['members:view', 'meetings:record'],
+  [PRESIDENT]: ['*'],
+  [JAKE]: ['members:view'],
+};
+
+const member = (userId: string, roleIds: string[]): Member =>
+  ({
+    id: `m-${userId}`,
+    user_id: userId,
+    chapter_id: CHAPTER,
+    role_ids: roleIds,
+  }) as unknown as Member;
+
+const MEMBERS: Member[] = [
+  member(SECRETARY, [EXEC_ROLE]),
+  member(VP, [EXEC_ROLE]),
+  member(PRESIDENT, [EXEC_ROLE]),
+  member(JAKE, [MEMBER_ROLE]),
+];
+
+const event = (overrides: Partial<Event> = {}): Event => ({
+  id: 'evt-chapter',
+  chapter_id: CHAPTER,
+  name: 'Chapter meeting',
+  description: null,
+  location: null,
+  start_time: '2026-11-10T00:00:00.000Z',
+  end_time: '2026-11-10T01:00:00.000Z',
+  point_value: 10,
+  is_mandatory: true,
+  recurrence_rule: null,
+  parent_event_id: null,
+  required_role_ids: null,
+  optional_role_ids: null,
+  excluded_role_ids: null,
+  others_invited: true,
+  notes: null,
+  check_in_zone: null,
+  check_in_zone_name: null,
+  check_in_opens_minutes: 10,
+  event_type_id: null,
+  agenda: [],
+  attachments: [],
+  created_by: SECRETARY,
+  created_at: '2026-11-01T00:00:00.000Z',
+  ...overrides,
+});
+
+const CHAPTER_EVENT = event();
+// Invites only the exec roles, the way an Exec meeting is set up.
+const EXEC_EVENT = event({
+  id: 'evt-exec',
+  name: 'Exec meeting',
+  others_invited: false,
+  required_role_ids: [EXEC_ROLE],
+});
+
+const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
+  id: 'mtg-1',
+  chapter_id: CHAPTER,
+  event_id: CHAPTER_EVENT.id,
+  event_name: CHAPTER_EVENT.name,
+  event_start_time: CHAPTER_EVENT.start_time,
+  meeting_type: 'chapter',
+  other_label: null,
+  status: 'draft',
+  content: { ...EMPTY_MEETING_CONTENT },
+  created_by: SECRETARY,
+  updated_by: SECRETARY,
+  posted_by: null,
+  posted_at: null,
+  created_at: '2026-11-10T02:00:00.000Z',
+  updated_at: '2026-11-10T02:00:00.000Z',
+  transcript: null,
+  ...overrides,
+});
+
+/** A member as a whole-audience check is handed them, already resolved. */
+const AUDIENCE = new Map(
+  MEMBERS.map((row) => [
+    row.user_id,
+    {
+      user_id: row.user_id,
+      permissions: new Set(PERMISSIONS[row.user_id] ?? []),
+      role_ids: row.role_ids,
+    },
+  ]),
+);
+const audience = (userId: string) => AUDIENCE.get(userId)!;
+
+describe('MeetingService', () => {
+  let events: Map<string, Event>;
+  let rows: Map<string, Meeting>;
+  let repo: jest.Mocked<IMeetingRepository>;
+  let attendance: jest.Mocked<Pick<IAttendanceRepository, 'findByEvent'>>;
+  let eventService: jest.Mocked<
+    Pick<
+      EventService,
+      'findById' | 'findVisibleByIds' | 'visibleToAll' | 'create' | 'delete'
+    >
+  >;
+  let notifyMembers: jest.Mock;
+  let service: MeetingService;
+  // Drafts with a recording row (`meeting_recordings`) that hasn't failed.
+  let recordedDrafts: Set<string>;
+  // Drafts someone has written notes on, and who is recording which now.
+  let notedDrafts: Set<string>;
+  let liveRecorders: Map<string, { userId: string; seenAt: string }>;
+
+  const has = (userId: string, permission: string) => {
+    const held = PERMISSIONS[userId] ?? [];
+    return held.includes('*') || held.includes(permission);
+  };
+  // The event read rule as `EventService` applies it (`isEventVisibleTo`).
+  const sees = (userId: string, row: Event) =>
+    has(userId, 'events:update') ||
+    isInvited(row, MEMBERS.find((m) => m.user_id === userId)?.role_ids ?? []);
+
+  beforeEach(() => {
+    events = new Map([
+      [CHAPTER_EVENT.id, CHAPTER_EVENT],
+      [EXEC_EVENT.id, EXEC_EVENT],
+    ]);
+    rows = new Map();
+    recordedDrafts = new Set();
+    notedDrafts = new Set();
+    liveRecorders = new Map();
+    repo = {
+      findById: jest.fn(async (_chapterId, id) => rows.get(id) ?? null),
+      findByIds: jest.fn(async (_chapterId: string, ids: readonly string[]) =>
+        ids.flatMap((id) => rows.get(id) ?? []),
+      ),
+      findByEvent: jest.fn(
+        async (_chapterId, eventId) =>
+          [...rows.values()].find((row) => row.event_id === eventId) ?? null,
+      ),
+      findByChapter: jest.fn(async (_chapterId: string, _limit: number) => [
+        ...rows.values(),
+      ]),
+      findPostedSince: jest.fn(
+        async (_chapterId: string, _since: string, _limit: number) =>
+          [...rows.values()].filter((row) => row.status === 'posted'),
+      ),
+      findPostedBefore: jest.fn(
+        async (
+          _chapterId: string,
+          _before: string,
+          meetingType: Meeting['meeting_type'],
+          _limit: number,
+        ) =>
+          [...rows.values()].filter(
+            (row) =>
+              row.status === 'posted' && row.meeting_type === meetingType,
+          ),
+      ),
+      create: jest.fn(async (data) => {
+        const row = meeting({ ...data, id: `mtg-${rows.size + 1}` });
+        rows.set(row.id, row);
+        return row;
+      }),
+      update: jest.fn(async (_chapterId, id, expected, data) => {
+        const row = rows.get(id);
+        if (!row || row.updated_at !== expected) return null;
+        const next = {
+          ...row,
+          ...data,
+          updated_at: new Date(Date.parse(row.updated_at) + 1000).toISOString(),
+        };
+        rows.set(id, next);
+        return next;
+      }),
+      delete: jest.fn(async (_chapterId, id) => {
+        rows.delete(id);
+      }),
+      findRecordedIds: jest.fn(
+        async (_chapterId: string, ids: readonly string[]) =>
+          new Set(ids.filter((id) => recordedDrafts.has(id))),
+      ),
+      findWithNotesIds: jest.fn(
+        async (_chapterId: string, ids: readonly string[]) =>
+          new Set(ids.filter((id) => notedDrafts.has(id))),
+      ),
+      // Both honour the cutoff, as the Supabase repository's `seen_at >=`
+      // filter does, so a beat older than it reads as stopped.
+      findLiveRecorders: jest.fn(
+        async (_chapterId: string, ids: readonly string[], since: string) =>
+          new Map(
+            [...liveRecorders]
+              .filter(([id, row]) => ids.includes(id) && row.seenAt >= since)
+              .map(([id, row]) => [id, row.userId]),
+          ),
+      ),
+      findLiveRecordings: jest.fn(async (_chapterId: string, since: string) =>
+        [...liveRecorders]
+          .filter(([, row]) => row.seenAt >= since)
+          .map(([meetingId, row]) => ({
+            meeting_id: meetingId,
+            chapter_id: CHAPTER,
+            user_id: row.userId,
+            started_at: row.seenAt,
+            seen_at: row.seenAt,
+          })),
+      ),
+      markLiveRecording: jest.fn(
+        async (_chapterId: string, id: string, userId: string, now: string) => {
+          liveRecorders.set(id, { userId, seenAt: now });
+        },
+      ),
+      clearLiveRecording: jest.fn(
+        async (_chapterId: string, id: string, userId: string) => {
+          if (liveRecorders.get(id)?.userId === userId) {
+            liveRecorders.delete(id);
+          }
+        },
+      ),
+      findTemplate: jest.fn().mockResolvedValue(null),
+      upsertTemplate: jest.fn(async (chapterId, sections, updatedBy) => ({
+        chapter_id: chapterId,
+        sections,
+        updated_by: updatedBy,
+        updated_at: '2026-11-10T00:00:00.000Z',
+      })),
+    };
+    attendance = {
+      findByEvent: jest.fn().mockResolvedValue([
+        { user_id: JAKE, status: 'PRESENT' },
+        { user_id: VP, status: 'LATE' },
+        { user_id: PRESIDENT, status: 'EXCUSED' },
+        { user_id: 'user-absent', status: 'ABSENT' },
+      ]),
+    };
+    eventService = {
+      findById: jest.fn(
+        async (id: string, _chapterId: string, viewer?: string) => {
+          const row = events.get(id);
+          if (!row || (viewer && !sees(viewer, row))) {
+            throw new NotFoundException('Event not found');
+          }
+          return row;
+        },
+      ),
+      findVisibleByIds: jest.fn(
+        async (ids: string[], _chapterId: string, viewer: string) =>
+          ids
+            .map((id) => events.get(id))
+            .filter((row): row is Event => !!row && sees(viewer, row)),
+      ),
+      visibleToAll: jest.fn(
+        async (
+          ids: readonly string[],
+          _chapterId: string,
+          viewers: Parameters<EventService['visibleToAll']>[2],
+        ) =>
+          new Set(
+            ids.filter((id) => {
+              const row = events.get(id);
+              return (
+                !!row &&
+                viewers.every((viewer) =>
+                  sees(
+                    Object.keys(PERMISSIONS).find(
+                      (userId) =>
+                        audience(userId).permissions === viewer.permissions,
+                    )!,
+                    row,
+                  ),
+                )
+              );
+            }),
+          ),
+      ),
+      create: jest.fn(async ({ attachments: _attachments, ...input }) => {
+        const row = event({
+          ...input,
+          id: 'evt-new',
+          notes: null,
+        });
+        events.set(row.id, row);
+        return row;
+      }),
+      delete: jest.fn(async (id: string, _chapterId: string) => {
+        events.delete(id);
+      }),
+    };
+    notifyMembers = jest.fn().mockResolvedValue(undefined);
+    const rbac = {
+      getEffectivePermissions: jest.fn(
+        async (_chapterId: string, userId: string) => PERMISSIONS[userId] ?? [],
+      ),
+      memberHasAnyPermission: jest.fn(
+        async (_chapterId: string, userId: string, wanted: string[]) =>
+          wanted.some((permission) => has(userId, permission)),
+      ),
+      findByChapter: jest
+        .fn()
+        .mockResolvedValue([{ id: EXEC_ROLE }, { id: MEMBER_ROLE }]),
+    };
+    const memberRepo = {
+      findByChapter: jest.fn().mockResolvedValue(MEMBERS),
+    };
+    service = new MeetingService(
+      repo,
+      attendance as unknown as IAttendanceRepository,
+      memberRepo as unknown as IMemberRepository,
+      eventService as unknown as EventService,
+      rbac as unknown as RbacService,
+      { notifyMembers } as unknown as NotificationService,
+    );
+  });
+
+  describe('listFacts (#5290)', () => {
+    it('keys a repeating event by its first event, with the rule, and counts what the minutes hold', async () => {
+      // A generated occurrence points at its series' head.
+      events.set(
+        'evt-head',
+        event({ id: 'evt-head', recurrence_rule: 'WEEKLY' }),
+      );
+      events.set(
+        'evt-occ',
+        event({
+          id: 'evt-occ',
+          parent_event_id: 'evt-head',
+          recurrence_rule: null,
+        }),
+      );
+      const occurrence = meeting({
+        id: 'mtg-occ',
+        event_id: 'evt-occ',
+        status: 'posted',
+        transcript: 'Words.',
+        content: {
+          ...EMPTY_MEETING_CONTENT,
+          tldr: '- Dues are due Friday.\n- Formal is set.',
+          decisions: [{ text: 'Dues due Friday', vote: null }],
+          action_items: [
+            { text: 'Book the venue', owner_user_id: null, due_date: null },
+            { text: 'Send reminder', owner_user_id: null, due_date: null },
+          ],
+        },
+      });
+      const oneOff = meeting({ id: 'mtg-one' });
+      recordedDrafts.add('mtg-one');
+      const facts = await service.listFacts(CHAPTER, PRESIDENT, [
+        occurrence,
+        oneOff,
+      ]);
+      expect(facts.get('mtg-occ')).toEqual({
+        series_key: 'evt-head',
+        series_rule: 'WEEKLY',
+        decision_count: 1,
+        action_item_count: 2,
+        recorded: true,
+        gist: 'Dues are due Friday.',
+        started: true,
+        recording_by: null,
+      });
+      expect(facts.get('mtg-one')).toEqual({
+        series_key: null,
+        series_rule: null,
+        decision_count: 0,
+        action_item_count: 0,
+        recorded: true,
+        gist: null,
+        started: true,
+        recording_by: null,
+      });
+    });
+
+    it("keys minutes on a series' first event by its own id", async () => {
+      events.set(
+        'evt-first',
+        event({ id: 'evt-first', recurrence_rule: 'WEEKLY' }),
+      );
+      const first = meeting({
+        id: 'mtg-first',
+        event_id: 'evt-first',
+        status: 'posted',
+      });
+      const facts = await service.listFacts(CHAPTER, PRESIDENT, [first]);
+      expect(facts.get('mtg-first')).toMatchObject({
+        series_key: 'evt-first',
+        series_rule: 'WEEKLY',
+      });
+    });
+
+    it('reads each event once for the list, reusing what the read rule loaded', async () => {
+      events.set('evt-x', event({ id: 'evt-x' }));
+      rows.set(
+        'mtg-x',
+        meeting({ id: 'mtg-x', event_id: 'evt-x', status: 'posted' }),
+      );
+      eventService.findVisibleByIds.mockClear();
+      const { rows: listed, facts } = await service.listWithFacts(
+        CHAPTER,
+        JAKE,
+      );
+      expect(listed.map((row) => row.id)).toEqual(['mtg-x']);
+      expect(facts.get('mtg-x')).toBeDefined();
+      const asked = eventService.findVisibleByIds.mock.calls.flatMap(
+        ([ids]) => [...ids],
+      );
+      expect(asked.filter((id) => id === 'evt-x')).toHaveLength(1);
+    });
+
+    it('reads events a hundred ids at a time', async () => {
+      const many = Array.from({ length: 150 }, (_, i) =>
+        meeting({ id: `mtg-${i}`, event_id: `evt-${i}`, status: 'posted' }),
+      );
+      eventService.findVisibleByIds.mockClear();
+      await service.listFacts(CHAPTER, PRESIDENT, many);
+      const sizes = eventService.findVisibleByIds.mock.calls.map(
+        ([ids]) => ids.length,
+      );
+      expect(Math.max(...sizes)).toBeLessThanOrEqual(100);
+      expect(sizes.filter((size) => size > 0)).toEqual([100, 50]);
+    });
+
+    it('gives no series for an event the reader cannot see, and asks about recordings only for drafts', async () => {
+      const posted = meeting({
+        id: 'mtg-exec',
+        event_id: EXEC_EVENT.id,
+        status: 'posted',
+      });
+      events.set(EXEC_EVENT.id, { ...EXEC_EVENT, recurrence_rule: 'WEEKLY' });
+      const facts = await service.listFacts(CHAPTER, JAKE, [posted]);
+      expect(facts.get('mtg-exec')).toMatchObject({
+        series_key: null,
+        recorded: false,
+      });
+      expect(repo.findRecordedIds).toHaveBeenCalledWith(CHAPTER, []);
+    });
+  });
+
+  describe('Standards meetings', () => {
+    it('refuses to start one, before anything is stored', async () => {
+      await expect(
+        service.start(CHAPTER, SECRETARY, {
+          meeting_type: 'standards',
+          event_id: CHAPTER_EVENT.id,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(eventService.findById).not.toHaveBeenCalled();
+    });
+
+    it('refuses to retype minutes as Standards', async () => {
+      rows.set('mtg-1', meeting());
+      await expect(
+        service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: meeting().updated_at,
+          meeting_type: 'standards',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('start', () => {
+    it('leaves attendees out when the chapter turned that section off', async () => {
+      repo.findTemplate.mockResolvedValue({
+        chapter_id: CHAPTER,
+        sections: ['summary', 'decisions'],
+        updated_by: PRESIDENT,
+        updated_at: '2026-11-10T00:00:00.000Z',
+      });
+      const view = await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'chapter',
+        event_id: CHAPTER_EVENT.id,
+      });
+      expect(view.attendees).toBeNull();
+      expect(attendance.findByEvent).not.toHaveBeenCalled();
+    });
+
+    it('starts a draft for the event, carrying the event notes into the summary', async () => {
+      events.set(CHAPTER_EVENT.id, event({ notes: 'Budget passed 30-2.' }));
+      const view = await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'chapter',
+        event_id: CHAPTER_EVENT.id,
+      });
+      expect(view.meeting.status).toBe('draft');
+      expect(view.content.summary).toBe('Budget passed 30-2.');
+      expect(view.attendees).toEqual({
+        present: [JAKE],
+        late: [VP],
+        excused: [PRESIDENT],
+      });
+      expect(view.can_edit).toBe(true);
+    });
+
+    it('refuses a second start without naming minutes the viewer may not read', async () => {
+      rows.set('mtg-1', meeting());
+      await expect(
+        service.start(CHAPTER, VP, {
+          meeting_type: 'chapter',
+          event_id: CHAPTER_EVENT.id,
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'meeting.already_started' },
+      });
+      const refusal = await service
+        .start(CHAPTER, VP, {
+          meeting_type: 'chapter',
+          event_id: CHAPTER_EVENT.id,
+        })
+        .catch((error: { getResponse(): object }) => error.getResponse());
+      expect(refusal).not.toHaveProperty('meeting_id');
+    });
+
+    it('refuses an event the officer cannot see', async () => {
+      PERMISSIONS['user-chair'] = ['members:view', 'meetings:record'];
+      MEMBERS.push(member('user-chair', [MEMBER_ROLE]));
+      try {
+        await expect(
+          service.start(CHAPTER, 'user-chair', {
+            meeting_type: 'exec',
+            event_id: EXEC_EVENT.id,
+          }),
+        ).rejects.toBeInstanceOf(NotFoundException);
+      } finally {
+        MEMBERS.pop();
+        delete PERMISSIONS['user-chair'];
+      }
+    });
+
+    it('makes a quiet event, nobody required, for a meeting that had none', async () => {
+      await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'exec',
+        new_event: {
+          name: 'Exec meeting',
+          start_time: '2026-11-11T00:00:00.000Z',
+          end_time: '2026-11-11T01:00:00.000Z',
+          role_ids: [EXEC_ROLE],
+        },
+      });
+      expect(eventService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          point_value: 0,
+          is_mandatory: false,
+          others_invited: false,
+          optional_role_ids: [EXEC_ROLE],
+          silent: true,
+        }),
+      );
+    });
+
+    it('makes the quiet event for an officer who can start minutes but not create events (#4935)', async () => {
+      await service.start(CHAPTER, VP, {
+        meeting_type: 'chapter',
+        new_event: {
+          name: 'Chapter meeting',
+          start_time: '2026-11-11T00:00:00.000Z',
+          end_time: '2026-11-11T01:00:00.000Z',
+        },
+      });
+      expect(eventService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ is_mandatory: false, silent: true }),
+      );
+    });
+
+    it('makes no event for someone who can neither start minutes nor create events', async () => {
+      await expect(
+        service.start(CHAPTER, JAKE, {
+          meeting_type: 'chapter',
+          new_event: {
+            name: 'Chapter meeting',
+            start_time: '2026-11-11T00:00:00.000Z',
+            end_time: '2026-11-11T01:00:00.000Z',
+          },
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(eventService.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a role from another chapter', async () => {
+      await expect(
+        service.start(CHAPTER, SECRETARY, {
+          meeting_type: 'exec',
+          new_event: {
+            name: 'Exec meeting',
+            start_time: '2026-11-11T00:00:00.000Z',
+            end_time: '2026-11-11T01:00:00.000Z',
+            role_ids: ['role-elsewhere'],
+          },
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('who can read minutes', () => {
+    it('keeps a draft to its author and officers who can edit any minutes', async () => {
+      rows.set('mtg-1', meeting());
+      await expect(service.canRead(CHAPTER, 'mtg-1', SECRETARY)).resolves.toBe(
+        true,
+      );
+      await expect(service.canRead(CHAPTER, 'mtg-1', PRESIDENT)).resolves.toBe(
+        true,
+      );
+      await expect(service.canRead(CHAPTER, 'mtg-1', VP)).resolves.toBe(false);
+      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(
+        false,
+      );
+      await expect(service.get(CHAPTER, 'mtg-1', JAKE)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(await service.list(CHAPTER, JAKE)).toEqual([]);
+    });
+
+    it('lets everyone the event invites read posted minutes', async () => {
+      rows.set(
+        'mtg-1',
+        meeting({ status: 'posted', posted_at: '2026-11-10T03:00:00.000Z' }),
+      );
+      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(true);
+      const view = await service.get(CHAPTER, 'mtg-1', JAKE);
+      expect(view.can_edit).toBe(false);
+      expect(view.can_delete).toBe(false);
+      expect((await service.list(CHAPTER, JAKE)).map((row) => row.id)).toEqual([
+        'mtg-1',
+      ]);
+    });
+
+    it('never opens an Exec meeting’s minutes to a member the event leaves out', async () => {
+      rows.set(
+        'mtg-exec',
+        meeting({
+          id: 'mtg-exec',
+          event_id: EXEC_EVENT.id,
+          event_name: EXEC_EVENT.name,
+          meeting_type: 'exec',
+          status: 'posted',
+          posted_at: '2026-11-10T03:00:00.000Z',
+        }),
+      );
+      await expect(
+        service.get(CHAPTER, 'mtg-exec', JAKE),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.canRead(CHAPTER, 'mtg-exec', JAKE)).resolves.toBe(
+        false,
+      );
+      expect(await service.list(CHAPTER, JAKE)).toEqual([]);
+      // The narrow read of recent posted minutes holds the same rule.
+      const since = new Date('2026-09-01T00:00:00.000Z');
+      expect(await service.listPostedSince(CHAPTER, JAKE, since, 5)).toEqual(
+        [],
+      );
+      expect(
+        (await service.listPostedSince(CHAPTER, PRESIDENT, since, 5)).map(
+          (row) => row.id,
+        ),
+      ).toEqual(['mtg-exec']);
+      expect(repo.findPostedSince).toHaveBeenLastCalledWith(
+        CHAPTER,
+        since.toISOString(),
+        5,
+      );
+      // So does the read of earlier minutes a draft's background uses (#5477).
+      const before = '2026-12-01T00:00:00.000Z';
+      expect(
+        await service.listPostedBefore(CHAPTER, JAKE, before, 'exec', 5),
+      ).toEqual([]);
+      expect(
+        (
+          await service.listPostedBefore(CHAPTER, PRESIDENT, before, 'exec', 5)
+        ).map((row) => row.id),
+      ).toEqual(['mtg-exec']);
+      expect(repo.findPostedBefore).toHaveBeenLastCalledWith(
+        CHAPTER,
+        before,
+        'exec',
+        5,
+      );
+      // Nor can he learn it exists by trying to change or delete it.
+      await expect(
+        service.update(CHAPTER, 'mtg-exec', JAKE, {
+          expected_updated_at: meeting().updated_at,
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.delete(CHAPTER, 'mtg-exec', JAKE),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      // The exec board reads them.
+      await expect(service.canRead(CHAPTER, 'mtg-exec', VP)).resolves.toBe(
+        true,
+      );
+    });
+
+    it('answers for a list of minutes by the same rule as one at a time', async () => {
+      const posted = {
+        status: 'posted' as const,
+        posted_at: '2026-11-10T03:00:00.000Z',
+      };
+      rows.set('mtg-1', meeting(posted));
+      rows.set(
+        'mtg-exec',
+        meeting({
+          id: 'mtg-exec',
+          event_id: EXEC_EVENT.id,
+          event_name: EXEC_EVENT.name,
+          meeting_type: 'exec',
+          ...posted,
+        }),
+      );
+      rows.set('mtg-draft', meeting({ id: 'mtg-draft' }));
+      rows.set(
+        'mtg-orphan',
+        meeting({ id: 'mtg-orphan', event_id: null, ...posted }),
+      );
+      const ids = ['mtg-1', 'mtg-exec', 'mtg-draft', 'mtg-orphan', 'missing'];
+      for (const viewer of [JAKE, VP, SECRETARY, PRESIDENT]) {
+        const one = new Set<string>();
+        for (const id of ids) {
+          if (await service.canRead(CHAPTER, id, viewer)) one.add(id);
+        }
+        await expect(
+          service.readableAmong(CHAPTER, viewer, ids),
+        ).resolves.toEqual(one);
+      }
+      await expect(service.readableAmong(CHAPTER, JAKE, ids)).resolves.toEqual(
+        new Set(['mtg-1']),
+      );
+    });
+
+    it('answers for a whole audience by the same rule as each member alone', async () => {
+      // What posting an Ask Frapp answer to a channel asks (#4713): could
+      // everyone who reads the channel open these minutes.
+      const posted = {
+        status: 'posted' as const,
+        posted_at: '2026-11-10T03:00:00.000Z',
+      };
+      rows.set('mtg-1', meeting(posted));
+      rows.set(
+        'mtg-exec',
+        meeting({
+          id: 'mtg-exec',
+          event_id: EXEC_EVENT.id,
+          event_name: EXEC_EVENT.name,
+          meeting_type: 'exec',
+          ...posted,
+        }),
+      );
+      rows.set('mtg-draft', meeting({ id: 'mtg-draft' }));
+      rows.set(
+        'mtg-orphan',
+        meeting({ id: 'mtg-orphan', event_id: null, ...posted }),
+      );
+      const ids = ['mtg-1', 'mtg-exec', 'mtg-draft', 'mtg-orphan', 'missing'];
+      for (const viewers of [
+        [JAKE],
+        [VP, SECRETARY],
+        [PRESIDENT],
+        [JAKE, VP, SECRETARY, PRESIDENT],
+        [SECRETARY],
+      ]) {
+        const each = await Promise.all(
+          viewers.map((viewer) => service.readableAmong(CHAPTER, viewer, ids)),
+        );
+        const all = new Set(
+          ids.filter((id) => each.every((readable) => readable.has(id))),
+        );
+        await expect(
+          service.readableByAll(CHAPTER, ids, viewers.map(audience)),
+        ).resolves.toEqual(all);
+      }
+      // The whole chapter reads only the posted chapter minutes; the exec
+      // board reads its own as well.
+      await expect(
+        service.readableByAll(
+          CHAPTER,
+          ids,
+          [JAKE, VP, SECRETARY, PRESIDENT].map(audience),
+        ),
+      ).resolves.toEqual(new Set(['mtg-1']));
+      await expect(
+        service.readableByAll(CHAPTER, ids, [VP, SECRETARY].map(audience)),
+      ).resolves.toEqual(new Set(['mtg-1', 'mtg-exec']));
+    });
+
+    it('an editor of minutes reads every one, whatever its event, in the whole-audience check too', async () => {
+      // `meetings:edit` without `*`: the branch no fixture member walks.
+      const posted = {
+        status: 'posted' as const,
+        posted_at: '2026-11-10T03:00:00.000Z',
+      };
+      rows.set(
+        'mtg-exec',
+        meeting({
+          id: 'mtg-exec',
+          event_id: EXEC_EVENT.id,
+          meeting_type: 'exec',
+          ...posted,
+        }),
+      );
+      rows.set(
+        'mtg-orphan',
+        meeting({ id: 'mtg-orphan', event_id: null, ...posted }),
+      );
+      const editor = {
+        user_id: 'user-editor',
+        permissions: new Set(['members:view', 'meetings:edit']),
+        role_ids: [],
+      };
+      const ids = ['mtg-exec', 'mtg-orphan'];
+      await expect(
+        service.readableByAll(CHAPTER, ids, [editor]),
+      ).resolves.toEqual(new Set(ids));
+      // One reader who is not an editor and not invited closes both.
+      await expect(
+        service.readableByAll(CHAPTER, ids, [editor, audience(JAKE)]),
+      ).resolves.toEqual(new Set());
+    });
+
+    it('follows the event when its audience changes', async () => {
+      rows.set(
+        'mtg-1',
+        meeting({ status: 'posted', posted_at: '2026-11-10T03:00:00.000Z' }),
+      );
+      events.set(
+        CHAPTER_EVENT.id,
+        event({ others_invited: false, required_role_ids: [EXEC_ROLE] }),
+      );
+      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(
+        false,
+      );
+    });
+
+    it('shows minutes whose event was deleted only to officers who can edit minutes', async () => {
+      rows.set(
+        'mtg-1',
+        meeting({
+          event_id: null,
+          status: 'posted',
+          posted_at: '2026-11-10T03:00:00.000Z',
+        }),
+      );
+      await expect(service.canRead(CHAPTER, 'mtg-1', JAKE)).resolves.toBe(
+        false,
+      );
+      const view = await service.get(CHAPTER, 'mtg-1', PRESIDENT);
+      expect(view.attendees).toBeNull();
+      expect(view.event_end_time).toBeNull();
+    });
+
+    it('is false for an id that is not there', async () => {
+      await expect(service.canRead(CHAPTER, 'nope', PRESIDENT)).resolves.toBe(
+        false,
+      );
+    });
+  });
+
+  describe('update', () => {
+    beforeEach(() => rows.set('mtg-1', meeting()));
+
+    it('merges the sections sent onto the ones stored', async () => {
+      const first = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: meeting().updated_at,
+        content: { summary: 'Recruitment plan approved.' },
+      });
+      const second = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: first.meeting.updated_at,
+        content: {
+          action_items: [
+            { text: 'Book the bus', owner_user_id: JAKE, due_date: null },
+            { text: 'Find a caterer', owner_user_id: null, due_date: null },
+          ],
+        },
+      });
+      expect(second.content.summary).toBe('Recruitment plan approved.');
+      expect(second.content.action_items).toHaveLength(2);
+    });
+
+    describe('tabled items (#5522)', () => {
+      const FIRST = '2026-11-03T23:00:00.000Z';
+      const tabled = (text: string, first: string | null, times = 1) => ({
+        text,
+        first_meeting_id: first,
+        first_start_time: first ? FIRST : null,
+        times,
+      });
+
+      it('stores them, and keeps them when a save leaves them out', async () => {
+        const first = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: meeting().updated_at,
+          content: { tabled: [tabled('Formal budget', null)] },
+        });
+        expect(first.content.tabled).toEqual([tabled('Formal budget', null)]);
+        const second = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: first.meeting.updated_at,
+          content: { summary: 'Budget came up.' },
+        });
+        expect(second.content.tabled).toEqual([tabled('Formal budget', null)]);
+      });
+
+      it('keeps a carried item’s first date and count when a draft lists it again', async () => {
+        const EARLIER = '0a000000-0000-4000-8000-000000000001';
+        rows.set(EARLIER, meeting({ id: EARLIER }));
+        const carried = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: meeting().updated_at,
+          content: { tabled: [tabled('Rush shirts', EARLIER, 2)] },
+        });
+        const redrafted = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: carried.meeting.updated_at,
+          content: {
+            tabled: [
+              // The same matter however it ends (#5534's shared key).
+              tabled('rush shirts.', null),
+              tabled('Formal budget', null),
+            ],
+          },
+        });
+        expect(redrafted.content.tabled).toEqual([
+          tabled('rush shirts.', EARLIER, 2),
+          tabled('Formal budget', null),
+        ]);
+      });
+
+      it('drops where it came from when those minutes aren’t this chapter’s, or are gone (#5534)', async () => {
+        // Not refused: an agenda item can carry minutes deleted since, and a
+        // draft that tables it again must still save.
+        const saved = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: meeting().updated_at,
+          content: {
+            tabled: [
+              tabled(
+                'Formal budget',
+                '99999999-9999-4999-8999-999999999999',
+                2,
+              ),
+            ],
+          },
+        });
+        expect(saved.content.tabled).toEqual([
+          {
+            text: 'Formal budget',
+            first_meeting_id: null,
+            first_start_time: null,
+            times: 2,
+          },
+        ]);
+      });
+
+      it('refuses a first date it couldn’t read back', async () => {
+        await expect(
+          service.update(CHAPTER, 'mtg-1', SECRETARY, {
+            expected_updated_at: meeting().updated_at,
+            content: {
+              tabled: [
+                {
+                  ...tabled('Formal budget', null),
+                  first_start_time: '2026-11-03',
+                },
+              ],
+            },
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
+    it('saves the TL;DR, and keeps it when a save leaves it out (#5523)', async () => {
+      const first = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: meeting().updated_at,
+        content: { tldr: '- Pay dues by Friday' },
+      });
+      expect(first.content.tldr).toBe('- Pay dues by Friday');
+      const second = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: first.meeting.updated_at,
+        content: { summary: 'Dues came up.' },
+      });
+      expect(second.content.tldr).toBe('- Pay dues by Friday');
+    });
+
+    it('saves the dates coming up soonest first, and a decision’s headline (#5562)', async () => {
+      const saved = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: meeting().updated_at,
+        content: {
+          dates: [
+            { date: '2026-12-15', text: 'Next leadership meeting' },
+            { date: '2026-11-28', text: 'Officer installation' },
+          ],
+          decisions: [
+            {
+              text: 'Officer installation will be at chapter on November 28.',
+              headline: 'Officer installation on November 28',
+              vote: null,
+            },
+          ],
+        },
+      });
+      expect(saved.content.dates.map((item) => item.date)).toEqual([
+        '2026-11-28',
+        '2026-12-15',
+      ]);
+      expect(saved.content.decisions[0].headline).toBe(
+        'Officer installation on November 28',
+      );
+    });
+
+    it('refuses a save over newer minutes', async () => {
+      await expect(
+        service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: '2026-01-01T00:00:00.000Z',
+          content: { summary: 'Mine' },
+        }),
+      ).rejects.toMatchObject({ response: { code: 'meeting.stale' } });
+    });
+
+    it('refuses an owner who is not in the chapter', async () => {
+      await expect(
+        service.update(CHAPTER, 'mtg-1', SECRETARY, {
+          expected_updated_at: meeting().updated_at,
+          content: {
+            action_items: [
+              {
+                text: 'Book the bus',
+                owner_user_id: 'user-stranger',
+                due_date: null,
+              },
+            ],
+          },
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('lets another recorder see nothing and change nothing in a draft that is not theirs', async () => {
+      await expect(
+        service.update(CHAPTER, 'mtg-1', VP, {
+          expected_updated_at: meeting().updated_at,
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('tells a reader of posted minutes they cannot change them', async () => {
+      rows.set(
+        'mtg-1',
+        meeting({ status: 'posted', posted_at: '2026-11-10T03:00:00.000Z' }),
+      );
+      await expect(
+        service.update(CHAPTER, 'mtg-1', JAKE, {
+          expected_updated_at: meeting().updated_at,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('lets the president edit anyone’s minutes', async () => {
+      const view = await service.update(CHAPTER, 'mtg-1', PRESIDENT, {
+        expected_updated_at: meeting().updated_at,
+        meeting_type: 'other',
+        other_label: ' Alumni board ',
+      });
+      expect(view.meeting.other_label).toBe('Alumni board');
+      expect(view.meeting.updated_by).toBe(PRESIDENT);
+    });
+  });
+
+  describe('post', () => {
+    it('posts once and tells the event’s audience, never the poster', async () => {
+      rows.set('mtg-1', meeting());
+      const view = await service.post(
+        CHAPTER,
+        'mtg-1',
+        SECRETARY,
+        meeting().updated_at,
+      );
+      expect(view.meeting.status).toBe('posted');
+      expect(view.meeting.posted_by).toBe(SECRETARY);
+      expect(notifyMembers).toHaveBeenCalledTimes(1);
+      const [, audience, payload] = notifyMembers.mock.calls[0];
+      expect([...audience].sort()).toEqual([JAKE, PRESIDENT, VP].sort());
+      expect(payload.data).toEqual({
+        target: {
+          screen: 'events',
+          eventId: CHAPTER_EVENT.id,
+          meetingId: 'mtg-1',
+        },
+      });
+
+      // Posting again tells nobody again.
+      await service.post(CHAPTER, 'mtg-1', SECRETARY, view.meeting.updated_at);
+      expect(notifyMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it('tells the members who were at the meeting that a recording was uploaded, linking the event and not the draft', async () => {
+      const draft = meeting();
+      const told = await service.notifyRecordingUploaded(
+        CHAPTER,
+        draft,
+        SECRETARY,
+        {
+          title: 'Meeting recording uploaded',
+          body: 'A recording was uploaded.',
+        },
+      );
+      // Present and late; not the excused, the absent or the uploader.
+      const [, audience, payload] = notifyMembers.mock.calls[0];
+      expect([...audience].sort()).toEqual(
+        [JAKE, VP].filter((id) => id !== SECRETARY).sort(),
+      );
+      expect(told).toBe(audience.length);
+      expect(payload.title).toBe('Meeting recording uploaded');
+      // The minutes are a draft the members cannot open.
+      expect(payload.data).toEqual({
+        target: { screen: 'events', eventId: CHAPTER_EVENT.id },
+      });
+    });
+
+    it('tells the members the event invites when nobody checked in', async () => {
+      attendance.findByEvent.mockResolvedValue([]);
+      await service.notifyRecordingUploaded(CHAPTER, meeting(), SECRETARY, {
+        title: 't',
+        body: 'b',
+      });
+      const [, audience] = notifyMembers.mock.calls[0];
+      expect([...audience].sort()).toEqual([JAKE, PRESIDENT, VP].sort());
+    });
+
+    it('tells only the members an Exec meeting invites', async () => {
+      rows.set(
+        'mtg-exec',
+        meeting({
+          id: 'mtg-exec',
+          event_id: EXEC_EVENT.id,
+          meeting_type: 'exec',
+        }),
+      );
+      await service.post(CHAPTER, 'mtg-exec', SECRETARY, meeting().updated_at);
+      const [, audience] = notifyMembers.mock.calls[0];
+      expect(audience).not.toContain(JAKE);
+    });
+  });
+
+  describe('onPostedMinutesSaved (#4313)', () => {
+    it('runs when minutes post and on each later save of their sections, never for a draft', async () => {
+      const seen: string[] = [];
+      service.onPostedMinutesSaved(async (saved, change) => {
+        seen.push(`${change.reason}:${change.actorId}:${saved.status}`);
+      });
+      rows.set('mtg-1', meeting());
+
+      const draft = await service.update(CHAPTER, 'mtg-1', SECRETARY, {
+        expected_updated_at: meeting().updated_at,
+        content: { summary: 'Still writing.' },
+      });
+      expect(seen).toEqual([]);
+
+      const posted = await service.post(
+        CHAPTER,
+        'mtg-1',
+        SECRETARY,
+        draft.meeting.updated_at,
+      );
+      // Posting again is not a save.
+      await service.post(
+        CHAPTER,
+        'mtg-1',
+        SECRETARY,
+        posted.meeting.updated_at,
+      );
+      const edited = await service.update(CHAPTER, 'mtg-1', PRESIDENT, {
+        expected_updated_at: posted.meeting.updated_at,
+        content: { action_items: [] },
+      });
+      // A new label is not a change to what the minutes say.
+      await service.update(CHAPTER, 'mtg-1', PRESIDENT, {
+        expected_updated_at: edited.meeting.updated_at,
+        meeting_type: 'other',
+        other_label: 'Alumni board',
+      });
+
+      expect(seen).toEqual([
+        `posted:${SECRETARY}:posted`,
+        `edited:${PRESIDENT}:posted`,
+      ]);
+    });
+
+    it('never fails the post when a follow-up does', async () => {
+      service.onPostedMinutesSaved(async () => {
+        throw new Error('suggestions are down');
+      });
+      rows.set('mtg-1', meeting());
+      const view = await service.post(
+        CHAPTER,
+        'mtg-1',
+        SECRETARY,
+        meeting().updated_at,
+      );
+      expect(view.meeting.status).toBe('posted');
+    });
+  });
+
+  describe('delete', () => {
+    it('lets the author throw away their own draft', async () => {
+      rows.set('mtg-1', meeting());
+      await service.delete(CHAPTER, 'mtg-1', SECRETARY);
+      expect(rows.has('mtg-1')).toBe(false);
+    });
+
+    it("keeps another officer's draft out of reach of one who only records", async () => {
+      rows.set('mtg-1', meeting());
+      await expect(service.delete(CHAPTER, 'mtg-1', VP)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(
+        service.delete(CHAPTER, 'mtg-1', JAKE),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(rows.has('mtg-1')).toBe(true);
+    });
+
+    it('refuses the author once the event no longer shows itself to them', async () => {
+      rows.set(
+        'mtg-exec',
+        meeting({ id: 'mtg-exec', event_id: EXEC_EVENT.id, created_by: JAKE }),
+      );
+      await expect(
+        service.delete(CHAPTER, 'mtg-exec', JAKE),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.post(CHAPTER, 'mtg-exec', JAKE, meeting().updated_at),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(rows.has('mtg-exec')).toBe(true);
+    });
+
+    it('keeps posted minutes from their author', async () => {
+      rows.set(
+        'mtg-1',
+        meeting({ status: 'posted', posted_at: '2026-11-10T03:00:00.000Z' }),
+      );
+      await expect(
+        service.delete(CHAPTER, 'mtg-1', SECRETARY),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await service.delete(CHAPTER, 'mtg-1', PRESIDENT);
+      expect(rows.has('mtg-1')).toBe(false);
+    });
+  });
+
+  describe('template', () => {
+    it('reads the default sections when the chapter saved none', async () => {
+      await expect(service.getTemplate(CHAPTER)).resolves.toEqual([
+        'tldr',
+        'summary',
+        'dates',
+        'decisions',
+        'action_items',
+        'tabled',
+        'announcements',
+        'discussion_log',
+        'attendees',
+      ]);
+    });
+
+    it('stores known sections in template order', async () => {
+      await service.setTemplate(CHAPTER, PRESIDENT, [
+        'discussion_log',
+        'summary',
+        'summary',
+      ]);
+      // The TL;DR (#5523), Coming up (#5562) and Tabled (#5522) are always
+      // on, so a list without them still has them.
+      expect(repo.upsertTemplate).toHaveBeenCalledWith(
+        CHAPTER,
+        ['tldr', 'summary', 'dates', 'tabled', 'discussion_log'],
+        PRESIDENT,
+      );
+    });
+  });
+
+  it('never conflicts silently when two officers start the same minutes', async () => {
+    repo.create.mockImplementationOnce(async () => {
+      rows.set('mtg-race', meeting({ id: 'mtg-race' }));
+      return null;
+    });
+    await expect(
+      service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'chapter',
+        event_id: CHAPTER_EVENT.id,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+  describe('minutes with no meeting (Paul, 2026-11-20)', () => {
+    it('starts a draft with no event, dated now, that only its author reads', async () => {
+      const view = await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'other',
+      });
+      expect(view.meeting.event_id).toBeNull();
+      expect(view.meeting.event_name).toBe('Minutes');
+      expect(view.attendees).toBeNull();
+      expect(eventService.create).not.toHaveBeenCalled();
+      const id = view.meeting.id;
+      await expect(service.canRead(CHAPTER, id, SECRETARY)).resolves.toBe(true);
+      await expect(service.canRead(CHAPTER, id, VP)).resolves.toBe(false);
+      await expect(service.canRead(CHAPTER, id, PRESIDENT)).resolves.toBe(true);
+      const { rows: listed } = await service.listWithFacts(CHAPTER, SECRETARY);
+      expect(listed.map((row) => row.id)).toEqual([id]);
+    });
+
+    it('lets the author edit it and link it to a meeting, but not post it before then', async () => {
+      const started = await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'other',
+      });
+      const id = started.meeting.id;
+      const saved = await service.update(CHAPTER, id, SECRETARY, {
+        expected_updated_at: started.meeting.updated_at,
+        content: { summary: 'Budget passed.' },
+      });
+      await expect(
+        service.post(CHAPTER, id, SECRETARY, saved.meeting.updated_at),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'meeting.no_event' }),
+      });
+      expect(notifyMembers).not.toHaveBeenCalled();
+      const linked = await service.linkEvent(CHAPTER, id, SECRETARY, {
+        event_id: CHAPTER_EVENT.id,
+      });
+      expect(linked.meeting.event_name).toBe(CHAPTER_EVENT.name);
+      // Started as Other with no name, they are filed by the meeting's name.
+      expect(linked.meeting.meeting_type).toBe('chapter');
+      const posted = await service.post(
+        CHAPTER,
+        id,
+        SECRETARY,
+        linked.meeting.updated_at,
+      );
+      expect(posted.meeting.status).toBe('posted');
+    });
+
+    it('tells the linked listeners once minutes get their meeting', async () => {
+      const heard: string[] = [];
+      service.onMinutesLinked(async (row) => {
+        heard.push(row.event_id ?? 'none');
+      });
+      const started = await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'other',
+      });
+      await service.linkEvent(CHAPTER, started.meeting.id, SECRETARY, {
+        event_id: CHAPTER_EVENT.id,
+      });
+      expect(heard).toEqual([CHAPTER_EVENT.id]);
+    });
+
+    it('still refuses an event_id and new_event together', async () => {
+      await expect(
+        service.start(CHAPTER, SECRETARY, {
+          meeting_type: 'chapter',
+          event_id: CHAPTER_EVENT.id,
+          new_event: {
+            name: 'Chapter meeting',
+            start_time: '2026-11-11T00:00:00.000Z',
+            end_time: '2026-11-11T01:00:00.000Z',
+          },
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('draft states on the list (Paul, 2026-11-20)', () => {
+    it('says a draft with nothing in it is not started, and one with words, notes or a recording is', async () => {
+      rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+      rows.set(
+        'mtg-2',
+        meeting({ id: 'mtg-2', content: { summary: 'Dues are due.' } }),
+      );
+      rows.set('mtg-3', meeting({ id: 'mtg-3' }));
+      notedDrafts.add('mtg-3');
+      const { facts } = await service.listWithFacts(CHAPTER, PRESIDENT);
+      expect(facts.get('mtg-1')?.started).toBe(false);
+      expect(facts.get('mtg-2')?.started).toBe(true);
+      expect(facts.get('mtg-3')?.started).toBe(true);
+    });
+
+    it('names who is recording, until their phone says it stopped', async () => {
+      rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+      await service.markLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+      let { facts } = await service.listWithFacts(CHAPTER, PRESIDENT);
+      expect(facts.get('mtg-1')?.recording_by).toBe(SECRETARY);
+      await service.clearLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+      ({ facts } = await service.listWithFacts(CHAPTER, PRESIDENT));
+      expect(facts.get('mtg-1')?.recording_by).toBeNull();
+    });
+
+    it('reads a phone that stopped beating for three minutes as stopped', async () => {
+      jest.useFakeTimers({ now: new Date('2026-11-20T21:00:00.000Z') });
+      try {
+        rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+        await service.markLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+        jest.setSystemTime(new Date('2026-11-20T21:02:59.000Z'));
+        let { facts } = await service.listWithFacts(CHAPTER, PRESIDENT);
+        expect(facts.get('mtg-1')?.recording_by).toBe(SECRETARY);
+        expect(
+          await service.liveRecordingsVisibleTo(CHAPTER, JAKE),
+        ).toHaveLength(1);
+        // The phone died without saying so: no beat for over three minutes.
+        jest.setSystemTime(new Date('2026-11-20T21:03:01.000Z'));
+        ({ facts } = await service.listWithFacts(CHAPTER, PRESIDENT));
+        expect(facts.get('mtg-1')?.recording_by).toBeNull();
+        expect(await service.liveRecordingsVisibleTo(CHAPTER, JAKE)).toEqual(
+          [],
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('tells anyone the meeting invites who is recording it, but not someone it leaves out', async () => {
+      rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+      rows.set(
+        'mtg-2',
+        meeting({
+          id: 'mtg-2',
+          event_id: EXEC_EVENT.id,
+          created_by: PRESIDENT,
+        }),
+      );
+      await service.markLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+      await service.markLiveRecording(CHAPTER, 'mtg-2', PRESIDENT);
+      const forJake = await service.liveRecordingsVisibleTo(CHAPTER, JAKE);
+      expect(forJake).toEqual([
+        expect.objectContaining({
+          meeting_id: 'mtg-1',
+          event_id: CHAPTER_EVENT.id,
+          user_id: SECRETARY,
+        }),
+      ]);
+    });
+
+    it('lets only someone who may edit the minutes say they are recording them', async () => {
+      rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+      await expect(
+        service.markLiveRecording(CHAPTER, 'mtg-1', VP),
+      ).rejects.toBeDefined();
+      expect(repo.markLiveRecording).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('linking an event (#4935)', () => {
+    it('links minutes whose event is gone to an event without minutes', async () => {
+      rows.set('mtg-1', meeting({ event_id: null }));
+      const view = await service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+        event_id: CHAPTER_EVENT.id,
+      });
+      expect(view.meeting.event_id).toBe(CHAPTER_EVENT.id);
+      expect(repo.update).toHaveBeenCalledWith(
+        CHAPTER,
+        'mtg-1',
+        expect.any(String),
+        expect.objectContaining({ event_id: CHAPTER_EVENT.id }),
+      );
+    });
+
+    it('makes a quiet event after the fact', async () => {
+      rows.set('mtg-1', meeting({ event_id: null }));
+      await service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+        new_event: {
+          name: 'Chapter meeting',
+          start_time: '2026-11-11T00:00:00.000Z',
+          end_time: '2026-11-11T01:00:00.000Z',
+        },
+      });
+      expect(eventService.create).toHaveBeenCalledWith(
+        expect.objectContaining({ silent: true, is_mandatory: false }),
+      );
+    });
+
+    it('refuses an event that already has minutes', async () => {
+      rows.set('mtg-1', meeting({ event_id: null }));
+      rows.set('mtg-2', meeting({ id: 'mtg-2', event_id: CHAPTER_EVENT.id }));
+      await expect(
+        service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+          event_id: CHAPTER_EVENT.id,
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'meeting.already_started' }),
+      });
+    });
+
+    it('answers a race on the event with 409, and removes an event it made', async () => {
+      rows.set('mtg-1', meeting({ event_id: null }));
+      repo.update.mockRejectedValueOnce(
+        Object.assign(
+          new SupabaseQueryError({ message: 'dup', code: '23505' }),
+        ),
+      );
+      await expect(
+        service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+          new_event: {
+            name: 'Chapter meeting',
+            start_time: '2026-11-11T00:00:00.000Z',
+            end_time: '2026-11-11T01:00:00.000Z',
+          },
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'meeting.already_started' }),
+      });
+      expect(eventService.delete).toHaveBeenCalledWith('evt-new', CHAPTER);
+    });
+
+    it('makes no event for meetings:edit alone', async () => {
+      PERMISSIONS['user-editor'] = ['meetings:edit'];
+      try {
+        rows.set('mtg-1', meeting({ event_id: null }));
+        await expect(
+          service.linkEvent(CHAPTER, 'mtg-1', 'user-editor', {
+            new_event: {
+              name: 'Chapter meeting',
+              start_time: '2026-11-11T00:00:00.000Z',
+              end_time: '2026-11-11T01:00:00.000Z',
+            },
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(eventService.create).not.toHaveBeenCalled();
+      } finally {
+        delete PERMISSIONS['user-editor'];
+      }
+    });
+
+    it('refuses minutes that already have their event', async () => {
+      rows.set('mtg-1', meeting());
+      await expect(
+        service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+          event_id: CHAPTER_EVENT.id,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+});

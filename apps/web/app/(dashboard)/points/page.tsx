@@ -7,10 +7,12 @@ import {
   memberFallbackLabel,
   useLeaderboard,
   useMemberDisplayNames,
+  useMyPermissions,
   useMyPoints,
   useSemesters,
   type SemesterArchive,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { formatDay, formatTimestampFull } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +27,7 @@ import {
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { SectionLabel } from "@/components/shared/section-label";
 import { PageActions } from "@/components/layout/page-actions";
 import { amountToneClassName } from "@/components/points/amount-tone";
@@ -118,7 +121,19 @@ export default function PointsPage() {
   // profile route carries every member's email, bio, graduation year, city and
   // company — see the note on `useChapterRoster` in
   // `packages/hooks/src/use-members.ts` (#1000, #986).
-  const { nameFor, refetch: refetchRoster } = useMemberDisplayNames();
+  const roster = useMemberDisplayNames();
+  const { nameFor, refetch: refetchRoster } = roster;
+  // A roster that failed with nothing cached leaves every row on its fallback
+  // label, so the page says so above the board, with Try again (#1209). Only
+  // to a viewer who may read it (`GET /v1/members/roster` needs
+  // `members:view`): a refusal is not a failure a retry clears. While
+  // permissions are unknown it says it rather than stay silent.
+  const { data: permissionsPayload } = useMyPermissions();
+  const rosterUnreadable =
+    (permissionsPayload === undefined ||
+      can("members:view", permissionsPayload.permissions)) &&
+    roster.isError &&
+    !roster.hasData;
 
   // The roster gates nothing, at either scope. It feeds one column, and a query
   // stays `isLoading` across its whole retry sequence, whose backoff
@@ -152,7 +167,7 @@ export default function PointsPage() {
       // and a rank renumbered from #1 per search would misreport chapter
       // standing on the surface officers read it off.
       //
-      // Equal totals share a rank (1, 1, 3), the way the mobile points card
+      // Equal totals share a rank (1, 1, 3), the way the mobile points line
       // counts it: a new chapter's board is its whole roster at 0, and
       // numbering that #1 to #40 would rank people who haven't started. The
       // rows arrive by total descending, so a row's rank is one past the
@@ -324,12 +339,9 @@ export default function PointsPage() {
             void leaderboardQuery.refetch();
             void summaryQuery.refetch();
             // Names are refreshed alongside the reads that raised this state,
-            // so a retry that fixes the board fixes the labels too. Not the
-            // only path and not a complete one: a roster that fails while the
-            // points reads succeed renders no state at all, and recovers on
-            // window focus or reconnect (`query-provider.tsx`) rather than
-            // from any control here. Giving that case a visible signal is
-            // #1209's.
+            // so a retry that fixes the board fixes the labels too. A roster
+            // that fails while the points reads succeed has its own line and
+            // Try again on the loaded page (#1209).
             refetchRoster();
           }}
         />
@@ -358,8 +370,8 @@ export default function PointsPage() {
             void leaderboardQuery.refetch();
             void summaryQuery.refetch();
             // Names are refreshed alongside the reads that raised this state,
-            // so a retry that fixes the board fixes the labels too (#1209
-            // owns the roster-only failure, which raises nothing here).
+            // so a retry that fixes the board fixes the labels too (the
+            // roster-only failure has its own line on the loaded page, #1209).
             refetchRoster();
           }}
         />
@@ -375,12 +387,12 @@ export default function PointsPage() {
     // window is wide, so the two panes count the page's own width.
     <div className="@container space-y-6">
       {/*
-        One toolbar row: the window choice, the archive picker and the route's
-        action, rather than a summary card. `PageActions` wraps them once the
-        row runs out of width, which is what holds the 375px floor (#1142 was
-        this row overflowing inside the old card header).
+        The window choice and the archive picker are a view of the page, not
+        an action, and they need the page's width, so they stay a row in the
+        body that wraps to hold the 375px floor (#1142). Adjust points, the
+        page's action, sits in the page header (`page-actions.tsx`).
       */}
-      <PageActions>
+      <div className="flex min-h-[34px] max-w-full flex-wrap items-center gap-2">
         {/*
             A segmented choice, not three primaries: the selected window is
             the outlined Secondary and the others are Ghost, so the row's
@@ -433,13 +445,15 @@ export default function PointsPage() {
             </SelectContent>
           </Select>
         ) : null}
+      </div>
+      <PageActions>
         {/*
-            The window buttons beside this trigger are reads and stay live
-            while it is gated: a lapsed chapter keeps its full ledger history.
+            The window buttons in the body are reads and stay live while this
+            is gated: a lapsed chapter keeps its full ledger history.
           */}
         <Button
           size="toolbar"
-          variant="secondary"
+          variant="action"
           className="gap-2"
           {...adjustGate.controlProps()}
           onClick={() => adjustDialog.setOpen(true)}
@@ -450,12 +464,17 @@ export default function PointsPage() {
       </PageActions>
 
       <SubscriptionNotice gate={adjustGate} feature="point adjustments" />
+      <StaleReadNotice
+        stale={rosterUnreadable}
+        message="We couldn't load member names, so the leaderboard shows a short id in place of each member."
+        onRetry={refetchRoster}
+      />
 
       {/* A stat on the page surface: the label over the number, no frame. */}
       <dl className="space-y-0.5">
         <dt className="text-caption text-muted-foreground">My balance</dt>
         <dd className="text-headline font-bold tabular-nums text-foreground">
-          {balance}{" "}
+          {balance.toLocaleString()}{" "}
           <span className="text-label font-semibold text-muted-foreground">
             points
           </span>

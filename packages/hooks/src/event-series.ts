@@ -1,8 +1,9 @@
 /**
- * Repeating events as an Events list shows them: one row per series, and a
- * two-week horizon (#3707). Web's Events page and mobile's Events tab
- * (#3823) both read it, so both apps collapse a series, and draw the
- * horizon, the same way.
+ * Repeating events as an Events list shows them: one row per series (#3707).
+ * Web's Events agenda collapses a series (#5560; its two-week horizon and
+ * Later fold went with it). The phone has no list since #5310: its Calendar and
+ * an event's page read only a series' cadence (`seriesCadenceOf`), as web's
+ * rows and event page do too.
  *
  * A series is stored as rows, one per meeting (the "Recurring events" rules
  * under [`spec/behavior/events.md` § Event Creation](../../../spec/behavior/events.md#event-creation)):
@@ -13,6 +14,13 @@
  *
  * Pure functions over plain rows: no React, no query.
  */
+
+import {
+  describeRepeatPattern,
+  eventSeriesKey,
+  ordinal,
+  parseRepeatRule,
+} from "@repo/validation";
 
 /** The fields this module reads off an event row. */
 export type SeriesEventLike = {
@@ -33,9 +41,6 @@ export type EventListEntry<T> = {
   series: T[] | null;
 };
 
-/** Today through the end of the fourteenth day after it (#3707). */
-export const EVENT_HORIZON_DAYS = 14;
-
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null;
 }
@@ -46,16 +51,8 @@ function startMs(event: SeriesEventLike): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-/**
- * Which series a row belongs to: the head's id. `null` for a one-time event,
- * and for an occurrence detached into a standalone event (no parent, no rule).
- */
-export function eventSeriesKey(event: SeriesEventLike): string | null {
-  const parent = nonEmptyString(event.parent_event_id);
-  if (parent) return parent;
-  const id = nonEmptyString(event.id);
-  return id && nonEmptyString(event.recurrence_rule) ? id : null;
-}
+/** Which series a row belongs to (`eventSeriesKey` in `@repo/validation`). */
+export { eventSeriesKey };
 
 /** Whether the row is a meeting of a repeating series, head or generated. */
 export function isSeriesEvent(event: SeriesEventLike): boolean {
@@ -109,55 +106,6 @@ export function collapseSeries<T extends SeriesEventLike>(
     if (members[0] === event) entries.push({ event, series: members });
   }
   return entries;
-}
-
-/**
- * The first instant past the horizon: local midnight starting the fifteenth
- * day after `now`'s, so "today through the next 14 days" holds whole days.
- */
-export function horizonEnd(
-  now: number,
-  days: number = EVENT_HORIZON_DAYS,
-): number {
-  const end = new Date(now);
-  end.setHours(0, 0, 0, 0);
-  end.setDate(end.getDate() + days + 1);
-  return end.getTime();
-}
-
-/**
- * Splits entries at the horizon. An entry whose start can't be read stays in
- * `soon`: it may be close, and hiding it behind Later would lose it.
- */
-export function splitByHorizon<T extends SeriesEventLike>(
-  entries: readonly EventListEntry<T>[],
-  now: number,
-  days: number = EVENT_HORIZON_DAYS,
-): { soon: EventListEntry<T>[]; later: EventListEntry<T>[] } {
-  const end = horizonEnd(now, days);
-  const soon: EventListEntry<T>[] = [];
-  const later: EventListEntry<T>[] = [];
-  for (const entry of entries) {
-    const start = startMs(entry.event);
-    if (start !== null && start >= end) later.push(entry);
-    else soon.push(entry);
-  }
-  return { soon, later };
-}
-
-function ordinal(day: number): string {
-  const tens = day % 100;
-  if (tens >= 11 && tens <= 13) return `${day}th`;
-  switch (day % 10) {
-    case 1:
-      return `${day}st`;
-    case 2:
-      return `${day}nd`;
-    case 3:
-      return `${day}rd`;
-    default:
-      return `${day}th`;
-  }
 }
 
 /**
@@ -234,7 +182,9 @@ function majorityWeekday(starts: readonly unknown[]): Date | null {
 
 /**
  * How a series row says when it repeats, from its rule and a meeting's start:
- * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`.
+ * `"Every Sunday"`, `"Every other Sunday"`, `"Every month on the 9th"`, and
+ * for a structured rule `"Every Mon and Thu"` or `"Every month on the second
+ * Tuesday"` (`describeRepeatPattern` in `@repo/validation`).
  *
  * The day it names is read from `seriesStarts` (every meeting of the series
  * the caller holds), so one meeting moved on its own doesn't rename the
@@ -252,9 +202,10 @@ export function seriesCadenceLabel(
   if (typeof start !== "string") return null;
   const at = new Date(start);
   if (Number.isNaN(at.getTime())) return null;
-  const weekday = (
-    majorityWeekday(seriesStarts) ?? at
-  ).toLocaleDateString("en-US", { weekday: "long" });
+  const weekday = (majorityWeekday(seriesStarts) ?? at).toLocaleDateString(
+    "en-US",
+    { weekday: "long" },
+  );
   switch (rule) {
     case "WEEKLY":
       return `Every ${weekday}`;
@@ -264,7 +215,56 @@ export function seriesCadenceLabel(
       const day = monthlyAnchorDay(seriesStarts) ?? at.getDate();
       return `Every month on the ${ordinal(day)}`;
     }
-    default:
-      return ruleTokenLabel(rule);
+    default: {
+      // A structured rule names its own days (#4488), so it reads straight
+      // from the rule, in the words push copy uses and, like the rows and the
+      // tokens above, on this device's calendar. A by-date monthly rule
+      // without BYMONTHDAY takes the series' usual day, as MONTHLY does
+      // above, not the shown meeting's, which a short month clamps.
+      const parsed = parseRepeatRule(rule);
+      const monthDay =
+        parsed?.freq === "MONTHLY" && !parsed.nthWeekday
+          ? monthlyAnchorDay(seriesStarts)
+          : null;
+      return (
+        describeRepeatPattern(rule, at, {
+          monthDay,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }) ?? ruleTokenLabel(rule)
+      );
+    }
   }
+}
+
+/**
+ * How often `event`'s series meets ("Every Sunday"), as a series row says it
+ * on web's Events list and on mobile's list, calendar and event page, or
+ * `null` for a one-time event or a generated meeting whose head isn't among
+ * `events`. A head carries its own rule, so it is labelled even when `events`
+ * leaves it out.
+ *
+ * The rule is the head's (`event`'s own when it is the head; a generated
+ * meeting carries none); the day is the one most of the series' meetings in
+ * `events` share (`seriesCadenceLabel`), never `event`'s own: an occurrence the
+ * API clamped to the 30th, or one an officer moved to a Monday, belongs to a
+ * series that still meets on the 31st or on Sundays.
+ */
+export function seriesCadenceOf(
+  events: readonly SeriesEventLike[],
+  event: SeriesEventLike,
+): string | null {
+  const key = eventSeriesKey(event);
+  if (!key) return null;
+  const rule =
+    key === event.id
+      ? event.recurrence_rule
+      : seriesHeadOf(key, events)?.recurrence_rule;
+  if (!rule) return null;
+  return seriesCadenceLabel(
+    rule,
+    event.start_time,
+    events
+      .filter((row) => eventSeriesKey(row) === key)
+      .map((row) => row.start_time),
+  );
 }

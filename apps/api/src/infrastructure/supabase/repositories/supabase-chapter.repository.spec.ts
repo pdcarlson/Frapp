@@ -302,6 +302,85 @@ describe('SupabaseChapterRepository — tenant scope', () => {
 
       expect(chapter?.id).toBe(CHAPTER_B);
     });
+
+    // The daily ceiling on starting chapters counts an account's, wherever.
+    it('findStartedAtByUserSince lists the chapters one account started in the window', async () => {
+      const starter = '0c000000-0000-4000-8000-0000000000aa';
+      const started = createTenantHarness({
+        tables: {
+          chapters: [
+            {
+              ...seed().chapters[0],
+              legal_accepted_by: starter,
+              created_at: '2026-11-17T09:00:00.000Z',
+            },
+            {
+              ...seed().chapters[1],
+              legal_accepted_by: 'someone-else',
+              created_at: '2026-11-17T09:00:00.000Z',
+            },
+          ],
+        },
+        tenantColumns: { chapters: 'id' },
+        collisionExempt: {
+          // The filter under test is on this column, so the twins differ.
+          chapters: [
+            'stripe_customer_id',
+            'subscription_id',
+            'legal_accepted_by',
+          ],
+        },
+      });
+      const repoFor = new SupabaseChapterRepository(started.client);
+
+      await expect(
+        repoFor.findStartedAtByUserSince(
+          starter,
+          new Date('2026-11-16T12:00:00.000Z'),
+        ),
+      ).resolves.toEqual(['2026-11-17T09:00:00.000Z']);
+      await expect(
+        repoFor.findStartedAtByUserSince(
+          starter,
+          new Date('2026-11-17T10:00:00.000Z'),
+        ),
+      ).resolves.toEqual([]);
+    });
+
+    // #4985: the weekly recap push's work list, across chapters by design.
+    it('findForRecapPush lists every chapter but a canceled one', async () => {
+      const canceled = createTenantHarness({
+        tables: {
+          chapters: [
+            { ...seed().chapters[0], enabled_modules: { points: false } },
+            {
+              ...seed().chapters[1],
+              enabled_modules: { points: false },
+              subscription_status: 'canceled',
+            },
+          ],
+        },
+        tenantColumns: { chapters: 'id' },
+        collisionExempt: {
+          // The filter under test is on this column, so the twins differ.
+          chapters: [
+            'stripe_customer_id',
+            'subscription_id',
+            'subscription_status',
+          ],
+        },
+      });
+
+      await expect(
+        new SupabaseChapterRepository(canceled.client).findForRecapPush(),
+      ).resolves.toEqual([
+        {
+          id: CHAPTER_A,
+          name: 'Beta Chapter',
+          enabled_modules: { points: false },
+        },
+      ]);
+    });
   });
 });
 

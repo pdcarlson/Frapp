@@ -3,17 +3,34 @@ import { notificationScreensForPath } from "./seen-screens";
 
 describe("notificationScreensForPath", () => {
   it("names the screens a page shows the subject of", () => {
-    expect(notificationScreensForPath("/events")).toEqual(["events"]);
-    expect(notificationScreensForPath("/events/abc")).toEqual(["events"]);
+    expect(notificationScreensForPath("/events")).toEqual([
+      "events",
+      "ai_suggestions",
+    ]);
+    expect(notificationScreensForPath("/events/abc")).toEqual([
+      "events",
+      "ai_suggestions",
+    ]);
     expect(notificationScreensForPath("/members")).toEqual(["members"]);
-    expect(notificationScreensForPath("/chat-admin")).toEqual(["chat_reports"]);
-    expect(notificationScreensForPath("/discord-import")).toEqual([
-      "discord_import",
+    // Task reviews, and the weekly recap push (#4985).
+    expect(notificationScreensForPath("/activity")).toEqual([
+      "tasks",
+      "activity",
+    ]);
+    // Suggested tasks are reviewed on the board and under their minutes.
+    expect(notificationScreensForPath("/tasks")).toEqual([
+      "tasks",
+      "ai_suggestions",
+    ]);
+    expect(notificationScreensForPath("/meetings/abc")).toEqual([
+      "ai_suggestions",
     ]);
   });
 
   it("leaves chat to the channel read, and matches whole segments only", () => {
     expect(notificationScreensForPath("/chat")).toEqual([]);
+    // The tools inside Chapter settings mark their own rows (#3837).
+    expect(notificationScreensForPath("/settings")).toEqual([]);
     expect(notificationScreensForPath("/chat/abc")).toEqual([]);
     expect(notificationScreensForPath("/eventsfoo")).toEqual([]);
     expect(notificationScreensForPath("/")).toEqual([]);

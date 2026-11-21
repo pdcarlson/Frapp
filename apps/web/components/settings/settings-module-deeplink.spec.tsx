@@ -14,6 +14,12 @@ vi.mock("@repo/validation/beta-off-modules", () => ({
 }));
 afterEach(() => {
   betaOff.keys = [];
+  aiRead.current = {
+    data: null,
+    isPending: false,
+    fetchStatus: "idle",
+    failureCount: 0,
+  };
 });
 
 const { mockCurrentChapter } = vi.hoisted(() => ({
@@ -22,52 +28,54 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
 
 let searchParams = new URLSearchParams();
 
-vi.mock("@repo/hooks", () => ({
-  useCurrentChapter: () => mockCurrentChapter(),
-  useMyPermissions: () => ({
-    data: { permissions: ["chapter-config:view", "chapter-config:manage"] },
+// The AI read. By default a server with AI off: no AI row (#4308).
+const aiRead = vi.hoisted(() => ({
+  current: {
+    data: null as object | null | undefined,
     isPending: false,
-    isError: false,
-  }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useOrgConfig: () => ({
-    data: { org_archetype: "ifc", enabled_modules: { events: false } },
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-  useRoles: () => ({ data: [], isPending: false, isError: false }),
+    fetchStatus: "idle" as "fetching" | "paused" | "idle",
+    failureCount: 0,
+  },
 }));
+
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => mockCurrentChapter(),
+    permissions: () => ["chapter-config:view", "chapter-config:manage"],
+    orgConfig: () => ({
+      org_archetype: "ifc",
+      enabled_modules: { events: false },
+    }),
+    overrides: {
+      useAiConsent: () => aiRead.current,
+      // The shared rule, whose own spec pins it in `@repo/hooks`.
+      isFirstAiReadInFlight: (q: typeof aiRead.current) =>
+        q.isPending && q.fetchStatus === "fetching" && q.failureCount === 0,
+    },
+  }),
+);
 
 // Mutable so a test can start with no active chapter, which is how zustand's
 // `persist` cold-starts before it rehydrates.
 let activeChapterId: string | null = "chap-1";
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (
-    selector: (s: { activeChapterId: string | null }) => unknown,
-  ) => selector({ activeChapterId }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(
+    () => activeChapterId,
+  ),
+);
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => searchParams,
-}));
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(() => searchParams),
+);
 
-vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+vi.mock("@/components/shared/can", async () =>
+  (await import("@/tests/settings-harness")).canPassThrough(),
+);
 
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
-}));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(),
+);
 
 const { SettingsPage } = await import("./settings-page");
 
@@ -183,5 +191,49 @@ describe("settings ?module= on a cold load", () => {
     rerender(<SettingsPage />);
 
     expect(eventsSwitch()).toHaveFocus();
+  });
+});
+
+/**
+ * The page holds its skeleton while the AI read's first attempt is out, so the
+ * AI row doesn't push the rows down when it lands (#4308). A first attempt
+ * that failed stops the hold: the read's retries take about seven seconds
+ * against a 5xx, and the officer shouldn't sit through them (#4504).
+ */
+describe("settings while the AI read is out", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchParams = new URLSearchParams("tab=events&module=events");
+    activeChapterId = "chap-1";
+    mockCurrentChapter.mockReturnValue({
+      data: { id: "chap-1", name: "Test", subscription_status: "active" },
+      isPending: false,
+      isError: false,
+    });
+  });
+
+  it("holds the skeleton while the first attempt is in flight", () => {
+    aiRead.current = {
+      data: undefined,
+      isPending: true,
+      fetchStatus: "fetching",
+      failureCount: 0,
+    };
+    render(<SettingsPage />);
+    expect(screen.getByText("Loading chapter settings")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: /^events on$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("draws the page once the first attempt has failed, while it retries", () => {
+    aiRead.current = {
+      data: undefined,
+      isPending: true,
+      fetchStatus: "fetching",
+      failureCount: 1,
+    };
+    render(<SettingsPage />);
+    expect(eventsSwitch()).toBeInTheDocument();
   });
 });

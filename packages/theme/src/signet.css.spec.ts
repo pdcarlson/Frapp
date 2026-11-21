@@ -15,7 +15,11 @@ import {
   WEB_TAILWIND,
 } from "./config-sources";
 
-import { getSignetCssVars, signetDarkTokens } from "./signet";
+import {
+  ACCENT_SUBTLE_HOVER_MIX,
+  getSignetCssVars,
+  signetDarkTokens,
+} from "./signet";
 import config from "./tailwind.config";
 
 /**
@@ -334,6 +338,14 @@ describe("the derived accent steps track the slot rather than restating it", () 
   );
 });
 
+describe("the Tinted hover mix is the shared constant", () => {
+  it("matches ACCENT_SUBTLE_HOVER_MIX, which the phone and the contrast fixture read", () => {
+    expect(root.get("--accent-subtle-hover")).toBe(
+      `color-mix(in srgb, var(--accent-border) ${Math.round(ACCENT_SUBTLE_HOVER_MIX * 100)}%, var(--accent-subtle))`,
+    );
+  });
+});
+
 describe("the status tints are the §5 recipe over a fixed semantic (#2376)", () => {
   // An `rgba()` of the semantic hue, because it has no browser floor: an alpha
   // utility falls back to the solid hue (the label's own colour), and a
@@ -348,6 +360,7 @@ describe("the status tints are the §5 recipe over a fixed semantic (#2376)", ()
     ["--warning-tint", "--warning", 0.13],
     ["--destructive-tint", "--destructive", 0.13],
     ["--destructive-tint-hover", "--destructive", 0.2],
+    ["--info-tint", "--info", 0.13],
   ])("%s is %s at %s alpha", (token, hue, alpha) => {
     const match = RGBA.exec(root.get(token) ?? "");
     expect(match, `${token} must be an rgba() literal`).not.toBeNull();
@@ -442,6 +455,7 @@ describe("the fixed families cannot be wired to the accent slot", () => {
     "--warning-tint",
     "--destructive-tint",
     "--destructive-tint-hover",
+    "--info-tint",
     // A card-filled control's hover is a neutral lift above the ladder, the
     // same in every chapter: the Secondary button sits on error surfaces,
     // where components.md §10 bars the chapter accent (#1220).

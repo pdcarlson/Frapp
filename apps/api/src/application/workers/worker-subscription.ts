@@ -18,7 +18,7 @@ import { reportSwallowed } from '../../infrastructure/observability/report-swall
 export const WORKER_SUBSCRIPTION_DOWN_AFTER_MS = 60_000;
 
 /** The first reopen after a server close waits this long. */
-export const WORKER_REOPEN_BASE_DELAY_MS = 1_000;
+const WORKER_REOPEN_BASE_DELAY_MS = 1_000;
 
 /** Reopens back off by doubling, and never wait longer than this. */
 export const WORKER_REOPEN_MAX_DELAY_MS = 60_000;

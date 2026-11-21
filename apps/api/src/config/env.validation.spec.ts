@@ -248,4 +248,35 @@ describe('validateEnv', () => {
       ).toThrow(/DEV_LOG_CHANNEL_ID/);
     });
   });
+
+  // ADR-28. The rules themselves are covered in `ai-config.spec.ts`; this
+  // pins that boot applies them.
+  describe('the AI switches', () => {
+    it('boots with none set, and with the documented values', () => {
+      expect(() => validateEnv({ ...complete })).not.toThrow();
+      expect(() =>
+        validateEnv({
+          ...complete,
+          AI_ENABLED: 'true',
+          AI_PROVIDER: 'scripted',
+        }),
+      ).not.toThrow();
+    });
+
+    it('refuses to boot on a typo, or on canned replies in production', () => {
+      expect(() => validateEnv({ ...complete, AI_ENABLED: 'on' })).toThrow(
+        /AI_ENABLED/,
+      );
+      expect(() => validateEnv({ ...complete, AI_PROVIDER: 'fake' })).toThrow(
+        /AI_PROVIDER/,
+      );
+      expect(() =>
+        validateEnv({
+          ...complete,
+          SUPABASE_URL: `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`,
+          AI_PROVIDER: 'scripted',
+        }),
+      ).toThrow(/AI_PROVIDER=scripted/);
+    });
+  });
 });

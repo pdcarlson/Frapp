@@ -8,8 +8,11 @@ import {
   View,
 } from "react-native";
 import Animated, {
+  Easing,
   FadeIn,
   FadeOut,
+  interpolate,
+  ReduceMotion,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -18,40 +21,70 @@ import Animated, {
 import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { BottomTabBarProps } from "expo-router/tabs";
+import { AskBar } from "@/components/ask/ask-bar";
 import { GlassSurface } from "@/components/glass-surface";
 import { QuickActionsPanel } from "@/components/quick-actions/quick-actions-panel";
 import { useQuickActionsHost } from "@/components/quick-actions/quick-actions-host";
 import { useQuickActions } from "@/components/quick-actions/use-quick-actions";
+import { useActivity } from "@repo/hooks";
+import { useAiSurfaces } from "@/lib/ai/availability";
+import { MEMBER_STATUS_LABEL } from "@repo/hooks/member-status";
+import { useOwnStatus } from "@/lib/account/own-status";
+import { activityCountChip } from "@/lib/activity/count-chip";
+import { useActivityRereadOnTab } from "@/lib/activity/use-activity-reread";
 import { TabLabel } from "@/components/tab-glyphs";
-import { useTourAnchor } from "@/components/onboarding/tour";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  unreadConversationsSpoken,
+  useUnreadConversationCount,
+} from "@/lib/chat/unread-conversations";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import { SCREEN_TITLES } from "@/lib/back-target";
+import {
+  FLOATING_ASK_BAR,
   FLOATING_TAB_BAR,
   floatingTabBarBottom,
   floatingTabBarTop,
+  setAskBarShown,
+  setBarFolded,
+  useBarFolded,
 } from "@/lib/floating-chrome";
+import { useScreenReaderOn } from "@/lib/screen-reader";
+import { useReduceMotion } from "@/lib/use-reduce-motion";
+import { GLASS_PRESSED, GLASS_SCRIM } from "@/lib/glass-paint";
 import { selectionHaptic } from "@/lib/haptics";
 import type { QuickActionKey } from "@/lib/quick-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The four tabs, in the locked order (`spec/ui/mobile/navigation.md` § Tab
- * bar). The navigator holds only these (`app/(app)/(tabs)/_layout.tsx`); every
- * other screen is pushed on the stack above it and covers the bar
+ * The four tabs, in order (`spec/ui/mobile/navigation.md` § Tab bar): Chat,
+ * Activity, Messages and You (#3839), since 2026-11-12 (#4610); the third
+ * was Calendar (the `events` route) until #5310. The navigator holds only these (`app/(app)/(tabs)/_layout.tsx`);
+ * every other screen is pushed on the stack above it and covers the bar
  * (`spec/ui/mobile/navigation.md` § Going back).
  */
-export const TAB_ROUTES = ["index", "events", "tasks", "more"] as const;
+export const TAB_ROUTES = ["index", "activity", "messages", "you"] as const;
 
 /** The pill's radius: half its height, so its ends are round. */
 const PILL_RADIUS = FLOATING_TAB_BAR.height / 2;
 /** The drawn row inside the pill, and the active tab's capsule. */
 const TAB_HEIGHT = FLOATING_TAB_BAR.height - 12;
+/** How long the fold takes. With Reduce Motion on it changes at once. */
+const FOLD_MS = 320;
+/** Where the folded round's first count dot sits, and how far down each next one goes. */
+const FOLDED_DOT_TOP = 12;
+const FOLDED_DOT_STEP = 12;
 
 /**
  * The tab bar (owner pick 2026-11-06, after Bevel's): a glass pill holding the
  * four tabs, and beside it a round glass + that is always there on a tab
  * screen. The + opens the quick-actions panel above the bar and turns into an
  * X while it is open (`spec/ui/mobile/navigation.md` § Quick actions).
+ *
+ * Above both, for a member who has Ask, sits the Ask Frapp bar
+ * (`ask/ask-bar.tsx`, #4702): on all four tabs, not inside the + panel, where
+ * it was until 2026-11-13. The open panel covers it. While the member reads
+ * down a tab screen the bar folds and the Ask bar joins the tabs' row (#4904,
+ * below).
  *
  * Drawn as the navigator's whole `tabBar`, over the screens rather than under
  * them: the root fills the window and lets touches through everywhere it draws
@@ -65,16 +98,81 @@ export function GlassTabBar({
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const { width } = useWindowDimensions();
+  // Activity's tab carries the count of things waiting on the member
+  // (`needs_you_count`), which More's Activity row carried before the screen
+  // became a tab (#4610). It is read again on every change of tab, on every
+  // return to the tabs from a pushed screen, on every visit to Activity, and
+  // on every return to the app.
+  const needsYou = activityCountChip(useActivity().data);
+  // Messages' tab carries the count of conversations with anything unread,
+  // which Chat home's Messages door carried until the tab replaced it (#5310).
+  const unreadConversations = useUnreadConversationCount();
+  const unreadConversationsLabel =
+    unreadConversationsSpoken(unreadConversations);
   const reduceMotion = useReducedMotion();
   const { shown, available, save, ready } = useQuickActions();
-  // Two of the first-run tour's stops: the + and the More tab.
-  const plusAnchor = useTourAnchor("quickActions");
-  const moreAnchor = useTourAnchor("more");
-  const { run, sheets, notice } = useQuickActionsHost({
-    events: available.includes("checkIn") || available.includes("hostCheckIn"),
+  // The status a member picked (#3845) shows on the You tab's avatar, so the
+  // tab names it too. Online is the one nobody picks, so it says nothing.
+  const own = useOwnStatus();
+  const youStatus =
+    own && own.status !== "online" ? MEMBER_STATUS_LABEL[own.status] : null;
+  const { run, ask, sheets, notice } = useQuickActionsHost({
+    events: available.includes("hostCheckIn"),
   });
 
   const focusedRoute = state.routes[state.index];
+  const focusedOptions = descriptors[focusedRoute.key]?.options ?? {};
+  const focusedLabel = focusedOptions.title ?? focusedRoute.name;
+  useActivityRereadOnTab(focusedRoute.key, focusedRoute.name === "activity");
+
+  const unreadConversationsBadge =
+    unreadConversations > 99 ? "99+" : String(unreadConversations);
+  // The counts the folded round keeps, Activity's before Messages' as the bar
+  // orders them, with what each one says and wears.
+  const counted = [
+    needsYou
+      ? {
+          route: "activity",
+          tab: SCREEN_TITLES.activity,
+          label: needsYou.label,
+          spoken: needsYou.spoken,
+          fill: tokens.color.gold.house,
+          ink: tokens.color.gold.onHouse,
+          badgeId: "tab-folded-badge",
+          dotId: "tab-folded-dot",
+        }
+      : null,
+    unreadConversationsLabel
+      ? {
+          route: "messages",
+          tab: SCREEN_TITLES.messages,
+          label: unreadConversationsBadge,
+          spoken: unreadConversationsLabel,
+          fill: tokens.color.semantic.mention,
+          ink: tokens.color.semantic.mentionForeground,
+          badgeId: "tab-folded-messages-badge",
+          dotId: "tab-folded-messages-dot",
+        }
+      : null,
+  ].filter((count) => count !== null);
+  // The focused tab's badge first, so the dots stack below it.
+  const foldedCounts = [
+    ...counted.filter((count) => count.route === focusedRoute.name),
+    ...counted.filter((count) => count.route !== focusedRoute.name),
+  ];
+  // The focused tab's own count follows its name; the others follow "show
+  // all tabs", each named: "Chat, show all tabs, Activity: 3 to do,
+  // Messages: 2 unread conversations".
+  const foldedLabel = [
+    focusedLabel,
+    ...foldedCounts
+      .filter((count) => count.route === focusedRoute.name)
+      .map((count) => count.spoken),
+    "show all tabs",
+    ...foldedCounts
+      .filter((count) => count.route !== focusedRoute.name)
+      .map((count) => `${count.tab}: ${count.spoken}`),
+  ].join(", ");
 
   // Open on the tab it was opened from: moving to another tab closes it. The
   // close is kept, so coming back to the tab doesn't open it again (state
@@ -115,6 +213,46 @@ export function GlassTabBar({
     return () => subscription.remove();
   }, [open, editing, closePanel]);
 
+  // The Ask Frapp bar is there only for a member who has Ask; the server
+  // decides. The tab screens are told, so their last row and anything that
+  // floats above the tab bar clears it (`useAskBarLift`).
+  const hasAsk = useAiSurfaces().ask;
+  useEffect(() => {
+    setAskBarShown(hasAsk);
+    return () => setAskBarShown(false);
+  }, [hasAsk]);
+
+  // The fold (#4904, Paul's direction A, 2026-11-17): reading down a tab
+  // screen folds the four tabs to the current one, a round the size of the
+  // +, and brings the Ask Frapp bar down into the row between them, Bevel's
+  // three pieces and iOS 26's own minimised tab bar. Any move back up opens
+  // it (`useBarScroll`). Only with the Ask bar to bring down, never while the
+  // + panel is open, and never under a screen reader, which keeps every tab
+  // a labelled control.
+  const screenReader = useScreenReaderOn();
+  const foldOn = useBarFolded() && hasAsk && !open && !screenReader;
+  // Followed live: Reanimated's own reading is the setting at launch.
+  const reduceFold = useReduceMotion();
+  const fold = useSharedValue(0);
+  useEffect(() => {
+    fold.set(
+      withTiming(foldOn ? 1 : 0, {
+        duration: reduceFold ? 0 : FOLD_MS,
+        easing: Easing.out(Easing.cubic),
+        reduceMotion: ReduceMotion.Never,
+      }),
+    );
+  }, [foldOn, reduceFold, fold]);
+  // The tabs take touches again only once they are back in place, so a
+  // second quick tap on the folded round can't land on a half-drawn tab.
+  const [tabsLive, setTabsLive] = useState(true);
+  if (foldOn && tabsLive) setTabsLive(false);
+  useEffect(() => {
+    if (foldOn || tabsLive) return;
+    const timer = setTimeout(() => setTabsLive(true), reduceFold ? 0 : FOLD_MS);
+    return () => clearTimeout(timer);
+  }, [foldOn, tabsLive, reduceFold]);
+
   const runAction = useCallback(
     (key: QuickActionKey) => {
       closePanel();
@@ -132,6 +270,38 @@ export function GlassTabBar({
     FLOATING_TAB_BAR.actionButton +
     FLOATING_TAB_BAR.actionGap;
   const panelWidth = width - FLOATING_TAB_BAR.side * 2;
+  const askBarBottom = floatingTabBarTop(bottomInset) + FLOATING_ASK_BAR.gap;
+  // A confirmation sits above the Ask Frapp bar where there is one.
+  const aboveAskBar = hasAsk
+    ? askBarBottom + FLOATING_ASK_BAR.height + FLOATING_TAB_BAR.actionGap
+    : aboveBar;
+
+  // Where each piece sits, open and folded.
+  const row = FLOATING_TAB_BAR.height;
+  const pillOpen = width - FLOATING_TAB_BAR.side - pillRight;
+  const askLeftFolded =
+    FLOATING_TAB_BAR.side + row + FLOATING_TAB_BAR.actionGap;
+  const askOpenWidth = width - FLOATING_TAB_BAR.side * 2;
+  const askFoldedWidth = width - askLeftFolded * 2;
+  const pillStyle = useAnimatedStyle(() => ({
+    width: interpolate(fold.get(), [0, 1], [pillOpen, row]),
+  }));
+  const tabsStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(fold.get(), [0, 0.5], [1, 0], "clamp"),
+  }));
+  const currentStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(fold.get(), [0.5, 1], [0, 1], "clamp"),
+  }));
+  const askStyle = useAnimatedStyle(() => ({
+    left: interpolate(
+      fold.get(),
+      [0, 1],
+      [FLOATING_TAB_BAR.side, askLeftFolded],
+    ),
+    width: interpolate(fold.get(), [0, 1], [askOpenWidth, askFoldedWidth]),
+    bottom: interpolate(fold.get(), [0, 1], [askBarBottom, barBottom]),
+    height: interpolate(fold.get(), [0, 1], [FLOATING_ASK_BAR.height, row]),
+  }));
 
   const plusStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${45 * turn.get()}deg` }],
@@ -142,6 +312,16 @@ export function GlassTabBar({
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       {sheets}
+      {/* Before the scrim, so the open panel and its scrim cover it. */}
+      {hasAsk && !open ? (
+        <Animated.View
+          entering={FadeIn.duration(150)}
+          exiting={FadeOut.duration(120)}
+          style={[styles.askBar, askStyle]}
+        >
+          <AskBar onPress={ask} folded={foldOn} />
+        </Animated.View>
+      ) : null}
       {open ? (
         <Animated.View
           entering={FadeIn.duration(200)}
@@ -190,7 +370,12 @@ export function GlassTabBar({
           entering={FadeIn.duration(150)}
           exiting={FadeOut.duration(200)}
           pointerEvents="none"
-          style={[styles.noticeRow, { bottom: aboveBar }]}
+          style={[
+            styles.noticeRow,
+            // Folded, the Ask bar is in the tab bar's row: the notice sits
+            // above that row.
+            { bottom: foldOn ? aboveBar : aboveAskBar },
+          ]}
         >
           <GlassSurface style={styles.notice}>
             {/* Read out by the host's announceForAccessibility, on both
@@ -207,15 +392,12 @@ export function GlassTabBar({
         </Animated.View>
       ) : null}
 
-      <View
+      <Animated.View
         accessibilityRole="tablist"
         style={[
           styles.pillFrame,
-          {
-            left: FLOATING_TAB_BAR.side,
-            right: pillRight,
-            bottom: barBottom,
-          },
+          { left: FLOATING_TAB_BAR.side, bottom: barBottom },
+          pillStyle,
         ]}
       >
         {/* GlassSurface clips to its own radius, so the pill's goes on it
@@ -223,7 +405,12 @@ export function GlassTabBar({
         <GlassSurface
           style={[StyleSheet.absoluteFill, { borderRadius: PILL_RADIUS }]}
         />
-        <View style={styles.tabs}>
+        <Animated.View
+          style={[styles.tabs, tabsStyle]}
+          pointerEvents={tabsLive ? "auto" : "none"}
+          accessibilityElementsHidden={foldOn}
+          importantForAccessibility={foldOn ? "no-hide-descendants" : "auto"}
+        >
           {TAB_ROUTES.map((name) => {
             const route = state.routes.find(
               (candidate) => candidate.name === name,
@@ -236,10 +423,17 @@ export function GlassTabBar({
             return (
               <Pressable
                 key={route.key}
-                ref={name === "more" ? moreAnchor : undefined}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: focused }}
-                accessibilityLabel={label}
+                accessibilityLabel={
+                  name === "activity" && needsYou
+                    ? `${label}, ${needsYou.spoken}`
+                    : name === "messages" && unreadConversationsLabel
+                      ? `${label}, ${unreadConversationsLabel}`
+                      : name === "you" && youStatus
+                        ? `${label}, ${youStatus}`
+                        : label
+                }
                 testID={`tab-${route.name}`}
                 onPress={() => {
                   const event = navigation.emit({
@@ -264,15 +458,116 @@ export function GlassTabBar({
                         (iconography.md §1 rule 2). */}
                 {focused ? <View style={styles.activeCapsule} /> : null}
                 {options.tabBarIcon?.({ focused, color, size: 24 })}
+                {name === "activity" && needsYou ? (
+                  // A count is not direct address, so it is house gold, never
+                  // the accent or mention red (components.md § App bar chips),
+                  // as the bell's count on Chat home is.
+                  <View
+                    testID="tab-activity-badge"
+                    pointerEvents="none"
+                    style={[
+                      styles.badge,
+                      { backgroundColor: tokens.color.gold.house },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        { color: tokens.color.gold.onHouse },
+                      ]}
+                    >
+                      {needsYou.label}
+                    </Text>
+                  </View>
+                ) : null}
+                {name === "messages" && unreadConversations > 0 ? (
+                  // Mention red, as the Messages door's count was: a direct
+                  // message addresses the member (foundations.md §5).
+                  <View
+                    testID="tab-messages-badge"
+                    pointerEvents="none"
+                    style={[
+                      styles.badge,
+                      { backgroundColor: tokens.color.semantic.mention },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        { color: tokens.color.semantic.mentionForeground },
+                      ]}
+                    >
+                      {unreadConversationsBadge}
+                    </Text>
+                  </View>
+                ) : null}
                 <TabLabel focused={focused} color={color}>
                   {label}
                 </TabLabel>
               </Pressable>
             );
           })}
-        </View>
-      </View>
+        </Animated.View>
+        {/* Folded, the pill is the current tab alone; a tap opens the tabs
+            again. */}
+        <Animated.View
+          style={[StyleSheet.absoluteFill, currentStyle]}
+          pointerEvents={foldOn ? "auto" : "none"}
+        >
+          <Pressable
+            testID="tab-folded"
+            accessibilityRole="button"
+            accessibilityLabel={foldedLabel}
+            accessibilityElementsHidden={!foldOn}
+            importantForAccessibility={foldOn ? "auto" : "no-hide-descendants"}
+            onPress={() => {
+              selectionHaptic();
+              setBarFolded(false);
+            }}
+            style={styles.folded}
+          >
+            {focusedOptions.tabBarIcon?.({
+              focused: true,
+              color: accent,
+              size: 24,
+            })}
+            {/* Activity's and Messages' counts stay in sight while folded:
+                the number on the tab's own round, a dot on any other, the
+                dots stacked down the round's edge under whatever is above
+                them. */}
+            {foldedCounts.map((count, slot) =>
+              count.route === focusedRoute.name ? (
+                <View
+                  key={count.route}
+                  testID={count.badgeId}
+                  pointerEvents="none"
+                  style={[styles.badge, { backgroundColor: count.fill }]}
+                >
+                  <Text style={[styles.badgeText, { color: count.ink }]}>
+                    {count.label}
+                  </Text>
+                </View>
+              ) : (
+                <View
+                  key={count.route}
+                  testID={count.dotId}
+                  pointerEvents="none"
+                  style={[
+                    styles.foldedDot,
+                    {
+                      top: FOLDED_DOT_TOP + slot * FOLDED_DOT_STEP,
+                      backgroundColor: count.fill,
+                    },
+                  ]}
+                />
+              ),
+            )}
+          </Pressable>
+        </Animated.View>
+      </Animated.View>
 
+      {/* The + keeps its place and size in every state, so whatever it
+          opens can change without the bar moving. */}
       <GlassSurface
         style={[
           styles.plus,
@@ -280,7 +575,9 @@ export function GlassTabBar({
         ]}
       >
         <Pressable
-          ref={plusAnchor}
+          // The Maestro flows tap the + by this id: open, its label is shared
+          // with the scrim, whose center sits under the panel.
+          testID="tab-plus"
           accessibilityRole="button"
           accessibilityLabel={open ? "Close quick actions" : "Quick actions"}
           accessibilityHint={
@@ -331,7 +628,16 @@ function growFromPlus() {
 }
 
 const styles = StyleSheet.create({
-  scrim: { backgroundColor: "rgba(0,0,0,0.40)" },
+  scrim: { backgroundColor: GLASS_SCRIM },
+  askBar: { position: "absolute" },
+  folded: { flex: 1, alignItems: "center", justifyContent: "center" },
+  foldedDot: {
+    position: "absolute",
+    right: 14,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
   noticeRow: {
     position: "absolute",
     left: FLOATING_TAB_BAR.side,
@@ -362,6 +668,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 6,
   },
+  badge: {
+    position: "absolute",
+    top: 4,
+    left: "50%",
+    marginLeft: 4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeText: {
+    ...typeRole({ size: 11, weight: 700 }),
+    lineHeight: 14,
+  },
   tab: {
     flex: 1,
     height: TAB_HEIGHT,
@@ -385,5 +707,5 @@ const styles = StyleSheet.create({
     borderRadius: FLOATING_TAB_BAR.actionButton / 2,
   },
   plusPress: { flex: 1, alignItems: "center", justifyContent: "center" },
-  plusPressed: { backgroundColor: "rgba(255,255,255,0.08)" },
+  plusPressed: { backgroundColor: GLASS_PRESSED },
 });

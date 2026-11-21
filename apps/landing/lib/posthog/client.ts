@@ -80,20 +80,12 @@ function currentAdapter(): LandingPostHogAdapter | null {
   return testAdapter ?? liveAdapter;
 }
 
-export function isPostHogReady(): boolean {
-  return currentAdapter() !== null;
-}
-
 export function getPostHogSessionId(): string | undefined {
   return currentAdapter()?.getSessionId();
 }
 
 export function getPostHogReplayId(): string | undefined {
   return currentAdapter()?.getReplayId();
-}
-
-export function getPostHogDistinctId(): string | undefined {
-  return currentAdapter()?.getDistinctId() || undefined;
 }
 
 function capture(

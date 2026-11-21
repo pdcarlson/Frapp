@@ -5,7 +5,10 @@ import { useEffect } from "react";
 import { createReportOnce } from "@repo/observability";
 import { ErrorState } from "@/components/shared/async-states";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { isChunkLoadError } from "@/lib/chunk-load-error";
+import {
+  STALE_CHUNK_DESCRIPTION,
+  isChunkLoadError,
+} from "@/lib/chunk-load-error";
 
 /**
  * The degraded-segment surface: what a member sees when one part of the
@@ -140,8 +143,7 @@ function segmentErrorCopy(
   if (isChunkError) {
     return {
       title: SEGMENT_ERROR_TITLE,
-      description:
-        "This usually means a new version shipped while the tab was open. Reload to pick it up.",
+      description: STALE_CHUNK_DESCRIPTION,
       actionLabel: "Reload",
       isChunkError,
       shouldReload: true,

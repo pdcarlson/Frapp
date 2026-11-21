@@ -7,7 +7,10 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
+import type {
+  ChatCardKind,
+  IChatMessageRepository,
+} from '#domain/repositories/chat.repository.interface';
 import {
   ChatMessageCursorNotFoundError,
   ChatMessageDuplicateError,
@@ -92,7 +95,7 @@ function effectivePollListLimit(requested?: number): number {
  * message page for a field that is discarded on arrival.
  */
 export const CHAT_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at' as const;
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, thread_last_reply, forwarded_from, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at' as const;
 
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
@@ -125,6 +128,14 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       // An `integer` from the RPC, but the count decides between "Attachment"
       // and "3 attachments", so coerce rather than trust the wire type.
       attachment_count: Number(row.attachment_count) || 0,
+      // Absent until `20261114153147` is applied; a missing column is no GIF.
+      has_gif: row.has_gif === true,
+      // Absent until `20261118173407` is applied, and anything but the two
+      // words is no status, so a row never claims a read it can't vouch for.
+      read_status:
+        row.read_status === 'sent' || row.read_status === 'read'
+          ? row.read_status
+          : null,
     }));
   }
 
@@ -285,9 +296,9 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return data || [];
   }
 
-  async findPollCardsByChapter(
+  async findCardsByChapter(
     chapterId: string,
-    options: { senderId?: string; limit: number },
+    options: { kind: ChatCardKind; senderId?: string; limit: number },
   ): Promise<ChatMessage[]> {
     // Chapter scope through the channel join, as `findPollsByChapter` does:
     // `chat_messages` carries no `chapter_id` of its own.
@@ -296,7 +307,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .select(
         `${CHAT_MESSAGE_COLUMNS}, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id)`,
       )
-      .eq('kind', 'poll')
+      .eq('kind', options.kind)
       .eq('is_deleted', false)
       .eq('chat_channels.chapter_id', chapterId)
       .order('created_at', { ascending: false });
@@ -427,6 +438,21 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
         : query.eq('flagged_by', expected.flagged_by);
     if (expected.requireLive) query = query.eq('is_deleted', false);
     const { data: updated, error } = await query
+      .select(CHAT_MESSAGE_COLUMNS)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
+  }
+
+  async updateIfLive(
+    id: string,
+    data: TablesUpdate<'chat_messages'>,
+  ): Promise<ChatMessage | null> {
+    const { data: updated, error } = await this.supabase
+      .from('chat_messages')
+      .update(data)
+      .eq('id', id)
+      .eq('is_deleted', false)
       .select(CHAT_MESSAGE_COLUMNS)
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);

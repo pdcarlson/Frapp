@@ -1,4 +1,11 @@
 import { Event } from '../entities/event.entity';
+import type { EventExcuse } from '../entities/event-excuse.entity';
+
+/** One rebuilt occurrence's old id and the new one replacing it (#4620). */
+export interface OccurrenceCarry {
+  from: string;
+  to: string;
+}
 
 export const EVENT_REPOSITORY = 'EVENT_REPOSITORY';
 
@@ -19,6 +26,11 @@ export interface IEventRepository {
    * (`end_time >= endsAfter`), earliest start first, at most `limit` rows.
    * An event with no recorded creator is never returned.
    */
+  /**
+   * The events among `ids` that are in this chapter, in no order. An id from
+   * another chapter, or one that no longer exists, is left out.
+   */
+  findByIds(ids: readonly string[], chapterId: string): Promise<Event[]>;
   findCreatedBy(
     chapterId: string,
     createdBy: string,
@@ -48,4 +60,18 @@ export interface IEventRepository {
   ): Promise<Event[]>;
   delete(id: string, chapterId: string): Promise<void>;
   deleteMany(ids: string[], chapterId: string): Promise<void>;
+  /**
+   * Delete the upcoming occurrences a series edit rebuilt (#4620), carrying
+   * each `carry` pair's excuses, and an approved one's EXCUSED attendance
+   * row, from the old meeting to the new one in the same transaction (RPC
+   * `delete_replaced_occurrences`). Each pair's new meeting also takes over
+   * the old one's `agenda` and `attachments` (#4934), replacing its own, so
+   * pair only a rebuilt meeting with the one it replaces. Returns the pending and approved excuses
+   * left on old rows no pair carried, deleted with them.
+   */
+  deleteReplacedOccurrences(
+    ids: string[],
+    chapterId: string,
+    carry: readonly OccurrenceCarry[],
+  ): Promise<EventExcuse[]>;
 }

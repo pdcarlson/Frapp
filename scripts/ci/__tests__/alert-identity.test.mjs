@@ -12,7 +12,9 @@ import {
   resolveAlert,
 } from "../lib/alert-issue.mjs";
 import * as checkMigrationDrift from "../check-migration-drift.mjs";
+import * as clockAheadTests from "../clock-ahead-tests.mjs";
 import * as deployAlert from "../deploy-alert.mjs";
+import * as mobileReleaseAlert from "../mobile-release-alert.mjs";
 import * as npmAuditWatch from "../npm-audit-watch.mjs";
 import * as prBaseSync from "../pr-base-sync.mjs";
 import * as productionAuthConformance from "../production-auth-conformance.mjs";
@@ -58,6 +60,7 @@ function codeLines(source) {
 // per project and environment.
 const FLAT = {
   "check-migration-drift": checkMigrationDrift,
+  "clock-ahead-tests": clockAheadTests,
   "pr-base-sync": prBaseSync,
   "production-auth-conformance": productionAuthConformance,
   "production-backup-env": productionBackupEnv,
@@ -74,6 +77,12 @@ const ALERTS = [
   ...Object.values(deployAlert.ALERT_CONFIGS).map((config) => ({
     name: `deploy-alert:${config.name}`,
     script: "deploy-alert",
+    alert: config.alert,
+  })),
+  // One alert per app release workflow: Staging app and Deploy production's.
+  ...Object.values(mobileReleaseAlert.ALERT_CONFIGS).map((config) => ({
+    name: `mobile-release-alert:${config.name}`,
+    script: "mobile-release-alert",
     alert: config.alert,
   })),
   // One alert per backup job: the dump and the Storage mirror (#2328).

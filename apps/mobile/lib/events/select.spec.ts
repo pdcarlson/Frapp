@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   selectAllEventRows,
   selectEventDetail,
-  selectEventList,
+  withoutMeetingLists,
   selectMyAttendance,
-  selectSeriesCadence,
-  selectSeriesName,
   selectSeriesOccurrences,
 } from "./select";
 
@@ -102,10 +100,14 @@ describe("selectMyAttendance", () => {
 
   it("keeps an officer's mark, with no check-in", () => {
     expect(
-      selectMyAttendance({ attendance: { status: "EXCUSED", check_in_time: at } }),
+      selectMyAttendance({
+        attendance: { status: "EXCUSED", check_in_time: at },
+      }),
     ).toEqual({ status: "EXCUSED", checkedInAt: null });
     expect(
-      selectMyAttendance({ attendance: { status: "PRESENT", check_in_time: null } }),
+      selectMyAttendance({
+        attendance: { status: "PRESENT", check_in_time: null },
+      }),
     ).toEqual({ status: "PRESENT", checkedInAt: null });
   });
 
@@ -116,109 +118,14 @@ describe("selectMyAttendance", () => {
   });
 });
 
-/**
- * #3707 / #3823: a repeating series is one row, the list holds today through
- * the next two weeks under day headings, and everything after waits in Later.
- * Local wall-clock times, so the day split holds wherever the suite runs.
- */
-/** The screen's call: rows parsed once, then listed. */
-const listOf = (data: unknown, now: Date) =>
-  selectEventList(selectAllEventRows(data), now);
-
-describe("selectEventList", () => {
-  // Monday Nov 9, 2026, 9:00 AM.
-  const now = new Date(2026, 10, 9, 9, 0);
-  const local = (day: number, hour = 18, month = 11) =>
-    new Date(2026, month - 1, day, hour).toISOString();
-  const row = (id: string, day: number, extra: object = {}) => ({
-    id,
-    name: id,
-    location: null,
-    start_time: local(day),
-    end_time: local(day, 19),
-    point_value: null,
-    ...extra,
-  });
-  /** "Chapter" every Sunday from Nov 8, as the API materializes it. */
-  const chapter = Array.from({ length: 13 }, (_, index) =>
-    row(index === 0 ? "head" : `chapter-${index}`, 8 + index * 7, {
-      name: "Chapter",
-      recurrence_rule: index === 0 ? "WEEKLY" : null,
-      parent_event_id: index === 0 ? null : "head",
-    }),
-  );
-
-  const flatten = (groups: ReturnType<typeof selectEventList>["soon"]) =>
-    groups.flatMap((group) =>
-      group.entries.map((entry) => `${group.heading}: ${entry.event.name}`),
-    );
-
-  it("draws a weekly series once, as its next occurrence, labelled", () => {
-    const { soon, later } = listOf(chapter, now);
-    expect(flatten(soon)).toEqual(["Sunday: Chapter"]);
-    expect(soon[0]!.entries[0]!.cadence).toBe("Every Sunday");
-    expect(soon[0]!.entries[0]!.event.id).toBe("chapter-1");
-    expect(later).toEqual([]);
-  });
-
-  it("writes day headings out and splits at the end of the 14th day", () => {
-    const { soon, later } = listOf(
-      [
-        row("today", 9),
-        row("tomorrow", 10),
-        row("thursday", 12),
-        row("next week", 17),
-        row("day 14", 23),
-        row("day 15", 24),
-      ],
-      now,
-    );
-    expect(flatten(soon)).toEqual([
-      "Today: today",
-      "Tomorrow: tomorrow",
-      "Thursday: thursday",
-      "November 17: next week",
-      "November 23: day 14",
-    ]);
-    expect(flatten(later)).toEqual(["November 24: day 15"]);
-    expect(soon.every((group) => group.entries.every((e) => e.cadence === null))).toBe(true);
-  });
-
-  it("groups two events on one day under one heading", () => {
-    const { soon } = listOf([row("a", 10, { start_time: local(10, 12) }), row("b", 10)], now);
-    expect(soon).toHaveLength(1);
-    expect(soon[0]!.entries.map((entry) => entry.event.id)).toEqual(["a", "b"]);
-  });
-
-  it("puts a series whose next meeting is past the horizon under Later, once", () => {
-    const monthly = [0, 1, 2].map((index) =>
-      row(index === 0 ? "dues" : `dues-${index}`, 28, {
-        start_time: local(28, 18, 11 + index),
-        end_time: local(28, 19, 11 + index),
-        name: "Dues night",
-        recurrence_rule: index === 0 ? "MONTHLY" : null,
-        parent_event_id: index === 0 ? null : "dues",
-      }),
-    );
-    const { soon, later } = listOf(monthly, now);
-    expect(soon).toEqual([]);
-    expect(flatten(later)).toEqual(["November 28: Dues night"]);
-    expect(later[0]!.entries[0]!.cadence).toBe("Every month on the 28th");
-  });
-
-  it("shows a series meeting that is under way as the series' row, not twice", () => {
-    // Sunday Nov 15, 6:05 PM: chapter-1 started five minutes ago.
-    const during = new Date(2026, 10, 15, 18, 5);
-    const { soon } = listOf(chapter, during);
-    const rows = soon.flatMap((group) => group.entries);
-    expect(rows.map((entry) => entry.event.id)).toEqual(["chapter-1"]);
-    expect(rows[0]!.cadence).toBe("Every Sunday");
-  });
-});
-
 describe("selectSeriesOccurrences", () => {
   const now = new Date(2026, 10, 9, 9, 0);
-  const at = (id: string, day: number, parent: string | null, rule: string | null = null) => ({
+  const at = (
+    id: string,
+    day: number,
+    parent: string | null,
+    rule: string | null = null,
+  ) => ({
     id,
     name: "Chapter",
     start_time: new Date(2026, 10, day, 18).toISOString(),
@@ -237,73 +144,44 @@ describe("selectSeriesOccurrences", () => {
   it("lists the series' other upcoming dates, soonest first", () => {
     const [, c1] = selectAllEventRows(data);
     expect(c1!.id).toBe("c1");
-    expect(selectSeriesOccurrences(selectAllEventRows(data), c1!, now).map((e) => e.id)).toEqual(["c2", "c3"]);
+    expect(
+      selectSeriesOccurrences(selectAllEventRows(data), c1!, now).map(
+        (e) => e.id,
+      ),
+    ).toEqual(["c2", "c3"]);
   });
 
   it("reaches the children from the head", () => {
     const head = selectAllEventRows(data)[0]!;
-    expect(selectSeriesOccurrences(selectAllEventRows(data), head, now).map((e) => e.id)).toEqual(["c1", "c2", "c3"]);
+    expect(
+      selectSeriesOccurrences(selectAllEventRows(data), head, now).map(
+        (e) => e.id,
+      ),
+    ).toEqual(["c1", "c2", "c3"]);
   });
 
   it("is empty for a one-time event", () => {
     const other = selectAllEventRows(data).find((e) => e.id === "other")!;
-    expect(selectSeriesOccurrences(selectAllEventRows(data), other, now)).toEqual([]);
+    expect(
+      selectSeriesOccurrences(selectAllEventRows(data), other, now),
+    ).toEqual([]);
   });
 });
 
-describe("the series as a whole", () => {
-  const meeting = (
-    id: string,
-    day: number,
-    extra: Record<string, unknown> = {},
-  ) => ({
-    id,
-    name: "Chapter",
-    start_time: new Date(2026, 10, day, 18).toISOString(),
-    end_time: new Date(2026, 10, day, 19).toISOString(),
-    recurrence_rule: id === "head" ? "WEEKLY" : null,
-    parent_event_id: id === "head" ? null : "head",
-    ...extra,
-  });
-
-  it("keeps the series' weekday when the head alone is moved", () => {
-    // The head moved to Monday Nov 9 with "This event only"; the rest are Sundays.
-    const rows = selectAllEventRows([
-      meeting("head", 9),
-      meeting("c1", 15),
-      meeting("c2", 22),
-    ]);
-    for (const row of rows) {
-      expect(selectSeriesCadence(rows, row)).toBe("Every Sunday");
-    }
-  });
-
-  it("says no cadence for a one-time event or a series without its head", () => {
-    const rows = selectAllEventRows([
-      meeting("solo", 12, { parent_event_id: null }),
-      meeting("orphan", 15, { parent_event_id: "gone" }),
-    ]);
-    expect(rows.map((row) => selectSeriesCadence(rows, row))).toEqual([
-      null,
-      null,
-    ]);
-  });
-
-  it("names the series by what most of its meetings are called", () => {
-    const rows = selectAllEventRows([
-      meeting("head", 8, { name: "Chapter: Kickoff" }),
-      meeting("c1", 15),
-      meeting("c2", 22),
-    ]);
-    expect(selectSeriesName(rows, "head")).toBe("Chapter");
-    expect(selectSeriesName(rows, "other")).toBeNull();
-  });
-
-  it("breaks a name tie toward the soonest meeting's name", () => {
-    const rows = selectAllEventRows([
-      meeting("c1", 15, { name: "Chapter: Elections" }),
-      meeting("head", 8),
-    ]);
-    expect(selectSeriesName(rows, "head")).toBe("Chapter");
+describe("withoutMeetingLists (#4934)", () => {
+  it("keys the edit sheet on everything but the lists saved in place", () => {
+    const read = { id: "e1", name: "Chapter", notes: "n" };
+    const checkedOff = {
+      ...read,
+      agenda: [{ id: "a", text: "Report", done: true }],
+      attachments: [],
+    };
+    expect(JSON.stringify(withoutMeetingLists(checkedOff))).toBe(
+      JSON.stringify(
+        withoutMeetingLists({ ...read, agenda: [], attachments: [] }),
+      ),
+    );
+    expect(withoutMeetingLists(checkedOff)).toEqual(read);
+    expect(withoutMeetingLists(undefined)).toBeUndefined();
   });
 });

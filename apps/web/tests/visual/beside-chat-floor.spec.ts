@@ -14,9 +14,9 @@ import { DASHBOARD_ROUTES } from "./routes";
  * enough for every viewport breakpoint, so a page that breaks on `sm`/`md`/`lg`
  * draws its desktop layout into a phone's width. `responsive-floor.spec.ts`
  * can't see that: its 375px *viewport* makes the page and the window the same
- * width. This opens each tool beside chat in a 1440px window with the divider
- * at its minimum (`frapp_chat_split=0`; CSS holds the page at 375px) and asserts
- * the page doesn't scroll sideways.
+ * width. This opens each tool beside chat in a 1440px window with chat's side
+ * panel as wide as it goes (`frapp_chat_width=4000`; CSS holds the page at
+ * 375px, #5575) and asserts the page doesn't scroll sideways.
  *
  * **What CI measures.** The same sessionless harness as the other suites, so
  * most pages show an empty or loading state, and this mostly pins the shell's
@@ -48,17 +48,19 @@ const DEMO_CHAPTER_ID = "c0ffee00-0000-4000-8000-000000000001";
 
 /**
  * Every dashboard route but `/chat` (chat alone, no tool page) and `/settings`,
- * plus the tool surfaces `routes.ts` reaches only as a tab or not at all:
- * Alumni is a Directory tab, and Chat admin opens from Settings. Chapter
- * settings never sits beside chat: it takes the whole width and hides chat
- * while it is open (#4068 decision 3, `isFullWidthToolRoute`), so there is no
- * beside-chat floor to hold there; `dashboard-shell.spec.tsx` pins that.
+ * plus the tool surface `routes.ts` reaches only as a tab: Alumni is a
+ * Directory tab. Chapter settings never sits beside chat: it takes the whole
+ * width and hides chat while it is open (#4068 decision 3,
+ * `isFullWidthToolRoute`), so there is no beside-chat floor to hold there;
+ * `dashboard-shell.spec.tsx` pins that. `/chat-admin` is not listed either:
+ * since #3837 it only redirects into Chapter settings' Chat tab, so measuring
+ * it raced the redirect, passing only when the poll read the page before it
+ * landed (#5575).
  */
 const TOOL_ROUTES = [
   ...DASHBOARD_ROUTES.filter(
     (route) => route !== "/chat" && route !== "/settings",
   ),
-  "/chat-admin",
   "/members?tab=alumni",
 ];
 
@@ -132,7 +134,7 @@ test.describe("tool pages hold the 375px floor beside chat", () => {
     }
     await context.addCookies([
       { name: "frapp_chat_open", value: "1", url },
-      { name: "frapp_chat_split", value: "0", url },
+      { name: "frapp_chat_width", value: "4000", url },
     ]);
   });
 
@@ -208,6 +210,42 @@ test.describe("tool pages hold the 375px floor beside chat", () => {
         measured.documentWidth,
         `${route}: the document is wider than the window beside chat`,
       ).toBeLessThanOrEqual(WINDOW.width);
+      // The page's actions are in its header beside the X (Paul,
+      // 2026-11-19, `page-actions.tsx`), outside `[data-tool-page]`, so the
+      // header is measured on its own: the actions end before the X and the
+      // title keeps room to be read.
+      const header = await page
+        .locator("[data-tool-page-header]")
+        .evaluate((el) => {
+          const slot = el.querySelector("[data-tool-page-actions]");
+          const close = el.querySelector(":scope > button");
+          const title = el.firstElementChild;
+          const actionsRight = slot
+            ? Math.max(
+                slot.getBoundingClientRect().left,
+                ...[...slot.querySelectorAll("*")].map(
+                  (node) => node.getBoundingClientRect().right,
+                ),
+              )
+            : 0;
+          return {
+            actionsRight: Math.round(actionsRight),
+            closeLeft: close
+              ? Math.round(close.getBoundingClientRect().left)
+              : Infinity,
+            titleWidth: title
+              ? Math.round(title.getBoundingClientRect().width)
+              : 0,
+          };
+        });
+      expect(
+        header.actionsRight,
+        `${route}: the header's actions run under its X beside chat`,
+      ).toBeLessThanOrEqual(header.closeLeft);
+      expect(
+        header.titleWidth,
+        `${route}: the header's actions squeeze the page title away beside chat`,
+      ).toBeGreaterThanOrEqual(48);
     });
   }
 });

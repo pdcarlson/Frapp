@@ -3,7 +3,7 @@ import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatMessage } from "@repo/chat-core/types";
+import type { ChatMessage, ThreadLastReply } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
 import { memberAvatarTint, memberHashHue } from "@repo/hooks";
@@ -46,17 +46,11 @@ vi.mock("@repo/hooks", async () => {
 // needs `FrappClientProvider` — a client this file's tests, focused on the
 // attachment-mount gate, have no reason to provide. `chapter-branding.spec.tsx`
 // owns the branding/accent behavior itself.
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#C49A3A",
-    accentPrimary: "#C49A3A",
-    accentOnPrimary: "#2B2009",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, MUTED_GOLD_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(MUTED_GOLD_BRANDING);
+});
 
 import {
   UNAVAILABLE_QUOTE,
@@ -190,6 +184,8 @@ function renderItem(
     roleColorFor?: (userId: string) => string | null;
     onOpenProfile?: (userId: string) => void;
     onOpenThread?: () => void;
+    threadUnread?: number;
+    threadPreview?: ThreadLastReply | null;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -211,6 +207,8 @@ function renderItem(
           onOpenActions={extra.onOpenActions}
           onOpenProfile={extra.onOpenProfile}
           onOpenThread={extra.onOpenThread}
+          threadUnread={extra.threadUnread}
+          threadPreview={extra.threadPreview}
         />
       </FrappThemeProvider>,
     );
@@ -403,8 +401,19 @@ describe("a row that mentions the viewer", () => {
     expect(highlights(tree)).toHaveLength(0);
   });
 
-  it("draws nothing for the viewer's own message that names them", () => {
-    const tree = renderItem(message({ sender_id: VIEWER, mentions: [VIEWER] }));
+  it("lights the viewer's own message when it reaches them, as their own @here does", () => {
+    const tree = renderItem(
+      message({
+        sender_id: VIEWER,
+        content: "@here build",
+        mentions: [VIEWER],
+      }),
+    );
+    expect(highlights(tree)).toHaveLength(1);
+  });
+
+  it("draws nothing for the viewer's own message that reaches only others", () => {
+    const tree = renderItem(message({ sender_id: VIEWER, mentions: [OTHER] }));
     expect(highlights(tree)).toHaveLength(0);
   });
 
@@ -724,8 +733,7 @@ describe("compact layout (#2873)", () => {
     const tree = renderItem(message({ is_pinned: true }));
     const pinned = tree.root.find(
       (node) =>
-        (node.type as unknown) === "Text" &&
-        node.props.children === " · Pinned",
+        (node.type as unknown) === "Text" && drawnText(node) === "  Pinned",
     );
     const style = JSON.stringify(pinned.props.style);
     expect(style).toContain(
@@ -748,9 +756,10 @@ describe("compact layout (#2873)", () => {
     const texts = tree.root
       .findAll((node) => (node.type as unknown) === "Text")
       .map((node) => node.props.children);
-    // `(edited)` leads its own line, and Pinned follows it with the separator.
+    // `(edited)` leads its own line, and Pinned follows it, its pin glyph
+    // between (#4136).
     expect(texts).toContainEqual([EDITED_MARKER, expect.anything()]);
-    expect(texts).toContain(" · Pinned");
+    expect(texts).toContainEqual([" ", expect.anything(), " Pinned"]);
     // Still no text row above the photo: only the author line is an action host.
     expect(actionHosts(tree)).toHaveLength(1);
   });
@@ -762,8 +771,8 @@ describe("compact layout (#2873)", () => {
     const texts = tree.root
       .findAll((node) => (node.type as unknown) === "Text")
       .map((node) => node.props.children);
-    expect(texts).toContain("Pinned");
-    expect(texts).not.toContain(" · Pinned");
+    // No space before the glyph: Pinned starts the line.
+    expect(texts).toContainEqual(["", expect.anything(), " Pinned"]);
   });
 
   it("offers no reactions on a deleted message, not even the add chip", () => {
@@ -964,7 +973,7 @@ describe("reply quote (#1727)", () => {
 });
 
 describe("delivery status (#1910)", () => {
-  const DESTRUCTIVE = "#F85149";
+  const DESTRUCTIVE = "#FF665C";
 
   it("renders an unconfirmed row as a muted note, not as delivered", () => {
     const flat = JSON.stringify(
@@ -1129,7 +1138,7 @@ describe("markers under a list (#2861)", () => {
         Array.isArray(node.props.style) &&
         drawnText(node).startsWith("a"),
     );
-    expect(drawnText(body)).toBe(`a\nb\n${EDITED_MARKER} · Pinned`);
+    expect(drawnText(body)).toBe(`a\nb\n${EDITED_MARKER}  Pinned`);
   });
 
   it("drop the Pinned separator when Pinned starts the line", () => {
@@ -1140,7 +1149,7 @@ describe("markers under a list (#2861)", () => {
         Array.isArray(node.props.style) &&
         drawnText(node).startsWith("a"),
     );
-    expect(drawnText(body)).toBe("a\nPinned");
+    expect(drawnText(body)).toBe("a\n Pinned");
   });
 });
 
@@ -1354,6 +1363,15 @@ describe("bubbles", () => {
     expect(byTestId(tree, "message-avatar")).toHaveLength(0);
   });
 
+  it("lights the viewer's own bubble row when it reaches them, as their own @here does", () => {
+    act(() => setChatDensity("bubbles"));
+    const tree = renderItem(
+      message({ content: "@here hi", sender_id: VIEWER, mentions: [VIEWER] }),
+    );
+    expect(byTestId(tree, "bubble-row-self").length).toBeGreaterThan(0);
+    expect(byTestId(tree, "message-mentions-viewer").length).toBeGreaterThan(0);
+  });
+
   it("tucks a stacked bubble's corners and holds the avatar back", () => {
     act(() => setChatDensity("bubbles"));
     const tree = renderItem(message({ content: "hello" }), undefined, {
@@ -1488,7 +1506,7 @@ describe("thread chip (#3785)", () => {
       onOpenThread,
     });
     expect(screenText(tree)).toContain("3 replies");
-    expect(screenText(tree)).toContain("· last reply 5m ago");
+    expect(screenText(tree)).toContain("last reply 5m ago");
     const chip = chips(tree)[0]!;
     expect(chip.props.accessibilityLabel).toBe(
       "3 replies, last reply 5m ago. Open thread",
@@ -1496,6 +1514,73 @@ describe("thread chip (#3785)", () => {
     act(() => chip.props.onPress());
     expect(onOpenThread).toHaveBeenCalledTimes(1);
   });
+
+  it("says how many are new to the viewer (#4297)", () => {
+    const tree = renderItem(message({ thread: THREAD }), undefined, {
+      onOpenThread: vi.fn(),
+      threadUnread: 2,
+    });
+    expect(screenText(tree)).toContain("2 new");
+    expect(chips(tree)[0]!.props.accessibilityLabel).toBe(
+      "3 replies, 2 new, last reply 5m ago. Open thread",
+    );
+  });
+
+  it("previews the latest reply under the count (#4297)", () => {
+    const preview = {
+      id: "reply-9",
+      sender_id: OTHER,
+      content: "grill is in my **garage**",
+      kind: "text" as const,
+      attachment_count: 0,
+      created_at: THREAD.last_reply_at,
+      sender_blocked: false,
+    };
+    const tree = renderItem(message({ thread: THREAD }), undefined, {
+      onOpenThread: vi.fn(),
+      threadPreview: preview,
+    });
+    expect(
+      tree.root.findAllByProps({ testID: "thread-preview" }).length,
+    ).toBeGreaterThan(0);
+    expect(screenText(tree)).toContain("grill is in my garage");
+    expect(chips(tree)[0]!.props.accessibilityLabel).toBe(
+      "3 replies, last reply 5m ago, latest from Casey: grill is in my garage. Open thread",
+    );
+    // The viewer's own latest reply reads "You".
+    const own = renderItem(message({ thread: THREAD }), undefined, {
+      onOpenThread: vi.fn(),
+      threadPreview: { ...preview, sender_id: VIEWER },
+    });
+    expect(chips(own)[0]!.props.accessibilityLabel).toContain(
+      "latest from You: grill is in my garage",
+    );
+    // Without one, no preview line.
+    const bare = renderItem(message({ thread: THREAD }), undefined, {
+      onOpenThread: vi.fn(),
+    });
+    expect(bare.root.findAllByProps({ testID: "thread-preview" })).toHaveLength(
+      0,
+    );
+  });
+
+  it.each([
+    ["cozy", true],
+    ["compact", false],
+    ["bubbles", false],
+  ] as const)(
+    "runs a connector from the photo to the card in %s only (#4297)",
+    (density, drawn) => {
+      act(() => setChatDensity(density));
+      const tree = renderItem(message({ thread: THREAD }), undefined, {
+        onOpenThread: vi.fn(),
+      });
+      expect(
+        tree.root.findAllByProps({ testID: "thread-spine" }).length > 0,
+      ).toBe(drawn);
+      act(() => setChatDensity("cozy"));
+    },
+  );
 
   it("is a plain label where threads aren't offered", () => {
     const tree = renderItem(message({ thread: THREAD }));

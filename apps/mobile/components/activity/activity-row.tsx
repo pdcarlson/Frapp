@@ -1,8 +1,13 @@
-import { StyleSheet, Text, View } from "react-native";
+import { createContext, useContext } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   ACTIVITY_GLYPH_NAV,
   activityBadgeIsAsk,
+  activityDetailParts,
+  activityFaceStack,
+  type ActivityFace,
   type ActivityRow,
+  type ActivityRowProgress,
 } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
@@ -11,54 +16,158 @@ import {
   listRowHint,
   PressableRow,
 } from "@/components/list-section";
+import { ForwardGlyph } from "@/components/control-glyphs";
+import {
+  LEAD_TILE_GLYPH,
+  LEAD_TILE_SIZE,
+  LeadTile,
+  LeadTileSkeleton,
+  leadRowStyles,
+} from "@/components/lead-tile";
+import { FaceWithBadge } from "@/components/face-with-badge";
+import {
+  itemMenuAccessibility,
+  longPressOf,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
+import { MemberAvatar } from "@/components/member-avatar";
+import { meterGrooveOn, meterStyles } from "@/components/meter";
+import { pageSurfaces } from "@/lib/surfaces";
 import { NavGlyph } from "@/components/nav-glyph";
-import { SkeletonBlock, SkeletonText } from "@/components/state-block";
-import { StatusChip } from "@/components/status-chip";
+import { SkeletonText } from "@/components/state-block";
+import { HairlineChip, StatusChip } from "@/components/status-chip";
+import { tintedControlStyles } from "@/components/tinted-control";
+import { createUnreadDotStyles } from "@/components/unread-dot";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { initialsFor } from "@/lib/chat/display-name";
+import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * One Activity row on the phone (#4173, step 2): its lead (the kind's glyph,
- * or an event's date), its two lines, and what it asks of the member or the
+ * Resolves a row's `faceId` on the chapter roster (#4402, item 4). The screen
+ * provides it from `useActivityFaces`; without a provider, and for an id
+ * the roster doesn't hold (a member who left), a row leads with its glyph.
+ */
+export const ActivityFaces = createContext<
+  (userId: string) => ActivityFace | null
+>(() => null);
+
+/**
+ * The screen's long press for a row: a task's or an event's menu (#5492)
+ * with Snooze where it applies (#4982), Snooze alone, or nothing
+ * (`useActivityRowMenu`). Provided by the Activity screen, so the week card,
+ * the To review card and every list get it without threading it through
+ * each.
+ */
+export const ActivityRowMenuContext = createContext<
+  (row: ActivityRow) => ItemMenuHandle | null
+>(() => null);
+
+/**
+ * One Activity row on the phone (#4173, step 2): its lead (the face of who
+ * it's from, its kind's glyph, or an event's date: `ActivityRowLead`), its
+ * two lines, and what it asks of the member or the
  * state it is in. Web's row (`apps/web/components/activity/activity-page.tsx`)
  * on the phone's flush list recipe: on the screen background, split by
  * hairlines, the way the phone's Events and Tasks lists draw theirs
  * (`components/events/event-rows.tsx`), not in a rounded card.
  *
- * The whole row is the one hit target, and every row opens something.
+ * Every row opens something. A row whose ask is one press (Confirm,
+ * Approve) carries it as a button where the ask was drawn (`action`, #4437),
+ * so the common case takes one tap and the rest of the row still opens the
+ * sheet, as web's rows do.
  */
 export function ActivityListRow({
   row,
   isFirst,
+  action = null,
+  onCard = false,
+  solo = false,
   onPress,
+  menu = null,
 }: {
   row: ActivityRow;
   /** The first row of its run draws no hairline above it. */
   isFirst: boolean;
+  /** The row's ask as a button (`components/activity/activity-row-action.tsx`). */
+  action?: ActivityRowActionControl | null;
+  /**
+   * The row sits in a card (the week card's Next row, the To review card's
+   * rows; #4766): it keeps to the card's own padding rather than bleeding
+   * into the screen gutter, and its press lift is the step above the card.
+   */
+  onCard?: boolean;
+  /**
+   * The row stands alone as the week card's Next row (#4766): its ask is
+   * filled with the chapter accent, the one primary action on the screen
+   * (`foundations.md` § Where the accent goes); its detail may take a second
+   * line, since "Due in 2 hours" must not be cut; and it keeps no slot for
+   * the unread dot once read, having no other row to line up with.
+   */
+  solo?: boolean;
   onPress: () => void;
+  /**
+   * What a long press opens (`useActivityRowMenu`): a task's or an event's
+   * menu (#5492), with Snooze on a row that waits and Unsnooze on a snoozed
+   * one (#4982). Each action is also offered by name to VoiceOver and
+   * TalkBack, where a long press is out of reach.
+   */
+  menu?: ItemMenuHandle | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
-  const rowStyle = [styles.row, isFirst ? null : styles.divider];
+  const dotStyles = createUnreadDotStyles(tokens);
+  // A poll's detail is its channel, so its poster, shown only as the face,
+  // is said after the title ("…, from Olive Officer"); every other row's
+  // detail already names the person.
+  const faceFor = useContext(ActivityFaces);
+  const poster =
+    row.kind === "poll" && row.faceId ? faceFor(row.faceId)?.name : null;
+  const titled = poster ? `${row.title}, from ${poster}` : row.title;
+  // "41 of 60 voted" is said with the title: the bar beside it is decoration.
+  const label = row.progress ? `${titled}, ${row.progress.spoken}` : titled;
+  const rowStyle = [
+    styles.row,
+    onCard ? styles.rowOnCard : null,
+    isFirst ? null : styles.divider,
+  ];
   const content = (
     <>
-      <ActivityRowLead row={row} />
+      {/* The unread mark (#4405): the notification list's dot, in a slot of
+          its own that stays when read so rows don't shift. */}
+      {solo && !row.unread ? null : (
+        <View
+          style={row.unread ? dotStyles.dot : dotStyles.spacer}
+          testID={row.unread ? "activity-unread-dot" : undefined}
+        />
+      )}
+      <ActivityRowLead row={row} onCard={onCard} />
       <View style={styles.text}>
         {/* Two lines, not web's one: at a phone's width one line cut most
             task names short, and the old list wrapped them in full. */}
         <Text numberOfLines={2} style={styles.title}>
           {row.title}
         </Text>
-        {row.detail ? (
-          <Text numberOfLines={1} style={styles.detail}>
-            {row.detail}
-          </Text>
+        <ActivityRowDetail row={row} lines={solo ? 2 : 1} />
+        {row.progress ? (
+          <ActivityRowProgressLine
+            progress={row.progress}
+            onCard={onCard}
+            faces={
+              row.kind === "task-group"
+                ? { ids: row.faceIds, total: row.group.total }
+                : null
+            }
+          />
         ) : null}
       </View>
       {row.badge ? (
-        activityBadgeIsAsk(row) ? (
-          <ActivityAsk label={row.badge.label} />
+        action ? (
+          <ActivityAskButton action={action} filled={solo} />
+        ) : activityBadgeIsAsk(row) ? (
+          <ActivityAsk label={row.badge.label} filled={solo} />
+        ) : row.badge.variant === "outline" ? (
+          <HairlineChip label={row.badge.label} />
         ) : (
           <StatusChip
             label={row.badge.label}
@@ -66,18 +175,33 @@ export function ActivityListRow({
           />
         )
       ) : null}
-      <Text style={styles.chevron}>›</Text>
+      <ForwardGlyph color={tokens.color.text.mutedForeground} />
     </>
   );
 
+  // The button's press as a named action, one swipe up on VoiceOver and in
+  // TalkBack's actions menu, as the Tasks row offers its checkbox, then each
+  // of the menu's; the row's own tap still opens it. The button is left off
+  // while disabled, so it can't offer what it would refuse.
+  const named = itemMenuAccessibility(
+    menu,
+    action && !action.disabled
+      ? [{ name: "rowAction", label: action.label, run: action.run }]
+      : [],
+  );
   return (
     <PressableRow
       accessibilityRole="button"
-      accessibilityLabel={row.title}
+      accessibilityLabel={row.unread ? `Unread: ${label}` : label}
       // The ask or the state is the row's value: "Vote", "Overdue".
       accessibilityValue={row.badge ? { text: row.badge.label } : undefined}
-      accessibilityHint={listRowHint(row.detail || null, undefined)}
+      // Offline, why its button is held, after the detail: the button is no
+      // focus stop of its own, so the row says it.
+      accessibilityHint={listRowHint(row.detail || null, action?.hint)}
+      {...named}
       onPress={onPress}
+      onLongPress={longPressOf(menu)}
+      onCard={onCard}
       style={rowStyle}
     >
       {content}
@@ -86,47 +210,195 @@ export function ActivityListRow({
 }
 
 /**
- * What leads a row: an event's date, month over day as a calendar draws it,
- * else its kind's glyph from the shared nav set (`ACTIVITY_GLYPH_NAV`), in
- * the same 40pt tile, so a row with either is the same height. Both are
- * neutral: colour on this screen is for what asks something of the member
- * and for status, never for a kind (`components.md` §5). Decoration only:
- * the row's detail says the day in words ("Tomorrow · 7:00 PM").
+ * What leads a row: an event's date, month over day as a calendar draws it;
+ * the face of who the row is from, with its kind's glyph small on the corner
+ * (#4402, item 4); else its kind's glyph from the shared nav set
+ * (`ACTIVITY_GLYPH_NAV`). All are 40pt, so every row is the same height, and
+ * all are neutral apart from the member's own tint: colour on this screen is
+ * for what asks something of the member and for status, never for a kind
+ * (`components.md` §5). Decoration only: the detail says the day in words
+ * ("Tomorrow · 7:00 PM") and names the person, and a poll's poster is in the
+ * row's label (`ActivityListRow`).
  */
-export function ActivityRowLead({ row }: { row: ActivityRow }) {
+function ActivityRowLead({
+  row,
+  onCard,
+}: {
+  row: ActivityRow;
+  onCard: boolean;
+}) {
+  const on = onCard ? "card" : "background";
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
+  const faceFor = useContext(ActivityFaces);
+  const face = !row.dateBlock && row.faceId ? faceFor(row.faceId) : null;
+  if (face) {
+    // The face of who the row is from, with its kind's glyph small on the
+    // corner, as Teams' and Slack's Activity draw the actor (#4402, item 4).
+    return (
+      <FaceWithBadge
+        size={LEAD_SIZE}
+        avatarUrl={face.avatarUrl}
+        name={face.name ?? "?"}
+        tint={face.tint}
+        testID={`activity-face-${row.glyph}`}
+        badgeTestID="activity-face-glyph"
+        badge={(glyph) => (
+          <NavGlyph
+            paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
+            color={glyph.color}
+            size={glyph.size}
+          />
+        )}
+      />
+    );
+  }
   if (row.dateBlock) {
     return (
-      <View
-        style={[styles.lead, styles.leadDate]}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-        testID="activity-date-block"
-      >
-        <Text style={styles.leadMonth}>{row.dateBlock.month}</Text>
-        <Text style={styles.leadDay}>{row.dateBlock.day}</Text>
-      </View>
+      <LeadTile size="lead" on={on} testID="activity-date-block">
+        <View style={styles.leadDate}>
+          <Text style={styles.leadMonth}>{row.dateBlock.month}</Text>
+          <Text style={styles.leadDay}>{row.dateBlock.day}</Text>
+        </View>
+      </LeadTile>
     );
   }
   return (
-    <View
-      style={styles.lead}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      testID={`activity-glyph-${row.glyph}`}
-    >
+    <LeadTile size="lead" on={on} testID={`activity-glyph-${row.glyph}`}>
       <NavGlyph
         paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
         color={tokens.color.text.mutedForeground}
-        size={ACTIVITY_GLYPH_SIZE}
+        size={LEAD_TILE_GLYPH}
       />
+    </LeadTile>
+  );
+}
+
+/**
+ * A row's second line. A closing time or due time less than a day away
+ * (`row.soon`, "closes in 2 hours") is drawn in the warning hue, so what runs
+ * out soon reads apart from what runs out next week (#4402, item 4).
+ */
+function ActivityRowDetail({
+  row,
+  lines,
+}: {
+  row: ActivityRow;
+  lines: number;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createActivityRowStyles(tokens);
+  if (!row.detail) return null;
+  const { lead, soon } = activityDetailParts(row);
+  return (
+    <Text numberOfLines={lines} style={styles.detail}>
+      {lead}
+      {lead && soon ? " · " : null}
+      {soon ? (
+        <Text style={styles.soon} testID="activity-soon">
+          {soon}
+        </Text>
+      ) : null}
+    </Text>
+  );
+}
+
+/**
+ * How far along a Waiting on others row is (#4792): a thin bar and "41 of
+ * 60", the week card's line recipe (`WeekLine`) under the row's detail, so
+ * an officer sees how many have voted or checked in without opening it.
+ * Google Forms' response count and GitHub's "2 of 3 approvals" are the
+ * comparables: a count where the list is, the detail one tap away.
+ *
+ * The groove follows what the row sits on (`meterGrooveOn`): the screen's
+ * floor, or a page card when `onCard`. A finished
+ * count closes in the success hue, as the week card's lines do. Decoration:
+ * the row's label says the count.
+ */
+function ActivityRowProgressLine({
+  progress,
+  onCard,
+  faces = null,
+}: {
+  progress: ActivityRowProgress;
+  onCard: boolean;
+  /** A task for everyone (#5492): whom it went to, led by their faces. */
+  faces?: { ids: string[]; total: number } | null;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accentPrimary } = useChapterBranding();
+  const styles = createActivityRowStyles(tokens);
+  const share = Math.min(1, progress.done / progress.total);
+  return (
+    <View
+      style={styles.progress}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      testID="activity-row-progress"
+    >
+      {faces ? <FaceStack ids={faces.ids} total={faces.total} /> : null}
+      <View
+        style={[
+          styles.progressTrack,
+          onCard ? styles.progressTrackOnCard : null,
+        ]}
+      >
+        <View
+          style={[
+            styles.progressFill,
+            {
+              width: `${Math.round(share * 100)}%`,
+              backgroundColor:
+                share === 1 ? tokens.color.semantic.success : accentPrimary,
+            },
+          ]}
+        />
+      </View>
+      <Text style={styles.progressCount}>{progress.label}</Text>
     </View>
   );
 }
 
-/** iconography.md §2's size for a list row's leading icon. */
-const ACTIVITY_GLYPH_SIZE = 20;
+/** Each face's side: the smallest avatar the phone draws (the mention picker's). */
+const FACE_STACK_SIZE = 24;
+/** How far each face tucks under the one before, as Slack's and GitHub's stacks. */
+const FACE_STACK_OVERLAP = 8;
+
+/**
+ * Whom a task for everyone went to (#5492), as `activityFaceStack` picks
+ * them: each face overlapping the one before, then "+N". Decoration: the
+ * row's label says who it went to and how many are done.
+ */
+function FaceStack({ ids, total }: { ids: string[]; total: number }) {
+  const { tokens } = useFrappTheme();
+  const styles = createActivityRowStyles(tokens);
+  const { faces, more } = activityFaceStack(
+    ids,
+    total,
+    useContext(ActivityFaces),
+  );
+  if (faces.length === 0) return null;
+  return (
+    <View style={styles.faceStack} testID="activity-face-stack">
+      {faces.map(({ id, face }, index) => (
+        <MemberAvatar
+          key={id}
+          uri={face.avatarUrl}
+          initials={face.name ? initialsFor(face.name) : ""}
+          size={FACE_STACK_SIZE}
+          tint={face.tint}
+          style={[
+            styles.stackFace,
+            index > 0 ? { marginLeft: -FACE_STACK_OVERLAP } : null,
+          ]}
+          textStyle={styles.stackInitials}
+          testID="activity-face-stack-face"
+        />
+      ))}
+      {more > 0 ? <Text style={styles.stackMore}>{`+${more}`}</Text> : null}
+    </View>
+  );
+}
 
 /**
  * A badge that asks the member to act (`Vote`, `Confirm`, `Approve`,
@@ -134,22 +406,122 @@ const ACTIVITY_GLYPH_SIZE = 20;
  * it reads apart from `To do` or `Required` (#4173). Web's tinted button
  * recipe: the chapter's subtle accent fill, its border and its text, since
  * the accent belongs to the one action that matters (`components.md` §3),
- * never a solid status hue (§5). It is not its own control: the whole row is
- * the hit target, and this names what the row opens to.
+ * never a solid status hue (§5). It is not its own control: the row is the
+ * hit target, and this names what the row opens to. `Vote` and `Check in`
+ * stay this; `Confirm` and `Approve` draw as `ActivityAskButton` while the
+ * plan allows them (#4437).
  */
-export function ActivityAsk({ label }: { label: string }) {
+export function ActivityAsk({
+  label,
+  filled = false,
+}: {
+  label: string;
+  /** The filled accent button: the week card's Next row only (#4766). */
+  filled?: boolean;
+}) {
   const { tokens } = useFrappTheme();
-  const { accent, accentSubtle, accentBorder } = useChapterBranding();
+  const branding = useChapterBranding();
   const styles = createActivityRowStyles(tokens);
+  const tinted = askTinted(tokens, branding);
   return (
     <View
+      testID={filled ? "activity-ask-filled" : undefined}
       style={[
         styles.ask,
-        { backgroundColor: accentSubtle, borderColor: accentBorder },
+        tinted.surface,
+        filled
+          ? {
+              backgroundColor: branding.accentPrimary,
+              borderColor: branding.accentPrimary,
+            }
+          : null,
       ]}
     >
-      <Text style={[styles.askText, { color: accent }]}>{label}</Text>
+      <Text
+        style={[
+          tinted.label,
+          filled ? { color: branding.accentOnPrimary } : null,
+        ]}
+      >
+        {label}
+      </Text>
     </View>
+  );
+}
+
+/** What a row's one-press ask needs to draw and run (#4437). */
+export interface ActivityRowActionControl {
+  label: string;
+  /** In flight, done, offline, or the chapter still loading. */
+  disabled: boolean;
+  /** Why it is disabled, when that is the connection. */
+  hint: string | undefined;
+  run: () => void;
+}
+
+/**
+ * The ask as its own control (#4437): the same tinted chip `ActivityAsk`
+ * draws, now pressable, with its hit area grown to the touch floor. Hidden
+ * from screen readers, since the row carries it as a named action rather
+ * than a second focus stop nested in the row's. Disabled, it doesn't claim
+ * the touch, so a tap on it opens the sheet as the ask did.
+ */
+export function ActivityAskButton({
+  action,
+  filled = false,
+}: {
+  action: ActivityRowActionControl;
+  /** `ActivityAsk`'s filled accent: the week card's Next row (#4766, #4427). */
+  filled?: boolean;
+}) {
+  const { tokens } = useFrappTheme();
+  const branding = useChapterBranding();
+  const tinted = askTinted(tokens, branding);
+  const styles = createActivityRowStyles(tokens);
+  const slop = Math.max(0, (tokens.touch.minimum - ASK_HEIGHT) / 2);
+  return (
+    <Pressable
+      testID="activity-row-action"
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      disabled={action.disabled}
+      hitSlop={{ top: slop, bottom: slop, left: slop, right: slop }}
+      onPress={action.run}
+      style={({ pressed }) => [
+        styles.ask,
+        tinted.surface,
+        // Disabled is the one recipe for every variant (tinted-control.ts);
+        // the filled ask keeps its accent fill otherwise, and a press dims
+        // it as the PR drew it, since the tinted press tint is for the
+        // subtle fill.
+        filled && !action.disabled
+          ? {
+              backgroundColor: branding.accentPrimary,
+              borderColor: branding.accentPrimary,
+            }
+          : null,
+        action.disabled
+          ? tinted.disabled
+          : pressed
+            ? filled
+              ? { opacity: 0.7 }
+              : tinted.pressed
+            : null,
+      ]}
+    >
+      <Text
+        style={[
+          tinted.label,
+          action.disabled
+            ? tinted.disabledLabel
+            : filled
+              ? { color: branding.accentOnPrimary }
+              : null,
+        ]}
+      >
+        {action.label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -166,11 +538,8 @@ export function ActivityRowSkeleton({
   const { label, caption } = tokens.typography.role;
   return (
     <View style={[styles.row, isFirst ? null : styles.divider]}>
-      <SkeletonBlock
-        width={LEAD_SIZE}
-        height={LEAD_SIZE}
-        radius={tokens.radius.chipLarge}
-      />
+      <View style={createUnreadDotStyles(tokens).spacer} />
+      <LeadTileSkeleton />
       <View style={styles.text}>
         <SkeletonText role={label} width={SKELETON_WIDTHS[index % 4]} />
         <SkeletonText role={caption} width="34%" />
@@ -181,58 +550,117 @@ export function ActivityRowSkeleton({
 
 const SKELETON_WIDTHS = ["58%", "42%", "66%", "48%"] as const;
 
-/** The lead tile: web's 40px (`h-10 w-10`). */
-const LEAD_SIZE = 40;
+/** The lead: web's 40px (`h-10 w-10`), the two-line row's `LeadTile`. */
+const LEAD_SIZE = LEAD_TILE_SIZE.lead;
 
 /** The ask's height: web's `h-7`, a badge's line rather than a button's. */
 const ASK_HEIGHT = 28;
 
+/** The ask's tinted recipe, at caption size to fit its badge-height line. */
+function askTinted(
+  tokens: SignetTokens,
+  branding: Parameters<typeof tintedControlStyles>[1],
+) {
+  return tintedControlStyles(tokens, branding, tokens.typography.role.caption);
+}
+
 function createActivityRowStyles(tokens: SignetTokens) {
+  // The frame the Calendar's rows share (`leadRowStyles`).
+  const lead = leadRowStyles(tokens);
+  const meter = meterStyles(tokens, tokens.color.surface.background);
   return StyleSheet.create({
     row: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-      paddingVertical: tokens.spacing.sm,
+      ...lead.row,
       // Square and hairline-split, as the Events list's flat rows bleed:
       // content on the gutter line, press feedback clear of it.
       ...gutterBleed(tokens, { rounded: false }),
+    },
+    // In a card the card's padding is the gutter: no bleed.
+    rowOnCard: {
+      paddingHorizontal: 0,
+      marginHorizontal: 0,
     },
     divider: {
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: tokens.color.border.hairline,
     },
-    text: {
-      flex: 1,
-      minWidth: 0,
-      gap: tokens.spacing.xs,
-    },
-    title: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-    },
+    text: lead.text,
+    title: lead.title,
     detail: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
-    chevron: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.muted,
+    progress: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      marginTop: tokens.spacing.xs,
+    },
+    progressTrack: {
+      ...meter.track,
+      width: 160,
+      flexShrink: 1,
+    },
+    progressTrackOnCard: {
+      backgroundColor: meterGrooveOn(tokens, pageSurfaces(tokens).card),
+    },
+    faceStack: {
+      flexDirection: "row",
+      alignItems: "center",
       flexShrink: 0,
     },
-    lead: {
-      width: LEAD_SIZE,
-      height: LEAD_SIZE,
-      flexShrink: 0,
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: tokens.radius.chipLarge,
+    stackFace: {
+      width: FACE_STACK_SIZE,
+      height: FACE_STACK_SIZE,
+      borderRadius: avatarRadius(FACE_STACK_SIZE),
+      // The face badge's edge (`face-with-badge.tsx`): a hairline, not a
+      // ring in the ground's colour, so each face reads over the one under
+      // it on the screen, a card or a pressed row alike.
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: tokens.color.surface.popover,
+    },
+    stackInitials: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.mutedForeground,
+    },
+    stackMore: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
+      fontVariant: ["tabular-nums"],
+      color: tokens.color.text.mutedForeground,
+      marginLeft: tokens.spacing.xs,
+    },
+    progressFill: meter.fill,
+    progressCount: {
+      ...typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }),
+      fontVariant: ["tabular-nums"],
+      color: tokens.color.text.mutedForeground,
+      // A fixed column, as the week card's counts, so every bar ends on one
+      // edge whatever its count says.
+      minWidth: 54,
+      textAlign: "right",
+    },
+    // The caption's size, at semibold: a weight is its own Figtree family.
+    soon: {
+      fontFamily: typeRole({
+        ...tokens.typography.role.caption,
+        weight: tokens.typography.weight.semibold,
+      }).fontFamily,
+      color: tokens.color.semantic.warning,
     },
     leadDate: {
+      alignItems: "center",
       gap: 2,
     },
     leadMonth: {
@@ -259,14 +687,6 @@ function createActivityRowStyles(tokens: SignetTokens) {
       flexShrink: 0,
       justifyContent: "center",
       paddingHorizontal: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-    },
-    askText: {
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.bold,
-      }),
     },
   });
 }

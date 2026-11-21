@@ -73,7 +73,7 @@
 // frontends, no tag. The deploy job (`_deploy.yml`) therefore calls this script twice:
 // `DEPLOY_PHASE=build` before anything is applied, which pulls and builds both
 // projects and stashes each `.vercel` directory under `VERCEL_BUILD_STASH_DIR`,
-// and `DEPLOY_PHASE=upload` after Render reports healthy, which restores each
+// and `DEPLOY_PHASE=upload` after the API reports healthy, which restores each
 // stash and uploads it. A build failure then costs nothing; only the upload —
 // a far smaller surface — can still fail after the apply. Staging does the
 // same since #2803 (`deploy-staging.yml`: build, migrate, API, then upload),

@@ -1,8 +1,11 @@
+import { BadRequestException } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ActivityController } from './activity.controller';
 import { ActivityService } from '../../application/services/activity.service';
+import { ActivityStandingService } from '../../application/services/activity-standing.service';
+import { ActivityRecapService } from '../../application/services/activity-recap.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -17,9 +20,12 @@ describe('ActivityController', () => {
   let controller: ActivityController;
   const activityService = {
     getActivity: jest.fn(),
+    getArchive: jest.fn(),
     markRead: jest.fn(),
     startUnread: jest.fn(),
   };
+  const standingService = { getStanding: jest.fn() };
+  const recapService = { getRecap: jest.fn() };
   const linkService = {
     setState: jest.fn(),
     clearState: jest.fn(),
@@ -32,6 +38,8 @@ describe('ActivityController', () => {
       providers: [
         { provide: ActivityService, useValue: activityService },
         { provide: ActivityLinkService, useValue: linkService },
+        { provide: ActivityStandingService, useValue: standingService },
+        { provide: ActivityRecapService, useValue: recapService },
       ],
     }).compile();
     controller = module.get(ActivityController);
@@ -63,6 +71,7 @@ describe('ActivityController', () => {
       'chapter-1',
       'user-1',
       enabledModules,
+      {},
     );
 
     // The toggles are what keeps a switched-off module out of the page, so
@@ -71,8 +80,146 @@ describe('ActivityController', () => {
       'chapter-1',
       'user-1',
       enabledModules,
+      { weekStart: undefined, now: expect.any(Date) },
     );
     expect(result).toBe(view);
+  });
+
+  it('hands the service the week the client named', async () => {
+    activityService.getActivity.mockResolvedValue({ needs_you_count: 0 });
+    const weekStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
+    await controller.getActivity('chapter-1', 'user-1', null, {
+      week_start: weekStart.toISOString(),
+    });
+
+    expect(activityService.getActivity).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      null,
+      { weekStart, now: expect.any(Date) },
+    );
+  });
+
+  it('does not refuse a week start from a wrong clock: the page still loads', async () => {
+    // Every Activity read carries the device's own week, so a refusal here
+    // would cost a phone with a wrong clock its whole list and its tab
+    // badge. The service counts the default week for a start out of range.
+    activityService.getActivity.mockResolvedValue({ needs_you_count: 0 });
+    const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+
+    await controller.getActivity('chapter-1', 'user-1', null, {
+      week_start: yearAgo.toISOString(),
+    });
+
+    expect(activityService.getActivity).toHaveBeenCalledWith(
+      'chapter-1',
+      'user-1',
+      null,
+      { weekStart: yearAgo, now: expect.any(Date) },
+    );
+  });
+
+  describe('standing', () => {
+    it('hands the service the chapter, the caller, the toggles and the week', async () => {
+      const standing = { unavailable: [] };
+      standingService.getStanding.mockResolvedValue(standing);
+      const weekStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      const enabledModules = { hours: false };
+
+      const result = await controller.getStanding(
+        'chapter-1',
+        'user-1',
+        enabledModules,
+        { week_start: weekStart.toISOString() },
+      );
+
+      expect(standingService.getStanding).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        enabledModules,
+        { weekStart, now: expect.any(Date) },
+      );
+      expect(result).toBe(standing);
+    });
+
+    it('refuses a week start that would widen "this week"', async () => {
+      const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+
+      await expect(
+        controller.getStanding('chapter-1', 'user-1', null, {
+          week_start: yearAgo.toISOString(),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(standingService.getStanding).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('archive (#5127)', () => {
+    it('hands the service the chapter, the caller and the toggles', async () => {
+      const archive = { events: [], tasks: [], polls: [], unavailable: [] };
+      activityService.getArchive.mockResolvedValue(archive);
+
+      const result = await controller.getArchive('chapter-1', 'user-1', {
+        polls: false,
+      });
+
+      expect(result).toBe(archive);
+      expect(activityService.getArchive).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        { polls: false },
+        { now: expect.any(Date) },
+      );
+    });
+  });
+
+  describe('recap (#4983)', () => {
+    it('hands the service the chapter, the caller, the toggles and the week', async () => {
+      const recap = { unavailable: [] };
+      recapService.getRecap.mockResolvedValue(recap);
+      const weekStart = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      const enabledModules = { tasks: false };
+
+      const lastWeekStart = new Date(
+        weekStart.getTime() - 167 * 60 * 60 * 1000,
+      );
+
+      const result = await controller.getRecap(
+        'chapter-1',
+        'user-1',
+        enabledModules,
+        {
+          week_start: weekStart.toISOString(),
+          last_week_start: lastWeekStart.toISOString(),
+          first_day: '2026-11-08',
+        },
+      );
+
+      expect(recapService.getRecap).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        enabledModules,
+        {
+          weekStart,
+          lastWeekStart,
+          firstDay: '2026-11-08',
+          now: expect.any(Date),
+        },
+      );
+      expect(result).toBe(recap);
+    });
+
+    it('refuses a week start that would reach past last week', async () => {
+      const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+      await expect(
+        controller.getRecap('chapter-1', 'user-1', null, {
+          week_start: monthAgo.toISOString(),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(recapService.getRecap).not.toHaveBeenCalled();
+    });
   });
 
   describe('links (#3897)', () => {

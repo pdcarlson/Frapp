@@ -510,13 +510,14 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
     // tint recipe is the text's own colour. The tint tokens are `rgba()`
     // literals with no floor, and the utilities must read them as they are.
     const css = await compile(
-      "bg-success-tint bg-warning-tint bg-destructive-tint bg-destructive-tint-hover",
+      "bg-success-tint bg-warning-tint bg-destructive-tint bg-destructive-tint-hover bg-info-tint",
     );
     for (const token of [
       "success-tint",
       "warning-tint",
       "destructive-tint",
       "destructive-tint-hover",
+      "info-tint",
     ]) {
       expect(css).toMatch(
         new RegExp(
@@ -635,8 +636,8 @@ describe("the surface-specific keys stay out of the shared preset (#2371)", () =
   });
 
   it("does not carry the web-only `gold` family", () => {
-    // The Ask pill is an `apps/web` treatment; `apps/landing` implements no
-    // such control, so binding it here would claim a treatment it does not draw.
+    // Ask's fixed gold is an `apps/web` treatment; `apps/landing` implements
+    // no Ask surface, so binding it here would claim a treatment it does not draw.
     expect(colors).not.toHaveProperty("gold");
   });
 

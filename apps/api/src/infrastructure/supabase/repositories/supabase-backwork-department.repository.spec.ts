@@ -60,6 +60,16 @@ describe('SupabaseBackworkDepartmentRepository — tenant scope', () => {
     expect(department?.id).toBe(DEPT_B);
   });
 
+  // #3918: "chem" typed on upload files under the chapter's "CHEM".
+  it('findByCode matches trimmed and case-insensitively, in the chapter only', async () => {
+    const department = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByCode(CHAPTER_B, ' chem '),
+    );
+
+    expect(department?.id).toBe(DEPT_B);
+    expect(department?.code).toBe('CHEM');
+  });
+
   it('update refuses an id belonging to another chapter', async () => {
     const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.update(DEPT_A, CHAPTER_B, { name: 'Renamed' }),

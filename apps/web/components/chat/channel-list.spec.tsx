@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import {
   ChannelFilters,
@@ -10,6 +10,7 @@ import {
   type ChatChannel,
   type ChannelUnread,
 } from "./channel-list";
+import type { MemberThread } from "@repo/hooks";
 
 /**
  * Before display-name resolution landed, this sidebar rendered a DM channel's
@@ -425,6 +426,64 @@ describe("ChannelList unread badges", () => {
     expect(row.querySelector('[data-testid="channel-unread-pip"]')).toBeNull();
   });
 
+  it("tones a row's # mark with the row, and lifts it with the name (#3999)", () => {
+    renderList(
+      [
+        general,
+        { id: "c-quiet", name: "quiet", type: "PUBLIC" },
+        {
+          id: "c-hush",
+          name: "hush",
+          type: "PUBLIC",
+          muted: true,
+        } as ChatChannel,
+      ],
+      new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]]),
+    );
+    const markOf = (name: RegExp) =>
+      within(screen.getByRole("button", { name })).getByText("#");
+    // The variants below fire only inside the row's `group/row`.
+    for (const name of [/general/, /quiet/, /hush/]) {
+      expect(screen.getByRole("button", { name }).closest("li")).toHaveClass(
+        "group/row",
+      );
+    }
+    // Unread: no tone of its own, so it takes the row's white.
+    expect(markOf(/general/).className).not.toMatch(
+      /\btext-(muted|disabled)\b/,
+    );
+    // Read: `--muted`; muted: `--disabled`. Both lift on hover and while the
+    // row's menu is open, as the name does.
+    for (const [name, tone] of [
+      [/quiet/, "text-muted"],
+      [/hush/, "text-disabled"],
+    ] as const) {
+      const mark = markOf(name);
+      expect(mark).toHaveClass(tone);
+      expect(mark).toHaveClass("group-hover/row:text-foreground");
+      expect(mark).toHaveClass("group-data-[state=open]/row:text-foreground");
+    }
+    expect(
+      within(screen.getByRole("button", { name: /hush/ })).getByText("Muted")
+        .previousElementSibling,
+    ).toHaveClass("text-muted", "group-hover/row:text-foreground");
+  });
+
+  it("puts a muted channel's bell straight after its name (#4136)", () => {
+    renderList(
+      [{ ...general, muted: true } as ChatChannel],
+      new Map([["c-gen", { unreadCount: 0, mentionCount: 1 }]]),
+    );
+    const row = screen.getByRole("button", { name: /general/ });
+    const name = within(row).getByText(general.name);
+    const bell = within(row).getByText("Muted");
+    // In the name's own box, so it never drifts to the far end with the badge.
+    expect(name.parentElement).toBe(bell.parentElement);
+    expect(within(row).getByText("@ 1").parentElement).not.toBe(
+      bell.parentElement,
+    );
+  });
+
   it("shows the mention badge, not the raw total, when the channel has an @-mention", () => {
     renderList(
       [general],
@@ -583,6 +642,7 @@ function sidebarControls(
       pinnedIds: new Set(),
       collapsed: new Set(),
       filters: { unreadOnly: false, hideMuted: false },
+      sort: "chapter",
     },
     mutedChannelIds: new Set(),
     onSetPinned: vi.fn(),
@@ -635,6 +695,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
           pinnedIds: new Set(["c-exec"]),
           collapsed: new Set(),
           filters: { unreadOnly: false, hideMuted: false },
+          sort: "chapter",
         },
       }),
     );
@@ -662,7 +723,9 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     // `sticky` inside the section's own box, so the next section's header
     // pushes it off; the surface keeps the rows under it from showing through.
     for (const name of ["Channels", "Direct messages"]) {
-      const header = screen.getByRole("button", { name });
+      // The heading's row is what sticks, so its New channel + stays with
+      // the fold button (#3838).
+      const header = screen.getByRole("button", { name }).parentElement!;
       expect(header).toHaveClass("sticky", "top-0", "bg-surface-1");
       expect(header.parentElement).toContainElement(
         screen.getByRole("list", { name }),
@@ -677,6 +740,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
           pinnedIds: new Set(),
           collapsed: new Set(["channels"]),
           filters: { unreadOnly: false, hideMuted: false },
+          sort: "chapter",
         },
       }),
       new Map([
@@ -700,6 +764,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
           pinnedIds: new Set(),
           collapsed: new Set(["channels"]),
           filters: { unreadOnly: false, hideMuted: false },
+          sort: "chapter",
         },
       }),
       new Map([["c-gen", { unreadCount: 3, mentionCount: 0 }]]),
@@ -716,6 +781,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
           pinnedIds: new Set(),
           collapsed: new Set(["channels"]),
           filters: { unreadOnly: false, hideMuted: false },
+          sort: "chapter",
         },
       }),
       new Map(),
@@ -736,6 +802,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
           pinnedIds: new Set(["c-exec"]),
           collapsed: new Set(),
           filters: { unreadOnly: false, hideMuted: false },
+          sort: "chapter",
         },
       }),
     );
@@ -762,6 +829,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
         pinnedIds: new Set([dm.id]),
         collapsed: new Set(),
         filters: { unreadOnly: false, hideMuted: false },
+        sort: "chapter",
       },
     });
     const renderHidden = (activeChannelId: string | null) =>
@@ -807,6 +875,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
           pinnedIds: new Set(),
           collapsed: new Set(),
           filters: { unreadOnly: true, hideMuted: false },
+          sort: "chapter",
         },
       }),
     );
@@ -854,6 +923,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
             pinnedIds: new Set(),
             collapsed: new Set(),
             filters: { unreadOnly: false, hideMuted: true },
+            sort: "chapter",
           },
         })}
       />,
@@ -865,6 +935,36 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
     expect(rows).not.toHaveTextContent("general");
   });
 
+  it("quiets a muted row from the arrangement's muted set, as its header does (#3999)", () => {
+    // `channel.muted` keeps the last good levels through a failed refetch,
+    // while the arrangement reads them as unknown and quiets nothing. The row
+    // follows the arrangement, so a lit folded header never sits over a
+    // read-looking row.
+    const draw = (mutedChannelIds: ReadonlySet<string> | undefined) =>
+      render(
+        <ChannelList
+          channels={[{ ...general, muted: true } as ChatChannel]}
+          activeChannelId={null}
+          viewerId={VIEWER}
+          memberNames={NAMES}
+          unreadByChannelId={
+            new Map([["c-gen", { unreadCount: 4, mentionCount: 0 }]])
+          }
+          onPick={vi.fn()}
+          sidebar={sidebarControls({ mutedChannelIds })}
+        />,
+      );
+    const quiet = draw(new Set(["c-gen"]));
+    expect(
+      screen.getByRole("button", { name: /general/ }).className,
+    ).not.toMatch(/\bfont-bold\b/);
+    quiet.unmount();
+    draw(undefined);
+    expect(screen.getByRole("button", { name: /general/ }).className).toMatch(
+      /\bfont-bold\b/,
+    );
+  });
+
   it("announces a folded Direct messages header as direct messages", () => {
     renderArranged(
       sidebarControls({
@@ -872,6 +972,7 @@ describe("ChannelList sidebar arrangement (#2877)", () => {
           pinnedIds: new Set(),
           collapsed: new Set(["direct"]),
           filters: { unreadOnly: false, hideMuted: false },
+          sort: "chapter",
         },
       }),
       new Map([["c-dm", { unreadCount: 3, mentionCount: 0 }]]),
@@ -925,6 +1026,145 @@ describe("ChannelFilters (#2877)", () => {
   });
 });
 
+describe("ChannelList member sort (#2877)", () => {
+  const zulu: ChatChannel = {
+    id: "c-z",
+    name: "zulu",
+    type: "PUBLIC",
+    display_order: 0,
+  };
+  const alpha: ChatChannel = {
+    id: "c-a",
+    name: "alpha",
+    type: "PUBLIC",
+    display_order: 1,
+  };
+  const mike: ChatChannel = { id: "c-m", name: "mike", type: "PUBLIC" };
+
+  const rowsIn = (name: string) =>
+    Array.from(screen.getByRole("list", { name }).querySelectorAll("li")).map(
+      (li) => li.querySelector("span.truncate")?.textContent ?? "",
+    );
+
+  function renderSorted(
+    sort: "chapter" | "recent" | "alpha",
+    latestAt?: ReadonlyMap<string, string>,
+  ) {
+    return render(
+      <ChannelList
+        channels={[alpha, mike, zulu]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        latestAt={latestAt}
+        onPick={vi.fn()}
+        sidebar={sidebarControls({
+          preferences: {
+            pinnedIds: new Set(),
+            collapsed: new Set(),
+            filters: { unreadOnly: false, hideMuted: false },
+            sort,
+          },
+        })}
+      />,
+    );
+  }
+
+  it("draws the chapter's order by default", () => {
+    renderSorted("chapter");
+    expect(rowsIn("Channels")).toEqual(["zulu", "alpha", "mike"]);
+  });
+
+  it("draws A–Z when the member picks it", () => {
+    renderSorted("alpha");
+    expect(rowsIn("Channels")).toEqual(["alpha", "mike", "zulu"]);
+  });
+
+  it("draws the newest activity first under Recent", () => {
+    renderSorted(
+      "recent",
+      new Map([
+        ["c-m", "2026-11-14T12:00:00.000Z"],
+        ["c-a", "2026-11-14T09:00:00.000Z"],
+      ]),
+    );
+    expect(rowsIn("Channels")).toEqual(["mike", "alpha", "zulu"]);
+  });
+});
+
+describe("ChannelFilters sort (#2877)", () => {
+  it("offers the three sorts and sends the one picked", () => {
+    const onChange = vi.fn();
+    render(
+      <ChannelFilters
+        filters={{ unreadOnly: false, hideMuted: false }}
+        sort="chapter"
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sort and filter channels" }),
+    );
+
+    const group = screen.getByRole("radiogroup", { name: "Sort" });
+    expect(
+      within(group)
+        .getAllByRole("radio")
+        .map((radio) => radio.textContent),
+    ).toEqual(["Chapter order", "Recent", "A–Z"]);
+    expect(
+      within(group).getByRole("radio", { name: "Chapter order" }),
+    ).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(within(group).getByRole("radio", { name: "Recent" }));
+    expect(onChange).toHaveBeenCalledWith({ sort: "recent" });
+  });
+
+  it("offers no sort without one, and says so in its name, as on the Direct messages panel", () => {
+    render(
+      <ChannelFilters
+        filters={{ unreadOnly: false, hideMuted: false }}
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Filter channels" }));
+
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  });
+
+  it("tells someone who can drag that dragging needs Chapter order", () => {
+    render(
+      <ChannelFilters
+        filters={{ unreadOnly: false, hideMuted: false }}
+        sort="alpha"
+        reorderable
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sort and filter channels" }),
+    );
+
+    expect(
+      screen.getByText("Switch to Chapter order to drag channels."),
+    ).toBeInTheDocument();
+  });
+
+  it("lights no dot for a sort alone, since it hides nothing", () => {
+    render(
+      <ChannelFilters
+        filters={{ unreadOnly: false, hideMuted: false }}
+        sort="recent"
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Sort and filter channels" }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("row tone, matching mobile's channel-row (#3777, #4147)", () => {
   const rowFor = (name: string) =>
     screen.getByText(name).closest("button") as HTMLElement;
@@ -969,5 +1209,555 @@ describe("row tone, matching mobile's channel-row (#3777, #4147)", () => {
     expect(rowFor("quiet")).toHaveClass("text-muted");
     expect(rowFor("quiet")).not.toHaveClass("font-bold");
     expect(rowFor("loud")).toHaveClass("font-bold", "text-foreground");
+  });
+});
+
+describe("ChannelList as the Direct messages list (#3774)", () => {
+  const group: ChatChannel = {
+    id: "c-group",
+    name: "Rush planning",
+    type: "GROUP_DM",
+    member_ids: [VIEWER, OTHER, "third"],
+  };
+
+  it("draws its rows straight under the column title, with no Direct messages heading", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        sidebar={sidebarControls()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: /Direct messages/ }),
+    ).not.toBeInTheDocument();
+    const rows = screen.getByRole("list", { name: "Direct messages" });
+    expect(rows).toHaveTextContent("Rush planning");
+    expect(rows.querySelectorAll("li")).toHaveLength(2);
+  });
+
+  it("ignores a fold left from when DMs were a section of the channel list", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        sidebar={sidebarControls({
+          preferences: {
+            pinnedIds: new Set(),
+            collapsed: new Set(["direct"]),
+            filters: { unreadOnly: false, hideMuted: false },
+            sort: "chapter",
+          },
+        })}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("list", { name: "Direct messages" })
+        .querySelectorAll("li"),
+    ).toHaveLength(2);
+  });
+
+  it("runs newest first with each conversation's last line, pinned ones still on top", () => {
+    const third: ChatChannel = {
+      id: "c-third",
+      name: "Alpha team",
+      type: "GROUP_DM",
+      member_ids: [VIEWER, OTHER, "x"],
+    };
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group, third]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        latestAt={
+          new Map([
+            ["c-dm", "2026-11-12T01:00:00.000Z"],
+            ["c-group", "2026-11-12T02:00:00.000Z"],
+          ])
+        }
+        previews={
+          new Map([
+            ["c-dm", "thanks, see you there"],
+            ["c-group", "Cole: I do, sending it tonight"],
+            ["c-third", "No messages yet"],
+          ])
+        }
+        sidebar={sidebarControls({
+          preferences: {
+            pinnedIds: new Set(["c-third"]),
+            collapsed: new Set(),
+            filters: { unreadOnly: false, hideMuted: false },
+            sort: "chapter",
+          },
+        })}
+      />,
+    );
+    const rows = Array.from(document.querySelectorAll("li")).map(
+      (li) => li.textContent ?? "",
+    );
+    // Pinned first, then the newest conversation, then the older one.
+    expect(rows[0]).toContain("Alpha team");
+    expect(rows[1]).toContain("Rush planning");
+    expect(rows[1]).toContain("Cole: I do, sending it tonight");
+    expect(rows[2]).toContain("thanks, see you there");
+    // Two lines: the row is 48px, where a channel row is 32px.
+    expect(screen.getByRole("button", { name: /Rush planning/ })).toHaveClass(
+      "h-12",
+    );
+  });
+
+  it("keeps a blank line, and A–Z order, until the latest messages answer", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[group, dm]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        sidebar={sidebarControls()}
+      />,
+    );
+    const button = screen.getByRole("button", { name: /Rush planning/ });
+    expect(button).toHaveClass("h-12");
+    expect(button.querySelector("[data-preview]")?.textContent).toBe("\u00a0");
+  });
+
+  it("sorts the pinned DMs newest first too", () => {
+    const third: ChatChannel = {
+      id: "c-third",
+      name: "Alpha team",
+      type: "GROUP_DM",
+      member_ids: [VIEWER, OTHER, "x"],
+    };
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group, third]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        latestAt={
+          new Map([
+            ["c-third", "2026-11-12T01:00:00.000Z"],
+            ["c-group", "2026-11-12T02:00:00.000Z"],
+          ])
+        }
+        sidebar={sidebarControls({
+          preferences: {
+            pinnedIds: new Set(["c-third", "c-group"]),
+            collapsed: new Set(),
+            filters: { unreadOnly: false, hideMuted: false },
+            sort: "chapter",
+          },
+        })}
+      />,
+    );
+    const rows = Array.from(document.querySelectorAll("li")).map(
+      (li) => li.textContent ?? "",
+    );
+    // A–Z would put Alpha team first; newest first puts Rush planning there.
+    expect(rows[0]).toContain("Rush planning");
+    expect(rows[1]).toContain("Alpha team");
+  });
+
+  // #5519: a time on each row, and the viewer's own last line's check.
+  it("draws each row's time and its sent or read check, with words for a screen reader", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        unreadByChannelId={
+          new Map([["c-group", { unreadCount: 2, mentionCount: 0 }]])
+        }
+        latestAt={
+          new Map([
+            ["c-dm", "2026-11-12T01:00:00.000Z"],
+            ["c-group", "2026-11-12T02:00:00.000Z"],
+          ])
+        }
+        previews={
+          new Map([
+            ["c-dm", "thanks, see you there"],
+            ["c-group", "Cole: I do, sending it tonight"],
+          ])
+        }
+        rowMeta={
+          new Map([
+            [
+              "c-dm",
+              {
+                time: "Yesterday",
+                timeLabel: "Nov 11, 2026, 5:00 PM",
+                readStatus: "read" as const,
+              },
+            ],
+            [
+              "c-group",
+              { time: "4:46 PM", timeLabel: null, readStatus: null },
+            ],
+          ])
+        }
+        sidebar={sidebarControls()}
+      />,
+    );
+    const dmRow = screen.getByRole("button", { name: /thanks, see you there/ });
+    expect(dmRow.querySelector("[data-row-time]")?.getAttribute("title")).toBe(
+      "Nov 11, 2026, 5:00 PM",
+    );
+    expect(dmRow.querySelector('[data-read-status="read"]')).not.toBeNull();
+    // The button's name says it in words: when, then Read before the line.
+    expect(dmRow).toHaveAccessibleName(
+      /Nov 11, 2026, 5:00 PM.*Read:.*thanks, see you there/,
+    );
+
+    // Someone else's last line: a time, no check, and the badge on the line.
+    const groupRow = screen.getByRole("button", { name: /Rush planning/ });
+    expect(groupRow.querySelector("[data-row-time]")?.textContent).toContain(
+      "4:46 PM",
+    );
+    expect(groupRow.querySelector("[data-read-status]")).toBeNull();
+    expect(groupRow.textContent).toContain("2");
+  });
+
+  it("draws a sent check muted, and no time or check without a latest row", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, group]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        rowMeta={
+          new Map([
+            [
+              "c-dm",
+              { time: "Monday", timeLabel: null, readStatus: "sent" as const },
+            ],
+          ])
+        }
+        sidebar={sidebarControls()}
+      />,
+    );
+    const sent = document.querySelector('[data-read-status="sent"]');
+    expect(sent).toHaveClass("text-muted");
+    const groupRow = screen.getByRole("button", { name: /Rush planning/ });
+    expect(groupRow.querySelector("[data-row-time]")).toBeNull();
+    expect(groupRow.querySelector("[data-read-status]")).toBeNull();
+  });
+
+  it("puts an open hidden DM first, and keeps Hidden conversations rows one line", () => {
+    const hiddenOpen: ChatChannel = { ...group, hidden: true };
+    const hiddenOther: ChatChannel = {
+      id: "c-hidden",
+      name: "dm-x-y",
+      type: "DM",
+      member_ids: [VIEWER, "x"],
+      hidden: true,
+    };
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[dm, hiddenOpen, hiddenOther]}
+        activeChannelId="c-group"
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        onPick={vi.fn()}
+        latestAt={new Map([["c-dm", "2026-11-12T01:00:00.000Z"]])}
+        previews={new Map([["c-dm", "thanks, see you there"]])}
+        sidebar={sidebarControls()}
+      />,
+    );
+    const main = screen.getByRole("list", { name: "Direct messages" });
+    const rows = Array.from(main.querySelectorAll("li"));
+    // The open hidden DM has no latest row (the server keeps none) and leads.
+    expect(rows[0]?.textContent).toContain("Rush planning");
+    fireEvent.click(
+      screen.getByRole("button", { name: /Hidden conversations/ }),
+    );
+    const hidden = screen.getByRole("list", { name: "Hidden conversations" });
+    const hiddenButton = hidden.querySelector("button")!;
+    expect(hiddenButton).toHaveClass("h-8");
+    expect(hiddenButton.querySelector("[data-preview]")).toBeNull();
+  });
+});
+
+describe("ChannelList New channel + (#3838)", () => {
+  const CATS: ChannelCategory[] = [{ id: "cat-exec", name: "Executive" }];
+  const execRow: ChatChannel = {
+    id: "c-exec",
+    name: "exec-board",
+    type: "PUBLIC",
+    category_id: "cat-exec",
+  };
+  const quiet: ChannelCategory = { id: "cat-empty", name: "Committees" };
+
+  function renderWith(onCreateChannel?: (id: string | null) => void) {
+    return render(
+      <ChannelList
+        channels={[general, execRow, dm]}
+        categories={[...CATS, quiet]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        unreadByChannelId={new Map()}
+        onPick={vi.fn()}
+        sidebar={sidebarControls()}
+        reorder={
+          onCreateChannel
+            ? { onReorderChannels: vi.fn(), onReorderCategories: vi.fn() }
+            : undefined
+        }
+        onCreateChannel={onCreateChannel}
+      />,
+    );
+  }
+
+  it("offers a + beside Channels and each category, starting it there", () => {
+    const onCreate = vi.fn();
+    renderWith(onCreate);
+
+    fireEvent.click(screen.getByRole("button", { name: "New channel" }));
+    expect(onCreate).toHaveBeenLastCalledWith(null);
+    fireEvent.click(
+      screen.getByRole("button", { name: "New channel in Executive" }),
+    );
+    expect(onCreate).toHaveBeenLastCalledWith("cat-exec");
+    // An empty category an officer sees as a drop target takes one too.
+    fireEvent.click(
+      screen.getByRole("button", { name: "New channel in Committees" }),
+    );
+    expect(onCreate).toHaveBeenLastCalledWith("cat-empty");
+    // Direct messages is the member's own, never the chapter's to fill.
+    expect(
+      screen.queryByRole("button", { name: /New channel in Direct/ }),
+    ).toBeNull();
+  });
+
+  it("draws no + for a member who can't manage channels", () => {
+    renderWith(undefined);
+    expect(screen.queryByRole("button", { name: /^New channel/ })).toBeNull();
+  });
+});
+
+describe("ChannelList threads under their channel (#5300)", () => {
+  const thread = (
+    over: Partial<MemberThread> & { content?: string } = {},
+  ): MemberThread => {
+    const { content = "Grill is in my garage", ...rest } = over;
+    return {
+      thread_root_id: "root-1",
+      channel_id: "c-gen",
+      state: "following",
+      last_read_at: null,
+      last_reply_at: new Date().toISOString(),
+      reply_count: 2,
+      unread_count: 0,
+      root: {
+        id: rest.thread_root_id ?? "root-1",
+        channel_id: rest.channel_id ?? "c-gen",
+        sender_id: OTHER,
+        content,
+        is_deleted: false,
+        created_at: new Date().toISOString(),
+        thread_root_id: null,
+      } as unknown as MemberThread["root"],
+      ...rest,
+    };
+  };
+
+  function renderThreads(
+    byChannel: Map<string, MemberThread[]>,
+    {
+      sidebar = sidebarControls(),
+      unread = new Map<string, ChannelUnread>(),
+      activeRootId = null as string | null,
+      onOpen = vi.fn(),
+    } = {},
+  ) {
+    render(
+      <ChannelList
+        channels={[general, announcements, exec, dm]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        unreadByChannelId={unread}
+        onPick={vi.fn()}
+        sidebar={sidebar}
+        threads={{
+          byChannel,
+          activeRootId,
+          nameFor: (id) => NAMES[id as keyof typeof NAMES] ?? null,
+          onOpen,
+        }}
+      />,
+    );
+    return { onOpen };
+  }
+
+  it("lists a channel's threads under its row and opens one in its channel", () => {
+    const { onOpen } = renderThreads(new Map([["c-gen", [thread()]]]));
+
+    const rows = screen.getAllByTestId("channel-thread-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveAccessibleName(
+      "Thread: Grill is in my garage, in #general",
+    );
+    // Straight after its channel's row, inside the Channels list.
+    const list = screen.getByRole("list", { name: "Threads in #general" });
+    expect(screen.getByRole("list", { name: "Channels" })).toContainElement(
+      list,
+    );
+    fireEvent.click(rows[0]!);
+    expect(onOpen).toHaveBeenCalledWith("c-gen", "root-1");
+  });
+
+  it("draws an unread thread bold with a pip, a muted one dimmed, the open one current", () => {
+    renderThreads(
+      new Map([
+        [
+          "c-gen",
+          [
+            thread({
+              thread_root_id: "r-new",
+              unread_count: 2,
+              content: "New",
+            }),
+            thread({
+              thread_root_id: "r-mute",
+              state: "muted",
+              content: "Quiet",
+            }),
+            thread({ thread_root_id: "r-open", content: "Open" }),
+          ],
+        ],
+      ]),
+      { activeRootId: "r-open" },
+    );
+
+    const [unread, muted, open] = screen.getAllByTestId("channel-thread-row");
+    expect(unread).toHaveClass("font-bold", "text-foreground");
+    expect(unread).toHaveAccessibleName(/2 new$/);
+    expect(
+      within(unread!).getByTestId("channel-thread-unread-pip"),
+    ).toBeInTheDocument();
+    expect(muted).toHaveClass("text-muted");
+    expect(muted).toHaveAccessibleName(/muted$/);
+    expect(open).toHaveAttribute("aria-current", "true");
+  });
+
+  it("draws no threads under a hidden conversation", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[{ ...dm, hidden: true }]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        unreadByChannelId={new Map()}
+        onPick={vi.fn()}
+        threads={{
+          byChannel: new Map([["c-dm", [thread({ channel_id: "c-dm" })]]]),
+          activeRootId: null,
+          nameFor: () => null,
+          onOpen: vi.fn(),
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("channel-thread-row")).toBeNull();
+  });
+
+  it("keeps the channel row mounted when its first thread arrives", () => {
+    const props = {
+      channels: [general],
+      activeChannelId: null,
+      viewerId: VIEWER,
+      memberNames: NAMES,
+      unreadByChannelId: new Map<string, ChannelUnread>(),
+      onPick: vi.fn(),
+    };
+    const threadsWith = (byChannel: Map<string, MemberThread[]>) => ({
+      byChannel,
+      activeRootId: null,
+      nameFor: () => null,
+      onOpen: vi.fn(),
+    });
+    const { rerender } = render(
+      <ChannelList {...props} threads={threadsWith(new Map())} />,
+    );
+    const before = screen.getByRole("button", { name: /^[#\s]*general/ });
+    rerender(
+      <ChannelList
+        {...props}
+        threads={threadsWith(new Map([["c-gen", [thread()]]]))}
+      />,
+    );
+    expect(screen.getAllByTestId("channel-thread-row")).toHaveLength(1);
+    // The same node: an open menu or focus on it survives the re-read.
+    expect(screen.getByRole("button", { name: /^[#\s]*general/ })).toBe(before);
+  });
+
+  it("draws nothing under a channel with no active threads", () => {
+    renderThreads(new Map());
+    expect(screen.queryByTestId("channel-threads")).toBeNull();
+  });
+
+  it("keeps a read channel under Unread only when its thread has new replies", () => {
+    renderThreads(new Map([["c-gen", [thread({ unread_count: 1 })]]]), {
+      sidebar: sidebarControls({
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(),
+          filters: { unreadOnly: true, hideMuted: false },
+          sort: "chapter",
+        },
+      }),
+    });
+
+    const channels = screen.getByRole("list", { name: "Channels" });
+    expect(channels).toHaveTextContent("general");
+    expect(channels).not.toHaveTextContent("exec");
+    expect(screen.getAllByTestId("channel-thread-row")).toHaveLength(1);
+    // The channel's own row still reads its own counts: read, not bold.
+    const generalRow = within(channels)
+      .getAllByRole("button")
+      .find((b) => b.getAttribute("aria-label") === null);
+    expect(generalRow).not.toHaveClass("font-bold");
+  });
+
+  it("reads a folded section as unread over a thread with new replies", () => {
+    renderThreads(new Map([["c-gen", [thread({ unread_count: 1 })]]]), {
+      sidebar: sidebarControls({
+        preferences: {
+          pinnedIds: new Set(),
+          collapsed: new Set(["channels"]),
+          filters: { unreadOnly: false, hideMuted: false },
+          sort: "chapter",
+        },
+      }),
+    });
+
+    expect(screen.getByRole("button", { name: /Channels/ })).toHaveClass(
+      "font-bold",
+      "text-foreground",
+    );
   });
 });

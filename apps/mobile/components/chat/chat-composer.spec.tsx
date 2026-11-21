@@ -6,27 +6,59 @@ import {
   type ReactTestInstance,
   type ReactTestRenderer,
 } from "react-test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StyleSheet } from "react-native";
 
 // These screens paint with the chapter accent (`useChapterBranding`), which
 // reads the current chapter through the client provider these specs don't
 // mount. A purple chapter's values, deliberately not house gold, so a control
 // that slips back to a `gold.*` token shows up in an assertion; the hook
 // itself has its own spec.
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
+// Dictation's cleanup (#5772) needs the API client: the words come back as
+// heard. The dictation suite below swaps in its own.
+const { cleanDictation } = vi.hoisted(() => ({
+  cleanDictation: {
+    current: (async () => null) as (text: string) => Promise<string | null>,
+  },
 }));
-import { FrappThemeProvider } from "@/lib/theme";
-import { ChatComposer, type ChatComposerProps } from "./chat-composer";
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useCleanDictation: () => (text: string) => cleanDictation.current(text),
+}));
+
+// The phone's recogniser, faked; off unless the dictation suite turns it on.
+const speech = vi.hoisted(() => ({
+  available: false,
+  handlers: null as null | {
+    onWords: (text: string) => void;
+    onLevel: (level: number) => void;
+    onEnd: (text: string) => void;
+    onFailure: (failure: string) => void;
+  },
+  finish: vi.fn(),
+  cancel: vi.fn(),
+}));
+vi.mock("@/lib/dictation/speech", () => ({
+  isDictationAvailable: () => speech.available,
+  requestDictationPermission: async () => true,
+  startDictation: (handlers: typeof speech.handlers) => {
+    speech.handlers = handlers;
+    return { finish: speech.finish, cancel: speech.cancel };
+  },
+}));
+
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
+import { FrappThemeProvider, tint } from "@/lib/theme";
+import { FrappCrest } from "@/components/frapp-crest";
+import {
+  ChatComposer,
+  type ChatComposerProps,
+  type ComposerContext,
+} from "./chat-composer";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 
 /**
@@ -169,6 +201,11 @@ describe("ChatComposer staged photos", () => {
     expect(byLabel(tree, "Send message").props.disabled).toBe(true);
   });
 
+  it("refuses a send of only the sticker placeholder U+FFFC (#4346)", () => {
+    const { tree } = renderComposer({ value: "\uFFFC ", photos: [] });
+    expect(byLabel(tree, "Send message").props.disabled).toBe(true);
+  });
+
   it("keeps send disabled while the runtime has no identity, photos or not", () => {
     const { tree } = renderComposer({
       value: "hello",
@@ -264,6 +301,81 @@ describe("ChatComposer reply and edit strip (#2775)", () => {
     const { tree } = renderComposer();
     expect(byLabel(tree, "Cancel reply")).toBeUndefined();
     expect(byLabel(tree, "Cancel edit")).toBeUndefined();
+  });
+});
+
+describe("ChatComposer scheduling (#4956)", () => {
+  // `byLabel` returns the first match, which is the Pressable that carries
+  // the label (its host child repeats it).
+  const send = (tree: ReactTestRenderer) => byLabel(tree, "Send message")!;
+
+  it("opens Schedule message from a long press on Send, or a screen reader's action", () => {
+    const onSchedule = vi.fn();
+    const { tree } = renderComposer({ value: "Chapter at 8", onSchedule });
+    expect(send(tree).props.accessibilityActions).toEqual([
+      { name: "schedule", label: "Schedule message" },
+    ]);
+    act(() => send(tree).props.onLongPress());
+    act(() =>
+      send(tree).props.onAccessibilityAction({
+        nativeEvent: { actionName: "schedule" },
+      }),
+    );
+    expect(onSchedule).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers nothing to schedule with nothing typed, or while editing", () => {
+    const onSchedule = vi.fn();
+    const empty = renderComposer({ value: "", onSchedule });
+    expect(send(empty.tree).props.onLongPress).toBeUndefined();
+    const editing = renderComposer({
+      value: "fixed",
+      onSchedule,
+      context: {
+        kind: "edit",
+        title: "Editing message",
+        preview: null,
+        onCancel: vi.fn(),
+      },
+    });
+    expect(
+      byLabel(editing.tree, "Save edit")!.props.onLongPress,
+    ).toBeUndefined();
+  });
+
+  it("opens the sheet for a draft naming @Frapp, which says why, rather than asking on release", () => {
+    const onSchedule = vi.fn();
+    const { tree } = renderComposer({
+      value: "@Frapp when is chapter?",
+      onSchedule,
+      ask: { naming: true },
+    });
+    const press = tree.root.findAll(
+      (node) => node.props?.onLongPress !== undefined,
+    );
+    expect(press).toHaveLength(1);
+    act(() => press[0]!.props.onLongPress());
+    expect(onSchedule).toHaveBeenCalled();
+  });
+
+  it("says how many are scheduled above the input, and opens the list", () => {
+    const onOpen = vi.fn();
+    const { tree } = renderComposer({
+      scheduled: { label: "2 scheduled messages", failed: 1, onOpen },
+    });
+    const line = byLabel(tree, "2 scheduled messages, 1 not sent")!;
+    act(() => line.props.onPress());
+    expect(onOpen).toHaveBeenCalled();
+  });
+
+  it("draws no line with nothing scheduled", () => {
+    const { tree } = renderComposer();
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props?.accessibilityHint === "Opens your scheduled messages.",
+      ),
+    ).toHaveLength(0);
   });
 });
 
@@ -420,12 +532,50 @@ describe("ChatComposer @-mention picker", () => {
     const input = result.tree.root.findByType("TextInput" as never);
     act(() => {
       input.props.onFocus?.();
+      // From the keyboard: the list opens only on text the member typed.
+      input.props.onChangeText?.(value);
       input.props.onSelectionChange?.({
         nativeEvent: { selection: { start: caret, end: caret } },
       });
     });
     return result;
   }
+
+  it("stays shut on text put in the box for the member: an edit, a restored draft", () => {
+    // Tapping Edit on "@Paul Carlson @shawn" used to pop the list up over the
+    // message at once, the caret landing after `@shawn` (tester report
+    // 2026-11-11). Discord's edit box opens it only once you type.
+    const result = renderComposer({
+      value: "@Paul Carlson @pa",
+      mentionCandidates: ROSTER,
+    });
+    const input = result.tree.root.findByType("TextInput" as never);
+    act(() => {
+      input.props.onFocus?.();
+      input.props.onSelectionChange?.({
+        nativeEvent: { selection: { start: 17, end: 17 } },
+      });
+    });
+    expect(offered(result.tree)).toEqual([]);
+  });
+
+  it("stays shut when the message just sent opens for an edit", () => {
+    // Typed "thanks @pa", sent (the box clears), then Edit on that message
+    // loads the same text back: that is not the member typing it again.
+    const { tree, props } = typed("thanks @pa");
+    const rerender = (value: string) =>
+      act(() =>
+        tree.update(
+          <FrappThemeProvider>
+            <ChatComposer {...props} value={value} />
+          </FrappThemeProvider>,
+        ),
+      );
+    expect(offered(tree)).toHaveLength(2);
+    rerender("");
+    rerender("thanks @pa");
+    expect(offered(tree)).toEqual([]);
+  });
 
   const offered = (tree: ReactTestRenderer) =>
     tree.root
@@ -460,7 +610,12 @@ describe("ChatComposer @-mention picker", () => {
     ]);
     // Picking a role writes its folded name, which the server resolves.
     const onChangeText = vi.fn();
-    const { tree } = typed("cc @off", 7, { mentionRoles: roles, onChangeText });
+    const onPickMember = vi.fn();
+    const { tree } = typed("cc @off", 7, {
+      mentionRoles: roles,
+      onChangeText,
+      onPickMember,
+    });
     const row = tree.root.find(
       (node) =>
         node.props?.accessibilityLabel ===
@@ -469,6 +624,8 @@ describe("ChatComposer @-mention picker", () => {
     );
     act(() => row.props.onPress());
     expect(onChangeText).toHaveBeenCalledWith("cc @Officers ");
+    // A role is no member pick (#3835): it resolves by its name.
+    expect(onPickMember).not.toHaveBeenCalled();
   });
 
   it("offers everyone on a bare `@`", () => {
@@ -502,6 +659,16 @@ describe("ChatComposer @-mention picker", () => {
     const { tree, props } = typed("hi @pa");
     act(() => byLabel(tree, "Mention Paul Carlson")!.props.onPress());
     expect(props.onChangeText).toHaveBeenCalledWith("hi @Paul Carlson ");
+  });
+
+  it("reports a picked member's id beside the label, for the send (#3835)", () => {
+    const onPickMember = vi.fn();
+    const { tree } = typed("hi @pa", undefined, { onPickMember });
+    act(() => byLabel(tree, "Mention Paul Carlson")!.props.onPress());
+    expect(onPickMember).toHaveBeenCalledWith({
+      user_id: expect.any(String),
+      label: "Paul Carlson",
+    });
   });
 
   it("closes on blur", () => {
@@ -539,5 +706,601 @@ describe("ChatComposer @-mention picker", () => {
     const { tree, props } = typed("@sa how are you", 3);
     act(() => byLabel(tree, "Mention Sam (VP)")!.props.onPress());
     expect(props.onChangeText).toHaveBeenCalledWith("@SamVP how are you");
+  });
+
+  describe("Frapp's own row (#4713)", () => {
+    const FRAPP = "Ask Frapp. Only you see the answer";
+    const ask = { naming: false };
+
+    it("is not offered to a member without Ask", () => {
+      expect(byLabel(typed("@").tree, FRAPP)).toBeUndefined();
+      expect(byLabel(typed("@frapp").tree, FRAPP)).toBeUndefined();
+    });
+
+    it("is first on a bare @, so a member finds it unprompted (#5476)", () => {
+      const { tree } = typed("@", 1, { ask });
+      const labels = tree.root
+        .findAll(
+          (node) =>
+            node.type === ("Pressable" as never) &&
+            typeof node.props.accessibilityLabel === "string" &&
+            (node.props.accessibilityLabel.startsWith("Mention ") ||
+              node.props.accessibilityLabel === FRAPP),
+        )
+        .map((node) => node.props.accessibilityLabel as string);
+      expect(labels).toEqual([
+        FRAPP,
+        "Mention Paul Carlson",
+        "Mention Pat O'Brien",
+        "Mention Sam (VP)",
+      ]);
+    });
+
+    it("draws the crest in the chapter's colour and writes @Frapp when picked", () => {
+      const { tree, props } = typed("@fr", 3, { ask });
+      const row = byLabel(tree, FRAPP)!;
+      const glyph = row.find(
+        (node) => node.props.testID === "mention-ask-glyph",
+      );
+      expect(glyph.findByType(FrappCrest).props.color).toBe("#CB9FFF");
+      // On the chapter's tint, not the grey disc a role gets (#5476).
+      expect(StyleSheet.flatten(glyph.props.style).backgroundColor).toBe(
+        tint("#CB9FFF"),
+      );
+      act(() => row.props.onPress());
+      expect(props.onChangeText).toHaveBeenCalledWith("@Frapp ");
+    });
+
+    it("calls Send what it will do while the draft names Frapp", () => {
+      const naming = renderComposer({
+        value: "@Frapp when is formal?",
+        ask: { naming: true },
+      }).tree;
+      const send = byLabel(naming, "Ask Frapp")!;
+      expect(send.props.accessibilityHint).toBe(
+        "Only you will see this question and Frapp's answer.",
+      );
+      expect(byLabel(naming, "Send message")).toBeUndefined();
+
+      const plain = renderComposer({ value: "when is formal?", ask }).tree;
+      expect(byLabel(plain, "Send message")).toBeDefined();
+      expect(byLabel(plain, "Ask Frapp")).toBeUndefined();
+    });
+  });
+});
+
+/**
+ * Winston, 2026-11-12: he sent a message and it stayed in the box, ready to
+ * send again. A send's clear reaches the native field as a command stamped
+ * with the last event count JS has read, and the field drops one that is
+ * behind, so a keyboard event still in flight at the tap kept the text there.
+ */
+describe("ChatComposer clears the box on send", () => {
+  function sendFrom(text: string) {
+    const clear = vi.fn();
+    const props: ChatComposerProps = {
+      value: text,
+      onChangeText: vi.fn(),
+      onSend: vi.fn(),
+      canSend: true,
+      placeholder: "Message",
+    };
+    const node = (value: string, context?: ComposerContext) => (
+      <FrappThemeProvider>
+        <ChatComposer {...props} value={value} context={context} />
+      </FrappThemeProvider>
+    );
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(node(text), {
+        createNodeMock: (el) =>
+          el.type === "TextInput"
+            ? { clear, focus: vi.fn(), setSelection: vi.fn() }
+            : null,
+      });
+    });
+    const input = () => tree.root.findByType("TextInput" as never);
+    const rerender = (value: string, context?: ComposerContext) =>
+      act(() => tree.update(node(value, context)));
+    // The tap, then the send empties the draft, as the screen's does.
+    act(() => byLabel(tree, "Send message")!.props.onPress());
+    rerender("");
+    const type = (next: string) =>
+      act(() => input().props.onChangeText?.(next));
+    return { props, clear, type, rerender };
+  }
+
+  it("turns away the field's late copy of the text just sent", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("You should have to submitproof");
+      expect(props.onSend).toHaveBeenCalledTimes(1);
+      type("You should have to submitproof");
+      expect(props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes the next message, typed from its first letter", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("hello");
+      type("h");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("h");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turns away the copy carrying the keystroke or correction that was in flight", () => {
+    vi.useFakeTimers();
+    try {
+      const first = sendFrom("hell");
+      first.type("hello");
+      expect(first.props.onChangeText).not.toHaveBeenCalled();
+
+      // Winston's: iOS fixed "submitproof" as the box held on to it.
+      const second = sendFrom("You should have to submitproof");
+      second.type("You should have to submit proof");
+      second.type("You should have to submit proof ");
+      expect(second.props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes every letter of the next message once it has started", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("hello");
+      type("h");
+      type("hel");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("hel");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes a short message sent twice in a row, a letter or an emoji", () => {
+    vi.useFakeTimers();
+    try {
+      const letter = sendFrom("k");
+      letter.type("k");
+      expect(letter.props.onChangeText).toHaveBeenLastCalledWith("k");
+
+      const emoji = sendFrom("👍🏽");
+      emoji.type("👍🏽");
+      expect(emoji.props.onChangeText).toHaveBeenLastCalledWith("👍🏽");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("after saving an edit over a draft, keeps the draft and turns away the edit's copy", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type, rerender } = sendFrom("see you there instead");
+      // The save hands the box back the member's draft, not an empty one.
+      rerender("see you at 7");
+      type("see you there instead");
+      expect(props.onChangeText).not.toHaveBeenCalled();
+      type("see you at 7!");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("see you at 7!");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes the same text typed again once the moment has passed", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("hello");
+      act(() => vi.advanceTimersByTime(3500));
+      type("hello");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("hello");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the field again a frame later, and on through the next three seconds", () => {
+    vi.useFakeTimers();
+    try {
+      const { clear } = sendFrom("hello");
+      act(() => vi.advanceTimersByTime(20));
+      expect(clear).toHaveBeenCalledTimes(1);
+      act(() => vi.advanceTimersByTime(300));
+      expect(clear).toHaveBeenCalledTimes(3);
+      act(() => vi.advanceTimersByTime(3000));
+      expect(clear).toHaveBeenCalledTimes(6);
+      act(() => vi.advanceTimersByTime(5000));
+      expect(clear).toHaveBeenCalledTimes(6);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Paul, 2026-11-17: "So we wouldn't need to do thsy" went out, and seconds
+  // later the box held "So we wouldn't need to do that", iOS having committed
+  // its pending correction once the clear landed.
+  it("turns away the autocorrected copy iOS puts back after the first retries", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, clear, type } = sendFrom("So we wouldn't need to do thsy");
+      act(() => vi.advanceTimersByTime(2000));
+      const before = clear.mock.calls.length;
+      type("So we wouldn't need to do that");
+      expect(props.onChangeText).not.toHaveBeenCalled();
+      // And clears again behind it, in case the field drops the resend.
+      act(() => vi.advanceTimersByTime(20));
+      expect(clear.mock.calls.length).toBeGreaterThan(before);
+      // The next message still starts cleanly.
+      type("O");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("O");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes a prediction tapped into the empty box, even one that opens the sent message", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("Thanks all");
+      type("Thanks ");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("Thanks ");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turns away a one-word copy, corrected or with a trailing space", () => {
+    vi.useFakeTimers();
+    try {
+      const typo = sendFrom("thnaks");
+      act(() => vi.advanceTimersByTime(1500));
+      typo.type("Thanks");
+      expect(typo.props.onChangeText).not.toHaveBeenCalled();
+
+      const spaced = sendFrom("Thanks ");
+      spaced.type("Thanks ");
+      expect(spaced.props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("turns away a copy where autocorrect changed an earlier word", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("There going to be lat");
+      type("Their going to be late");
+      expect(props.onChangeText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes a short first word or a dictated next message after a short send", () => {
+    vi.useFakeTimers();
+    try {
+      const prediction = sendFrom("Ok thanks");
+      prediction.type("Ok ");
+      expect(prediction.props.onChangeText).toHaveBeenLastCalledWith("Ok ");
+
+      const dictated = sendFrom("Sounds good");
+      dictated.type("Sounds great, see you then");
+      expect(dictated.props.onChangeText).toHaveBeenLastCalledWith(
+        "Sounds great, see you then",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts the clear retries over after turning a copy away", () => {
+    vi.useFakeTimers();
+    try {
+      const { clear, type } = sendFrom("So we wouldn't need to do thsy");
+      act(() => vi.advanceTimersByTime(1600));
+      const before = clear.mock.calls.length;
+      type("So we wouldn't need to do that");
+      // A frame, then 100 and 300ms from the copy, not from the send.
+      act(() => vi.advanceTimersByTime(320));
+      expect(clear.mock.calls.length - before).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes every change to an edit opened just after a send", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type, rerender } = sendFrom(
+        "So we wouldn't need to do thsy ",
+      );
+      rerender("So we wouldn't need to do thsy", {
+        kind: "edit",
+        title: "Editing message",
+        preview: null,
+        onCancel: vi.fn(),
+      });
+      type("So we wouldn't need to do that");
+      expect(props.onChangeText).toHaveBeenLastCalledWith(
+        "So we wouldn't need to do that",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes the next message when it only shares the first letters of the last one", () => {
+    vi.useFakeTimers();
+    try {
+      const { props, type } = sendFrom("Sounds good to me");
+      type("Sou");
+      expect(props.onChangeText).toHaveBeenLastCalledWith("Sou");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves the field alone once the member is typing the next message", () => {
+    vi.useFakeTimers();
+    try {
+      const { clear, rerender } = sendFrom("hello");
+      rerender("n");
+      act(() => vi.advanceTimersByTime(400));
+      expect(clear).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does nothing extra when a send was refused and the text stayed", () => {
+    vi.useFakeTimers();
+    try {
+      const clear = vi.fn();
+      const props: ChatComposerProps = {
+        value: "hello",
+        onChangeText: vi.fn(),
+        onSend: vi.fn(),
+        canSend: true,
+        placeholder: "Message",
+      };
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = create(
+          <FrappThemeProvider>
+            <ChatComposer {...props} />
+          </FrappThemeProvider>,
+          {
+            createNodeMock: (el) =>
+              el.type === "TextInput" ? { clear, focus: vi.fn() } : null,
+          },
+        );
+      });
+      act(() => byLabel(tree, "Send message")!.props.onPress());
+      act(() => vi.advanceTimersByTime(400));
+      expect(clear).not.toHaveBeenCalled();
+      act(() =>
+        tree.root
+          .findByType("TextInput" as never)
+          .props.onChangeText?.("hello!"),
+      );
+      expect(props.onChangeText).toHaveBeenLastCalledWith("hello!");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("ChatComposer dictation (#5772)", () => {
+  beforeEach(() => {
+    speech.available = true;
+    speech.handlers = null;
+    speech.finish.mockReset();
+    speech.cancel.mockReset();
+    cleanDictation.current = async (text) =>
+      text.replace(/^so um /, "").replace(/^./, (c) => c.toUpperCase()) + ".";
+  });
+  afterEach(() => {
+    speech.available = false;
+    cleanDictation.current = async () => null;
+  });
+
+  /**
+   * The composer as a channel holds it: the box's words are the parent's.
+   * `swap` lets a test change what the parent hands in (an edit opening, a
+   * channel switched in place), as `useComposerStaging` does.
+   */
+  function renderLive(
+    initial = "",
+    onSend = vi.fn(),
+    extra: Partial<ChatComposerProps> = { tidyDictation: true },
+  ) {
+    let swap!: (next: {
+      value?: string;
+      props?: Partial<ChatComposerProps>;
+    }) => void;
+    function Live() {
+      const [value, setValue] = React.useState(initial);
+      const [props, setProps] = React.useState(extra);
+      swap = (next) => {
+        if (next.value !== undefined) setValue(next.value);
+        if (next.props) setProps({ ...extra, ...next.props });
+      };
+      return (
+        <ChatComposer
+          value={value}
+          onChangeText={setValue}
+          onSend={onSend}
+          canSend
+          placeholder="Message"
+          {...props}
+        />
+      );
+    }
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <Live />
+        </FrappThemeProvider>,
+      );
+    });
+    return {
+      tree,
+      onSend,
+      swap: (next: Parameters<typeof swap>[0]) => act(() => swap(next)),
+    };
+  }
+  const input = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        node.props?.accessibilityLabel === "Message" &&
+        typeof node.props?.onChangeText === "function",
+    )[0]!;
+
+  async function dictate(tree: ReactTestRenderer, heard: string) {
+    await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+    act(() => speech.handlers!.onWords(heard));
+    act(() => byLabel(tree, "Done")!.props.onPress());
+    await act(async () => speech.handlers!.onEnd(heard));
+  }
+
+  it("draws no mic where the phone can't dictate", () => {
+    speech.available = false;
+    const { tree } = renderLive();
+    expect(byLabel(tree, "Dictate")).toBeUndefined();
+  });
+
+  it("listens in the box with Done in Send's place, then lands the tidied words without sending", async () => {
+    const { tree, onSend } = renderLive();
+    await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+    expect(byLabel(tree, "Cancel dictation")).toBeDefined();
+    expect(byLabel(tree, "Send message")).toBeUndefined();
+
+    act(() => speech.handlers!.onWords("so um running late"));
+    act(() => byLabel(tree, "Done")!.props.onPress());
+    expect(speech.finish).toHaveBeenCalled();
+    await act(async () => speech.handlers!.onEnd("so um running late"));
+
+    expect(input(tree).props.value).toBe("Running late.");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(byLabel(tree, "Send message")!.props.accessibilityState).toEqual({
+      disabled: false,
+    });
+  });
+
+  it("adds to words already typed, and the Original chip puts back what was said", async () => {
+    const { tree } = renderLive("Heads up:");
+    await dictate(tree, "so um running late");
+    expect(input(tree).props.value).toBe("Heads up: Running late.");
+
+    act(() => byLabel(tree, "Original")!.props.onPress());
+    expect(input(tree).props.value).toBe("Heads up: so um running late");
+    expect(byLabel(tree, "Original")).toBeUndefined();
+  });
+
+  it("drops the Original chip once the member types or sends", async () => {
+    const { tree } = renderLive();
+    await dictate(tree, "so um running late");
+    act(() => input(tree).props.onChangeText("Running late!"));
+    expect(byLabel(tree, "Original")).toBeUndefined();
+
+    await dictate(tree, "so um on my way");
+    expect(byLabel(tree, "Original")).toBeDefined();
+    act(() => byLabel(tree, "Send message")!.props.onPress());
+    expect(byLabel(tree, "Original")).toBeUndefined();
+  });
+
+  it("keeps the words as heard when the cleanup has nothing", async () => {
+    cleanDictation.current = async () => null;
+    const { tree } = renderLive();
+    await dictate(tree, "so um running late");
+    expect(input(tree).props.value).toBe("so um running late");
+    expect(byLabel(tree, "Original")).toBeUndefined();
+  });
+
+  it("never sends a DM's words to be tidied: they land as heard", async () => {
+    const clean = vi.fn(cleanDictation.current);
+    cleanDictation.current = clean;
+    const { tree } = renderLive("", vi.fn(), { tidyDictation: false });
+    await dictate(tree, "so um running late");
+    expect(input(tree).props.value).toBe("so um running late");
+    expect(clean).not.toHaveBeenCalled();
+    expect(byLabel(tree, "Original")).toBeUndefined();
+  });
+
+  it("holds Send while the words are being tidied", async () => {
+    let answer!: (text: string | null) => void;
+    cleanDictation.current = () => new Promise((resolve) => (answer = resolve));
+    const { tree } = renderLive("Heads up:");
+    await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+    act(() => speech.handlers!.onWords("so um running late"));
+    act(() => byLabel(tree, "Done")!.props.onPress());
+    await act(async () => speech.handlers!.onEnd("so um running late"));
+    expect(byLabel(tree, "Send message")!.props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    await act(async () => answer("Running late."));
+    expect(input(tree).props.value).toBe("Heads up: Running late.");
+  });
+
+  it("drops the Original chip when an edit opens, so it can't write into the edit", async () => {
+    const { tree, swap } = renderLive();
+    await dictate(tree, "so um running late");
+    expect(byLabel(tree, "Original")).toBeDefined();
+    swap({
+      value: "my old message",
+      props: {
+        context: {
+          kind: "edit",
+          title: "Editing message",
+          preview: null,
+          onCancel: vi.fn(),
+        },
+      },
+    });
+    expect(byLabel(tree, "Original")).toBeUndefined();
+    expect(input(tree).props.value).toBe("my old message");
+  });
+
+  it("drops a dictation in progress when the channel changes in place", async () => {
+    const { tree, swap } = renderLive("", vi.fn(), {
+      tidyDictation: true,
+      dictationTarget: "general",
+    });
+    await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+    act(() => speech.handlers!.onWords("so um running late"));
+    swap({ value: "dues draft", props: { dictationTarget: "dues" } });
+    expect(speech.cancel).toHaveBeenCalled();
+    await act(async () => speech.handlers?.onEnd("so um running late"));
+    expect(input(tree).props.value).toBe("dues draft");
+  });
+
+  it("says which limit stopped it: one dictation, or the whole message", async () => {
+    cleanDictation.current = async () => null;
+    const said = (tree: ReactTestRenderer, line: string) =>
+      JSON.stringify(tree.toJSON()).includes(line);
+    const talk = async (tree: ReactTestRenderer, words: string) => {
+      await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+      act(() => speech.handlers!.onWords(words));
+      await act(async () => speech.handlers!.onEnd(words));
+    };
+
+    const empty = renderLive();
+    await talk(empty.tree, "word ".repeat(260));
+    expect(said(empty.tree, "That's all one dictation can hold.")).toBe(true);
+
+    const nearlyFull = renderLive("x".repeat(9_990));
+    await talk(nearlyFull.tree, "word ".repeat(10));
+    expect(said(nearlyFull.tree, "That's all one message can hold.")).toBe(
+      true,
+    );
+    expect(input(nearlyFull.tree).props.value.length).toBeLessThanOrEqual(
+      10_000,
+    );
   });
 });

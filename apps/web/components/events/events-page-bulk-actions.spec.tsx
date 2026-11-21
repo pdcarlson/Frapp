@@ -18,14 +18,14 @@ const { autoAbsentMutateAsync, access } = vi.hoisted(() => ({
 }));
 
 // Dates relative to the suite's clock: Chapter Meeting is tomorrow, inside
-// the default Upcoming window and its two-week horizon; Last Formal was
+// the default Upcoming window and the agenda's four weeks; Last Formal was
 // yesterday, so only Past shows it.
 const EVENTS = [
   {
     id: "evt-1",
     name: "Chapter Meeting",
     location: "Great Hall",
-    // Tomorrow, inside the list's two-week horizon whenever the suite runs.
+    // Tomorrow, inside the agenda's four weeks whenever the suite runs.
     start_time: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     end_time: new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(),
     is_mandatory: true,
@@ -44,30 +44,33 @@ const EVENTS = [
   },
 ];
 
-vi.mock("@repo/hooks", () => ({
-  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
-  useChapterRoster: () => ({ data: [] }),
-  useCurrentChapter: () => ({
-    data: { subscription_status: access.subscription, past_due_since: null },
-    isPending: false,
-    isError: false,
-  }),
-  useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
-  useEvents: () => ({
-    data: EVENTS,
-    isLoading: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  useAutoAbsent: () => ({
-    mutateAsync: autoAbsentMutateAsync,
-    isPending: false,
-  }),
-  useMyPermissions: () => ({ data: { permissions: access.permissions } }),
-  useNow: () => Date.now(),
+// "This time last year" (#3930) has its own spec.
+vi.mock("@/components/ai/suggested-events", () => ({
+  SuggestedEvents: () => null,
+  useRecordPlannedEvent: () => async () => undefined,
 }));
+
+vi.mock("@repo/hooks", async () => {
+  const { eventsPageHooks } = await import("@/tests/events-page");
+  return eventsPageHooks({
+    useCurrentChapter: () => ({
+      data: { subscription_status: access.subscription, past_due_since: null },
+      isPending: false,
+      isError: false,
+    }),
+    useEvents: () => ({
+      data: EVENTS,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    }),
+    useAutoAbsent: () => ({
+      mutateAsync: autoAbsentMutateAsync,
+      isPending: false,
+    }),
+    useMyPermissions: () => ({ data: { permissions: access.permissions } }),
+  });
+});
 
 // The viewer whose last view (List or Calendar) the page reads; no stored
 // choice unless a test writes one.
@@ -109,19 +112,15 @@ async function selectChapterMeeting(
   );
 }
 
-/** Sets the list's time window through the Filter popover. */
+/** Sets the list's time window through the Filter menu. */
 async function showTime(
   user: ReturnType<typeof userEvent.setup>,
   name: "Upcoming" | "Past" | "All",
 ) {
   await user.click(screen.getByRole("button", { name: /^filter events/i }));
-  await user.click(
-    within(screen.getByRole("radiogroup", { name: "Time" })).getByRole(
-      "radio",
-      { name },
-    ),
-  );
-  await user.keyboard("{Escape}");
+  screen.getByRole("menuitem", { name: /^Time/ }).focus();
+  await user.keyboard("{ArrowRight}");
+  await user.click(await screen.findByRole("menuitemradio", { name }));
 }
 
 // The one event whose check-in has closed, so the one auto-absent is sent for

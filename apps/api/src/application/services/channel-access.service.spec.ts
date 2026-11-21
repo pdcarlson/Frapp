@@ -131,15 +131,17 @@ describe('ChannelAccessService', () => {
       findLatestPerChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
       findPollsByChapter: jest.fn(),
-      findPollCardsByChapter: jest.fn(),
+      findCardsByChapter: jest.fn(),
       findByClientMessageId: jest.fn(),
       findAuthorAvatarPaths: jest.fn(),
       insertIdempotent: jest.fn(),
       compareAndSetFlag: jest.fn(),
+      updateIfLive: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUser: jest.fn(),
       findByUserAndChapter: jest.fn(),
@@ -150,6 +152,9 @@ describe('ChannelAccessService', () => {
       findChapterMemberIdentities: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
+      setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
+      countByChapter: jest.fn(),
     };
     mockRbac = {
       // Default: an active member holding nothing a list names.
@@ -230,7 +235,8 @@ describe('ChannelAccessService', () => {
       ).resolves.toBe(roleGatedChannel);
       expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
         'chap-1',
-        member.role_ids,
+        member,
+        false,
       );
 
       mockRbac.getChannelAccessHolder.mockResolvedValueOnce(
@@ -239,6 +245,27 @@ describe('ChannelAccessService', () => {
       await expect(
         service.assertChannelAccess('ch-role', 'chap-1', 'user-1'),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it("asks for the caller's groups only when a list names a group (#4076)", async () => {
+      const groupChannel: ChatChannel = {
+        ...roleGatedChannel,
+        who_can_see: ['group:g-floor'],
+      };
+      mockChannelRepo.findById.mockResolvedValue(groupChannel);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      mockRbac.getChannelAccessHolder.mockResolvedValueOnce(
+        holderOf('group:g-floor'),
+      );
+
+      await expect(
+        service.assertChannelAccess('ch-role', 'chap-1', 'user-1'),
+      ).resolves.toBe(groupChannel);
+      expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
+        'chap-1',
+        member,
+        true,
+      );
     });
 
     it('gates posting on the who-can-post list', async () => {
@@ -288,33 +315,110 @@ describe('ChannelAccessService', () => {
     });
   });
 
+  describe('readersOf', () => {
+    const member = (user_id: string, channel_access: ChannelAccessHolder) => ({
+      user_id,
+      permissions: new Set<string>(),
+      top_role_rank: null,
+      top_tier: null,
+      top_role: null,
+      channel_access,
+    });
+
+    it('answers each channel by the reader rule, from one chapter-wide resolve', async () => {
+      mockRbac.getChapterMemberAccess.mockResolvedValue([
+        member('president', WILDCARD),
+        member('secret-holder', holderOf(SECRET)),
+        member('member-of-private', EMPTY_ACCESS_HOLDER),
+      ]);
+
+      const readers = await service.readersOf('chap-1', [
+        publicChannel,
+        privateChannel,
+        roleGatedChannel,
+      ]);
+
+      expect(readers.get('ch-public')).toEqual(
+        new Set(['president', 'secret-holder', 'member-of-private']),
+      );
+      expect(readers.get('ch-private')).toEqual(new Set(['member-of-private']));
+      expect(readers.get('ch-role')).toEqual(
+        new Set(['president', 'secret-holder']),
+      );
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledTimes(1);
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
+        'chap-1',
+        false,
+        undefined,
+      );
+    });
+
+    it('reads group memberships when a channel is opened by a group, so a committee counts its members', async () => {
+      mockRbac.getChapterMemberAccess.mockImplementation(
+        (_chapterId: string, withGroups: boolean) =>
+          Promise.resolve([
+            member(
+              'committee-member',
+              withGroups ? holderOf('group:g-social') : EMPTY_ACCESS_HOLDER,
+            ),
+            member('outsider', EMPTY_ACCESS_HOLDER),
+          ]),
+      );
+
+      const readers = await service.readersOf('chap-1', [
+        publicChannel,
+        {
+          ...roleGatedChannel,
+          id: 'ch-social',
+          who_can_see: ['group:g-social'],
+        },
+      ]);
+
+      expect(readers.get('ch-social')).toEqual(new Set(['committee-member']));
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
+        'chap-1',
+        true,
+        undefined,
+      );
+    });
+
+    it('reads nothing for no channels', async () => {
+      await expect(service.readersOf('chap-1', [])).resolves.toEqual(new Map());
+      expect(mockRbac.getChapterMemberAccess).not.toHaveBeenCalled();
+    });
+  });
+
   describe('listChannelMembers', () => {
     const access = [
       {
         user_id: 'president',
         permissions: new Set(['*']),
-        top_role_order: 0,
+        top_role_rank: 0,
+        top_tier: { id: 't-cabinet', name: 'Cabinet', position: 1 },
         top_role: { id: 'r-pres', name: 'President' },
         channel_access: WILDCARD,
       },
       {
         user_id: 'member-of-private',
         permissions: new Set<string>(),
-        top_role_order: 4,
+        top_role_rank: 4,
+        top_tier: null,
         top_role: { id: 'r-mem', name: 'Member' },
         channel_access: EMPTY_ACCESS_HOLDER,
       },
       {
         user_id: 'secret-holder',
         permissions: new Set<string>(),
-        top_role_order: 2,
+        top_role_rank: 2,
+        top_tier: null,
         top_role: { id: 'r-sec', name: 'Secret' },
         channel_access: holderOf(SECRET),
       },
       {
         user_id: 'no-role',
         permissions: new Set<string>(),
-        top_role_order: null,
+        top_role_rank: null,
+        top_tier: null,
         top_role: null,
         channel_access: EMPTY_ACCESS_HOLDER,
       },
@@ -341,22 +445,48 @@ describe('ChannelAccessService', () => {
           role_rank: 0,
           role_id: 'r-pres',
           role_name: 'President',
+          title: 'President',
+          tier_id: 't-cabinet',
+          tier_name: 'Cabinet',
+          tier_rank: 1,
         },
         {
           user_id: 'member-of-private',
           role_rank: 4,
           role_id: 'r-mem',
           role_name: 'Member',
+          title: 'Member',
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
         },
         {
           user_id: 'secret-holder',
           role_rank: 2,
           role_id: 'r-sec',
           role_name: 'Secret',
+          title: 'Secret',
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
         },
-        { user_id: 'no-role', role_rank: null, role_id: null, role_name: null },
+        {
+          user_id: 'no-role',
+          role_rank: null,
+          role_id: null,
+          role_name: null,
+          title: null,
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
+        },
       ]);
-      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith('chap-1');
+      expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
+        'chap-1',
+        false,
+        undefined,
+        true,
+      );
     });
 
     it('lists only who its who-can-see list names, and the wildcard', async () => {
@@ -394,6 +524,43 @@ describe('ChannelAccessService', () => {
           role_rank: 4,
           role_id: 'r-mem',
           role_name: 'Member',
+          title: 'Member',
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
+        },
+      ]);
+    });
+
+    it('files an Everyone holder under "Members", never under a role called Everyone (#4191)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(publicChannel);
+      mockRbac.getChapterMemberAccess.mockResolvedValue([
+        {
+          user_id: 'plain-member',
+          permissions: new Set<string>(),
+          top_role_rank: 4,
+          top_tier: null,
+          top_role: { id: 'r-everyone', name: 'Everyone', everyone: true },
+          channel_access: EMPTY_ACCESS_HOLDER,
+        },
+      ]);
+
+      const result = await service.listChannelMembers(
+        'ch-public',
+        'chap-1',
+        'user-1',
+      );
+
+      expect(result).toEqual([
+        {
+          user_id: 'plain-member',
+          role_rank: 4,
+          role_id: 'r-everyone',
+          role_name: 'Members',
+          title: null,
+          tier_id: null,
+          tier_name: null,
+          tier_rank: null,
         },
       ]);
     });
@@ -572,7 +739,8 @@ describe('ChannelAccessService', () => {
 
       expect(mockRbac.getChannelAccessHolder).toHaveBeenCalledWith(
         'chap-1',
-        member.role_ids,
+        member,
+        false,
       );
     });
 
@@ -707,6 +875,42 @@ describe('ChannelAccessService', () => {
           grant(),
         ),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    // `assertGrantNames`: a report stands in for channel access to read or
+    // remove its one message, and nothing else, before the message is read.
+    it.each([
+      'post',
+      'thread',
+      'vote',
+      'close',
+      'answer',
+      'pin',
+      'unpin',
+      'flag',
+      'unflag',
+    ] as const)('never authorizes a %s', async (operation) => {
+      await expect(
+        service.assertMessageAccess(
+          'msg-reported',
+          'chap-1',
+          OFFICER,
+          operation,
+          grant(),
+        ),
+      ).rejects.toThrow('A report does not grant write access');
+      expect(mockMessageRepo.findById).not.toHaveBeenCalled();
+    });
+
+    it('authorizes the removal itself, a delete', async () => {
+      const message = await service.assertMessageAccess(
+        'msg-reported',
+        'chap-1',
+        OFFICER,
+        'delete',
+        grant(),
+      );
+      expect(message.id).toBe('msg-reported');
     });
 
     it('refuses a grant from another chapter', async () => {

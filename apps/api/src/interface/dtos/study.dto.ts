@@ -7,12 +7,20 @@ import {
   IsUUID,
   Max,
   Min,
+  ArrayMaxSize,
+  ArrayMinSize,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import {
+  POINTS_ADJUSTMENT_MAX,
+  ZONE_OUTLINE_MAX_POINTS,
+  ZONE_RADIUS_MAX_M,
+  ZONE_RADIUS_MIN_M,
+} from '@repo/validation';
 import { INT4_MAX } from '#domain/constants/field-limits';
 
 export class GeofenceCoordinateDto {
@@ -25,16 +33,58 @@ export class GeofenceCoordinateDto {
   lng: number;
 }
 
+export class GeofenceCircleDto {
+  @ApiProperty({ minimum: -90, maximum: 90 })
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat: number;
+
+  @ApiProperty({ minimum: -180, maximum: 180 })
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng: number;
+
+  @ApiProperty({
+    minimum: ZONE_RADIUS_MIN_M,
+    maximum: ZONE_RADIUS_MAX_M,
+    description: 'Radius in meters.',
+  })
+  @IsNumber()
+  @Min(ZONE_RADIUS_MIN_M)
+  @Max(ZONE_RADIUS_MAX_M)
+  radius_m: number;
+}
+
+const SHAPE_DESCRIPTION =
+  'Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle.';
+
 export class CreateGeofenceDto {
   @ApiProperty()
   @IsString()
   name: string;
 
-  @ApiProperty({ type: [GeofenceCoordinateDto] })
+  @ApiPropertyOptional({
+    type: [GeofenceCoordinateDto],
+    description: `An outline's corners. ${SHAPE_DESCRIPTION}`,
+  })
+  @ValidateIf((dto: CreateGeofenceDto) => dto.circle == null)
   @IsArray()
+  @ArrayMinSize(3)
+  @ArrayMaxSize(ZONE_OUTLINE_MAX_POINTS)
   @ValidateNested({ each: true })
   @Type(() => GeofenceCoordinateDto)
-  coordinates: GeofenceCoordinateDto[];
+  coordinates?: GeofenceCoordinateDto[];
+
+  @ApiPropertyOptional({
+    type: GeofenceCircleDto,
+    description: `A circle zone. ${SHAPE_DESCRIPTION}`,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GeofenceCircleDto)
+  circle?: GeofenceCircleDto;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()
@@ -85,12 +135,26 @@ export class UpdateGeofenceDto {
   @IsString()
   name?: string;
 
-  @ApiPropertyOptional({ type: [GeofenceCoordinateDto] })
+  @ApiPropertyOptional({
+    type: [GeofenceCoordinateDto],
+    description: `An outline's corners. ${SHAPE_DESCRIPTION}`,
+  })
   @IsOptional()
   @IsArray()
+  @ArrayMinSize(3)
+  @ArrayMaxSize(ZONE_OUTLINE_MAX_POINTS)
   @ValidateNested({ each: true })
   @Type(() => GeofenceCoordinateDto)
   coordinates?: GeofenceCoordinateDto[];
+
+  @ApiPropertyOptional({
+    type: GeofenceCircleDto,
+    description: `A circle zone. ${SHAPE_DESCRIPTION}`,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => GeofenceCircleDto)
+  circle?: GeofenceCircleDto;
 
   @ApiPropertyOptional()
   @IsOptional()

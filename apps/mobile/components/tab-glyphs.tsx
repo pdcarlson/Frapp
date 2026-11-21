@@ -1,14 +1,16 @@
 import { Text, type ColorValue } from "react-native";
-import Svg from "react-native-svg";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { NAV_GLYPHS, type NavGlyphName } from "@repo/theme/nav-glyphs";
 import { NavGlyph } from "@/components/nav-glyph";
+import { NEUTRAL_FILL, STROKE_WIDTH } from "@/components/glyph-recipe";
 import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Tab bar glyphs, and the stroke recipe the chat card eyebrows still use.
  *
- * The four tabs draw the shared nav set in `@repo/theme/nav-glyphs` through
- * `components/nav-glyph.tsx`: a silhouette at 20% of the glyph's hue (30% when
+ * Three of the four tabs draw the shared nav set in `@repo/theme/nav-glyphs` through
+ * `components/nav-glyph.tsx` (the fourth, You, is the member's own avatar,
+ * `components/you-tab-avatar.tsx`): a silhouette at 20% of the glyph's hue (30% when
  * focused) under a full-strength outline, per
  * `spec/ui/design-system/iconography.md` §1. The web sidebar draws the same
  * set, so a tab and its web row share one silhouette. It replaced the
@@ -22,27 +24,25 @@ import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
  * §1 rule 1 is why `focused` is a *color* input and never a shape input: a
  * state change recolors the glyph and does not swap to a solid variant.
  *
- * `glyphPaint`, `GlyphFrame` and `STROKE_WIDTH` are the older stroke recipe,
- * kept for the chat card eyebrow glyphs that have no tab of their own
- * (`components/chat/card-glyphs.tsx`).
+ * `glyphPaint` and `GlyphFrame` are the tab family's stroke recipe, also drawn
+ * by the chat card eyebrow glyphs that have no tab of their own
+ * (`components/chat/card-glyphs.tsx`) and the composer + sheet's rows. Its
+ * stroke width and neutral fill come from `glyph-recipe.tsx`; only the 18%
+ * active fill is its own.
  *
  * Sizing is 24px per iconography.md §2.
  */
 
-export const TAB_GLYPH_SIZE = 24;
-
-export const STROKE_WIDTH = 1.6;
+const TAB_GLYPH_SIZE = 24;
 
 /** Canvas draws the tab labels at 10.5px. */
 const TAB_LABEL_SIZE = 10.5;
 
 /**
- * Inactive fill is "white at 6%" per iconography.md §1's state table. It is a
- * literal rather than a token read because no token carries it — the nearest,
- * `border.hairline`, is 8% and semantically a border, so borrowing it would
- * drift the glyph the next time hairlines are retuned.
+ * Inactive fill is "white at 6%" per iconography.md §1's state table, the same
+ * neutral fill as the §1 recipe (`glyph-recipe.tsx` says why it is a literal).
  */
-const INACTIVE_FILL = "rgba(255,255,255,0.06)";
+const INACTIVE_FILL = NEUTRAL_FILL;
 
 /**
  * Active fill is the stroke hue at 16–18% (iconography.md §1); Canvas draws the
@@ -69,8 +69,7 @@ export type TabGlyphProps = {
    * Drawn size in points; the glyph's grid scales with it. The tab bar uses
    * the default {@link TAB_GLYPH_SIZE}. A chat card's eyebrow draws the same
    * glyph at 16, as web's card eyebrow does, so the card and the tab it
-   * belongs to share one silhouette. Chat home's UP NEXT rows draw it at 20,
-   * the list-row icon size (spec/ui/design-system/iconography.md § 6.1).
+   * belongs to share one silhouette.
    */
   size?: number;
 };
@@ -134,19 +133,28 @@ export function ChatGlyph(props: TabGlyphProps) {
   return <TabGlyph name="chat" {...props} />;
 }
 
-/** Events: the calendar with day dots. */
+/** Activity: the nav set's tray, the old More row's and web's Activity glyph. */
+export function ActivityTabGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="activity" {...props} />;
+}
+
+/**
+ * Messages: the nav set's `direct`, the paper plane web's sidebar draws
+ * beside Direct messages and Instagram draws on its inbox. Not a second
+ * speech bubble, which Chat's tab beside it already is (#4610, #5310).
+ */
+export function MessagesGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="direct" {...props} />;
+}
+
+/** Events (the calendar with day dots): chat's event card, the composer's + sheet and the push ask. Off the tab bar since #5310. */
 export function EventsGlyph(props: TabGlyphProps) {
   return <TabGlyph name="events" {...props} />;
 }
 
-/** Tasks: the seal with a check. */
+/** Tasks: the seal with a check. Off the tab bar since #4610; chat's task card and the composer's + sheet still draw it. */
 export function TasksGlyph(props: TabGlyphProps) {
   return <TabGlyph name="tasks" {...props} />;
-}
-
-/** More: a 2x2 grid of squares, not an ellipsis. */
-export function MoreGlyph(props: TabGlyphProps) {
-  return <TabGlyph name="more" {...props} />;
 }
 
 /**
@@ -189,5 +197,43 @@ export function TabLabel({
     >
       {children}
     </Text>
+  );
+}
+
+/**
+ * Photo: a framed picture, sun and hill, in the card eyebrows' stroke recipe.
+ * The composer's + draws it on its Photo row, and s21 on Choose a photo.
+ */
+export function PhotoGlyph(props: TabGlyphProps) {
+  const { stroke, fill } = glyphPaint(props);
+  return (
+    <GlyphFrame size={props.size}>
+      <Rect
+        x={3.5}
+        y={5}
+        width={17}
+        height={14}
+        rx={2.4}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+      />
+      <Circle
+        cx={9}
+        cy={10}
+        r={1.6}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+      />
+      <Path
+        d="M4 17l5-4.6 3.2 2.8 3.3-3.4L20 16"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </GlyphFrame>
   );
 }

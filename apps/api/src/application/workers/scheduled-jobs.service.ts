@@ -4,10 +4,14 @@ import { ReportedCron } from './reported-cron.decorator';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { AttendanceService } from '../services/attendance.service';
+import { EventExcuseService } from '../services/event-excuse.service';
 import { NotificationService } from '../services/notification.service';
 import { ChapterWorkflowsService } from '../services/chapter-workflows.service';
 import { PollService } from '../services/poll.service';
 import { ChatReportService } from '../services/chat-report.service';
+import { TaskService } from '../services/task.service';
+import { planNextCopy } from '../services/task-series-schedule';
+import type { TaskSeries } from '#domain/entities';
 import {
   ReportRetentionService,
   type ReportSweepResult,
@@ -28,12 +32,25 @@ import {
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import { CHECK_IN_GRACE_MINUTES, isBetaOffModule } from '@repo/validation';
-import { formatDueDate, joinFacts } from '../services/push-copy';
+import {
+  DEFAULT_PUSH_TIME_ZONE,
+  formatDueDate,
+  joinFacts,
+} from '../services/push-copy';
+import { localClock, localDateKey } from '../services/local-clock';
+import { shiftDate } from '#domain/utils/last-year-comparison';
 import {
   buildChapterPalette,
   chapterPaletteColumns,
   logChapterPaletteWarnings,
 } from '../services/chapter-palette';
+
+/**
+ * Repeating-task series one sweep run advances at most (#5119). Each costs a
+ * membership read, an RPC and a push, so a run stays well inside its five
+ * minutes; a larger backlog is taken up by the next run.
+ */
+const TASK_SERIES_PER_RUN = 200;
 
 /**
  * How far back the hourly auto-absent sweep reaches. Comfortably longer than
@@ -86,13 +103,18 @@ const EVENT_REMINDER_LEAD_MINUTES = 30;
 const DUE_SOON_LEAD_DAYS = 1;
 
 /**
- * How long before a timed task's `due_at` its assignee is reminded (#4003).
- * Long enough to still do a chore ("Take out the trash" due at 9 PM nudges at
- * 7), short enough that the push is about today. The day-based lead above
- * doesn't fit a task due at 9 AM, which a 9 AM daily sweep would remind about
- * as it falls due.
+ * How long before a timed task's `due_at` its assignee is reminded: an hour
+ * (Paul, 2026-11-17, #5279: reminding people "with like an hour left on
+ * them"; two hours from #4003 until then). Close enough that the push reads
+ * as "now's the time", still long enough to do a chore ("Take out the trash"
+ * due at 9 PM nudges at 8). The day-based lead above doesn't fit a task due at
+ * 9 AM, which a 9 AM daily sweep would remind about as it falls due.
+ *
+ * It is the window's width, not the delivery offset: a five-minute tick
+ * first sees a task 55 to 60 minutes out, and one made inside its own window
+ * is closer still, so the body says the time actually left (`dueInPhrase`).
  */
-const TIMED_TASK_DUE_SOON_LEAD_MINUTES = 120;
+const TIMED_TASK_DUE_SOON_LEAD_MINUTES = 60;
 
 /**
  * How recently an entity must have *become* overdue to still earn a
@@ -114,7 +136,40 @@ const OVERDUE_LOOKBACK_DAYS = 7;
  */
 const MAX_DUES_GRACE_DAYS = 365;
 
+/**
+ * The hours of a member's own morning in which their day-granular task and
+ * invoice reminders go out (#4788): from 9 AM up to noon, in the zone their
+ * pushes use (`user_settings.time_zone`, then `quiet_hours_tz`, then
+ * {@link DEFAULT_PUSH_TIME_ZONE}). The sweeps run hourly and the dispatch
+ * claim keeps each reminder to one push, so the first tick inside the window
+ * sends; the three-hour width is what lets a missed tick or a deploy still land
+ * the reminder that morning, and a zone on a half-hour offset still gets a
+ * tick inside it. Gmail's and Todoist's daily digests work the same way: a
+ * fixed morning hour in the reader's own zone, not the server's.
+ */
+const DAILY_REMINDER_FROM_HOUR = 9;
+const DAILY_REMINDER_UNTIL_HOUR = 12;
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Today's date key in `timeZone` (null: the member's fallback zone) when its
+ * clock reads inside the daily reminder window, else null: the reminder waits
+ * for a later tick. A zone this runtime cannot resolve reads as the fallback.
+ */
+function reminderDayKey(now: Date, timeZone: string | null): string | null {
+  const clock =
+    localClock(now, timeZone ?? DEFAULT_PUSH_TIME_ZONE) ??
+    localClock(now, DEFAULT_PUSH_TIME_ZONE);
+  if (
+    !clock ||
+    clock.hour < DAILY_REMINDER_FROM_HOUR ||
+    clock.hour >= DAILY_REMINDER_UNTIL_HOUR
+  ) {
+    return null;
+  }
+  return localDateKey(clock);
+}
 
 /** `YYYY-MM-DD` in UTC, matching the `date` columns being compared. */
 function toDateKey(date: Date): string {
@@ -179,6 +234,8 @@ export class ScheduledJobsService {
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly chatReports: ChatReportService,
+    private readonly eventExcuses: EventExcuseService,
+    private readonly taskService: TaskService,
   ) {}
 
   @ReportedCron(CronExpression.EVERY_HOUR)
@@ -202,12 +259,17 @@ export class ScheduledJobsService {
     await this.sweepEventReminders(new Date());
   }
 
-  @ReportedCron(CronExpression.EVERY_DAY_AT_9AM)
+  /**
+   * Hourly, not at a fixed hour of the server's clock (#4788): each reminder
+   * goes out in its recipient's own morning ({@link DAILY_REMINDER_FROM_HOUR}),
+   * and members span zones, so every hour is someone's 9 AM.
+   */
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleInvoiceReminderSweep(): Promise<void> {
     await this.sweepInvoiceReminders(new Date());
   }
 
-  @ReportedCron(CronExpression.EVERY_DAY_AT_9AM)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleTaskReminderSweep(): Promise<void> {
     await this.sweepTaskReminders(new Date());
   }
@@ -219,7 +281,11 @@ export class ScheduledJobsService {
    */
   @ReportedCron(CronExpression.EVERY_5_MINUTES)
   async handleTimedTaskReminderSweep(): Promise<void> {
-    await this.sweepTimedTaskReminders(new Date());
+    const now = new Date();
+    // Repeating tasks' next copies first (#5119), so a copy made this tick
+    // is in the reminder read below.
+    await this.materializeDueTaskSeries(now);
+    await this.sweepTimedTaskReminders(now);
   }
 
   /**
@@ -461,6 +527,10 @@ export class ScheduledJobsService {
             event.chapter_id,
           );
           processed += 1;
+          // Once per event, under the same claim: excuses still pending at
+          // the close of check-in get one reminder to their receiver (#3735).
+          // Best-effort inside, so it never releases the claim.
+          await this.eventExcuses.remindPending(event.id, event.chapter_id);
         } catch (error) {
           reportCaughtFailure(this.logger, {
             level: 'warning',
@@ -656,13 +726,19 @@ export class ScheduledJobsService {
    * so the claim does not outlive the tick and an event that gains its first
    * required member later in the window is still reminded about.
    *
-   * **Known limit: a same-UTC-day reschedule is not re-armed.** The claim key's
-   * date component is `scheduled_notification_dispatches.due_date`, a `date`
-   * column, so moving an event from 14:00 to 20:00 on the same day reuses the
-   * key and the second claim loses — the member's only reminder named the old
-   * time. Moving it across a UTC day boundary does re-arm. The separate "event
-   * updated" push softens this but does not replace the reminder. Widening the
-   * key needs a schema change shared with three other sweeps; tracked in #1550.
+   * **A reschedule re-arms it (#1550).** The claim key's date component is a
+   * `date`, so a move within one UTC day would reuse the key. Two halves keep
+   * that from suppressing the reminder for the new time:
+   *
+   * - The `events_release_reminder_claims` trigger deletes the claim when
+   *   `start_time` changes, at the writer's commit, so the next tick claims
+   *   for the new time.
+   * - A tick that read the event before the move but claims after it would
+   *   re-create the old-time claim the trigger had nothing to delete, so the
+   *   time is read again once the claim is won. If it moved, the audience
+   *   resolves to nobody, which releases the claim, and the next tick sends
+   *   with the real time. It costs one single-row read per won claim, not
+   *   per losing tick.
    */
   private async notifyEventStartingSoon(
     event: SweepUpcomingEventRow,
@@ -684,13 +760,33 @@ export class ScheduledJobsService {
       entityId: event.id,
       threshold: 'EVENT_REMINDER',
       dueDate: startsOn,
-      recipients: async () =>
-        (
-          await this.attendanceService.resolveRequiredMembers(
+      recipients: async () => {
+        const current = await this.repository.findEventStartTime(
+          event.chapter_id,
+          event.id,
+        );
+        if (
+          current === null ||
+          new Date(current).getTime() !== new Date(event.start_time).getTime()
+        ) {
+          return [];
+        }
+        const [required, excused] = await Promise.all([
+          this.attendanceService.resolveRequiredMembers(
             event.chapter_id,
             event,
-          )
-        ).map((member) => member.user_id),
+          ),
+          // An approved excuse (#3735) means they aren't expected: a push
+          // saying "Required" would contradict "You're excused". A pending
+          // one may still be declined, so it keeps the reminder.
+          this.attendanceService.excusedUserIds(event.chapter_id, event.id, [
+            'APPROVED',
+          ]),
+        ]);
+        return required
+          .map((member) => member.user_id)
+          .filter((userId) => !excused.has(userId));
+      },
       // Named for the event, like every event push (notifications.md § What a
       // push says). Only required members get a reminder, so it says so.
       title: event.name,
@@ -742,18 +838,23 @@ export class ScheduledJobsService {
    * invoices stay as they are. Reminders are skipped, not queued: once dues
    * returns, only an invoice whose due date or overdue day still falls in the
    * windows below gets one.
+   *
+   * "Today" is the member's own date, read only while their clock is inside
+   * the morning window ({@link reminderDayKey}); a member outside it is left
+   * for a later hourly tick. The query is widened by a day on each side so it
+   * holds every member's today whatever their zone, and narrowed per member.
    */
   async sweepInvoiceReminders(now: Date): Promise<{ sent: number }> {
     if (isBetaOffModule('dues')) return { sent: 0 };
-    const todayKey = toDateKey(now);
-    const dueSoonKey = toDateKey(addDays(now, DUE_SOON_LEAD_DAYS));
-    const windowStart = toDateKey(
-      addDays(now, -(OVERDUE_LOOKBACK_DAYS + MAX_DUES_GRACE_DAYS)),
-    );
-
     const invoices = await this.repository.findOpenInvoicesDueBetween(
-      windowStart,
-      dueSoonKey,
+      toDateKey(
+        addDays(now, -(OVERDUE_LOOKBACK_DAYS + MAX_DUES_GRACE_DAYS + 1)),
+      ),
+      toDateKey(addDays(now, DUE_SOON_LEAD_DAYS + 1)),
+    );
+    if (invoices.length === 0) return { sent: 0 };
+    const zones = await this.notificationService.timeZonesFor(
+      invoices.map((invoice) => invoice.user_id),
     );
 
     const graceByChapter = new Map<string, number>();
@@ -761,6 +862,14 @@ export class ScheduledJobsService {
 
     for (const invoice of invoices) {
       try {
+        const todayKey = reminderDayKey(
+          now,
+          zones.get(invoice.user_id) ?? null,
+        );
+        if (todayKey === null) continue;
+        if (invoice.due_date > shiftDate(todayKey, DUE_SOON_LEAD_DAYS)) {
+          continue;
+        }
         if (invoice.due_date >= todayKey) {
           if (await this.notifyInvoiceDueSoon(invoice, todayKey)) sent += 1;
           continue;
@@ -772,7 +881,7 @@ export class ScheduledJobsService {
           graceByChapter.set(invoice.chapter_id, graceDays);
         }
 
-        if (this.isNewlyOverdue(invoice.due_date, graceDays, now)) {
+        if (this.isNewlyOverdue(invoice.due_date, graceDays, todayKey)) {
           if (await this.notifyInvoiceOverdue(invoice)) sent += 1;
         }
       } catch (error) {
@@ -792,20 +901,36 @@ export class ScheduledJobsService {
   /**
    * Notify assignees about tasks coming due, and assignee plus assigner about
    * tasks that have just gone overdue (`spec/behavior/tasks.md`).
+   *
+   * Timed by the assignee's zone, as the invoice sweep is by the member's
+   * (#4788): "today" is their date, and the push goes out in their morning.
+   * The assigner of an overdue task hears at the same moment; one task is one
+   * claim, so it cannot wait for a second zone's morning.
    */
   async sweepTaskReminders(now: Date): Promise<{ sent: number }> {
-    const todayKey = toDateKey(now);
-    const dueSoonKey = toDateKey(addDays(now, DUE_SOON_LEAD_DAYS));
-    const windowStart = toDateKey(addDays(now, -OVERDUE_LOOKBACK_DAYS));
-
     const tasks = await this.repository.findIncompleteTasksDueBetween(
-      windowStart,
-      dueSoonKey,
+      toDateKey(addDays(now, -(OVERDUE_LOOKBACK_DAYS + 1))),
+      toDateKey(addDays(now, DUE_SOON_LEAD_DAYS + 1)),
+    );
+    if (tasks.length === 0) return { sent: 0 };
+    const zones = await this.notificationService.timeZonesFor(
+      tasks.map((task) => task.assignee_id),
     );
 
     let sent = 0;
     for (const task of tasks) {
       try {
+        const todayKey = reminderDayKey(
+          now,
+          zones.get(task.assignee_id) ?? null,
+        );
+        if (todayKey === null) continue;
+        if (
+          task.due_date > shiftDate(todayKey, DUE_SOON_LEAD_DAYS) ||
+          task.due_date < shiftDate(todayKey, -OVERDUE_LOOKBACK_DAYS)
+        ) {
+          continue;
+        }
         if (task.due_date >= todayKey) {
           if (await this.notifyTaskDueSoon(task, todayKey)) sent += 1;
         } else if (await this.notifyTaskOverdue(task)) {
@@ -823,6 +948,112 @@ export class ScheduledJobsService {
 
     if (sent > 0) this.logger.log(`task sweep: sent ${sent} reminders`);
     return { sent };
+  }
+
+  /**
+   * Repeating tasks (#5119): for each live series whose latest copy is due,
+   * make the next copy and push it to its assignee. One copy at a time: the
+   * missed copy stays as it is (overdue, reminded as any task is), and days a
+   * stopped sweep missed are skipped rather than made at once
+   * (`planNextCopy`).
+   *
+   * - **Idempotent across instances.** The write is compare-and-set on the
+   *   series' `next_due_date` under a row lock, backed by the unique
+   *   `(series_id, occurrence_date)` key, so two instances racing make one
+   *   copy and only the winner pushes.
+   * - **Bounded.** At most {@link TASK_SERIES_PER_RUN} series a run; the
+   *   rest wait five minutes.
+   * - **An assignee who left** ends the series, and its creator hears why,
+   *   when they are still in the chapter.
+   */
+  async materializeDueTaskSeries(now: Date): Promise<{ made: number }> {
+    const due = await this.repository.findDueTaskSeries(
+      now,
+      TASK_SERIES_PER_RUN,
+    );
+    let made = 0;
+    for (const series of due) {
+      try {
+        if (await this.advanceTaskSeries(series, now)) made += 1;
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-series-sweep',
+          message: `task series sweep: series ${series.id} failed`,
+          error,
+        });
+      }
+    }
+    if (made > 0) this.logger.log(`task series sweep: made ${made} copies`);
+    return { made };
+  }
+
+  private async advanceTaskSeries(
+    series: TaskSeries,
+    now: Date,
+  ): Promise<boolean> {
+    const assignee = await this.memberRepo.findByUserAndChapter(
+      series.assignee_id,
+      series.chapter_id,
+    );
+    if (!assignee) {
+      if (
+        await this.repository.endTaskSeries(series.id, series.next_due_date)
+      ) {
+        await this.notifySeriesEnded(series);
+      }
+      return false;
+    }
+
+    const plan = planNextCopy(series, now);
+    if (!plan) {
+      // The rule ran out between copies (an UNTIL among skipped days).
+      await this.repository.endTaskSeries(series.id, series.next_due_date);
+      return false;
+    }
+    const copy = await this.repository.materializeTaskSeriesCopy({
+      seriesId: series.id,
+      expectedNext: series.next_due_date,
+      expectedLatestDueAt: series.latest_due_at,
+      occurrenceDate: plan.occurrenceDate,
+      dueAt: plan.dueAt,
+      latestDueAt: plan.latestDueAt,
+      nextDueDate: plan.nextDueDate,
+      end: plan.nextDueDate === null,
+    });
+    if (!copy) return false;
+    await this.taskService.notifyAssigned(copy, series.created_by);
+    return true;
+  }
+
+  /** Tell a series' creator it stopped because its assignee left. */
+  private async notifySeriesEnded(series: TaskSeries): Promise<void> {
+    if (series.created_by === series.assignee_id) return;
+    const creator = await this.memberRepo.findByUserAndChapter(
+      series.created_by,
+      series.chapter_id,
+    );
+    if (!creator) return;
+    try {
+      await this.notificationService.notifyUser(
+        series.created_by,
+        series.chapter_id,
+        {
+          title: series.title,
+          body: 'Stopped repeating: the person it was assigned to left the chapter.',
+          priority: 'NORMAL',
+          category: 'tasks',
+          data: { target: { screen: 'tasks' } },
+        },
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-series-sweep',
+        message: `task series sweep: ended notice failed for series ${series.id}`,
+        error,
+      });
+    }
   }
 
   /**
@@ -903,14 +1134,12 @@ export class ScheduledJobsService {
   private isNewlyOverdue(
     dueDate: string,
     graceDays: number,
-    now: Date,
+    todayKey: string,
   ): boolean {
-    const overdueKey = toDateKey(
-      addDays(new Date(`${dueDate}T00:00:00Z`), graceDays),
-    );
+    const overdueKey = shiftDate(dueDate, graceDays);
     return (
-      overdueKey < toDateKey(now) &&
-      overdueKey >= toDateKey(addDays(now, -OVERDUE_LOOKBACK_DAYS))
+      overdueKey < todayKey &&
+      overdueKey >= shiftDate(todayKey, -OVERDUE_LOOKBACK_DAYS)
     );
   }
 
@@ -986,30 +1215,65 @@ export class ScheduledJobsService {
    * `notifications` rows scoped to a chapter they no longer belong to. The
    * assignee needs no such check: an unfinished task is their own record, and
    * `markAutoAbsent`-style membership churn does not reassign it.
+   *
+   * That check is resolved lazily, behind the claim (#5307): an overdue task
+   * stays in the sweep's lookback for days, and only the first tick can send,
+   * so reading the assigner's membership before claiming paid one
+   * `chapter_members` read per tick per replica for nothing. A failed read is
+   * a `warning`, as it was before: the claim is released and the task stays
+   * in the lookback for days, so the next tick retries and nothing is lost.
    */
-  private async notifyTaskOverdue(task: SweepTaskRow) {
-    const recipients = [task.assignee_id];
-
-    if (task.created_by !== task.assignee_id) {
-      const assigner = await this.memberRepo.findByUserAndChapter(
-        task.created_by,
-        task.chapter_id,
-      );
-      if (assigner) recipients.push(task.created_by);
-    }
-
-    return this.claimAndNotify({
+  private async notifyTaskOverdue(task: SweepTaskRow): Promise<boolean> {
+    // A copy of a group task tells its following group once for the whole
+    // group (#5473), under a claim keyed by the group, not once per copy.
+    const groupFollowed = !!(task.followed_by && task.group_id);
+    const sent = await this.claimAndNotify({
       chapterId: task.chapter_id,
       entityType: 'TASK',
       entityId: task.id,
       threshold: 'OVERDUE',
       dueDate: task.due_date,
-      recipients,
+      recipients: async () => {
+        // The tier, role or group following a one-person task (#5473), read
+        // now; its members get the same line. Never fails the claim: a
+        // failed read reaches nobody and is reported.
+        const followers = groupFollowed
+          ? []
+          : await this.taskService.followerRecipients(task, task.chapter_id);
+        if (task.created_by === task.assignee_id) {
+          return [task.assignee_id, ...followers];
+        }
+        const assigner = await this.memberRepo.findByUserAndChapter(
+          task.created_by,
+          task.chapter_id,
+        );
+        return assigner
+          ? [task.assignee_id, task.created_by, ...followers]
+          : [task.assignee_id, ...followers];
+      },
+      resolveFailureLevel: 'warning',
       title: task.title,
       body: `Overdue · was due ${formatDueDate(task.due_date)}`,
       category: 'tasks',
       target: { screen: 'tasks', taskId: task.id },
     });
+    if (groupFollowed && task.group_id) {
+      await this.claimAndNotify({
+        chapterId: task.chapter_id,
+        entityType: 'TASK',
+        entityId: task.group_id,
+        threshold: 'OVERDUE',
+        dueDate: task.due_date,
+        recipients: () =>
+          this.taskService.followerRecipients(task, task.chapter_id),
+        resolveFailureLevel: 'warning',
+        title: task.title,
+        body: `Overdue · was due ${formatDueDate(task.due_date)}`,
+        category: 'tasks',
+        target: { screen: 'tasks', taskId: task.id },
+      });
+    }
+    return sent;
   }
 
   /**
@@ -1031,11 +1295,12 @@ export class ScheduledJobsService {
    * the spec requires both the assignee and the assigner to hear about it.
    *
    * `recipients` may be a **thunk**, resolved only once the claim is won. The
-   * invoice and task sweeps already hold their recipient ids by the time they
-   * get here, so they pass an array; a sweep whose audience costs a query —
-   * the pre-event reminder reads the whole chapter roster — passes a function
+   * invoice sweeps and the task due-soon sweeps already hold their recipient
+   * ids on the row, so they pass an array; a sweep whose audience costs a
+   * query — the pre-event reminder reads the whole chapter roster, the
+   * overdue-task push reads the assigner's membership — passes a function
    * instead, and the losing ticks then cost one failed insert rather than a
-   * roster read they throw away. Resolving to an empty list is treated as
+   * read they throw away. Resolving to an empty list is treated as
    * "delivered to zero" below, so the claim is released rather than stranded.
    */
   private async claimAndNotify(params: {
@@ -1045,6 +1310,12 @@ export class ScheduledJobsService {
     threshold: DispatchThreshold;
     dueDate: string;
     recipients: string[] | (() => Promise<string[]>);
+    /**
+     * How a rejected thunk reports. `error` (the default) suits a reminder
+     * whose window is a few ticks wide, where a release is close to dropped
+     * work; a sweep that will retry for days passes `warning`.
+     */
+    resolveFailureLevel?: 'error' | 'warning';
     title: string;
     body: string;
     category: string;
@@ -1071,7 +1342,7 @@ export class ScheduledJobsService {
           : params.recipients;
     } catch (error) {
       reportCaughtFailure(this.logger, {
-        level: 'error',
+        level: params.resolveFailureLevel ?? 'error',
         site: `scheduled-reminder-resolve-recipients:${sweep}`,
         message: `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
         error,
