@@ -1196,7 +1196,7 @@ Tenor, which most apps used, shut its API down on 2026-06-30; Discord moved to K
 
 - **Where it starts.**
   On web, a "GIF" button beside the emoji button opens a picker the emoji panel's size, the way Discord and Slack place theirs: two columns of GIFs at their own heights. The + card's GIF row, under Attach a file, opens the same picker (#5772), so the + offers what the phone's does.
-  On the phone, the + sheet's GIF row, under Photo, opens a tall sheet, as iMessage's keyboard app does: two GIFs to a row, in tiles of one height.
+  On the phone, the + sheet's GIF row, under Photo, opens a sheet at 62% of the screen, so the conversation stays in view above it, as iMessage's keyboard app keeps it: two GIFs to a row, in tiles of one height.
   Each shows trending GIFs until the member types, then search results, and loads more on scroll; a failed load of more offers a retry rather than retrying on its own.
   One click or tap sends; there is no preview step and no caption.
   The search field reads "Search KLIPY", which is the attribution KLIPY's terms ask for.

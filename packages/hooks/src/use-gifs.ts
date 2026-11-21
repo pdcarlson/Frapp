@@ -177,6 +177,9 @@ export function useToggleGifFavorite() {
     { previous: GifResult[] | undefined }
   >({
     mutationKey: ["gifs", "favorite"],
+    // One at a time: a quick star then unstar must reach the server in that
+    // order, or the slower POST lands last and the undo is lost.
+    scope: { id: "gif-favorite" },
     onMutate: async ({ gif, starred }) => {
       await queryClient.cancelQueries({ queryKey: key, exact: true });
       const previous = queryClient.getQueryData<GifResult[]>(key);
@@ -204,7 +207,13 @@ export function useToggleGifFavorite() {
       throwUnlessOk(result);
     },
     onError: (_error, _input, context) => {
-      queryClient.setQueryData(key, context?.previous);
+      // Starred before the list ever loaded: there is nothing to put back,
+      // and setQueryData ignores undefined, so drop the guess instead.
+      if (context?.previous === undefined) {
+        queryClient.removeQueries({ queryKey: key, exact: true });
+      } else {
+        queryClient.setQueryData(key, context.previous);
+      }
     },
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: key, exact: true }),

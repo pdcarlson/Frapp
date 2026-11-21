@@ -23,23 +23,37 @@ export class SupabaseGifFavoriteRepository implements IGifFavoriteRepository {
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async listByUser(userId: string): Promise<GifFavorite[]> {
+  async listByUser(userId: string, provider: string): Promise<GifFavorite[]> {
     const { data, error } = await this.supabase
       .from('gif_favorites')
       .select(COLUMNS)
       .eq('user_id', userId)
+      .eq('provider', provider)
       .order('created_at', { ascending: false });
     if (error) throw new SupabaseQueryError(error);
     return (data ?? []) as GifFavorite[];
   }
 
-  async countByUser(userId: string): Promise<number> {
+  async countByUser(userId: string, provider: string): Promise<number> {
     const { count, error } = await this.supabase
       .from('gif_favorites')
       .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('provider', provider);
     if (error) throw new SupabaseQueryError(error);
     return count ?? 0;
+  }
+
+  async has(userId: string, provider: string, gifId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('gif_favorites')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .eq('gif_id', gifId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data !== null;
   }
 
   async add(userId: string, input: GifFavoriteInput): Promise<void> {

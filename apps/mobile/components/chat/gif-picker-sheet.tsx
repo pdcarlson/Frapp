@@ -18,8 +18,8 @@ import {
   useSheetBackgroundStyle,
   useGuardedSheetRef,
   useSheetClose,
-  useTallSheetProps,
 } from "@/components/sheet-scaffold";
+import { ON_MEDIA_DISC, ON_MEDIA_INK } from "./on-media";
 import { StarGlyph } from "@/components/documents/document-glyphs";
 import { Segmented } from "@/components/segmented";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -31,11 +31,11 @@ import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 const TILE_HEIGHT = 120;
 const SKELETON_ROWS = 4;
 /**
- * The star's disc and ink over a GIF: fixed, not themed, because they sit on
- * the GIF's own colors, as the composer's photo thumbnails' remove disc does.
+ * Short of full height, so the conversation stays in view above the picker
+ * (Paul 2026-11-20: a sheet must not hide what you're dealing with), as the
+ * + menu's task picker does.
  */
-const ON_MEDIA_DISC = "rgba(0,0,0,0.55)";
-const ON_MEDIA_INK = "#FFFFFF";
+const SNAP_POINTS = ["62%"];
 
 type GifRow = { key: string; gifs: GifResult[] };
 type GifTab = "search" | "favorites";
@@ -78,7 +78,6 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
       [tokens, accent],
     );
     const backgroundStyle = useSheetBackgroundStyle();
-    const tallSheet = useTallSheetProps();
     const close = useSheetClose(ref);
     // The composer dismisses it on every blur, up or not (#5059): the ref it
     // holds only reaches a sheet that is up.
@@ -220,7 +219,8 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
     return (
       <BottomSheetModal
         ref={modalRef}
-        {...tallSheet}
+        snapPoints={SNAP_POINTS}
+        enableDynamicSizing={false}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}

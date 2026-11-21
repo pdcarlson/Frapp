@@ -39,7 +39,7 @@ import {
 
 /**
  * The composer's **+** (#3865, layout A) as one card (#3983): its first view
- * is the menu, Attach a file and then one row per command that has a visual
+ * is the menu, Attach a file, GIF and then one row per command that has a visual
  * form, each teaching its slash shortcut. Picking a row turns the card into
  * that form, in place above the +, with the chat still readable and live
  * behind it: no dialog and no scrim (Paul, 2026-11-10). The comparable apps
@@ -98,7 +98,7 @@ export interface ComposerPlusCardProps {
 }
 
 /**
- * Always opens, even when Attach a file is all it holds, so the footer can say
+ * Always opens, even when Attach a file (and GIF) is all it holds, so the footer can say
  * why nothing else is there (#3865).
  */
 export function ComposerPlusCard({
@@ -117,6 +117,10 @@ export function ComposerPlusCard({
   const cardRef = useRef<HTMLDivElement>(null);
   // The row a form was opened from, so Back lands on it.
   const lastPicked = useRef<PlusMenuCommand | null>(null);
+  // Set when the GIF row hands off to the GIF picker: returning focus to the
+  // + button as this card closes would read as a click outside that picker
+  // and close it as it opens.
+  const handingOff = useRef(false);
 
   // Focus follows the view: a form's first field, or the menu's row the
   // member came back from (its first row on open). Radix's own open focus is
@@ -162,6 +166,11 @@ export function ComposerPlusCard({
         // ten-option poll on a short window scrolls rather than clip.
         className="flex max-h-[var(--radix-popover-content-available-height)] w-[22.5rem] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto p-0"
         onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => {
+          if (!handingOff.current) return;
+          handingOff.current = false;
+          event.preventDefault();
+        }}
         onEscapeKeyDown={(event) => {
           if (!view) return;
           event.preventDefault();
@@ -199,6 +208,7 @@ export function ComposerPlusCard({
             onGif={
               onGif
                 ? () => {
+                    handingOff.current = true;
                     onOpenChange(false);
                     onGif();
                   }

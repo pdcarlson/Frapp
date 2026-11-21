@@ -293,7 +293,7 @@ interface ComposerBaseProps {
    * The command forms the **+** menu offers (#3865), each with whether the
    * member's role may use it; a row opens its form through
    * `onOpenCommandForm` with no details, as a bare command does. Omitted, the
-   * menu holds Attach a file alone.
+   * menu holds Attach a file (and GIF, with `onSendGif`) alone.
    */
   commandForms?: readonly PlusMenuForm[];
   /**

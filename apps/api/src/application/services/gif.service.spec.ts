@@ -49,10 +49,17 @@ function fakeSearch(configured = true) {
   } satisfies IGifSearch;
 }
 
-function fakeFavorites(rows: GifFavorite[] = [], count = rows.length) {
+function fakeFavorites(
+  rows: GifFavorite[] = [],
+  count = rows.length,
+  starred = false,
+) {
   return {
-    listByUser: jest.fn(() => Promise.resolve(rows)),
+    listByUser: jest.fn((_user: string, provider: string) =>
+      Promise.resolve(rows.filter((row) => row.provider === provider)),
+    ),
     countByUser: jest.fn(() => Promise.resolve(count)),
+    has: jest.fn(() => Promise.resolve(starred)),
     add: jest.fn(() => Promise.resolve()),
     remove: jest.fn(() => Promise.resolve()),
   } satisfies IGifFavoriteRepository;
@@ -251,12 +258,11 @@ describe('GifService', () => {
       ).not.toThrow();
     });
 
-    it("leaves out another provider's favorites", async () => {
-      const service = new GifService(
-        fakeSearch(),
-        fakeFavorites([{ ...starred, provider: 'tenor' }]),
-      );
+    it("asks only for this server's provider", async () => {
+      const favorites = fakeFavorites([{ ...starred, provider: 'tenor' }]);
+      const service = new GifService(fakeSearch(), favorites);
       expect((await service.listFavorites('u1')).results).toEqual([]);
+      expect(favorites.listByUser).toHaveBeenCalledWith('u1', 'klipy');
     });
 
     it('stars only a GIF this server handed out', async () => {
@@ -291,6 +297,16 @@ describe('GifService', () => {
       await expect(service.addFavorite('u1', signed!)).rejects.toThrow(
         /up to 200 favorite GIFs/,
       );
+      expect(favorites.add).not.toHaveBeenCalled();
+      expect(favorites.countByUser).toHaveBeenCalledWith('u1', 'klipy');
+    });
+
+    it('lets a re-star through at the limit as a no-op', async () => {
+      const favorites = fakeFavorites([], GIF_FAVORITES_MAX, true);
+      const service = new GifService(fakeSearch(), favorites);
+      const [signed] = (await service.trending(1)).results;
+      await expect(service.addFavorite('u1', signed!)).resolves.toBeUndefined();
+      expect(favorites.has).toHaveBeenCalledWith('u1', 'klipy', 'dance');
       expect(favorites.add).not.toHaveBeenCalled();
     });
 

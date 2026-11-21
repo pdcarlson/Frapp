@@ -104,33 +104,31 @@ export class GifService {
 
   /**
    * The member's favorites (#5772), newest first, each signed as a search
-   * result is, so a send from Favorites passes the same check. A favorite
-   * from another provider than this server's is left out: its token could
-   * never match.
+   * result is, so a send from Favorites passes the same check. Only this
+   * server's provider: another's token could never match, and its rows
+   * don't count toward the cap either.
    */
   async listFavorites(userId: string): Promise<SignedGifPage> {
     if (!this.gifs.isConfigured()) {
       throw new ServiceUnavailableException("GIFs aren't set up yet");
     }
     const provider = this.gifs.provider.toLowerCase();
-    const rows = await this.favorites.listByUser(userId);
+    const rows = await this.favorites.listByUser(userId, provider);
     return this.signed({
-      results: rows
-        .filter((row) => row.provider === provider)
-        .map((row) => ({
-          id: row.gif_id,
-          title: row.title,
-          preview: {
-            url: row.preview_url,
-            width: row.preview_width,
-            height: row.preview_height,
-          },
-          full: {
-            url: row.full_url,
-            width: row.full_width,
-            height: row.full_height,
-          },
-        })),
+      results: rows.map((row) => ({
+        id: row.gif_id,
+        title: row.title,
+        preview: {
+          url: row.preview_url,
+          width: row.preview_width,
+          height: row.preview_height,
+        },
+        full: {
+          url: row.full_url,
+          width: row.full_width,
+          height: row.full_height,
+        },
+      })),
       next_page: null,
     });
   }
@@ -156,7 +154,13 @@ export class GifService {
         "gif.preview must be the GIF provider's own https media",
       );
     }
-    if ((await this.favorites.countByUser(userId)) >= GIF_FAVORITES_MAX) {
+    // A re-star (a stale list on another device) is a no-op even at the cap.
+    // Two stars racing at 199 can both land; the cap is a soft bound.
+    if (await this.favorites.has(userId, gif.provider, gif.id)) return;
+    if (
+      (await this.favorites.countByUser(userId, gif.provider)) >=
+      GIF_FAVORITES_MAX
+    ) {
       throw new BadRequestException(
         `You can keep up to ${GIF_FAVORITES_MAX} favorite GIFs. Remove one to add another.`,
       );

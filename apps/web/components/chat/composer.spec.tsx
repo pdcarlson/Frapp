@@ -98,6 +98,24 @@ vi.mock("@repo/hooks", () => ({
   },
   formatScheduledFor: () => "Tomorrow at 9:00 AM",
   scheduleTimeProblem: () => null,
+  // The GIF picker the + card's GIF row opens (#5772).
+  useGifSearch: () => ({
+    results: [],
+    isLoading: false,
+    isError: false,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    isFetchNextPageError: false,
+    fetchNextPage: () => {},
+  }),
+  useGifFavorites: () => ({
+    favorites: [],
+    isStarred: () => false,
+    isLoading: false,
+    isError: false,
+    refetch: () => {},
+  }),
+  useToggleGifFavorite: () => ({ mutate: () => {} }),
 }));
 vi.mock("@/lib/chat/photo-preview", () => ({
   describeChatPhoto: mockDescribePhoto,
@@ -243,6 +261,26 @@ describe("Composer GIF button (#4631)", () => {
       <Composer {...baseProps()} onSendGif={() => {}} gifProvider="KLIPY" />,
     );
     expect(screen.getByRole("button", { name: "Send a GIF" })).toBeTruthy();
+  });
+
+  it("opens the GIF picker from the + card's GIF row, and keeps it open (#5772)", async () => {
+    Element.prototype.scrollTo ??= function scrollTo() {};
+    const user = userEvent.setup();
+    render(
+      <Composer {...baseProps()} onSendGif={() => {}} gifProvider="KLIPY" />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /add a file, poll, event/i }),
+    );
+    await user.click(await screen.findByRole("menuitem", { name: "GIF" }));
+
+    const search = await screen.findByRole("searchbox", {
+      name: "Search KLIPY",
+    });
+    // Past the + card's close and its focus return.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(search.isConnected).toBe(true);
+    expect(screen.queryByRole("menuitem", { name: "GIF" })).toBeNull();
   });
 });
 
