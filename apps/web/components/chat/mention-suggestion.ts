@@ -66,9 +66,7 @@ function filterMentionEntries(
           }
         : {
             kind: "role",
-            // With the name: a class year's standing (#5786) shares its
-            // group's id, and the two rows need their own keys.
-            id: `${entry.role.role_id}:${entry.role.name}`,
+            id: entry.role.role_id,
             label: entry.label,
             displayName: entry.role.name,
             roleKind: entry.role.kind,

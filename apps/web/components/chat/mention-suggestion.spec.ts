@@ -151,7 +151,7 @@ describe("createMentionSuggestion — roles", () => {
   it("offers the roles the viewer may ping after the members", () => {
     expect(itemsFor("").map((item) => [item.kind, item.id])).toEqual([
       ["member", "u1"],
-      ["role", "r1:Officers"],
+      ["role", "r1"],
     ]);
   });
 
@@ -159,7 +159,7 @@ describe("createMentionSuggestion — roles", () => {
     expect(itemsFor("off")).toEqual([
       {
         kind: "role",
-        id: "r1:Officers",
+        id: "r1",
         label: "Officers",
         displayName: "Officers",
         avatarUrl: null,

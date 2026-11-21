@@ -112,7 +112,8 @@ export function classStanding(
 
 /**
  * A group's name as the Groups settings lists it: a class year with a
- * standing reads "Sophomores · Class of 2028", anything else its own name.
+ * standing reads "Sophomores · Class of 2029"
+ * (in 2026-27), anything else its own name.
  */
 export function groupDisplayName(
   group: { kind: string; name: string; class_year?: number | null },

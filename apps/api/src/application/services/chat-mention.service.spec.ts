@@ -8,6 +8,7 @@ import {
   ChatMentionService,
   canPingAnyRole,
   mentionRoleViews,
+  standingMentionId,
 } from './chat-mention.service';
 import { resolveMentions } from '@repo/validation';
 import type { RbacService } from './rbac.service';
@@ -242,9 +243,9 @@ describe('mentionRoleViews', () => {
             .map((view) => [view.name, view.role_id, view.member_ids]),
         ).toEqual([
           ['Class of 2025', 'y25', ['u3']],
-          ['Seniors', 'y27', ['u3']],
+          ['Seniors', standingMentionId('y27', 'Seniors'), ['u3']],
           ['Class of 2027', 'y27', ['u3']],
-          ['Sophomores', 'y29', ['u3']],
+          ['Sophomores', standingMentionId('y29', 'Sophomores'), ['u3']],
           ['Class of 2029', 'y29', ['u3']],
         ]);
       });
@@ -276,6 +277,50 @@ describe('mentionRoleViews', () => {
             .filter((view) => view.name === 'Sophomores')
             .map((view) => view.kind),
         ).toEqual(['role']);
+      });
+
+      it('gives the standing its own UUID, the same on every read', () => {
+        const id = standingMentionId(
+          '11111111-1111-4111-8111-111111111111',
+          'Seniors',
+        );
+        expect(id).toMatch(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+        expect(
+          standingMentionId('11111111-1111-4111-8111-111111111111', 'Seniors'),
+        ).toBe(id);
+        expect(
+          standingMentionId('11111111-1111-4111-8111-111111111111', 'Juniors'),
+        ).not.toBe(id);
+      });
+
+      it("follows its class year's ping switch", () => {
+        const off = { ...year('y27', 2027), mentionable: false };
+        const views = mentionRoleViews(roles, members, joined([off]));
+        expect(
+          views
+            .filter((view) => view.kind === 'group')
+            .map((view) => [view.name, view.open_to_all]),
+        ).toEqual([
+          ['Seniors', false],
+          ['Class of 2027', false],
+        ]);
+        // A member who can't ping any role reaches nobody with it.
+        const member = views.map((view) => ({
+          ...view,
+          mentionable: view.open_to_all,
+        }));
+        expect(resolveMentions('hey @Seniors', members, member)).toEqual([]);
+      });
+
+      it('offers no standing or major when the roles could not be read', () => {
+        const views = mentionRoleViews(
+          [],
+          members,
+          joined([year('y27', 2027), group('m-music', 'Music', 'major')]),
+        );
+        expect(views.map((view) => view.name)).toEqual(['Class of 2027']);
       });
 
       it('makes @Seniors reach the class graduating this academic year', () => {

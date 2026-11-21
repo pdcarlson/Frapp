@@ -223,9 +223,7 @@ export function MentionPicker({
         key={
           entry.kind === "member"
             ? entry.member.user_id
-            : // With the name: a class year's standing (#5786) shares its
-              // group's id.
-              `role:${entry.role.role_id}:${entry.role.name}`
+            : `role:${entry.role.role_id}`
         }
         accessibilityRole="button"
         accessibilityLabel={

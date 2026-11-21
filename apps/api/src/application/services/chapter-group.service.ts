@@ -423,7 +423,7 @@ export class ChapterGroupService {
       // must not lock an officer out of a name (the row of a major nobody has
       // any more is hidden and can't be deleted). A major gives way instead:
       // one named like another set isn't a mention target
-      // (`namesMajorsGiveWayTo` in chat-mention.service.ts).
+      // (`namesAutomaticGroupsGiveWayTo` in chat-mention.service.ts).
       ...groups
         .filter((g) => g.id !== selfId && g.kind !== 'major')
         .map((g) => g.name),
