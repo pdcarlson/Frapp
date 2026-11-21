@@ -134,6 +134,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "The GIF picker has a Favorites tab: star a GIF to keep it there, in every chapter you're in.",
       "Officers can now stop members from changing their own name in Chapter settings, and every name change shows in the chapter's audit log with the old and new name.",
       "A member's profile now leads with their three highest roles, and +N more opens the rest right where they are.",
+      "The chapter's record of officer changes moved out of chat into Logs in Chapter settings, where officers can filter it by kind, person and time.",
     ],
     web: [
       "Right-click a document for its actions.",
@@ -143,6 +144,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     phone: [
       "The app opens straight to your last chat instead of waiting on the logo, then catches up in the background.",
       "Menus are smaller and open right where you tap, instead of the system sheet that covered the screen.",
+      "Every chat box has a mic: talk, tap the check, and your words land in the box for you to read and send, tidied up in channels.",
     ],
   },
   {
