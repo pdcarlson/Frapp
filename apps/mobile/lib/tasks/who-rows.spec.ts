@@ -19,14 +19,29 @@ const directory = buildWhoDirectory({
     { user_id: "u-viewer", display_name: "Paul Carlson", role_ids: ["exec"] },
     { user_id: "u-sam", display_name: "Sam Lee", role_ids: ["recruit"] },
     { user_id: "u-alex", display_name: "Alex Kim", role_ids: ["recruit"] },
-    { user_id: "u-old", display_name: "Old Timer", role_ids: ["recruit"], is_alumni: true },
+    {
+      user_id: "u-old",
+      display_name: "Old Timer",
+      role_ids: ["recruit"],
+      is_alumni: true,
+    },
     { user_id: "u-blank", display_name: "  ", role_ids: [] },
   ],
   roles: [
-    { id: "everyone", name: "Member", system_key: "MEMBER", display_order: 0 },
+    {
+      id: "everyone",
+      name: "Everyone",
+      system_key: "EVERYONE",
+      display_order: 0,
+    },
     { id: "alumni", name: "Alumni", system_key: "ALUMNI", display_order: 1 },
     { id: "exec", name: "President", tier_id: "t-exec", display_order: 2 },
-    { id: "recruit", name: "Recruitment Committee", tier_id: "t-comm", display_order: 3 },
+    {
+      id: "recruit",
+      name: "Recruitment Committee",
+      tier_id: "t-comm",
+      display_order: 3,
+    },
     { id: "loose", name: "Historian", tier_id: null, display_order: 4 },
   ],
   tiers: [
@@ -34,9 +49,19 @@ const directory = buildWhoDirectory({
     { id: "t-exec", name: "Executive Board", position: 1 },
   ],
   groups: [
-    { id: "g-phil", name: "Philanthropy", kind: "manual", member_ids: ["u-sam", "u-old"] },
+    {
+      id: "g-phil",
+      name: "Philanthropy",
+      kind: "manual",
+      member_ids: ["u-sam", "u-old"],
+    },
     { id: "g-empty", name: "Formal planning", kind: "manual", member_ids: [] },
-    { id: "g-auto", name: "Class of 2030", kind: "class", member_ids: ["u-old"] },
+    {
+      id: "g-auto",
+      name: "Class of 2030",
+      kind: "class",
+      member_ids: ["u-old"],
+    },
   ],
   viewerUserId: "u-viewer",
 });
@@ -130,12 +155,21 @@ describe("whoRows: a tier picked whole (#5473)", () => {
   const tiered = buildWhoDirectory({
     members: [
       { user_id: "u-viewer", display_name: "Paul Carlson", role_ids: ["pres"] },
-      { user_id: "u-sam", display_name: "Sam Lee", role_ids: ["vp", "recruit"] },
+      {
+        user_id: "u-sam",
+        display_name: "Sam Lee",
+        role_ids: ["vp", "recruit"],
+      },
     ],
     roles: [
       { id: "pres", name: "President", tier_id: "t-exec", display_order: 1 },
       { id: "vp", name: "Vice President", tier_id: "t-exec", display_order: 2 },
-      { id: "recruit", name: "Recruitment Chair", tier_id: "t-comm", display_order: 3 },
+      {
+        id: "recruit",
+        name: "Recruitment Chair",
+        tier_id: "t-comm",
+        display_order: 3,
+      },
     ],
     tiers: [
       { id: "t-exec", name: "Exec board", position: 1 },
@@ -179,7 +213,7 @@ describe("whoRows: a tier picked whole (#5473)", () => {
     ]);
   });
 
-  it("finds no tier of one role, nor every tier for \"every\"", () => {
+  it('finds no tier of one role, nor every tier for "every"', () => {
     // Committees holds one role: its role row stands for it.
     expect(
       labels(whoRows(tiered, { ...base, tab: "people", search: "committees" })),
@@ -191,16 +225,18 @@ describe("whoRows: a tier picked whole (#5473)", () => {
 
   it("offers no tier where the payload can't carry one (a suggestion)", () => {
     const rows = whoRows(tiered, { ...base, tab: "sets", tiers: false });
-    expect(rows.some((row) => row.kind === "set" && row.set.kind === "tier")).toBe(
-      false,
-    );
+    expect(
+      rows.some((row) => row.kind === "set" && row.set.kind === "tier"),
+    ).toBe(false);
     expect(
       whoRows(tiered, { ...base, tab: "people", search: "exec", tiers: false }),
     ).toEqual([]);
   });
 
   it("keys the tier's row apart from its heading", () => {
-    const keys = whoRows(tiered, { ...base, tab: "sets" }).map((row) => row.key);
+    const keys = whoRows(tiered, { ...base, tab: "sets" }).map(
+      (row) => row.key,
+    );
     expect(new Set(keys).size).toBe(keys.length);
   });
 });
@@ -212,6 +248,9 @@ describe("whoOfLegacyAssignee", () => {
       kind: "each",
       target: { kind: "chapter" },
     });
-    expect(whoOfLegacyAssignee("u-sam")).toEqual({ kind: "person", userId: "u-sam" });
+    expect(whoOfLegacyAssignee("u-sam")).toEqual({
+      kind: "person",
+      userId: "u-sam",
+    });
   });
 });

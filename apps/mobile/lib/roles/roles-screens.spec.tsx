@@ -466,10 +466,10 @@ describe("Roles (#4074)", () => {
       role({
         id: "r-all",
         name: "Everyone",
-        tier_id: "t-bro",
+        tier_id: null,
         permissions: ["members:view"],
         is_system: true,
-        system_key: "MEMBER",
+        system_key: "EVERYONE",
       }),
     ];
     const text = screenText(render(<ChapterRolesScreen />));
