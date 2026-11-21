@@ -422,4 +422,12 @@ export class PatchChapterConfigDto {
   @IsOptional()
   @IsUUID()
   birthday_channel_id?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether members who finished joining may change their own name (#5801). False, the default, locks it: PATCH /v1/users/me refuses a changed display_name unless the member holds roles:manage here. Officers fix names through PATCH /v1/members/{id}/profile either way.',
+  })
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  members_can_change_name?: boolean;
 }

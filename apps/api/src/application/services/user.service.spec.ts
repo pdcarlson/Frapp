@@ -5,8 +5,11 @@ import {
   NotFoundException,
   BadRequestException,
   GoneException,
+  ForbiddenException,
 } from '@nestjs/common';
+import { NAME_LOCK_COPY } from '@repo/validation';
 import { UserService } from './user.service';
+import { DisplayNameLockService } from './display-name-lock.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
@@ -24,8 +27,13 @@ describe('UserService', () => {
   let service: UserService;
   let mockRepo: jest.Mocked<IUserRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
+  let nameLock: { isLocked: jest.Mock; recordRename: jest.Mock };
 
   beforeEach(async () => {
+    nameLock = {
+      isLocked: jest.fn().mockResolvedValue(false),
+      recordRename: jest.fn().mockResolvedValue(undefined),
+    };
     mockRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
@@ -59,6 +67,7 @@ describe('UserService', () => {
         ProfilePhotoUrlService,
         { provide: USER_REPOSITORY, useValue: mockRepo },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
+        { provide: DisplayNameLockService, useValue: nameLock },
       ],
     }).compile();
 
@@ -118,6 +127,58 @@ describe('UserService', () => {
       graduation_year: 2024,
     });
     expect(result).toEqual(updatedUser);
+    expect(nameLock.recordRename).toHaveBeenCalledWith(
+      'user-1',
+      'Old Name',
+      'Updated Name',
+    );
+  });
+
+  describe('name lock (#5801)', () => {
+    const existing = userFixture({ display_name: 'Ethan Smith' });
+
+    beforeEach(() => {
+      mockRepo.findById.mockResolvedValue(existing);
+      mockRepo.update.mockImplementation(async (_id, data) => ({
+        ...existing,
+        ...data,
+      }));
+    });
+
+    it('refuses a changed name while a chapter locks it, and writes nothing', async () => {
+      nameLock.isLocked.mockResolvedValue(true);
+      await expect(
+        service.update('user-1', { display_name: 'Paul' }),
+      ).rejects.toThrow(new ForbiddenException(NAME_LOCK_COPY.refusal));
+      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(nameLock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it('still saves the other fields, and the same name, while locked', async () => {
+      nameLock.isLocked.mockResolvedValue(true);
+      await service.update('user-1', {
+        display_name: 'Ethan Smith',
+        bio: 'Hi',
+      });
+      expect(mockRepo.update).toHaveBeenCalled();
+      expect(nameLock.isLocked).not.toHaveBeenCalled();
+      expect(nameLock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it('records an allowed rename', async () => {
+      await service.update('user-1', { display_name: 'Ethan S.' });
+      expect(nameLock.recordRename).toHaveBeenCalledWith(
+        'user-1',
+        'Ethan Smith',
+        'Ethan S.',
+      );
+    });
+
+    it('says on the own profile whether the name is locked', async () => {
+      nameLock.isLocked.mockResolvedValue(true);
+      const profile = await service.findProfile('user-1');
+      expect(profile.display_name_locked).toBe(true);
+    });
   });
 
   describe('birthday (#4959)', () => {
