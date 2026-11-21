@@ -320,3 +320,15 @@ export function cutChips<T>(
     toggle: { label: `+${hidden} more`, expands: true },
   };
 }
+
+/**
+ * The toggle's accessible name on both apps: its visible words first, so a
+ * voice-control "Tap Show less" still finds it, then which row it opens,
+ * since the Roles and Groups rows can each show one ("+5 more roles").
+ */
+export function chipToggleName(
+  toggle: { label: string },
+  noun: "roles" | "groups",
+): string {
+  return `${toggle.label} ${noun}`;
+}

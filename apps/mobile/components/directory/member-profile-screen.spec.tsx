@@ -325,6 +325,34 @@ describe("MemberProfile groups (#4076)", () => {
     expect(texts(tree)).not.toContain("Groups");
     act(() => tree.unmount());
   });
+
+  it("folds a long Groups row behind +N more, as the roles row does (#5783)", () => {
+    const names = ["G1", "G2", "G3", "G4", "G5", "G6"];
+    state.groups = names.map((name) => ({
+      id: `g-${name}`,
+      name,
+      kind: "manual",
+      color: null,
+      member_ids: [ADA],
+    }));
+    const tree = render(ADA);
+    const shown = () =>
+      texts(tree).filter(
+        (child) => typeof child === "string" && names.includes(child),
+      );
+    expect(shown()).toEqual(["G1", "G2", "G3"]);
+    const toggle = (label: string) =>
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === label &&
+          typeof node.props.onPress === "function",
+      )[0];
+    act(() => toggle("+3 more groups").props.onPress());
+    expect(shown()).toEqual(names);
+    act(() => toggle("Show less groups").props.onPress());
+    expect(shown()).toHaveLength(3);
+    act(() => tree.unmount());
+  });
 });
 
 describe("MemberProfile Message action (#2773)", () => {
@@ -1151,7 +1179,7 @@ describe("MemberProfile roles", () => {
     expect(more.props.accessibilityState).toEqual({ expanded: false });
     act(() => more.props.onPress());
     expect(shown()).toEqual(["A8", "A7", "A6", "A5", "A4", "A3", "A2", "A1"]);
-    act(() => editButton(tree, "Show fewer roles").props.onPress());
+    act(() => editButton(tree, "Show less roles").props.onPress());
     expect(shown()).toHaveLength(3);
     act(() => tree.unmount());
     PROFILES[ADA] = profile(ADA, "Ada");

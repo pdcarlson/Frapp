@@ -82,6 +82,7 @@ vi.mock("@repo/hooks", async () => {
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
   return {
     ASSIGN_COPY: actual.ASSIGN_COPY,
+    chipToggleName: actual.chipToggleName,
     cutChips: actual.cutChips,
     memberAssignmentSections: actual.memberAssignmentSections,
     memberGroupChips: actual.memberGroupChips,
@@ -179,7 +180,7 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
       "Corresponding Secretary",
       "Rush chair",
     ]);
-    const more = within(roles).getByRole("button", { name: "+3 more" });
+    const more = within(roles).getByRole("button", { name: "+3 more roles" });
     expect(more).toHaveAttribute("aria-expanded", "false");
     await user.click(more);
     expect(chipNames()).toEqual([
@@ -194,7 +195,7 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
     expect(
       within(roles).getByRole("button", { name: "Remove Tree" }),
     ).toBeInTheDocument();
-    const less = within(roles).getByRole("button", { name: "Show less" });
+    const less = within(roles).getByRole("button", { name: "Show less roles" });
     expect(less).toHaveAttribute("aria-expanded", "true");
     await user.click(less);
     expect(chipNames()).toHaveLength(3);

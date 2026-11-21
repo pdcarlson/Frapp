@@ -13,6 +13,7 @@ import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  chipToggleName,
   cutChips,
   dmChannelIdOf,
   memberGroupChips,
@@ -220,8 +221,8 @@ export function MemberProfile({
     [memberQuery.data],
   );
   const rolesData = useRolesData();
-  // Ordered as web's card orders them (`memberRoleChips`): by tier, then the
-  // role's own order, the Everyone role left out.
+  // Ordered as web's card orders them (`memberRoleChips`): by rank
+  // (`compareRolesByRank`), the Everyone role left out.
   const roleChips = useMemo(
     () =>
       memberRoleChips({
@@ -821,11 +822,7 @@ function FoldedChips({
       {cut.toggle ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={
-            cut.toggle.expands
-              ? `${cut.toggle.label} ${noun}`
-              : `Show fewer ${noun}`
-          }
+          accessibilityLabel={chipToggleName(cut.toggle, noun)}
           accessibilityState={{ expanded }}
           hitSlop={8}
           onPress={() => setExpanded(cut.toggle?.expands ?? false)}

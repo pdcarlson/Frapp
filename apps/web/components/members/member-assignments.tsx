@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, Loader2, Plus, X } from "lucide-react";
 import {
   ASSIGN_COPY,
+  chipToggleName,
   cutChips,
   memberAssignmentSections,
   memberGroupChips,
@@ -290,7 +291,7 @@ function ChipRow({
   onRemove,
   add,
 }: {
-  title: string;
+  title: "Roles" | "Groups";
   chips: AssignmentChip[];
   empty: string;
   compact: boolean;
@@ -304,6 +305,7 @@ function ChipRow({
   // same cut as the phone's). Opened, every chip the viewer may take away
   // shows its x, so editing still reaches the whole list.
   const [expanded, setExpanded] = useState(false);
+  const noun = title === "Roles" ? "roles" : "groups";
   if (compact && chips.length === 0 && !add) return null;
   const cut = cutChips(chips, expanded);
   return (
@@ -370,6 +372,7 @@ function ChipRow({
               type="button"
               aria-expanded={expanded}
               aria-controls={listId}
+              aria-label={chipToggleName(cut.toggle, noun)}
               onClick={() => setExpanded(cut.toggle?.expands ?? false)}
               className={cn(
                 "inline-flex items-center rounded-full px-2 py-1 text-caption font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground",
