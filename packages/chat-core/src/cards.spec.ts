@@ -418,6 +418,31 @@ describe("auditLineText", () => {
   it("has no detail when the change touched no field", () => {
     expect(auditLineText(audit("member_removed", {})).detail).toBe(null);
   });
+
+  it("reads a rename as the old and new names (#5801)", () => {
+    expect(
+      auditLineText(
+        audit("member_renamed", {
+          display_name: { from: "Ethan Smith", to: "Paul" },
+        }),
+      ),
+    ).toEqual({ phrase: "changed their name", detail: "Ethan Smith to Paul" });
+    expect(
+      auditLineText(
+        audit("member_profile_corrected", {
+          display_name: { from: "Paul", to: "Ethan Smith" },
+          graduation_year: { from: null, to: 2027 },
+        }),
+      ).detail,
+    ).toBe("Paul to Ethan Smith, graduation year");
+  });
+
+  it("falls back to the field when a name diff isn't two names", () => {
+    expect(
+      auditLineText(audit("member_renamed", { display_name: { to: "Paul" } }))
+        .detail,
+    ).toBe("display name");
+  });
 });
 
 describe("isAuditLine", () => {

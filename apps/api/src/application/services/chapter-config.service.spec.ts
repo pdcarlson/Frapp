@@ -1070,6 +1070,32 @@ describe('ChapterConfigService — analytics opt-out', () => {
   });
 });
 
+describe('ChapterConfigService — members can change their name (#5801)', () => {
+  it('reads as locked unless the chapter turned renaming on', async () => {
+    const service = await buildService(makeRepos([]));
+    const config = await service.getConfig(CHAPTER_ID);
+    expect(config.members_can_change_name).toBe(false);
+  });
+
+  it('saves the switch and audits it', async () => {
+    const repos = makeRepos([]);
+    const service = await buildService(repos);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      members_can_change_name: true,
+    });
+
+    expect(repos.chapterUpdate).toHaveBeenCalledWith(CHAPTER_ID, {
+      members_can_change_name: true,
+    });
+    const auditRow = mockAuditLog.record.mock.calls[0][0];
+    expect((auditRow.diff as AuditDiff).members_can_change_name).toEqual({
+      from: false,
+      to: true,
+    });
+  });
+});
+
 describe('ChapterConfigService — service hours', () => {
   describe('getConfig', () => {
     it('falls back to the 60 min/point default when the chapter has no row', async () => {

@@ -37,6 +37,9 @@ const h = vi.hoisted(() => ({
   aiSettings: null as Record<string, unknown> | null,
   updateAi: vi.fn(),
   aiSaving: false,
+  // Chapter config (#5801): whether members may rename themselves.
+  config: { members_can_change_name: false } as Record<string, unknown>,
+  patchConfig: vi.fn(),
 }));
 
 vi.mock("react-native", async () => {
@@ -79,6 +82,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useUpdateRoleTier: () => ({ mutateAsync: h.updateTier, isPending: false }),
     useAiChapterSettings: (options?: { enabled?: boolean }) =>
       ok(options?.enabled === false ? undefined : h.aiSettings),
+    useOrgConfig: (options?: { enabled?: boolean }) =>
+      ok(options?.enabled === false ? undefined : h.config),
+    usePatchOrgConfig: () => ({ mutate: h.patchConfig, isPending: false }),
     useUpdateAiChapterSettings: () => ({
       mutate: h.updateAi,
       isPending: h.aiSaving,
@@ -263,6 +269,38 @@ describe("Chapter settings (#4074)", () => {
     );
     expect(text).toContain("Roles");
     expect(text).not.toContain("Set by an officer");
+  });
+
+  it("lets an officer with chapter-config:manage turn member renames on (#5801)", () => {
+    h.patchConfig.mockClear();
+    h.permissions = ["*"];
+    const tree = render(<ChapterSettingsScreen />);
+    expect(screenText(tree)).toContain(
+      "Members can change their own name\nWhen off, officers who manage roles change names.",
+    );
+    const toggle = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Members can change their own name" &&
+        typeof node.props.onValueChange === "function",
+    );
+    expect(toggle.props.value).toBe(false);
+    act(() => toggle.props.onValueChange(true));
+    expect(h.patchConfig).toHaveBeenCalledWith(
+      { members_can_change_name: true },
+      expect.anything(),
+    );
+  });
+
+  it("shows the member-names switch read-only to a viewer without :manage (#5801)", () => {
+    h.patchConfig.mockClear();
+    h.permissions = ["chapter-config:view"];
+    const tree = render(<ChapterSettingsScreen />);
+    const toggle = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Members can change their own name" &&
+        typeof node.props.onValueChange === "function",
+    );
+    expect(toggle.props.disabled).toBe(true);
   });
 
   it("opens the accent and background sheets for an editor", () => {

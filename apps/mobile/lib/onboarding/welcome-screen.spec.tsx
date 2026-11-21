@@ -517,6 +517,27 @@ describe("s03 welcome, the name screen", () => {
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
+  it("shows a locked name read-only and moves on without sending it (#5801)", async () => {
+    currentUser = {
+      ...COMPLETE_USER,
+      display_name: "Member",
+      display_name_locked: true,
+    };
+    const { root } = await render({ passYou: false });
+
+    expect(field(root)?.props.value).toBe("Member");
+    expect(field(root)?.props.editable).toBe(false);
+    expect(
+      texts(root).some((t) => t.includes("Your chapter's officers set names.")),
+    ).toBe(true);
+    await press(button(root, "Go to chat"));
+
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(completeOnboarding).toHaveBeenCalledWith({
+      has_completed_onboarding: true,
+    });
+  });
+
   it("stays, with the reason, when the name can't be saved", async () => {
     currentUser = { ...COMPLETE_USER, display_name: "" };
     updateUser.mockRejectedValueOnce(new Error("offline"));

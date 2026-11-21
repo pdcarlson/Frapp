@@ -369,6 +369,24 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     requires: CONFIG,
     web: { page: "org", anchor: "birthday-channel" },
   },
+  {
+    id: "member-names",
+    label: "Members can change their own name",
+    area: "chapter",
+    section: "Chapter",
+    keywords: [
+      "name",
+      "names",
+      "rename",
+      "display name",
+      "nickname",
+      "impersonate",
+      "lock names",
+    ],
+    requires: CONFIG,
+    web: { page: "org", anchor: "settings-member-names" },
+    phone: { screen: "/chapter-settings", anchor: "member-names" },
+  },
 
   // ---- Semester, Privacy, AI, Plan and billing --------------------------
   {

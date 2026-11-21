@@ -81,4 +81,11 @@ export interface Chapter {
    * none, the default. A deleted channel clears it (`on delete set null`).
    */
   birthday_channel_id?: string | null;
+  /**
+   * Whether settled members may change their own name (#5801). False, the
+   * default, locks it for a member of this chapter alone; officers holding
+   * `roles:manage` still can.
+   * `spec/behavior/members.md` § Profiles.
+   */
+  members_can_change_name?: boolean;
 }
