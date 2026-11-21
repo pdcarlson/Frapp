@@ -18,6 +18,8 @@ import {
   dmChannelIdOf,
   memberGroupChips,
   memberRoleChips,
+  NO_BASE_ROLE_LABEL,
+  needsBaseRole,
   useBlockedUserIds,
   useGetOrCreateDm,
   useGroups,
@@ -253,6 +255,8 @@ export function MemberProfile({
   // The member's pledge class and order number (#3939): each drawn only when
   // set, except to an officer who sets them here (the same `roles:manage`).
   const canEditClass = canEditRoles && !!detail?.memberId;
+  const noBaseRole =
+    canEditRoles && !!detail && needsBaseRole(rolesData.roles, detail.roleIds);
   const classRows = usePledgeClassRows(detail, { canEdit: canEditClass });
   const classSheetRef = useRef<BottomSheetModal>(null);
   const [classSession, setClassSession] = useState<MemberClassSession | null>(
@@ -543,6 +547,16 @@ export function MemberProfile({
               <Text style={styles.meta}>Loading roles</Text>
             ) : (
               <View style={styles.chips}>
+                {/* No base role: they see only what the whole chapter may
+                    (Paul, 2026-11-21), said as web's card says it, to
+                    whoever can give one. */}
+                {noBaseRole ? (
+                  <View style={[styles.chip, styles.addChip]}>
+                    <Text style={[styles.chipText, styles.addChipText]}>
+                      {NO_BASE_ROLE_LABEL}
+                    </Text>
+                  </View>
+                ) : null}
                 <FoldedChips chips={roleChips} noun="roles" />
                 {canOpenAssignments ? (
                   <AddChip
@@ -551,7 +565,7 @@ export function MemberProfile({
                     onPress={() => openAssignments("roles")}
                   />
                 ) : roleChips.length === 0 ? (
-                  // Everyone draws no chip (#4191): as Discord says it.
+                  // Everyone draws no chip: as Discord says it.
                   <Text style={styles.meta}>No roles</Text>
                 ) : null}
               </View>

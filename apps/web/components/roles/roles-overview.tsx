@@ -15,6 +15,7 @@ import {
 } from "@repo/hooks";
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import {
+  isActiveRole,
   isEveryoneRole,
   NEW_PICKABLE_ROLE_COPY,
   ROLE_NAME_MAX_LENGTH,
@@ -277,8 +278,8 @@ function TierList({
     const editable = canManage && reachesRole(reach, role, tiers);
     // A Non-chapter business role can't sit in a tier (#4958): the API
     // refuses the move until it's unmarked on its role page, so the menu
-    // doesn't offer one.
-    const movable = !role.self_assignable;
+    // doesn't offer one. Actives (#5802) stays in its tier, as the API holds it.
+    const movable = !role.self_assignable && !isActiveRole(role);
     const entries: RowMenuEntry[] = [
       ...(movable
         ? [{ type: "label", key: "move-label", label: "Move to" } as const]
@@ -292,7 +293,7 @@ function TierList({
           disabled: !editable || !reachesTier(reach, tier),
           onSelect: () => moveRole(role, tier.id),
         })),
-      ...(role.tier_id === null
+      ...(role.tier_id === null || !movable
         ? []
         : [
             {

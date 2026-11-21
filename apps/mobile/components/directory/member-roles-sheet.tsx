@@ -28,7 +28,6 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import {
-  removesBaseAccess,
   rolesSaveFailedBody,
   toggleRole,
   type RoleOption,
@@ -310,28 +309,7 @@ export const MemberRolesSheet = forwardRef<
   function onToggle(option: RoleOption) {
     if (!session || option.locked || !session.canManageRoles) return;
     const current = draftRef.current;
-    const next = toggleRole(current, option.id);
-    if (removesBaseAccess(current, next, options)) {
-      Alert.alert(
-        ASSIGN_COPY.accessTitle(session.name),
-        ASSIGN_COPY.accessBody(session.name),
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: ASSIGN_COPY.accessConfirm(option.name),
-            style: "destructive",
-            // A removal, never a toggle: a save that failed while the alert
-            // was up may have put the list back, and the button must not
-            // then add the role.
-            onPress: () => {
-              if (!draftRef.current.includes(option.id)) return;
-              apply(draftRef.current.filter((id) => id !== option.id));
-            },
-          },
-        ],
-      );
-      return;
-    }
+    const next = toggleRole(current, option.id, options);
     apply(next);
   }
 
@@ -416,7 +394,7 @@ export const MemberRolesSheet = forwardRef<
           const dim = row.disabledReason !== null;
           return (
             <Pressable
-              accessibilityRole="checkbox"
+              accessibilityRole={row.exclusive ? "radio" : "checkbox"}
               accessibilityLabel={row.name}
               accessibilityHint={row.disabledReason ?? undefined}
               accessibilityState={{
@@ -458,7 +436,36 @@ export const MemberRolesSheet = forwardRef<
                 accessibilityElementsHidden
                 importantForAccessibility="no-hide-descendants"
               >
-                {checked ? (
+                {row.exclusive ? (
+                  // A base role is one pick of three (#5802): a radio, as
+                  // web's card draws it.
+                  <View
+                    testID={`radio-${row.id}`}
+                    style={[
+                      styles.radio,
+                      checked
+                        ? {
+                            borderColor: dim
+                              ? tokens.color.text.muted
+                              : brand.accent,
+                          }
+                        : null,
+                    ]}
+                  >
+                    {checked ? (
+                      <View
+                        style={[
+                          styles.radioDot,
+                          {
+                            backgroundColor: dim
+                              ? tokens.color.text.muted
+                              : brand.accent,
+                          },
+                        ]}
+                      />
+                    ) : null}
+                  </View>
+                ) : checked ? (
                   <CheckGlyph
                     color={dim ? tokens.color.text.muted : brand.accent}
                     size={16}
@@ -539,6 +546,20 @@ function createStyles(tokens: SignetTokens, accent: string) {
     check: {
       width: 16,
       alignItems: "center",
+    },
+    radio: {
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      borderWidth: 1.5,
+      borderColor: tokens.color.border.input,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    radioDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
     },
   });
 }

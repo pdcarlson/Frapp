@@ -374,7 +374,7 @@ describe("InviteMemberDialog default role", () => {
     mockRoles.mockReturnValue({
       data: [
         { id: "role-alumni", name: "Alumni", system_key: "ALUMNI" },
-        { id: "role-member", name: "Brother", system_key: "MEMBER" },
+        { id: "role-member", name: "Brother", system_key: "EVERYONE" },
         { id: "role-pledge", name: "New Member", system_key: "NEW_MEMBER" },
       ],
       isError: false,

@@ -226,14 +226,10 @@ describe("MemberRolesSheet", () => {
     act(() => tree.unmount());
   });
 
-  it("asks before taking away the last role with basic access", async () => {
+  it("takes a role away on a tap, without asking first", async () => {
     const tree = render();
     await tap(tree, "r-member");
-    expect(state.mutateAsync).not.toHaveBeenCalled();
-    const [title, , buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
-    expect(title).toBe("Take away Ada's access?");
-    const remove = buttons!.find((b) => b.style === "destructive")!;
-    await act(async () => remove.onPress!());
+    expect(Alert.alert).not.toHaveBeenCalled();
     expect(state.mutateAsync).toHaveBeenCalledWith({
       id: "m-ada",
       role_ids: ["r-brothers"],
@@ -355,23 +351,6 @@ describe("MemberRolesSheet", () => {
       id: "m-ada",
       role_ids: ["r-member", "r-cabinet"],
     });
-    act(() => tree.unmount());
-  });
-
-  it("confirming Remove after a failed save put the role back never adds it", async () => {
-    let fail!: (e: unknown) => void;
-    state.mutateAsync.mockImplementationOnce(
-      () => new Promise<void>((_, reject) => (fail = reject)),
-    );
-    const tree = render({ ...SESSION, heldIds: ["r-brothers"] });
-    await tap(tree, "r-member");
-    await tap(tree, "r-member");
-    const [, , buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
-    const remove = buttons!.find((b) => b.style === "destructive")!;
-    await act(async () => fail(new Error("offline")));
-    await act(async () => remove.onPress!());
-    expect(state.mutateAsync).toHaveBeenCalledTimes(1);
-    expect(row(tree, "r-member").props.accessibilityState.checked).toBe(false);
     act(() => tree.unmount());
   });
 

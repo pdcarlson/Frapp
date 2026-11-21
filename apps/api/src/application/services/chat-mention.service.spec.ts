@@ -53,7 +53,7 @@ const members = [
 
 const roles = [
   role('member', 'Everyone', {
-    system_key: 'MEMBER',
+    system_key: 'EVERYONE',
     display_order: 5,
     mentionable: false,
   }),
@@ -372,6 +372,23 @@ describe('mentionRoleViews', () => {
         member_ids: ['u1', 'u2', 'u3', 'u4'],
       });
       // A chapter that opened @everyone opens it too.
+      expect(members_(true)?.open_to_all).toBe(true);
+    });
+
+    it('makes a tier holding the Actives role follow its switch (#5802)', () => {
+      const members_ = (activesOn: boolean) =>
+        mentionRoleViews(
+          tiered.map((r) =>
+            r.id === 'brothers'
+              ? { ...r, system_key: 'MEMBER', mentionable: activesOn }
+              : r,
+          ),
+          members,
+          { tiers: [tier('t-members', 'Members', 3)] },
+        ).find((view) => view.kind === 'tier');
+
+      // The old Everyone row: @Members stays officers-only while it is.
+      expect(members_(false)?.open_to_all).toBe(false);
       expect(members_(true)?.open_to_all).toBe(true);
     });
 

@@ -739,12 +739,12 @@ describe('MemberService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    describe('the Everyone role (#4191)', () => {
+    describe('the Everyone role and the base roles (2026-11-21)', () => {
       const everyone = roleFixture({
         id: 'role-everyone',
         chapter_id: 'chapter-1',
         name: 'Everyone',
-        system_key: 'MEMBER',
+        system_key: 'EVERYONE',
         permissions: ['members:view'],
         is_system: true,
         display_order: 5,
@@ -758,7 +758,16 @@ describe('MemberService', () => {
         is_system: true,
         display_order: 7,
       });
-      const roles = [presidentRole, everyone, alumni, customRole];
+      const actives = roleFixture({
+        id: 'role-actives',
+        chapter_id: 'chapter-1',
+        name: 'Actives',
+        system_key: 'MEMBER',
+        permissions: ['members:view'],
+        is_system: true,
+        display_order: 6,
+      });
+      const roles = [presidentRole, everyone, actives, alumni, customRole];
       const save = async (held: string[], requested: string[]) => {
         mockRepo.findById.mockResolvedValue({
           ...existingMember,
@@ -785,15 +794,29 @@ describe('MemberService', () => {
         });
       });
 
-      it('takes it away from a member made Alumni', async () => {
+      it('swaps the base role: an active made Alumni stops being an active', async () => {
         await expect(
-          save(['role-everyone'], ['role-everyone', 'role-alumni']),
-        ).resolves.toEqual({ role_ids: ['role-alumni'] });
+          save(
+            ['role-actives', 'role-everyone'],
+            ['role-actives', 'role-everyone', 'role-alumni'],
+          ),
+        ).resolves.toEqual({ role_ids: ['role-alumni', 'role-everyone'] });
       });
 
-      it('gives it to a member left with no role granting access', async () => {
+      it('leaves a member with no base role on Everyone alone', async () => {
         await expect(save(['role-2'], [])).resolves.toEqual({
           role_ids: ['role-everyone'],
+        });
+      });
+
+      it('refuses two base roles neither of which the save adds', async () => {
+        await expect(
+          save(
+            ['role-actives', 'role-alumni', 'role-everyone'],
+            ['role-actives', 'role-alumni'],
+          ),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({ code: 'role.base_conflict' }),
         });
       });
     });
@@ -976,7 +999,8 @@ describe('MemberService', () => {
         expect.any(String),
         'member-1',
         expect.any(Array),
-        ['role-president', 'role-president', 'role-1'],
+        // `rolesAfterSave` drops the duplicate.
+        ['role-president', 'role-1'],
       );
     });
 

@@ -1,5 +1,7 @@
 import {
+  BASE_ROLE_SYSTEM_KEYS,
   compareRolesByRank,
+  isBaseRole,
   isEveryoneRole,
   roleColorOrNull,
   tierPositionsOf,
@@ -46,14 +48,9 @@ export const ASSIGN_CAPTIONS = {
 
 /**
  * The words both apps use when a role or group change from a member goes
- * wrong or needs a yes, so the web card and the phone sheet say the same.
- * Each tap removes one role, so the confirm names it.
+ * wrong, so the web card and the phone sheet say the same.
  */
 export const ASSIGN_COPY = {
-  accessTitle: (name: string) => `Take away ${name}'s access?`,
-  accessBody: (name: string) =>
-    `Without this role, ${name} can't open chat, the member list or events.`,
-  accessConfirm: (roleName: string) => `Remove ${roleName}`,
   rolesFailed: "Couldn't save roles",
   groupAddFailed: "Couldn't add to that group",
   groupRemoveFailed: "Couldn't take out of that group",
@@ -77,12 +74,18 @@ export type AssignmentRow = {
   color: string | null;
   /** Whether the member has it now. */
   held: boolean;
+  /**
+   * A base role (New Member, Actives, Alumni): one of a set the member holds
+   * at most one of, so it is drawn as a radio, and picking it takes the
+   * others away (`rolesAfterSave`).
+   */
+  exclusive?: boolean;
   /** Why it can't be ticked, or `null` when it can. */
   disabledReason: string | null;
 };
 
 export type AssignmentSection = {
-  /** Stable key: a tier id, `outside`, or `groups`. */
+  /** Stable key: `base`, a tier id, `outside`, or `groups`. */
   key: string;
   title: string;
   rows: AssignmentRow[];
@@ -135,10 +138,12 @@ function memberReachable(inputs: {
 }
 
 /**
- * The "+ Add" list for one member: a section per tier (highest first) with
- * its roles, then roles outside the tiers, then the chapter's own groups.
- * The Everyone role is never a row (#4191). Sections a search empties are
- * left out.
+ * The "+ Add" list for one member: their base role first (New Member,
+ * Actives, Alumni, one of which an officer gives each member; Paul,
+ * 2026-11-21), then a section per tier (highest first) with its other roles,
+ * then roles outside the tiers, then the chapter's own groups. The Everyone
+ * role, which every member holds, is never a row. Sections a search empties
+ * are left out.
  */
 export function memberAssignmentSections(
   inputs: AssignmentInputs,
@@ -153,7 +158,7 @@ export function memberAssignmentSections(
   const byOrder = (a: TieredRole, b: TieredRole) =>
     a.display_order - b.display_order || a.name.localeCompare(b.name);
   const assignable = inputs.roles.filter(
-    (role) => !isEveryoneRole(role) && matches(role.name),
+    (role) => !isEveryoneRole(role) && !isBaseRole(role) && matches(role.name),
   );
   const roleRow = (role: TieredRole): AssignmentRow => ({
     kind: "role",
@@ -165,6 +170,12 @@ export function memberAssignmentSections(
   });
 
   const sections: AssignmentSection[] = [];
+  const baseRows = baseRolesInOrder(inputs.roles)
+    .filter((role) => matches(role.name))
+    .map((role) => ({ ...roleRow(role), exclusive: true }));
+  if (baseRows.length > 0) {
+    sections.push({ key: "base", title: BASE_ROLE_HEADING, rows: baseRows });
+  }
   const tierIds = new Set(inputs.tiers.map((tier) => tier.id));
   for (const tier of [...inputs.tiers].sort(
     (a, b) => a.position - b.position,
@@ -202,6 +213,35 @@ export function memberAssignmentSections(
     sections.push({ key: "groups", title: "Groups", rows: groupRows });
   }
   return sections;
+}
+
+/** The heading of the base role section, the same on both apps. */
+export const BASE_ROLE_HEADING = "Base role";
+
+/** What a member with no base role shows where it would be. */
+export const NO_BASE_ROLE_LABEL = "No base role";
+
+/** The chapter's base roles in their one order: New Member, Actives, Alumni. */
+export function baseRolesInOrder<R extends { system_key?: string | null }>(
+  roles: readonly R[],
+): R[] {
+  const order = (role: R) =>
+    (BASE_ROLE_SYSTEM_KEYS as readonly unknown[]).indexOf(role.system_key);
+  return roles.filter(isBaseRole).sort((a, b) => order(a) - order(b));
+}
+
+/**
+ * Whether a member holds none of the chapter's base roles, so they see only
+ * what the whole chapter may. False for a chapter with no base roles at all.
+ */
+export function needsBaseRole(
+  roles: readonly { id: string; system_key?: string | null }[],
+  heldRoleIds: readonly string[],
+): boolean {
+  const base = roles.filter(isBaseRole);
+  if (base.length === 0) return false;
+  const held = new Set(heldRoleIds);
+  return !base.some((role) => held.has(role.id));
 }
 
 /** A chip on the profile: a role or group the member has. */

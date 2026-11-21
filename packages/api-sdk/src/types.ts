@@ -7248,7 +7248,7 @@ export interface components {
             analytics_opt_out?: boolean;
             /**
              * Format: uuid
-             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise).
+             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role, the floor every member holds (#5802). Must belong to this chapter (400 otherwise).
              */
             default_invite_role_id?: string | null;
             /**
@@ -11285,7 +11285,7 @@ export interface components {
              */
             end_date: string;
             /**
-             * @description Also bulk-promote every New Member in the chapter to the Everyone role (once Member), in the same transaction as the archive. Members keep all their other roles. Defaults to false.
+             * @description Also bulk-promote every New Member in the chapter to the Actives role, in the same transaction as the archive. Members keep all their other roles. Defaults to false.
              * @default false
              */
             promote_new_members: boolean;

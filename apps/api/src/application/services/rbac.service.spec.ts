@@ -268,7 +268,6 @@ describe('RbacService', () => {
     mockRoleRepo.update.mockResolvedValue({ ...role, name: 'Renamed' });
     mockRoleRepo.delete.mockResolvedValue({
       strippedMemberIds: [],
-      givenEveryoneMemberIds: [],
     });
     mockChapterAuditLogService.record.mockRejectedValue(
       new Error('audit insert failed'),
@@ -521,10 +520,17 @@ describe('RbacService', () => {
     expect(mockRoleRepo.update).not.toHaveBeenCalled();
   });
 
-  describe('the Everyone role (#4191)', () => {
+  describe('the Everyone and Actives roles (2026-11-21)', () => {
     const everyone: Role = roleFixture({
       id: 'role-everyone',
       name: 'Everyone',
+      system_key: 'EVERYONE',
+      is_system: true,
+      tier_id: null,
+    });
+    const actives: Role = roleFixture({
+      id: 'role-actives',
+      name: 'Actives',
       system_key: 'MEMBER',
       is_system: true,
       tier_id: 'tier-3',
@@ -558,7 +564,7 @@ describe('RbacService', () => {
       });
     });
 
-    it('keeps its name and tier, and leaves the rest editable', async () => {
+    it('keeps Everyone named and outside the tiers', async () => {
       mockRoleRepo.findById.mockResolvedValue(everyone);
       await expect(
         service.update('role-everyone', 'ch-1', ACTOR, { name: 'Members' }),
@@ -566,17 +572,35 @@ describe('RbacService', () => {
         response: expect.objectContaining({ code: 'role.everyone_fixed' }),
       });
       await expect(
-        service.update('role-everyone', 'ch-1', ACTOR, { tier_id: null }),
+        service.update('role-everyone', 'ch-1', ACTOR, { tier_id: 'tier-3' }),
       ).rejects.toMatchObject({
         response: expect.objectContaining({ code: 'role.everyone_fixed' }),
       });
       expect(mockRoleRepo.update).not.toHaveBeenCalled();
     });
 
-    // #4548: New Member and Alumni stay at or below Everyone, so neither
-    // moves into a tier above Everyone's; a move at or below it goes through.
+    it('lets a chapter rename Actives, but keeps it in its tier', async () => {
+      mockRoleRepo.findById.mockResolvedValue(actives);
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.update.mockResolvedValue({ ...actives, name: 'Brothers' });
+      await service.update('role-actives', 'ch-1', ACTOR, {
+        name: 'Brothers',
+      });
+      expect(mockRoleRepo.update).toHaveBeenCalledWith(
+        'role-actives',
+        expect.objectContaining({ name: 'Brothers' }),
+      );
+      await expect(
+        service.update('role-actives', 'ch-1', ACTOR, { tier_id: null }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'role.everyone_fixed' }),
+      });
+    });
+
+    // #4548: New Member and Alumni stay at or below Actives, so neither
+    // moves into a tier above Actives'; a move at or below it goes through.
     it.each(['NEW_MEMBER', 'ALUMNI'])(
-      'keeps the %s role out of tiers above Everyone',
+      'keeps the %s role out of tiers above Actives',
       async (key) => {
         const keyed = roleFixture({
           id: 'role-keyed',
@@ -595,7 +619,11 @@ describe('RbacService', () => {
           updated_at: '2026-11-13T00:00:00Z',
         });
         mockRoleRepo.findById.mockResolvedValue(keyed);
-        mockRoleRepo.findByChapter.mockResolvedValue([everyone, keyed]);
+        mockRoleRepo.findByChapter.mockResolvedValue([
+          everyone,
+          actives,
+          keyed,
+        ]);
         mockTierRepo.findByChapter.mockResolvedValue([
           tier('tier-2', 2),
           tier('tier-3', 3),
@@ -620,21 +648,12 @@ describe('RbacService', () => {
       },
     );
 
-    it('lets it take the name Everyone, and go into a tier from outside them', async () => {
-      // A row the previous API seeded as Member after the migration ran.
-      const stray: Role = { ...everyone, name: 'Member', tier_id: null };
+    it('lets Actives go into a tier from outside them', async () => {
+      const stray: Role = { ...actives, tier_id: null };
       mockRoleRepo.findById.mockResolvedValue(stray);
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
-      mockRoleRepo.update.mockResolvedValue({ ...stray, name: 'Everyone' });
-      await service.update('role-everyone', 'ch-1', ACTOR, {
-        name: 'Everyone',
-      });
-      expect(mockRoleRepo.update).toHaveBeenCalledWith(
-        'role-everyone',
-        expect.objectContaining({ name: 'Everyone' }),
-      );
+      mockRoleRepo.update.mockResolvedValue({ ...stray, tier_id: 'tier-3' });
       await expect(
-        service.update('role-everyone', 'ch-1', ACTOR, { tier_id: 'tier-3' }),
+        service.update('role-actives', 'ch-1', ACTOR, { tier_id: 'tier-3' }),
       ).resolves.not.toThrow();
     });
   });
@@ -661,7 +680,6 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.delete.mockResolvedValue({
       strippedMemberIds: [],
-      givenEveryoneMemberIds: [],
     });
 
     await service.delete('role-1', 'ch-1', ACTOR);
@@ -679,13 +697,13 @@ describe('RbacService', () => {
   });
 
   // #4547: the delete takes the role off its holders in the same
-  // transaction, and the audit row says who lost it and who got Everyone.
-  it('records who lost a deleted role and who was given Everyone', async () => {
+  // transaction, and the audit row says who lost it. Since #5802 nobody is
+  // given a role in its place.
+  it('records who lost a deleted role', async () => {
     const role: Role = roleFixture();
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.delete.mockResolvedValue({
       strippedMemberIds: ['m-1', 'm-2'],
-      givenEveryoneMemberIds: ['m-2'],
     });
 
     await service.delete('role-1', 'ch-1', ACTOR);
@@ -696,7 +714,6 @@ describe('RbacService', () => {
         diff: {
           role: { from: role, to: null },
           removed_from_member_ids: { from: ['m-1', 'm-2'], to: null },
-          given_everyone_member_ids: { from: null, to: ['m-2'] },
         },
       }),
     );
@@ -2539,7 +2556,7 @@ describe('RbacService', () => {
           id: 'r-everyone',
           chapter_id: 'ch-1',
           name: 'Everyone',
-          system_key: 'MEMBER',
+          system_key: 'EVERYONE',
           display_order: 5,
         }),
       ]);

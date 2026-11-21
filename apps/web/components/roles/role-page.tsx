@@ -5,6 +5,7 @@ import { ChevronLeft, Eye, Loader2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDeleteRole, useUpdateRole } from "@repo/hooks";
 import {
+  isActiveRole,
   isEveryoneRole,
   ROLE_NAME_MAX_LENGTH,
   roleColorOrNull,
@@ -176,6 +177,8 @@ function RoleBody({
   // The Everyone role (#4191): its permissions and @everyone switch are
   // edited here; its name and tier are fixed, as the API holds them.
   const everyone = isEveryoneRole(role);
+  // Actives (#5802) stays in its tier: presidency's claim walk stops there.
+  const tierFixed = everyone || isActiveRole(role);
   const wildcard = isWildcardRole(role);
   const editable = canManage && reachesRole(reach, role, tiers);
 
@@ -355,10 +358,9 @@ function RoleBody({
         </p>
         {everyone ? (
           <p className="max-w-2xl text-sm text-muted-foreground">
-            What members get when no role of theirs gives them access: whoever
-            joins with no role, and new members once they&apos;re made members.
-            It isn&apos;t offered in any list, and its name and {words.singular}{" "}
-            stay as they are.
+            Every member holds it, including someone who has just joined and has
+            no base role yet. It isn&apos;t offered in any list, and its name
+            and {words.singular} stay as they are.
           </p>
         ) : null}
       </header>
@@ -380,7 +382,7 @@ function RoleBody({
             <Select
               value={placement}
               onValueChange={setPlacement}
-              disabled={!editable || everyone}
+              disabled={!editable || tierFixed}
             >
               <SelectTrigger id="role-tier">
                 <SelectValue />

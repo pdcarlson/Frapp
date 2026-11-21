@@ -93,8 +93,8 @@ console.log("\n=== Functional: set_member_role_ids (20261113184311) ===");
       soloAfter,
     );
     check(
-      "and a member whose only role was deleted mid-save still holds Everyone",
-      same(soloAfter.ids, [R.everyone]),
+      "and a member whose only role was deleted mid-save is not handed Actives",
+      same(soloAfter.ids, []),
       soloAfter,
     );
 
@@ -151,8 +151,8 @@ console.log("\n=== Functional: set_member_role_ids (20261113184311) ===");
     );
 
     // The other order: the save commits first, then the role it gave is
-    // deleted. The delete strips it and, since nothing else the member holds
-    // grants access, gives Everyone.
+    // deleted. The delete strips it and, since 20261121020046 (#5802), gives
+    // nothing in its place: this fixture's `MEMBER` row is Actives.
     const TEMP = "a4830000-0000-4000-8000-0000000000e5";
     await db.exec(`
       insert into roles (id, chapter_id, name, is_system, display_order, permissions)
@@ -164,8 +164,8 @@ console.log("\n=== Functional: set_member_role_ids (20261113184311) ===");
     const first = await write(late.id, late.ids, [R.dj, TEMP]);
     await rows(`select delete_role($1::uuid, $2::uuid)`, [A, TEMP]);
     check(
-      "a save committed before a delete has the deleted id stripped, and Everyone given",
-      first.length === 1 && same((await member(U[4])).ids, [R.dj, R.everyone]),
+      "a save committed before a delete has the deleted id stripped, and nothing given",
+      first.length === 1 && same((await member(U[4])).ids, [R.dj]),
       { first, after: await member(U[4]) },
     );
 

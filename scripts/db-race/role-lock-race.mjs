@@ -25,7 +25,9 @@
 //   1. delete held, save gives the role to a member who lacks it: the save
 //      waits, then writes nothing; the member never holds the role.
 //   2. save held having given the role, delete called: the delete waits, then
-//      strips it and gives Everyone, since nothing else grants access.
+//      strips it and gives nothing in its place (since 20261121020046, #5802;
+//      until then it gave the old Everyone row, the `MEMBER` key this seed
+//      still uses, which is Actives now).
 //   3a. delete held, save keeps the role for a member who holds it: the save
 //      waits, then writes nothing (the delete moved the row).
 //   3b. save held keeping the role, delete called: the delete waits, then
@@ -268,7 +270,7 @@ async function case1(fn = "set_member_role_ids") {
 async function case2() {
   const s = await seed(["chair"]);
   return overlap(
-    "2. save giving the role held; delete waits, then strips it and gives Everyone",
+    "2. save giving the role held; delete waits, then strips it and gives nothing",
     (c) => save(c, "set_member_role_ids", s, s.held, [s.role.target]),
     (c) => del(c, s),
     async (saved, deleted) => {
@@ -278,15 +280,11 @@ async function case2() {
       expect(
         p,
         same(result?.stripped_member_ids, [s.member]) &&
-          same(result?.given_everyone_member_ids, [s.member]),
+          same(result?.given_everyone_member_ids, []),
         `delete returned ${JSON.stringify(result)}`,
       );
       const ids = await roleIdsOf(s.member);
-      expect(
-        p,
-        same(ids, [s.role.everyone]),
-        `member holds ${JSON.stringify(ids)}`,
-      );
+      expect(p, same(ids, []), `member holds ${JSON.stringify(ids)}`);
       return p;
     },
   );
@@ -334,7 +332,7 @@ async function case3b() {
       const ids = await roleIdsOf(s.member);
       expect(
         p,
-        same(ids, [s.role.photo, s.role.everyone]),
+        same(ids, [s.role.photo]),
         `member holds ${JSON.stringify(ids)}`,
       );
       return p;

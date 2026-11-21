@@ -145,9 +145,9 @@ function chapter() {
     ),
     role("brother", "Brothers", "t3", MEMBERS.permissions),
     role("alum", "Alumni", null, []),
-    role("member", "Member", "t3", ["members:view", "chat:send"], {
+    role("everyone", "Everyone", null, ["members:view"], {
       is_system: true,
-      system_key: "MEMBER",
+      system_key: "EVERYONE",
     }),
     role("cabinet", "Cabinet", null, ["channels:read:cabinet"]),
   ];
@@ -671,14 +671,13 @@ describe("a role's page", () => {
     expect(h.push).toHaveBeenCalledWith("/chat");
   });
 
-  it("previews a role that opens nothing on its own with Member beside it, as a join would", async () => {
+  it("previews a role with what Everyone holds beside it, as every member has it", async () => {
     const user = userEvent.setup();
     render(<RolePage roleId="cabinet" onBack={vi.fn()} onOpenTier={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "View as Cabinet" }));
     expect(useRolePreviewStore.getState().preview?.permissions).toEqual([
       "channels:read:cabinet",
       "members:view",
-      "chat:send",
     ]);
   });
 

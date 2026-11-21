@@ -41,7 +41,7 @@ import type {
 /**
  * #422: `role` is optional on all three create routes. Omitting it falls back
  * to the chapter's configured `default_invite_role_id`, then to the seeded
- * Everyone role (once Member, #4191), so a caller that never learned about
+ * Everyone role (the floor every member holds, #5802), so a caller that never learned about
  * roles still issues a sensible invite, and a chapter that set a default does
  * not have to restate it on every call. Naming a role still wins, so no existing caller changes
  * behaviour.

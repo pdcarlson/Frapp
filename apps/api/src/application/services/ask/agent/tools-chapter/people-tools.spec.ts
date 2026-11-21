@@ -10,7 +10,7 @@ import { RosterAgentTool } from './roster.tool';
 const context = askerContext();
 
 const roles = [
-  { id: 'r-everyone', name: 'Everyone', system_key: 'MEMBER' },
+  { id: 'r-everyone', name: 'Everyone', system_key: 'EVERYONE' },
   { id: 'r-treasurer', name: 'Treasurer', system_key: 'TREASURER' },
   { id: 'r-social', name: 'Social Chair', system_key: null },
   { id: 'r-rush', name: 'Rush Chair', system_key: null },

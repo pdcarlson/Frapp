@@ -10,7 +10,7 @@ const roles = [
   {
     id: "everyone",
     name: "Member",
-    system_key: "MEMBER",
+    system_key: "EVERYONE",
     tier_id: "t-all",
     display_order: 0,
   },

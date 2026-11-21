@@ -320,7 +320,7 @@ export class ChapterService {
         is_system: roleDef.is_system,
         display_order: roleDef.display_order,
         color: roleDef.color ?? null,
-        // Every seeded role is mentionable but Everyone (#4191).
+        // Every seeded role is mentionable but Everyone.
         mentionable: 'mentionable' in roleDef ? roleDef.mentionable : true,
       };
     });
@@ -347,10 +347,15 @@ export class ChapterService {
         'President role not found during chapter creation',
       );
     }
+    // The founder is an active too (#5802), so their profile carries a base
+    // role; the database appends Everyone.
+    const activesRole = roles.find(
+      (r) => r.system_key === SystemRoleKeys.MEMBER,
+    );
     await this.memberRepo.create({
       user_id: userId,
       chapter_id: chapter.id,
-      role_ids: presidentRole ? [presidentRole.id] : [],
+      role_ids: [presidentRole.id, ...(activesRole ? [activesRole.id] : [])],
       has_completed_onboarding: true,
     });
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  baseRoleIds,
+  isBaseRole,
   isEveryoneRole,
   mentionRoleHint,
   reservedMentionName,
@@ -11,7 +13,8 @@ import {
 
 const roles: EveryoneSaveRole[] = [
   { id: "president", system_key: "PRESIDENT", permissions: ["*"] },
-  { id: "everyone", system_key: "MEMBER", permissions: ["members:view"] },
+  { id: "everyone", system_key: "EVERYONE", permissions: ["members:view"] },
+  { id: "actives", system_key: "MEMBER", permissions: ["members:view"] },
   { id: "new", system_key: "NEW_MEMBER", permissions: ["members:view"] },
   { id: "alumni", system_key: "ALUMNI", permissions: ["members:view"] },
   {
@@ -22,10 +25,12 @@ const roles: EveryoneSaveRole[] = [
   { id: "pc-2026", system_key: null, permissions: [] },
 ];
 
-describe("isEveryoneRole (#4191)", () => {
+describe("isEveryoneRole", () => {
   it("reads the role by its key, never its name", () => {
-    expect(isEveryoneRole({ system_key: "MEMBER", name: "Actives" })).toBe(
-      true,
+    expect(isEveryoneRole({ system_key: "EVERYONE", name: "All" })).toBe(true);
+    // The Actives role was the Everyone role until 2026-11-21.
+    expect(isEveryoneRole({ system_key: "MEMBER", name: "Everyone" })).toBe(
+      false,
     );
     expect(isEveryoneRole({ system_key: null, name: "Everyone" })).toBe(false);
     expect(isEveryoneRole(null)).toBe(false);
@@ -95,83 +100,78 @@ describe("mentionRoleHint", () => {
   });
 });
 
-describe("rolesAfterSave (#4191)", () => {
-  it("keeps Everyone for a member made a chair", () => {
-    expect(rolesAfterSave(["everyone", "chair"], ["everyone"], roles)).toEqual([
-      "everyone",
-      "chair",
+describe("isBaseRole", () => {
+  it("is New Member, Actives and Alumni, by key", () => {
+    expect(roles.filter(isBaseRole).map((role) => role.id)).toEqual([
+      "actives",
+      "new",
+      "alumni",
     ]);
-    // A save that leaves Everyone off still keeps it: nobody unticks it.
+  });
+});
+
+describe("rolesAfterSave", () => {
+  it("always keeps Everyone, last, whatever the save sent", () => {
     expect(rolesAfterSave(["chair"], ["everyone"], roles)).toEqual([
       "chair",
       "everyone",
     ]);
-    // Nor does a shipped build's tap on its chip take it away.
-    expect(rolesAfterSave([], ["everyone"], roles)).toEqual(["everyone"]);
+    expect(rolesAfterSave([], [], roles)).toEqual(["everyone"]);
+    expect(
+      rolesAfterSave(["everyone", "actives"], ["everyone"], roles),
+    ).toEqual(["actives", "everyone"]);
   });
 
-  it("gives Everyone to a pledge made a member, a chair or both", () => {
-    expect(rolesAfterSave([], ["new"], roles)).toEqual(["everyone"]);
-    expect(rolesAfterSave(["chair"], ["new"], roles)).toEqual([
-      "chair",
+  it("gives nothing else: no base role leaves only Everyone", () => {
+    expect(rolesAfterSave([], ["actives", "everyone"], roles)).toEqual([
       "everyone",
     ]);
-    // A pledge class role grants nothing, so it doesn't stand in for Everyone.
-    expect(rolesAfterSave(["pc-2026"], ["new", "pc-2026"], roles)).toEqual([
+    expect(rolesAfterSave(["pc-2026"], ["new"], roles)).toEqual([
       "pc-2026",
       "everyone",
     ]);
   });
 
-  it("gives Everyone when the save leaves no role granting member access", () => {
-    expect(rolesAfterSave(["pc-2026"], ["chair", "pc-2026"], roles)).toEqual([
-      "pc-2026",
-      "everyone",
-    ]);
-  });
-
-  it("doesn't hand Everyone to an officer who never held it", () => {
-    expect(rolesAfterSave(["chair", "pc-2026"], ["chair"], roles)).toEqual([
-      "chair",
-      "pc-2026",
-    ]);
-  });
-
-  it("never leaves Everyone beside New Member or Alumni", () => {
-    expect(rolesAfterSave(["everyone", "alumni"], ["everyone"], roles)).toEqual(
-      ["alumni"],
-    );
-    expect(rolesAfterSave(["new"], ["everyone"], roles)).toEqual(["new"]);
-    // An alumnus who held both before keeps neither copy of it on a save.
+  it("swaps the base role: the one the save adds wins", () => {
+    // A pledge made an active.
+    expect(
+      rolesAfterSave(["new", "actives"], ["new", "everyone"], roles),
+    ).toEqual(["actives", "everyone"]);
+    // An active made a grad, keeping their other roles.
     expect(
       rolesAfterSave(
-        ["alumni", "everyone", "chair"],
-        ["alumni", "everyone"],
+        ["actives", "chair", "alumni"],
+        ["actives", "chair", "everyone"],
         roles,
       ),
-    ).toEqual(["alumni", "chair"]);
-    // A shipped build ticking the Everyone chip on an alumnus moves nothing.
-    expect(rolesAfterSave(["alumni", "everyone"], ["alumni"], roles)).toEqual([
+    ).toEqual(["chair", "alumni", "everyone"]);
+  });
+
+  it("keeps an officer's roles on top of a base role", () => {
+    expect(
+      rolesAfterSave(["actives", "chair"], ["actives", "everyone"], roles),
+    ).toEqual(["actives", "chair", "everyone"]);
+  });
+
+  it("leaves several held base roles as sent, for the API to refuse", () => {
+    expect(
+      rolesAfterSave(["new", "actives"], ["new", "actives"], roles),
+    ).toEqual(["new", "actives", "everyone"]);
+  });
+
+  it("changes nothing but duplicates for a chapter with no Everyone role", () => {
+    const legacy = roles.filter((role) => role.id !== "everyone");
+    expect(rolesAfterSave(["chair", "x", "x"], [], legacy)).toEqual([
+      "chair",
+      "x",
+    ]);
+  });
+});
+
+describe("baseRoleIds", () => {
+  it("lists the base roles a member holds", () => {
+    expect(baseRoleIds(["chair", "alumni", "everyone"], roles)).toEqual([
       "alumni",
     ]);
-  });
-
-  it("demotes even where New Member and Alumni carry no member access", () => {
-    const tightened = roles.map((role) =>
-      role.id === "new" || role.id === "alumni"
-        ? { ...role, permissions: [] }
-        : role,
-    );
-    expect(rolesAfterSave(["new"], ["everyone"], tightened)).toEqual(["new"]);
-    expect(rolesAfterSave(["new", "pc-2026"], ["new"], tightened)).toEqual([
-      "new",
-      "pc-2026",
-    ]);
-  });
-
-  it("changes nothing for a chapter with no Everyone role", () => {
-    const legacy = roles.filter((role) => role.id !== "everyone");
-    expect(rolesAfterSave([], ["new"], legacy)).toEqual([]);
-    expect(rolesAfterSave(["chair", "x"], [], legacy)).toEqual(["chair", "x"]);
   });
 });

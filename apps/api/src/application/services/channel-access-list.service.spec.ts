@@ -34,7 +34,7 @@ describe('ChannelAccessListService.listOptions', () => {
         findByChapter: jest
           .fn()
           .mockResolvedValue([
-            role('r-everyone', 'Everyone', { system_key: 'MEMBER' }),
+            role('r-everyone', 'Everyone', { system_key: 'EVERYONE' }),
             role('r-chair', 'Rush Chair'),
           ]),
       } as unknown as IRoleRepository,

@@ -255,7 +255,7 @@ describe("SettingsRolesTab", () => {
           {
             id: "role-member",
             name: "Everyone",
-            system_key: "MEMBER",
+            system_key: "EVERYONE",
             permissions: ["members:view"],
             is_system: true,
             display_order: 1,

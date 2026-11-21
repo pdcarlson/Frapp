@@ -65,10 +65,10 @@ function words(name: string): string[] {
  * educator, not a pledge, and matching it to New Member would let every
  * pledge read the officer channels.
  *
- * The Everyone role (`MEMBER`, once called Member, #4191) is the exception,
- * matched only as the WHOLE name: a Discord "Brothers" role still lands on
- * it, so its channels open to the chapter's members. It is the widest role a
- * chapter has, and "member" ends too many officer titles ("Board
+ * The Actives role (`MEMBER`, once Member, then Everyone until #5802) is the
+ * exception, matched only as the WHOLE name: a Discord "Brothers" role still
+ * lands on it, so its channels open to the chapter's actives. It is the
+ * widest role an officer gives, and "member" ends too many officer titles ("Board
  * Member", "Cabinet Member") for a suffix to be safe: a wrong guess there
  * opens an exec channel to everyone.
  */

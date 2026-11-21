@@ -33,6 +33,4 @@ export interface IRoleRepository {
 export interface RoleDeletion {
   /** Members whose `role_ids` held the role. */
   strippedMemberIds: string[];
-  /** Of those, the ones given Everyone because nothing else gave access. */
-  givenEveryoneMemberIds: string[];
 }

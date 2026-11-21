@@ -117,7 +117,7 @@ function scopeWith(
   };
   const rbac = {
     findByChapter: jest.fn(async () => [
-      { id: 'role-everyone', name: 'Everyone', system_key: 'MEMBER' },
+      { id: 'role-everyone', name: 'Everyone', system_key: 'EVERYONE' },
       { id: 'role-treasurer', name: 'Treasurer', system_key: null },
     ]),
   };

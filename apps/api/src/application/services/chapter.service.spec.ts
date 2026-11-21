@@ -509,15 +509,24 @@ describe('ChapterService', () => {
       is_system: roleDef.is_system,
       display_order: roleDef.display_order,
       color: roleDef.color ?? null,
-      // Every seeded role can be pinged but Everyone, which only officers
-      // may use until the chapter opens it (#4191).
-      mentionable: roleDef.system_key !== SystemRoleKeys.MEMBER,
+      // Every seeded role can be pinged but Everyone and Actives, which only
+      // officers may use until the chapter opens them.
+      mentionable:
+        roleDef.system_key !== SystemRoleKeys.EVERYONE &&
+        roleDef.system_key !== SystemRoleKeys.MEMBER,
     }));
     expect(mockRoleRepo.createMany).toHaveBeenCalledWith(expectedRolesData);
-    expect(
-      expectedRolesData.find((r) => r.system_key === SystemRoleKeys.MEMBER)
-        ?.name,
-    ).toBe('Everyone');
+    const byKey = (key: string) =>
+      expectedRolesData.find((r) => r.system_key === key);
+    // The base role is Actives (Paul, 2026-11-21); Everyone is the floor,
+    // outside the tiers, with the directory and nothing private.
+    expect(byKey(SystemRoleKeys.MEMBER)?.name).toBe('Actives');
+    expect(byKey(SystemRoleKeys.MEMBER)?.tier_id).toBe('tier-3');
+    expect(byKey(SystemRoleKeys.EVERYONE)).toMatchObject({
+      name: 'Everyone',
+      tier_id: null,
+      permissions: ['members:view'],
+    });
     expect(result).toEqual(chapter);
   });
 
@@ -773,10 +782,11 @@ describe('ChapterService', () => {
       config: {},
     });
 
+    // The founder is an active too (#5802); the database appends Everyone.
     expect(mockMemberRepo.create).toHaveBeenCalledWith({
       user_id: 'user-1',
       chapter_id: chapter.id,
-      role_ids: [presidentRole.id],
+      role_ids: [presidentRole.id, 'role-actives'],
       has_completed_onboarding: true,
     });
   });

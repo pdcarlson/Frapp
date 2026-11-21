@@ -92,7 +92,7 @@ export class TaskAudienceReader {
       (role) =>
         role.tier_id === tierId && role.system_key !== SystemRoleKeys.ALUMNI,
     );
-    if (roles.some((role) => role.system_key === SystemRoleKeys.MEMBER)) {
+    if (roles.some((role) => role.system_key === SystemRoleKeys.EVERYONE)) {
       return [...this.activeIds];
     }
     const roleIds = new Set(roles.map((role) => role.id));
@@ -154,7 +154,7 @@ export class TaskAudienceReader {
       case 'role': {
         const role = await this.role(target.id);
         if (!role || role.system_key === SystemRoleKeys.ALUMNI) return [];
-        return role.system_key === SystemRoleKeys.MEMBER
+        return role.system_key === SystemRoleKeys.EVERYONE
           ? [...this.activeIds]
           : this.holdersOf(role.id);
       }
@@ -197,7 +197,7 @@ export class TaskAudienceReader {
             "Alumni don't get chapter tasks, so a task can't go to that role",
           );
         }
-        if (role.system_key === SystemRoleKeys.MEMBER) {
+        if (role.system_key === SystemRoleKeys.EVERYONE) {
           return this.resolve({ kind: 'chapter' });
         }
         return this.reaching(
@@ -434,7 +434,7 @@ export class TaskAudienceService {
         return (
           !!role &&
           role.chapter_id === chapterId &&
-          role.system_key !== SystemRoleKeys.MEMBER &&
+          role.system_key !== SystemRoleKeys.EVERYONE &&
           role.system_key !== SystemRoleKeys.ALUMNI
         );
       }
@@ -453,7 +453,8 @@ export class TaskAudienceService {
           tiers.some((tier) => tier.id === id) &&
           !roles.some(
             (role) =>
-              role.tier_id === id && role.system_key === SystemRoleKeys.MEMBER,
+              role.tier_id === id &&
+              role.system_key === SystemRoleKeys.EVERYONE,
           )
         );
       }
