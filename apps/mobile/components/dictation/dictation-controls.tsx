@@ -66,13 +66,16 @@ export const DICTATION_COPY = {
     unavailable: "Dictation isn't available right now.",
     failed: "Dictation stopped.",
     full: "That's all that fits in one question.",
-    /** Chat's `full`: one go is capped by what the cleanup takes. */
-    fullMessage: "That's all one dictation can hold.",
-  } satisfies Record<Notice | "fullMessage", string>,
+    /** Chat's `full` when the message itself is full. */
+    fullMessage: "That's all one message can hold.",
+    /** Chat's `full` when one go reached what the cleanup takes. */
+    fullDictation: "That's all one dictation can hold.",
+  } satisfies Record<Notice | "fullMessage" | "fullDictation", string>,
 } as const;
 
 /** 32pt inside a 44pt field; the slop reaches 44. */
-const MIC_SIZE = 32;
+export const DICTATION_MIC_SIZE = 32;
+const MIC_SIZE = DICTATION_MIC_SIZE;
 
 export function DictationMic({ onPress }: { onPress: () => void }) {
   const { tokens } = useFrappTheme();

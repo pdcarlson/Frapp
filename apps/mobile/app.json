@@ -98,7 +98,7 @@
         {
           "cameraPermission": "Frapp uses the camera to scan an event's check-in code when you tap Scan code.",
           "recordAudioAndroid": false,
-          "microphonePermission": "Frapp uses the microphone when you tap the mic to dictate to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap."
+          "microphonePermission": "Frapp uses the microphone when you tap the mic to dictate a message or a question to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap."
         }
       ],
       [
@@ -106,13 +106,13 @@
         {
           "photosPermission": "Frapp uses your photo library so you can set your profile photo, add your chapter's logo, send photos in chapter chat, add photos to your chapter's documents and to tasks, and attach photo proof to service hours.",
           "cameraPermission": "Frapp uses the camera to scan an event's check-in code when you tap Scan code.",
-          "microphonePermission": "Frapp uses the microphone when you tap the mic to dictate to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap."
+          "microphonePermission": "Frapp uses the microphone when you tap the mic to dictate a message or a question to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap."
         }
       ],
       [
         "expo-audio",
         {
-          "microphonePermission": "Frapp uses the microphone when you tap the mic to dictate to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap.",
+          "microphonePermission": "Frapp uses the microphone when you tap the mic to dictate a message or a question to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap.",
           "recordAudioAndroid": true,
           "enableBackgroundRecording": true,
           "enableBackgroundPlayback": false
@@ -121,8 +121,8 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Frapp uses the microphone when you tap the mic to dictate to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap.",
-          "speechRecognitionPermission": "Frapp turns what you say into text when you tap the mic in Ask Frapp. On most phones this happens on the phone itself."
+          "microphonePermission": "Frapp uses the microphone when you tap the mic to dictate a message or a question to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap.",
+          "speechRecognitionPermission": "Frapp turns what you say into text when you tap the mic in a chat or in Ask Frapp. On most phones this happens on the phone itself."
         }
       ],
       [

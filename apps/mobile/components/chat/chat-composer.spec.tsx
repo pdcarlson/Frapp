@@ -1109,10 +1109,27 @@ describe("ChatComposer dictation (#5772)", () => {
     cleanDictation.current = async () => null;
   });
 
-  /** The composer as a channel holds it: the box's words are the parent's. */
-  function renderLive(initial = "", onSend = vi.fn()) {
+  /**
+   * The composer as a channel holds it: the box's words are the parent's.
+   * `swap` lets a test change what the parent hands in (an edit opening, a
+   * channel switched in place), as `useComposerStaging` does.
+   */
+  function renderLive(
+    initial = "",
+    onSend = vi.fn(),
+    extra: Partial<ChatComposerProps> = { tidyDictation: true },
+  ) {
+    let swap!: (next: {
+      value?: string;
+      props?: Partial<ChatComposerProps>;
+    }) => void;
     function Live() {
       const [value, setValue] = React.useState(initial);
+      const [props, setProps] = React.useState(extra);
+      swap = (next) => {
+        if (next.value !== undefined) setValue(next.value);
+        if (next.props) setProps({ ...extra, ...next.props });
+      };
       return (
         <ChatComposer
           value={value}
@@ -1120,6 +1137,7 @@ describe("ChatComposer dictation (#5772)", () => {
           onSend={onSend}
           canSend
           placeholder="Message"
+          {...props}
         />
       );
     }
@@ -1131,7 +1149,11 @@ describe("ChatComposer dictation (#5772)", () => {
         </FrappThemeProvider>,
       );
     });
-    return { tree, onSend };
+    return {
+      tree,
+      onSend,
+      swap: (next: Parameters<typeof swap>[0]) => act(() => swap(next)),
+    };
   }
   const input = (tree: ReactTestRenderer) =>
     tree.root.findAll(
@@ -1199,5 +1221,86 @@ describe("ChatComposer dictation (#5772)", () => {
     await dictate(tree, "so um running late");
     expect(input(tree).props.value).toBe("so um running late");
     expect(byLabel(tree, "Original")).toBeUndefined();
+  });
+
+  it("never sends a DM's words to be tidied: they land as heard", async () => {
+    const clean = vi.fn(cleanDictation.current);
+    cleanDictation.current = clean;
+    const { tree } = renderLive("", vi.fn(), { tidyDictation: false });
+    await dictate(tree, "so um running late");
+    expect(input(tree).props.value).toBe("so um running late");
+    expect(clean).not.toHaveBeenCalled();
+    expect(byLabel(tree, "Original")).toBeUndefined();
+  });
+
+  it("holds Send while the words are being tidied", async () => {
+    let answer!: (text: string | null) => void;
+    cleanDictation.current = () => new Promise((resolve) => (answer = resolve));
+    const { tree } = renderLive("Heads up:");
+    await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+    act(() => speech.handlers!.onWords("so um running late"));
+    act(() => byLabel(tree, "Done")!.props.onPress());
+    await act(async () => speech.handlers!.onEnd("so um running late"));
+    expect(byLabel(tree, "Send message")!.props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    await act(async () => answer("Running late."));
+    expect(input(tree).props.value).toBe("Heads up: Running late.");
+  });
+
+  it("drops the Original chip when an edit opens, so it can't write into the edit", async () => {
+    const { tree, swap } = renderLive();
+    await dictate(tree, "so um running late");
+    expect(byLabel(tree, "Original")).toBeDefined();
+    swap({
+      value: "my old message",
+      props: {
+        context: {
+          kind: "edit",
+          title: "Editing message",
+          preview: null,
+          onCancel: vi.fn(),
+        },
+      },
+    });
+    expect(byLabel(tree, "Original")).toBeUndefined();
+    expect(input(tree).props.value).toBe("my old message");
+  });
+
+  it("drops a dictation in progress when the channel changes in place", async () => {
+    const { tree, swap } = renderLive("", vi.fn(), {
+      tidyDictation: true,
+      dictationTarget: "general",
+    });
+    await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+    act(() => speech.handlers!.onWords("so um running late"));
+    swap({ value: "dues draft", props: { dictationTarget: "dues" } });
+    expect(speech.cancel).toHaveBeenCalled();
+    await act(async () => speech.handlers?.onEnd("so um running late"));
+    expect(input(tree).props.value).toBe("dues draft");
+  });
+
+  it("says which limit stopped it: one dictation, or the whole message", async () => {
+    cleanDictation.current = async () => null;
+    const said = (tree: ReactTestRenderer, line: string) =>
+      JSON.stringify(tree.toJSON()).includes(line);
+    const talk = async (tree: ReactTestRenderer, words: string) => {
+      await act(async () => byLabel(tree, "Dictate")!.props.onPress());
+      act(() => speech.handlers!.onWords(words));
+      await act(async () => speech.handlers!.onEnd(words));
+    };
+
+    const empty = renderLive();
+    await talk(empty.tree, "word ".repeat(260));
+    expect(said(empty.tree, "That's all one dictation can hold.")).toBe(true);
+
+    const nearlyFull = renderLive("x".repeat(9_990));
+    await talk(nearlyFull.tree, "word ".repeat(10));
+    expect(said(nearlyFull.tree, "That's all one message can hold.")).toBe(
+      true,
+    );
+    expect(input(nearlyFull.tree).props.value.length).toBeLessThanOrEqual(
+      10_000,
+    );
   });
 });

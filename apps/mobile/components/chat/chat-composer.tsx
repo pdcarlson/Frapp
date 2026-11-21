@@ -30,7 +30,6 @@ import {
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { useDictation } from "@/lib/dictation/use-dictation";
 import {
   DICTATION_COPY,
   DictationDone,
@@ -40,8 +39,9 @@ import {
   DictationNotice,
   DictationOriginal,
   DictationTidying,
-  joinDictated,
+  DICTATION_MIC_SIZE,
 } from "@/components/dictation/dictation-controls";
+import { useFieldDictation } from "@/components/dictation/use-field-dictation";
 import { CloseGlyph, RetryGlyph } from "@/components/control-glyphs";
 import {
   MentionPicker,
@@ -221,7 +221,22 @@ export interface ChatComposerProps {
    * none.
    */
   scheduled?: { label: string; failed: number; onOpen: () => void } | null;
+  /**
+   * What dictation's words are for, such as the channel's id (#5772). When it
+   * changes, a dictation in progress is dropped, so a channel switched in
+   * place never gets words heard for another.
+   */
+  dictationTarget?: string | null;
+  /**
+   * Whether dictated words go to Frapp AI to be tidied. False lands them as
+   * the phone heard them: in a DM or group DM, which Frapp AI never reads
+   * (privacy policy, Frapp AI), and until the channel is known.
+   */
+  tidyDictation?: boolean;
 }
+
+/** Dictation's cleanup where nothing may reach Frapp AI: the words as heard. */
+const KEEP_AS_HEARD = async (): Promise<string | null> => null;
 
 export function ChatComposer({
   value,
@@ -247,6 +262,8 @@ export function ChatComposer({
   ask = null,
   onSchedule,
   scheduled = null,
+  dictationTarget = null,
+  tidyDictation = false,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -254,11 +271,6 @@ export function ChatComposer({
   const { height: windowHeight } = useWindowDimensions();
   const inputRef = useRef<TextInput>(null);
   const contextKind = context?.kind ?? null;
-  // Reply and Edit are both "type now": open the keyboard with the strip.
-  // Keyed on the kind, so it runs when one starts, not on every keystroke.
-  useEffect(() => {
-    if (contextKind) inputRef.current?.focus();
-  }, [contextKind]);
   const isEditing = contextKind === "edit";
   const mention = useMentionPicker(
     inputRef,
@@ -276,46 +288,33 @@ export function ChatComposer({
     if (isEditing) endSendWindow();
   }, [isEditing, endSendWindow]);
 
-  // Dictation (#5772, Ask's own from #5276): talk, tap Done, and the tidied
-  // words land in the box to read and send. `valueRef` is the box as it is
-  // when they land, not as it was when listening began.
-  const valueRef = useRef(value);
-  useEffect(() => {
-    valueRef.current = value;
-  }, [value]);
-  // Tidied words just landed: what the Original chip puts back, until the
-  // member types or sends.
-  const [original, setOriginal] = useState<{
-    tidied: string;
-    restore: string;
-  } | null>(null);
+  // Dictation (#5772, Ask's own from #5276): talk, tap Done, and the words
+  // land in the box to read and send. Tidied only where the composer says so:
+  // never in a DM or group DM, whose words Frapp AI never receives.
   const cleanDictation = useCleanDictation();
-  const roomLeft =
-    CHAT_MESSAGE_CONTENT_MAX_LENGTH -
-    (value.trim() ? value.trimEnd().length + 1 : 0);
-  const dictation = useDictation({
-    clean: cleanDictation,
+  const field = useFieldDictation({
+    value,
+    setValue: onChangeText,
+    max: CHAT_MESSAGE_CONTENT_MAX_LENGTH,
     // One go is capped by what the cleanup takes, as well as by the message.
-    room: Math.min(ASK_DICTATION_MAX_LENGTH, roomLeft),
-    onText: (text, heard) => {
-      const before = valueRef.current;
-      const tidied = joinDictated(
-        before,
-        text,
-        CHAT_MESSAGE_CONTENT_MAX_LENGTH,
-      );
-      const restore = joinDictated(
-        before,
-        heard,
-        CHAT_MESSAGE_CONTENT_MAX_LENGTH,
-      );
-      onChangeText(tidied);
-      setOriginal(tidied === restore ? null : { tidied, restore });
-    },
+    cap: ASK_DICTATION_MAX_LENGTH,
+    clean: tidyDictation ? cleanDictation : KEEP_AS_HEARD,
+    // Words heard for one draft never land in another: a channel switch in
+    // place, or a reply or edit opened mid-dictation, drops them.
+    target: `${dictationTarget ?? ""}|${contextKind ?? ""}`,
   });
+  const { dictation, original, roomLeft } = field;
   const listening = dictation.phase === "listening";
   const tidying = dictation.phase === "cleaning";
   const canDictate = dictation.available && canSend && roomLeft > 0;
+  // Reply and Edit are both "type now": open the keyboard with the strip.
+  // Keyed on the kind, so it runs when one starts, not on every keystroke.
+  // While dictation listens or tidies the box is swapped out, so the focus
+  // waits for it to come back.
+  const dictating = listening || tidying;
+  useEffect(() => {
+    if (contextKind && !dictating) inputRef.current?.focus();
+  }, [contextKind, dictating]);
 
   // An empty or whitespace-only body is not a send — unless a photo is
   // staged. A photo-only message is a real message, uploaded or still
@@ -486,14 +485,17 @@ export function ChatComposer({
         <DictationNotice
           failure={dictation.notice}
           onDismiss={dictation.dismiss}
-          fullText={DICTATION_COPY.notice.fullMessage}
+          fullText={
+            field.fullBy === "cap"
+              ? DICTATION_COPY.notice.fullDictation
+              : DICTATION_COPY.notice.fullMessage
+          }
         />
       ) : null}
       {original !== null && dictation.phase === "idle" ? (
         <DictationOriginal
           onPress={() => {
-            onChangeText(original.restore);
-            setOriginal(null);
+            field.restoreOriginal();
           }}
         />
       ) : null}
@@ -556,9 +558,6 @@ export function ChatComposer({
               multiline
               onChangeText={(next) => {
                 if (sendClear.isStaleEcho(next)) return;
-                if (original !== null && next !== original.tidied) {
-                  setOriginal(null);
-                }
                 mention.onChangeText(next);
               }}
               onSelectionChange={mention.onSelectionChange}
@@ -591,8 +590,7 @@ export function ChatComposer({
               <View style={styles.mic}>
                 <DictationMic
                   onPress={() => {
-                    setOriginal(null);
-                    dictation.start();
+                    field.start();
                   }}
                 />
               </View>
@@ -634,7 +632,7 @@ export function ChatComposer({
             onLongPress={canSchedule ? onSchedule : undefined}
             onPress={() => {
               sendClear.markSent();
-              setOriginal(null);
+              field.clearOriginal();
               dictation.dismiss();
               onSend();
             }}
@@ -911,7 +909,7 @@ function useClearedOnSend(
 const INPUT_LINE_HEIGHT = 20;
 const INPUT_BORDER = 1;
 /** The dictation mic's size (`DictationMic`). */
-const DICTATION_MIC = 32;
+
 /** Lines an edit shows before it scrolls; a draft stops at `maxHeight: 120`. */
 const EDIT_MAX_LINES = 10;
 
@@ -1089,13 +1087,13 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     // Room for the 32pt mic inside the box's right end.
     inputWithMic: {
-      paddingRight: DICTATION_MIC + tokens.spacing.sm,
+      paddingRight: DICTATION_MIC_SIZE + tokens.spacing.sm,
     },
     // 32pt centred in the one-line 44pt box, pinned to its foot as it grows.
     mic: {
       position: "absolute",
-      right: (tokens.touch.minimum - DICTATION_MIC) / 2,
-      bottom: (tokens.touch.minimum - DICTATION_MIC) / 2,
+      right: (tokens.touch.minimum - DICTATION_MIC_SIZE) / 2,
+      bottom: (tokens.touch.minimum - DICTATION_MIC_SIZE) / 2,
     },
     // The waveform or the pulsing words, in the box's own frame.
     dictating: {
