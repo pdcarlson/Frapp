@@ -183,20 +183,22 @@ export const IOS_PURPOSE_STRINGS = new Map([
   [
     // Two microphone surfaces: the meeting recorder (spec/behavior/meetings.md
     // § Recording in the app) and Ask's dictation (#5276). Paul approved this
-    // text on 2026-11-17. The recorder's request is the one pinned; dictation's
+    // text on 2026-11-17; chat's dictation (#5772, 2026-11-21) added "a message
+    // or a question to", pending his approval in that PR. The recorder's request is the one pinned; dictation's
     // `requestPermissionsAsync(` asks for the microphone and speech together.
     "NSMicrophoneUsageDescription",
     {
-      text: "Frapp uses the microphone when you tap the mic to dictate to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap.",
+      text: "Frapp uses the microphone when you tap the mic to dictate a message or a question to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap.",
       requestedBy: { file: RECORDER_DEVICE, call: "requestRecordingPermissionsAsync(" },
     },
   ],
   [
     // Ask's dictation (#5276): the phone's own speech recogniser, on-device
-    // where it can be. Paul approved this text on 2026-11-17.
+    // where it can be. Paul approved this text on 2026-11-17; "in a chat or"
+    // came with chat's dictation (#5772, 2026-11-21), pending his approval.
     "NSSpeechRecognitionUsageDescription",
     {
-      text: "Frapp turns what you say into text when you tap the mic in Ask Frapp. On most phones this happens on the phone itself.",
+      text: "Frapp turns what you say into text when you tap the mic in a chat or in Ask Frapp. On most phones this happens on the phone itself.",
       requestedBy: { file: DICTATION_SPEECH, call: "requestPermissionsAsync(" },
     },
   ],
