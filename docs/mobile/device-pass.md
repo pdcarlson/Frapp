@@ -36,72 +36,72 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 
 ## 1. Launch (1 minute)
 
-| #   | Phone | Do                                                                                                 | Expect                                                                                                     | From         |
-| --- | ----- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------ |
-| 1   | Both  | Open the app after the update                                                                      | What's new opens by itself once. Close it, force-quit, reopen: it doesn't open again                       | #3809, #4131 |
-| 2   | Both  | Before opening the app: TestFlight (iPhone) or the Play Store's internal-testing listing (Android) | The installed build is 0.14.0. Note its build number in your #808 comment. The app itself has no About row | #808         |
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 1 | Both | Open the app after the update | What's new opens by itself once. Close it, force-quit, reopen: it doesn't open again | #3809, #4131 |
+| 2 | Both | Before opening the app: TestFlight (iPhone) or the Play Store's internal-testing listing (Android) | The installed build is 0.14.0. Note its build number in your #808 comment. The app itself has no About row | #808 |
 
 ## 2. Chat home (2 minutes)
 
-| #   | Phone | Do                                                                   | Expect                                                                                                                                                                                                                                                                                                             | From         |
-| --- | ----- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------ |
-| 3   | Both  | With a direct message unread, look at the tab bar, then tap Messages | The third tab is Messages with a red count of unread conversations; it opens your conversations with no back row. Scrolled down far enough to fold the bar (with Ask Frapp on), the round keeps a red dot, or the count on Messages' own round. Calendar opens from the "Calendar" link in Activity's To do header | #5310        |
-| 4   | Both  | Long-press a channel, then one near the bottom of the list           | A haptic, and the channel actions menu opens by your finger, not off screen. Android back closes it                                                                                                                                                                                                                | #3636, #3523 |
-| 5   | Both  | Arrange channels, drag one channel down, then back                   | A haptic on pickup, the row follows your finger, the order holds after you leave and come back                                                                                                                                                                                                                     | #4479        |
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 3 | Both | With a direct message unread, look at the tab bar, then tap Messages | The third tab is Messages with a red count of unread conversations; it opens your conversations with no back row. Scrolled down far enough to fold the bar (with Ask Frapp on), the round keeps a red dot, or the count on Messages' own round. Calendar opens from the "Calendar" link in Activity's To do header | #5310 |
+| 4 | Both | Long-press a channel, then one near the bottom of the list | A haptic, and the channel actions menu opens by your finger, not off screen. Android back closes it | #3636, #3523 |
+| 5 | Both | Arrange channels, drag one channel down, then back | A haptic on pickup, the row follows your finger, the order holds after you leave and come back | #4479 |
 
 ## 3. In a channel (4 minutes)
 
-| #   | Phone   | Do                                                                                                                                     | Expect                                                                                                                                                                        | From                            |
-| --- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| 6   | iPhone  | In #general, tap the message box so the keyboard is up, then long-press a message                                                      | The keyboard closes and the menu opens fully above the chat                                                                                                                   | #4211                           |
-| 7   | Android | With Gboard's suggestion strip showing: tap the message box, type two lines, open the emoji panel and go back, then drag the chat down | The box sits directly on top of the keyboard every time, grows upward, and returns above the navigation bar when the keyboard goes                                            | #4081, smoke checklist § 8      |
-| 8   | iPhone  | Pick three photos, one of them taken with the camera, and send before they finish                                                      | Each shows at once with a thumbnail and settles. On the laptop each arrives blurred first, then sharp, and the chat doesn't jump                                              | #3675, #3681, #4261, #808 row 6 |
-| 9   | Both    | Open a photo, pinch in, drag it from near the left edge, close it, then swipe back slowly from the edge (Android: back)                | The drag pans the photo. With the viewer closed, the swipe goes to the channel list with no pale strip at the left edge                                                       | #3588, #4465                    |
-| 10  | Both    | Open a thread from a reply-count line, then long-press a reply in it                                                                   | The header names the parent message. The reply gets the same long-press sheet a channel message does                                                                          | #4444, #4455, #4466             |
-| 11  | Both    | Long-press a message, flag it Important, then clear the flag                                                                           | The tint and caption appear and go. Report and Block are in the menu (don't send either)                                                                                      | #4195, #3724                    |
-| 12  | Both    | Tap a member's name. Look at the ⋯, then tap Edit in the Roles block, and close the role editor with a swipe down                      | The profile opens as its own screen, and the ⋯ sits at the back row's far end (never on your own profile). Closing the role editor lands back on the profile, not on the chat | #3729, #4345, #3798             |
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 6 | iPhone | In #general, tap the message box so the keyboard is up, then long-press a message | The keyboard closes and the menu opens fully above the chat | #4211 |
+| 7 | Android | With Gboard's suggestion strip showing: tap the message box, type two lines, open the emoji panel and go back, then drag the chat down | The box sits directly on top of the keyboard every time, grows upward, and returns above the navigation bar when the keyboard goes | #4081, smoke checklist § 8 |
+| 8 | iPhone | Pick three photos, one of them taken with the camera, and send before they finish | Each shows at once with a thumbnail and settles. On the laptop each arrives blurred first, then sharp, and the chat doesn't jump | #3675, #3681, #4261, #808 row 6 |
+| 9 | Both | Open a photo, pinch in, drag it from near the left edge, close it, then swipe back slowly from the edge (Android: back) | The drag pans the photo. With the viewer closed, the swipe goes to the channel list with no pale strip at the left edge | #3588, #4465 |
+| 10 | Both | Open a thread from a reply-count line, then long-press a reply in it | The header names the parent message. The reply gets the same long-press sheet a channel message does | #4444, #4455, #4466 |
+| 11 | Both | Long-press a message, flag it Important, then clear the flag | The tint and caption appear and go. Report and Block are in the menu (don't send either) | #4195, #3724 |
+| 12 | Both | Tap a member's name. Look at the ⋯, then tap Edit in the Roles block, and close the role editor with a swipe down | The profile opens as its own screen, and the ⋯ sits at the back row's far end (never on your own profile). Closing the role editor lands back on the profile, not on the chat | #3729, #4345, #3798 |
 
 ## 4. Making things (3 minutes)
 
-| #   | Phone | Do                                                                                                                              | Expect                                                                                                            | From                       |
-| --- | ----- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| 13  | Both  | +, New event: an end time after midnight, Repeat weekly with an end date, Who's coming then Done. Create it, open it, delete it | The wheels scroll in one-minute steps, Done closes the role list, the event shows with its repeat, and it deletes | #3663, #4516, #4483, #3668 |
-| 14  | Both  | +, New task: a due date with a time and one subtask. Create it, edit its title, delete it                                       | The time picker opens natively, the subtask is listed, and the edit saves                                         | #4287, #4319               |
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 13 | Both | +, New event: an end time after midnight, Repeat weekly with an end date, Who's coming then Done. Create it, open it, delete it | The wheels scroll in one-minute steps, Done closes the role list, the event shows with its repeat, and it deletes | #3663, #4516, #4483, #3668 |
+| 14 | Both | +, New task: a due date with a time and one subtask. Create it, edit its title, delete it | The time picker opens natively, the subtask is listed, and the edit saves | #4287, #4319 |
 
 ## 5. Around the app (4 minutes)
 
-| #   | Phone  | Do                                                                                                                                                   | Expect                                                                                                                                          | From                   |
-| --- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| 15  | iPhone | The "Calendar" link in Activity's To do header, then pull down. Tap a day, then its heading, then go back twice                                      | The month opens with `‹ Activity` and the pull refreshes. The heading opens that day's hour grid, and back lands on the month, then on Activity | #5310, #3516           |
-| 16  | Both   | Documents: upload a camera photo, then switch List and Grid, then delete it                                                                          | The sheet closes at once and the "Uploading…" row turns into the document within a few seconds, not 30                                          | #3674, #4519, #3962    |
-| 17  | iPhone | Directory: switch to Grid, filter by a role                                                                                                          | The grid holds faces and names. The filter narrows it                                                                                           | #4509, #4130           |
-| 18  | iPhone | You: open each row, and leave each by its back row                                                                                                   | Every row opens its page, and nothing on the page is a dead end (a control that looks tappable does something)                                  | smoke checklist §§ 2-3 |
-| 19  | iPhone | A channel's ⋯, Edit channel, Who can see. Then Chapter settings, any module, Who can                                                                 | Each sheet opens over the one before and closes back to it. On the iPhone, swipe back from Chapter settings works                               | #4526, #4502           |
-| 20  | Both   | You: change your photo, then put the old one back                                                                                                    | The new photo shows at the top of You, on the You tab itself and on your chat messages without a restart                                        | #808 row 8, #4486      |
-| 21  | iPhone | Settings: switch chat density, open a channel, then switch it back. Then change the quiet-hours end time, leave Settings, come back, and set it back | The open channel redraws in the new density. The new end time is still there when you come back                                                 | #3640, #808 row 14     |
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 15 | iPhone | The "Calendar" link in Activity's To do header, then pull down. Tap a day, then its heading, then go back twice | The month opens with `‹ Activity` and the pull refreshes. The heading opens that day's hour grid, and back lands on the month, then on Activity | #5310, #3516 |
+| 16 | Both | Documents: upload a camera photo, then switch List and Grid, then delete it | The sheet closes at once and the "Uploading…" row turns into the document within a few seconds, not 30 | #3674, #4519, #3962 |
+| 17 | iPhone | Directory: switch to Grid, filter by a role | The grid holds faces and names. The filter narrows it | #4509, #4130 |
+| 18 | iPhone | You: open each row, and leave each by its back row | Every row opens its page, and nothing on the page is a dead end (a control that looks tappable does something) | smoke checklist §§ 2-3 |
+| 19 | iPhone | A channel's ⋯, Edit channel, Who can see. Then Chapter settings, any module, Who can | Each sheet opens over the one before and closes back to it. On the iPhone, swipe back from Chapter settings works | #4526, #4502 |
+| 20 | Both | You: change your photo, then put the old one back | The new photo shows at the top of You, on the You tab itself and on your chat messages without a restart | #808 row 8, #4486 |
+| 21 | iPhone | Settings: switch chat density, open a channel, then switch it back. Then change the quiet-hours end time, leave Settings, come back, and set it back | The open channel redraws in the new density. The new end time is still there when you come back | #3640, #808 row 14 |
 
 ## 6. Offline and push (2 minutes)
 
-| #   | Phone | Do                                                                                  | Expect                                                                                                                         | From                            |
-| --- | ----- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
-| 22  | Both  | Turn on airplane mode, send a message, turn it off                                  | A small "Offline" pill fades in and nothing on screen moves. The message waits in gray and sends on its own when you reconnect | smoke checklist § 4             |
-| 23  | Both  | Settings, Push notifications. If it's off, turn it on. Note the time                | The OS prompt, or the OS settings app if it asked before. Note the time in your comment so the token row can be checked        | #808 row 5, #2617, #3452, #3635 |
-| 24  | Both  | Force-quit the app and lock the phone. Ask your brother to @mention you in #general | The push arrives naming him and the message. Tapping it opens #general                                                         | #808 row 5                      |
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 22 | Both | Turn on airplane mode, send a message, turn it off | A small "Offline" pill fades in and nothing on screen moves. The message waits in gray and sends on its own when you reconnect | smoke checklist § 4 |
+| 23 | Both | Settings, Push notifications. If it's off, turn it on. Note the time | The OS prompt, or the OS settings app if it asked before. Note the time in your comment so the token row can be checked | #808 row 5, #2617, #3452, #3635 |
+| 24 | Both | Force-quit the app and lock the phone. Ask your brother to @mention you in #general | The push arrives naming him and the message. Tapping it opens #general | #808 row 5 |
 
 ## 7. Sign out and back in (1 minute)
 
-| #   | Phone   | Do                                                              | Expect                                                                                                       | From                |
-| --- | ------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------- |
-| 25  | Android | Settings, Sign out, Continue with email, tap the password field | The field and Sign in sit above the keyboard. Android back returns to the first view without leaving the app | #4208, #808 row 2   |
-| 26  | Android | Sign back in                                                    | Straight to the chat, with no chapter picker                                                                 | smoke checklist § 1 |
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 25 | Android | Settings, Sign out, Continue with email, tap the password field | The field and Sign in sit above the keyboard. Android back returns to the first view without leaving the app | #4208, #808 row 2 |
+| 26 | Android | Sign back in | Straight to the chat, with no chapter picker | smoke checklist § 1 |
 
 ## 8. Check-in link and Scan code (4 minutes)
 
-| #   | Phone   | Do                                                                                                                                                                                                                                                                                                                                   | Expect                                                                                                           | From  |
-| --- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ----- |
-| 27  | Android | On the iPhone, open an event that is happening now and show its check-in code. On the Android phone, signed in as a member without host rights, open the same event in Frapp and tap Scan code. Choose Don't allow, tap Allow camera, and allow it this time. Point it at the code                                                   | Android asks again after the first no; the viewport comes up, reads the code, and checks you in                  | #4942 |
-| 28  | Android | Point the Android phone's own camera app at the same code and tap the link it offers                                                                                                                                                                                                                                                 | Frapp opens on the check-in and says "You're already checked in" (row 27), not a browser page with Open in Frapp | #4763 |
-| 29  | iPhone  | On the Android phone, start a second event that's happening now and show its code. On the iPhone, signed in as a member without host rights, open it, tap Scan code, and choose Don't Allow. Tap Open Settings and turn on Camera for Frapp. iOS restarts Frapp when a permission changes, so open the event again and tap Scan code | After the restart the viewport comes up with no prompt, reads the code, and checks you in                        | #4942 |
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 27 | Android | On the iPhone, open an event that is happening now and show its check-in code. On the Android phone, signed in as a member without host rights, open the same event in Frapp and tap Scan code. Choose Don't allow, tap Allow camera, and allow it this time. Point it at the code | Android asks again after the first no; the viewport comes up, reads the code, and checks you in | #4942 |
+| 28 | Android | Point the Android phone's own camera app at the same code and tap the link it offers | Frapp opens on the check-in and says "You're already checked in" (row 27), not a browser page with Open in Frapp | #4763 |
+| 29 | iPhone | On the Android phone, start a second event that's happening now and show its code. On the iPhone, signed in as a member without host rights, open it, tap Scan code, and choose Don't Allow. Tap Open Settings and turn on Camera for Frapp. iOS restarts Frapp when a permission changes, so open the event again and tap Scan code | After the restart the viewport comes up with no prompt, reads the code, and checks you in | #4942 |
 
 ## 9. Dictate to Ask Frapp (3 minutes)
 
@@ -110,10 +110,10 @@ production ([`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md), `AI_
 off there is no Ask Frapp to dictate into. Move these rows to the production pass once Paul turns
 Frapp AI on there.
 
-| #   | Phone  | Do                                                                                                                                                                                                                                   | Expect                                                                                                                                                                                                                                                                                                                                   | From  |
-| --- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| 30  | Both   | Open Ask Frapp and tap the mic inside the field. Allow the microphone (and Speech Recognition on iPhone). Say "so um can you remind the rush chairs that the uh bid dinner moved to Thursday no Friday at seven", then tap the check | While you talk the field shows a moving waveform in the chapter's colour and a clock, with your words faint above it. After the check they pulse for about a second, then the box reads close to "Can you remind the rush chairs that the bid dinner moved to Friday at 7?", nothing has been sent, and Original puts back what you said | #5276 |
-| 31  | iPhone | Tap the mic, then the X. Then put the phone in airplane mode and dictate a sentence                                                                                                                                                  | X leaves the box as it was. Offline the words still land, as heard, and on most iPhones the waveform and words work with no connection                                                                                                                                                                                                   | #5276 |
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 30 | Both | Open Ask Frapp and tap the mic inside the field. Allow the microphone (and Speech Recognition on iPhone). Say "so um can you remind the rush chairs that the uh bid dinner moved to Thursday no Friday at seven", then tap the check | While you talk the field shows a moving waveform in the chapter's colour and a clock, with your words faint above it. After the check they pulse for about a second, then the box reads close to "Can you remind the rush chairs that the bid dinner moved to Friday at 7?", nothing has been sent, and Original puts back what you said | #5276 |
+| 31 | iPhone | Tap the mic, then the X. Then put the phone in airplane mode and dictate a sentence | X leaves the box as it was. Offline the words still land, as heard, and on most iPhones the waveform and words work with no connection | #5276 |
 
 ## What the pass leaves out, and why
 

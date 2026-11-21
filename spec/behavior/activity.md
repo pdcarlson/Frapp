@@ -198,26 +198,26 @@ the sidebar. It is a separate, small read, so Chat home doesn't load the whole o
 
 The page is a stack of cards each member orders and hides (#5520; Paul's pick, 2026-11-18, after
 Bevel's Edit Home and Apple Fitness's Edit Summary). Before it, the page's sections sat in one fixed
-order (#4766). _Changed in #5520 by `pdcarlson`, 2026-11-18._
+order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
 
 **One home per question** (#5779; Paul's pick "A", 2026-11-20). Activity answers "what do I do
 next?" and "what have I got running?", and nothing else; each other question moved to the one
 place that owns it:
 
-| Was on Activity                                              | Now                                                                                |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| Week card (big ring, lines, Next) and the phone's week strip | A small ring beside the title; pressed, it opens the lines ([§ Week](#week))       |
-| To review and Waiting on others                              | One card, Running                                                                  |
-| Reminders                                                    | Rows in To do, on their day ([§ Reminders](#reminders))                            |
-| Calendar card                                                | A "Calendar" link in To do's header                                                |
-| This semester and Last week                                  | You (web: the profile), beside Points ([§ Standing](#standing), [§ Recap](#recap)) |
-| Links                                                        | The channel's own menu, beside Pinned and Saved ([§ Links](#links))                |
+| Was on Activity | Now |
+| --- | --- |
+| Week card (big ring, lines, Next) and the phone's week strip | A small ring beside the title; pressed, it opens the lines ([§ Week](#week)) |
+| To review and Waiting on others | One card, Running |
+| Reminders | Rows in To do, on their day ([§ Reminders](#reminders)) |
+| Calendar card | A "Calendar" link in To do's header |
+| This semester and Last week | You (web: the profile), beside Points ([§ Standing](#standing), [§ Recap](#recap)) |
+| Links | The channel's own menu, beside Pinned and Saved ([§ Links](#links)) |
 
 - **The cards** are named by key (`ACTIVITY_CARD_KEYS` in `@repo/validation`): the Frapp card
   (`nudge`), To do (`todo`) and Running (`running`). Now ([§ Now](#now)) is not one: it is always
   first and can't be hidden. To do can move but can't be hidden, because the ring's lines narrow
-  it. _Changed in #5779 by `pdcarlson`, 2026-11-20 (was nine cards: `recap`, `review`,
-  `calendar`, `reminders`, `waiting`, `links` and `semester` besides these)._
+  it. *Changed in #5779 by `pdcarlson`, 2026-11-20 (was nine cards: `recap`, `review`,
+  `calendar`, `reminders`, `waiting`, `links` and `semester` besides these).*
 - **Running** leads with "3 to approve" (finished tasks to confirm and service hours to approve,
   for who reviews them), then the tasks the member assigned with their progress, the events they
   made with their headcount, and the polls they posted. It shows for anyone with something in it,
