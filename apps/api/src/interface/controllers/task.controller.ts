@@ -60,6 +60,8 @@ import {
   RequestTaskPhotoUploadUrlDto,
   TaskPhotoUploadUrlResponseDto,
   TaskPhotoUrlResponseDto,
+  ShareTaskToChatDto,
+  ShareTaskToChatResponseDto,
 } from '../dtos/task.dto';
 import { OpenTaskDto } from '../dtos/open-task.dto';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
@@ -252,6 +254,30 @@ export class TaskController {
       channel_id: dto.channel_id,
       client_message_id: dto.client_message_id,
     });
+  }
+
+  @Post(':id/share')
+  @ThrottleFanOutWrite()
+  @ApiOperation({
+    summary: "Post an existing task's card into a chat channel",
+    description:
+      "The chat + sheet's Task row (#5772). Any member who can read the task (its assignee, a `tasks:manage` holder, or a follower) may link it; the card is sent as them, and channel access is checked as for any message.",
+  })
+  @ApiCreatedResponse({ type: ShareTaskToChatResponseDto })
+  async share(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ShareTaskToChatDto,
+  ): Promise<ShareTaskToChatResponseDto> {
+    const task = await this.readableTask(chapterId, userId, id);
+    await this.taskService.shareToChat(task, {
+      chapter_id: chapterId,
+      channel_id: dto.channel_id,
+      sender_id: userId,
+      client_message_id: dto.client_message_id,
+    });
+    return { card_posted: true };
   }
 
   @Patch(':id')

@@ -48,18 +48,6 @@ export const PollForm = deferredPanel(
   () => import("./poll-form").then((m) => m.PollForm),
   "slot",
 );
-export const SignupForm = deferredPanel(
-  () => import("./signup-form").then((m) => m.SignupForm),
-  "slot",
-);
-export const RolePickerForm = deferredPanel(
-  () => import("./role-picker-form").then((m) => m.RolePickerForm),
-  "slot",
-);
-export const FormBuilder = deferredPanel(
-  () => import("./form-builder").then((m) => m.FormBuilder),
-  "slot",
-);
 export const EventQuickForm = deferredPanel(
   () => import("./event-quick-form").then((m) => m.EventQuickForm),
   "slot",
@@ -173,9 +161,6 @@ export function deferredComposer(
 export function preloadChatPanels(): void {
   const loads = [
     import("./poll-form"),
-    import("./signup-form"),
-    import("./role-picker-form"),
-    import("./form-builder"),
     import("./event-quick-form"),
     import("@/components/tasks/task-form"),
     import("@/components/service/log-hours-form"),

@@ -2506,8 +2506,25 @@ export interface paths {
         /** Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts */
         get: operations["MeetingController_list_v1"];
         put?: never;
-        /** Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist */
+        /** Start minutes for a meeting’s event, for a meeting not on the calendar (new_event), or with no meeting yet (neither). 409 `meeting.already_started` names the minutes that exist */
         post: operations["MeetingController_start_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/live-recordings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Meetings a phone is recording right now, whose events the caller can see: who is recording, since when, and the event */
+        get: operations["MeetingController_liveRecordings_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2577,9 +2594,27 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
+        /** Link minutes that have no event (started with no meeting, or whose event was deleted) to one, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
         post: operations["MeetingController_linkEvent_v1"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/live-recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** The caller’s phone is recording these minutes: sent when it starts and every minute while it records, so lists can say who is recording */
+        put: operations["MeetingController_markLiveRecording_v1"];
+        post?: never;
+        /** The caller’s phone stopped recording these minutes */
+        delete: operations["MeetingController_clearLiveRecording_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3561,6 +3596,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tasks/{id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post an existing task's card into a chat channel
+         * @description The chat + sheet's Task row (#5772). Any member who can read the task (its assignee, a `tasks:manage` holder, or a follower) may link it; the card is sent as them, and channel access is checked as for any message.
+         */
+        post: operations["TaskController_share_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tasks/{id}/status": {
         parameters: {
             query?: never;
@@ -4033,7 +4088,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the chapter's groups with their members: manual ones, then pledge classes and class years that have members */
+        /** List the chapter's groups with their members: manual ones, then pledge classes, class years and majors that have members */
         get: operations["ChapterGroupController_list_v1"];
         put?: never;
         /** Make a group and, optionally, pick its members */
@@ -9068,6 +9123,26 @@ export interface components {
             recorded: boolean;
             /** @description The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR. */
             gist: string | null;
+            /** @description Anything is in the minutes yet: a written section, someone’s notes, or a recording. Always true once posted. */
+            started: boolean;
+            /**
+             * Format: uuid
+             * @description Who is recording the meeting on their phone right now (heard from in the last few minutes). Null when nobody is.
+             */
+            recording_by: string | null;
+        };
+        MeetingLiveRecordingDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /**
+             * Format: uuid
+             * @description Who is recording.
+             */
+            user_id: string;
+            /** Format: date-time */
+            started_at: string;
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
@@ -9198,7 +9273,7 @@ export interface components {
             other_label?: string | null;
             /**
              * Format: uuid
-             * @description The meeting’s event. Send this or new_event.
+             * @description The meeting’s event. Send this, new_event, or neither: with neither the minutes start with no meeting, readable by their author alone, and are linked to one (POST /v1/meetings/{id}/event) before they can be posted.
              */
             event_id?: string;
             /** @description Make an event for a meeting that has none: nobody required, no points, and no new-event push. */
@@ -9779,7 +9854,7 @@ export interface components {
             audience_role_id?: string;
             /**
              * Format: uuid
-             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class or class year) get a copy. An empty group is a 400. Not with `audience_role_id`.
+             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class, class year or major) get a copy. An empty group is a 400. Not with `audience_role_id`.
              */
             audience_group_id?: string;
             /**
@@ -9906,6 +9981,22 @@ export interface components {
             photos: components["schemas"]["TaskPhotoDto"][];
             /** @description On a task for everyone: its group, as task reads carry it (#4295 step 3). */
             group?: components["schemas"]["TaskGroupSummaryDto"];
+        };
+        ShareTaskToChatDto: {
+            /**
+             * Format: uuid
+             * @description The channel to post the card in.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Client-generated idempotency key, reconciling the optimistic placeholder.
+             */
+            client_message_id: string;
+        };
+        ShareTaskToChatResponseDto: {
+            /** @description True once the card is in the channel. The route answers 4xx instead of `false` when it could not post. */
+            card_posted: boolean;
         };
         UpdateTaskDto: {
             title?: string;
@@ -10070,7 +10161,7 @@ export interface components {
             role_id?: string;
             /**
              * Format: uuid
-             * @description Only this chapter group’s active members (manual, pledge class or class year) may claim it. An empty group is a 400.
+             * @description Only this chapter group’s active members (manual, pledge class, class year or major) may claim it. An empty group is a 400.
              */
             group_id?: string;
             /**
@@ -10561,11 +10652,11 @@ export interface components {
             /** Format: uuid */
             chapter_id: string;
             /**
-             * @description `manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change.
+             * @description `manual`: an officer picks its members. `pledge_class`, `class_year` and `major`: Frapp keeps one per pledge class, per graduation year and per major (matched ignoring case and spacing), and its members follow the members’ own data; only its color and ping switch can change. A `class_year` or `major` group can’t go on a channel list or be what a task is from: members set their own.
              * @enum {string}
              */
-            kind: "manual" | "pledge_class" | "class_year";
-            /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, or "Class of" and the year. */
+            kind: "manual" | "pledge_class" | "class_year" | "major";
+            /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, "Class of" and the year, or the major as most of its members write it. */
             name: string;
             /** @description One of the role palette colors, or null. */
             color: string | null;
@@ -10578,6 +10669,8 @@ export interface components {
             pledge_class_id: string | null;
             /** @description The graduation year a `class_year` group follows. */
             class_year: number | null;
+            /** @description The major a `major` group follows, folded: trimmed, spacing collapsed, lower case. */
+            major_key: string | null;
             /** @description The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers. */
             member_ids: string[];
             /** Format: date-time */
@@ -10599,7 +10692,7 @@ export interface components {
             member_ids?: string[];
         };
         UpdateChapterGroupDto: {
-            /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here. */
+            /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class, year or major and is refused here. */
             name?: string;
             /**
              * @description One of the role palette colors, in any letter case. Null clears it.
@@ -18881,6 +18974,34 @@ export interface operations {
             };
         };
     };
+    MeetingController_liveRecordings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingLiveRecordingDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     MeetingController_getTemplate_v1: {
         parameters: {
             query?: never;
@@ -19089,6 +19210,62 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MeetingDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_markLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_clearLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -21232,6 +21409,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskPhotoUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_share_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareTaskToChatDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareTaskToChatResponseDto"];
                 };
             };
             /** @description Error */

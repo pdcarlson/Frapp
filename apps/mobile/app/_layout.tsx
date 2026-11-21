@@ -17,6 +17,7 @@ import { AppErrorScreen } from "@/components/route-error";
 import { RecordingBar } from "@/components/minutes/recording-bar";
 import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
+import { ItemMenuHost } from "@/components/item-actions-menu";
 import { AnalyticsProvider } from "@/lib/analytics-provider";
 import { ObservabilityIdentityProvider } from "@/lib/observability-identity-provider";
 import { AuthSessionProvider } from "@/lib/auth-session";
@@ -178,6 +179,8 @@ function RootProviders() {
                       */}
                       <NetworkBanner />
                       <RecordingBar />
+                      {/* The glass menu `openItemMenu` opens from anywhere. */}
+                      <ItemMenuHost />
                     </ClientPolicyGate>
                   </KeyboardProviderGuarded>
                 </AnalyticsProvider>

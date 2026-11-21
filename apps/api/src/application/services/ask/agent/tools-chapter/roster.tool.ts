@@ -20,7 +20,7 @@ import {
   People,
   wordsArg,
 } from './chapter-tool-kit';
-import { groupLabel, roleNames, rolesHeld } from './people';
+import { askableGroups, groupLabel, roleNames, rolesHeld } from './people';
 
 /** A roster longer than this is cut, with a line saying so. */
 const ROSTER_LIMIT = 250;
@@ -61,7 +61,9 @@ export class RosterAgentTool implements AgentReadTool<Args> {
     const [profiles, roles, groups] = await Promise.all([
       this.members.findProfilesByChapter(context.chapterId),
       this.rbac.findByChapter(context.chapterId),
-      args.group ? this.groups.list(context.chapterId) : Promise.resolve([]),
+      args.group
+        ? this.groups.list(context.chapterId).then(askableGroups)
+        : Promise.resolve([]),
     ]);
     const names = roleNames(roles);
 

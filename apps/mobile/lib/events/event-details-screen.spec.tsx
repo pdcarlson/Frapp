@@ -116,6 +116,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   usePermissionList: () => permissions,
   useRoles: () => ({ data: [], isPending: false, isError: false }),
   useEventTypes: () => ({ data: [] }),
+  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCreateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateEvent: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteEvent: () => ({ mutate: vi.fn(), isPending: false }),
@@ -1305,7 +1306,9 @@ describe("Event details agenda and attachments (#4934)", () => {
     act(() =>
       rows.forEach((row, index) =>
         row.props.onLayout({
-          nativeEvent: { layout: { x: 0, y: index * 48, width: 300, height: 44 } },
+          nativeEvent: {
+            layout: { x: 0, y: index * 48, width: 300, height: 44 },
+          },
         }),
       ),
     );
@@ -1393,9 +1396,7 @@ describe("Event details agenda and attachments (#4934)", () => {
     expect(boxes).toHaveLength(2);
     for (const box of boxes) expect(box.props.disabled).toBe(true);
     const text = screenText(tree);
-    expect(
-      text.split(AGENDA_CHECK_OFF_LOCKED_COPY).length - 1,
-    ).toBe(1);
+    expect(text.split(AGENDA_CHECK_OFF_LOCKED_COPY).length - 1).toBe(1);
     // No "done" count before there is anything to count.
     expect(text).not.toContain("of 2 done");
   });

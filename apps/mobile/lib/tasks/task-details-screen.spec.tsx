@@ -19,7 +19,11 @@ import {
 } from "@/components/tasks/task-action-bar";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
-import type { ActionMenu } from "@/lib/action-menu";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 import { ProofField } from "@/components/tasks/task-form-fields";
 import { TASK_EDIT_COPY } from "@/lib/tasks/task-edit";
 import { TASK_AUDIENCE_COPY } from "@repo/validation";
@@ -220,11 +224,14 @@ vi.mock("@/components/tasks/mark-done-sheet", async () => {
     MarkDoneSheet: (props: object) => createElement("MarkDoneSheet", props),
   };
 });
-const menus: ActionMenu[] = [];
-vi.mock("@/lib/action-menu", () => ({
-  showActionMenu: (menu: ActionMenu) => menus.push(menu),
+// The glass menu taps one as it opens (`openItemMenu`).
+vi.mock("@/lib/haptics", () => ({
+  successHaptic: () => undefined,
+  pressHaptic: () => undefined,
 }));
-vi.mock("@/lib/haptics", () => ({ successHaptic: () => undefined }));
+/** The More menu the bar opened: the app's glass menu. */
+const moreMenu = () => currentItemMenu()!;
+const moreRowLabels = () => moreMenu().actions.map((action) => action.label);
 /** `null` online; a reason while a write would be lost. */
 const connection = vi.hoisted(() => ({
   writeBlockedReason: null as string | null,
@@ -293,12 +300,13 @@ beforeEach(() => {
   taskPending = false;
   tasks = [];
   permissions = ["members:view"];
-  menus.length = 0;
+  dismissItemMenu();
   whoPicker.presented = 0;
   vi.clearAllMocks();
 });
 
 afterEach(() => {
+  dismissItemMenu();
   vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
 });
 
@@ -326,8 +334,8 @@ describe("A member's own plain task: a little", () => {
   it("offers Start in More, and it sends the assignee's To do → In progress (#5492)", () => {
     const tree = render();
     press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Start"]);
-    act(() => menus[0]!.rows[0]!.onPress());
+    expect(moreRowLabels()).toEqual(["Start"]);
+    act(() => pickItemMenuAction("Start"));
     expect(mutateStatus).toHaveBeenCalledTimes(1);
     expect(mutateStatus).toHaveBeenCalledWith({
       id: "t1",
@@ -392,7 +400,7 @@ describe("A member's own plain task: a little", () => {
     const tree = render();
     press(tree, "More");
     await act(async () => {
-      menus[0]!.rows[0]!.onPress();
+      pickItemMenuAction("Mark not done");
     });
     expect(screenText(tree)).toContain(
       "Couldn't mark that task not done. An officer may have confirmed it already.",
@@ -480,7 +488,7 @@ describe("The task's states", () => {
     expect(screenText(tree)).toContain("Marked done by you");
     expect(control(tree, "Mark done")).toBeUndefined();
     press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Mark not done"]);
+    expect(moreRowLabels()).toEqual(["Mark not done"]);
     act(() => tree.unmount());
   });
 
@@ -497,7 +505,7 @@ describe("The task's states", () => {
     const tree = render();
     expect(tree.root.findByType(StatusChip).props.label).toBe("Done");
     press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Mark not done"]);
+    expect(moreRowLabels()).toEqual(["Mark not done"]);
     act(() => tree.unmount());
   });
 
@@ -572,20 +580,20 @@ describe("An officer on a task for everyone: a lot", () => {
     expect(control(tree, "Edit task")).toBeDefined();
     expect(control(tree, "Remove people")).toBeDefined();
     press(tree, "More");
-    // Their own copy, still To do: Start leads, and three is the most.
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual([
-      "Start",
-      "Delete",
-      "Delete for everyone",
+    // Their own copy, still To do: Start leads, the deletes last and red.
+    expect(moreRowLabels()).toEqual(["Start", "Delete", "Delete for everyone"]);
+    expect(moreMenu().actions.map((action) => !!action.destructive)).toEqual([
+      false,
+      true,
+      true,
     ]);
-    expect(menus[0]!.rows.at(-1)!.style).toBe("destructive");
     act(() => tree.unmount());
   });
 
   it("deletes only this copy from More's plain Delete", async () => {
     const tree = render();
     press(tree, "More");
-    act(() => menus[0]!.rows.find((row) => row.label === "Delete")!.onPress());
+    act(() => pickItemMenuAction("Delete"));
     const [title, , buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
     expect(title).toBe('Delete "Fill in the housing form"?');
     await act(async () => {
@@ -600,7 +608,7 @@ describe("An officer on a task for everyone: a lot", () => {
     vi.mocked(router.canGoBack).mockReturnValue(true);
     const tree = render();
     press(tree, "More");
-    act(() => menus[0]!.rows.find((row) => row.label === "Delete")!.onPress());
+    act(() => pickItemMenuAction("Delete"));
     await act(async () => {
       vi.mocked(Alert.alert)
         .mock.calls[0]![2]!.find((button) => button.style === "destructive")!
@@ -688,7 +696,8 @@ describe("An officer on a task for everyone: a lot", () => {
   it("deletes for everyone after the platform alert, then goes back to Tasks", async () => {
     const tree = render();
     press(tree, "More");
-    act(() => menus[0]!.rows.at(-1)!.onPress());
+    expect(moreRowLabels().at(-1)).toBe("Delete for everyone");
+    act(() => pickItemMenuAction("Delete for everyone"));
     const [title, , buttons] = vi.mocked(Alert.alert).mock.calls[0]!;
     expect(title).toBe('Delete "Fill in the housing form" for everyone?');
     const go = buttons!.find((button) => button.style === "destructive")!;
@@ -828,7 +837,7 @@ describe("A member on a task for everyone", () => {
     expect(control(tree, "Edit task")).toBeUndefined();
     // Their own copy's Start, and nothing an officer has.
     press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Start"]);
+    expect(moreRowLabels()).toEqual(["Start"]);
     act(() => tree.unmount());
   });
 
@@ -863,11 +872,8 @@ describe("Give it back, on a task claimed from Up for grabs (#5503)", () => {
     task = { ...PLAIN, open_task_id: "open-1" };
     const tree = render();
     press(tree, "More");
-    const giveBack = menus[0]!.rows.find(
-      (row) => row.label === TASK_AUDIENCE_COPY.release,
-    );
-    expect(giveBack).toBeDefined();
-    act(() => giveBack!.onPress());
+    expect(moreRowLabels()).toContain(TASK_AUDIENCE_COPY.release);
+    act(() => pickItemMenuAction(TASK_AUDIENCE_COPY.release));
     expect(releaseTask).toHaveBeenCalledWith("t1", expect.anything());
     const { onSuccess } = releaseTask.mock.calls[0]![1] as {
       onSuccess: () => void;
@@ -890,12 +896,10 @@ describe("Give it back, on a task claimed from Up for grabs (#5503)", () => {
       stored_status: "COMPLETED",
       completed_at: "2026-11-18T09:00:00.000Z",
     };
-    menus.length = 0;
+    dismissItemMenu();
     const done = render();
     press(done, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).not.toContain(
-      TASK_AUDIENCE_COPY.release,
-    );
+    expect(moreRowLabels()).not.toContain(TASK_AUDIENCE_COPY.release);
     act(() => done.unmount());
   });
 
@@ -903,7 +907,7 @@ describe("Give it back, on a task claimed from Up for grabs (#5503)", () => {
     const tree = render();
     // More holds only Start on a member's ordinary open task.
     press(tree, "More");
-    expect(menus[0]!.rows.map((row) => row.label)).toEqual(["Start"]);
+    expect(moreRowLabels()).toEqual(["Start"]);
     act(() => tree.unmount());
   });
 });
@@ -930,9 +934,9 @@ describe("An officer's Confirm and Send back (#5513)", () => {
   const sendBackSheet = (tree: ReactTestRenderer) =>
     tree.root.findAll((node) => (node.type as unknown) === "SendBackSheet")[0];
   const moreLabels = (tree: ReactTestRenderer) => {
-    menus.length = 0;
+    dismissItemMenu();
     press(tree, "More");
-    return menus[0]!.rows.map((row) => row.label);
+    return moreRowLabels();
   };
 
   beforeEach(() => {
@@ -950,7 +954,7 @@ describe("An officer's Confirm and Send back (#5513)", () => {
     // Edit under More, as web's review keeps it under its ⋯ (#4693).
     expect(control(tree, "Edit task")).toBeUndefined();
     expect(moreLabels(tree)).toEqual(["Edit", "Delete"]);
-    act(() => menus[0]!.rows[0]!.onPress());
+    act(() => pickItemMenuAction("Edit"));
     // The screen turns into its editor, in place (#5514).
     expect(field(tree, "Task title").props.value).toBe("Sweep the porch");
     expect(control(tree, "Done")).toBeDefined();
@@ -1093,7 +1097,7 @@ describe("An officer's Confirm and Send back (#5513)", () => {
         "Delete",
         "Delete for everyone",
       ]);
-      act(() => menus[0]!.rows[0]!.onPress());
+      act(() => pickItemMenuAction("Send back"));
       expect(sendBackSheet(tree)).toBeDefined();
       act(() => tree.unmount());
     });

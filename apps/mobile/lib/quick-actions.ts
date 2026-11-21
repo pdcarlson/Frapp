@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { PLUS_MENU_PERMISSIONS } from "@repo/chat-core/plus-menu";
+import { TASK_CREATE_PERMISSIONS } from "@repo/chat-core/plus-menu";
 import {
   can,
   canAll,
@@ -131,9 +131,9 @@ export function availableQuickActions({
     // The event sheet's own gate: creating reads the roster, which the events
     // controller guards with members:view.
     newEvent: on("events") && canAll(EVENT_CREATE_PERMISSIONS, permissions),
-    // The route's grant, from the table the chat + reads too: `tasks:manage`
-    // under the controller's `members:view`.
-    newTask: on("tasks") && canAll(PLUS_MENU_PERMISSIONS.task, permissions),
+    // The route's grant (`TASK_CREATE_PERMISSIONS`, the chat + picker's New
+    // task reads it too): `tasks:manage` under the controller's `members:view`.
+    newTask: on("tasks") && canAll(TASK_CREATE_PERMISSIONS, permissions),
     // Every invite route (`POST /v1/invites`, `GET /v1/invites`) checks
     // `members:invite`. Invites have no module switch.
     invite: can("members:invite", permissions),

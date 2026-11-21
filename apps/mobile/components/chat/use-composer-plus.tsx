@@ -17,72 +17,52 @@ import {
   useMyPermissions,
   type GifResult,
 } from "@repo/hooks";
-import { can, isModuleEnabled } from "@repo/validation";
+import { can, canAll, isModuleEnabled } from "@repo/validation";
 import {
   plusMenuForms,
   plusMenuModel,
+  TASK_CREATE_PERMISSIONS,
   type PlusMenuCommand,
   type PlusMenuModuleStatus,
 } from "@repo/chat-core/plus-menu";
 import {
   eventCardOutcomeCopy,
+  TASK_LINK_UNCONFIRMED_WARNING,
   type DispatchResult,
 } from "@repo/chat-core/dispatch";
 import { ComposerPlusSheet } from "@/components/chat/composer-plus-sheet";
 import { NewPollSheet } from "@/components/chat/new-poll-sheet";
 import { GifPickerSheet } from "@/components/chat/gif-picker-sheet";
-import { NewSignupSheet } from "@/components/chat/new-signup-sheet";
-import { NewFormSheet } from "@/components/chat/new-form-sheet";
-import { NewRolePickerSheet } from "@/components/chat/new-role-picker-sheet";
+import { TaskLinkSheet } from "@/components/chat/task-link-sheet";
 import {
   NewEventSheet,
   type EventCreatedOutcome,
 } from "@/components/events/new-event-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
-import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { SheetBoundary } from "@/components/quick-actions/quick-actions-host";
 import { CHAT_PHOTO_LIMIT } from "@/lib/chat/attachment-upload";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 
 /**
- * The forms the phone's + offers, in the menu's order. Points waits for a
- * phone form (#3865).
+ * The forms the phone's + offers, in the menu's order (#5772): Poll, Event
+ * and Task, as on web. The phone has no typed shortcuts, so Service hours
+ * and Points, which web keeps for a bare `/hours` or `/points`, aren't here.
  */
-const PHONE_PLUS_COMMANDS = [
-  "poll",
-  "signup",
-  "form",
-  "event",
-  "task",
-  "hours",
-  "roles",
-] as const;
+const PHONE_PLUS_COMMANDS = ["poll", "event", "task"] as const;
 
-/**
- * The forms mounted on first use, since each reads its own data: the role
- * picker reads the chapter's roles, which no other + form needs.
- */
-type ChannelForm = "event" | "task" | "hours" | "roles";
+/** The forms mounted on first use, since each reads its own data. */
+type ChannelForm = "event" | "task";
 
 const NO_FORMS: ReadonlySet<ChannelForm> = new Set();
 
 /** What each form's posted-but-not-quite outcome is called in its alert. */
 const OUTCOME_TITLES: Record<
-  "poll" | "signup" | "form" | "task" | "hours" | "roles",
+  "poll" | "task" | "link",
   { posted: string; unconfirmed: string }
 > = {
   poll: { posted: "Poll posted", unconfirmed: "Couldn't confirm the poll" },
-  signup: {
-    posted: "Sign-up sheet posted",
-    unconfirmed: "Couldn't confirm the sign-up sheet",
-  },
-  form: { posted: "Form posted", unconfirmed: "Couldn't confirm the form" },
   task: { posted: "Task created", unconfirmed: "Couldn't confirm the task" },
-  hours: { posted: "Hours logged", unconfirmed: "Couldn't confirm the hours" },
-  roles: {
-    posted: "Role picker posted",
-    unconfirmed: "Couldn't confirm the role picker",
-  },
+  link: { posted: "Task linked", unconfirmed: "Couldn't confirm the link" },
 };
 
 /**
@@ -93,7 +73,7 @@ const OUTCOME_TITLES: Record<
  * read this before trying again.
  */
 export function presentPostOutcome(
-  form: "poll" | "signup" | "form" | "task" | "hours" | "roles",
+  form: "poll" | "task" | "link",
   result: { warning?: string; unconfirmed?: boolean },
   alert: typeof Alert.alert = Alert.alert,
 ): void {
@@ -135,7 +115,7 @@ export function plusModuleStatus(read: {
  *
  * Every form is keyed per channel, so a draft kept by a swipe never posts
  * into another channel, and all of them close on blur like the member list.
- * Event, Task and Service hours mount on first use, as the quick actions'
+ * Event and Task mount on first use, as the quick actions'
  * do, since each reads its own data.
  */
 export function useComposerPlus({
@@ -149,11 +129,8 @@ export function useComposerPlus({
   channel: Pick<
     UseChatChannelResult,
     | "sendPoll"
-    | "sendSignup"
-    | "sendRolePicker"
-    | "sendForm"
     | "postTask"
-    | "postHours"
+    | "linkTask"
     | "trackEventCard"
     | "photos"
     | "sendGif"
@@ -212,12 +189,9 @@ export function useComposerPlus({
   // GIFs (#4631): the row shows only once the server says search is set up.
   const gifs = useGifAvailability();
   const pollRef = useRef<BottomSheetModal>(null);
-  const signupRef = useRef<BottomSheetModal>(null);
-  const newFormRef = useRef<BottomSheetModal>(null);
+  const taskLinkRef = useRef<BottomSheetModal>(null);
   const eventRef = useRef<BottomSheetModal>(null);
   const taskRef = useRef<BottomSheetModal>(null);
-  const hoursRef = useRef<BottomSheetModal>(null);
-  const rolePickerRef = useRef<BottomSheetModal>(null);
   const formRefs: Record<
     ChannelForm,
     RefObject<BottomSheetModal | null>
@@ -225,8 +199,6 @@ export function useComposerPlus({
     () => ({
       event: eventRef,
       task: taskRef,
-      hours: hoursRef,
-      roles: rolePickerRef,
     }),
     [],
   );
@@ -258,24 +230,9 @@ export function useComposerPlus({
     [],
   );
 
-  const openForm = useCallback(
-    (command: PlusMenuCommand) => {
-      Keyboard.dismiss();
-      if (command === "poll") {
-        pollRef.current?.present();
-        return;
-      }
-      if (command === "signup") {
-        signupRef.current?.present();
-        return;
-      }
-      if (command === "form") {
-        newFormRef.current?.present();
-        return;
-      }
-      // Points isn't on the phone's + yet, so `PHONE_PLUS_COMMANDS` never
-      // offers it.
-      if (command === "points") return;
+  // Mounts a form on first use, then presents it.
+  const presentForm = useCallback(
+    (command: ChannelForm) => {
       setNow(new Date());
       if (mountedForms.has(command)) {
         formRefs[command].current?.present();
@@ -292,6 +249,24 @@ export function useComposerPlus({
     [channelId, mountedForms, formRefs],
   );
 
+  const openForm = useCallback(
+    (command: PlusMenuCommand) => {
+      Keyboard.dismiss();
+      if (command === "poll") {
+        pollRef.current?.present();
+        return;
+      }
+      // The Task row opens the picker (#5772); its New task opens the form.
+      if (command === "task") {
+        taskLinkRef.current?.present();
+        return;
+      }
+      if (command === "event") presentForm("event");
+      // Hours and points aren't offered on the phone (`PHONE_PLUS_COMMANDS`).
+    },
+    [presentForm],
+  );
+
   const openPlus = useCallback(() => {
     Keyboard.dismiss();
     plusRef.current?.present();
@@ -305,12 +280,9 @@ export function useComposerPlus({
           plusRef,
           gifRef,
           pollRef,
-          signupRef,
-          newFormRef,
+          taskLinkRef,
           eventRef,
           taskRef,
-          hoursRef,
-          rolePickerRef,
         ]) {
           ref.current?.dismiss();
         }
@@ -318,16 +290,7 @@ export function useComposerPlus({
     }, [channelId]),
   );
 
-  const {
-    sendPoll,
-    sendSignup,
-    sendRolePicker,
-    sendForm,
-    postTask,
-    postHours,
-    trackEventCard,
-    sendGif,
-  } = channel;
+  const { sendPoll, postTask, linkTask, trackEventCard, sendGif } = channel;
   const openGif = useCallback(() => {
     Keyboard.dismiss();
     gifRef.current?.present();
@@ -339,30 +302,6 @@ export function useComposerPlus({
       });
     },
     [sendGif, gifs.provider],
-  );
-  const postSignupHere = useCallback(
-    async (signup: Parameters<typeof sendSignup>[0]) => {
-      const result = await sendSignup(signup);
-      if (result.ok) presentPostOutcome("signup", result);
-      return result;
-    },
-    [sendSignup],
-  );
-  const postRolePickerHere = useCallback(
-    async (picker: Parameters<typeof sendRolePicker>[0]) => {
-      const result = await sendRolePicker(picker);
-      if (result.ok) presentPostOutcome("roles", result);
-      return result;
-    },
-    [sendRolePicker],
-  );
-  const postFormHere = useCallback(
-    async (form: Parameters<typeof sendForm>[0]) => {
-      const result = await sendForm(form);
-      if (result.ok) presentPostOutcome("form", result);
-      return result;
-    },
-    [sendForm],
   );
   const postPollHere = useCallback(
     async (poll: Parameters<typeof sendPoll>[0]) => {
@@ -376,10 +315,28 @@ export function useComposerPlus({
     (result: DispatchResult) => presentPostOutcome("task", result),
     [],
   );
-  const onHoursPosted = useCallback(
-    (result: DispatchResult) => presentPostOutcome("hours", result),
-    [],
+  const linkTaskHere = useCallback(
+    async (task: { id: string; title: string }) => {
+      let result: DispatchResult;
+      try {
+        result = await linkTask(task);
+      } catch {
+        // A throw is chat-core's cache bookkeeping, after the request went
+        // out: the card may be posted, so it reads as unconfirmed, as web's.
+        result = {
+          ok: true,
+          unconfirmed: true,
+          warning: TASK_LINK_UNCONFIRMED_WARNING,
+        };
+      }
+      if (result.ok) presentPostOutcome("link", result);
+      return result;
+    },
+    [linkTask],
   );
+  const canCreateTask = Array.isArray(granted)
+    ? canAll([...TASK_CREATE_PERMISSIONS], granted)
+    : false;
   const eventChat = useMemo(
     () =>
       channelId && trackEventCard
@@ -420,15 +377,12 @@ export function useComposerPlus({
         onPost={postPollHere}
         canCloseEarly={can("polls:create", granted)}
       />
-      <NewSignupSheet
-        key={`signup-${key}`}
-        ref={signupRef}
-        onPost={postSignupHere}
-      />
-      <NewFormSheet
-        key={`form-${key}`}
-        ref={newFormRef}
-        onPost={postFormHere}
+      <TaskLinkSheet
+        key={`task-link-${key}`}
+        ref={taskLinkRef}
+        canCreate={canCreateTask}
+        onLink={linkTaskHere}
+        onNew={() => presentForm("task")}
       />
       {mountedForms.has("event") && eventChat ? (
         <SheetBoundary key={`event-${key}`} onError={() => dropForm("event")}>
@@ -448,21 +402,6 @@ export function useComposerPlus({
             postToChannel={postTask}
             onPosted={onTaskPosted}
           />
-        </SheetBoundary>
-      ) : null}
-      {mountedForms.has("hours") ? (
-        <SheetBoundary key={`hours-${key}`} onError={() => dropForm("hours")}>
-          <LogHoursSheet
-            ref={hoursRef}
-            now={now}
-            postToChannel={postHours}
-            onPosted={onHoursPosted}
-          />
-        </SheetBoundary>
-      ) : null}
-      {mountedForms.has("roles") ? (
-        <SheetBoundary key={`roles-${key}`} onError={() => dropForm("roles")}>
-          <NewRolePickerSheet ref={rolePickerRef} onPost={postRolePickerHere} />
         </SheetBoundary>
       ) : null}
     </>

@@ -2244,6 +2244,40 @@ describe('TaskService', () => {
     });
   });
 
+  describe('shareToChat (#5772)', () => {
+    it("posts the task's own card: its creator as assigner, its live status, sent as the linker", async () => {
+      mockUserRepo.findByIds.mockResolvedValue([
+        { id: 'admin-1', display_name: 'Admin Alice' } as User,
+        { id: 'user-1', display_name: 'Member Bob' } as User,
+      ]);
+
+      await service.shareToChat({ ...baseTask, status: 'COMPLETED' } as never, {
+        chapter_id: 'ch-1',
+        channel_id: 'channel-1',
+        sender_id: 'user-9',
+        client_message_id: 'cmid-9',
+      });
+
+      expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channel_id: 'channel-1',
+          sender_id: 'user-9',
+          kind: 'task',
+          system_originated: true,
+          client_message_id: 'cmid-9',
+          content: `"${baseTask.title}" for Member Bob (due ${baseTask.due_date})`,
+          payload: expect.objectContaining({
+            task_id: baseTask.id,
+            assigner_user_id: baseTask.created_by,
+            assigner_name: 'Admin Alice',
+            assignee_name: 'Member Bob',
+            status: 'COMPLETED',
+          }),
+        }),
+      );
+    });
+  });
+
   describe('updateStatus', () => {
     it('should allow TODO → IN_PROGRESS transition', async () => {
       const updated: Task = { ...baseTask, status: TaskStatus.IN_PROGRESS };

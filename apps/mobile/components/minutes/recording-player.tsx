@@ -1,9 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
-import {
-  MEETING_RECORDER_COPY,
-  meetingRecorderClock,
-} from "@repo/validation";
+import { MEETING_RECORDER_COPY, meetingRecorderClock } from "@repo/validation";
 import { PauseGlyph, PlayGlyph } from "@/components/control-glyphs";
 import { RoundControl } from "@/components/minutes/recorder-controls";
 import { useChapterBranding } from "@/lib/chapter-branding";

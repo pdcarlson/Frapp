@@ -1,9 +1,16 @@
 import { useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  type GestureResponderEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { ActivityNudge } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { isMemberNudgePraise } from "@repo/validation";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
 import { NavGlyph } from "@/components/nav-glyph";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -102,12 +109,22 @@ export function NudgeCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, seen]);
 
-  const more = () =>
-    Alert.alert("This card", undefined, [
-      { text: "Hide this one", onPress: () => onDismiss(shown) },
-      { text: "Turn these off", style: "destructive", onPress: onTurnOff },
-      { text: "Cancel", style: "cancel" },
-    ]);
+  const more = (event?: GestureResponderEvent) =>
+    openItemMenu(
+      {
+        title: "This card",
+        actions: [
+          { key: "hide", label: "Hide this one", run: () => onDismiss(shown) },
+          {
+            key: "turn-off",
+            label: "Turn these off",
+            destructive: true,
+            run: onTurnOff,
+          },
+        ],
+      },
+      pressAt(event),
+    );
 
   return (
     <View style={styles.card} testID="activity-nudge-card">

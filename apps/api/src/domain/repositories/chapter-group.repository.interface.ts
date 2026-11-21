@@ -41,7 +41,8 @@ export interface IChapterGroupRepository {
   findMemberIds(chapterId: string, groupId: string): Promise<string[]>;
   /**
    * The groups one member is in that can open a channel: every kind but a
-   * class year (`groupKindOpensChannels`). For channel access only.
+   * class year or a major (`groupKindOpensChannels`). For channel access
+   * only.
    */
   findGroupIdsForUser(chapterId: string, userId: string): Promise<string[]>;
   /** Whether any channel's or category's who-can-see or who-can-post names it. */

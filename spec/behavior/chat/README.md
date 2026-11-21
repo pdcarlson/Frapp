@@ -44,8 +44,8 @@ Paul, 2026-11-10 (#3722, under #4068): each channel answers two questions, and o
   A group grants nothing, so it is how a channel opens to a set of people without giving them a role: who is in a group is the officers' call in Chapter settings → Roles and groups, or on the member's profile (`groups:manage`), and naming a group on a list is the channel officers' call.
   Once a list names a group, changing who is in it or deleting it is a change to that channel's access, so it also needs `channels:manage`; otherwise a `groups:manage` holder could add themselves to a group that gates a channel they can't read.
   A pledge class's group follows the class, which officers set.
-  A class year's group can't go on a list at all (the API refuses it, and `can_read_chat_channel` ignores it): members set their own graduation year, so it would let anyone in.
-  The pickers list groups after tiers and roles, and leave out class years and a pledge class nobody is in yet.
+  A class year's or a major's group (#5778) can't go on a list at all (the API refuses it, and `can_read_chat_channel` ignores it): members set their own graduation year and major, so it would let anyone in.
+  The pickers list groups after tiers and roles, and leave out class years, majors and a pledge class nobody is in yet.
 - **No deny and no per-person overrides.**
   Private channels with hand-picked members stay as they are (`PRIVATE`, decided by `member_ids`) and carry no lists; neither do DMs and group DMs.
   One exception: a private channel someone made read-only before #3722 keeps the roles that could post there as its who-can-post list, so its members post exactly where they did; `PATCH /v1/channels/:id` with `who_can_post: null` clears it, and nothing sets one.
@@ -2029,7 +2029,8 @@ The rules (`ChatMentionService`, `apps/api/src/application/services/chat-mention
   No role may be named so it reads as `@here` (`role.everyone_name`, and a Discord import's new role), and a role an older chapter named "Here" is no longer mentionable by that name.
   Presence is advisory (`presence-topics.ts`), so a forged entry can make someone "here" who isn't; that costs them a mention, never access.
 - **Tiers and groups are pinged the same way** (#4076; tiers decided by Paul and Shawn on 2026-11-11).
-  `@<tier name>` reaches everyone holding any role in the tier, and `@<group name>` everyone in the group now ([`members.md` § Groups](../members.md#groups)): a pledge class's group reaches the class, "Class of 2027" whoever has that graduation year.
+  `@<tier name>` reaches everyone holding any role in the tier, and `@<group name>` everyone in the group now ([`members.md` § Groups](../members.md#groups)): a pledge class's group reaches the class, "Class of 2027" whoever has that graduation year, and a major's group (`@Mechanical Engineering`, #5778) whoever has that major, however they capitalized it.
+  A member types their own major, so a major gives way: one named like a role, tier or other group of the chapter, or like a member's name or first name, is no mention target (it still lists under Roles and groups), and that name keeps meaning what it meant. Otherwise saving "Exec Board" as a major would add you to every `@Exec Board`, and a major "Art" would take a typed `@Art` from a member named Art. A chapter that made a role per major keeps pinging the role until it deletes it, and then the major takes the name.
   Each tier and group has its own `mentionable` switch, on by default, with the role's rule: while off, only a member holding `channels:manage`, `roles:manage` or `*` can ping it (the tier's on its page under Roles, the group's under Roles and groups).
   A tier holding the Everyone role reaches nearly the whole chapter, so it also follows the Everyone role's switch (§ `@everyone`, officers only by default): without that, `@Members` would be `@everyone` for anyone.
   Matching is the role's, by the whole folded name.

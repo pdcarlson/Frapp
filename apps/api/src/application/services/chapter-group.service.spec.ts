@@ -35,6 +35,7 @@ function group(
     mentionable: true,
     pledge_class_id: null,
     class_year: null,
+    major_key: null,
     created_at: '2026-11-01T00:00:00Z',
     updated_at: '2026-11-01T00:00:00Z',
     ...extra,
@@ -157,6 +158,17 @@ describe('ChapterGroupService (#4076)', () => {
         expect(repo.create).not.toHaveBeenCalled();
       },
     );
+
+    it("takes a name a major's group has: the major gives way in mentions (#5778)", async () => {
+      repo.findByChapter.mockResolvedValue([
+        group('m', 'Rush Chairs', { kind: 'major', major_key: 'rush chairs' }),
+      ]);
+      repo.create.mockResolvedValue(group('new', 'Rush Chairs'));
+
+      await expect(
+        service.create(CHAPTER, ACTOR, { name: 'Rush Chairs' }),
+      ).resolves.toMatchObject({ id: 'new' });
+    });
 
     it.each(['everyone', '@Here', '---'])(
       'refuses %s, which is no name a mention can reach on its own',
@@ -443,5 +455,20 @@ describe('withMembers', () => {
       [],
     );
     expect(views.map((v) => v.id)).toEqual(['a', 'b']);
+  });
+
+  it('puts majors after class years, alphabetically (#5778)', () => {
+    const views = withMembers(
+      [
+        group('m2', 'Music', { kind: 'major', major_key: 'music' }),
+        group('m1', 'Computer Science', {
+          kind: 'major',
+          major_key: 'computer science',
+        }),
+        group('y', 'Class of 2027', { kind: 'class_year', class_year: 2027 }),
+      ],
+      [],
+    );
+    expect(views.map((v) => v.id)).toEqual(['y', 'm1', 'm2']);
   });
 });

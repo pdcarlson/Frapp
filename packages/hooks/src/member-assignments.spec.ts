@@ -3,6 +3,7 @@ import {
   ASSIGN_CAPTIONS,
   CHIP_PREVIEW_COUNT,
   cutChips,
+  groupFollowsLabel,
   memberAssignmentSections,
   memberGroupChips,
   memberRoleChips,
@@ -336,5 +337,17 @@ describe("cutChips", () => {
     ]);
     expect(folded.toggle?.label).toBe("+6 more");
     expect(names(cutChips(chips, true).shown)).toEqual(names(chips));
+describe("groupFollowsLabel", () => {
+  it("says what each automatic group follows, and nothing for a manual one", () => {
+    expect(
+      (["manual", "pledge_class", "class_year", "major"] as const).map((kind) =>
+        groupFollowsLabel({ kind }),
+      ),
+    ).toEqual([
+      null,
+      "Follows pledge class",
+      "Follows graduation year",
+      "Follows major",
+    ]);
   });
 });

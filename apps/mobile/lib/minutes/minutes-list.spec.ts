@@ -38,6 +38,8 @@ function row(over: Partial<MinutesListRow> = {}): MinutesListRow {
     decision_count: 0,
     action_item_count: 0,
     recorded: false,
+    started: true,
+    recording_by: null,
     gist: null,
     ...over,
   };

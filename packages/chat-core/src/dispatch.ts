@@ -23,9 +23,6 @@ import {
   type SlashCommand,
 } from "./integrations";
 import { buildPollMessage, type PollPayload } from "./polls";
-import type { FormPayload } from "./forms";
-import type { SignupPayload } from "./signups";
-import type { RolePickerPayload } from "./role-pickers";
 import {
   sendMessage,
   insertLocalPlaceholder,
@@ -228,13 +225,13 @@ type PostFormCardResult =
   | { ok: false; error: string; cause?: unknown };
 
 /**
- * The one way a + form posts a card that queues like a message: a poll, a
- * sign-up sheet, a form and a role picker. Never rejects; the outcomes are `postPoll`'s.
+ * The one way a + form posts a card that queues like a message: a poll.
+ * Never rejects; the outcomes are `postPoll`'s.
  */
 async function postFormCard(
   ctx: ChatActionContext,
   channelId: string,
-  kind: "poll" | "signup" | "form" | "role_picker",
+  kind: "poll",
   card: { content: string; payload: object },
   failureCopy: string,
 ): Promise<PostFormCardResult> {
@@ -256,68 +253,6 @@ async function postFormCard(
     // caller's error reporting, which chat-core has no port for.
     return { ok: false, error: failureCopy, cause };
   }
-}
-
-/**
- * Posts a sign-up sheet card the New sign-up sheet form built
- * (`buildSignupMessage`, #3926), on web's + card and the phone's sheet.
- * Through the outbox like a poll, so it is optimistic and survives going
- * offline, and it leaves the channel's saved draft alone. Never rejects; the
- * outcomes are `postPoll`'s.
- */
-export function postSignup(
-  ctx: ChatActionContext,
-  channelId: string,
-  signup: { content: string; payload: SignupPayload },
-): Promise<PostFormCardResult> {
-  return postFormCard(
-    ctx,
-    channelId,
-    "signup",
-    signup,
-    "Couldn't post that sign-up sheet. Try again.",
-  );
-}
-
-/**
- * Posts a form card the New form builder built (`buildFormMessage`, #3926
- * step 3). Through the outbox like a sign-up sheet: optimistic, survives
- * going offline, and leaves the channel's saved draft alone. Never rejects;
- * the outcomes are `postPoll`'s.
- */
-export function postForm(
-  ctx: ChatActionContext,
-  channelId: string,
-  form: { content: string; payload: FormPayload },
-): Promise<PostFormCardResult> {
-  return postFormCard(
-    ctx,
-    channelId,
-    "form",
-    form,
-    "Couldn't post that form. Try again.",
-  );
-}
-
-/**
- * Posts a role picker the New role picker form built
- * (`buildRolePickerMessage`, #4958), on web's + card and the phone's sheet.
- * Through the outbox like a sign-up sheet. The send route refuses it without
- * `roles:manage` or for a role no longer marked; that refusal lands on the
- * failed row. Never rejects; the outcomes are `postPoll`'s.
- */
-export function postRolePicker(
-  ctx: ChatActionContext,
-  channelId: string,
-  picker: { content: string; payload: RolePickerPayload },
-): Promise<PostFormCardResult> {
-  return postFormCard(
-    ctx,
-    channelId,
-    "role_picker",
-    picker,
-    "Couldn't post that role picker. Try again.",
-  );
 }
 
 async function dispatchAnnounce(
@@ -571,7 +506,10 @@ async function submitPointsAdjustment(
         error:
           status === 429
             ? `${REFUSED_ERROR} ${
-                isServerBusy({ statusCode: 429, message: serverMessageOf(refusal) })
+                isServerBusy({
+                  statusCode: 429,
+                  message: serverMessageOf(refusal),
+                })
                   ? SERVER_BUSY_COPY
                   : (serverMessageOf(refusal) ?? RATE_LIMITED_COPY)
               }`
@@ -1021,6 +959,61 @@ export async function postTask(
   // Success: the server posts the `task` card (same client_message_id); the
   // Realtime echo reconciles the placeholder via mergeServerRow. Nothing to do
   // unless `card_posted` was an explicit `false` above.
+  return { ok: true };
+}
+
+export const TASK_LINK_UNCONFIRMED_WARNING =
+  "Couldn't confirm the task was linked. Check the channel before you link it again.";
+
+/**
+ * Post an existing task's card into `channelId` (#5772): the + sheet's Task
+ * row, on web and the phone. A `loading` placeholder until the server's card
+ * reconciles it by Realtime echo; dropped on a refusal. A lost answer reads
+ * as unconfirmed, like `/task`'s, since a second link would post a second
+ * card.
+ */
+export async function linkTask(
+  ctx: ChatActionContext,
+  channelId: string,
+  task: { id: string; title: string },
+): Promise<DispatchResult> {
+  const clientMessageId = randomClientId();
+  insertLocalPlaceholder(ctx, {
+    channelId,
+    clientMessageId,
+    content: `Linking "${task.title}"…`,
+  });
+  try {
+    const result = await ctx.apiClient.POST("/v1/tasks/{id}/share", {
+      params: { path: { id: task.id } },
+      body: { channel_id: channelId, client_message_id: clientMessageId },
+    });
+    const { status, ok } = responseStatus(result);
+    if (!ok) {
+      if (!isTerminalStatus(status)) {
+        return lostResponse(
+          ctx,
+          channelId,
+          clientMessageId,
+          TASK_LINK_UNCONFIRMED_WARNING,
+        );
+      }
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return {
+        ok: false,
+        error: apiErrorMessage(result.error, "Couldn't link that task"),
+        cause: result.error,
+      };
+    }
+  } catch {
+    return lostResponse(
+      ctx,
+      channelId,
+      clientMessageId,
+      TASK_LINK_UNCONFIRMED_WARNING,
+    );
+  }
+  // The card arrives by Realtime echo and replaces the placeholder.
   return { ok: true };
 }
 

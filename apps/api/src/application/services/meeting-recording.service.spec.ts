@@ -164,9 +164,17 @@ function setup(
       ]);
     }),
   };
+  const linked: ((row: Meeting) => Promise<void>)[] = [];
   const meetings = {
     editableBy: jest.fn().mockResolvedValue(options.meeting ?? meeting()),
     notifyRecordingUploaded: jest.fn().mockResolvedValue(24),
+    onMinutesLinked: jest.fn((listener: (row: Meeting) => Promise<void>) => {
+      linked.push(listener);
+    }),
+    /** Runs what the service registered for minutes being linked. */
+    link: async (row: Meeting) => {
+      for (const listener of linked) await listener(row);
+    },
   };
   const runs = {
     enqueue: jest.fn().mockResolvedValue({ id: RUN }),
@@ -437,6 +445,23 @@ describe('MeetingRecordingService', () => {
       const again = await upload();
       await service.uploaded(CHAPTER, MEETING, SECRETARY, again.upload_id);
       expect(runs.enqueue).toHaveBeenCalledTimes(2);
+      expect(meetings.notifyRecordingUploaded).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits to tell anyone about minutes with no meeting, and tells the meeting once they are linked', async () => {
+      const unlinked = meeting({ event_id: null });
+      const harness = setup({ meeting: unlinked });
+      const { service, meetings, recordings } = harness;
+      service.onModuleInit();
+      await transcribing(harness);
+      expect(meetings.notifyRecordingUploaded).not.toHaveBeenCalled();
+      expect(recordings.row!.attendees_notified_at).toBeNull();
+
+      await meetings.link({ ...unlinked, event_id: 'evt-linked' });
+      expect(meetings.notifyRecordingUploaded).toHaveBeenCalledTimes(1);
+      expect(meetings.notifyRecordingUploaded.mock.calls[0][2]).toBe(SECRETARY);
+      // Linked again later (it can't be, but a second call): nobody twice.
+      await meetings.link({ ...unlinked, event_id: 'evt-linked' });
       expect(meetings.notifyRecordingUploaded).toHaveBeenCalledTimes(1);
     });
 

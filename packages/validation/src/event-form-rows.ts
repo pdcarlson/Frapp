@@ -1,4 +1,9 @@
 import { ATTENDANCE_SEARCH_FROM } from "./event-attendance";
+import {
+  EVENT_TYPE_NAME_MAX_LENGTH,
+  EVENT_TYPES_MAX,
+  POINTS_ADJUSTMENT_MAX,
+} from "./field-limits";
 
 /**
  * The words of the event form's rows (#5561), one copy for web's
@@ -72,6 +77,68 @@ export const EVENT_FORM_MEMBER_NOTE =
  * as Who's coming does past as many roles.
  */
 export const EVENT_TYPE_SEARCH_FROM = ATTENDANCE_SEARCH_FROM;
+
+/**
+ * The Type menu's search field for someone who can make types: it finds a
+ * type and, when none is called that, offers to make one (Paul 2026-11-20,
+ * "you should either be able to do no type or add a type in the moment").
+ */
+export const EVENT_TYPE_FIND_OR_ADD = "Find or add a type";
+
+/**
+ * The name "Create “…”" would make from what is typed in the Type menu, or
+ * `null` when it offers nothing: a blank field, a name past the column's
+ * limit, a type already called that (ignoring case, as the server's unique
+ * index does), or a chapter already holding {@link EVENT_TYPES_MAX}.
+ * Comparable: Linear's and Notion's label menus, which offer to create
+ * whatever was typed when nothing matches.
+ */
+export function eventTypeToAdd(
+  typed: string,
+  types: readonly { name: string }[],
+): string | null {
+  const name = typed.trim().replace(/\s+/g, " ");
+  if (name === "" || name.length > EVENT_TYPE_NAME_MAX_LENGTH) return null;
+  if (types.length >= EVENT_TYPES_MAX) return null;
+  const key = name.toLocaleLowerCase();
+  const taken = types.some(
+    (type) => type.name.trim().toLocaleLowerCase() === key,
+  );
+  return taken ? null : name;
+}
+
+/** The row that makes the type: `Create “Work party”`. */
+export function addEventTypeLabel(name: string): string {
+  return `Create \u201c${name}\u201d`;
+}
+
+/** What a new event type is made of: the body of `POST /v1/event-types`. */
+export type EventTypeDraft = {
+  name: string;
+  point_value: number;
+  is_mandatory: boolean;
+};
+
+/**
+ * The type made in place from the form it was made on: it carries the
+ * event's points and whether everyone must come, so the next event of that
+ * kind starts the same. The form keeps what it holds; only the type is held
+ * (and its name fills a blank name). Points are read from the field's text
+ * the same way on both apps: a whole number is kept, capped at
+ * {@link POINTS_ADJUSTMENT_MAX}; anything else, a blank field, or a
+ * member's form, which sets none (`null`), makes 0.
+ */
+export function eventTypeFromForm(
+  name: string,
+  pointsText: string | null,
+  everyoneRequired: boolean,
+): EventTypeDraft {
+  const trimmed = pointsText?.trim() ?? "";
+  const point_value = /^\d+$/.test(trimmed)
+    ? Math.min(Number(trimmed), POINTS_ADJUSTMENT_MAX)
+    : 0;
+  return { name, point_value, is_mandatory: everyoneRequired };
+}
 
 /** `"10 points · Required"`: what picking a type sets, in its menu row. */
 export function describeEventTypeSets(type: {

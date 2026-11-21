@@ -31,10 +31,7 @@ import {
   PlusGlyph,
   PointsGlyph,
   PollsGlyph,
-  RolesGlyph,
   ServiceGlyph,
-  SignupGlyph,
-  FormGlyph,
   TasksGlyph,
   type ChatGlyphProps,
 } from "./chat-glyphs";
@@ -60,25 +57,20 @@ import {
 
 const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<ChatGlyphProps>> = {
   poll: PollsGlyph,
-  signup: SignupGlyph,
-  form: FormGlyph,
   event: EventsGlyph,
   task: TasksGlyph,
   hours: ServiceGlyph,
   points: PointsGlyph,
-  roles: RolesGlyph,
 };
 
 /** The form's title in the card's header. */
 const PLUS_FORM_TITLE: Record<PlusMenuCommand, string> = {
   poll: "New poll",
-  signup: "New sign-up sheet",
-  form: "New form",
   event: "New event",
-  task: "New task",
+  // Link one the member can see, or make a new one (#5772).
+  task: "Add a task",
   hours: "Log service hours",
   points: "Adjust points",
-  roles: "New role picker",
 };
 
 export interface ComposerPlusCardProps {
