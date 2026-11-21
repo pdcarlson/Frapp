@@ -66,26 +66,28 @@ export class UserService {
 
   /**
    * The caller's own profile edit. A changed name is refused while a chapter
-   * locks it (#5801), and otherwise recorded in the audit log of each chapter
-   * the member has finished joining, so officers see every rename.
+   * locks it (#5801), and otherwise recorded in the audit log of each of the
+   * member's chapters, so officers see every rename.
    */
   async update(id: string, data: Partial<User>): Promise<User> {
     const current = await this.requireLiveUser(id);
+    const patch = birthdayPatch(current, data);
     const renamed =
       data.display_name !== undefined &&
       data.display_name !== current.display_name;
-    if (renamed && (await this.nameLock.isLocked(id))) {
-      throw new ForbiddenException(NAME_LOCK_COPY.refusal);
-    }
-    const saved = await this.userRepo.update(id, birthdayPatch(current, data));
     if (renamed) {
+      if (await this.nameLock.isLocked(id)) {
+        throw new ForbiddenException(NAME_LOCK_COPY.refusal);
+      }
+      // Recorded before it is saved: a failed audit write refuses the rename
+      // instead of saving one no chapter can see (#5801).
       await this.nameLock.recordRename(
-        id,
+        current,
         current.display_name,
-        saved.display_name,
+        data.display_name as string,
       );
     }
-    return saved;
+    return this.userRepo.update(id, patch);
   }
 
   /** {@link findById} with `avatar_url` made renderable, for the caller's own profile. */
@@ -136,9 +138,28 @@ export class UserService {
   async ownProfile(user: User): Promise<OwnProfile> {
     const [signed, locked] = await Promise.all([
       this.photoUrls.signRow(user, user.id),
-      this.nameLock.isLocked(user.id),
+      this.nameLockForDisplay(user.id),
     ]);
     return { ...signed, display_name_locked: locked };
+  }
+
+  /**
+   * The lock as Profile shows it. A failed read shows the name editable
+   * rather than failing a route whose write already landed; the rename
+   * itself is still checked when it is sent.
+   */
+  private async nameLockForDisplay(userId: string): Promise<boolean> {
+    try {
+      return await this.nameLock.isLocked(userId);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not read the name lock for user ${userId}; showing the name editable`,
+        error,
+      );
+      return false;
+    }
   }
 
   /**

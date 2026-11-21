@@ -72,7 +72,7 @@ export interface OrgConfig {
   /** When true, this chapter has opted out of pseudonymous product analytics. */
   analytics_opt_out?: boolean;
   /**
-   * Whether members who finished joining may change their own name (#5801);
+   * Whether settled members may change their own name (#5801);
    * false, the default, locks it to officers who manage roles.
    */
   members_can_change_name?: boolean;
@@ -309,7 +309,12 @@ export function usePatchOrgConfig() {
     // overwrite its optimistic value, flicking the switch and its nav row
     // back. During `onSettled` this mutation still counts as pending, so 1
     // means "only this one".
-    onSettled: () => {
+    onSettled: (_data, _error, diff) => {
+      // The member-names switch can lock or free the officer's own name
+      // (#5801), which their own row says.
+      if (diff.members_can_change_name !== undefined) {
+        void qc.invalidateQueries({ queryKey: ["user", "me"], exact: true });
+      }
       if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1)
         return;
       void qc.invalidateQueries({ queryKey });

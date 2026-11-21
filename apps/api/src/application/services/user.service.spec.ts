@@ -128,7 +128,7 @@ describe('UserService', () => {
     });
     expect(result).toEqual(updatedUser);
     expect(nameLock.recordRename).toHaveBeenCalledWith(
-      'user-1',
+      existingUser,
       'Old Name',
       'Updated Name',
     );
@@ -165,13 +165,30 @@ describe('UserService', () => {
       expect(nameLock.recordRename).not.toHaveBeenCalled();
     });
 
-    it('records an allowed rename', async () => {
+    it('records an allowed rename before saving it', async () => {
       await service.update('user-1', { display_name: 'Ethan S.' });
       expect(nameLock.recordRename).toHaveBeenCalledWith(
-        'user-1',
+        existing,
         'Ethan Smith',
         'Ethan S.',
       );
+      expect(nameLock.recordRename.mock.invocationCallOrder[0]).toBeLessThan(
+        mockRepo.update.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('refuses the rename when its audit write fails, saving nothing', async () => {
+      nameLock.recordRename.mockRejectedValue(new Error('insert failed'));
+      await expect(
+        service.update('user-1', { display_name: 'Ethan S.' }),
+      ).rejects.toThrow('insert failed');
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('shows the name editable when the lock read fails, not a failed request', async () => {
+      nameLock.isLocked.mockRejectedValue(new Error('read failed'));
+      const profile = await service.findProfile('user-1');
+      expect(profile.display_name_locked).toBe(false);
     });
 
     it('says on the own profile whether the name is locked', async () => {

@@ -291,6 +291,18 @@ describe("Chapter settings (#4074)", () => {
     );
   });
 
+  it("shows the member-names switch read-only to a viewer without :manage (#5801)", () => {
+    h.patchConfig.mockClear();
+    h.permissions = ["chapter-config:view"];
+    const tree = render(<ChapterSettingsScreen />);
+    const toggle = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Members can change their own name" &&
+        typeof node.props.onValueChange === "function",
+    );
+    expect(toggle.props.disabled).toBe(true);
+  });
+
   it("opens the accent and background sheets for an editor", () => {
     h.accentPresent.mockClear();
     h.backgroundPresent.mockClear();

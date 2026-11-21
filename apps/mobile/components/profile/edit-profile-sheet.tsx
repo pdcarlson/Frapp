@@ -183,7 +183,9 @@ export const EditProfileSheet = forwardRef<
 
   const original = useMemo(() => draftFromProfile(profile), [profile]);
   const [edits, setEdits] = useState<ProfileEdits | null>(null);
-  const [submitFailed, setSubmitFailed] = useState(false);
+  // `true` for a failed save, or the API's own words when it refused a
+  // locked name (#5801), which a retry can't fix.
+  const [submitFailed, setSubmitFailed] = useState<boolean | string>(false);
   const [focused, setFocused] = useState<ProfileDraftField | null>(null);
   // The chapter's majors, offered under Major while it has focus (#5778), so
   // a member picks the spelling the chapter already pings. Read only then:
@@ -208,7 +210,14 @@ export const EditProfileSheet = forwardRef<
     setTypedAgainst(original);
     setEdits(typed);
   }
-  const shown: ProfileDraft = { ...original, ...typed };
+  // A locked name (#5801) shows as stored and is never sent, even when it was
+  // typed before the lock reached this device.
+  const nameLocked = profile?.nameLocked === true;
+  const shown: ProfileDraft = {
+    ...original,
+    ...typed,
+    ...(nameLocked ? { displayName: original.displayName } : {}),
+  };
 
   const result = profilePatch(original, shown);
   // A refusal exists only once the member has typed (the sheet must not open
@@ -373,7 +382,12 @@ export const EditProfileSheet = forwardRef<
         if (isSameVisit(sentFrom)) dismiss();
       },
       // The draft stays, so nothing typed is lost to a dropped connection.
-      onError: () => setSubmitFailed(true),
+      onError: (error) => {
+        const message = (error as { message?: unknown } | null)?.message;
+        setSubmitFailed(
+          message === NAME_LOCK_COPY.refusal ? NAME_LOCK_COPY.refusal : true,
+        );
+      },
       onSettled: () => {
         sending.current = false;
       },
@@ -505,11 +519,8 @@ export const EditProfileSheet = forwardRef<
           placeholder: copy.displayName.placeholder,
           autoCapitalize: "words",
           maxLength: DISPLAY_NAME_MAX_LENGTH,
-          readOnly: profile?.nameLocked === true,
-          hint:
-            profile?.nameLocked === true
-              ? NAME_LOCK_COPY.lockedLine
-              : undefined,
+          readOnly: nameLocked,
+          hint: nameLocked ? NAME_LOCK_COPY.lockedLine : undefined,
         })}
         {field("phone", copy.phone.label, {
           placeholder: copy.phone.placeholder,
@@ -642,7 +653,11 @@ export const EditProfileSheet = forwardRef<
           </>
         ) : null}
 
-        {submitFailed ? (
+        {typeof submitFailed === "string" ? (
+          <Text accessibilityRole="alert" style={styles.error}>
+            {submitFailed}
+          </Text>
+        ) : submitFailed ? (
           <Text accessibilityRole="alert" style={styles.error}>
             That didn&apos;t save. Your changes are still here, so try again.
           </Text>

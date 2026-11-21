@@ -1,8 +1,9 @@
 /**
  * Whether a member may change their own name (#5801, Paul 2026-11-21: a member
- * kept renaming himself to the president's name). A chapter setting,
- * `chapters.members_can_change_name`, off by default: once a member has
- * finished joining, only an officer holding `roles:manage` changes their name
+ * kept renaming themselves to the president's name). A chapter setting,
+ * `chapters.members_can_change_name`, off by default: once a member of that
+ * chapter alone has settled in (finished the welcome screen or joined over a
+ * day ago), only an officer holding `roles:manage` changes their name
  * (`PATCH /v1/members/{id}/profile`). `spec/behavior/members.md` § Profiles.
  *
  * One copy of the words, so the API's refusal, both apps' Profile and both

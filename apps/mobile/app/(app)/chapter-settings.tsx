@@ -52,7 +52,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * - **Chapter**: the accent and the chat background, each a sheet for a
  *   member holding `CHAPTER_PROFILE_PERMISSIONS` and read-only, saying who
  *   sets it, for anyone else; Members can change their own name (#5801), a
- *   switch for `chapter-config:manage`, as web's Organization tab has it; and
+ *   switch for `chapter-config:manage`, as web's Chapter tab has it; and
  *   Study zones, read-only, since zones are drawn on the web dashboard.
  * - **AI**: the president's three switches (#4789), the same ones and the
  *   same rules as web's AI tab (`settings-ai-tab.tsx`): every member here can

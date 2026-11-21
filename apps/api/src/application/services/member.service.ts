@@ -897,7 +897,8 @@ export class MemberService {
 
     // One `{ from, to }` pair per changed field, the audit line's convention
     // (`SystemAuditPayload.diff`), so `#chapter-audit` reads "Paul edited a
-    // member's profile · display name".
+    // member's profile · Ethan Smith to Paul" (a name diff reads as the
+    // names, `auditLineText`, #5801).
     const patch: MemberProfileCorrection = {};
     const diff: Record<string, { from: unknown; to: unknown }> = {};
     if (

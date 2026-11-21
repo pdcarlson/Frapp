@@ -468,6 +468,34 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     });
   });
 
+  it("drops a name typed before the lock arrived (#5801)", async () => {
+    mocks.updateUser.mutateAsync.mockClear();
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      display_name: "Ethan Smith",
+    };
+    const { rerender } = render(<ProfilePanel />);
+    const name = screen.getByLabelText("Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Paul");
+    await userEvent.type(screen.getByLabelText("Major"), "Economics");
+
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      display_name_locked: true,
+    };
+    rerender(<ProfilePanel />);
+    expect(screen.getByLabelText("Name")).toHaveValue("Ethan Smith");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toEqual({
+      major: "Economics",
+    });
+  });
+
   it("stops the name at the length the API takes", () => {
     render(<ProfilePanel />);
     expect(screen.getByLabelText("Name")).toHaveAttribute("maxlength", "100");

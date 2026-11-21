@@ -6,7 +6,7 @@ import { SettingsGroup, SettingsRow } from "@/components/shared/settings-row";
 
 /**
  * Settings → Chapter → Member names (#5801, Paul 2026-11-21). Off, the
- * default, a member who finished joining can't rename themselves; officers
+ * default, a member settled in this chapter can't rename themselves; officers
  * who manage roles still fix a name from the member's profile. Saves the
  * moment it flips, as every switch on a settings page does. The phone's
  * Chapter settings carries the same row, in the same words.

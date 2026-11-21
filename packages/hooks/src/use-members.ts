@@ -519,10 +519,17 @@ export function useUpdateOnboarding() {
     // s03 gate and web's welcome gate (#5627) read this flag off
     // `GET /v1/chapters`, and a standing cache would send a member who just
     // finished straight back.
+    // The member's own row too: finishing can lock their name (#5801,
+    // `display_name_locked`), so Profile must not keep offering an edit the
+    // API now refuses.
     onSuccess: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: ["members", chapterId] }),
         queryClient.invalidateQueries({ queryKey: ["chapters"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["user", "me"],
+          exact: true,
+        }),
       ]),
   });
 }
