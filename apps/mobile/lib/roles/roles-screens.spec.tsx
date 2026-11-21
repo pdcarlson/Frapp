@@ -544,6 +544,47 @@ describe("Roles (#4074)", () => {
     });
   });
 
+  it("names a class year by its standing, and finds it by that (#5786)", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
+    try {
+      h.groups = [
+        ...h.groups,
+        {
+          id: "g-29",
+          name: "Class of 2029",
+          kind: "class_year",
+          class_year: 2029,
+          color: null,
+          member_ids: ["u2"],
+        },
+      ];
+      h.roles = [
+        ...h.roles,
+        ...Array.from({ length: 10 }, (_, index) =>
+          role({
+            id: `r-x${index}`,
+            name: `Committee ${index}`,
+            tier_id: "t-bro",
+          }),
+        ),
+      ];
+      const tree = render(<ChapterRolesScreen />);
+      expect(screenText(tree)).toContain("Sophomores · Class of 2029");
+      const search = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "TextInput" &&
+          node.props.accessibilityLabel === "Find a role or group",
+      );
+      act(() => search.props.onChangeText("soph"));
+      const text = screenText(tree);
+      expect(text).toContain("Sophomores · Class of 2029");
+      expect(text).not.toContain("In house");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("finds a role or group by name once the list is long", () => {
     h.roles = [
       ...h.roles,

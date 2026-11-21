@@ -8230,7 +8230,7 @@ export interface components {
         MentionRoleDto: {
             /**
              * Format: uuid
-             * @description The role's id, or the tier's or group's (`kind`).
+             * @description The role's id, or the tier's or group's (`kind`). A class year's standing (`@Seniors`, #5786) has its own id, fixed for that group and standing, so no two rows share one.
              */
             role_id: string;
             /**

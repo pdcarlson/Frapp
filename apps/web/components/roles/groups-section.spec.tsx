@@ -99,6 +99,28 @@ describe("GroupsSection (#4076)", () => {
     expect(screen.queryByRole("button", { name: "Delete Alpha" })).toBeNull();
   });
 
+  it("names a class year by its standing too, and an alumni year by year only (#5786)", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T12:00:00Z"));
+    try {
+      mockGroups.mockReturnValue(
+        loaded([
+          group("g-29", "Class of 2029", "class_year", ["u1"], {
+            class_year: 2029,
+          }),
+          group("g-25", "Class of 2025", "class_year", ["u2"], {
+            class_year: 2025,
+          }),
+        ]),
+      );
+      render(<GroupsSection canManage />);
+      expect(screen.getByText("Sophomores · Class of 2029")).toBeTruthy();
+      expect(screen.getByText("Class of 2025")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("offers no writes without groups:manage", () => {
     render(<GroupsSection canManage={false} />);
     expect(screen.queryByRole("button", { name: /Edit/ })).toBeNull();

@@ -19,6 +19,7 @@ import {
 } from "@repo/hooks/role-tiers";
 import {
   canAny,
+  groupDisplayName,
   isEveryoneRole,
   NEW_PICKABLE_ROLE_COPY,
   roleColorOrNull,
@@ -105,7 +106,7 @@ export default function ChapterRolesScreen() {
   const groups = useMemo(() => {
     const all = groupsQuery.data ?? [];
     const shown = filtering
-      ? all.filter((group) => matchesWordStarts(group.name, query))
+      ? all.filter((group) => matchesWordStarts(groupDisplayName(group), query))
       : all;
     return [
       ...shown.filter((group) => group.kind === "manual"),
@@ -312,7 +313,7 @@ export default function ChapterRolesScreen() {
                     <ListRow
                       key={group.id}
                       variant="detail"
-                      label={group.name}
+                      label={groupDisplayName(group)}
                       leading={
                         <View
                           style={[
