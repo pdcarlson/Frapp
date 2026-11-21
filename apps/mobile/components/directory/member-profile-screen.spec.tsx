@@ -1,0 +1,1315 @@
+/** @vitest-environment jsdom */
+import React from "react";
+import { act } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import { Alert } from "react-native";
+import * as expoRouter from "expo-router";
+import { useRouter } from "expo-router";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SYSTEM_SENDER_ID, type BlockListStatus } from "@repo/validation";
+import { FrappThemeProvider } from "@/lib/theme";
+import {
+  MESSAGE_CHECKING_BLOCK_LIST,
+  START_DM_FAILED_BODY,
+  startDmFailedTitle,
+} from "@/lib/directory/start-dm";
+
+/**
+ * The member profile screen (#5568), rendered: its header, the Message action
+ * (#2773), the ⋯ menu, the fact rows, roles, class and presence, and that a
+ * request landing after the member has gone back neither navigates nor
+ * alerts.
+ */
+
+const VIEWER = "11111111-1111-4111-8111-111111111111";
+const ADA = "22222222-2222-4222-8222-222222222222";
+const BOB = "33333333-3333-4333-8333-333333333333";
+
+const state = vi.hoisted(() => ({
+  viewer: "11111111-1111-4111-8111-111111111111" as string | null,
+  blockStatus: "ready" as BlockListStatus,
+  blocked: new Set<string>(),
+  blockPaused: false,
+  blockRetrying: false,
+  retryBlockList: vi.fn(),
+  mutateAsync: vi.fn(),
+  dmOptions: [] as unknown[],
+  permissions: [] as string[],
+  roles: [] as unknown[],
+  // What `useMemberPhoneReach` answers; `null` until a test sets it.
+  phoneReach: null as null | {
+    scope: "chapter" | "self";
+    byUserId: Map<string, unknown>;
+  },
+  // `GET /v1/groups` (#4076); `undefined` is a read not answered yet.
+  groups: undefined as unknown[] | undefined,
+  // `GET /v1/pledge-classes` and the options the sheet reads it with (#3939).
+  classes: [] as { id: string; name: string }[],
+  vocabulary: undefined as Record<string, string> | undefined,
+  classReads: [] as ({ enabled?: boolean } | undefined)[],
+  // Users whose profile read says `viewer_can_remove`.
+  removable: new Set<string>(),
+  // Users whose profile read says `viewer_can_edit_profile` (#4367).
+  correctable: new Set<string>(),
+  // A phone per user id, for the reads that carry one (#3711).
+  phones: {} as Record<string, string>,
+  correctMutate: vi.fn(),
+  removeMutate: vi.fn(),
+  block: vi.fn(),
+}));
+
+function profile(userId: string, name: string) {
+  return {
+    id: `m-${userId}`,
+    user_id: userId,
+    chapter_id: "c-1",
+    role_ids: [],
+    custom_role_ids: [],
+    has_completed_onboarding: true,
+    created_at: "2026-08-21T12:00:00.000Z",
+    updated_at: "2026-08-21T12:00:00.000Z",
+    display_name: name,
+    avatar_url: null,
+    email: `${name.toLowerCase()}@example.edu`,
+    custom_fields: [],
+  };
+}
+
+// Keyed by user id, the id `GET /v1/members/by-user/{userId}` takes: chat
+// pushes the screen with a sender or mention id, which is never a member row id.
+const PROFILES: Record<string, ReturnType<typeof profile>> = Object.fromEntries(
+  [
+    profile(ADA, "Ada"),
+    profile(BOB, "Bob"),
+    profile(SYSTEM_SENDER_ID, "Frapp"),
+    profile(VIEWER, "Me"),
+  ].map((p) => [p.user_id, p]),
+);
+
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+  useMemberPhoneReach: () => ({ reach: state.phoneReach }),
+  useMemberByUserId: (id: string) => ({
+    data: PROFILES[id] && {
+      ...PROFILES[id],
+      viewer_can_remove: state.removable.has(id),
+      viewer_can_edit_profile: state.correctable.has(id),
+      phone: state.phones[id] ?? null,
+    },
+    isPending: false,
+    isError: false,
+    isSuccess: true,
+    isFetching: false,
+    refetch: vi.fn(),
+  }),
+  useRoles: () => ({ data: state.roles, isPending: false, isSuccess: true }),
+  useGroups: () => ({ data: state.groups }),
+  usePermissionList: () => state.permissions,
+  useCurrentChapter: () => ({
+    data: state.vocabulary ? { vocabulary: state.vocabulary } : undefined,
+  }),
+  usePledgeClasses: (options?: { enabled?: boolean }) => {
+    state.classReads.push(options);
+    return options?.enabled === false
+      ? { data: undefined, isPending: true, isSuccess: false }
+      : { data: state.classes, isPending: false, isSuccess: true };
+  },
+  useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSetGroupMembership: () => ({ mutateAsync: vi.fn() }),
+  useRoleTiers: () => ({ data: [] }),
+  useMembers: () => ({ data: [], isSuccess: true }),
+  useMyPermissions: () => ({ data: { permissions: state.permissions } }),
+  useAssignPledgeClasses: () => ({ mutate: vi.fn(), isPending: false }),
+  useRemoveMember: () => ({ mutate: state.removeMutate, isPending: false }),
+  useCorrectMemberProfile: () => ({
+    mutate: state.correctMutate,
+    isPending: false,
+  }),
+  useViewerUserId: () => state.viewer,
+  useBlockedUserIds: () => ({
+    ids: state.blocked,
+    unblocked: new Set<string>(),
+    status: state.blockStatus,
+    isPaused: state.blockPaused,
+    retry: state.retryBlockList,
+    isRetrying: state.blockRetrying,
+  }),
+  useGetOrCreateDm: (options: unknown) => {
+    state.dmOptions.push(options);
+    return { mutateAsync: state.mutateAsync, isPending: false };
+  },
+}));
+
+vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chat/block-actions")>()),
+  useBlockActions: () => ({
+    block: state.block,
+    unblock: vi.fn(),
+    reloadMaskedCopies: vi.fn(),
+    isPending: false,
+  }),
+}));
+
+import { ListRow } from "@/components/list-section";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
+
+afterEach(() => {
+  dismissItemMenu();
+});
+import { ScreenShell } from "@/components/screen-shell";
+import { MemberProfile, MemberProfileScreen } from "./member-profile-screen";
+import { MemberClassSheet } from "./member-class-sheet";
+import { MemberCorrectionSheet } from "./member-correction-sheet";
+import { MemberRolesSheet } from "./member-roles-sheet";
+import {
+  PRESENCE_NOT_READY,
+  setChapterPresence,
+} from "@/lib/presence/presence-store";
+
+const present = vi.fn();
+const router = vi.mocked(useRouter)();
+const nav = expoRouter as unknown as {
+  __blur: () => void;
+  __refocus: () => void;
+};
+
+function screen(userId: string, openChannelId: string | null = null) {
+  return (
+    <FrappThemeProvider>
+      <MemberProfile userId={userId} openChannelId={openChannelId} />
+    </FrappThemeProvider>
+  );
+}
+
+function render(
+  userId: string,
+  openChannelId: string | null = null,
+): ReactTestRenderer {
+  let tree!: ReactTestRenderer;
+  act(() => {
+    tree = create(screen(userId, openChannelId), {
+      // The editors are sheets presented through their refs; the stand-in
+      // modal is a host string, so hand it an instance that records the call.
+      createNodeMock: (element) =>
+        element.type === "BottomSheetModal" ? { present } : null,
+    });
+  });
+  return tree;
+}
+
+function messageRows(tree: ReactTestRenderer) {
+  return tree.root.findAll(
+    (node) => node.props.label === "Message" && typeof node.type === "function",
+  );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+// #5568: a pushed screen, not a sheet. The shell's own header carries the
+// member: their face on the title row, their name as the title, and the meta
+// line as the subtitle; the ⋯ sits at the back row's far end.
+describe("MemberProfile as a screen", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.removable = new Set();
+  });
+
+  it("titles the screen with the member's name, under a back row to the Directory", () => {
+    const tree = render(ADA);
+    const shell = tree.root.findByType(ScreenShell);
+    expect(shell.props.title).toBe("Ada");
+    expect(shell.props.back).toEqual({
+      label: "Directory",
+      href: "/directory",
+    });
+    expect(shell.props.titleMark).toBeTruthy();
+    // No sheet holds the profile itself; only the editors are sheets.
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === "Close" &&
+          typeof node.props.onPress === "function",
+      ),
+    ).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("puts the ⋯ at the back row's far end", () => {
+    state.removable = new Set([ADA]);
+    const tree = render(ADA);
+    const shell = tree.root.findByType(ScreenShell);
+    expect(shell.props.backAction).toBeTruthy();
+    act(() => tree.unmount());
+  });
+
+  it("reads the member and the thread it was pushed from off the route", () => {
+    vi.spyOn(expoRouter, "useLocalSearchParams").mockReturnValueOnce({
+      userId: ADA,
+      channelId: "dm-ada",
+    });
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MemberProfileScreen />
+        </FrappThemeProvider>,
+      );
+    });
+    const profile = tree.root.findByType(MemberProfile);
+    expect(profile.props).toEqual({ userId: ADA, openChannelId: "dm-ada" });
+    act(() => tree.unmount());
+  });
+
+  it("says where to open a member from when the route has no user", () => {
+    vi.spyOn(expoRouter, "useLocalSearchParams").mockReturnValueOnce({});
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MemberProfileScreen />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(JSON.stringify(tree.toJSON())).toContain(
+      "Open a member from the Directory.",
+    );
+    expect(tree.root.findAllByType(MemberProfile)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+});
+
+describe("MemberProfile groups (#4076)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+  });
+
+  const texts = (tree: ReturnType<typeof render>) =>
+    tree.root
+      .findAll((node) => (node.type as unknown) === "Text")
+      .map((node) => node.props.children);
+
+  it("lists the groups the member is in, and only those", () => {
+    state.groups = [
+      { id: "g1", name: "Third floor", color: null, member_ids: [ADA] },
+      { id: "g2", name: "Live-ins", color: null, member_ids: ["someone"] },
+    ];
+    const tree = render(ADA);
+    expect(texts(tree)).toContain("Groups");
+    expect(texts(tree)).toContain("Third floor");
+    expect(texts(tree)).not.toContain("Live-ins");
+    act(() => tree.unmount());
+  });
+
+  it("says No groups when they are in none, and nothing before the read answers", () => {
+    state.groups = [];
+    let tree = render(ADA);
+    expect(texts(tree)).toContain("No groups");
+    act(() => tree.unmount());
+    state.groups = undefined;
+    tree = render(ADA);
+    expect(texts(tree)).not.toContain("Groups");
+    act(() => tree.unmount());
+  });
+
+  it("folds a long Groups row behind +N more, as the roles row does (#5783)", () => {
+    const names = ["G1", "G2", "G3", "G4", "G5", "G6"];
+    state.groups = names.map((name) => ({
+      id: `g-${name}`,
+      name,
+      kind: "manual",
+      color: null,
+      member_ids: [ADA],
+    }));
+    const tree = render(ADA);
+    const shown = () =>
+      texts(tree).filter(
+        (child) => typeof child === "string" && names.includes(child),
+      );
+    expect(shown()).toEqual(["G1", "G2", "G3"]);
+    const toggle = (label: string) =>
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === label &&
+          typeof node.props.onPress === "function",
+      )[0];
+    act(() => toggle("+3 more groups").props.onPress());
+    expect(shown()).toEqual(names);
+    act(() => toggle("Show less groups").props.onPress());
+    expect(shown()).toHaveLength(3);
+    act(() => tree.unmount());
+  });
+});
+
+describe("MemberProfile Message action (#2773)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.blockPaused = false;
+    state.blockRetrying = false;
+    state.dmOptions = [];
+  });
+
+  it("offers Message on another member's profile", () => {
+    const tree = render(ADA);
+    expect(messageRows(tree)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("does not wait on the channel-list refetch", () => {
+    const tree = render(ADA);
+    expect(state.dmOptions.at(-1)).toEqual({ awaitRefetch: false });
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    ["your own profile", VIEWER],
+    ["the system actor's profile", SYSTEM_SENDER_ID],
+  ])("withholds it on %s", (_, userId) => {
+    const tree = render(userId);
+    expect(messageRows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("withholds it while the viewer is unknown", () => {
+    state.viewer = null;
+    const tree = render(ADA);
+    expect(messageRows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("withholds it for a member you blocked", () => {
+    state.blocked = new Set([ADA]);
+    const tree = render(ADA);
+    expect(messageRows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  // The block list's ids are only a floor until it is read, so the row waits
+  // rather than starting a DM, and says why instead of disappearing.
+  it("waits, disabled, while the block list loads", () => {
+    state.blockStatus = "loading";
+    const tree = render(ADA);
+    const [row] = messageRows(tree);
+    expect(row.props.disabled).toBe(true);
+    expect(row.props.accessibilityHint).toBe(MESSAGE_CHECKING_BLOCK_LIST);
+    act(() => tree.unmount());
+  });
+
+  it("waits for the network while the read is paused offline", () => {
+    state.blockStatus = "unavailable";
+    state.blockPaused = true;
+    const tree = render(ADA);
+    const [row] = messageRows(tree);
+    expect(row.props.disabled).toBe(true);
+    expect(row.props.accessibilityHint).toBe(
+      "Couldn't check your block list first. Retries when you're back online.",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("offers to re-read a block list whose read failed, and starts no DM", () => {
+    state.blockStatus = "unavailable";
+    const tree = render(ADA);
+    const [row] = messageRows(tree);
+    expect(row.props.disabled).toBe(false);
+    expect(row.props.accessibilityHint).toBe(
+      "Couldn't check your block list first. Tap to try again.",
+    );
+
+    act(() => row.props.onPress());
+    expect(state.retryBlockList).toHaveBeenCalledTimes(1);
+    expect(state.mutateAsync).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("says it is checking, disabled, while that re-read is in flight", () => {
+    state.blockStatus = "unavailable";
+    state.blockRetrying = true;
+    const tree = render(ADA);
+    const [row] = messageRows(tree);
+    expect(row.props.disabled).toBe(true);
+    expect(row.props.accessibilityHint).toBe(MESSAGE_CHECKING_BLOCK_LIST);
+    act(() => tree.unmount());
+  });
+
+  it("stays hidden for a member already on the list while it is unavailable", () => {
+    state.blockStatus = "unavailable";
+    state.blocked = new Set([ADA]);
+    const tree = render(ADA);
+    expect(messageRows(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("pushes the DM's thread over the profile", async () => {
+    state.mutateAsync.mockResolvedValueOnce({ id: "dm-ada" });
+    const tree = render(ADA);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+
+    expect(state.mutateAsync).toHaveBeenCalledWith({ member_id: ADA });
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "dm-ada" },
+    });
+    expect(router.back).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("goes back to the thread it was pushed from when that is the DM", async () => {
+    state.mutateAsync.mockResolvedValueOnce({ id: "dm-ada" });
+    vi.mocked(router.canGoBack).mockReturnValueOnce(true);
+    const tree = render(ADA, "dm-ada");
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+
+    expect(router.back).toHaveBeenCalledTimes(1);
+    expect(router.push).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("sends one request for a double tap", async () => {
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    const row = messageRows(tree)[0];
+
+    await act(async () => {
+      row.props.onPress();
+      row.props.onPress();
+    });
+    expect(state.mutateAsync).toHaveBeenCalledTimes(1);
+    // Working, not unavailable: a spinner in the chevron's place, and the
+    // label keeps its colour (`ListRow`'s `busy`, not `disabled`).
+    expect(messageRows(tree)[0].props.busy).toBe(true);
+    expect(messageRows(tree)[0].props.disabled).toBe(false);
+
+    await act(async () => {
+      pending.resolve({ id: "dm-ada" });
+    });
+    expect(messageRows(tree)[0].props.busy).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  // #3405: the member went back, or on to another screen, while the
+  // request was out; a thread opening over whatever is shown now would
+  // surprise. Message again finds the same DM.
+  it("opens no thread for a result that lands after the screen lost focus", async () => {
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    act(() => nav.__blur());
+
+    await act(async () => {
+      pending.resolve({ id: "dm-ada" });
+    });
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.back).not.toHaveBeenCalled();
+    act(() => nav.__refocus());
+    // Free again once it settled, for the visit that comes back.
+    expect(messageRows(tree)[0].props.busy).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("raises no failure alert once the screen has lost focus", async () => {
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    act(() => nav.__blur());
+    await act(async () => {
+      pending.reject(new Error("offline"));
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    act(() => nav.__refocus());
+    act(() => tree.unmount());
+  });
+
+  it("drops a failure that lands after the screen has gone", async () => {
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    act(() => tree.unmount());
+    await act(async () => {
+      pending.reject(new Error("offline"));
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it("says the conversation couldn't be opened when the request fails", async () => {
+    state.mutateAsync.mockRejectedValueOnce(new Error("offline"));
+    const tree = render(ADA);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(Alert.alert).toHaveBeenCalledWith(
+      startDmFailedTitle("Ada"),
+      START_DM_FAILED_BODY,
+    );
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("reports a response with no channel id as a failure instead of navigating", async () => {
+    state.mutateAsync.mockResolvedValueOnce({});
+    const tree = render(ADA);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(Alert.alert).toHaveBeenCalledWith(
+      startDmFailedTitle("Ada"),
+      START_DM_FAILED_BODY,
+    );
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
+// Block and Remove from chapter sit behind the back row's ⋯, never on the
+// profile's face (Paul, 2026-11-11), and neither is offered on your own.
+describe("MemberProfile ⋯ menu", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.blockPaused = false;
+    state.removable = new Set();
+    state.correctable = new Set();
+  });
+
+  function moreButton(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        typeof node.props.label === "string" &&
+        node.props.label.startsWith("More for ") &&
+        typeof node.type === "function",
+    );
+  }
+
+  /** Opens the ⋯ and reads the glass menu it opened. */
+  function openMenu(tree: ReactTestRenderer) {
+    const [button] = moreButton(tree);
+    act(() => button!.props.onPress());
+    const menu = currentItemMenu()!;
+    return {
+      title: menu.title,
+      labels: menu.actions.map((action) => action.label),
+      destructive: menu.actions
+        .filter((action) => action.destructive)
+        .map((action) => action.label),
+      pick: (label: string) => act(() => pickItemMenuAction(label)),
+    };
+  }
+
+  /** Presses the alert button labelled `text` on the last alert shown. */
+  function pressAlert(text: string) {
+    const buttons = vi.mocked(Alert.alert).mock.calls.at(-1)![2]!;
+    act(() => buttons.find((b) => b.text === text)!.onPress!());
+  }
+
+  it("draws no Block row or Remove button on the profile's face", () => {
+    state.removable = new Set([ADA]);
+    const tree = render(ADA);
+    const faceRows = tree.root.findAll(
+      (node) =>
+        typeof node.props.label === "string" &&
+        /^(Block|Unblock|Remove)/.test(node.props.label) &&
+        typeof node.type === "function",
+    );
+    expect(faceRows).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers Block, and no removal, to a viewer who may not remove", () => {
+    const tree = render(ADA);
+    expect(openMenu(tree).labels).toEqual(["Block Ada"]);
+    act(() => tree.unmount());
+  });
+
+  it("offers Unblock for a member you blocked", () => {
+    state.blocked = new Set([ADA]);
+    const tree = render(ADA);
+    expect(openMenu(tree).labels).toEqual(["Unblock Ada"]);
+    act(() => tree.unmount());
+  });
+
+  it("offers Remove from chapter where the API says this viewer may, marked destructive", () => {
+    state.removable = new Set([ADA]);
+    const tree = render(ADA);
+    const menu = openMenu(tree);
+    expect(menu.title).toBe("Ada");
+    expect(menu.labels).toEqual(["Block Ada", "Remove from chapter"]);
+    expect(menu.destructive).toEqual(["Block Ada", "Remove from chapter"]);
+    act(() => tree.unmount());
+  });
+
+  // #4367: an officer fixes the name and year from here.
+  it("offers Edit name and graduation year first where the API says this viewer may", () => {
+    state.correctable = new Set([ADA]);
+    state.removable = new Set([ADA]);
+    const tree = render(ADA);
+    const menu = openMenu(tree);
+    expect(menu.labels).toEqual([
+      "Edit name and graduation year",
+      "Block Ada",
+      "Remove from chapter",
+    ]);
+    // Only Block and Remove are destructive.
+    expect(menu.destructive).toEqual(["Block Ada", "Remove from chapter"]);
+    act(() => tree.unmount());
+  });
+
+  it("opens the officer's editor on this member's saved values", () => {
+    state.correctable = new Set([ADA]);
+    const tree = render(ADA);
+    openMenu(tree).pick("Edit name and graduation year");
+    const editor = tree.root.findByType(MemberCorrectionSheet);
+    expect(editor.props.session).toEqual({
+      memberId: `m-${ADA}`,
+      label: "Ada",
+      name: "Ada",
+      graduationYear: null,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("blocks only after confirming", () => {
+    const tree = render(ADA);
+    openMenu(tree).pick("Block Ada");
+    expect(state.block).not.toHaveBeenCalled();
+    pressAlert("Block");
+    expect(state.block).toHaveBeenCalledWith(ADA);
+    act(() => tree.unmount());
+  });
+
+  it("removes only after confirming, then goes back", () => {
+    state.removable = new Set([ADA]);
+    state.removeMutate.mockImplementation(
+      (_id: string, handlers: { onSuccess: () => void }) =>
+        handlers.onSuccess(),
+    );
+    const tree = render(ADA);
+    openMenu(tree).pick("Remove from chapter");
+    expect(state.removeMutate).not.toHaveBeenCalled();
+    expect(vi.mocked(Alert.alert).mock.calls.at(-1)![0]).toBe(
+      "Remove Ada from the chapter?",
+    );
+    pressAlert("Remove from chapter");
+    expect(state.removeMutate).toHaveBeenCalledWith(
+      `m-${ADA}`,
+      expect.anything(),
+    );
+    // Nothing under it on a cold open: back to the Directory.
+    expect(router.dismissTo).toHaveBeenCalledWith("/directory");
+    act(() => tree.unmount());
+  });
+
+  // #3405: a removal that lands once the member has moved on leaves the
+  // screen they are on alone.
+  it("doesn't go back when a removal lands after the screen lost focus", () => {
+    state.removable = new Set([ADA]);
+    let land = () => {};
+    state.removeMutate.mockImplementation(
+      (_id: string, handlers: { onSuccess: () => void }) => {
+        land = handlers.onSuccess;
+      },
+    );
+    const tree = render(ADA);
+    openMenu(tree).pick("Remove from chapter");
+    pressAlert("Remove from chapter");
+    act(() => nav.__blur());
+    act(() => land());
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    act(() => nav.__refocus());
+    act(() => tree.unmount());
+  });
+
+  it("says the removal failed when the API refuses it", () => {
+    state.removable = new Set([ADA]);
+    state.removeMutate.mockImplementation(
+      (_id: string, handlers: { onError: (e: unknown) => void }) =>
+        handlers.onError(new Error("403")),
+    );
+    const tree = render(ADA);
+    openMenu(tree).pick("Remove from chapter");
+    pressAlert("Remove from chapter");
+    expect(vi.mocked(Alert.alert).mock.calls.at(-1)![0]).toBe(
+      "Couldn't remove Ada",
+    );
+    expect(router.back).not.toHaveBeenCalled();
+    expect(router.dismissTo).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    ["your own profile", VIEWER],
+    ["the system actor's profile", SYSTEM_SENDER_ID],
+  ])("draws no ⋯ on %s, even if a read says you may remove", (_, userId) => {
+    state.removable = new Set([userId]);
+    const tree = render(userId);
+    expect(moreButton(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  // #3790: an editor opened from the ⋯ would stay drawn over the thread a
+  // DM pushes, so the ⋯ waits for the DM as the roles Edit does.
+  it("holds the ⋯ while a DM with this member opens", async () => {
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    expect(moreButton(tree)[0]!.props.disabled).toBe(false);
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(moreButton(tree)[0]!.props.disabled).toBe(true);
+    await act(async () => {
+      pending.resolve({ id: "dm-ada" });
+    });
+    expect(moreButton(tree)[0]!.props.disabled).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("draws no ⋯ while the viewer is unknown", () => {
+    state.viewer = null;
+    const tree = render(ADA);
+    expect(moreButton(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * The sheet's facts are `ListRow`'s detail rows, as s15's are: the label the
+ * quiet half and the value the one a member reads (the owner's design review,
+ * 2026-11-04). A chapter's custom field, whose label can run long, too.
+ */
+describe("MemberProfile fact rows", () => {
+  const CARA = "44444444-4444-4444-8444-444444444444";
+  const LONG_LABEL = "Emergency contact name and phone number";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.blockPaused = false;
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      custom_fields: [
+        {
+          field_id: "f-1",
+          label: LONG_LABEL,
+          type: "text",
+          value: "Jordan Lee, 555-0100",
+        },
+      ] as never[],
+    };
+  });
+
+  it("says whether notifications reach the member's phone, only when the server sent it", () => {
+    state.phoneReach = null;
+    const before = render(CARA);
+    expect(
+      before.root
+        .findAllByType(ListRow)
+        .find((r) => r.props.label === "Phone app"),
+    ).toBeUndefined();
+    act(() => before.unmount());
+
+    state.phoneReach = {
+      scope: "chapter",
+      byUserId: new Map([
+        [
+          CARA,
+          {
+            user_id: CARA,
+            state: "web_only",
+            platform: null,
+            last_opened_at: null,
+          },
+        ],
+      ]),
+    };
+    const tree = render(CARA);
+    const row = tree.root
+      .findAllByType(ListRow)
+      .find((r) => r.props.label === "Phone app");
+    expect(row?.props.value).toBe("Web only");
+    expect(row?.props.description).toBe(null);
+    act(() => tree.unmount());
+    state.phoneReach = null;
+  });
+
+  it("draws Email, Member since and each custom field as detail rows", () => {
+    const tree = render(CARA);
+    const rows = () => tree.root.findAllByType(ListRow);
+    const rowOf = (label: string) =>
+      rows().find((row) => row.props.label === label);
+
+    expect(rowOf("Email")?.props.variant).toBe("detail");
+    // Tapping the address starts an email to them.
+    expect(rowOf("Email")?.props.onPress).toBeTypeOf("function");
+    expect(rowOf("Member since")?.props.variant).toBe("detail");
+    // Written out: no abbreviated month in the UI.
+    expect(rowOf("Member since")?.props.value).toMatch(/August/);
+    // The chapter's fields fold under More details until asked for (#3711).
+    expect(rowOf(LONG_LABEL)).toBeUndefined();
+    expect(rowOf("More details")?.props.value).toBe("Show");
+    act(() => rowOf("More details")?.props.onPress());
+    expect(rowOf("More details")?.props.value).toBe("Hide");
+    expect(rowOf(LONG_LABEL)?.props.variant).toBe("detail");
+    expect(rowOf(LONG_LABEL)?.props.value).toBe("Jordan Lee, 555-0100");
+    act(() => tree.unmount());
+    // A new visit to the same member: folded again.
+    const again = render(CARA);
+    expect(
+      again.root
+        .findAllByType(ListRow)
+        .find((row) => row.props.label === "More details")?.props.value,
+    ).toBe("Show");
+    act(() => again.unmount());
+  });
+
+  // #3711: a contact card, the phone first.
+  it("draws the member's phone above Email, and a tap offers Call or Text", () => {
+    state.phones[CARA] = "(518) 555-0142";
+    const tree = render(CARA);
+    const rows = tree.root.findAllByType(ListRow).map((row) => row.props.label);
+    expect(rows.slice(0, 2)).toEqual(["Phone", "Email"]);
+    const phoneRow = tree.root
+      .findAllByType(ListRow)
+      .find((row) => row.props.label === "Phone");
+    expect(phoneRow?.props.value).toBe("(518) 555-0142");
+    act(() => phoneRow?.props.onPress());
+    const menu = currentItemMenu()!;
+    expect(menu.message).toBe("(518) 555-0142");
+    expect(
+      menu.actions.map((action) => [action.label, !!action.destructive]),
+    ).toEqual([
+      ["Call", false],
+      ["Text", false],
+    ]);
+    delete state.phones[CARA];
+    act(() => tree.unmount());
+  });
+
+  // #3939, read-only on mobile: each row only when an officer has set it.
+  it("draws the member's pledge class and order number after the contact rows", () => {
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      pledge_class_id: "pc-1",
+      order_number: 9,
+    } as never;
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    const tree = render(CARA);
+
+    expect(
+      tree.root
+        .findAllByType(ListRow)
+        .map((row) => [row.props.label, row.props.value])
+        .slice(0, 4),
+    ).toEqual([
+      ["Email", "cara@example.edu"],
+      ["Member since", "August 21, 2026"],
+      ["Pledge class", "Alpha"],
+      ["Fraternal order", "9"],
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("labels both rows with the chapter's own words, as typed", () => {
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      pledge_class_id: "pc-1",
+      order_number: 9,
+    } as never;
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    state.vocabulary = { class: "Line", order: "line number" };
+    const tree = render(CARA);
+    const rows = tree.root
+      .findAllByType(ListRow)
+      .map((row) => [row.props.label, row.props.value]);
+    state.vocabulary = undefined;
+
+    expect(rows.slice(2, 4)).toEqual([
+      ["Line", "Alpha"],
+      ["line number", "9"],
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("says Not available for a class the chapter's list no longer holds", () => {
+    PROFILES[CARA] = {
+      ...profile(CARA, "Cara"),
+      pledge_class_id: "pc-gone",
+    } as never;
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    const tree = render(CARA);
+
+    expect(
+      tree.root
+        .findAllByType(ListRow)
+        .find((r) => r.props.label === "Pledge class")?.props.value,
+    ).toBe("Not available");
+    act(() => tree.unmount());
+  });
+
+  it("draws neither row, and reads no class list, for a member with none set", () => {
+    state.classReads = [];
+    const tree = render(CARA);
+    const labels = tree.root
+      .findAllByType(ListRow)
+      .map((row) => row.props.label);
+
+    expect(labels).not.toContain("Pledge class");
+    expect(labels).not.toContain("Fraternal order");
+    expect(state.classReads.every((read) => read?.enabled === false)).toBe(
+      true,
+    );
+    act(() => tree.unmount());
+  });
+});
+
+// #3991: an officer holding `roles:manage` sets the class and number here.
+describe("MemberProfile pledge class editing (#3991)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.classes = [{ id: "pc-1", name: "Alpha" }];
+    state.vocabulary = undefined;
+  });
+
+  function classRows(tree: ReactTestRenderer) {
+    return tree.root
+      .findAllByType(ListRow)
+      .filter(
+        (row) =>
+          row.props.label === "Pledge class" ||
+          row.props.label === "Fraternal order",
+      );
+  }
+
+  it("shows an officer both rows, unset ones as Not set, and reads the list", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    state.classReads = [];
+    const tree = render(ADA);
+    const rows = classRows(tree);
+
+    expect(rows.map((row) => [row.props.label, row.props.value])).toEqual([
+      ["Pledge class", "Not set"],
+      ["Fraternal order", "Not set"],
+    ]);
+    expect(rows.every((row) => typeof row.props.onPress === "function")).toBe(
+      true,
+    );
+    expect(state.classReads.some((read) => read?.enabled === true)).toBe(true);
+    act(() => tree.unmount());
+    state.permissions = [];
+  });
+
+  it("opens the class editor on this member's saved values", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    PROFILES[ADA] = {
+      ...profile(ADA, "Ada"),
+      pledge_class_id: "pc-1",
+      order_number: 9,
+    } as never;
+    const tree = render(ADA);
+    act(() => classRows(tree)[1]!.props.onPress());
+
+    expect(present).toHaveBeenCalled();
+    expect(tree.root.findByType(MemberClassSheet).props.session).toEqual({
+      memberId: `m-${ADA}`,
+      name: "Ada",
+      pledgeClassId: "pc-1",
+      orderNumber: 9,
+    });
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+    state.permissions = [];
+  });
+
+  // As the roles Edit is (#3790): the editor stacks over the profile, so a DM
+  // landing under it would leave the editor drawn over the thread.
+  it("holds the class rows while a DM with this member opens", async () => {
+    state.permissions = ["members:view", "roles:manage"];
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    expect(classRows(tree).map((row) => row.props.disabled)).toEqual([
+      false,
+      false,
+    ]);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(classRows(tree).map((row) => row.props.disabled)).toEqual([
+      true,
+      true,
+    ]);
+
+    await act(async () => {
+      pending.resolve({ id: "dm-ada" });
+    });
+    expect(classRows(tree)[0]!.props.disabled).toBe(false);
+    act(() => tree.unmount());
+    state.permissions = [];
+  });
+
+  it("offers no editor for a profile read without a membership id", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    PROFILES[ADA] = { ...profile(ADA, "Ada"), id: undefined } as never;
+    const tree = render(ADA);
+
+    expect(classRows(tree)).toEqual([]);
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+    state.permissions = [];
+  });
+
+  it("leaves the rows read-only, and unset ones hidden, without roles:manage", () => {
+    state.permissions = ["members:view"];
+    PROFILES[ADA] = {
+      ...profile(ADA, "Ada"),
+      pledge_class_id: "pc-1",
+    } as never;
+    const tree = render(ADA);
+    const rows = classRows(tree);
+
+    expect(rows.map((row) => row.props.label)).toEqual(["Pledge class"]);
+    expect(rows[0]!.props.onPress).toBeUndefined();
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+  });
+});
+
+describe("MemberProfile roles", () => {
+  beforeEach(() => {
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.roles = [
+      { id: "r-member", name: "Member", is_system: true, permissions: [] },
+    ];
+  });
+
+  function editButton(tree: ReactTestRenderer, label = "Add role") {
+    return tree.root.findAll(
+      (node) =>
+        node.props.accessibilityLabel === label &&
+        typeof node.props.onPress === "function",
+    )[0];
+  }
+
+  it("draws the member's roles as chips, top-ranked first", () => {
+    state.roles = [
+      { id: "r-b", name: "Brothers", color: "#5CC8F0", display_order: 5 },
+      { id: "r-p", name: "President", color: "#F2994A", display_order: 1 },
+    ];
+    PROFILES[ADA] = {
+      ...profile(ADA, "Ada"),
+      role_ids: ["r-b", "r-p"] as never[],
+    };
+    const tree = render(ADA);
+    const text = tree.root
+      .findAllByType("Text" as never)
+      .map((node) => node.props.children)
+      .filter((child) => child === "President" || child === "Brothers");
+    expect(text).toEqual(["President", "Brothers"]);
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+  });
+
+  it("shows the top three roles, then +N more that opens the rest in place (#5783)", () => {
+    const names = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"];
+    state.roles = names.map((name, i) => ({
+      id: `r-${name}`,
+      name,
+      color: null,
+      // Listed in reverse, so the chips must sort.
+      display_order: names.length - i,
+    }));
+    PROFILES[ADA] = {
+      ...profile(ADA, "Ada"),
+      role_ids: names.map((name) => `r-${name}`) as never[],
+    };
+    const tree = render(ADA);
+    const shown = () =>
+      tree.root
+        .findAllByType("Text" as never)
+        .map((node) => node.props.children)
+        .filter((child) => typeof child === "string" && names.includes(child));
+    expect(shown()).toEqual(["A8", "A7", "A6"]);
+    const more = editButton(tree, "+5 more roles");
+    expect(more.props.accessibilityState).toEqual({ expanded: false });
+    act(() => more.props.onPress());
+    expect(shown()).toEqual(["A8", "A7", "A6", "A5", "A4", "A3", "A2", "A1"]);
+    act(() => editButton(tree, "Show less roles").props.onPress());
+    expect(shown()).toHaveLength(3);
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+  });
+
+  it("offers no Add to a viewer without roles:manage or groups:manage", () => {
+    state.permissions = ["members:view"];
+    state.groups = [];
+    const tree = render(ADA);
+    expect(editButton(tree)).toBeUndefined();
+    expect(editButton(tree, "Add to group")).toBeUndefined();
+    act(() => tree.unmount());
+    state.groups = undefined;
+  });
+
+  it("opens the one sheet at the groups for Add to group", () => {
+    state.permissions = ["members:view", "groups:manage"];
+    state.groups = [];
+    const tree = render(ADA);
+    act(() => editButton(tree, "Add to group")?.props.onPress());
+    const editor = tree.root.findByType(MemberRolesSheet);
+    expect(editor.props.session).toMatchObject({
+      focus: "groups",
+      userId: ADA,
+      canManageRoles: false,
+      canManageGroups: true,
+    });
+    act(() => tree.unmount());
+    state.permissions = [];
+    state.groups = undefined;
+  });
+
+  it("opens the roles-and-groups sheet for this member when the viewer holds roles:manage", () => {
+    state.permissions = ["members:view", "roles:manage"];
+    const tree = render(ADA);
+    const button = editButton(tree);
+    expect(button?.props.onPress).toBeTypeOf("function");
+    act(() => button?.props.onPress());
+    const editor = tree.root.findByType(MemberRolesSheet);
+    expect(present).toHaveBeenCalled();
+    expect(editor.props.session).toMatchObject({
+      memberId: `m-${ADA}`,
+      userId: ADA,
+      focus: "roles",
+      canManageRoles: true,
+      canManageGroups: false,
+      name: "Ada",
+      heldIds: [],
+    });
+    act(() => tree.unmount());
+    state.permissions = [];
+  });
+
+  // The editor stacks over the profile (#3790), so a DM landing under it
+  // would close the profile and open the thread with the editor still on top.
+  it("holds Add role while a DM with this member opens", async () => {
+    state.permissions = ["members:view", "roles:manage"];
+    const pending = deferred<unknown>();
+    state.mutateAsync.mockReturnValueOnce(pending.promise);
+    const tree = render(ADA);
+    expect(editButton(tree)?.props.disabled).toBe(false);
+
+    await act(async () => {
+      messageRows(tree)[0].props.onPress();
+    });
+    expect(editButton(tree)?.props.disabled).toBe(true);
+    expect(editButton(tree)?.props.accessibilityState).toEqual({
+      disabled: true,
+    });
+
+    await act(async () => {
+      pending.resolve({ id: "dm-ada" });
+    });
+    expect(editButton(tree)?.props.disabled).toBe(false);
+    act(() => tree.unmount());
+    state.permissions = [];
+  });
+});
+
+// #3917: the member's presence dot on their avatar, their custom line under
+// the name, and the status in the name heading's accessible name.
+describe("MemberProfile presence (#3917)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.viewer = VIEWER;
+    state.blockStatus = "ready";
+    state.blocked = new Set();
+    state.blockPaused = false;
+    setChapterPresence(PRESENCE_NOT_READY);
+  });
+
+  // The face on the title row, which names their status (the title itself
+  // is the shell's, and reads the name).
+  const faceLabel = (tree: ReactTestRenderer) =>
+    (
+      tree.root.findByType(ScreenShell).props.titleMark as React.ReactElement<{
+        accessibilityLabel?: string;
+      }>
+    ).props.accessibilityLabel;
+  const dots = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        node.type === ("View" as never) &&
+        typeof node.props.testID === "string" &&
+        node.props.testID.startsWith("member-presence-"),
+    );
+
+  it("draws no dot and names no status before presence has synced", () => {
+    const tree = render(ADA);
+    expect(dots(tree)).toHaveLength(0);
+    expect(faceLabel(tree)).toBeUndefined();
+  });
+
+  it("draws the member's dot, names the status and shows their line", () => {
+    setChapterPresence({
+      statusOf: (id) => (id === ADA ? "dnd" : "offline"),
+      lineOf: (id) => (id === ADA ? "In lab until 6" : null),
+      isReady: true,
+    });
+    const tree = render(ADA);
+    expect(dots(tree).map((dot) => dot.props.testID)).toEqual([
+      "member-presence-dnd",
+    ]);
+    expect(faceLabel(tree)).toBe("Ada, Do Not Disturb");
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.type === ("Text" as never) &&
+          node.props.children === "In lab until 6",
+      ),
+    ).toHaveLength(1);
+  });
+});

@@ -1,7 +1,60 @@
-import { IsArray, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { MEMBER_DISMISSAL_KEYS } from '@repo/validation';
+import {
+  GRADUATION_YEAR_MAX,
+  GRADUATION_YEAR_MIN,
+  MEMBER_DISMISSAL_KEYS,
+  DISPLAY_NAME_MAX_LENGTH,
+  BLANK_NAME_REFUSAL,
+} from '@repo/validation';
+import { Trim } from '../decorators/trim.decorator';
+
+/**
+ * An officer's fix to another member's profile (#4367,
+ * `PATCH /v1/members/{id}/profile`): their name and graduation year only. The
+ * rest of a profile is the member's own (`spec/behavior/members.md`
+ * § Profiles).
+ */
+export class CorrectMemberProfileDto {
+  @ApiPropertyOptional({
+    description:
+      "The member's name as the chapter knows them. Trimmed; it may not be blank.",
+    maxLength: DISPLAY_NAME_MAX_LENGTH,
+  })
+  // Not `@IsOptional`, which would also skip the checks for `null` and let it
+  // reach a NOT NULL column as a 500: only an absent name is skipped.
+  @ValidateIf((_obj, value) => value !== undefined)
+  @Trim()
+  @IsString()
+  @IsNotEmpty({ message: BLANK_NAME_REFUSAL })
+  @MaxLength(DISPLAY_NAME_MAX_LENGTH)
+  display_name?: string;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    description: "The member's graduation year, or null to clear it.",
+  })
+  @IsOptional()
+  @ValidateIf((_obj, value) => value !== null)
+  @IsInt()
+  @Min(GRADUATION_YEAR_MIN)
+  @Max(GRADUATION_YEAR_MAX)
+  graduation_year?: number | null;
+}
 
 export class UpdateMemberRolesDto {
   @ApiProperty({ type: [String] })
@@ -22,7 +75,10 @@ export class UpdateMemberRolesDto {
 }
 
 export class UpdateOnboardingDto {
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'true marks onboarding done; the first time it does, the inviter and the officers are told who joined. Finishing is one-way: false is accepted and changes nothing (#5627).',
+  })
   @IsStrictBoolean()
   has_completed_onboarding: boolean;
 }

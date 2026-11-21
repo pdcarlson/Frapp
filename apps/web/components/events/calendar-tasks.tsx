@@ -1,15 +1,19 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
-import { Circle, CircleCheck, UsersRound } from "lucide-react";
+import { Circle, CircleCheck } from "lucide-react";
+import { CALENDAR_KIND_HUE } from "@repo/hooks/activity-agenda";
 import {
-  CALENDAR_LAYERS,
   calendarTaskAccessibleLabel,
-  type CalendarLayer,
+  type CalendarItem,
   type CalendarTask,
   type CalendarTaskState,
 } from "@repo/hooks/calendar-tasks";
+import {
+  calendarBirthdayLabel,
+  type CalendarBirthday,
+} from "@repo/hooks/calendar-birthdays";
 import { parseInstantOrBareLocalNoon } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,15 +26,21 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Tasks on the Events calendar (#4144). An event is a filled chip with an
- * edge; a task has no fill and leads with a round check mark, the way Google
- * Calendar sets its tasks apart from its events. The mark says where the
- * task stands: an empty ring is still to do (red when overdue), a ring with a
- * check is done and waiting on an officer, a green check is confirmed.
- * Rules and words: `@repo/hooks` `calendar-tasks.ts`.
+ * Tasks and birthdays on Events (#4144, #4959): the agenda's rows (#5560)
+ * and the hour grid's all-day chips. On the agenda a task leads with a ring
+ * in the Tasks hue, filled once it is done, and a birthday with a square in
+ * the Birthdays hue (`CALENDAR_KIND_HUE`), the marks the navigator's dots and
+ * the colour key draw. Rules and words: `@repo/hooks` `calendar-tasks.ts`.
  */
 
-export function TaskMark({
+/**
+ * A chip's text on the month grid: the event chips' 11px (ledgered in
+ * `type-scale-call-sites.spec.ts`, #3075 decides), shared by the task and
+ * birthday chips that sit in the same day cell.
+ */
+const CHIP_TEXT = "text-[11px] font-medium";
+
+function TaskMark({
   state,
   className,
 }: {
@@ -63,7 +73,7 @@ export function TaskMark({
 }
 
 /** A finished task's title steps back, so what is still open stands out. */
-export function taskTitleClassName(state: CalendarTaskState): string {
+function taskTitleClassName(state: CalendarTaskState): string {
   if (state === "confirmed") return "text-muted-foreground line-through";
   if (state === "waiting") return "text-muted-foreground";
   return "text-foreground";
@@ -74,7 +84,7 @@ export function taskTitleClassName(state: CalendarTaskState): string {
  * viewer's own: who it went to ("Julian"), or for a task handed to many,
  * how many are done ("8/20").
  */
-export function assignedTrailing(
+function assignedTrailing(
   item: CalendarTask,
   nameOf: (userId: string) => string,
 ): string | null {
@@ -92,15 +102,17 @@ function badgeVariant(state: CalendarTaskState) {
   return "outline" as const;
 }
 
-function dueLabel(day: string): string {
-  const at = parseInstantOrBareLocalNoon(day);
-  return at
+/** "Thursday, November 20", and " at 5 PM" for a task due at a time. */
+function dueLabel(item: CalendarTask): string {
+  const at = parseInstantOrBareLocalNoon(item.day);
+  const day = at
     ? at.toLocaleDateString(undefined, {
         weekday: "long",
         month: "long",
         day: "numeric",
       })
-    : day;
+    : item.day;
+  return item.timeLabel ? `${day} at ${item.timeLabel}` : day;
 }
 
 /**
@@ -108,14 +120,14 @@ function dueLabel(day: string): string {
  * task the viewer assigned, where each assignee stands. The Tasks page is
  * where it is worked, so the card ends with the way there.
  */
-export function CalendarTaskPopover({
+function CalendarTaskPopover({
   item,
   nameOf,
   children,
 }: {
   item: CalendarTask;
   nameOf: (userId: string) => string;
-  /** The trigger: a chip on the wide month, a row under the compact one. */
+  /** The trigger: an agenda row, or a chip or marker on the hour grid. */
   children: ReactNode;
 }) {
   return (
@@ -125,7 +137,7 @@ export function CalendarTaskPopover({
         <div className="space-y-1">
           <p className="text-sm font-semibold text-foreground">{item.title}</p>
           <p className="text-caption text-muted-foreground">
-            Due {dueLabel(item.day)}
+            Due {dueLabel(item)}
           </p>
         </div>
         {item.kind === "mine" ? (
@@ -184,8 +196,84 @@ export function CalendarTaskPopover({
   );
 }
 
-/** The wide month's chip for a task: no fill, a check mark, the title. */
+/**
+ * A member's birthday on the hour grid's all-day strip (#4959): its rose
+ * square and their name, no fill and nothing to open. The name reads "Dana Lowe's
+ * birthday" to a screen reader.
+ */
+function BirthdayChip({ item }: { item: CalendarBirthday }) {
+  const label = calendarBirthdayLabel(item);
+  return (
+    <div
+      title={label}
+      className={cn("flex items-center gap-1 px-1.5 py-1 text-left", CHIP_TEXT)}
+    >
+      <KindMark kind="birthdays" size="small" />
+      <span className="min-w-0 flex-1 truncate text-foreground">
+        <span className="sr-only">{label}</span>
+        <span aria-hidden="true">{item.title}</span>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * A kind's mark (#5560): a task's ring in the Tasks hue, filled once done,
+ * or a birthday's square in the Birthdays hue. The agenda's rows draw it at
+ * 16px and the hour grid's chips at 12px, so both read as the dots do.
+ */
+export function KindMark({
+  kind,
+  done = false,
+  size = "row",
+}: {
+  kind: "tasks" | "birthdays";
+  done?: boolean;
+  size?: "row" | "small";
+}) {
+  const hue = CALENDAR_KIND_HUE[kind];
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="agenda-mark"
+      data-hue={hue}
+      data-done={done || undefined}
+      className={cn(
+        "shrink-0",
+        size === "row" ? "h-4 w-4" : "h-3 w-3",
+        kind === "tasks"
+          ? cn("rounded-full", size === "row" ? "border-2" : "border-[1.5px]")
+          : size === "row"
+            ? "rounded-[4px]"
+            : "rounded-[3px]",
+      )}
+      style={
+        kind === "tasks"
+          ? { borderColor: hue, backgroundColor: done ? hue : undefined }
+          : { backgroundColor: hue }
+      }
+    />
+  );
+}
+
+/** A task is done for its mark once it is marked, signed off or not. */
+function isDone(state: CalendarTaskState): boolean {
+  return state === "waiting" || state === "confirmed";
+}
+
+/** The hour grid's chip for a task (its green ring, the title), or a birthday's. */
 export function CalendarTaskChip({
+  item,
+  nameOf,
+}: {
+  item: CalendarItem;
+  nameOf: (userId: string) => string;
+}) {
+  if (item.kind === "birthdays") return <BirthdayChip item={item} />;
+  return <TaskChip item={item} nameOf={nameOf} />;
+}
+
+function TaskChip({
   item,
   nameOf,
 }: {
@@ -200,12 +288,13 @@ export function CalendarTaskChip({
         title={item.title}
         aria-label={calendarTaskAccessibleLabel(item)}
         className={cn(
-          "flex items-center gap-1 rounded-xs px-1.5 py-1 text-left text-[11px] font-medium transition-colors",
+          "flex items-center gap-1 rounded-xs px-1.5 py-1 text-left transition-colors",
+          CHIP_TEXT,
           FOCUS_RING,
           "hover:bg-card-hover",
         )}
       >
-        <TaskMark state={item.state} className="h-3 w-3" />
+        <KindMark kind="tasks" done={isDone(item.state)} size="small" />
         <span
           className={cn(
             "min-w-0 flex-1 truncate",
@@ -224,111 +313,169 @@ export function CalendarTaskChip({
   );
 }
 
-/** The compact month's row for a task, under the picked day. */
-export function CalendarTaskRow({
+/**
+ * A task due at a time on the hour grid (#5116): a slim marker at that
+ * time, the way Google Calendar draws a timed task: its ring, then its time,
+ * then as much of its title as fits (a narrow lane beside an event keeps the
+ * time), and for one the viewer assigned, who it went to or how many are
+ * done, as the strip's chip says. Where it sits is the grid's (`timeGridColumns`);
+ * `style` places it. It opens the task's card, as the strip's chip does.
+ */
+export function CalendarTaskBlock({
   item,
   nameOf,
+  style,
 }: {
   item: CalendarTask;
   nameOf: (userId: string) => string;
+  style: CSSProperties;
 }) {
-  const trailing = item.kind === "mine" ? item.label : item.progress;
+  const trailing = assignedTrailing(item, nameOf);
   return (
     <CalendarTaskPopover item={item} nameOf={nameOf}>
       <button
         type="button"
         title={item.title}
         aria-label={calendarTaskAccessibleLabel(item)}
+        data-kind="tasks"
+        data-testid={`time-grid-task-${item.key}`}
         className={cn(
-          "flex min-h-11 w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors",
+          "absolute z-10 flex items-center gap-1 overflow-hidden rounded-xs border border-border bg-card px-1.5 text-left leading-tight ring-1 ring-background transition-colors hover:bg-card-hover",
+          CHIP_TEXT,
           FOCUS_RING,
-          "hover:bg-card-hover",
         )}
+        style={style}
       >
-        <span className="flex w-16 shrink-0 items-center gap-1.5">
-          <TaskMark state={item.state} className="h-4 w-4" />
-          {item.kind === "assigned" ? (
-            <UsersRound
-              aria-hidden="true"
-              className="h-3.5 w-3.5 text-muted-foreground"
-            />
-          ) : null}
+        <KindMark kind="tasks" done={isDone(item.state)} size="small" />
+        <span className="shrink-0 tabular-nums text-muted-foreground">
+          {item.timeLabel}
         </span>
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-sm font-semibold",
+            "min-w-0 flex-1 truncate",
             taskTitleClassName(item.state),
           )}
         >
           {item.title}
         </span>
-        <span
-          className={cn(
-            "shrink-0 text-caption",
-            item.state === "overdue"
-              ? "text-destructive-text"
-              : "text-muted-foreground",
-          )}
-        >
-          {trailing}
+        {trailing ? (
+          <span className="max-w-[40%] shrink-0 truncate tabular-nums text-muted-foreground">
+            {trailing}
+          </span>
+        ) : null}
+      </button>
+    </CalendarTaskPopover>
+  );
+}
+
+/** The agenda row's frame, shared by every kind so their text lines up. */
+export const AGENDA_ROW_CLASS =
+  "flex min-h-11 w-full items-center gap-3 rounded-md px-2 py-1.5 text-left";
+
+/** The 16px column every agenda row leads with: its kind's mark. */
+export function AgendaMarkSlot({ children }: { children: ReactNode }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex w-4 shrink-0 items-center justify-center self-stretch"
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * A task on the agenda (#5560): a ring in the Tasks hue, filled once the
+ * task is done (waiting on an officer or confirmed), when its title steps
+ * back. Its line under the title starts with its time when it has one. One row per task the viewer assigned to many (`selectCalendarTasks`
+ * groups them), naming its progress at the right. It opens the task's card.
+ */
+export function AgendaTaskRow({
+  item,
+  nameOf,
+}: {
+  item: CalendarTask;
+  nameOf: (userId: string) => string;
+}) {
+  const done = isDone(item.state);
+  const status =
+    item.kind === "mine"
+      ? item.label
+      : item.assignees.length === 1
+        ? item.assignees[0]!.label
+        : "Assigned by you";
+  // A task due at a time leads with it, as an event's row does (#5116).
+  const meta = item.timeLabel ? `${item.timeLabel} · ${status}` : status;
+  const trailing =
+    item.kind === "mine"
+      ? null
+      : item.assignees.length === 1
+        ? nameOf(item.assignees[0]!.userId)
+        : item.progress;
+  return (
+    <CalendarTaskPopover item={item} nameOf={nameOf}>
+      <button
+        type="button"
+        aria-label={calendarTaskAccessibleLabel(item)}
+        data-kind="tasks"
+        className={cn(
+          AGENDA_ROW_CLASS,
+          "transition-colors hover:bg-card-hover",
+          FOCUS_RING,
+        )}
+      >
+        <AgendaMarkSlot>
+          <KindMark kind="tasks" done={done} />
+        </AgendaMarkSlot>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span
+            className={cn(
+              "truncate text-sm font-semibold",
+              done ? "text-muted-foreground line-through" : "text-foreground",
+            )}
+          >
+            {item.title}
+          </span>
+          <span
+            className={cn(
+              "truncate text-caption",
+              item.state === "overdue"
+                ? "text-destructive-text"
+                : "text-muted-foreground",
+            )}
+          >
+            {meta}
+          </span>
         </span>
+        {trailing ? (
+          <span className="max-w-[40%] shrink-0 truncate text-caption tabular-nums text-muted-foreground">
+            {trailing}
+          </span>
+        ) : null}
       </button>
     </CalendarTaskPopover>
   );
 }
 
 /**
- * What the calendar shows, as toggles that double as its key: each carries
- * the mark its kind is drawn with, the way Google Calendar's list of
- * calendars both explains and switches its colours. Only kinds the viewer
- * has are offered; a member with no tasks sees no row at all.
+ * A member's birthday on the agenda (#4959, #5560): a square in the
+ * Birthdays hue and their name. Nothing to open.
  */
-export function CalendarLayerToggles({
-  offered,
-  shown,
-  onToggle,
-}: {
-  offered: ReadonlySet<CalendarLayer>;
-  shown: ReadonlySet<CalendarLayer>;
-  onToggle: (layer: CalendarLayer) => void;
-}) {
+export function AgendaBirthdayRow({ item }: { item: CalendarBirthday }) {
   return (
-    <div
-      role="group"
-      aria-label="Show on calendar"
-      className="flex flex-wrap items-center gap-1.5"
-    >
-      {CALENDAR_LAYERS.filter((layer) => offered.has(layer.value)).map(
-        (layer) => {
-          const on = shown.has(layer.value);
-          return (
-            <button
-              key={layer.value}
-              type="button"
-              aria-pressed={on}
-              className={cn(
-                "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-caption font-semibold transition-colors",
-                FOCUS_RING,
-                on
-                  ? "border-input bg-surface-1 text-foreground hover:bg-card-hover"
-                  : "border-dashed border-input text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => onToggle(layer.value)}
-            >
-              <span aria-hidden="true" className={cn(on ? null : "opacity-40")}>
-                {layer.value === "events" ? (
-                  <span className="block h-3 w-1 rounded-full bg-primary" />
-                ) : layer.value === "mine" ? (
-                  <Circle className="h-3 w-3 text-muted-foreground" />
-                ) : (
-                  <UsersRound className="h-3 w-3 text-muted-foreground" />
-                )}
-              </span>
-              {layer.label}
-            </button>
-          );
-        },
-      )}
+    <div data-kind="birthdays" className={AGENDA_ROW_CLASS}>
+      <AgendaMarkSlot>
+        <KindMark kind="birthdays" />
+      </AgendaMarkSlot>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-semibold text-foreground">
+          <span className="sr-only">{calendarBirthdayLabel(item)}</span>
+          <span aria-hidden="true">{item.title}</span>
+        </span>
+        <span aria-hidden="true" className="text-caption text-muted-foreground">
+          Birthday
+        </span>
+      </span>
     </div>
   );
 }

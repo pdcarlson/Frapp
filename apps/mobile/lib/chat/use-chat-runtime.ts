@@ -22,13 +22,20 @@
  * `/realtime-manager`); the package has no barrel (#3228).
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useChatActivityHandler,
   useFrappClient,
   useViewerUserId,
+  type ChatActivity,
 } from "@repo/hooks";
 import type { OutboxStore } from "@repo/chat-core/adapters";
 import type { ChatActionContext } from "@repo/chat-core/chat-client";
@@ -41,6 +48,7 @@ import { useLatestTrack } from "@/lib/use-latest-track";
 import { useIsApiAuthenticated } from "@/lib/use-is-api-authenticated";
 import { getSupabaseClient } from "@/lib/supabase";
 import { connectionMonitor } from "@/lib/connection/monitor";
+import { dismissDeletedMessagePushes } from "@/lib/notifications/push";
 import { useChatScope } from "./chat-scope";
 import { getDraftStore, type DraftStore } from "./draft-store";
 import { createAsyncStorageKeyValueStore } from "./key-value-store";
@@ -65,8 +73,8 @@ import { getOutboxStore } from "./outbox-store";
  * sent it (`chat:heavy:v1:<userId>:<channelId>`), so another member on the
  * same phone never reads it (`spec/ui/mobile/patterns.md` § Chat).
  */
-export const chatKeyValueStore = createAsyncStorageKeyValueStore();
-export const chatNetworkState = createMonitorNetworkState(connectionMonitor);
+const chatKeyValueStore = createAsyncStorageKeyValueStore();
+const chatNetworkState = createMonitorNetworkState(connectionMonitor);
 
 let bootPromise: Promise<void> | null = null;
 
@@ -123,7 +131,18 @@ export function useChatRealtimeBinding(): void {
   // token (the hazard `lib/notifications/use-badge-sync.ts` gates against).
   const signedIn = useIsApiAuthenticated();
   const viewerId = useViewerUserId({ enabled: signedIn });
-  const onMessageActivity = useChatActivityHandler(viewerId, isForeground);
+  const handleActivity = useChatActivityHandler(viewerId, isForeground);
+  // A delete seen live takes its push out of the tray at once (#4470); one
+  // made while the app was closed is caught by `use-badge-sync.ts`.
+  const onMessageActivity = useCallback(
+    (activity: ChatActivity) => {
+      handleActivity(activity);
+      if (activity.type === "changed" && activity.deleted) {
+        void dismissDeletedMessagePushes(new Set([activity.messageId]));
+      }
+    },
+    [handleActivity],
+  );
   /**
    * Once bound, the manager is rebound on every viewer change, a `null` one
    * included: `configure({ viewerId: null })` rejoins the inbox and every
@@ -189,7 +208,15 @@ export interface ChatRuntime {
   drafts: DraftStore;
 }
 
-export function useChatRuntime(): ChatRuntime {
+/**
+ * The runtime without its outbox flush: the same `ctx`, `viewerId`, outbox
+ * and drafts, for a screen that only dispatches row writes while the channel
+ * screen under it owns the flush (the open thread, #4297). The flush effect in
+ * {@link useChatRuntime} runs once per caller, and `flushOutbox` has no
+ * in-flight guard, so a second flushing caller POSTs every queued message
+ * twice on each reconnect.
+ */
+export function useChatActionContext(): ChatRuntime {
   const queryClient = useQueryClient();
   const apiClient = useFrappClient();
   const supabase = useMemo(() => getSupabaseClient(), []);
@@ -251,6 +278,16 @@ export function useChatRuntime(): ChatRuntime {
     };
   }, [queryClient, apiClient, supabase, viewerId, outbox, track]);
 
+  return { ctx, viewerId, outbox, drafts };
+}
+
+/**
+ * The chat runtime, plus the outbox flush: once on boot and on every return
+ * online. One caller per mounted chat: the channel's `useChatChannel`.
+ */
+export function useChatRuntime(): ChatRuntime {
+  const runtime = useChatActionContext();
+  const { ctx } = runtime;
   // Boot flush, then re-flush on every reconnect. Both the trigger and the gate
   // ride the same port: `flushOutbox` consults `net` internally, so subscribing
   // through it keeps the two consistent.
@@ -268,5 +305,5 @@ export function useChatRuntime(): ChatRuntime {
     });
   }, [ctx]);
 
-  return { ctx, viewerId, outbox, drafts };
+  return runtime;
 }

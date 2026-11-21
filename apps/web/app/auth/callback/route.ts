@@ -1,13 +1,24 @@
 import { NextResponse } from "next/server";
-import { isFirstOAuthSignIn } from "@/lib/auth/oauth";
 import {
   AUTH_CALLBACK_INTENT_PARAM,
   EMAIL_CONFIRMED_AUTH_ERROR,
-  NEW_ACCOUNT_PATH,
+  isEmailLinkIntent,
   isEmailOtpType,
   resolveRedirectPath,
 } from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { reportServerAuthFailure } from "@/lib/sentry/auth-failures";
+
+/**
+ * Report a link or provider return that didn't become a session (#3832), with
+ * GoTrue's own error where there is one, so an Auth 5xx arrives at `error`
+ * rather than as the fixed `authError` the member is shown. Reported here, not
+ * from `/sign-in`, which only sees that fixed code and would count a reload or
+ * a hand-typed `?authError=` as another failure.
+ */
+function reportCallbackFailure(failure: { error?: unknown; code?: string }): void {
+  reportServerAuthFailure({ flow: "auth_callback", screen: "/auth/callback", ...failure });
+}
 
 /**
  * Where every Supabase email link *and* OAuth return lands: sign-up
@@ -32,22 +43,16 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
  * a bad hash, a code whose verifier cookie is gone, a replay — lands on
  * `/sign-in` with `next` preserved as `redirectTo` and `authError` set so
  * the page can say what happened. Nothing is signed in on failure. The one
- * failure that is good news is an email link (`intent=confirm`) whose code
- * won't exchange: GoTrue verified it before handing out the code, which
- * confirms the address, so it lands with `authError=email_confirmed` and the
- * page says to sign in.
+ * failure that is good news is an email link (`intent=confirm` from sign-up
+ * and Resend, or `intent=sign-in-link` from the sign-in magic link:
+ * `isEmailLinkIntent`) whose code won't exchange: GoTrue verified it before
+ * handing out the code, which confirms the address, so it lands with
+ * `authError=email_confirmed` and the page says to sign in. A Google or Apple
+ * code (`intent=sign-in`) that won't exchange is a real failure.
  *
  * `next` is re-validated with the same open-redirect guard the proxy applies
  * (a same-origin path or `/chat`), so tampering with the link cannot send a
  * freshly signed-in session to another host.
- *
- * **A sign-in that created an account.** When the sign-in screen started an
- * OAuth round trip (`intent=sign-in`) and the exchange returns a user that
- * Google or Apple created just now, the member asked to sign in and got a new,
- * empty account instead: GoTrue links nothing it can't verify, so a member who
- * joined on the phone with Apple and picks Google here is split (#3786). They
- * go to `/new-account` first, which names the account and offers sign-out in
- * one step, before onboarding treats them as new. Nothing is linked or merged.
  */
 export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
@@ -59,6 +64,8 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (!linkError && tokenHash) {
     if (!otpType || !isEmailOtpType(otpType)) {
+      // The link's `type` is one GoTrue never sends: a template fault.
+      reportCallbackFailure({ code: "otp_type_invalid" });
       const signIn = new URL("/sign-in", url.origin);
       signIn.searchParams.set("redirectTo", next);
       signIn.searchParams.set("authError", "verify_failed");
@@ -69,9 +76,8 @@ export async function GET(request: Request): Promise<NextResponse> {
       token_hash: tokenHash,
       type: otpType,
     });
-    if (!error) {
-      return NextResponse.redirect(new URL(next, url.origin));
-    }
+    if (!error) return NextResponse.redirect(new URL(next, url.origin));
+    reportCallbackFailure({ error });
     const signIn = new URL("/sign-in", url.origin);
     signIn.searchParams.set("redirectTo", next);
     signIn.searchParams.set("authError", "verify_failed");
@@ -80,23 +86,15 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (code && !linkError) {
     const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      if (
-        url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM) === "sign-in" &&
-        isFirstOAuthSignIn(data?.user)
-      ) {
-        const notice = new URL(NEW_ACCOUNT_PATH, url.origin);
-        notice.searchParams.set("next", next);
-        return NextResponse.redirect(notice);
-      }
-      return NextResponse.redirect(new URL(next, url.origin));
-    }
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error) return NextResponse.redirect(new URL(next, url.origin));
+    reportCallbackFailure({ error });
     // An email link that reached here with a code already confirmed the
     // address (GoTrue verifies before it hands out a code), so the only thing
     // that failed is signing *this* browser in. Say so, and let a sign-in do
-    // it, rather than call a working link broken.
-    if (url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM) === "confirm") {
+    // it, rather than call a working link broken. OAuth's `sign-in` is excluded:
+    // a provider code that won't exchange is a real failure, not a confirmation.
+    if (isEmailLinkIntent(url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM))) {
       const signIn = new URL("/sign-in", url.origin);
       signIn.searchParams.set("redirectTo", next);
       signIn.searchParams.set("authError", EMAIL_CONFIRMED_AUTH_ERROR);
@@ -104,6 +102,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     }
   }
 
+  // A failed exchange was reported above; what is left arrived failed.
+  if (!code || linkError) reportCallbackFailure({ code: linkError ?? "missing_code" });
   const signIn = new URL("/sign-in", url.origin);
   signIn.searchParams.set("redirectTo", next);
   signIn.searchParams.set("authError", linkError ?? (code ? "exchange_failed" : "missing_code"));

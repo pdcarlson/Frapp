@@ -1,20 +1,24 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { createFrappClient } from "@repo/api-sdk";
-import { FrappClientProvider } from "./use-frapp-client";
 import {
   deriveDisplayStatus,
+  readAllTaskPages,
+  TASK_PAGE_SIZE,
   taskKeys,
   useConfirmTask,
   subtaskProgress,
   useDeleteSubtask,
   useRejectTask,
+  useRemoveFromTaskGroup,
   useSetSubtaskDone,
+  useTasks,
+  useUpdateTask,
   useUpdateTaskStatus,
 } from "./use-tasks";
+import { activityKeys } from "./use-activity";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 /**
  * These cover #560 — promoting the optimistic task writes out of
@@ -36,30 +40,17 @@ const detailKey = taskKeys.detail(CHAPTER, TASK);
 /** A future due date, so nothing derives to OVERDUE unless a test wants it. */
 const FUTURE = "2999-01-01";
 
-// Note the absence of `gcTime: 0`, which some specs in this package use: these
-// tests seed cache entries that no component observes, and a zero gc time
+// `createTestQueryClient()` leaves `gcTime` at its default; don't set it to 0
+// here. These tests seed cache entries that no component observes, and a zero gc time
 // collects an unobserved entry the moment it is written — so the mutation would
 // find an empty cache and correctly decline to write, for the wrong reason.
-function makeQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-}
-
 function createWrapper(client: unknown, queryClient: QueryClient) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={client as ReturnType<typeof createFrappClient>}
-      chapterId={CHAPTER}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "TasksHookWrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client,
+    queryClient,
+    chapterId: CHAPTER,
+    displayName: "TasksHookWrapper",
+  });
 }
 
 /**
@@ -130,12 +121,9 @@ describe("deriveDisplayStatus", () => {
     // Only TODO and IN_PROGRESS derive; the others pass through untouched.
     ["COMPLETED", "2026-08-16", "2026-08-17", "COMPLETED"],
     ["OVERDUE", "2026-08-16", "2026-08-17", "OVERDUE"],
-  ] as const)(
-    "%s due %s on %s → %s",
-    (stored, dueDate, today, expected) => {
-      expect(deriveDisplayStatus(stored, dueDate, today)).toBe(expected);
-    },
-  );
+  ] as const)("%s due %s on %s → %s", (stored, dueDate, today, expected) => {
+    expect(deriveDisplayStatus(stored, dueDate, today)).toBe(expected);
+  });
 
   it("passes through when the due date is missing or blank", () => {
     expect(deriveDisplayStatus("TODO", undefined, "2026-08-17")).toBe("TODO");
@@ -147,7 +135,7 @@ describe("useUpdateTaskStatus", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
   });
 
@@ -342,7 +330,9 @@ describe("useUpdateTaskStatus", () => {
     });
 
     await act(async () => {
-      await fail(0, { message: "Invalid status transition from TODO to COMPLETED" });
+      await fail(0, {
+        message: "Invalid status transition from TODO to COMPLETED",
+      });
     });
 
     await waitFor(() => {
@@ -492,7 +482,7 @@ describe("useConfirmTask", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
   });
 
@@ -547,7 +537,7 @@ describe("useRejectTask", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
   });
 
@@ -562,7 +552,10 @@ describe("useRejectTask", () => {
     });
 
     act(() => {
-      result.current.mutate({ id: TASK });
+      result.current.mutate({
+        id: TASK,
+        body: { comment: "Floor is still sticky" },
+      });
     });
 
     await waitFor(() => {
@@ -584,7 +577,10 @@ describe("useRejectTask", () => {
     });
 
     act(() => {
-      result.current.mutate({ id: TASK });
+      result.current.mutate({
+        id: TASK,
+        body: { comment: "Floor is still sticky" },
+      });
     });
 
     await waitFor(() => {
@@ -622,7 +618,7 @@ describe("useSetSubtaskDone (#4003)", () => {
   ];
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
   });
 
   function stepDone(id: string) {
@@ -692,5 +688,195 @@ describe("useSetSubtaskDone (#4003)", () => {
       await fail();
     });
     await waitFor(() => expect(ids()).toEqual(["s1", "s2"]));
+  });
+});
+
+/**
+ * #4037: the list is read in bounded pages, each resuming at the last row's
+ * `created_at` and `id` exactly as received, so a list past the server's
+ * row cap arrives whole.
+ */
+describe("readAllTaskPages", () => {
+  const row = (index: number) => ({
+    id: `task-${index}`,
+    // Microseconds, as Postgres answers: passed back verbatim, never reparsed.
+    created_at: "2026-01-01T00:00:00.123456+00:00",
+  });
+
+  it("follows the cursor until a short page, and returns one array", async () => {
+    const pages = [
+      Array.from({ length: TASK_PAGE_SIZE }, (_, i) => row(i)),
+      Array.from({ length: TASK_PAGE_SIZE }, (_, i) => row(TASK_PAGE_SIZE + i)),
+      [row(2 * TASK_PAGE_SIZE)],
+    ];
+    const GET = vi.fn();
+    for (const page of pages) {
+      GET.mockResolvedValueOnce({ data: page, error: undefined });
+    }
+
+    const rows = await readAllTaskPages({ GET } as never);
+
+    expect(rows).toHaveLength(2 * TASK_PAGE_SIZE + 1);
+    expect(GET).toHaveBeenCalledTimes(3);
+    expect(GET).toHaveBeenNthCalledWith(1, "/v1/tasks", {
+      params: { query: { limit: TASK_PAGE_SIZE } },
+    });
+    expect(GET).toHaveBeenNthCalledWith(2, "/v1/tasks", {
+      params: {
+        query: {
+          limit: TASK_PAGE_SIZE,
+          before: "2026-01-01T00:00:00.123456+00:00",
+          before_id: `task-${TASK_PAGE_SIZE - 1}`,
+        },
+      },
+    });
+  });
+
+  it("asks once more after an exactly full last page, and stops on empty", async () => {
+    const GET = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: Array.from({ length: TASK_PAGE_SIZE }, (_, i) => row(i)),
+        error: undefined,
+      })
+      .mockResolvedValueOnce({ data: [], error: undefined });
+
+    const rows = await readAllTaskPages({ GET } as never);
+
+    expect(rows).toHaveLength(TASK_PAGE_SIZE);
+    expect(GET).toHaveBeenCalledTimes(2);
+  });
+
+  it("takes an API that ignores paging at its word, rather than looping", async () => {
+    // An API from before paging answers the whole list to every request.
+    const whole = Array.from({ length: 250 }, (_, i) => row(i));
+    const ignoresLimit = vi
+      .fn()
+      .mockResolvedValue({ data: whole, error: undefined });
+
+    await expect(
+      readAllTaskPages({ GET: ignoresLimit } as never),
+    ).resolves.toHaveLength(250);
+    expect(ignoresLimit).toHaveBeenCalledTimes(1);
+
+    // Exactly a page long: the repeat of the first page ends it.
+    const exact = Array.from({ length: TASK_PAGE_SIZE }, (_, i) => row(i));
+    const ignoresCursor = vi
+      .fn()
+      .mockResolvedValue({ data: exact, error: undefined });
+
+    await expect(
+      readAllTaskPages({ GET: ignoresCursor } as never),
+    ).resolves.toHaveLength(TASK_PAGE_SIZE);
+    expect(ignoresCursor).toHaveBeenCalledTimes(2);
+  });
+
+  it("is what useTasks reads through", async () => {
+    const GET = vi.fn().mockResolvedValue({ data: [row(1)], error: undefined });
+    const queryClient = createTestQueryClient();
+
+    const { result } = renderHook(() => useTasks(), {
+      wrapper: createHookWrapper({
+        client: { GET },
+        queryClient,
+        chapterId: CHAPTER,
+      }),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(GET).toHaveBeenCalledWith(
+      "/v1/tasks",
+      expect.objectContaining({ params: { query: { limit: TASK_PAGE_SIZE } } }),
+    );
+  });
+
+  it("throws a failed page rather than returning part of the list", async () => {
+    const failure = { message: "boom" };
+    const GET = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: Array.from({ length: TASK_PAGE_SIZE }, (_, i) => row(i)),
+        error: undefined,
+      })
+      .mockResolvedValueOnce({ data: undefined, error: failure });
+
+    await expect(readAllTaskPages({ GET } as never)).rejects.toBe(failure);
+  });
+});
+
+describe("useUpdateTask", () => {
+  it("refreshes Activity, which draws the edited task's card (#4512)", async () => {
+    const queryClient = createTestQueryClient();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const PATCH = vi.fn().mockResolvedValue({ data: {}, error: undefined });
+    const { result } = renderHook(() => useUpdateTask(), {
+      wrapper: createWrapper({ PATCH }, queryClient),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ id: TASK, body: { title: "Mop" } });
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: activityKeys.chapter(CHAPTER),
+    });
+  });
+});
+
+describe("useRemoveFromTaskGroup (#5492)", () => {
+  it("posts the members to take out and reads every task and Activity again", async () => {
+    const queryClient = createTestQueryClient();
+    const answer = {
+      removed: ["user-2", "user-3"],
+      group: {
+        id: "g1",
+        audience: "everyone",
+        total: 10,
+        done: 2,
+        confirmed: 1,
+      },
+    };
+    const POST = vi.fn().mockResolvedValue({ data: answer, error: undefined });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useRemoveFromTaskGroup(), {
+      wrapper: createWrapper({ POST }, queryClient),
+    });
+
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.mutateAsync({
+        id: TASK,
+        assigneeIds: ["user-2", "user-3"],
+      });
+    });
+
+    expect(POST).toHaveBeenCalledWith("/v1/tasks/{id}/group/remove", {
+      params: { path: { id: TASK } },
+      body: { assignee_ids: ["user-2", "user-3"] },
+    });
+    expect(returned).toEqual(answer);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: taskKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: activityKeys.chapter(CHAPTER),
+    });
+  });
+
+  it("hands a refusal to the caller once, and still reads the tasks again", async () => {
+    const queryClient = createTestQueryClient();
+    const refusal = {
+      statusCode: 400,
+      message: "That is everyone: delete the task for everyone instead",
+    };
+    const POST = vi.fn().mockResolvedValue({ data: undefined, error: refusal });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useRemoveFromTaskGroup(), {
+      wrapper: createWrapper({ POST }, queryClient),
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({ id: TASK, assigneeIds: ["user-2"] }),
+      ).rejects.toBe(refusal);
+    });
+    expect(POST).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: taskKeys.all });
   });
 });

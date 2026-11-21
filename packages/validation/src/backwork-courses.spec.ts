@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   collapseCourseText,
+  departmentCodeKey,
+  findDepartmentByCode,
   courseTextLength,
   courseTextTooLong,
   normalizeCourseNicknames,
@@ -40,5 +42,31 @@ describe("course text lengths count code points, like Postgres char_length", () 
 describe("collapseCourseText", () => {
   it("trims and collapses inner whitespace", () => {
     expect(collapseCourseText("  Calc \t  I \n")).toBe("Calc I");
+  });
+});
+
+describe("department codes (#3918)", () => {
+  it("match trimmed and case-insensitively", () => {
+    expect(departmentCodeKey(" math ")).toBe("MATH");
+    const departments = [
+      { id: "d-1", code: "CS" },
+      { id: "d-2", code: "MATH" },
+    ];
+    expect(findDepartmentByCode(departments, "math")?.id).toBe("d-2");
+    expect(findDepartmentByCode(departments, "  Math")?.code).toBe("MATH");
+    expect(findDepartmentByCode(departments, "chem")).toBeUndefined();
+    expect(findDepartmentByCode(departments, "   ")).toBeUndefined();
+  });
+
+  it("pick one case variant the same way every time, whatever the order", () => {
+    const variants = [
+      { id: "d-3", code: "math" },
+      { id: "d-2", code: "Math" },
+      { id: "d-1", code: "MATH" },
+    ];
+    // The typed spelling first, then code-unit order.
+    expect(findDepartmentByCode(variants, "math")?.id).toBe("d-3");
+    expect(findDepartmentByCode(variants, "mAth")?.id).toBe("d-1");
+    expect(findDepartmentByCode([...variants].reverse(), "mAth")?.id).toBe("d-1");
   });
 });

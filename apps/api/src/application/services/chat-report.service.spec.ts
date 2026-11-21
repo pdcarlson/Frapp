@@ -370,6 +370,30 @@ describe('ChatReportService', () => {
       );
     });
 
+    it('names the member who posted an Ask Frapp answer, not the Frapp sender (#4713)', async () => {
+      channelAccess.assertMessageAccess.mockResolvedValue({
+        ...baseMessage,
+        sender_id: '00000000-0000-0000-0000-000000000000',
+        kind: 'ask_answer',
+        content: 'Dues are due on the 1st.',
+        payload: { v: 1, asked_by: 'user-asker', question: 'When are dues?' },
+      } satisfies ChatMessage);
+
+      await service.fileReport(CHAPTER, REPORTER, {
+        message_id: MESSAGE_ID,
+        reason: 'other',
+      });
+
+      expect(reportRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reported_content:
+            'Asked Frapp: When are dues?\nDues are due on the 1st.',
+          reported_sender_id: 'user-asker',
+          reported_author_name: null,
+        }),
+      );
+    });
+
     it('snapshots author_name for an imported message with no sender_id', async () => {
       // The case that makes carrying BOTH author columns necessary rather than
       // belt-and-braces. A Discord-imported row has `sender_id: null` and names
@@ -431,7 +455,7 @@ describe('ChatReportService', () => {
         // reported. The queue reads only the report row, so what the officer
         // sees is the snapshot written at file time, whatever happens to the
         // message afterwards (a delete tombstones `content` and wipes
-        // `metadata`; #1575 tracks `payload`). The store below stands in for
+        // `metadata` and `payload`, #1575). The store below stands in for
         // the report table.
         const stored: ChatMessageReportView[] = [];
         channelAccess.assertMessageAccess.mockResolvedValue(pollMessage);
@@ -1942,6 +1966,107 @@ describe('reportedContentSnapshot', () => {
     metadata: {},
   };
 
+  it('keeps the question a posted Ask Frapp answer was given (#4713)', () => {
+    const posted = {
+      content: 'Dues are due on the 1st.',
+      type: 'TEXT' as const,
+      kind: 'ask_answer' as const,
+      payload: { v: 1, question: ' When are dues due? ' },
+      metadata: {},
+    };
+    expect(reportedContentSnapshot(posted)).toBe(
+      'Asked Frapp: When are dues due?\nDues are due on the 1st.',
+    );
+    // A payload this build cannot read still files the answer.
+    expect(reportedContentSnapshot({ ...posted, payload: null })).toBe(
+      'Dues are due on the 1st.',
+    );
+  });
+
+  it("keeps a GIF message's GIF, its only evidence (#4631)", () => {
+    const gif = {
+      provider: 'klipy',
+      id: 'dance',
+      title: 'Happy dance',
+      url: 'https://static.klipy.com/ii/a/dance.webp',
+      width: 498,
+      height: 280,
+    };
+    expect(
+      reportedContentSnapshot({ ...text, content: '', metadata: { gif } }),
+    ).toBe('GIF: Happy dance\nhttps://static.klipy.com/ii/a/dance.webp');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: '',
+        metadata: { gif: { ...gif, title: '' } },
+      }),
+    ).toBe('GIF: https://static.klipy.com/ii/a/dance.webp');
+  });
+
+  it("keeps a forward's copy after its comment, unless the original was deleted (#4864)", () => {
+    const copy = {
+      message_id: 'orig-1',
+      channel_id: 'chan-src',
+      sender_id: 'user-ana',
+      author_name: 'Ana',
+      content: 'harassing words',
+      gif: null,
+      attachment_count: 0,
+      created_at: '2026-11-01T00:00:00Z',
+    };
+    expect(
+      reportedContentSnapshot({ ...text, content: '', forwarded_from: copy }),
+    ).toBe('Forwarded from Ana: harassing words');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'look',
+        forwarded_from: copy,
+      }),
+    ).toBe('look\n\nForwarded from Ana: harassing words');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: '',
+        forwarded_from: {
+          ...copy,
+          content: '',
+          gif: {
+            provider: 'klipy',
+            id: 'dance',
+            title: 'Happy dance',
+            url: 'https://static.klipy.com/ii/a/dance.webp',
+            width: 498,
+            height: 280,
+          },
+        },
+      }),
+    ).toBe(
+      'Forwarded GIF: Happy dance\nhttps://static.klipy.com/ii/a/dance.webp',
+    );
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: '',
+        forwarded_from: { ...copy, content: '', attachment_count: 2 },
+      }),
+    ).toBe('Forwarded from Ana: 2 attachments');
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'look',
+        forwarded_from: {
+          ...copy,
+          sender_id: null,
+          author_name: null,
+          content: '',
+          deleted: true,
+        },
+      }),
+    ).toBe('look');
+  });
+
   it('is the content for anything that is not a poll', () => {
     expect(reportedContentSnapshot(text)).toBe('hello');
     // A card of another kind carries no member-written options.
@@ -1952,6 +2077,47 @@ describe('reportedContentSnapshot', () => {
         payload: { options: [{ label: 'not a poll' }] },
       }),
     ).toBe('hello');
+  });
+
+  it("keeps a sign-up sheet's title, details and slot names (#3926)", () => {
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'Rides',
+        kind: 'signup',
+        payload: {
+          title: 'Rides Friday',
+          note: '10pm to 2am',
+          slots: [
+            { id: 'a', label: 'Driver 1', capacity: 1 },
+            { id: 'b', label: 'Driver 2', capacity: null },
+          ],
+        },
+      }),
+    ).toBe('Rides\nRides Friday\n- 10pm to 2am\n- Driver 1\n- Driver 2');
+  });
+
+  it("keeps a form's title, description, questions and options, and no answers (#3926 step 3)", () => {
+    expect(
+      reportedContentSnapshot({
+        ...text,
+        content: 'Rooms',
+        kind: 'form',
+        payload: {
+          title: 'Room picks',
+          description: 'By Friday',
+          questions: [
+            { id: 'q1', type: 'short_answer', title: 'Name' },
+            {
+              id: 'q2',
+              type: 'dropdown',
+              title: 'Room',
+              options: [{ id: 'a', label: 'Room A' }],
+            },
+          ],
+        },
+      }),
+    ).toBe('Rooms\nRoom picks\n- By Friday\n- Name\n- Room\n- Room A');
   });
 
   it("adds the card's question when it differs from content, since the card shows the question", () => {

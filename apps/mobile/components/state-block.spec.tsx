@@ -9,6 +9,7 @@ import {
   withRepeat,
 } from "react-native-reanimated";
 import { NavigationContext } from "expo-router/react-navigation";
+import { useBottomSheetInternal } from "@gorhom/bottom-sheet";
 import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, tint } from "@/lib/theme";
@@ -34,6 +35,9 @@ import {
   NoChapterState,
   SkeletonBlock,
   SkeletonLines,
+  SkeletonOnCard,
+  SkeletonRegion,
+  SkeletonText,
 } from "./state-block";
 
 /**
@@ -68,7 +72,9 @@ function flatten(style: unknown): Record<string, unknown> {
 
 /** The outermost View's resolved style — the card chrome. */
 function cardStyle(tree: ReactTestRenderer): Record<string, unknown> {
-  const [card] = tree.root.findAllByType("View" as unknown as React.ComponentType);
+  const [card] = tree.root.findAllByType(
+    "View" as unknown as React.ComponentType,
+  );
   return flatten(card.props.style);
 }
 
@@ -76,9 +82,137 @@ function texts(tree: ReactTestRenderer): string[] {
   return tree.root
     .findAllByType("Text" as unknown as React.ComponentType)
     .flatMap((node) =>
-      node.children.filter((child): child is string => typeof child === "string"),
+      node.children.filter(
+        (child): child is string => typeof child === "string",
+      ),
     );
 }
+
+/** Each skeleton block's fill, in render order. */
+function blockFills(tree: ReactTestRenderer): unknown[] {
+  return tree.root
+    .findAllByType("Animated.View" as unknown as React.ComponentType)
+    .map((view) => flatten(view.props.style).backgroundColor);
+}
+
+/**
+ * #5109. On a phone screen a card is `surface1`, one step above the page,
+ * and a bar on it takes `card`. A bar straight on the page with no card
+ * under it took `card` too, two steps up, louder than what it stands for.
+ */
+describe("on a page", () => {
+  const { surface } = signetDarkTokens.color;
+
+  it("draws flush bars one step above the page", () => {
+    const fills = blockFills(
+      render(
+        <SkeletonRegion label="Loading messages" flush>
+          <SkeletonBlock width={32} height={32} />
+          <SkeletonText
+            role={signetDarkTokens.typography.role.body}
+            width="60%"
+          />
+        </SkeletonRegion>,
+      ),
+    );
+    expect(fills).toEqual([surface.surface1, surface.surface1]);
+  });
+
+  it("keeps bars on a card one step above the card", () => {
+    const fills = blockFills(
+      render(
+        <SkeletonRegion label="Loading">
+          <SkeletonBlock width="60%" height={12} />
+        </SkeletonRegion>,
+      ),
+    );
+    expect(fills).toEqual([surface.card]);
+  });
+
+  it("draws a card frame's bars inside a flush region a step above the card", () => {
+    const fills = blockFills(
+      render(
+        <SkeletonRegion label="Loading" flush>
+          <SkeletonOnCard>
+            <SkeletonBlock width="60%" height={12} />
+          </SkeletonOnCard>
+          <SkeletonBlock width="40%" height={12} />
+        </SkeletonRegion>,
+      ),
+    );
+    expect(fills).toEqual([surface.card, surface.surface1]);
+  });
+});
+
+/**
+ * #4690. A sheet's fill is `popover`, the top of the ladder, and a sheet's
+ * "step above a card" is `popover` too. So a bar drawn straight on the sheet
+ * took the sheet's own colour and the member list loaded as a blank area, and
+ * a state card painting `card` read as a hole (components.md §10 "Nested
+ * inside a card").
+ */
+describe("in a sheet", () => {
+  const { surface } = signetDarkTokens.color;
+
+  function inSheet<T>(run: () => T): T {
+    vi.mocked(useBottomSheetInternal).mockReturnValue({} as never);
+    try {
+      return run();
+    } finally {
+      vi.mocked(useBottomSheetInternal).mockReturnValue(null);
+    }
+  }
+
+  it("draws flush rows' bars a step under the sheet, never in its own fill", () => {
+    const fills = inSheet(() =>
+      blockFills(
+        render(
+          <SkeletonRegion label="Loading members" flush>
+            <SkeletonBlock width={24} height={24} />
+            <SkeletonBlock width="60%" height={12} />
+          </SkeletonRegion>,
+        ),
+      ),
+    );
+    expect(fills).toEqual([surface.card, surface.card]);
+    expect(fills).not.toContain(surface.popover);
+  });
+
+  it("keeps bars on a card in a sheet one step above the card", () => {
+    const fills = inSheet(() =>
+      blockFills(
+        render(
+          <SkeletonRegion label="Loading">
+            <SkeletonBlock width="60%" height={12} />
+          </SkeletonRegion>,
+        ),
+      ),
+    );
+    expect(fills).toEqual([surface.popover]);
+  });
+
+  it("drops the state cards' fill and keeps their edge", () => {
+    const lines = inSheet(() => render(<SkeletonLines lines={3} />));
+    expect(cardStyle(lines).backgroundColor).toBe("transparent");
+    expect(cardStyle(lines).borderColor).toBe(
+      signetDarkTokens.color.border.hairline,
+    );
+    // With no card under them, the bars take the step under the sheet.
+    expect(blockFills(lines)).toEqual([
+      surface.card,
+      surface.card,
+      surface.card,
+    ]);
+
+    const error = cardStyle(
+      inSheet(() => render(<ErrorState title="Failed" body="Retry." />)),
+    );
+    expect(error.backgroundColor).toBe("transparent");
+    expect(error.borderColor).toBe(
+      tint(signetDarkTokens.color.semantic.destructive, 0.28),
+    );
+  });
+});
 
 describe("ErrorState", () => {
   it("carries the semantic destructive border, and no accent", () => {
@@ -147,9 +281,7 @@ describe("the glyph tiles", () => {
         .find((node) => ["⌕", "!"].includes(String(node.props.children)));
       const tile = glyph?.parent;
       expect(tile?.props.accessibilityElementsHidden).toBe(true);
-      expect(tile?.props.importantForAccessibility).toBe(
-        "no-hide-descendants",
-      );
+      expect(tile?.props.importantForAccessibility).toBe("no-hide-descendants");
     }
   });
 });
@@ -185,7 +317,7 @@ describe("NoChapterState", () => {
   it("says where to pick a chapter in one line", () => {
     const tree = render(<NoChapterState noun="the directory" />);
     expect(texts(tree).join("")).toBe(
-      "Choose a chapter from More → Switch chapter to see the directory.",
+      "Tap the chapter menu at the top of Chat, then Switch chapter, to see the directory.",
     );
   });
 });
@@ -198,7 +330,9 @@ describe("NoChapterState", () => {
     const tree = render(<NoChapterState noun="the directory" />);
     const copy = texts(tree).join(" ");
 
-    expect(copy).toContain("More → Switch chapter");
+    expect(copy).toContain(
+      "chapter menu at the top of Chat, then Switch chapter",
+    );
     expect(copy).toContain("the directory");
   });
 });
@@ -234,21 +368,19 @@ describe("SkeletonLines", () => {
   });
 
   it("draws every shape as a SkeletonBlock, so the shimmer lands once", () => {
-    const tree = render(<SkeletonLines lines={3} showTile />);
+    const tree = render(<SkeletonLines lines={4} />);
     const blocks = tree.root.findAllByType(SkeletonBlock);
 
     expect(blocks).toHaveLength(4);
-    // What each block draws, not what it was passed: §10's control-sized tile
-    // takes the control radius, text lines the chip radius (TODO-DESIGN: 6).
+    // What each block draws, not what it was passed: text lines take the
+    // chip radius (TODO-DESIGN: 6).
     const drawn = blocks.map((block) =>
       flatten(
         block.findByType("Animated.View" as unknown as React.ComponentType)
           .props.style,
       ),
     );
-    expect(drawn[0]!.borderRadius).toBe(signetDarkTokens.radius.control);
-    expect(drawn[0]!.width).toBe(signetDarkTokens.touch.minimum);
-    for (const line of drawn.slice(1)) {
+    for (const line of drawn) {
       expect(line.borderRadius).toBe(signetDarkTokens.radius.chip);
     }
   });
@@ -256,7 +388,7 @@ describe("SkeletonLines", () => {
   // The card centres its contents (the empty and error stacks), but a
   // skeleton stands in for rows, which start at the left edge.
   it("left-aligns its blocks inside the centred card", () => {
-    const tree = render(<SkeletonLines lines={2} showTile />);
+    const tree = render(<SkeletonLines lines={2} />);
     const [, stack] = tree.root.findAllByType(
       "View" as unknown as React.ComponentType,
     );
@@ -267,10 +399,11 @@ describe("SkeletonLines", () => {
   });
 
   // A skeleton takes the shape of what replaces it, so the screen doesn't
-  // change when its content lands: every tone sits on `card`, and a grouped
-  // list's skeleton takes the list's smaller corners.
+  // change when its content lands: every tone sits on a card's fill, which on
+  // a screen is `surface1` (`lib/surfaces.ts`), and a grouped list's skeleton
+  // takes the list's smaller corners.
   it("sits on the tone of what it turns into", () => {
-    const { card } = signetDarkTokens.color.surface;
+    const card = signetDarkTokens.color.surface.surface1;
     const { radius } = signetDarkTokens;
     expect(cardStyle(render(<SkeletonLines />)).backgroundColor).toBe(card);
     const list = cardStyle(render(<SkeletonLines tone="list" />));
@@ -476,7 +609,7 @@ describe("SkeletonBlock's pulse", () => {
     vi.mocked(withRepeat).mockClear();
     const tree = render(
       <NavigationContext.Provider value={navigation as never}>
-        <SkeletonLines lines={4} showTile />
+        <SkeletonLines lines={5} />
       </NavigationContext.Provider>,
     );
     const opacities = () =>
@@ -501,4 +634,3 @@ describe("SkeletonBlock's pulse", () => {
     expect(opacities()).toEqual([1, 1, 1, 1, 1]);
   });
 });
-

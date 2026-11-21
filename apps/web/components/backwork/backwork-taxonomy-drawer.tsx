@@ -13,12 +13,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Panel,
+  PanelBody,
+  PanelContent,
+  PanelDescription,
+  PanelHeader,
+} from "@/components/shared/panel";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
@@ -43,6 +43,9 @@ type Entity = "department" | "professor";
  * referencing resource to the chosen target, then deletes the source. Both
  * error shapes surface via toast rather than a silent no-op, since the 400's
  * message names how many resources are still attached.
+ *
+ * Docked in place of the Backwork page beside chat (2026-11-12, #4593), as
+ * the page's other panels are; focus goes back to the ⋯ that opened it.
  */
 export function BackworkTaxonomyDrawer({
   open,
@@ -141,18 +144,20 @@ export function BackworkTaxonomyDrawer({
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>Manage departments &amp; professors</SheetTitle>
-            <SheetDescription>
+      <Panel
+        open={open}
+        onOpenChange={onOpenChange}
+        docked
+        backLabel="Back to backwork"
+      >
+        <PanelContent>
+          <PanelHeader>Manage departments &amp; professors</PanelHeader>
+          <PanelBody className="gap-8">
+            <PanelDescription>
               Rename, merge, or delete entries created from uploads. Deleting is
               blocked while any resource still references an entry. Merge it
               into another one first.
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="mt-6 space-y-8">
+            </PanelDescription>
             <TaxonomySection
               title="Departments"
               entity="department"
@@ -174,9 +179,9 @@ export function BackworkTaxonomyDrawer({
               onConfirmDelete={confirmDelete}
               onDelete={executeDelete}
             />
-          </div>
-        </SheetContent>
-      </Sheet>
+          </PanelBody>
+        </PanelContent>
+      </Panel>
 
       {dialogs}
       {confirmDialog}

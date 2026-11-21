@@ -25,5 +25,8 @@
         }
       }
     ]
-  }
+  },
+  "setupFilesAfterEnv": [
+    "<rootDir>/harness/register-ask-agent.ts"
+  ]
 }

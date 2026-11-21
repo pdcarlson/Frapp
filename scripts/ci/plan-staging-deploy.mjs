@@ -8,13 +8,13 @@
 // (#2803).
 //
 // ── Why the served commit, not `HEAD~1` ─────────────────────────────────────
-// Staging deploys only by commit from this job; Render auto-deploy must be off
-// (staging-conformance asserts it; #2679 turns it off). So a deploy this job
+// Staging deploys only by commit from this job (on Cloud Run since #5228;
+// Render's auto-deploy had to be off, #2679). So a deploy this job
 // skips is one that never happens, and a gate that asks "did THIS push change
 // the API?" skips too much:
 //   * an API commit whose own CI failed or was replaced gets no Deploy staging run,
 //     and the next push, if it touches no API path, diffs only itself;
-//   * after a failed Render build, the next docs-only merge would skip, and the
+//   * after a failed API build, the next docs-only merge would skip, and the
 //     Deploy staging alert would close on a run that deployed nothing.
 // Asking "has anything the image is built from changed since what staging
 // serves?" covers all of these: the diff runs from the served commit, so it
@@ -216,7 +216,7 @@ export function planFrontendUpload({ head, tip, api, live, isAncestor, changedPa
     verifySha: api.verifySha,
   });
   // Even for the tip: staging can serve a newer commit than the tip this
-  // checkout fetched (Render auto-deploy still on, #2679), and uploading then
+  // checkout fetched (a deploy outside this job, as Render's auto-deploy was, #2679), and uploading then
   // would ship frontends behind an API nobody verified.
   if (!api.readyApi) {
     // `api.reason` already says whether `main` moved on; no second suffix.

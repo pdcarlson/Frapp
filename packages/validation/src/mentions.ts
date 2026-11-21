@@ -25,6 +25,9 @@ export interface MentionCandidate {
  */
 const MAX_TOKEN_LENGTH = 64;
 
+/** The longest label a mention pick may carry: the token bound (#3835). */
+export const MAX_MENTION_LABEL_LENGTH = MAX_TOKEN_LENGTH;
+
 /**
  * `@` followed by a run of name-ish characters.
  *
@@ -105,8 +108,8 @@ export interface MentionSpanOptions {
    * Names with a space in them that someone can be mentioned by, from
    * {@link spacedMentionNames}: members' display names and role names
    * (2026-11-09, #3825: "Winston Hewitt" is mentionable as written). After an
-   * `@`, text that spells one of them, ignoring case, is one token, the
-   * longest name first. Without the list every token stops at whitespace, as
+   * `@`, text that spells one of them, ignoring case, is one token, tried in
+   * the order given: longest first, after any picked labels (#3835). Without the list every token stops at whitespace, as
    * all of them did before.
    */
   names?: readonly string[];
@@ -184,9 +187,7 @@ export function findMentionSpans(
       names.length > 0 ? spacedNameAt(content, start + 1, names) : null;
     if (spaced !== null) readings.push(spaced);
     if (bare && bare.length <= MAX_TOKEN_LENGTH) readings.push(bare);
-    const token = options.accept
-      ? readings.find(options.accept)
-      : readings[0];
+    const token = options.accept ? readings.find(options.accept) : readings[0];
     if (token === undefined) continue;
     const end = start + 1 + token.length;
     spans.push({ start, end, token });
@@ -248,6 +249,9 @@ export function spacedMentionNames(
   const add = (raw: string) => {
     const name = spacedMentionName(raw);
     if (name === null) return;
+    // `@Frapp` is the assistant's (#4713), so no name may read on past it:
+    // "Frapp What" must not take `@Frapp what do I owe` from Ask and post it.
+    if (opensOnAskHandle(name)) return;
     const key = name.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
@@ -331,12 +335,157 @@ function matchTiers<T extends MentionCandidate>(
 }
 
 /**
+ * A member a mention picker wrote into a body (#3835, Shawn 2026-11-13): who
+ * was picked, and the label it wrote after the `@` ({@link mentionPickLabel}).
+ *
+ * The body stays `@Jane Doe`, which every reader already draws (both clients,
+ * every shipped mobile build, push text, search); the id rides beside it on
+ * the send (`mention_picks`). Without it the server had only the name, and a
+ * name the roster no longer holds (she left, or renamed, after the picker's
+ * roster loaded) was read as `@Jane`, which the first-word tier could hand to
+ * another member: a push past her mute, to the wrong person.
+ */
+export interface MentionPick {
+  /** `users.id` of the member picked. */
+  user_id: string;
+  /** What the picker wrote after the `@`, exactly. */
+  label: string;
+}
+
+/** Most picks one message carries; more is not a message, it is a list. */
+export const MAX_MENTION_PICKS = 50;
+
+/**
+ * The picks a draft holds after one more: the newest pick of a label wins,
+ * newest first, up to {@link MAX_MENTION_PICKS}. Every field that keeps `@`
+ * picks (the composer, the Forward comment) adds them through this, so a
+ * comment and a post resolve the same picks the same way (#4907).
+ */
+export function withMentionPick(
+  held: readonly MentionPick[],
+  pick: MentionPick,
+): MentionPick[] {
+  return [pick, ...held.filter((kept) => kept.label !== pick.label)].slice(
+    0,
+    MAX_MENTION_PICKS,
+  );
+}
+
+/** A pick's label as a spaced name, or `null` when it has no space or can't be one. */
+function spacedPickLabel(label: string): string | null {
+  // A label that opens on `@Frapp` is read as the handle, never as a pick.
+  if (opensOnAskHandle(label)) return null;
+  return spacedMentionName(label) === label ? label : null;
+}
+
+/**
+ * The picks `content` still writes: each whose label is read as a token there,
+ * one per label, at most {@link MAX_MENTION_PICKS}. What a send stores
+ * (`metadata.mention_picks`) so a later edit reads the same `@`s the same
+ * way, and what a client sends: picks made in a draft whose text has since
+ * been deleted are dropped here, not resolved.
+ *
+ * **One label is one member: the first pick for it in `picks` wins.** So a
+ * caller lists the picks it trusts most first: the newest (a member who
+ * deleted `@Chris Lee` and picked the other Chris Lee meant the second), and
+ * an edit's own picks ahead of the stored ones. Two members sharing a name
+ * can't both be reached by one label, since the text can't say which `@` was
+ * which; the one picked last is.
+ */
+export function mentionPicksIn(
+  content: string,
+  picks: readonly MentionPick[],
+): MentionPick[] {
+  if (picks.length === 0) return [];
+  const labels = new Set(picks.map((pick) => pick.label));
+  const names = [...labels]
+    .map(spacedPickLabel)
+    .filter((name): name is string => name !== null)
+    .sort((a, b) => b.length - a.length);
+  const written = new Set(
+    findMentionSpans(content, {
+      names,
+      accept: (token) => !token.includes(" ") || labels.has(token),
+    }).map((span) => span.token),
+  );
+  const seen = new Set<string>();
+  const kept: MentionPick[] = [];
+  for (const pick of picks) {
+    if (kept.length >= MAX_MENTION_PICKS) break;
+    if (!written.has(pick.label)) continue;
+    if (seen.has(pick.label)) continue;
+    seen.add(pick.label);
+    kept.push({ user_id: pick.user_id, label: pick.label });
+  }
+  return kept;
+}
+
+/**
+ * The picks a message row stores (`metadata.mention_picks`), read
+ * defensively: anything that isn't a list of `{ user_id, label }` strings
+ * reads as no picks, which resolves the body by name as before.
+ */
+export function readMentionPicks(value: unknown): MentionPick[] {
+  if (!Array.isArray(value)) return [];
+  const picks: MentionPick[] = [];
+  for (const entry of value) {
+    if (picks.length >= MAX_MENTION_PICKS) break;
+    if (!entry || typeof entry !== "object") continue;
+    const { user_id: userId, label } = entry as Record<string, unknown>;
+    if (typeof userId !== "string" || typeof label !== "string") continue;
+    if (!userId || !label) continue;
+    picks.push({ user_id: userId, label });
+  }
+  return picks;
+}
+
+/**
+ * Who each picked label reaches: for every label, the picked members still in
+ * the chapter under the name it was written from. A label whose member left,
+ * or renamed so the label no longer spells them, reaches nobody (an empty
+ * list), and never falls through to the name tiers: a wrong recipient is
+ * worse than none (`spec/behavior/chat/README.md` § Mentions).
+ *
+ * The name check is what keeps a pick honest. Without it a sender could
+ * write `@pizza` with anyone's id beside it and ping them under a word that
+ * names nobody; with it, a pick reaches only someone the text already names.
+ */
+function pickedTargets(
+  candidates: readonly MentionCandidate[],
+  picks: readonly MentionPick[],
+): Map<string, string[]> {
+  const byId = new Map(candidates.map((member) => [member.user_id, member]));
+  const targets = new Map<string, string[]>();
+  // One label, one member: the first pick for it (`mentionPicksIn`).
+  for (const pick of picks) {
+    if (targets.has(pick.label)) continue;
+    const ids: string[] = [];
+    targets.set(pick.label, ids);
+    const member = byId.get(pick.user_id);
+    if (!member) continue;
+    const folded = fold(pick.label);
+    if (folded.length === 0 || fold(member.display_name) !== folded) continue;
+    // `@Frapp` is the assistant's for every sender (#4713), a pick included:
+    // a label that is the handle, or opens on it, is claimed, so it reaches
+    // nobody, as the name tiers have it.
+    if (opensOnAskHandle(pick.label)) continue;
+    ids.push(member.user_id);
+  }
+  return targets;
+}
+
+/**
  * Every `users.id` mentioned in `content`, resolved against `candidates`.
  *
  * Unresolvable tokens are dropped silently — an `@` in prose is not an error,
  * and a message that fails to send because someone wrote "email me @ noon"
  * would be a worse bug than a missed highlight. Order follows first appearance;
  * duplicates collapse.
+ *
+ * `picks` are the members a picker wrote into the body ({@link MentionPick}):
+ * a token spelling a picked label exactly reaches that member or nobody, ahead
+ * of every role and name tier. Every other token, a hand-typed `@Jane` and
+ * any body from a client that sends no picks, resolves by name as before.
  *
  * `candidates` MUST be scoped to the chapter (and ideally the channel) the
  * message is being sent to. Passing a wider set would let a member mention
@@ -346,6 +495,7 @@ export function resolveMentions(
   content: string,
   candidates: readonly MentionCandidate[],
   roles: readonly MentionRole[] = [],
+  picks: readonly MentionPick[] = [],
 ): string[] {
   if (candidates.length === 0) return [];
 
@@ -357,11 +507,17 @@ export function resolveMentions(
     seen.add(userId);
     resolved.push(userId);
   };
+  const picked = pickedTargets(candidates, picks);
 
   for (const token of extractMentionTokens(
     content,
-    sendMentionReading(candidates, roles),
+    sendMentionReading(candidates, roles, picks),
   )) {
+    const pickedIds = picked.get(token);
+    if (pickedIds !== undefined) {
+      pickedIds.forEach(add);
+      continue;
+    }
     const role = matchMentionRole(candidates, roles, token);
     if (role !== undefined) {
       // A role token is consumed even when it reaches nobody, so a role this
@@ -382,6 +538,8 @@ export function resolveMentions(
  * for the resolver and for the API's "does this name a switched-off role"
  * pre-read, so the two can't read one body differently.
  *
+ * - **A picked label is read as written** ({@link MentionPick}), whether or
+ *   not the roster still holds it.
  * - **A role nobody holds lends no name.** It is no target
  *   (`matchMentionRole`), so it must not claim `@Vice President` from a member
  *   or a held role named "Vice".
@@ -398,14 +556,32 @@ export function resolveMentions(
 export function sendMentionReading(
   candidates: readonly MentionCandidate[],
   roles: readonly MentionRole[],
+  picks: readonly MentionPick[] = [],
 ): MentionSpanOptions {
   const held = roles.filter((role) => role.member_ids.length > 0);
-  const names = spacedMentionNames(
+  const pickedLabels = new Set(picks.map((pick) => pick.label));
+  const roster = spacedMentionNames(
     candidates,
     held.map((role) => role.name),
   );
+  // A picked label is read whole even when the roster no longer has the
+  // name (#3835): that is the stale case, and reading it as `@Jane` is how
+  // it reached someone else.
+  //
+  // Picked labels come first, ahead of longer roster names: the picker wrote
+  // `@Jane Doe`, so `@Jane Doe Smith` after it is Jane Doe and prose, not a
+  // roster "Jane Doe Smith" the member never picked.
+  const pickedSpaced = [...pickedLabels]
+    .map(spacedPickLabel)
+    .filter((name): name is string => name !== null)
+    .sort((a, b) => b.length - a.length);
+  const firsts = new Set(pickedSpaced.map((name) => name.toLowerCase()));
+  const names = [
+    ...pickedSpaced,
+    ...roster.filter((name) => !firsts.has(name.toLowerCase())),
+  ];
   if (names.length === 0) return {};
-  const asWritten = new Set(names);
+  const asWritten = new Set([...roster, ...pickedLabels]);
   const namesSomeoneExactly = (bare: string): boolean => {
     const folded = fold(bare);
     if (held.some((role) => fold(role.name) === folded)) return true;
@@ -418,6 +594,10 @@ export function sendMentionReading(
     accept: (token) => {
       const space = token.indexOf(" ");
       if (space === -1) return true;
+      if (pickedLabels.has(token)) return true;
+      // A one-word pick (`@Jane`) followed by more words stays the pick, as
+      // a spaced one does: a roster "Jane Doe" doesn't take it.
+      if (pickedLabels.has(token.slice(0, space))) return false;
       if (asWritten.has(token)) return true;
       return !namesSomeoneExactly(token.slice(0, space));
     },
@@ -438,18 +618,60 @@ export type MentionChipTest = ((token: string) => boolean) & {
  * A chapter role as `@`-resolution sees it (2026-11-06, owner direction:
  * "roles should be attable"). `@Officers` reaches every member holding the
  * role, so it overrides their mutes exactly as naming each of them would.
+ *
+ * A tier and a group are mentioned the same way (#4076, Paul 2026-11-11:
+ * "that tier name is pingable"), so they ride this shape too: `role_id` is
+ * then the tier's or group's id, and `member_ids` everyone holding a role in
+ * the tier, or in the group.
  */
 export interface MentionRole {
   role_id: string;
   name: string;
   /** `users.id` of every member holding the role. */
   member_ids: readonly string[];
+  /** `role` (the default), `tier` or `group`. */
+  kind?: "role" | "tier" | "group";
   /**
    * Whether this sender may ping it. The API decides (`spec/behavior/chat/
    * README.md` § Role mentions): `true` when the role's "anyone can @" switch
    * is on, or the sender can manage channels or roles.
    */
   mentionable: boolean;
+}
+
+/** `@everyone` and `@here`, folded; `EVERYONE_MENTION_NAME` and
+ * `HERE_MENTION_NAME` in `everyone-role.ts`, which imports this module, so
+ * they are spelled here rather than imported. */
+const EVERYONE_FOLDED = "everyone";
+const HERE_FOLDED = "here";
+
+/**
+ * `@Frapp`, as a picker writes it (#4713): the handle a member with Ask puts
+ * in a chat message to ask Frapp from where they are. It names the assistant,
+ * so it is reserved like `@here`: it reaches no member and no role, for every
+ * sender, whether or not their chapter has Ask.
+ */
+export const ASK_MENTION_NAME = "Frapp";
+const ASK_FOLDED = "frapp";
+
+/**
+ * Whether a token is the reserved `@Frapp`: one word that folds to it, so
+ * `@frapp` and `@FRAPP` are the handle and a member named "F Rapp" is not.
+ */
+function isAskHandle(value: string): boolean {
+  const word = value.trim();
+  return !/\s/.test(word) && fold(word) === ASK_FOLDED;
+}
+
+/**
+ * Whether a name is the handle or opens on it ("Frapp", "Frapp Fan"). Such a
+ * name can't be mentioned, typed or picked: `@Frapp` followed by anything is
+ * always the assistant's, or a member could rename themselves "Frapp What"
+ * and have `@Frapp what do I owe` posted to the channel and pushed to them.
+ */
+function opensOnAskHandle(name: string): boolean {
+  const first = name.trim().split(/\s+/)[0] ?? "";
+  return isAskHandle(first);
 }
 
 /**
@@ -460,29 +682,75 @@ export interface MentionRole {
  * and `@vice-president` both reach "Vice President" and `@Off` reaches no role.
  * A role named in full outranks a member's shorthand (first word, prefix), but
  * not a member's own exact name: when "Rush" is both a role and a member, the
- * token is ambiguous and, like every ambiguity here, reaches nobody.
+ * token is ambiguous and, like every ambiguity here, reaches nobody. Tiers
+ * and groups (#4076) ride the same list as roles, and when several of them
+ * share the name they are one target ({@link sharedName}), except two roles
+ * or two tiers, which stay ambiguous.
+ * `@everyone` and `@here` are the exceptions below.
  */
 function matchMentionRole(
   candidates: readonly MentionCandidate[],
   roles: readonly MentionRole[],
   token: string,
 ): MentionRole | null | undefined {
-  if (roles.length === 0) return undefined;
   const folded = fold(token);
   if (folded.length === 0) return undefined;
+  // `@here` is reserved (2026-11-12): it is the online members the caller's
+  // `here` entry holds (the API adds the sender), and it reaches nobody when
+  // there is no entry. It never falls through to a member, or an empty room would page
+  // whoever's name starts with "here" past their mute.
+  if (folded === HERE_FOLDED) {
+    return roles.find((role) => fold(role.name) === HERE_FOLDED) ?? null;
+  }
+  // `@Frapp` is the assistant's (#4713) and reaches nobody: a member whose
+  // name is or opens on "Frapp" must not be paged, past their mute, by a
+  // question someone meant for Ask.
+  if (opensOnAskHandle(token)) return null;
+  if (roles.length === 0) return undefined;
   // A role nobody holds is not a target: it would reach nobody, and letting
   // it claim the token would take the name from a member it collides with.
   const hits = roles.filter(
     (role) => role.member_ids.length > 0 && fold(role.name) === folded,
   );
   if (hits.length === 0) return undefined;
-  if (hits.length > 1) return null;
+  // `@everyone` is the chapter's (#4191): only its Everyone role may carry
+  // the name, and a member whose display name reads the same must not be
+  // able to silence every announcement by making it ambiguous.
+  if (folded === EVERYONE_FOLDED) return hits[0]!;
   // Any exact member hit, one or several, makes the token ambiguous.
   // `matchTiers` reads several as "no match", which would hand the role a
   // token that should reach nobody.
   const exact = tierPredicates<MentionCandidate>(token).slice(0, EXACT_TIERS);
   if (exact.some((pred) => candidates.some(pred))) return null;
-  return hits[0]!;
+  if (hits.length === 1) return hits[0]!;
+  // Two roles or two tiers folding to one name stay ambiguous: the picker
+  // offered one of them and the token can't say which. Two groups don't: a
+  // pledge class or class year can take a hand-made group's name (the
+  // database makes them), and each is plainly the set the sender named, so
+  // they reach together like a tier and role sharing a name.
+  const kinds = hits.map((role) => role.kind ?? "role");
+  if (kinds.some((kind, i) => kind !== "group" && kinds.indexOf(kind) !== i)) {
+    return null;
+  }
+  return sharedName(hits);
+}
+
+/**
+ * One tier, role and group sharing a name (#4076): a "Members" tier and a
+ * "Members" role, or a group named like a role. Unlike two members sharing a
+ * name, no reading of the token is the wrong set: the sender wrote the name
+ * each carries, and the picker showed every one of them, labelled by kind. So
+ * it reaches the members of each one this sender may ping; one they may not
+ * adds nobody, as it would alone.
+ */
+function sharedName(hits: readonly MentionRole[]): MentionRole {
+  const allowed = hits.filter((role) => role.mentionable);
+  return {
+    role_id: hits[0]!.role_id,
+    name: hits[0]!.name,
+    member_ids: [...new Set(allowed.flatMap((role) => role.member_ids))],
+    mentionable: allowed.length > 0,
+  };
 }
 
 /**
@@ -540,6 +808,8 @@ export function draftWithMention(
   // The picker's own refusals (`mentionSuggestions`): a label the tokenizer
   // wouldn't read as a mention reaches nobody.
   if (!/^\p{L}/u.test(label) || label.length > MAX_TOKEN_LENGTH) return null;
+  // `@Frapp` is the assistant's (#4713): it would reach nobody, or be asked.
+  if (opensOnAskHandle(label)) return null;
   const gap = draft.length === 0 || /\s$/.test(draft) ? "" : " ";
   return `${draft}${gap}@${label} `;
 }
@@ -587,6 +857,8 @@ export function mentionSuggestions<T extends MentionCandidate>(
     if (!/^\p{L}/u.test(label)) continue;
     // The tokenizer drops a longer token, so the pick would reach nobody.
     if (label.length > MAX_TOKEN_LENGTH) continue;
+    // `@Frapp` is the assistant's, so this pick would reach nobody either.
+    if (opensOnAskHandle(label)) continue;
     if (needle && !matchable(member.display_name).includes(needle)) continue;
     offered.push({ member, label });
   }
@@ -620,8 +892,9 @@ const MAX_ROLE_SUGGESTIONS = 3;
  * given (the chapter's role order). Both pickers draw this list, so web and
  * mobile offer the same rows for the same text.
  *
- * Roles take at most three rows of the eight, and the members fill the rest.
- * A role matches as a member does (its name contains the query) and is left
+ * Roles take at most three rows of the eight, and the members fill the rest;
+ * `@everyone` and `@here` sit between them, outside the three, matched by
+ * prefix only. A role matches as a member does (its name contains the query) and is left
  * out under the same rule: its label must open on a letter to be typeable.
  */
 export function mentionPickerEntries<
@@ -634,26 +907,129 @@ export function mentionPickerEntries<
   limit: number = MAX_MENTION_SUGGESTIONS,
 ): MentionPickerEntry<M, R>[] {
   const needle = matchable(query.trim());
+  // `@everyone` and `@here` (2026-11-12): offered once a letter is typed and
+  // only by the start of their name, as Slack offers them, and outside the
+  // three role rows, so `@er` still lists the chapter's roles.
+  const reservedRows: MentionPickerEntry<M, R>[] = [];
   const roleRows: MentionPickerEntry<M, R>[] = [];
   for (const role of roles) {
-    if (roleRows.length >= Math.min(MAX_ROLE_SUGGESTIONS, limit)) break;
     if (!role.mentionable) continue;
+    const folded = fold(role.name);
+    if (folded === EVERYONE_FOLDED || folded === HERE_FOLDED) {
+      if (needle && folded.startsWith(fold(needle))) {
+        reservedRows.push({ kind: "role", role, label: folded });
+      }
+      continue;
+    }
+    if (roleRows.length >= Math.min(MAX_ROLE_SUGGESTIONS, limit)) continue;
     const label = mentionPickLabel(role.name);
     if (!/^\p{L}/u.test(label)) continue;
     if (label.length > MAX_TOKEN_LENGTH) continue;
+    if (opensOnAskHandle(label)) continue;
     if (needle && !matchable(role.name).includes(needle)) continue;
     roleRows.push({ kind: "role", role, label });
   }
+  const special = reservedRows.slice(0, Math.max(0, limit - roleRows.length));
   const memberRows = mentionSuggestions(
     roster,
     query,
-    limit - roleRows.length,
+    limit - roleRows.length - special.length,
   ).map(({ member, label }): MentionPickerEntry<M, R> => ({
     kind: "member",
     member,
     label,
   }));
-  return [...memberRows, ...roleRows];
+  return [...memberRows, ...special, ...roleRows];
+}
+
+/** A picker's row for Frapp itself, beside its members and roles. */
+export interface MentionAskEntry {
+  kind: "ask";
+  /** What picking it inserts after the `@`: {@link ASK_MENTION_NAME}. */
+  label: string;
+}
+
+/** One row of a picker that may also offer Frapp. */
+export type MentionPickerRow<
+  M extends MentionCandidate,
+  R extends MentionRoleOption,
+> = MentionPickerEntry<M, R> | MentionAskEntry;
+
+/**
+ * {@link mentionPickerEntries}, with a row for Frapp when this member has Ask
+ * and this composer can ask from where it is (#4713).
+ *
+ * It is the first row: on a bare `@`, so a member who never knew they could
+ * ask in a channel finds Frapp the first time they mention anyone (#5476),
+ * and once a letter is typed, by the start of its name only, as Slack lists
+ * an app above people once its name is being typed. Enter straight after
+ * `@` picks Frapp, which still sends nothing: the composer says the draft is
+ * a question before it is sent, and taking `@Frapp` out undoes it. The row
+ * takes one of the eight, never a ninth.
+ */
+export function mentionPickerRows<
+  M extends MentionCandidate,
+  R extends MentionRoleOption,
+>(
+  roster: readonly M[],
+  roles: readonly R[],
+  query: string,
+  options: { ask: boolean },
+  limit: number = MAX_MENTION_SUGGESTIONS,
+): MentionPickerRow<M, R>[] {
+  const needle = fold(query);
+  const typed = query.trim().length > 0;
+  const offered =
+    options.ask &&
+    limit > 0 &&
+    (typed
+      ? needle.length > 0 &&
+        !/\s/.test(query.trim()) &&
+        ASK_FOLDED.startsWith(needle)
+      : true);
+  if (!offered) return mentionPickerEntries(roster, roles, query, limit);
+  const rest = mentionPickerEntries(roster, roles, query, limit - 1);
+  const ask: MentionAskEntry = { kind: "ask", label: ASK_MENTION_NAME };
+  return [ask, ...rest];
+}
+
+/**
+ * The question a message asks Frapp, or `null` when it does not name
+ * `@Frapp` (#4713).
+ *
+ * `@Frapp` anywhere in the text makes the whole message a question: the
+ * words with the handle taken out. Anywhere, not only at the start, because
+ * the two ways to be wrong are not equal: a question that was meant for
+ * Frapp and is posted to a channel can't be taken back, and a message that
+ * was meant for the channel and is asked instead is still in the member's
+ * hands. The composer says which will happen before anything is sent.
+ *
+ * It is read from the text, not from a picked chip, so a draft restored as
+ * plain text, a pasted handle and a typed one all behave the same.
+ * `names` are the chapter's spaced names ({@link spacedMentionNames}), so
+ * `@Jordan Frapp` is the member and not the handle. No name reads on past
+ * the handle itself: with a member named "Frapp Fan", `@Frapp Fan are you
+ * in?` is still a question ("Fan are you in?"), as a send reads it too.
+ * The question is empty when the handle is all there is.
+ */
+export function askMentionQuestion(
+  content: string,
+  names: readonly string[] = [],
+): string | null {
+  const spans = findMentionSpans(content, {
+    names: names.filter((name) => !opensOnAskHandle(name)),
+  }).filter((span) => isAskHandle(span.token));
+  if (spans.length === 0) return null;
+  let rest = "";
+  let from = 0;
+  for (const span of spans) {
+    rest += content.slice(from, span.start);
+    // The comma or colon written after the handle goes with it: "@Frapp,
+    // what's quorum?" asks "what's quorum?".
+    from = /[,:]/.test(content.charAt(span.end)) ? span.end + 1 : span.end;
+  }
+  rest += content.slice(from);
+  return rest.replace(/[ \t]{2,}/g, " ").trim();
 }
 
 /** The `@`-query a caret sits in: where its `@` is, and what follows it. */
@@ -767,7 +1143,9 @@ export function mentionChipFilter(
       // `@Vice President` that pinged the member "Vice" stays `@Vice`.
       const space = token.indexOf(" ");
       const bare =
-        space === -1 ? null : matchMentionCandidate(members, token.slice(0, space));
+        space === -1
+          ? null
+          : matchMentionCandidate(members, token.slice(0, space));
       return bare === null || !mentioned.has(bare.user_id);
     }
     const member = matchMentionCandidate(members, token);

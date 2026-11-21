@@ -10,7 +10,9 @@ import {
   type SetupChecklistKey,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { OPENED_FROM_APP_KEY, OPENED_FROM_APP_VALUE } from "@repo/validation";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { asRoute } from "@/lib/href";
 import {
@@ -50,7 +52,7 @@ import { CheckGlyph } from "@/components/tasks/task-glyphs";
 export const MOBILE_SETUP_CHECKLIST_OMIT = ["dues"] as const;
 
 /** Lines the phone does itself, and the route that does it. */
-export const SETUP_CHECKLIST_APP_ROUTE: Partial<
+const SETUP_CHECKLIST_APP_ROUTE: Partial<
   Record<SetupChecklistKey, string>
 > = {
   // `from=chat` gives the screen `‹ Chat`, the way back to this list.
@@ -63,7 +65,7 @@ export const SETUP_CHECKLIST_APP_ROUTE: Partial<
 export const SETUP_CHECKLIST_WEB_NOTE = "Web";
 
 export const SETUP_CHECKLIST_OPEN_FAILED_TITLE = "Couldn't open the web app";
-export const SETUP_CHECKLIST_WEB_HINT = "Opens this step in the web app.";
+const SETUP_CHECKLIST_WEB_HINT = "Opens this step in the web app.";
 
 /** Names the host the line would have opened, which a build can change. */
 export function setupChecklistOpenFailedBody(
@@ -76,7 +78,11 @@ export function setupChecklistWebUrl(
   key: SetupChecklistKey,
   origin: string = webAppOrigin(),
 ): string {
-  return `${origin}${SETUP_CHECKLIST_WEB_PATH[key]}`;
+  // Marked as opened from the app, so the phone dashboard doesn't suggest
+  // getting the app to someone already in it (#4002).
+  const url = new URL(`${origin}${SETUP_CHECKLIST_WEB_PATH[key]}`);
+  url.searchParams.set(OPENED_FROM_APP_KEY, OPENED_FROM_APP_VALUE);
+  return url.toString();
 }
 
 /** The drawn list. Chat home owns the hook and passes its result in. */
@@ -171,6 +177,7 @@ export function SetupChecklistView({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     strip: {
       gap: tokens.spacing.xs,
@@ -210,7 +217,7 @@ function createStyles(tokens: SignetTokens) {
     // Done is the quietest thing on the list (foundations.md, accent rule:
     // a done state takes a muted check, never the accent).
     markDone: {
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
     },
     label: {
       ...typeRole(tokens.typography.role.label),

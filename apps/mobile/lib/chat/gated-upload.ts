@@ -51,18 +51,25 @@ export async function uploadPickedImageGated(
   image: PickedImage,
   requestUploadUrl: RequestSignedUpload,
   copy: GateCopy,
+  /** What a failed PUT reads as, when "that photo" would misname the file. */
+  failedCopy?: string,
 ): Promise<GatedUploadResult> {
   // `uploadPickedImage` turns a refused mint into a sentence, so the error
   // itself is caught on its way out to tell a gate from a failure.
   let gated: string | null = null;
-  const put = await uploadPickedImage(image, async (body) => {
-    try {
-      return await requestUploadUrl(body);
-    } catch (error) {
-      gated = gateRefusalOf(error, copy);
-      throw error;
-    }
-  });
+  const put = await uploadPickedImage(
+    image,
+    async (body) => {
+      try {
+        return await requestUploadUrl(body);
+      } catch (error) {
+        gated = gateRefusalOf(error, copy);
+        throw error;
+      }
+    },
+    null,
+    failedCopy,
+  );
   if (put.status === "uploaded") return put;
   return gated !== null
     ? { status: "refused", reason: gated, final: true }

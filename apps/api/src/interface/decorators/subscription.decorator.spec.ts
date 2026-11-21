@@ -7,7 +7,6 @@ jest.mock('@repo/org-archetypes', () => ({
     vocabulary: {},
     customFields: [],
     workflows: [],
-    dues: {},
   })),
   getArchetype: jest.fn((key: string) => ({ key })),
 }));
@@ -69,6 +68,9 @@ import { ReportController } from '../controllers/report.controller';
 import { AlumniController } from '../controllers/alumni.controller';
 import { SemesterRolloverController } from '../controllers/semester-rollover.controller';
 import { DiscordAuthorLinkController } from '../controllers/discord-author-link.controller';
+import { CalendarFeedController } from '../controllers/calendar-feed.controller';
+import { GoogleCalendarController } from '../controllers/google-calendar.controller';
+import { GoogleDriveController } from '../controllers/google-drive.controller';
 
 /** A route-level marker: its label, its handler, and the class it lives on. */
 type RouteMarker = [string, (...args: never[]) => unknown, Type<unknown>];
@@ -99,6 +101,10 @@ describe('subscription decorator wiring', () => {
     DiscordAuthorLinkController,
     // #3939: pledge classes are Directory data, and the Directory is free.
     PledgeClassController,
+    // #3322: a member's own calendar subscription link.
+    CalendarFeedController,
+    // #3322 step 2: a member's own Google Calendar connection.
+    GoogleCalendarController,
   ];
 
   /**
@@ -174,6 +180,25 @@ describe('subscription decorator wiring', () => {
       'FinancialInvoiceController.createPaymentIntent',
       FinancialInvoiceController.prototype.createPaymentIntent,
       FinancialInvoiceController,
+    ],
+    // #3322: member safety, cutting off a calendar link that got out.
+    [
+      'CalendarFeedController.reset',
+      CalendarFeedController.prototype.reset,
+      CalendarFeedController,
+    ],
+    // #3322 step 2: member safety, stopping the Google Calendar sync.
+    [
+      'GoogleCalendarController.disconnect',
+      GoogleCalendarController.prototype.disconnect,
+      GoogleCalendarController,
+    ],
+    // #5157: member safety, an officer can always stop Frapp copying the
+    // chapter's Google Drive folder.
+    [
+      'GoogleDriveController.disconnect',
+      GoogleDriveController.prototype.disconnect,
+      GoogleDriveController,
     ],
   ];
 

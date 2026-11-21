@@ -9,6 +9,7 @@ import {
 } from '@repo/validation';
 import {
   hashChapterIdForAnalytics,
+  hashInviteVisitForAnalytics,
   hashUserIdForAnalytics,
 } from '#domain/utils/analytics-keying';
 import {
@@ -37,12 +38,40 @@ function canonicalChapterId(
   return chapterId.toLowerCase();
 }
 
-/** `properties` with the API's own `app` stamp, when there is one. */
+/**
+ * `properties` with the API's own stamps, each only when there is one: `app`,
+ * and the mobile build as PostHog's `$app_version` / `$app_build`. Both are
+ * keys `assertContentFreeProperties` refuses from callers, so this is the
+ * only place an event gets them.
+ */
 function withApp(
   properties: AnalyticsProperties | undefined,
   app: AnalyticsApp | undefined,
+  appVersion?: AnalyticsAppVersion,
 ): AnalyticsProperties | undefined {
-  return app ? { ...properties, app } : properties;
+  if (!app && !appVersion) return properties;
+  return {
+    ...properties,
+    ...(app ? { app } : {}),
+    ...(appVersion
+      ? {
+          $app_version: appVersion.version,
+          ...(appVersion.build === null
+            ? {}
+            : { $app_build: appVersion.build }),
+        }
+      : {}),
+  };
+}
+
+/**
+ * A mobile build as PostHog's mobile SDK names it: `version` is the store
+ * version (`0.11.0`), `build` the native build number as a string (`19`), or
+ * null when the client reported none.
+ */
+export interface AnalyticsAppVersion {
+  version: string;
+  build: string | null;
 }
 
 export interface TrackOptions {
@@ -59,6 +88,13 @@ export interface TrackOptions {
    * client that names no app carries none.
    */
   app?: AnalyticsApp;
+  /**
+   * The mobile build that sent the request, stamped as PostHog's
+   * `$app_version` and `$app_build` after the properties are checked (they may
+   * not set `$`-prefixed keys themselves). Read from `X-Client-Version` by
+   * `requestAppVersion`; absent for web and for anything that can't be placed.
+   */
+  appVersion?: AnalyticsAppVersion;
 }
 
 /**
@@ -126,6 +162,34 @@ export class AnalyticsService {
   }
 
   /**
+   * The chapter group id for a chapter the caller belongs to, for
+   * `GET /v1/analytics/identity`. That route's chapter can come from the
+   * unverified `x-chapter-id` header (identity works before a chapter is
+   * picked), so the pseudonym is handed out only after a membership check:
+   * not a member, or a lookup that fails, answers null, and the user's own
+   * id still comes back for Sentry.
+   */
+  async getMemberChapterGroupId(
+    userId: string,
+    chapterId: string | undefined | null,
+  ): Promise<string | null> {
+    const groupId = this.getChapterGroupId(chapterId);
+    if (!groupId || !chapterId) return null;
+    try {
+      const member = await this.members.findByUserAndChapter(userId, chapterId);
+      return member ? groupId : null;
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        'analytics identity membership check failed; leaving the chapter out',
+        error,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Record a user-keyed behavioral event. Best-effort: a provider or
    * opt-out lookup failure is logged and swallowed so product requests are
    * never affected. A *content/PII* payload, by contrast, throws — that is a
@@ -154,7 +218,7 @@ export class AnalyticsService {
     const event: AnalyticsEvent = {
       name: eventName,
       distinctId,
-      properties: withApp(options.properties, options.app),
+      properties: withApp(options.properties, options.app, options.appVersion),
       ...(chapterGroup ? { groups: { chapter: chapterGroup } } : {}),
     };
 
@@ -310,15 +374,68 @@ export class AnalyticsService {
     chapterId: string,
     properties?: AnalyticsProperties,
   ): Promise<void> {
-    // Checked first, analytics configured or not, as in `track`.
-    assertContentFreeProperties({ name: eventName, properties });
+    await this.captureForChapter(
+      eventName,
+      chapterId,
+      (salt) => hashChapterIdForAnalytics(salt, chapterId),
+      withApp(properties, 'api'),
+      properties,
+    );
+  }
+
+  /**
+   * Record a step of the invite card funnel (#5663), keyed by the card
+   * visit's pseudonym rather than a user's: most steps happen before the
+   * visitor has an account, and the join that ends the funnel must land on the
+   * same distinct id as the card view that started it. The visit id is random
+   * and minted by the card, so it names no one; it is hashed anyway, so a
+   * client-chosen string never becomes a PostHog distinct id.
+   *
+   * The caller has proved the chapter (an invite token, or a redeem that
+   * just succeeded), so the chapter's opt-out applies strictly, as in
+   * {@link trackForChapter}. Personless: it carries no chapter group, so the
+   * provider sends it with `$process_person_profile: false` and no visit
+   * becomes a PostHog person.
+   *
+   * Best-effort like {@link track}.
+   */
+  async trackInviteVisit(
+    eventName: string,
+    chapterId: string,
+    visitId: string,
+    options: Pick<TrackOptions, 'properties' | 'app' | 'appVersion'> = {},
+  ): Promise<void> {
+    await this.captureForChapter(
+      eventName,
+      chapterId,
+      (salt) => hashInviteVisitForAnalytics(salt, visitId),
+      withApp(options.properties, options.app, options.appVersion),
+      options.properties,
+    );
+  }
+
+  /**
+   * The shared path of {@link trackForChapter} and {@link trackInviteVisit}:
+   * events whose distinct id isn't a user's, sent with no group (so
+   * personless), and gated strictly by a chapter the caller has proved.
+   * The caller's own properties are checked before anything else, analytics
+   * configured or not; a delivery or opt-out lookup failure is logged and
+   * swallowed.
+   */
+  private async captureForChapter(
+    eventName: string,
+    chapterId: string,
+    distinctIdFor: (salt: string) => string,
+    stamped: AnalyticsProperties | undefined,
+    ownProperties: AnalyticsProperties | undefined,
+  ): Promise<void> {
+    assertContentFreeProperties({ name: eventName, properties: ownProperties });
     if (!this.salt) return;
 
-    const distinctId = hashChapterIdForAnalytics(this.salt, chapterId);
     const event: AnalyticsEvent = {
       name: eventName,
-      distinctId,
-      properties: withApp(properties, 'api'),
+      distinctId: distinctIdFor(this.salt),
+      properties: stamped,
     };
 
     try {

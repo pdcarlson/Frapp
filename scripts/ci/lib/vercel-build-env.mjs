@@ -91,6 +91,10 @@ export const APP_CONFIG_KEYS = Object.freeze({
       "NEXT_PUBLIC_SUPABASE_URL",
     ]),
     optional: Object.freeze([
+      "NEXT_PUBLIC_ANDROID_APP_CERT_SHA256",
+      "NEXT_PUBLIC_ANDROID_INSTALL_URL",
+      "NEXT_PUBLIC_APPLE_TEAM_ID",
+      "NEXT_PUBLIC_IOS_INSTALL_URL",
       "NEXT_PUBLIC_LANDING_URL",
       "NEXT_PUBLIC_POSTHOG_HOST",
       "NEXT_PUBLIC_POSTHOG_KEY",
@@ -127,9 +131,16 @@ export function appConfigKeysFor(label) {
   return [...entry.required, ...entry.optional];
 }
 
+/**
+ * GitHub's OIDC request pair, present in every step of a job with `id-token:
+ * write` (#5228). Left out of the baseline, so no CLI step built from it can
+ * ask for a token that Google trades for a deployer's.
+ */
+const OIDC_REQUEST_NAMES = new Set(["ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"]);
+
 /** What `record-env-baseline.mjs` writes: the sorted names, one JSON array. */
 export function formatEnvBaseline(env) {
-  return `${JSON.stringify(Object.keys(env).sort())}\n`;
+  return `${JSON.stringify(Object.keys(env).filter((name) => !OIDC_REQUEST_NAMES.has(name)).sort())}\n`;
 }
 
 /**

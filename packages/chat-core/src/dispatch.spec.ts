@@ -6,6 +6,7 @@ import {
   postHours,
   postPointsAdjustment,
   postPoll,
+  linkTask,
   postTask,
   retryPointsDispatch,
   trackEventCard,
@@ -444,6 +445,11 @@ describe("dispatchPoints — replay refusals and resolution (#1733 review)", () 
     ],
     ["the throttler's sentence", RATE_LIMITED_COPY, RATE_LIMITED_COPY],
     ["no message", undefined, RATE_LIMITED_COPY],
+    [
+      "Cloud Run's busy text",
+      "Rate exceeded.",
+      "Frapp is busy right now. Try again in a moment.",
+    ],
   ])(
     "tells the officer when to try again after a first-attempt 429 carrying %s (#3061)",
     async (_label, message, expected) => {
@@ -1240,6 +1246,51 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
   );
 });
 
+describe("linkTask — the + sheet's Task row (#5772)", () => {
+  const TASK = {
+    id: "33333333-3333-4333-8333-333333333333",
+    title: "Fix the door",
+  };
+  const rows = (ctx: ChatActionContext) =>
+    selectMessages(
+      ctx.queryClient.getQueryData<ChannelCache>(chatMessagesKey(CHANNEL_ID)),
+    );
+
+  it("posts the share and leaves the placeholder for the card's echo", async () => {
+    const post = posted201(true);
+    const ctx = buildCtx(post);
+    expect(await linkTask(ctx, CHANNEL_ID, TASK)).toEqual({ ok: true });
+    expect(post).toHaveBeenCalledWith("/v1/tasks/{id}/share", {
+      params: { path: { id: TASK.id } },
+      body: {
+        channel_id: CHANNEL_ID,
+        client_message_id: expect.any(String),
+      },
+    });
+    expect(rows(ctx).map((row) => row.kind)).toEqual(["loading"]);
+  });
+
+  it("drops the placeholder and says why on a refusal", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Access denied to this task" },
+      response: { status: 403 },
+    });
+    const ctx = buildCtx(post);
+    const result = await linkTask(ctx, CHANNEL_ID, TASK);
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("Access denied to this task");
+    expect(rows(ctx)).toEqual([]);
+  });
+
+  it("reads a lost answer as unconfirmed, not failed", async () => {
+    const ctx = buildCtx(vi.fn().mockRejectedValue(new TypeError("offline")));
+    const result = await linkTask(ctx, CHANNEL_ID, TASK);
+    expect(result).toMatchObject({ ok: true, unconfirmed: true });
+    expect(result.warning).toMatch(/before you link it again/);
+  });
+});
+
 describe("postPoll — the New poll form's send (#3865)", () => {
   const POLL = {
     content: "Who's in?",
@@ -1585,5 +1636,67 @@ describe("the + menu's Task, Service hours and Points forms post as their comman
       channel_id: CHANNEL_ID,
     });
     expect(placeholderCount(ctx)).toBe(1);
+  });
+});
+
+describe("one member guard and one status read for every command", () => {
+  for (const [name, command, args] of [
+    ["/points", POINTS_COMMAND, "grant @bobby 5 for great work"],
+    ["/task", TASK_COMMAND, `"Clean the house" @bobby 2099-03-15 10`],
+  ] as const) {
+    it(`${name} refuses while the member directory loads, and on no match, without a write`, async () => {
+      const post = vi.fn();
+      const ctx = buildCtx(post);
+      const run = (resolveMember?: () => null) =>
+        dispatchSlashCommand(ctx, {
+          command,
+          args,
+          channelId: CHANNEL_ID,
+          announcementsChannelId: null,
+          resolveMember,
+        });
+      expect(await run()).toEqual({
+        ok: false,
+        error: "Member directory is still loading — try again in a moment",
+      });
+      expect(await run(() => null)).toEqual({
+        ok: false,
+        error: "No member matches @bobby",
+      });
+      expect(post).not.toHaveBeenCalled();
+      expect(placeholderCount(ctx)).toBe(0);
+    });
+  }
+
+  it("/rush vote does not read an empty-body gateway 502 as a recorded vote (#1717)", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { status: 502 },
+    });
+    const result = await dispatchRushVoteCmd(
+      buildCtx(post),
+      "vote 11111111-1111-4111-8111-111111111111",
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("/rush vote does not take a lookup that errored with no response as a match", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { id: "cand-1" },
+      error: { message: "network" },
+      response: undefined,
+    });
+    const post = vi.fn();
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
+    const result = await dispatchRushVoteCmd(ctx, "vote Jane");
+    expect(result.ok).toBe(false);
+    expect(post).not.toHaveBeenCalled();
   });
 });

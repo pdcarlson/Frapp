@@ -19,6 +19,38 @@
 // its entry, before merging or in a PR of its own, or to upload it again by
 // hand and keep it.
 //
+// ── Retrying a failed upload (Paul, 2026-11-12) ─────────────────────────────
+// An upload that fails on the store's side for a passing reason (App Store
+// Connect's `SERVER_ERROR`, which ended iOS 0.12.0 (21)'s upload after an hour
+// of building on 2026-11-12) is retried here, up to MAX_RETRIES times, through
+// EAS's own `retrySubmission` mutation: the shape of eas-cli 24.8.0's
+// `SubmissionMutation.retrySubmissionAsync`, which `eas submit:retry` runs. It
+// re-sends the same build with the same submit config, so nothing is rebuilt
+// and no credential passes through here. EAS allows it only while the failed
+// submission's `canRetry` holds (a limited window after it fails). The retry
+// is polled like the first try, inside the same deadline. RETRY_ANY_ERROR
+// (`mobile-retry-upload.yml`, dispatched by hand) retries whatever the error.
+//
+// ── Showing why an upload failed (2026-11-12) ────────────────────────────────
+// EAS's error for a store failure is a code and a stock sentence (App Store
+// Connect's `SERVER_ERROR` says only "unexpected server error"). The
+// submission's own log, which expo.dev shows on its page, names the step that
+// failed and the store's response. When a submission ends ERRORED or CANCELED
+// this prints the last LOG_TAIL_LINES lines of that log into the job log, so
+// the cause can be read from the Actions run without signing in to expo.dev.
+// The log is EAS's `logFiles` (signed links it serves for a while, the field
+// eas-cli 24.8.0's `displayLogsAsync` reads), asked for in a query of its own
+// so a failure there never costs a status read, and fetched once per failed
+// submission, after any retry is asked for, so a slow log never delays one.
+// Unlike eas-cli it keeps a line that isn't JSON, and a file it can't read
+// doesn't hide the others; a log it can't read at all is noted, never fatal.
+//
+// This repo is public, and so is the job log, while EAS's log is a third
+// party's text that GitHub masks nothing in. So every link (signed URLs to the
+// build archive) and email address (the Apple ID) is replaced before a line is
+// printed, and `::` and `##[` are broken up so no line can be read as a
+// workflow command.
+//
 // FINISHED means the binary reached App Store Connect or Google Play, not that
 // it passed their processing. App Store Connect can still reject an iOS
 // binary afterwards by email (ITMS-90683 rejected iOS 0.9.1 (8) that way), and
@@ -32,11 +64,15 @@
 // the token reaches no code from the built commit.
 //
 // Env:
-//   EXPO_TOKEN          — the robot token the build job uses
+//   EXPO_TOKEN          — the robot token the build jobs use
 //   IOS_UPLOAD          — the iOS upload step's outcome (`success` when EAS accepted it)
 //   IOS_SUBMISSION      — that step's submission id, empty when none
-//   IOS_BUILD           — the iOS EAS build id, for the summary's re-upload command
+//   IOS_BUILD           — the iOS EAS build id, for the summary's re-upload command;
+//                         unset from `_mobile-build.yml`, whose builds run on GitHub's
+//                         runners and have no EAS build id (#5162)
 //   ANDROID_UPLOAD, ANDROID_SUBMISSION, ANDROID_BUILD — the same for Android
+//   RETRY_ANY_ERROR     — `true` retries any failed submission EAS allows, not
+//                         only a store server error (the hand-dispatched retry)
 //   DEADLINE_MINUTES    — stop polling after this long (default 280)
 //   POLL_SECONDS        — wait between rounds (default 60)
 //   GITHUB_STEP_SUMMARY — where the summary goes
@@ -53,10 +89,36 @@ const QUERY = `query ConfirmSubmission($id: ID!) {
     byId(submissionId: $id) {
       id
       status
+      canRetry
       error { errorCode message }
     }
   }
 }`;
+// A failed submission's log files: eas-cli 24.8.0's `SubmissionFragment.logFiles`.
+const LOG_QUERY = `query SubmissionLogFiles($id: ID!) {
+  submissions {
+    byId(submissionId: $id) {
+      logFiles
+    }
+  }
+}`;
+// eas-cli 24.8.0's `SubmissionMutation.retrySubmissionAsync`, asking back only
+// what this script reads.
+const RETRY = `mutation RetrySubmission($parentSubmissionId: ID!) {
+  submission {
+    retrySubmission(parentSubmissionId: $parentSubmissionId) {
+      submission { id status }
+    }
+  }
+}`;
+/**
+ * Store errors that say nothing about the build, so the same upload may well
+ * go through a little later. Anything else (a rejected binary, a bad
+ * credential, a duplicate build number) would fail the same way again.
+ */
+export const RETRYABLE_ERROR_CODES = new Set(["SERVER_ERROR"]);
+/** Retries of one platform's upload in one run. Each waits out Expo's queue again. */
+export const MAX_RETRIES = 2;
 
 /** EAS's terminal submission states. Anything else is still on its way. */
 export const TERMINAL = new Set(["FINISHED", "ERRORED", "CANCELED"]);
@@ -68,6 +130,8 @@ export const TERMINAL = new Set(["FINISHED", "ERRORED", "CANCELED"]);
  */
 export const MAX_FAILED_READS = 10;
 const DISPLAY = Object.freeze({ ios: "iOS", android: "Android" });
+/** How much of a failed submission's log reaches the job log. */
+export const LOG_TAIL_LINES = 60;
 const STORE = Object.freeze({ ios: "TestFlight", android: "the Play internal track" });
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const READ_TIMEOUT_MS = 30_000;
@@ -112,7 +176,124 @@ export async function readSubmission({ id, token, fetchImpl = fetch, sleep = del
   }
   const submission = body?.data?.submissions?.byId;
   if (!submission || typeof submission.status !== "string") return { readError: "the response named no submission" };
-  return { status: oneLine(submission.status), error: submission.error ?? null };
+  return { status: oneLine(submission.status), error: submission.error ?? null, canRetry: submission.canRetry === true };
+}
+
+/** A submission's log file links. Returns `{ urls }`, or `{ logError }`. */
+export async function readLogFiles({ id, token, fetchImpl = fetch, sleep = delay }) {
+  try {
+    const res = await fetchWithRetry(
+      GRAPHQL_URL,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ query: LOG_QUERY, variables: { id } }),
+      },
+      { fetchImpl, sleep, timeoutMs: READ_TIMEOUT_MS, retryMethods: RETRY_POST },
+    );
+    if (!res.ok) return { logError: `HTTP ${res.status}` };
+    const body = await res.json();
+    if (Array.isArray(body?.errors) && body.errors.length > 0) {
+      return { logError: oneLine(body.errors.map((e) => e?.message ?? "unknown error").join("; ")) };
+    }
+    const files = body?.data?.submissions?.byId?.logFiles;
+    return { urls: Array.isArray(files) ? files.filter((f) => typeof f === "string" && f.startsWith("https://")) : [] };
+  } catch (error) {
+    return { logError: `request failed: ${oneLine(error.message)}` };
+  }
+}
+
+/**
+ * One log line made safe for a public job log: links and email addresses
+ * replaced, `::` and `##[` broken up, on one line behind a prefix.
+ */
+export function redactLogLine(text) {
+  const safe = oneLine(text)
+    .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, "[link removed]")
+    .replace(/[^\s@<>()"']+@[^\s@<>()"']+\.[a-z]{2,}/gi, "[email removed]")
+    .replace(/::/g, ": :")
+    .replace(/##\[/g, "# #[");
+  return `  | ${safe}`;
+}
+
+/**
+ * The last `maxLines` lines of a submission's log files, in order, as plain
+ * text: EAS writes one JSON object per line (bunyan, the message in `msg`),
+ * and a line that isn't JSON is kept as it is. Each line goes through
+ * redactLogLine. A file that can't be read is skipped and named in
+ * `failures`, so the others still show. Returns `{ lines, failures }`.
+ */
+export async function readSubmissionLog({ urls, fetchImpl = fetch, sleep = delay, maxLines = LOG_TAIL_LINES }) {
+  let text = "";
+  const failures = [];
+  for (const url of urls) {
+    try {
+      const res = await fetchWithRetry(url, { method: "GET" }, { fetchImpl, sleep, timeoutMs: READ_TIMEOUT_MS });
+      if (!res.ok) {
+        failures.push(`HTTP ${res.status}`);
+        continue;
+      }
+      text += `${await res.text()}\n`;
+    } catch (error) {
+      failures.push(`request failed: ${oneLine(error.message)}`);
+    }
+  }
+  const lines = [];
+  for (const raw of text.split(/\r?\n/)) {
+    if (raw.trim() === "") continue;
+    let line = raw;
+    try {
+      const entry = JSON.parse(raw);
+      if (entry && typeof entry === "object" && "msg" in entry) line = String(entry.msg);
+    } catch {
+      // Not JSON: keep the raw line.
+    }
+    for (const part of line.split(/\r?\n/)) if (part.trim() !== "") lines.push(redactLogLine(part));
+  }
+  return { lines: lines.slice(-maxLines), failures };
+}
+
+/**
+ * Ask EAS to send a failed submission again. One attempt: a mutation whose
+ * answer was lost may have created the retry already, and a second would
+ * upload the build twice. Returns `{ id }` of the new submission, or
+ * `{ retryError }`.
+ */
+export async function retrySubmission({ id, token, fetchImpl = fetch, sleep = delay }) {
+  let res;
+  try {
+    res = await fetchWithRetry(
+      GRAPHQL_URL,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ query: RETRY, variables: { parentSubmissionId: id } }),
+      },
+      { fetchImpl, sleep, timeoutMs: READ_TIMEOUT_MS, retryMethods: new Set() },
+    );
+  } catch (error) {
+    return { retryError: `request failed: ${oneLine(error.message)}` };
+  }
+  if (!res.ok) return { retryError: `HTTP ${res.status}` };
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    return { retryError: "the response was not JSON" };
+  }
+  if (Array.isArray(body?.errors) && body.errors.length > 0) {
+    return { retryError: oneLine(body.errors.map((e) => e?.message ?? "unknown error").join("; ")) };
+  }
+  const next = body?.data?.submission?.retrySubmission?.submission?.id;
+  if (typeof next !== "string" || !ID.test(next)) return { retryError: "the response named no new submission" };
+  return { id: next };
+}
+
+/** Whether a row's failed upload is one to send again. */
+export function shouldRetry(row, { retryAnyError = false } = {}) {
+  if (row.status !== "ERRORED" || !row.canRetry) return false;
+  if ((row.retriedFrom?.length ?? 0) >= MAX_RETRIES) return false;
+  return retryAnyError || RETRYABLE_ERROR_CODES.has(row.error?.errorCode ?? "");
 }
 
 /** A row this job has stopped asking about. */
@@ -124,8 +305,20 @@ const settled = (row) => TERMINAL.has(row.status) || row.failedReads >= MAX_FAIL
  * submission: `{ store, id, build, status, error, readError, failedReads }`,
  * with `status` the last one read (or `unread`).
  */
-export async function pollSubmissions({ submissions, token, fetchImpl = fetch, deadlineMs, pollMs, now = Date.now, sleep = delay, log = console.log }) {
-  const rows = submissions.map(({ store, id, build = "" }) => ({ store, id, build, status: "unread", error: null, readError: null, failedReads: 0 }));
+export async function pollSubmissions({ submissions, token, fetchImpl = fetch, deadlineMs, pollMs, now = Date.now, sleep = delay, log = console.log, retryAnyError = false }) {
+  const rows = submissions.map(({ store, id, build = "" }) => ({ store, id, build, status: "unread", error: null, readError: null, failedReads: 0, canRetry: false, retriedFrom: [], retryError: null, logShown: [] }));
+  const showLog = async (store, id) => {
+    const name = `${DISPLAY[store]} submission ${id}`;
+    const where = `read it at ${SUBMISSIONS_URL}/${id}`;
+    const files = await readLogFiles({ id, token, fetchImpl, sleep });
+    if (files.logError) return log(`${name}: couldn't find its log (${files.logError}); ${where}.`);
+    if (files.urls.length === 0) return log(`${name}: EAS gave no log for it; ${where}.`);
+    const got = await readSubmissionLog({ urls: files.urls, fetchImpl, sleep });
+    const skipped = got.failures.length > 0 ? ` (${got.failures.length} of its ${files.urls.length} log files couldn't be read: ${got.failures.join("; ")})` : "";
+    if (got.lines.length === 0) return log(`${name}: its log had nothing to show${skipped}; ${where}.`);
+    log(`${name}: the last ${got.lines.length} lines of its log on EAS, links and email addresses removed${skipped}:`);
+    for (const line of got.lines) log(line);
+  };
   const readRound = async () => {
     for (const row of rows) {
       if (settled(row)) continue;
@@ -142,6 +335,25 @@ export async function pollSubmissions({ submissions, token, fetchImpl = fetch, d
       if (read.status !== row.status) log(`${DISPLAY[row.store]} submission ${row.id}: ${read.status}.`);
       row.status = read.status;
       row.error = read.error;
+      row.canRetry = read.canRetry === true;
+      const ended = (read.status === "ERRORED" || read.status === "CANCELED") && !row.logShown.includes(row.id) ? row.id : null;
+      if (ended) row.logShown.push(ended);
+      if (shouldRetry(row, { retryAnyError })) {
+        const retried = await retrySubmission({ id: row.id, token, fetchImpl, sleep });
+        if (retried.retryError) {
+          row.retryError = retried.retryError;
+          log(`${DISPLAY[row.store]} submission ${row.id}: couldn't retry it (${retried.retryError}).`);
+        } else {
+          log(`${DISPLAY[row.store]} submission ${row.id} failed (${oneLine(row.error?.errorCode ?? "no error code")}); retried it as ${retried.id}.`);
+          row.retriedFrom.push(row.id);
+          row.id = retried.id;
+          row.status = "retried";
+          row.error = null;
+          row.canRetry = false;
+        }
+      }
+      // After the retry is asked for, so a slow log never eats into EAS's retry window.
+      if (ended) await showLog(row.store, ended);
     }
     return rows;
   };
@@ -176,8 +388,22 @@ export function nextStep(row) {
   const url = `${SUBMISSIONS_URL}/${row.id}`;
   if (row.status === "ERRORED" || row.status === "CANCELED") {
     const why = row.error?.message ? `: ${oneLine(row.error.message)}${row.error.errorCode ? ` (\`${oneLine(row.error.errorCode)}\`)` : ""}` : "";
-    const again = ID.test(row.build ?? "") ? `with ${submitCommand(row.store, row.build)}` : "by hand";
-    return `${name}'s upload to ${STORE[row.store]} ${row.status === "ERRORED" ? "failed" : "was cancelled"}${why}. The record PR lists this build, so ${DROP}. Or, while its commit is still the latest \`v*\` tag, fix the cause, upload it again ${again} (\`docs/ops/deployment/mobile.md\` § 6.6), and keep the entry. Details: ${url}`;
+    const again = row.canRetry
+      ? `with the **Retry a store upload** workflow (platform \`${row.store}\`, submission \`${row.id}\`), which sends the same build again without rebuilding`
+      : ID.test(row.build ?? "")
+        ? `with ${submitCommand(row.store, row.build)}`
+        : null;
+    const tried = row.retriedFrom?.length ? ` It was already retried ${row.retriedFrom.length === 1 ? "once" : `${row.retriedFrom.length} times`} (first try ${row.retriedFrom[0]}).` : "";
+    const retryFailed = row.retryError
+      ? ` Retrying it failed: ${row.retryError}. EAS may still have started that retry, so check expo.dev (Submissions) for a newer submission of this build before retrying again.`
+      : "";
+    const head = `${name}'s upload to ${STORE[row.store]} ${row.status === "ERRORED" ? "failed" : "was cancelled"}${why}.${tried}${retryFailed}`;
+    if (!again) {
+      // A build from a GitHub runner (#5162) exists only in that job's temp folder, so once EAS
+      // won't retry the submission, nothing can send this build number again.
+      return `${head} EAS won't retry it, and the runner that built it kept no copy, so this build can't be sent again. The record PR lists it, so ${DROP}. Then, while its commit is still the latest \`v*\` tag, fix the cause and re-run that run's ${name} job by itself (its own re-run button: **Re-run failed jobs** wouldn't pick it, since its upload was accepted), which builds and uploads a new one (\`docs/ops/deployment/mobile.md\` § 6.6). Details: ${url}`;
+    }
+    return `${head} The record PR lists this build, so ${DROP}. Or, while its commit is still the latest \`v*\` tag, fix the cause, upload it again ${again} (\`docs/ops/deployment/mobile.md\` § 6.6), and keep the entry. Details: ${url}`;
   }
   if (row.failedReads >= MAX_FAILED_READS || row.status === "unread") {
     return `${name}'s submission couldn't be read${row.readError ? ` (${row.readError})` : ""}, so this job doesn't know how it ended. Check ${url}. If it finished, the record PR is right as it is; if it failed, ${DROP}.`;
@@ -188,7 +414,10 @@ export function nextStep(row) {
 /** The run summary. */
 export function summary(rows) {
   const lines = ["## Store uploads", "", "| Platform | Submission | Status |", "| --- | --- | --- |"];
-  for (const r of rows) lines.push(`| ${DISPLAY[r.store]} | ${ID.test(r.id) ? `\`${r.id}\`` : "none"} | \`${r.status}\` |`);
+  for (const r of rows) {
+    const retried = r.retriedFrom?.length ? ` (retry of ${r.retriedFrom.map((id) => `\`${id}\``).join(", ")})` : "";
+    lines.push(`| ${DISPLAY[r.store]} | ${ID.test(r.id) ? `\`${r.id}\`` : "none"}${retried} | \`${r.status}\` |`);
+  }
   lines.push("");
   const steps = rows.map(nextStep).filter(Boolean);
   if (steps.length === 0) {
@@ -245,6 +474,7 @@ export async function confirmStoreSubmissions({ env, fetchImpl = fetch, now = Da
           now,
           sleep,
           log,
+          retryAnyError: env.RETRY_ANY_ERROR === "true",
         });
   const rows = [...polled, ...unchecked.map((r) => ({ error: null, readError: null, failedReads: 0, ...r }))];
   rows.sort((a, b) => (a.store === b.store ? 0 : a.store === "ios" ? -1 : 1));

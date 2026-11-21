@@ -221,7 +221,10 @@ let shellFocusableAt: number | null = null;
  * focusable from first paint, and this effect is the first moment client code
  * can observe that. (It is therefore an upper bound, and on a slow-hydrating
  * page a loose one — but it is bounded by hydration rather than by a network
- * round trip, which is the whole of what #2176 changed.)
+ * round trip, which is the whole of what #2176 changed.) On a client-side
+ * navigation into chat, the shell that mounts first may instead be the one
+ * `Composer` draws while its editor's code loads (#5050), rendered on the
+ * client, and this records that mount.
  */
 export function noteComposerShellFocusable(): void {
   if (typeof window === "undefined") return;

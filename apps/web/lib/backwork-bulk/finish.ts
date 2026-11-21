@@ -1,4 +1,5 @@
 import { statusOf } from "@repo/api-sdk";
+import { sha256Hex } from "@/lib/bulk-upload/hash";
 import type { useConfirmBackworkUpload } from "@repo/hooks";
 import { MemberFacingError } from "@repo/hooks/error-copy";
 import {
@@ -9,6 +10,7 @@ import {
   SEMESTERS,
   readSignedUpload,
 } from "@repo/validation";
+import { within } from "@/lib/bulk-upload/stall";
 import { parseGuardedInt } from "@/lib/utils";
 import type { BulkFields } from "./fields";
 import { countBoxes, type BoxesByPage } from "./geometry";
@@ -16,11 +18,11 @@ import type { FlattenOptions } from "./pdf";
 
 /**
  * The background finish step of a bulk upload (#3499): flatten when the
- * document needs it, upload, confirm. Kept apart from the page so the one
+ * document needs it, upload, confirm as a draft (#5208). Kept apart from the page so the one
  * rule that matters most here is tested on its own: for a Student Copy, or
  * any document with a box, only the flattened bytes ever leave the browser.
  */
-export type ConfirmBody = Parameters<
+type ConfirmBody = Parameters<
   ReturnType<typeof useConfirmBackworkUpload>["mutateAsync"]
 >[0];
 
@@ -35,15 +37,45 @@ export type FinishDeps<Doc> = {
     content_type: string;
     size_bytes: number;
   }) => Promise<unknown>;
-  put: (input: { signedUrl: string; body: Blob }) => Promise<void>;
+  /** Gets a signal to stop on, for the upload's own time limit and the queue's. */
+  put: (input: { signedUrl: string; body: Blob; signal: AbortSignal }) => Promise<void>;
   confirm: (body: ConfirmBody) => Promise<unknown>;
 };
 
 export type FinishJob<Doc> = {
   file: File;
+  /** Aborts when the queue gives up on this upload as stalled. */
+  signal?: AbortSignal;
   prepared: { bytes: Uint8Array; hash: string; doc: Doc };
-  submission: { fields: BulkFields; boxes: BoxesByPage; flatten: boolean };
+  submission: {
+    fields: BulkFields;
+    boxes: BoxesByPage;
+      flatten: boolean;
+    /**
+     * Saved by "Save the rest" without the person looking at it (#5252): the
+     * draft waits for its uploader to check its pages.
+     */
+    unchecked?: boolean;
+  };
 };
+
+/**
+ * How long the file's own PUT may take, the one upload step the API client
+ * doesn't bound (its requests time out on their own). `fetch` reports no
+ * upload progress, so this caps the whole PUT rather than a quiet spell, and
+ * is generous on purpose: a minute, plus a second for every 32 KB (about
+ * 0.25 Mbps, a crowded campus network). A 3 MB file gets about two and a half
+ * minutes; one at the 100 MB cap, about fifty-five.
+ */
+export function putStallMs(bytes: number): number {
+  return 60_000 + Math.ceil(bytes / 32_000) * 1_000;
+}
+
+/** What `storePdf` needs: the upload-url request, the PUT, and the checks. */
+export type StoreDeps = Pick<
+  FinishDeps<unknown>,
+  "assertChapter" | "sleep" | "requestUpload" | "put"
+>;
 
 /** Second try when a flattened file comes out over the cap. */
 const SMALLER: FlattenOptions = { dpi: 110, quality: 0.7 };
@@ -81,12 +113,6 @@ export function mustFlatten(fields: BulkFields, boxes: BoxesByPage): boolean {
   return fields.document_variant === "Student Copy" || countBoxes(boxes) > 0;
 }
 
-export async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function tagsOf(raw: string): string[] | undefined {
   const tags = raw
@@ -116,7 +142,7 @@ export function confirmFields(fields: BulkFields, fallbackTitle: string) {
 }
 
 export async function finishUpload<Doc>(
-  { file, prepared, submission }: FinishJob<Doc>,
+  { file, prepared, submission, signal }: FinishJob<Doc>,
   deps: FinishDeps<Doc>,
 ): Promise<void> {
   // Decided again here rather than trusted from the submission alone, so a
@@ -125,30 +151,76 @@ export async function finishUpload<Doc>(
   // render every page only to be refused.
   await deps.assertChapter?.();
   const flatten = submission.flatten || mustFlatten(submission.fields, submission.boxes);
-  let body = prepared.bytes;
-  if (flatten) {
-    body = await deps.flatten(prepared.doc, submission.boxes);
-    if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
-      body = await deps.flatten(prepared.doc, submission.boxes, SMALLER);
-    }
+  const body = flatten
+    ? await flattenWithinCap(prepared.doc, submission.boxes, deps.flatten)
+    : prepared.bytes;
+  if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
+    throw new MemberFacingError(`This file is over ${MAX_BACKWORK_UPLOAD_LABEL}.`);
+  }
+  const fileHash = flatten ? await sha256Hex(body) : prepared.hash;
+  const storagePath = await storePdf(
+    body,
+    flatten ? flattenedFileName(submission.fields.title) : file.name,
+    deps,
+    signal,
+  );
+  await deps.assertChapter?.();
+  signal?.throwIfAborted();
+  await deps.confirm({
+    storage_path: storagePath,
+    file_hash: fileHash,
+    ...confirmFields(submission.fields, flatten ? "Redacted backwork" : file.name),
+    is_redacted: flatten,
+    // Saved as a draft (#5208): the person reviews the batch in one table
+    // and publishes it, so a field left blank here is fixed there.
+    draft: true,
+    ...(submission.unchecked ? { pages_checked: false } : {}),
+  });
+}
+
+/**
+ * Flattens a document with its boxes burned in, once more at a lower quality
+ * when the first pass comes out over the upload cap, and refuses one that is
+ * still over it.
+ */
+export async function flattenWithinCap<Doc>(
+  doc: Doc,
+  boxes: BoxesByPage,
+  flatten: FinishDeps<Doc>["flatten"],
+): Promise<Uint8Array> {
+  let body = await flatten(doc, boxes);
+  if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
+    body = await flatten(doc, boxes, SMALLER);
   }
   if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
     throw new MemberFacingError(
-      flatten
-        ? `This file is over ${MAX_BACKWORK_UPLOAD_LABEL} once flattened. Split the PDF and try again.`
-        : `This file is over ${MAX_BACKWORK_UPLOAD_LABEL}.`,
+      `This file is over ${MAX_BACKWORK_UPLOAD_LABEL} once flattened. Split the PDF and try again.`,
     );
   }
-  const fileHash = flatten ? await sha256Hex(body) : prepared.hash;
+  return body;
+}
+
+/**
+ * Uploads a PDF through `upload-url` and returns where it is stored. A 429
+ * waits and asks again (`RATE_LIMIT_WAITS_MS`). Shared by the bulk finish and
+ * a draft's page check, which uploads the file flattened again (#5252).
+ */
+export async function storePdf(
+  body: Uint8Array,
+  filename: string,
+  deps: StoreDeps,
+  signal?: AbortSignal,
+): Promise<string> {
   const sleep = deps.sleep ?? realSleep;
   const request = {
-    filename: flatten ? flattenedFileName(submission.fields.title) : file.name,
+    filename,
     content_type: "application/pdf",
     size_bytes: body.byteLength,
   };
   let signed: unknown;
   for (let attempt = 0; ; attempt += 1) {
     await deps.assertChapter?.();
+    signal?.throwIfAborted();
     try {
       signed = await deps.requestUpload(request);
       break;
@@ -159,15 +231,25 @@ export async function finishUpload<Doc>(
     }
   }
   const { signedUrl, storagePath } = readSignedUpload(signed);
-  await deps.put({
-    signedUrl,
-    body: new Blob([body as BlobPart], { type: "application/pdf" }),
-  });
-  await deps.assertChapter?.();
-  await deps.confirm({
-    storage_path: storagePath,
-    file_hash: fileHash,
-    ...confirmFields(submission.fields, flatten ? "Redacted backwork" : file.name),
-    is_redacted: flatten,
-  });
+  // Given up on while the link was requested: send nothing.
+  signal?.throwIfAborted();
+  // Stopped when the queue gives up on the upload, or when it runs past its
+  // own allowance; either way the PUT's fetch is dropped, not left running.
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    await within(
+      deps.put({
+        signedUrl,
+        body: new Blob([body as BlobPart], { type: "application/pdf" }),
+        signal: controller.signal,
+      }),
+      putStallMs(body.byteLength),
+    );
+  } finally {
+    signal?.removeEventListener("abort", stop);
+    stop();
+  }
+  return storagePath;
 }

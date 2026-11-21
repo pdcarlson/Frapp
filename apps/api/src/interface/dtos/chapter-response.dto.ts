@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  SUBSCRIPTION_STATUSES,
+  type SubscriptionStatus,
+} from '@repo/validation';
 import type { ChapterMemberViewField } from '../../application/services/chapter-member-view';
+import type { AssertNever } from './drift-guard';
 
 /**
  * The response shape of `GET /v1/chapters/current` (#930).
@@ -26,11 +31,11 @@ export class CurrentChapterResponseDto {
   university: string;
 
   @ApiProperty({
-    enum: ['incomplete', 'active', 'past_due', 'canceled'],
+    enum: SUBSCRIPTION_STATUSES,
     description:
       'Read by the client subscription gate. Load-bearing — see `chapter-member-view.ts`.',
   })
-  subscription_status: 'incomplete' | 'active' | 'past_due' | 'canceled';
+  subscription_status: SubscriptionStatus;
 
   @ApiProperty({
     type: String,
@@ -134,11 +139,11 @@ export class UpdateChapterResponseDto {
   university: string;
 
   @ApiProperty({
-    enum: ['incomplete', 'active', 'past_due', 'canceled'],
+    enum: SUBSCRIPTION_STATUSES,
     description:
       'Read by the client subscription gate. Load-bearing — see `chapter-member-view.ts`.',
   })
-  subscription_status: 'incomplete' | 'active' | 'past_due' | 'canceled';
+  subscription_status: SubscriptionStatus;
 
   @ApiProperty({
     type: String,
@@ -205,29 +210,39 @@ export class UpdateChapterResponseDto {
  * Compile-time drift guards between these DTOs and the runtime allowlist.
  *
  * Each resolves to `never` while the two agree. If they diverge, the alias
- * stops satisfying `Assert`'s constraint and the build fails naming the field
+ * stops satisfying `AssertNever`'s constraint and the build fails naming the field
  * — which is the point: a column added to the projection but not documented
  * (or vice versa) is exactly the silent drift this issue is about.
  */
-type Assert<T extends never> = T;
-
-/** Allowlisted fields {@link CurrentChapterResponseDto} forgot to declare. Must be `never`. */
-export type ChapterResponseDtoMissingFields = Assert<
+/**
+ * Allowlisted fields {@link CurrentChapterResponseDto} forgot to declare. Must be `never`.
+ * @driftguard
+ */
+export type ChapterResponseDtoMissingFields = AssertNever<
   Exclude<ChapterMemberViewField, keyof CurrentChapterResponseDto>
 >;
 
-/** Fields {@link CurrentChapterResponseDto} declares that the projection does not emit. Must be `never`. */
-export type ChapterResponseDtoExtraFields = Assert<
+/**
+ * Fields {@link CurrentChapterResponseDto} declares that the projection does not emit. Must be `never`.
+ * @driftguard
+ */
+export type ChapterResponseDtoExtraFields = AssertNever<
   Exclude<keyof CurrentChapterResponseDto, ChapterMemberViewField | 'logo_url'>
 >;
 
-/** Allowlisted fields {@link UpdateChapterResponseDto} forgot to declare. Must be `never`. */
-export type UpdateChapterResponseDtoMissingFields = Assert<
+/**
+ * Allowlisted fields {@link UpdateChapterResponseDto} forgot to declare. Must be `never`.
+ * @driftguard
+ */
+export type UpdateChapterResponseDtoMissingFields = AssertNever<
   Exclude<ChapterMemberViewField, keyof UpdateChapterResponseDto>
 >;
 
-/** Fields {@link UpdateChapterResponseDto} declares that the projection does not emit. Must be `never`. */
-export type UpdateChapterResponseDtoExtraFields = Assert<
+/**
+ * Fields {@link UpdateChapterResponseDto} declares that the projection does not emit. Must be `never`.
+ * @driftguard
+ */
+export type UpdateChapterResponseDtoExtraFields = AssertNever<
   Exclude<
     keyof UpdateChapterResponseDto,
     ChapterMemberViewField | 'failedContrastChecks'

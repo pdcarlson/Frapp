@@ -1,14 +1,16 @@
-import { Path } from "react-native-svg";
+import { Path, Rect } from "react-native-svg";
+import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
 import {
   GlyphFrame,
   glyphPaint,
-  STROKE_WIDTH,
   TabGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
+import { STROKE_WIDTH } from "@/components/glyph-recipe";
 
 /**
- * The eyebrow glyphs of the chat cards that have no tab of their own.
+ * The eyebrow glyphs of the chat cards that have no tab of their own, and
+ * the channel row's lock, audit and muted marks (`channel-row.tsx`).
  *
  * Geometry is transcribed from web's chat family
  * (`apps/web/components/chat/chat-glyphs.tsx` and the shell's
@@ -21,13 +23,21 @@ import {
  * Points and Service hours draw the shared nav set (iconography.md §1.1)
  * through `TabGlyph`, the same shapes as web's cards, drawn at rest in the
  * muted foreground (an eyebrow is a label, never the accent: foundations.md
- * §6); the others below keep the stroke recipe. The event and task cards draw the Events and Tasks tab glyphs
+ * §6); the others below keep the stroke recipe. The event and task cards draw the Events glyph and the task board's
  * themselves.
  */
 
 /** Points: the nav set's trophy, as the web sidebar and web's card draw it. */
 export function PointsGlyph(props: TabGlyphProps) {
   return <TabGlyph name="points" {...props} />;
+}
+
+/**
+ * Role picker (#4958): the nav set's Roles shield, the Roles page's own
+ * glyph, so the card and the + row read as roles.
+ */
+export function RolePickerGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="roles" {...props} />;
 }
 
 /** Announcement — the megaphone, its sound arc stroke-only. */
@@ -102,7 +112,68 @@ export function AuditGlyph(props: TabGlyphProps) {
   );
 }
 
-/** Service hours: the nav set's hand-heart, the More hub's shape, lifted when focused like its sibling eyebrows. */
+/**
+ * Lock: a private or role-gated channel's row on chat home (#4134), as web's
+ * rail draws it (`apps/web/components/chat/chat-glyphs.tsx` `LockGlyph`).
+ * Body filled, shackle stroke-only.
+ */
+export function LockGlyph(props: TabGlyphProps) {
+  const { stroke, fill } = glyphPaint(props);
+  return (
+    <GlyphFrame size={props.size}>
+      <Rect
+        x={4.8}
+        y={10.5}
+        width={14.4}
+        height={9.5}
+        rx={3}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M8.4 10.5V8a3.6 3.6 0 0 1 7.2 0v2.5"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </GlyphFrame>
+  );
+}
+
+/**
+ * Notification level: a speaker (a box and its cone, split by a detail
+ * stroke) with two sound waves, an × for the waves when `active` (muted).
+ * Web's `MuteGlyph`, from the same path data (`MARK_GLYPH_PATHS.mute`). A speaker, not a bell, since #3362: the bell
+ * is the notification inbox's glyph (iconography.md §6.2.2). The row draws it
+ * `focused` in the muted text hue, as web's row draws it `active` in
+ * `text-muted`.
+ */
+export function MuteGlyph({
+  active,
+  ...props
+}: TabGlyphProps & { active: boolean }) {
+  const { stroke, fill } = glyphPaint(props);
+  const paths = MARK_GLYPH_PATHS.mute;
+  const line = {
+    stroke,
+    strokeWidth: STROKE_WIDTH,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  } as const;
+  return (
+    <GlyphFrame size={props.size}>
+      <Path d={paths.body} fill={fill} {...line} />
+      <Path d={paths.split} fill="none" {...line} />
+      <Path d={active ? paths.muted : paths.waves} fill="none" {...line} />
+    </GlyphFrame>
+  );
+}
+
+/** Service hours: the nav set's hand-heart, the You tab's row shape, lifted when focused like its sibling eyebrows. */
 export function ServiceHoursGlyph(props: TabGlyphProps) {
   return <TabGlyph name="service" {...props} />;
 }

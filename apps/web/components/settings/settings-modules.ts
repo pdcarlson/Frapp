@@ -1,6 +1,7 @@
 import { MODULE_CATALOG } from "@repo/org-archetypes";
 import {
   PERMISSION_REGISTRY,
+  RETIRED_PERMISSIONS,
   isBetaOffModule,
   type PermissionDefinition,
 } from "@repo/validation";
@@ -96,6 +97,14 @@ const MODULE_COPY: readonly ModuleCopy[] = [
     offNote: "No one can post a new poll in chat.",
   },
   {
+    key: "meetings",
+    label: "Meetings",
+    description:
+      "Minutes for chapter, exec and committee meetings, posted to the members each meeting invites.",
+    offNote:
+      "Members don't see Meetings in the sidebar, and no minutes can be started or posted. Minutes already written are kept.",
+  },
+  {
     key: "documents",
     label: "Documents",
     description: "The chapter's files: bylaws, minutes, forms.",
@@ -166,10 +175,14 @@ export function shownModuleSettings(): readonly ModuleSettings[] {
 /**
  * The permissions that belong to a module, from the permission registry the
  * Roles page reads (#4069), so "who can" on a module page and the Roles page
- * name the same things in the same words.
+ * name the same things in the same words. The retired ones
+ * (`RETIRED_PERMISSIONS`, #5728) are left out, as the Roles page leaves them.
  */
 export function modulePermissions(
   moduleKey: string,
 ): readonly PermissionDefinition[] {
-  return PERMISSION_REGISTRY.filter((entry) => entry.module === moduleKey);
+  return PERMISSION_REGISTRY.filter(
+    (entry) =>
+      entry.module === moduleKey && !RETIRED_PERMISSIONS.has(entry.permission),
+  );
 }

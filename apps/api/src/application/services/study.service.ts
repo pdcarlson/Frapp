@@ -11,14 +11,15 @@ import { STUDY_GEOFENCE_REPOSITORY } from '#domain/repositories/study.repository
 import type { IStudyGeofenceRepository } from '#domain/repositories/study.repository.interface';
 import { STUDY_SESSION_REPOSITORY } from '#domain/repositories/study.repository.interface';
 import type { IStudySessionRepository } from '#domain/repositories/study.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '#domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '#domain/repositories/point-transaction.repository.interface';
 import type {
   StudyGeofence,
   StudySession,
+  GeofenceCircle,
   GeofenceCoordinate,
 } from '#domain/entities/study.entity';
 import { pointInPolygon } from '#domain/utils/geofence';
+import { circleToPolygon } from '@repo/validation';
+import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 
 const HEARTBEAT_STALE_MINUTES = 10;
 const MS_PER_MINUTE = 60 * 1000;
@@ -35,6 +36,29 @@ const LOCATION_REJECT_STREAK_LIMIT = 2;
  */
 const DEFAULT_PAUSE_GRACE_MINUTES = 5;
 
+/**
+ * How many times one request recomputes from a fresh row after a concurrent
+ * write moved the session under it. Two is enough for every real overlap (a
+ * heartbeat beside a pause, a stop beside a heartbeat); the cap only stops a
+ * pathological loop.
+ */
+const MAX_SESSION_WRITE_ATTEMPTS = 3;
+
+const ACTIVE_SESSION_CONFLICT =
+  'You already have an active study session. Stop it before starting a new one.';
+
+/**
+ * Thrown when a session write's compare-and-set matched nothing: another
+ * request changed or ended the session after this one read it. Never leaves
+ * the service; `retryOnStale` recomputes from the fresh row instead.
+ */
+class StaleSessionError extends Error {
+  constructor() {
+    super('Study session changed since it was read');
+    this.name = 'StaleSessionError';
+  }
+}
+
 @Injectable()
 export class StudyService {
   constructor(
@@ -42,8 +66,6 @@ export class StudyService {
     private readonly geofenceRepo: IStudyGeofenceRepository,
     @Inject(STUDY_SESSION_REPOSITORY)
     private readonly sessionRepo: IStudySessionRepository,
-    @Inject(POINT_TRANSACTION_REPOSITORY)
-    private readonly pointTxnRepo: IPointTransactionRepository,
     private readonly rbac: RbacService,
   ) {}
 
@@ -135,7 +157,7 @@ export class StudyService {
     chapterId: string,
     now: Date,
   ): Promise<StudySession> {
-    return this.sessionRepo.update(session.id, chapterId, {
+    return this.write(session, chapterId, {
       status: 'EXPIRED',
       end_time: now.toISOString(),
       location_reject_streak: 0,
@@ -147,12 +169,12 @@ export class StudyService {
    * `spec/behavior/study-sessions.md` awards both on foreground minutes,
    * unlike EXPIRED / LOCATION_INVALID which award nothing.
    */
-  private async awardPoints(
+  private pointsFor(
     session: StudySession,
     geofence: StudyGeofence,
     totalMinutes: number,
     isAlumni: boolean,
-  ): Promise<number> {
+  ): number {
     if (
       isAlumni ||
       session.points_awarded ||
@@ -160,27 +182,87 @@ export class StudyService {
     ) {
       return 0;
     }
-
-    const points =
+    return (
       Math.floor(totalMinutes / geofence.minutes_per_point) *
-      geofence.points_per_interval;
+      geofence.points_per_interval
+    );
+  }
 
-    if (points > 0) {
-      await this.pointTxnRepo.create({
-        chapter_id: session.chapter_id,
-        user_id: session.user_id,
-        amount: points,
-        category: 'STUDY',
-        description: `Study session: ${geofence.name}`,
-        metadata: {
-          study_session_id: session.id,
-          geofence_id: session.geofence_id,
-          total_minutes: totalMinutes,
-        },
-      });
+  /**
+   * Write to the session only if it is exactly the row this request read:
+   * still ACTIVE, same watermark, same pause. Every session write goes
+   * through here, so a request working from a stale read never overwrites
+   * what a concurrent one wrote (an out-of-zone heartbeat turning a just
+   * COMPLETED session into EXPIRED, or a pause rewriting its minutes).
+   */
+  private async write(
+    session: StudySession,
+    chapterId: string,
+    data: Partial<StudySession>,
+  ): Promise<StudySession> {
+    const updated = await this.sessionRepo.updateIfUnchanged(
+      session,
+      chapterId,
+      data,
+    );
+    if (!updated) throw new StaleSessionError();
+    return updated;
+  }
+
+  /**
+   * Finish the session as COMPLETED or PAUSED_EXPIRED and write its STUDY
+   * award, in one database transaction behind the same compare-and-set as
+   * {@link write} (`finish_study_session`). Reading the row, writing the
+   * ledger, then writing the row back (what this used to do) let two requests
+   * that both read the session as ACTIVE each award: a double-tapped Stop, or
+   * a heartbeat and a history read settling the same grace-expired session.
+   * Now only one finish can match, and a failed ledger insert rolls the
+   * finish back, leaving the session ACTIVE for the retry.
+   */
+  private async finish(
+    session: StudySession,
+    geofence: StudyGeofence,
+    chapterId: string,
+    isAlumni: boolean,
+    finish: {
+      status: 'COMPLETED' | 'PAUSED_EXPIRED';
+      endTime: Date;
+      lastHeartbeatAt: string;
+      totalMinutes: number;
+    },
+  ): Promise<StudySession> {
+    const finished = await this.sessionRepo.finish(session, chapterId, {
+      status: finish.status,
+      end_time: finish.endTime.toISOString(),
+      last_heartbeat_at: finish.lastHeartbeatAt,
+      total_foreground_minutes: finish.totalMinutes,
+      points: this.pointsFor(session, geofence, finish.totalMinutes, isAlumni),
+      description: `Study session: ${geofence.name}`,
+    });
+    if (!finished) throw new StaleSessionError();
+    return finished;
+  }
+
+  /**
+   * Run one session operation, recomputing from a fresh read when a
+   * concurrent request moved the session first. The rerun sees the session
+   * as it now is: one another request ended is simply gone (the operation's
+   * own 404, as for a stop arriving a moment later), and one it only advanced
+   * is recomputed from its new watermark.
+   */
+  private async retryOnStale<T>(operation: () => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await operation();
+      } catch (err) {
+        if (!(err instanceof StaleSessionError)) throw err;
+        if (attempt >= MAX_SESSION_WRITE_ATTEMPTS) {
+          throw new ConflictException(
+            'Your study session changed while this was saving. Try again.',
+          );
+        }
+      }
     }
-
-    return points;
   }
 
   /**
@@ -206,19 +288,11 @@ export class StudyService {
     // Minutes were already credited up to `paused_at` when the pause landed;
     // paused time never accrues. Settle any sub-minute remainder and stop.
     const { totalMinutes, watermark } = this.accrue(session, pausedAt);
-    const points = await this.awardPoints(
-      session,
-      geofence,
-      totalMinutes,
-      isAlumni,
-    );
-
-    return this.sessionRepo.update(session.id, chapterId, {
+    return this.finish(session, geofence, chapterId, isAlumni, {
       status: 'PAUSED_EXPIRED',
-      end_time: pausedAt.toISOString(),
-      last_heartbeat_at: watermark,
-      total_foreground_minutes: totalMinutes,
-      points_awarded: points > 0 || session.points_awarded,
+      endTime: pausedAt,
+      lastHeartbeatAt: watermark,
+      totalMinutes,
     });
   }
 
@@ -226,11 +300,53 @@ export class StudyService {
     return this.geofenceRepo.findByChapter(chapterId);
   }
 
+  /**
+   * A zone's stored shape from what the officer drew: a circle becomes the
+   * polygon containment is checked against, derived here so the stored
+   * polygon always matches the circle; an outline is kept as traced and
+   * clears any circle. `undefined` when the request names no shape (an
+   * update that only renames or changes a rate).
+   */
+  private zoneShape(data: {
+    coordinates?: GeofenceCoordinate[] | null;
+    circle?: GeofenceCircle | null;
+  }):
+    | { coordinates: GeofenceCoordinate[]; circle: GeofenceCircle | null }
+    | undefined {
+    // `null` counts as not sent: a client echoing a fetched outline zone back
+    // sends `circle: null`, which must not read as a circle.
+    const circle = data.circle ?? undefined;
+    const coordinates = data.coordinates ?? undefined;
+    if (circle && coordinates) {
+      throw new BadRequestException(
+        'Send a circle or an outline for the study zone, not both',
+      );
+    }
+    if (circle) {
+      const kept = {
+        lat: circle.lat,
+        lng: circle.lng,
+        radius_m: circle.radius_m,
+      };
+      return { coordinates: circleToPolygon(kept), circle: kept };
+    }
+    if (coordinates) {
+      if (coordinates.length < 3) {
+        throw new BadRequestException(
+          'Coordinates must form a polygon with at least 3 points',
+        );
+      }
+      return { coordinates, circle: null };
+    }
+    return undefined;
+  }
+
   async createGeofence(
     chapterId: string,
     data: {
       name: string;
-      coordinates: GeofenceCoordinate[];
+      coordinates?: GeofenceCoordinate[] | null;
+      circle?: GeofenceCircle | null;
       is_active?: boolean;
       minutes_per_point?: number;
       points_per_interval?: number;
@@ -238,7 +354,8 @@ export class StudyService {
       pause_grace_minutes?: number;
     },
   ): Promise<StudyGeofence> {
-    if (!data.coordinates || data.coordinates.length < 3) {
+    const shape = this.zoneShape(data);
+    if (!shape) {
       throw new BadRequestException(
         'Coordinates must form a polygon with at least 3 points',
       );
@@ -246,7 +363,8 @@ export class StudyService {
     return this.geofenceRepo.create({
       chapter_id: chapterId,
       name: data.name,
-      coordinates: data.coordinates,
+      coordinates: shape.coordinates,
+      circle: shape.circle,
       is_active: data.is_active ?? true,
       minutes_per_point: data.minutes_per_point ?? 30,
       points_per_interval: data.points_per_interval ?? 1,
@@ -261,7 +379,8 @@ export class StudyService {
     chapterId: string,
     data: Partial<{
       name: string;
-      coordinates: GeofenceCoordinate[];
+      coordinates: GeofenceCoordinate[] | null;
+      circle: GeofenceCircle | null;
       is_active: boolean;
       minutes_per_point: number;
       points_per_interval: number;
@@ -273,12 +392,9 @@ export class StudyService {
     if (!existing) {
       throw new NotFoundException('Geofence not found');
     }
-    if (data.coordinates !== undefined && data.coordinates.length < 3) {
-      throw new BadRequestException(
-        'Coordinates must form a polygon with at least 3 points',
-      );
-    }
-    return this.geofenceRepo.update(id, chapterId, data);
+    const { coordinates, circle, ...rest } = data;
+    const shape = this.zoneShape({ coordinates, circle });
+    return this.geofenceRepo.update(id, chapterId, { ...rest, ...shape });
   }
 
   async deleteGeofence(id: string, chapterId: string): Promise<void> {
@@ -296,64 +412,112 @@ export class StudyService {
     lat: number,
     lng: number,
   ): Promise<StudySession> {
-    await this.assertNotAlumni(chapterId, userId);
+    return this.retryOnStale(async () => {
+      await this.assertNotAlumni(chapterId, userId);
 
-    const geofence = await this.geofenceRepo.findById(geofenceId, chapterId);
-    if (!geofence) {
-      throw new NotFoundException('Geofence not found');
-    }
-    if (!geofence.is_active) {
-      throw new BadRequestException('Geofence is not active');
-    }
+      const geofence = await this.geofenceRepo.findById(geofenceId, chapterId);
+      if (!geofence) {
+        throw new NotFoundException('Geofence not found');
+      }
+      if (!geofence.is_active) {
+        throw new BadRequestException({
+          code: 'study.zone_inactive',
+          message: 'Geofence is not active',
+        });
+      }
 
-    const inside = pointInPolygon(lat, lng, geofence.coordinates);
-    if (!inside) {
-      throw new BadRequestException('Location is outside the geofence');
-    }
+      const inside = pointInPolygon(lat, lng, geofence.coordinates);
+      if (!inside) {
+        // A member pressing Start away from the zone: normal use, not a bug.
+        // The code lets the clients leave it out of Sentry; the message is
+        // what their error map words ("You're outside the zone…").
+        throw new BadRequestException({
+          code: 'study.outside_zone',
+          message: 'Location is outside the geofence',
+        });
+      }
 
-    const activeSession = await this.sessionRepo.findActiveByUserAndChapter(
+      const activeSession = await this.sessionRepo.findActiveByUserAndChapter(
+        userId,
+        chapterId,
+      );
+      if (activeSession) {
+        // A session paused past its grace window is finished in every sense
+        // except the row's status — expiry is lazy, so nothing has settled it
+        // yet. Resolving it here frees the slot instead of 409-ing the member
+        // out of ever starting another session.
+        const priorGeofence = await this.geofenceRepo.findById(
+          activeSession.geofence_id,
+          chapterId,
+        );
+        const expired = priorGeofence
+          ? await this.expireIfGraceElapsed(
+              activeSession,
+              priorGeofence,
+              new Date(),
+              false,
+              chapterId,
+            )
+          : null;
+
+        if (!expired) {
+          throw new ConflictException(ACTIVE_SESSION_CONFLICT);
+        }
+      }
+
+      const now = new Date().toISOString();
+      // `idx_study_sessions_one_active` allows one ACTIVE row per member per
+      // chapter, so a double-tapped Start that passed the check above twice
+      // fails here instead of leaving two ACTIVE rows, which every later
+      // lookup (`findActiveByUserAndChapter`) would refuse to read.
+      return this.sessionRepo
+        .create({
+          chapter_id: chapterId,
+          user_id: userId,
+          geofence_id: geofenceId,
+          status: 'ACTIVE',
+          start_time: now,
+          end_time: null,
+          last_heartbeat_at: now,
+          paused_at: null,
+          total_foreground_minutes: 0,
+          points_awarded: false,
+        })
+        .catch((err: unknown) => {
+          if (isUniqueViolation(err)) {
+            throw new ConflictException(ACTIVE_SESSION_CONFLICT);
+          }
+          throw err;
+        });
+    });
+  }
+
+  /**
+   * The member's active session in the chapter and the geofence it runs in,
+   * read fresh for heartbeat, pause, resume and stop (each inside its
+   * `retryOnStale`, after its own alumni check): a 404 when there is no active
+   * session, or when its geofence is gone.
+   */
+  private async loadActiveSession(
+    userId: string,
+    chapterId: string,
+  ): Promise<{ session: StudySession; geofence: StudyGeofence }> {
+    const session = await this.sessionRepo.findActiveByUserAndChapter(
       userId,
       chapterId,
     );
-    if (activeSession) {
-      // A session paused past its grace window is finished in every sense
-      // except the row's status — expiry is lazy, so nothing has settled it
-      // yet. Resolving it here frees the slot instead of 409-ing the member
-      // out of ever starting another session.
-      const priorGeofence = await this.geofenceRepo.findById(
-        activeSession.geofence_id,
-        chapterId,
-      );
-      const expired = priorGeofence
-        ? await this.expireIfGraceElapsed(
-            activeSession,
-            priorGeofence,
-            new Date(),
-            false,
-            chapterId,
-          )
-        : null;
-
-      if (!expired) {
-        throw new ConflictException(
-          'You already have an active study session. Stop it before starting a new one.',
-        );
-      }
+    if (!session) {
+      throw new NotFoundException('No active study session found');
     }
 
-    const now = new Date().toISOString();
-    return this.sessionRepo.create({
-      chapter_id: chapterId,
-      user_id: userId,
-      geofence_id: geofenceId,
-      status: 'ACTIVE',
-      start_time: now,
-      end_time: null,
-      last_heartbeat_at: now,
-      paused_at: null,
-      total_foreground_minutes: 0,
-      points_awarded: false,
-    });
+    const geofence = await this.geofenceRepo.findById(
+      session.geofence_id,
+      chapterId,
+    );
+    if (!geofence) {
+      throw new NotFoundException('Geofence not found');
+    }
+    return { session, geofence };
   }
 
   async heartbeat(
@@ -363,107 +527,98 @@ export class StudyService {
     lng: number,
     accuracyMeters?: number,
   ): Promise<StudySession> {
-    await this.assertNotAlumni(chapterId, userId);
+    return this.retryOnStale(async () => {
+      await this.assertNotAlumni(chapterId, userId);
 
-    const session = await this.sessionRepo.findActiveByUserAndChapter(
-      userId,
-      chapterId,
-    );
-    if (!session) {
-      throw new NotFoundException('No active study session found');
-    }
+      const { session, geofence } = await this.loadActiveSession(
+        userId,
+        chapterId,
+      );
 
-    const geofence = await this.geofenceRepo.findById(
-      session.geofence_id,
-      chapterId,
-    );
-    if (!geofence) {
-      throw new NotFoundException('Geofence not found');
-    }
+      const now = new Date();
 
-    const now = new Date();
+      // A heartbeat only fires in the foreground, so one arriving on a paused
+      // session means the member is back — treat it as an implicit resume rather
+      // than requiring the client to have called /resume. Grace is checked
+      // first, so a late return still expires.
+      const expired = await this.expireIfGraceElapsed(
+        session,
+        geofence,
+        now,
+        false,
+        chapterId,
+      );
+      if (expired) return expired;
 
-    // A heartbeat only fires in the foreground, so one arriving on a paused
-    // session means the member is back — treat it as an implicit resume rather
-    // than requiring the client to have called /resume. Grace is checked
-    // first, so a late return still expires.
-    const expired = await this.expireIfGraceElapsed(
-      session,
-      geofence,
-      now,
-      false,
-      chapterId,
-    );
-    if (expired) return expired;
-
-    // Staleness reflects the *gap* since the last heartbeat and is checked
-    // before accuracy: a session that already went 10+ minutes silent should
-    // expire for that reason regardless of how good or bad this heartbeat's
-    // fix is. Only non-paused sessions can be stale this way — a paused
-    // session's clock is `paused_at`/the grace window, already resolved above.
-    if (!session.paused_at && this.isStale(session, now)) {
-      return this.sessionRepo.update(session.id, chapterId, {
-        status: 'EXPIRED',
-        end_time: now.toISOString(),
-      });
-    }
-
-    // A poor-accuracy fix cannot be trusted for the polygon check below, so it
-    // is rejected before that check runs rather than treated as "outside the
-    // zone". Two *consecutive* rejections are required before the session
-    // expires — one bad fix among otherwise-good ones is normal GPS jitter,
-    // not spoofing — and LOCATION_INVALID is reserved for exactly this path;
-    // an out-of-polygon miss below expires immediately as EXPIRED instead.
-    if (
-      typeof accuracyMeters === 'number' &&
-      accuracyMeters > GPS_ACCURACY_REJECT_METERS
-    ) {
-      // `?? 0` guards a row read before the migration's schema-cache reload
-      // finishes propagating, the same deploy-ordering risk
-      // `DEFAULT_PAUSE_GRACE_MINUTES` exists for on `pause_grace_minutes`.
-      const streak = (session.location_reject_streak ?? 0) + 1;
-      if (streak >= LOCATION_REJECT_STREAK_LIMIT) {
-        return this.sessionRepo.update(session.id, chapterId, {
-          status: 'LOCATION_INVALID',
+      // Staleness reflects the *gap* since the last heartbeat and is checked
+      // before accuracy: a session that already went 10+ minutes silent should
+      // expire for that reason regardless of how good or bad this heartbeat's
+      // fix is. Only non-paused sessions can be stale this way — a paused
+      // session's clock is `paused_at`/the grace window, already resolved above.
+      if (!session.paused_at && this.isStale(session, now)) {
+        return this.write(session, chapterId, {
+          status: 'EXPIRED',
           end_time: now.toISOString(),
+        });
+      }
+
+      // A poor-accuracy fix cannot be trusted for the polygon check below, so it
+      // is rejected before that check runs rather than treated as "outside the
+      // zone". Two *consecutive* rejections are required before the session
+      // expires — one bad fix among otherwise-good ones is normal GPS jitter,
+      // not spoofing — and LOCATION_INVALID is reserved for exactly this path;
+      // an out-of-polygon miss below expires immediately as EXPIRED instead.
+      if (
+        typeof accuracyMeters === 'number' &&
+        accuracyMeters > GPS_ACCURACY_REJECT_METERS
+      ) {
+        // `?? 0` guards a row read before the migration's schema-cache reload
+        // finishes propagating, the same deploy-ordering risk
+        // `DEFAULT_PAUSE_GRACE_MINUTES` exists for on `pause_grace_minutes`.
+        const streak = (session.location_reject_streak ?? 0) + 1;
+        if (streak >= LOCATION_REJECT_STREAK_LIMIT) {
+          return this.write(session, chapterId, {
+            status: 'LOCATION_INVALID',
+            end_time: now.toISOString(),
+            location_reject_streak: streak,
+          });
+        }
+        return this.write(session, chapterId, {
           location_reject_streak: streak,
         });
       }
-      return this.sessionRepo.update(session.id, chapterId, {
-        location_reject_streak: streak,
-      });
-    }
 
-    // Location is checked before the implicit resume below, not after: the
-    // member may have left the zone while backgrounded, and this heartbeat is
-    // the only evidence available until the next one five minutes out.
-    const inside = pointInPolygon(lat, lng, geofence.coordinates);
+      // Location is checked before the implicit resume below, not after: the
+      // member may have left the zone while backgrounded, and this heartbeat is
+      // the only evidence available until the next one five minutes out.
+      const inside = pointInPolygon(lat, lng, geofence.coordinates);
 
-    if (session.paused_at) {
+      if (session.paused_at) {
+        if (!inside) {
+          return this.expireOutOfZone(session, chapterId, now);
+        }
+        // Inside grace and back in the zone. Paused time does not accrue, so
+        // restart the watermark — carrying the pre-pause remainder with it.
+        return this.write(session, chapterId, {
+          paused_at: null,
+          last_heartbeat_at: this.resumeWatermark(session, now),
+          location_reject_streak: 0,
+        });
+      }
+
+      // Staleness for a non-paused session was already checked above, before
+      // the accuracy gate — reaching here means this heartbeat is timely.
       if (!inside) {
         return this.expireOutOfZone(session, chapterId, now);
       }
-      // Inside grace and back in the zone. Paused time does not accrue, so
-      // restart the watermark — carrying the pre-pause remainder with it.
-      return this.sessionRepo.update(session.id, chapterId, {
-        paused_at: null,
-        last_heartbeat_at: this.resumeWatermark(session, now),
+
+      const { totalMinutes, watermark } = this.accrue(session, now);
+
+      return this.write(session, chapterId, {
+        last_heartbeat_at: watermark,
+        total_foreground_minutes: totalMinutes,
         location_reject_streak: 0,
       });
-    }
-
-    // Staleness for a non-paused session was already checked above, before
-    // the accuracy gate — reaching here means this heartbeat is timely.
-    if (!inside) {
-      return this.expireOutOfZone(session, chapterId, now);
-    }
-
-    const { totalMinutes, watermark } = this.accrue(session, now);
-
-    return this.sessionRepo.update(session.id, chapterId, {
-      last_heartbeat_at: watermark,
-      total_foreground_minutes: totalMinutes,
-      location_reject_streak: 0,
     });
   }
 
@@ -473,62 +628,53 @@ export class StudyService {
    *
    * Not gated by `assertNotAlumni`, for the same reason `stopSession` isn't:
    * refusing the pause would leave the session running and accruing for someone
-   * granted the Alumni role mid-session. The award gate in `awardPoints` is what
+   * granted the Alumni role mid-session. The award gate in `pointsFor` is what
    * withholds their points.
    */
   async pauseSession(userId: string, chapterId: string): Promise<StudySession> {
-    const isAlumni = await this.rbac.isAlumni(chapterId, userId);
+    return this.retryOnStale(async () => {
+      const isAlumni = await this.rbac.isAlumni(chapterId, userId);
 
-    const session = await this.sessionRepo.findActiveByUserAndChapter(
-      userId,
-      chapterId,
-    );
-    if (!session) {
-      throw new NotFoundException('No active study session found');
-    }
+      const { session, geofence } = await this.loadActiveSession(
+        userId,
+        chapterId,
+      );
 
-    const geofence = await this.geofenceRepo.findById(
-      session.geofence_id,
-      chapterId,
-    );
-    if (!geofence) {
-      throw new NotFoundException('Geofence not found');
-    }
+      const now = new Date();
 
-    const now = new Date();
+      const expired = await this.expireIfGraceElapsed(
+        session,
+        geofence,
+        now,
+        isAlumni,
+        chapterId,
+      );
+      if (expired) return expired;
 
-    const expired = await this.expireIfGraceElapsed(
-      session,
-      geofence,
-      now,
-      isAlumni,
-      chapterId,
-    );
-    if (expired) return expired;
+      // Already paused and still inside grace — a duplicate pause (two tab-hide
+      // events, a retry) must not restart the grace clock.
+      if (session.paused_at) return session;
 
-    // Already paused and still inside grace — a duplicate pause (two tab-hide
-    // events, a retry) must not restart the grace clock.
-    if (session.paused_at) return session;
+      // A pause arriving long after the last heartbeat proves nothing about the
+      // gap before it: the member may have been away the whole time, and every
+      // other write path bounds crediting by the stale window. Without this,
+      // POSTing /pause after an hour of silence would bank the hour as
+      // foreground time and `stopSession` would skip its own stale check
+      // (paused_at governs there), so nothing downstream would catch it.
+      if (this.isStale(session, now)) {
+        return this.write(session, chapterId, {
+          status: 'EXPIRED',
+          end_time: now.toISOString(),
+        });
+      }
 
-    // A pause arriving long after the last heartbeat proves nothing about the
-    // gap before it: the member may have been away the whole time, and every
-    // other write path bounds crediting by the stale window. Without this,
-    // POSTing /pause after an hour of silence would bank the hour as
-    // foreground time and `stopSession` would skip its own stale check
-    // (paused_at governs there), so nothing downstream would catch it.
-    if (this.isStale(session, now)) {
-      return this.sessionRepo.update(session.id, chapterId, {
-        status: 'EXPIRED',
-        end_time: now.toISOString(),
+      const { totalMinutes, watermark } = this.accrue(session, now);
+
+      return this.write(session, chapterId, {
+        paused_at: now.toISOString(),
+        last_heartbeat_at: watermark,
+        total_foreground_minutes: totalMinutes,
       });
-    }
-
-    const { totalMinutes, watermark } = this.accrue(session, now);
-
-    return this.sessionRepo.update(session.id, chapterId, {
-      paused_at: now.toISOString(),
-      last_heartbeat_at: watermark,
-      total_foreground_minutes: totalMinutes,
     });
   }
 
@@ -546,118 +692,91 @@ export class StudyService {
     lat: number,
     lng: number,
   ): Promise<StudySession> {
-    const isAlumni = await this.rbac.isAlumni(chapterId, userId);
+    return this.retryOnStale(async () => {
+      const isAlumni = await this.rbac.isAlumni(chapterId, userId);
 
-    const session = await this.sessionRepo.findActiveByUserAndChapter(
-      userId,
-      chapterId,
-    );
-    if (!session) {
-      throw new NotFoundException('No active study session found');
-    }
+      const { session, geofence } = await this.loadActiveSession(
+        userId,
+        chapterId,
+      );
 
-    const geofence = await this.geofenceRepo.findById(
-      session.geofence_id,
-      chapterId,
-    );
-    if (!geofence) {
-      throw new NotFoundException('Geofence not found');
-    }
+      const now = new Date();
 
-    const now = new Date();
+      const expired = await this.expireIfGraceElapsed(
+        session,
+        geofence,
+        now,
+        isAlumni,
+        chapterId,
+      );
+      if (expired) return expired;
 
-    const expired = await this.expireIfGraceElapsed(
-      session,
-      geofence,
-      now,
-      isAlumni,
-      chapterId,
-    );
-    if (expired) return expired;
+      if (!session.paused_at) return session;
 
-    if (!session.paused_at) return session;
+      // Same rule as the implicit resume in `heartbeat()`: an out-of-polygon
+      // fix expires the session immediately as EXPIRED, not LOCATION_INVALID —
+      // that status is reserved for the consecutive-poor-accuracy path, and a
+      // client that never calls `/resume` reaches this exact scenario through
+      // its next heartbeat, so the two paths must agree.
+      if (!pointInPolygon(lat, lng, geofence.coordinates)) {
+        return this.expireOutOfZone(session, chapterId, now);
+      }
 
-    // Same rule as the implicit resume in `heartbeat()`: an out-of-polygon
-    // fix expires the session immediately as EXPIRED, not LOCATION_INVALID —
-    // that status is reserved for the consecutive-poor-accuracy path, and a
-    // client that never calls `/resume` reaches this exact scenario through
-    // its next heartbeat, so the two paths must agree.
-    if (!pointInPolygon(lat, lng, geofence.coordinates)) {
-      return this.expireOutOfZone(session, chapterId, now);
-    }
-
-    return this.sessionRepo.update(session.id, chapterId, {
-      paused_at: null,
-      last_heartbeat_at: this.resumeWatermark(session, now),
-      location_reject_streak: 0,
+      return this.write(session, chapterId, {
+        paused_at: null,
+        last_heartbeat_at: this.resumeWatermark(session, now),
+        location_reject_streak: 0,
+      });
     });
   }
 
   async stopSession(userId: string, chapterId: string): Promise<StudySession> {
-    // Deliberately NOT gated by assertNotAlumni. Nothing else transitions a
-    // session out of ACTIVE — expiry is computed lazily inside heartbeat/stop,
-    // there is no sweeper — so 403-ing the stop would strand a session forever
-    // for anyone granted the Alumni role mid-session (graduation, semester
-    // rollover), and leave them unable to ever start another one. Alumni can
-    // always close a session; the award below is what's withheld.
-    const isAlumni = await this.rbac.isAlumni(chapterId, userId);
+    return this.retryOnStale(async () => {
+      // Deliberately NOT gated by assertNotAlumni. Nothing else transitions a
+      // session out of ACTIVE — expiry is computed lazily inside heartbeat/stop,
+      // there is no sweeper — so 403-ing the stop would strand a session forever
+      // for anyone granted the Alumni role mid-session (graduation, semester
+      // rollover), and leave them unable to ever start another one. Alumni can
+      // always close a session; the award below is what's withheld.
+      const isAlumni = await this.rbac.isAlumni(chapterId, userId);
 
-    const session = await this.sessionRepo.findActiveByUserAndChapter(
-      userId,
-      chapterId,
-    );
-    if (!session) {
-      throw new NotFoundException('No active study session found');
-    }
+      const { session, geofence } = await this.loadActiveSession(
+        userId,
+        chapterId,
+      );
 
-    const geofence = await this.geofenceRepo.findById(
-      session.geofence_id,
-      chapterId,
-    );
-    if (!geofence) {
-      throw new NotFoundException('Geofence not found');
-    }
+      const now = new Date();
 
-    const now = new Date();
+      const expired = await this.expireIfGraceElapsed(
+        session,
+        geofence,
+        now,
+        isAlumni,
+        chapterId,
+      );
+      if (expired) return expired;
 
-    const expired = await this.expireIfGraceElapsed(
-      session,
-      geofence,
-      now,
-      isAlumni,
-      chapterId,
-    );
-    if (expired) return expired;
+      // Stopping while paused but inside grace: credit up to the pause instant,
+      // never to now. The stale-heartbeat rule is deliberately skipped on a
+      // paused session — `paused_at` governs there, otherwise a chapter that
+      // configures grace above the 10-minute stale window would have the stale
+      // rule silently win and report the wrong status.
+      const creditUpTo = session.paused_at ? new Date(session.paused_at) : now;
 
-    // Stopping while paused but inside grace: credit up to the pause instant,
-    // never to now. The stale-heartbeat rule is deliberately skipped on a
-    // paused session — `paused_at` governs there, otherwise a chapter that
-    // configures grace above the 10-minute stale window would have the stale
-    // rule silently win and report the wrong status.
-    const creditUpTo = session.paused_at ? new Date(session.paused_at) : now;
+      if (!session.paused_at && this.isStale(session, now)) {
+        return this.write(session, chapterId, {
+          status: 'EXPIRED',
+          end_time: now.toISOString(),
+        });
+      }
 
-    if (!session.paused_at && this.isStale(session, now)) {
-      return this.sessionRepo.update(session.id, chapterId, {
-        status: 'EXPIRED',
-        end_time: now.toISOString(),
+      const { totalMinutes, watermark } = this.accrue(session, creditUpTo);
+      return this.finish(session, geofence, chapterId, isAlumni, {
+        status: 'COMPLETED',
+        endTime: now,
+        lastHeartbeatAt: watermark,
+        totalMinutes,
       });
-    }
-
-    const { totalMinutes, watermark } = this.accrue(session, creditUpTo);
-    const points = await this.awardPoints(
-      session,
-      geofence,
-      totalMinutes,
-      isAlumni,
-    );
-
-    return this.sessionRepo.update(session.id, chapterId, {
-      status: 'COMPLETED',
-      end_time: now.toISOString(),
-      last_heartbeat_at: watermark,
-      paused_at: null,
-      total_foreground_minutes: totalMinutes,
-      points_awarded: points > 0 || session.points_awarded,
     });
   }
 
@@ -665,30 +784,48 @@ export class StudyService {
     userId: string,
     chapterId: string,
   ): Promise<StudySession[]> {
-    // Settle a grace-expired session before reading history, so the list never
-    // shows a session as ACTIVE when its window has already lapsed. Expiry is
-    // lazy and there is no sweeper, so this read is one of the few places a
-    // stale row surfaces to a member.
-    const active = await this.sessionRepo.findActiveByUserAndChapter(
-      userId,
-      chapterId,
-    );
-    if (active?.paused_at) {
-      const geofence = await this.geofenceRepo.findById(
-        active.geofence_id,
+    return this.retryOnStale(async () => {
+      // Settle a grace-expired session before reading history, so the list never
+      // shows a session as ACTIVE when its window has already lapsed. Expiry is
+      // lazy and there is no sweeper, so this read is one of the few places a
+      // stale row surfaces to a member.
+      const active = await this.sessionRepo.findActiveByUserAndChapter(
+        userId,
         chapterId,
       );
-      if (geofence) {
-        await this.expireIfGraceElapsed(
-          active,
-          geofence,
-          new Date(),
-          await this.rbac.isAlumni(chapterId, userId),
+      if (active?.paused_at) {
+        const geofence = await this.geofenceRepo.findById(
+          active.geofence_id,
           chapterId,
         );
+        if (geofence) {
+          await this.expireIfGraceElapsed(
+            active,
+            geofence,
+            new Date(),
+            await this.rbac.isAlumni(chapterId, userId),
+            chapterId,
+          );
+        }
       }
-    }
 
-    return this.sessionRepo.findByUserAndChapter(userId, chapterId);
+      return this.sessionRepo.findByUserAndChapter(userId, chapterId);
+    });
+  }
+
+  /**
+   * The member's sessions started at or after `since`, read as they stand.
+   * Unlike {@link listSessions} it settles nothing, so a read that runs on
+   * every Activity load never writes (a grace-expired pause is settled, and
+   * its minutes counted, once the member opens Study or starts again).
+   */
+  async listSessionsStartedSince(
+    userId: string,
+    chapterId: string,
+    since: Date,
+  ): Promise<StudySession[]> {
+    return this.sessionRepo.findByUserAndChapter(userId, chapterId, {
+      startedSince: since,
+    });
   }
 }

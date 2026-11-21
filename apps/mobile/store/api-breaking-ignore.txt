@@ -6,8 +6,8 @@
 # comment line above the entry. Format, and when an entry may go:
 # apps/mobile/store/README.md, section "Shipped builds and the API contract".
 
-# #3485 limits role `color` to the palette. Only the web Roles page writes roles: at both shipped
-# SHAs (android 0.9.0+2 at ea9bc12c; ios 0.9.1+8 and android 0.9.1+3 at cca52dec),
+# #3485 limits role `color` to the palette. The builds shipped before it never wrote roles: at both
+# shipped SHAs (android 0.9.0+2 at ea9bc12c; ios 0.9.1+8 and android 0.9.1+3 at cca52dec),
 # `git grep 'useCreateRole\|useUpdateRole' <sha> -- apps/mobile` finds no caller,
 # so the binaries never send POST /v1/roles or PATCH /v1/roles/{id} (the hooks they bundle from
 # packages/hooks define them, unused).
@@ -30,3 +30,73 @@ GET /v1/events/{id}/ics api path removed without deprecation
 POST /v1/custom-roles api removed without deprecation
 DELETE /v1/custom-roles/{id} api path removed without deprecation
 PATCH /v1/custom-roles/{id} api path removed without deprecation
+
+# #4635 moves task photos into task_photos rows and replaces #4565's single-photo fields and photo
+# route. Only the web dashboard used them: #4565's phone half never shipped. At the shipped SHA
+# c85e2c3a (ios 0.12.0+22, android 0.12.0+14), `git grep 'photo-url\|photo_required\|reference_photo_path\|proof_photo_path\|useTaskPhotoUrl' c85e2c3a -- apps/mobile`
+# finds no caller (one hit is a comment about the chat-background photo route). The bundled
+# packages/hooks reads the three fields through `nonEmptyString` / `=== true`, so their absence reads
+# as no photo, and its `useTaskPhotoUrl` has no mobile caller. Earlier shipped SHAs predate #4565.
+POST /v1/tasks removed the required property 'photo_required' from the response with the '201' status
+POST /v1/tasks removed the required property 'proof_photo_path' from the response with the '201' status
+POST /v1/tasks removed the required property 'reference_photo_path' from the response with the '201' status
+GET /v1/tasks/{id}/photo-url api path removed without deprecation
+
+# The backwork confirm now takes file_hash only as a SHA-256 in lowercase hex, which is what the web
+# app's sha256Hex has always sent. Only the web upload sheet and bulk upload confirm a backwork
+# file (useConfirmBackworkUpload); the phone has no Backwork (#2258). Checked 2026-11-17 at every
+# SHA in shipped-builds.json (ea9bc12c, cca52dec, 5e43a27b, 55922eab, 108b7ac7, 728fb69e, b61c20c3,
+# c91ec8d8, 547c1364, 68a47019, e83a0109, dcdfde42, 218b178c, 5615e8b2, c85e2c3a, 5f0bd6c9,
+# 6928a014): `git grep '"/v1/backwork"' <sha> -- apps/mobile packages` finds only
+# packages/api-sdk/src/types.ts, packages/hooks/src/use-backwork.spec.tsx, and in
+# packages/hooks/src/use-backwork.ts the list GET and useConfirmBackworkUpload's POST; and
+# `git grep 'useConfirmBackworkUpload\|backwork/upload-url\|/v1/backwork' <sha> -- apps/mobile`
+# finds nothing. So no binary sends this POST (the hook it bundles defines it, unused).
+POST /v1/backwork added the pattern '^[0-9a-f]{64}$' to the request property 'file_hash'
+
+# #5784 lets a role or group color be any readable hue, so the request `color` drops its enum of the
+# ten palette values. oasdiff reads a dropped enum value as a narrowing, but this is a widening: every
+# value the enum listed is still accepted and stored as before (`isPaintableRoleColor` passes the whole
+# palette; `apps/api/src/interface/dtos/rbac.dto.spec.ts` pins every palette value on all four
+# writes), so no request a shipped binary can
+# send is refused that wasn't refused before.
+POST /v1/roles removed the enum value '#3DD6C4' of the request property 'color'
+POST /v1/roles removed the enum value '#5CC8F0' of the request property 'color'
+POST /v1/roles removed the enum value '#6FD08C' of the request property 'color'
+POST /v1/roles removed the enum value '#8FA8FF' of the request property 'color'
+POST /v1/roles removed the enum value '#A9B4C2' of the request property 'color'
+POST /v1/roles removed the enum value '#B392F0' of the request property 'color'
+POST /v1/roles removed the enum value '#C5E06A' of the request property 'color'
+POST /v1/roles removed the enum value '#D9B99B' of the request property 'color'
+POST /v1/roles removed the enum value '#F2994A' of the request property 'color'
+POST /v1/roles removed the enum value '#F47FA4' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#3DD6C4' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#5CC8F0' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#6FD08C' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#8FA8FF' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#A9B4C2' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#B392F0' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#C5E06A' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#D9B99B' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#F2994A' of the request property 'color'
+PATCH /v1/roles/{id} removed the enum value '#F47FA4' of the request property 'color'
+POST /v1/groups removed the enum value '#3DD6C4' of the request property 'color'
+POST /v1/groups removed the enum value '#5CC8F0' of the request property 'color'
+POST /v1/groups removed the enum value '#6FD08C' of the request property 'color'
+POST /v1/groups removed the enum value '#8FA8FF' of the request property 'color'
+POST /v1/groups removed the enum value '#A9B4C2' of the request property 'color'
+POST /v1/groups removed the enum value '#B392F0' of the request property 'color'
+POST /v1/groups removed the enum value '#C5E06A' of the request property 'color'
+POST /v1/groups removed the enum value '#D9B99B' of the request property 'color'
+POST /v1/groups removed the enum value '#F2994A' of the request property 'color'
+POST /v1/groups removed the enum value '#F47FA4' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#3DD6C4' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#5CC8F0' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#6FD08C' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#8FA8FF' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#A9B4C2' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#B392F0' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#C5E06A' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#D9B99B' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#F2994A' of the request property 'color'
+PATCH /v1/groups/{id} removed the enum value '#F47FA4' of the request property 'color'

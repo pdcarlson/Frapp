@@ -252,7 +252,10 @@ describe('BillingService', () => {
     mockChapterRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
+      findStartedAtByUserSince: jest.fn().mockResolvedValue([]),
       isAnalyticsOptedOut: jest.fn(),
+      findWithBirthdayChannel: jest.fn(),
+      findForRecapPush: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
@@ -288,6 +291,7 @@ describe('BillingService', () => {
     };
 
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUser: jest.fn(),
       findByUserAndChapter: jest.fn(),
@@ -298,6 +302,9 @@ describe('BillingService', () => {
       transferPresidencyAtomic: jest.fn(),
       findChapterMemberIdentities: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
+      setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
+      countByChapter: jest.fn(),
     };
 
     mockRoleRepo = {
@@ -3385,7 +3392,8 @@ describe('BillingService', () => {
       ): WebhookEvent => ({
         id,
         type: 'payment_intent.payment_failed',
-        created: Date.now(),
+        // Stripe's `created` is in seconds: 2026-11-15T17:00:00Z.
+        created: 1_794_762_000,
         data: { object },
       });
 
@@ -3403,6 +3411,8 @@ describe('BillingService', () => {
         ).toHaveBeenCalledWith({
           invoiceId: INVOICE_ID,
           chapterId: CHAPTER_ID,
+          paymentIntentId: 'pi_1',
+          failedAt: '2026-11-15T17:00:00.000Z',
           declineReason: 'Your card was declined.',
         });
         expect(
@@ -3424,6 +3434,8 @@ describe('BillingService', () => {
         ).toHaveBeenCalledWith({
           invoiceId: INVOICE_ID,
           chapterId: CHAPTER_ID,
+          paymentIntentId: 'pi_1',
+          failedAt: '2026-11-15T17:00:00.000Z',
           declineReason: null,
         });
       });

@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MembersDirectory } from "@/components/members/members-directory";
 import { AlumniDirectory } from "@/components/alumni/alumni-directory";
 import { DirectoryBodySkeleton } from "@/components/members/directory-skeleton";
+import { ListLayoutToggle } from "@/components/shared/list-layout-toggle";
 
 /**
  * Actives and alumni, one surface, two tabs.
@@ -64,10 +65,19 @@ function DirectoryPageContent() {
 
   return (
     <Tabs value={activeTab} onValueChange={selectTab}>
-      <TabsList>
-        <TabsTrigger value="members">Actives</TabsTrigger>
-        <TabsTrigger value="alumni">Alumni</TabsTrigger>
-      </TabsList>
+      {/*
+        List or Grid (#4175) at the tab row's trailing edge: one pick for the
+        whole screen, so it sits above both tabs rather than in either list's
+        toolbar. The row carries the hairline the tab list draws on its own
+        elsewhere, so the active tab's underline still lands on it.
+      */}
+      <div className="flex items-end justify-between gap-3 border-b border-border">
+        <TabsList className="w-auto border-b-0">
+          <TabsTrigger value="members">Actives</TabsTrigger>
+          <TabsTrigger value="alumni">Alumni</TabsTrigger>
+        </TabsList>
+        <ListLayoutToggle screen="directory" className="mb-1" />
+      </div>
       {/*
         `mt-3` rather than the primitive's `mt-4`: the board's page body stacks
         at 12px (`1f`'s `<main ... gap:12px>`), and the tab row is page chrome

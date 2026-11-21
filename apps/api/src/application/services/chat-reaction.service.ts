@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
 import {
   CARD_VOTE_ACTION_TYPE,
   cardPollChoiceMode,
@@ -9,9 +14,18 @@ import {
   type CardPollPayload,
 } from '#domain/utils/poll-vote-rules';
 import {
+  isHeadcountCard,
+  SIGNUP_ACTION_TYPE,
+  signupClaimNote,
+  signupClaimSlotIds,
+} from '#domain/utils/signup-card-rules';
+import { isCardClosed } from '#domain/utils/card-closing';
+import { isReactionActionType } from '#domain/utils/message-action-types';
+import {
   CHAT_MESSAGE_ACTION_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
   ChatMessageActionDuplicateError,
+  SignupClaimRefusedError,
   type IChatMessageActionRepository,
   type IMessageReactionRepository,
 } from '#domain/repositories/chat.repository.interface';
@@ -62,6 +76,25 @@ function assertCardPollVoteAllowed(
         'Single-choice poll requires exactly one option',
       );
   }
+}
+
+/** The refusal of a claim on a closed sign-up card (#3926 step 2). */
+const SIGNUPS_CLOSED = 'Sign-ups are closed';
+
+/**
+ * The channel operation a card action is checked as (#4695). A poll vote and
+ * a sign-up claim are `'answer'`, as a form's answers are: refused in an
+ * archived channel and in the audit log, where the card can't be closed
+ * either, but open to every reader, as the cards on web and the phone offer
+ * them. A vote is not `'vote'`, which would also apply who can post and so
+ * refuse a member a poll in `#announcements` that the card lets them tap.
+ * An emoji reaction stays a `'read'`.
+ */
+function cardActionOperation(actionType: string): 'answer' | 'read' {
+  return actionType === CARD_VOTE_ACTION_TYPE ||
+    actionType === SIGNUP_ACTION_TYPE
+    ? 'answer'
+    : 'read';
 }
 
 /**
@@ -142,6 +175,12 @@ export class ChatReactionService {
    *   23505 path UPSERTS instead — same row id, replaced `payload`,
    *   bumped `created_at` — so subscribed clients see a Realtime UPDATE
    *   rather than a second row.
+   * - Sign-up claims (#3926): `action_type === "signup"` is reserved. It
+   *   takes `payload.slot_ids` and goes through `claimSignupSlots` instead
+   *   of the insert below: 400 on a message that isn't a sign-up card, a
+   *   malformed list or an unknown slot, 409 on a full slot. A headcount
+   *   (step 2) takes at most one slot and an optional `payload.note`, and a
+   *   closed card refuses every claim with a 400.
    */
   async recordMessageAction(
     messageId: string,
@@ -158,10 +197,30 @@ export class ChatReactionService {
       messageId,
       chapterId,
       userId,
+      cardActionOperation(input.action_type),
     );
 
-    const payload = input.payload ?? {};
+    // A deleted message takes no reaction, vote or card response, as it takes
+    // no edit or flag. A delete clears a card's `payload` (#1575), so a vote on
+    // a deleted poll would otherwise skip every rule below: with no options to
+    // check against, `assertCardPollVoteAllowed` has nothing to refuse.
+    if (message.is_deleted) {
+      throw new BadRequestException('Cannot act on a deleted message');
+    }
+
+    // A reaction is its emoji and nothing else: no client sends it a payload,
+    // and every reader loads the row, so whatever one carries is not stored.
+    const payload = isReactionActionType(input.action_type)
+      ? {}
+      : (input.payload ?? {});
     const isVote = input.action_type === CARD_VOTE_ACTION_TYPE;
+
+    // A claim on a sign-up card (#3926) has its own write: the slot limits are
+    // checked against everyone else's claims under a lock on the card, which
+    // the insert-then-upsert below can't do.
+    if (input.action_type === SIGNUP_ACTION_TYPE) {
+      return this.claimSignupSlots(message, userId, payload);
+    }
 
     // #871: this path used to check channel access and then insert whatever it
     // was handed, so a member could vote on a closed poll, pick an option that
@@ -209,6 +268,66 @@ export class ChatReactionService {
       );
       if (!existing) throw error;
       return { action: existing, deduplicated: true };
+    }
+  }
+
+  /**
+   * Set the member's slots on a sign-up card. `payload.slot_ids` is every
+   * slot they want to hold, so a tap that adds one sends the old list plus
+   * it, and an empty list drops out of all of them; the row stays, as an
+   * emptied multi-choice vote does. Taking a full slot is a 409 naming it;
+   * a slot the member already holds is never full to them.
+   */
+  private async claimSignupSlots(
+    message: { id: string; kind?: string | null; payload?: unknown },
+    userId: string,
+    payload: Record<string, unknown>,
+  ): Promise<{
+    action: ChatMessageAction;
+    deduplicated: boolean;
+    updated?: boolean;
+  }> {
+    if (message.kind !== 'signup') {
+      throw new BadRequestException('Message is not a sign-up card');
+    }
+    const slotIds = signupClaimSlotIds(payload);
+    if (slotIds === null) {
+      throw new BadRequestException('slot_ids must be a list of slot ids');
+    }
+    const headcount = isHeadcountCard(message.payload);
+    if (headcount && slotIds.length > 1) {
+      throw new BadRequestException('A headcount takes one answer');
+    }
+    const note = signupClaimNote(payload, headcount);
+    if ('error' in note) throw new BadRequestException(note.error);
+    // The RPC decides this again under its lock; this spares the round trip
+    // for a card that was closed when it was read.
+    if (isCardClosed(message.payload)) {
+      throw new BadRequestException(SIGNUPS_CLOSED);
+    }
+    try {
+      const { action, updated } = await this.actionRepo.claimSignupSlots(
+        message.id,
+        userId,
+        slotIds,
+        note.note,
+      );
+      return { action, deduplicated: false, ...(updated ? { updated } : {}) };
+    } catch (error) {
+      if (!(error instanceof SignupClaimRefusedError)) throw error;
+      switch (error.reason) {
+        case 'full':
+          throw new ConflictException(
+            'That slot is full. Someone took the last spot just before you.',
+          );
+        case 'unknown_slot':
+          throw new BadRequestException(`Invalid slot: ${error.slotId}`);
+        case 'missing':
+          // Deleted between the access check and the lock.
+          throw new BadRequestException('Cannot act on a deleted message');
+        case 'closed':
+          throw new BadRequestException(SIGNUPS_CLOSED);
+      }
     }
   }
 }

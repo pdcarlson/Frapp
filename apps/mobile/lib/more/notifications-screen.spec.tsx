@@ -9,20 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // mount. A purple chapter's values, deliberately not house gold, so a control
 // that slips back to a `gold.*` token shows up in an assertion; the hook
 // itself has its own spec.
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
 import { useRouter } from "expo-router";
 import { FrappThemeProvider } from "@/lib/theme";
+import { HeaderButton } from "@/components/header-button";
 import { expectBackRow } from "@/test/back-row";
 import { drawnText, screenText } from "@/test/screen-text";
 
@@ -42,6 +36,31 @@ import { drawnText, screenText } from "@/test/screen-text";
 const CREATED_AT = new Date(2026, 8, 30, 23, 47);
 const MOUNTED_AT = new Date(2026, 8, 30, 23, 59, 30);
 
+/** The roster the screen reads for pictures, names and chips (#4346). */
+const ROSTER = vi.hoisted(() => [
+  {
+    user_id: "u-me",
+    display_name: "Marcus Ellison",
+    avatar_url: null,
+    role_color: null,
+  },
+  {
+    user_id: "u-ryan",
+    display_name: "Ryan Castellano",
+    avatar_url: null,
+    role_color: "#8FA8FF",
+  },
+]);
+const NAMES = vi.hoisted(() => {
+  const row = (id: string) => ROSTER.find((r) => r.user_id === id);
+  return {
+    nameFor: (id: string) => row(id)?.display_name ?? null,
+    avatarFor: () => null,
+    roleColorFor: (id: string) => row(id)?.role_color ?? null,
+    avatarTintFor: () => ({ fill: "#2A2D3D", text: "#8FA8FF" }),
+  };
+});
+
 const NOTIFICATIONS = [
   {
     id: "notif-1",
@@ -58,6 +77,9 @@ const inbox = vi.hoisted(() => ({ data: null as unknown[] | null }));
 
 /** The read receipt the screen sends; stable so a spec can assert on a tap. */
 const markRead = vi.hoisted(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
+
+/** `POST /v1/notifications/clear` (#3948). */
+const clearRows = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
 
 /** `POST /v1/notifications/read`, the one request behind Mark all read. */
 const markAll = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
@@ -77,6 +99,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useMarkNotificationRead: () => markRead,
   useMarkNotificationsRead: () => markAll,
+  useClearNotifications: () => clearRows,
+  useViewerUserId: () => "u-me",
+  useChapterRoster: () => ({ data: ROSTER }),
+  useMemberDisplayNames: () => NAMES,
 }));
 
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -172,7 +198,7 @@ describe("Notifications row target", () => {
     data: { target: { screen: target } },
   });
 
-  it("pops down to a tab and pushes any other screen", () => {
+  it("pushes the screen each target names, the task board included (#4610)", () => {
     inbox.data = [read("n-tasks", "tasks"), read("n-dues", "billing")];
     const router = vi.mocked(useRouter)();
     vi.mocked(router.push).mockClear();
@@ -186,8 +212,8 @@ describe("Notifications row target", () => {
       );
 
     act(() => row("About tasks").props.onPress());
-    expect(router.dismissTo).toHaveBeenCalledWith("/tasks");
-    expect(router.push).not.toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledWith("/tasks");
+    expect(router.dismissTo).not.toHaveBeenCalled();
 
     act(() => row("About billing").props.onPress());
     expect(router.push).toHaveBeenCalledWith("/dues");
@@ -296,7 +322,7 @@ describe("Notification row press feedback", () => {
               id: "n1",
               title: "Dues reminder",
               body,
-              categoryLabel: "Dues",
+              data: { target: { screen: "billing" } },
               target: { pathname: "/dues" },
               time: "4:00 PM",
               createdAt: CREATED_AT.toISOString(),
@@ -320,7 +346,7 @@ describe("Notification row press feedback", () => {
       // The suite's react-native stub runs as iOS.
       const held = row.props.style({ pressed: true });
       expect(held).toContainEqual({
-        backgroundColor: signetDarkTokens.color.surface.card,
+        backgroundColor: signetDarkTokens.color.surface.surface1,
       });
       expect(JSON.stringify(held)).not.toContain("opacity");
     }
@@ -381,20 +407,25 @@ describe("Notification row press feedback", () => {
     expect(bodyNode.props.numberOfLines).toBe(2);
     // The two-line cut is visual only: a screen reader hears all of it.
     expect(row.props.accessibilityLabel).toBe(
-      "Dues reminder. Spring dues are open for every active member.",
+      "Dues: Dues reminder. Spring dues are open for every active member.",
     );
   });
 
-  it("centres the unread dot on the title's first line", () => {
+  it("centres the unread dot on the picture beside it", () => {
     const row = renderRow(true);
-    const title = textStyle(row, "Dues reminder");
     const [dot] = row.children as ReactTestRenderer["root"][];
-    const dotStyle = Object.assign(
-      {},
-      ...[dot!.props.style].flat(Infinity),
-    ) as Record<string, number>;
-
-    expect(dotStyle.marginTop * 2 + dotStyle.height).toBe(title.lineHeight);
+    const picture = row.find(
+      (node) => node.props.testID === "notification-tile-billing",
+    );
+    const style = (node: ReactTestRenderer["root"]) =>
+      Object.assign({}, ...[node.props.style].flat(Infinity)) as Record<
+        string,
+        number
+      >;
+    const dotStyle = style(dot!);
+    expect(dotStyle.marginTop * 2 + dotStyle.height).toBe(
+      style(picture).height,
+    );
   });
 });
 
@@ -415,7 +446,7 @@ describe("Notifications row tap marks read (#3788)", () => {
     const row = tree.root.find(
       (node) =>
         typeof node.props.accessibilityLabel === "string" &&
-        node.props.accessibilityLabel.startsWith(title) &&
+        node.props.accessibilityLabel.includes(title) &&
         typeof node.props.onPress === "function",
     );
     act(() => row.props.onPress());
@@ -450,6 +481,16 @@ describe("Mark all read sends one request (#3929)", () => {
     markRead.mutateAsync.mockClear();
   });
 
+  // #4610 step 3: a bare glyph beside the title was what "buttons are
+  // unclear" meant. Every header action sits in the round Chat home drew.
+  it("draws Mark all read as a round header button", () => {
+    inbox.data = [NOTIFICATIONS[0]];
+    const labels = render()
+      .root.findAllByType(HeaderButton)
+      .map((node) => node.props.label);
+    expect(labels).toContain("Mark all notifications read");
+  });
+
   it("asks the server once, naming no screens", () => {
     inbox.data = [
       NOTIFICATIONS[0],
@@ -467,5 +508,318 @@ describe("Mark all read sends one request (#3929)", () => {
     expect(markAll.mutate.mock.calls[0]?.[0]).toBeUndefined();
     expect(markRead.mutate).not.toHaveBeenCalled();
     expect(markRead.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #4346 (Shawn, 2026-11-11): a row shows who it is about and its kind, names
+ * wear their colour, a mention wears the @ badge, and the "OBJ" box is gone.
+ */
+describe("Notification rows that stand out (#4346)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+  });
+
+  function renderChat(data: Record<string, unknown>, body: string) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NotificationListRow
+            row={{
+              id: "n1",
+              title: "Ryan Castellano in #general",
+              body,
+              data: {
+                target: { screen: "chat", channelId: "c1" },
+                senderId: "u-ryan",
+                ...data,
+              },
+              target: { pathname: "/chat-thread" } as never,
+              time: "4:00 PM",
+              createdAt: CREATED_AT.toISOString(),
+              isUnread: true,
+            }}
+            people={{ viewerId: "u-me", members: ROSTER, names: NAMES }}
+            onPress={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    mounted.push(tree);
+    return tree.root;
+  }
+
+  const byTestId = (root: ReactTestRenderer["root"], id: string) =>
+    root.findAll((node) => node.props.testID === id);
+
+  it("draws the sender's picture, their name in their colour, and the channel badge", () => {
+    const root = renderChat({ chatKind: "channel" }, "can you cover?");
+    expect(byTestId(root, "notification-badge-channel")).not.toHaveLength(0);
+    const name = root.find(
+      (node) =>
+        (node.type as unknown as string) === "Text" &&
+        node.props.children === "Ryan Castellano",
+    );
+    expect(Object.assign({}, ...[name.props.style].flat(Infinity)).color).toBe(
+      "#8FA8FF",
+    );
+  });
+
+  it("wears the @ badge when it mentions you, chips the names, and says so to a screen reader", () => {
+    const root = renderChat(
+      { chatKind: "channel", mentioned: true },
+      "@Marcus Ellison @bigsigma can you cover?",
+    );
+    expect(byTestId(root, "notification-badge-mention")).not.toHaveLength(0);
+    const row = root.find(
+      (node) => node.props.testID === "notification-row-mention",
+    );
+    expect(row.props.accessibilityLabel).toMatch(/^Mentioned you: /);
+    const chips = root.findAll(
+      (node) =>
+        (node.type as unknown as string) === "Text" &&
+        Object.assign({}, ...[node.props.style].flat(Infinity))
+          .backgroundColor === signetDarkTokens.color.semantic.mentionChip,
+    );
+    expect(chips.map((chip) => chip.props.children)).toEqual([
+      "@Marcus Ellison",
+    ]);
+  });
+
+  it("leaves out the U+FFFC box", () => {
+    const root = renderChat({ chatKind: "dm" }, "take a look \uFFFC");
+    const row = root.find(
+      (node) => node.props.testID === "notification-row-dm",
+    );
+    expect(row.props.accessibilityLabel).not.toContain("\uFFFC");
+    const texts = root
+      .findAll((node) => (node.type as unknown as string) === "Text")
+      .map((node) => node.props.children)
+      .filter((children): children is string => typeof children === "string");
+    expect(texts).toContain("take a look");
+    expect(texts.join("")).not.toContain("\uFFFC");
+  });
+});
+
+/**
+ * What review caught on #4346: the screen must hand its roster to the rows,
+ * the mention badge is the fixed gold and the row stays flat, and a read row
+ * reads quieter even where a role colour keeps its name bright.
+ */
+describe("Notification rows on the real screen (#4346)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+  });
+
+  const chatRow = (over: Record<string, unknown> = {}) => ({
+    id: "n-chat",
+    title: "Ryan Castellano in #general",
+    body: "@Marcus Ellison can you cover?",
+    created_at: CREATED_AT.toISOString(),
+    read_at: null,
+    data: {
+      target: { screen: "chat", channelId: "c1" },
+      senderId: "u-ryan",
+      chatKind: "channel",
+      mentioned: true,
+    },
+    ...over,
+  });
+
+  const styleOf = (node: ReactTestRenderer["root"]) =>
+    Object.assign({}, ...[node.props.style].flat(Infinity)) as Record<
+      string,
+      unknown
+    >;
+
+  it("hands the roster to each row: the name in its colour, initials, the gold @ badge, no tint", () => {
+    inbox.data = [chatRow()];
+    const root = render().root;
+    const name = root.find(
+      (node) =>
+        (node.type as unknown as string) === "Text" &&
+        node.props.children === "Ryan Castellano",
+    );
+    expect(styleOf(name).color).toBe("#8FA8FF");
+    const badge = root.find(
+      (node) =>
+        node.props.testID === "notification-badge-mention" &&
+        (node.type as unknown as string) === "View",
+    );
+    expect(styleOf(badge).backgroundColor).toBe(
+      signetDarkTokens.color.semantic.mentionChipText,
+    );
+    const row = root.find(
+      (node) =>
+        node.props.testID === "notification-row-mention" &&
+        typeof node.props.style === "function",
+    );
+    const rest = [row.props.style({ pressed: false })].flat(Infinity);
+    expect(JSON.stringify(rest)).not.toContain(
+      signetDarkTokens.color.semantic.mentionChipText,
+    );
+  });
+
+  it("draws a read row's name at regular weight, so it reads quieter than unread", () => {
+    // The title line: the Text that holds the coloured name.
+    const titleOf = (root: ReactTestRenderer["root"]) => {
+      let node = root.find(
+        (candidate) =>
+          (candidate.type as unknown as string) === "Text" &&
+          candidate.props.children === "Ryan Castellano",
+      ).parent;
+      while (node && (node.type as unknown as string) !== "Text") {
+        node = node.parent;
+      }
+      return node!;
+    };
+    inbox.data = [chatRow({ read_at: CREATED_AT.toISOString() })];
+    const read = styleOf(titleOf(render().root));
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = [chatRow()];
+    const unread = styleOf(titleOf(render().root));
+    expect(read.fontFamily).not.toBe(unread.fontFamily);
+    expect(read.color).toBe(signetDarkTokens.color.text.mutedForeground);
+  });
+});
+
+describe("Notifications: Unread / All (#3948)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+  });
+
+  it("hides read rows under Unread and says all caught up when none are left", () => {
+    inbox.data = [
+      {
+        id: "read-1",
+        title: "Dues reminder",
+        body: null,
+        created_at: CREATED_AT.toISOString(),
+        read_at: CREATED_AT.toISOString(),
+        data: null,
+      },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain("Dues reminder");
+
+    const unread = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.props.accessibilityLabel === "Unread" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => unread.props.onPress());
+    expect(screenText(tree)).not.toContain("Dues reminder");
+    expect(screenText(tree)).toContain("You're all caught up.");
+    // The switch stays, so the way back to All is still there.
+    expect(
+      tree.root.findAll((node) => node.props.accessibilityRole === "radiogroup")
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("draws a conversation as one row that says, and speaks, how many", () => {
+    const chat = (id: string, minute: number) => ({
+      id,
+      title: "Ryan Castellano in #general",
+      body: `message ${id}`,
+      created_at: new Date(2026, 8, 30, 23, minute).toISOString(),
+      read_at: null,
+      data: { target: { screen: "chat", channelId: "c1" }, senderId: "u-ryan" },
+    });
+    inbox.data = [chat("old", 10), chat("new", 40)];
+    markAll.mutate.mockClear();
+    markRead.mutate.mockClear();
+    const tree = render();
+
+    expect(screenText(tree)).toContain("2 messages");
+    const row = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "button" &&
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.includes("message new"),
+    );
+    expect(row.props.accessibilityLabel).toContain("2 messages");
+
+    act(() => row.props.onPress());
+    expect(markAll.mutate).toHaveBeenCalledWith({ ids: ["new", "old"] });
+    expect(markRead.mutate).not.toHaveBeenCalled();
+  });
+
+  it("draws no switch on an empty inbox", () => {
+    inbox.data = [];
+    const tree = render();
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityRole === "radiogroup",
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+describe("Notifications: clearing an entry (#3948)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+    vi.restoreAllMocks();
+  });
+
+  it("offers Clear on a long press and clears every row the entry stands for", async () => {
+    const { Alert } = await import("react-native");
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const chat = (id: string, minute: number) => ({
+      id,
+      title: "Ryan Castellano in #general",
+      body: `message ${id}`,
+      created_at: new Date(2026, 8, 30, 23, minute).toISOString(),
+      read_at: null,
+      data: { target: { screen: "chat", channelId: "c1" }, senderId: "u-ryan" },
+    });
+    inbox.data = [chat("old", 10), chat("new", 40)];
+    clearRows.mutate.mockClear();
+    const tree = render();
+    expect(screenText(tree)).toContain("2 messages");
+
+    const row = tree.root.find(
+      (node) =>
+        typeof node.props.onLongPress === "function" &&
+        node.props.accessibilityRole === "button",
+    );
+    expect(row.props.accessibilityActions).toEqual([
+      { name: "clear", label: "Clear" },
+    ]);
+    act(() => row.props.onLongPress());
+
+    expect(alert).toHaveBeenCalledTimes(1);
+    const buttons = alert.mock.calls[0]?.[2] as {
+      text: string;
+      onPress?: () => void;
+    }[];
+    expect(buttons.map((b) => b.text)).toEqual(["Cancel", "Clear"]);
+    act(() => buttons[1]?.onPress?.());
+    expect(clearRows.mutate).toHaveBeenCalledWith({
+      ids: ["new", "old"],
+      conversation: { channelId: "c1" },
+    });
+
+    // A screen reader's named action asks the same way.
+    alert.mockClear();
+    act(() =>
+      row.props.onAccessibilityAction({ nativeEvent: { actionName: "clear" } }),
+    );
+    expect(alert).toHaveBeenCalledTimes(1);
   });
 });

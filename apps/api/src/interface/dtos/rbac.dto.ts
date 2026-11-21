@@ -1,41 +1,45 @@
 import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsArray,
-  IsIn,
   IsInt,
-  IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   PERMISSION_MODULES,
-  ROLE_COLOR_HEXES,
   ROLE_NAME_MAX_LENGTH,
+  ROLE_TIER_NAME_MAX_LENGTH,
   type PermissionModuleKey,
   type PermissionScope,
 } from '@repo/validation';
-import { POSITION_MAX } from '#domain/constants/field-limits';
+import {
+  POSITION_MAX,
+  ROLE_TIER_POSITION_MAX,
+} from '#domain/constants/field-limits';
+
+import {
+  IsRoleColor,
+  ROLE_COLOR_API_DESCRIPTION,
+} from '../decorators/is-role-color.decorator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
-/**
- * Upper-cases a role color string before `@IsIn` checks it, so `#f2994a` is
- * the palette's `#F2994A` and is stored in the palette's spelling (#3485).
- * Anything else passes through for the validators to judge.
- */
-function normalizeRoleColorInput(value: unknown): unknown {
-  return typeof value === 'string' ? value.trim().toUpperCase() : value;
-}
-
 export class CreateRoleDto {
-  @ApiProperty({ maxLength: ROLE_NAME_MAX_LENGTH })
+  @ApiProperty({
+    maxLength: ROLE_NAME_MAX_LENGTH,
+    description: 'Must contain something besides whitespace.',
+  })
   @IsString()
-  @IsNotEmpty()
   @MaxLength(ROLE_NAME_MAX_LENGTH)
+  @Matches(/\S/, { message: 'name must not be blank' })
   name: string;
 
   @ApiProperty({ type: [String] })
@@ -53,31 +57,55 @@ export class CreateRoleDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    enum: ROLE_COLOR_HEXES,
-    description:
-      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.',
+    description: ROLE_COLOR_API_DESCRIPTION,
   })
   @IsOptional()
-  @Transform(({ value }) => normalizeRoleColorInput(value))
-  @IsIn(ROLE_COLOR_HEXES, {
-    message: 'color must be one of the role palette colors',
-  })
+  @IsRoleColor()
   color?: string | null;
   @ApiPropertyOptional({
     type: Boolean,
     description:
       'Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it.',
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets `null` through to a not-null column
+  // (a 500): absent is fine, `null` is refused like any non-boolean.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   mentionable?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.",
+  })
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== null)
+  @IsUUID()
+  tier_id?: string | null;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Create the role already marked for members to join and leave themselves (#4958, #5736). It must be safe to pick, as `PATCH` checks: outside the tiers (`tier_id` null or absent) and holding no permission beyond `channels:read:<slug>` (400 `role.self_assignable_tiered` or `role.self_assignable_permissions`). Defaults to false.',
+  })
+  // Not `@IsOptional()`, which lets `null` through to a not-null column.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  self_assignable?: boolean;
 }
 
 export class UpdateRoleDto {
-  @ApiPropertyOptional({ maxLength: ROLE_NAME_MAX_LENGTH })
-  @IsOptional()
+  @ApiPropertyOptional({
+    maxLength: ROLE_NAME_MAX_LENGTH,
+    description: 'Must contain something besides whitespace.',
+  })
+  // Not `@IsOptional()`, which lets `null` through to a 500.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsString()
   @MaxLength(ROLE_NAME_MAX_LENGTH)
+  @Matches(/\S/, { message: 'name must not be blank' })
   name?: string;
 
   @ApiPropertyOptional({ type: [String] })
@@ -96,24 +124,66 @@ export class UpdateRoleDto {
   @ApiPropertyOptional({
     type: String,
     nullable: true,
-    enum: ROLE_COLOR_HEXES,
-    description:
-      'One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.',
+    description: ROLE_COLOR_API_DESCRIPTION,
   })
   @IsOptional()
-  @Transform(({ value }) => normalizeRoleColorInput(value))
-  @IsIn(ROLE_COLOR_HEXES, {
-    message: 'color must be one of the role palette colors',
-  })
+  @IsRoleColor()
   color?: string | null;
   @ApiPropertyOptional({
     type: Boolean,
     description:
       'Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it.',
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets `null` through to a not-null column
+  // (a 500): absent is fine, `null` is refused like any non-boolean.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   mentionable?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.",
+  })
+  @IsOptional()
+  @ValidateIf((_object, value) => value !== null)
+  @IsUUID()
+  tier_id?: string | null;
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: { type: 'boolean', nullable: true },
+    description:
+      'Overrides to change, merged into what the role has (#4071): true switches a permission on for this role whatever its tier says, false switches it off, null clears the override so the tier decides. Keys left out are kept. Not with `permissions`.',
+    example: { 'service:approve': true, 'polls:create': null },
+  })
+  @IsOptional()
+  @IsObject()
+  permission_overrides?: Record<string, boolean | null>;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Members may join and leave this role themselves (#4958). Only a role with no system key, outside the tiers, and holding no permission beyond `channels:read:<slug>` may be marked (400 `role.self_assignable_keyed`, `role.self_assignable_tiered` or `role.self_assignable_permissions`), and marking needs the caller to hold what it carries. A save that would leave a marked role unsafe is refused the same way unless it also sends false.',
+  })
+  // Not `@IsOptional()`, which lets `null` through to a not-null column
+  // (a 500): absent is fine, `null` is refused like any non-boolean.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  self_assignable?: boolean;
+}
+
+/** `POST /v1/roles/:id/join` and `/leave` (#4958). */
+export class SelfAssignRoleResultDto {
+  @ApiProperty({
+    type: String,
+    isArray: true,
+    description:
+      "The caller's role ids after the change, the role added (join) or taken off (leave).",
+  })
+  role_ids!: string[];
 }
 
 export class TransferPresidencyDto {
@@ -179,4 +249,100 @@ export class PermissionCatalogEntryDto {
     description: 'The level the permission applies at. Always `chapter` today.',
   })
   scope: PermissionScope;
+}
+
+export class CreateRoleTierDto {
+  @ApiProperty({ maxLength: ROLE_TIER_NAME_MAX_LENGTH })
+  @IsString()
+  @MaxLength(ROLE_TIER_NAME_MAX_LENGTH)
+  @Matches(/\S/, { message: 'name must not be blank' })
+  name: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'What every role in the tier gets. Only permissions the caller holds; never `*`. Defaults to none.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  permissions?: string[];
+}
+
+export class UpdateRoleTierDto {
+  @ApiPropertyOptional({ maxLength: ROLE_TIER_NAME_MAX_LENGTH })
+  // Not `@IsOptional()`, which lets `null` through to a 500.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsString()
+  @MaxLength(ROLE_TIER_NAME_MAX_LENGTH)
+  @Matches(/\S/, { message: 'name must not be blank' })
+  name?: string;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Whether any member may `@` the tier, which reaches everyone holding a role in it (#4076). While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it.',
+  })
+  // Not `@IsOptional()`, which lets `null` through to a not-null column
+  // (a 500): absent is fine, `null` is refused like any non-boolean.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  mentionable?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      "The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`.",
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  permissions?: string[];
+}
+
+export class ReorderRoleTiersDto {
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    description:
+      "Every one of the chapter's tiers, highest first. Tiers ranked at or above the caller's own must stay where they are.",
+  })
+  @IsArray()
+  @ArrayMaxSize(ROLE_TIER_POSITION_MAX)
+  @ArrayUnique()
+  @IsUUID('all', { each: true })
+  tier_ids: string[];
+}
+
+/** One of a chapter's tiers (`GET /v1/role-tiers`, #4071). */
+export class RoleTierDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  chapter_id: string;
+
+  @ApiProperty({ description: 'Order within the chapter; 1 is highest.' })
+  position: number;
+
+  @ApiProperty({ description: "The chapter's own name for the tier." })
+  name: string;
+
+  @ApiProperty({
+    type: [String],
+    description: 'What every role in the tier gets before its own overrides.',
+  })
+  permissions: string[];
+
+  @ApiProperty({
+    description:
+      'Whether any member may `@` the tier (#4076). On by default; while false, only a member holding `channels:manage` or `roles:manage` can ping it.',
+  })
+  mentionable: boolean;
+
+  @ApiProperty()
+  created_at: string;
+
+  @ApiProperty()
+  updated_at: string;
 }

@@ -1,4 +1,5 @@
 import {
+  BackworkDraftFields,
   BackworkResource,
   BackworkDepartment,
   BackworkProfessor,
@@ -21,8 +22,34 @@ export interface BackworkResourceFilter {
   search?: string;
 }
 
+/** The columns a draft's fields resolve to when it is published. */
+export type BackworkPublishedColumns = Pick<
+  BackworkResource,
+  | 'title'
+  | 'department_id'
+  | 'course_number'
+  | 'professor_id'
+  | 'year'
+  | 'semester'
+  | 'assignment_type'
+  | 'assignment_number'
+  | 'document_variant'
+  | 'tags'
+>;
+
+/**
+ * Every read here but the `*Draft*` methods and `findByFileHash` leaves drafts
+ * out (#5208): a draft is visible only to its uploader, through the draft
+ * methods, which take the uploader. `findByFileHash` sees drafts so a file
+ * already sitting in someone's drafts is still a duplicate.
+ */
 export interface IBackworkResourceRepository {
-  findById(id: string, chapterId: string): Promise<BackworkResource | null>;
+  /** A published resource. `includeDrafts` also finds a draft, for the admin delete. */
+  findById(
+    id: string,
+    chapterId: string,
+    options?: { includeDrafts?: boolean },
+  ): Promise<BackworkResource | null>;
   findByChapter(
     chapterId: string,
     filters?: BackworkResourceFilter,
@@ -35,6 +62,81 @@ export interface IBackworkResourceRepository {
   ): Promise<BackworkResource | null>;
   create(data: Partial<BackworkResource>): Promise<BackworkResource>;
   delete(id: string, chapterId: string): Promise<void>;
+  /** The uploader's drafts in the chapter, oldest first (upload order). */
+  findDrafts(
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource[]>;
+  /** The uploader's drafts among `ids`; anything else is simply not returned. */
+  findDraftsByIds(
+    ids: string[],
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource[]>;
+  /** Replaces a draft's fields. Null when it is no longer the uploader's draft. */
+  updateDraftFields(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    fields: BackworkDraftFields,
+  ): Promise<BackworkResource | null>;
+  /**
+   * Marks one of the uploader's drafts as being AI-filled, only when no other
+   * fill holds it: no claim, or one started before `staleBefore`. One
+   * conditional update, so of two fills racing for the same draft, on any
+   * number of API instances, one wins. Returns the claim's timestamp, which
+   * `releaseAiFill` needs; null when another fill holds the draft or it is
+   * no longer the uploader's draft.
+   */
+  claimAiFill(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    now: Date,
+    staleBefore: Date,
+  ): Promise<string | null>;
+  /**
+   * Clears a claim `claimAiFill` returned, unless a later fill has since
+   * taken the draft over (its claim went stale).
+   */
+  releaseAiFill(id: string, chapterId: string, claim: string): Promise<void>;
+  /**
+   * Rows, drafts included, whose file is at this path: a path already in use
+   * is never taken by another row, nor deleted while one still points at it.
+   */
+  countByStoragePath(chapterId: string, storagePath: string): Promise<number>;
+  /**
+   * Points a draft at a new stored file and sets its fields, only while it is
+   * the uploader's draft. Null when it isn't.
+   */
+  replaceDraftFile(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    update: {
+      storage_path: string;
+      file_hash: string;
+      is_redacted: boolean;
+      draft_fields: BackworkDraftFields;
+    },
+  ): Promise<BackworkResource | null>;
+  /**
+   * Writes the resolved columns and clears `draft_fields`, only while the row
+   * is still the uploader's draft. Null when it isn't (published by another
+   * tab, deleted), so a publish never runs twice.
+   */
+  publishDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    columns: BackworkPublishedColumns,
+  ): Promise<BackworkResource | null>;
+  /** Deletes the row only while it is the uploader's draft; false when it wasn't. */
+  deleteDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<boolean>;
   /** Count of resources still tagged with this department, for the delete guard. */
   countByDepartment(chapterId: string, departmentId: string): Promise<number>;
   /** Count of resources still tagged with this professor, for the delete guard. */

@@ -36,7 +36,11 @@ export function useSelectChapter() {
         await activateChapter.mutateAsync(chapterId);
 
         const supabase = createSupabaseBrowserClient();
-        await supabase.auth.refreshSession();
+        // supabase-js resolves a refused refresh as `{ error }` rather than
+        // throwing, so a refusal has to be turned into the same failure path
+        // a throw takes (#4439).
+        const { error } = await supabase.auth.refreshSession();
+        if (error) throw error;
       } catch {
         // Best-effort by design. Callers reach here *after* the action that
         // matters has already succeeded (invite redeemed, chapter created), so

@@ -73,6 +73,7 @@ export function memberFixture(overrides: Partial<Member> = {}): Member {
     dismissed_ops_nudges: [],
     pledge_class_id: null,
     order_number: null,
+    joined_via_invite_id: null,
     created_at: CREATED_AT,
     updated_at: CREATED_AT,
     ...overrides,
@@ -93,6 +94,7 @@ export function roleFixture(overrides: Partial<Role> = {}): Role {
     mentionable: true,
     tier_id: null,
     permission_overrides: {},
+    self_assignable: false,
     created_at: CREATED_AT,
     ...overrides,
   };

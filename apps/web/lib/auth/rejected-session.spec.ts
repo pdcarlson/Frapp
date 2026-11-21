@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
-import { isSessionOver } from "./rejected-session";
+import { isSessionOver } from "@repo/hooks/auth-error-copy";
 
 const user = { id: "u1" };
 
@@ -70,7 +70,7 @@ describe("leaveWhenSignedOutElsewhere", () => {
       ["/sign-in", 0],
       ["/join", 0],
       ["/no-access", 0],
-      ["/new-account", 0],
+      ["/check-in", 0],
     ] as const) {
       assign.mockClear();
       vi.stubGlobal("location", { pathname: path, assign });

@@ -8,16 +8,17 @@
 // notices a split-brain deploy or a named-SHA ship that skipped Release.
 //
 // This script reads:
-//   * Render frapp-api-prod's deploy with status `live` → commit.id
+//   * the API's commit: the `commit` that api.frapp.live's /health reports.
+//     The API runs on Cloud Run (#5228), which has no deploy list to read a
+//     commit from, so /health is the source and an absent field is a failure.
 //   * Vercel frapp-web and frapp-landing READY production githubCommitSha
 //   * GitHub refs/tags/vX.Y.Z peeled to a commit
 // and requires the three SHAs to be identical and to match at least one
 // such tag. Matching origin/main is NOT required: live is allowed to lag
 // main until the next Deploy production.
 //
-// /health `commit` is corroboration only. Absent is ignored (the live tag
-// predates that field). Present and disagreeing with Render is a failure.
-// The GET is timed out so a stall cannot hold the job until the runner kills it.
+// The /health GET is timed out so a stall cannot hold the job until the
+// runner kills it.
 //
 // Unreadable matching-refs or annotated-tag peel is FAIL, not a missing tag.
 //
@@ -37,13 +38,13 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { fetchWithRetry } from "./lib/http.mjs";
-import { fetchJson, fetchRenderDeploys, vercelDeploymentState } from "./lib/providers.mjs";
+import { fetchJson, vercelDeploymentState } from "./lib/providers.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 export const V_TAG_REF = /^refs\/tags\/v\d+\.\d+\.\d+$/;
 export const DEFAULT_HEALTH_URL = "https://api.frapp.live/health";
-/** Corroboration only — fail fast so a hung `/health` cannot eat the job. */
+/** Fail fast so a hung `/health` cannot eat the job. */
 export const HEALTH_FETCH_TIMEOUT_MS = 10_000;
 
 export const ALERT = defineAlert({
@@ -57,28 +58,6 @@ export function isFullSha(value) {
 
 export function tagNameFromRef(ref) {
   return typeof ref === "string" && ref.startsWith("refs/tags/") ? ref.slice("refs/tags/".length) : "";
-}
-
-/**
- * Newest-first Render deploy page → the running commit.
- * Nested decoys (serviceDetails.commit, top-level commitId) are ignored.
- */
-export function readLiveRenderCommit(page) {
-  if (!Array.isArray(page)) {
-    return { ok: false, reason: "Render deploys list unreadable" };
-  }
-  const live = page.find((entry) => entry?.deploy?.status === "live");
-  if (!live) {
-    return { ok: false, reason: "no Render deploy with status 'live'" };
-  }
-  const sha = live.deploy?.commit?.id;
-  if (!isFullSha(sha)) {
-    return {
-      ok: false,
-      reason: `Render live commit '${sha ?? "unreadable"}' is not a 40-hex SHA`,
-    };
-  }
-  return { ok: true, sha };
 }
 
 /**
@@ -106,8 +85,8 @@ export function readProductionVercelCommit(body, label) {
 }
 
 /**
- * Optional /health `commit` field. Absent is not a failure — live still
- * omits it until a later Deploy of the tree that added `readDeployedCommit`.
+ * The /health `commit` field, read as present or absent. `apiShaFromHealth`
+ * turns an absent one into a failure.
  */
 export function readHealthCommitField(bodyText) {
   let body;
@@ -153,10 +132,8 @@ export function tagsMatchingSha(tags, sha) {
     .sort();
 }
 
-/**
- * Combine host SHAs, peeled v* tags, and optional /health corroboration.
- */
-export function evaluatePin({ hosts, tagsResult, health }) {
+/** Combine the host SHAs with the peeled v* tags. */
+export function evaluatePin({ hosts, tagsResult }) {
   const compared = compareHostShas(hosts);
   if (!compared.ok) return compared;
 
@@ -171,45 +148,12 @@ export function evaluatePin({ hosts, tagsResult, health }) {
     };
   }
 
-  if (health?.present) {
-    if (!health.ok) {
-      return { ok: false, reason: health.reason };
-    }
-    if (health.sha !== compared.sha) {
-      return {
-        ok: false,
-        reason: `/health commit ${health.sha} disagrees with Render live ${compared.sha}`,
-      };
-    }
-  }
-
   return {
     ok: true,
     sha: compared.sha,
     tags: names,
     reason: `api=web=landing=${compared.sha} tagged ${names.join(", ")}`,
   };
-}
-
-export async function findLiveRenderDeployPage({
-  apiKey,
-  serviceId,
-  maxPages = 5,
-  fetchImpl = fetch,
-}) {
-  let cursor;
-  for (let page = 0; page < maxPages; page += 1) {
-    const rows = await fetchRenderDeploys({ apiKey, serviceId, cursor, fetchImpl });
-    const live = readLiveRenderCommit(rows);
-    if (live.ok) return { page: rows, live };
-    if (live.reason !== "no Render deploy with status 'live'") {
-      return { page: rows, live };
-    }
-    if (!Array.isArray(rows) || rows.length === 0) break;
-    cursor = rows[rows.length - 1]?.cursor;
-    if (!cursor) break;
-  }
-  return { page: [], live: { ok: false, reason: "no Render deploy with status 'live'" } };
 }
 
 function vercelProductionUrl(projectId, teamId) {
@@ -273,31 +217,21 @@ export async function peelVTags({ token, repo, fetchImpl }) {
   return { ok: true, tags };
 }
 
+/** /health's reading as the API's own commit: required. */
+export function apiShaFromHealth(health) {
+  if (!health?.present) return { ok: false, reason: "/health reports no commit, so the API's commit is unknown" };
+  if (!health.ok) return { ok: false, reason: health.reason };
+  return { ok: true, sha: health.sha };
+}
+
 export async function collectLiveShas({
-  renderApiKey,
   vercelApiKey,
   teamId,
-  renderServiceId,
   webProjectId,
   landingProjectId,
   healthUrl,
   fetchImpl = fetch,
 }) {
-  let api;
-  try {
-    const found = await findLiveRenderDeployPage({
-      apiKey: renderApiKey,
-      serviceId: renderServiceId,
-      fetchImpl,
-    });
-    api = found.live;
-  } catch (error) {
-    api = {
-      ok: false,
-      reason: `Could not read Render deploys: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-
   async function vercelProject(projectId, label) {
     try {
       const body = await fetchJson({
@@ -327,15 +261,19 @@ export async function collectLiveShas({
         { fetchImpl, attempts: 1, timeoutMs: HEALTH_FETCH_TIMEOUT_MS },
       );
       const bodyText = await response.text();
-      if (response.ok) {
-        health = readHealthCommitField(bodyText);
-      }
-    } catch {
-      health = { present: false };
+      health = response.ok
+        ? readHealthCommitField(bodyText)
+        : { present: true, ok: false, reason: `/health returned HTTP ${response.status}` };
+    } catch (error) {
+      health = {
+        present: true,
+        ok: false,
+        reason: `Could not read /health: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   }
 
-  return { api, web, landing, health };
+  return { api: apiShaFromHealth(health), web, landing };
 }
 
 function buildAlertIssueBody({ verdict, runUrl }) {
@@ -401,9 +339,7 @@ export async function runWatchdog({
 async function main() {
   const probeOnly = process.argv.includes("--probe-only");
 
-  const renderApiKey = requireEnv("RENDER_API_KEY");
   const vercelApiKey = requireEnv("VERCEL_API_KEY");
-  const renderServiceId = requireEnv("RENDER_SERVICE_ID");
   const webProjectId = requireEnv("VERCEL_WEB_PROJECT_ID");
   const landingProjectId = requireEnv("VERCEL_LANDING_PROJECT_ID");
   const teamId = process.env.VERCEL_TEAM_ID;
@@ -417,10 +353,8 @@ async function main() {
   }
 
   const hosts = await collectLiveShas({
-    renderApiKey,
     vercelApiKey,
     teamId,
-    renderServiceId,
     webProjectId,
     landingProjectId,
     healthUrl,
@@ -436,7 +370,7 @@ async function main() {
     };
   }
 
-  const verdict = evaluatePin({ hosts, tagsResult, health: hosts.health });
+  const verdict = evaluatePin({ hosts, tagsResult });
   if (verdict.ok) {
     console.log(`✅ ${verdict.reason}`);
   } else {

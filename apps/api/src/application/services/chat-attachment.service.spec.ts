@@ -35,6 +35,7 @@ describe('ChatAttachmentService', () => {
   let mockRbac: ChatServiceFixture['mockRbac'];
   let mockChatBlocks: ChatServiceFixture['mockChatBlocks'];
   let mockReportRepo: ChatServiceFixture['mockReportRepo'];
+  let mockScheduledRepo: ChatServiceFixture['mockScheduledRepo'];
 
   beforeEach(async () => {
     captureException.mockClear();
@@ -47,7 +48,131 @@ describe('ChatAttachmentService', () => {
       mockRbac,
       mockChatBlocks,
       mockReportRepo,
+      mockScheduledRepo,
     } = await createChatServiceFixture());
+  });
+
+  // #5667: chat rendered one single-message request per row with files.
+  describe('listAttachmentsForMessages', () => {
+    const rowFor = (
+      messageId: string,
+      senderId: string | null,
+      name: string,
+    ) => ({
+      id: `att-${messageId}`,
+      message_id: messageId,
+      channel_id: 'ch-chan-1',
+      bucket: 'chat',
+      storage_path: `chapters/ch-1/chat/ch-chan-1/${messageId}/${name}`,
+      filename: name,
+      content_type: 'image/png',
+      byte_size: 2048,
+      width: 10,
+      height: 10,
+      thumbhash: null,
+      preview_storage_path: null,
+      external_url: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+      sender_id: senderId,
+    });
+
+    it('refuses a caller who cannot read the channel before reading or signing anything', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'PRIVATE',
+        member_ids: ['someone-else'],
+      });
+
+      await expect(
+        attachments.listAttachmentsForMessages('ch-chan-1', 'ch-1', 'user-1', [
+          'msg-1',
+        ]),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAttachmentRepo.findByMessages).not.toHaveBeenCalled();
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
+
+    it('reads and signs every message in one call each, keyed by message id', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue([]);
+      const a = rowFor('msg-1', 'user-2', 'a.png');
+      const b = rowFor('msg-2', 'user-3', 'b.png');
+      mockAttachmentRepo.findByMessages.mockResolvedValue([a, b]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        [a.storage_path]: 'https://signed/a',
+        [b.storage_path]: 'https://signed/b',
+      });
+
+      const result = await attachments.listAttachmentsForMessages(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        ['msg-1', 'msg-2', 'msg-3', 'msg-1'],
+      );
+
+      expect(mockAttachmentRepo.findByMessages).toHaveBeenCalledTimes(1);
+      expect(mockAttachmentRepo.findByMessages).toHaveBeenCalledWith(
+        'ch-chan-1',
+        ['msg-1', 'msg-2', 'msg-3'],
+        'ch-1',
+      );
+      expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledTimes(
+        1,
+      );
+      expect(Object.keys(result).sort()).toEqual(['msg-1', 'msg-2', 'msg-3']);
+      expect(result['msg-1'].map((row) => row.download_url)).toEqual([
+        'https://signed/a',
+      ]);
+      expect(result['msg-2'].map((row) => row.download_url)).toEqual([
+        'https://signed/b',
+      ]);
+      // Asked about, nothing to show: an empty list, not a missing key.
+      expect(result['msg-3']).toEqual([]);
+      // The sender is the mask's input, not part of the answer.
+      expect(result['msg-1'][0]).not.toHaveProperty('sender_id');
+    });
+
+    it('withholds the files of a sender the caller has blocked, and signs nothing for them', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+      const blockedRow = rowFor('msg-1', 'user-blocked', 'hidden.png');
+      const visibleRow = rowFor('msg-2', 'user-2', 'shown.png');
+      mockAttachmentRepo.findByMessages.mockResolvedValue([
+        blockedRow,
+        visibleRow,
+      ]);
+      mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({
+        [visibleRow.storage_path]: 'https://signed/shown',
+      });
+
+      const result = await attachments.listAttachmentsForMessages(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        ['msg-1', 'msg-2'],
+      );
+
+      expect(result['msg-1']).toEqual([]);
+      expect(result['msg-2']).toHaveLength(1);
+      const [, signedPaths] =
+        mockStorageProvider.getSignedDownloadUrls.mock.calls[0];
+      expect(signedPaths).not.toContain(blockedRow.storage_path);
+    });
+
+    it('withholds every file when the block list cannot be read', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockChatBlocks.listBlockedUserIds.mockRejectedValue(new Error('down'));
+      mockAttachmentRepo.findByMessages.mockResolvedValue([
+        rowFor('msg-1', 'user-2', 'a.png'),
+      ]);
+
+      await expect(
+        attachments.listAttachmentsForMessages('ch-chan-1', 'ch-1', 'user-1', [
+          'msg-1',
+        ]),
+      ).rejects.toThrow('down');
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
   });
 
   describe('listMessageAttachments', () => {
@@ -877,7 +1002,9 @@ describe('ChatAttachmentService', () => {
           'virus.exe',
           'application/x-msdownload',
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        new BadRequestException('File extension is not allowed'),
+      );
     });
 
     it('should reject blocked .sh files', async () => {
@@ -910,10 +1037,15 @@ describe('ChatAttachmentService', () => {
           'ch-chan-1',
           'ch-1',
           'user-1',
-          'file.zip',
+          // An allowed extension, so the content type is what refuses it.
+          'file.pdf',
           'application/zip',
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Content type "application/zip" is not allowed',
+        ),
+      );
     });
 
     it('should accept PDF content type', async () => {
@@ -1346,6 +1478,102 @@ describe('ChatAttachmentService', () => {
         original,
         preview,
       ]);
+    });
+
+    it('keeps a file a scheduled message still names (#4971)', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
+      mockScheduledRepo.findPathsInUse.mockResolvedValue([original]);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockScheduledRepo.findPathsInUse).toHaveBeenCalledWith(
+        'ch-1',
+        [original, preview],
+        null,
+      );
+      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+        preview,
+      ]);
+    });
+
+    it('keeps everything when it cannot tell whether a scheduled message names it', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
+      mockScheduledRepo.findPathsInUse.mockRejectedValue(new Error('down'));
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+    });
+
+    describe('discardUnsentAttachments (#4971)', () => {
+      const claim = { storage_path: original, content_type: 'image/jpeg' };
+      const pdf = {
+        storage_path: 'chapters/ch-1/chat/ch-chan-1/b/dues.pdf',
+        content_type: 'application/pdf',
+      };
+
+      it('deletes the files and photo previews nothing else needs', async () => {
+        await attachments.discardUnsentAttachments('ch-1', 'sched-1', [
+          claim,
+          pdf,
+        ]);
+
+        expect(mockScheduledRepo.findPathsInUse).toHaveBeenCalledWith(
+          'ch-1',
+          [original, preview, pdf.storage_path],
+          'sched-1',
+        );
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+          original,
+          preview,
+          pdf.storage_path,
+        ]);
+      });
+
+      it('keeps what a live message, a report or another scheduled message needs', async () => {
+        mockAttachmentRepo.findSharedObjects.mockResolvedValue([
+          { bucket: 'chat', storage_path: preview },
+        ]);
+        mockReportRepo.findHeldObjects.mockResolvedValue([
+          { bucket: 'chat', storage_path: original },
+        ]);
+        mockScheduledRepo.findPathsInUse.mockResolvedValue([pdf.storage_path]);
+
+        await attachments.discardUnsentAttachments('ch-1', 'sched-1', [
+          claim,
+          pdf,
+        ]);
+
+        expect(mockAttachmentRepo.findSharedObjects).toHaveBeenCalledWith(
+          expect.any(Array),
+          null,
+        );
+        expect(mockReportRepo.findHeldObjects).toHaveBeenCalledWith('ch-1');
+        expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a live message', () => mockAttachmentRepo.findSharedObjects],
+        ['a report', () => mockReportRepo.findHeldObjects],
+        ['a scheduled message', () => mockScheduledRepo.findPathsInUse],
+      ])(
+        'keeps everything when it cannot tell whether %s needs it',
+        async (_label, mock) => {
+          mock().mockRejectedValue(new Error('down'));
+          jest
+            .spyOn(Logger.prototype, 'warn')
+            .mockImplementation(() => undefined);
+
+          await attachments.discardUnsentAttachments('ch-1', 'sched-1', [
+            claim,
+          ]);
+
+          expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+        },
+      );
     });
 
     it('takes the preview with the original even when this row never named it (a forward of the photo)', async () => {

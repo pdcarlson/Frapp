@@ -69,14 +69,23 @@ const rosterState: {
   names: Record<string, string | null>;
   isPending: boolean;
   isError: boolean;
-} = { names: {}, isPending: false, isError: false };
+  hasData: boolean;
+} = { names: {}, isPending: false, isError: false, hasData: true };
+
+// The viewer's grants; `undefined` is the permissions read still unanswered.
+const permissionsState: { list: string[] | undefined } = {
+  list: ["billing:view"],
+};
 
 vi.mock("@repo/hooks", () => ({
   // Paid-ops writes on this surface now read the chapter subscription (#841);
   // these cases predate the gate, so they run against an active chapter.
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
-    data: { permissions: ["billing:view"] },
+    data:
+      permissionsState.list === undefined
+        ? undefined
+        : { permissions: permissionsState.list },
     isPending: false,
     isError: false,
   }),
@@ -101,6 +110,7 @@ vi.mock("@repo/hooks", () => ({
     },
     isPending: rosterState.isPending,
     isError: rosterState.isError,
+    hasData: rosterState.hasData,
     refetch: rosterRefetch,
   }),
 }));
@@ -169,8 +179,10 @@ function setQueries(overrides: {
     names: {},
     isPending: false,
     isError: false,
+    hasData: true,
     ...overrides.roster,
   });
+  permissionsState.list = ["billing:view"];
 }
 
 // The preview rows this page used to fabricate on error (FRA-235). None of
@@ -194,6 +206,59 @@ beforeEach(() => {
   vi.clearAllMocks();
   setQueries({});
   chapter.active();
+});
+
+/** The one status line with something in it (see the roster tests below). */
+function liveStatus(): HTMLElement | null {
+  return (
+    screen
+      .queryAllByRole("status")
+      .find((el) => (el.textContent ?? "").trim() !== "") ?? null
+  );
+}
+
+describe("PointsPage when member names can't load (#1209)", () => {
+  const ALICE = "8f14e45f-ceea-467a-9f1c-1a2b3c4d5e6f";
+
+  it("keeps the board and says the names are missing, with a retry", async () => {
+    setQueries({
+      leaderboard: { data: [{ user_id: ALICE, total: 42 }] },
+      roster: { isError: true, hasData: false },
+    });
+    permissionsState.list = ["members:view"];
+    render(<PointsPage />);
+
+    expect(screen.getByText("Member 8f14e4")).toBeInTheDocument();
+    expect(liveStatus()).toHaveTextContent(/couldn't load member names/i);
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(rosterRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("says nothing when a refetch failed over names it already has", () => {
+    setQueries({
+      leaderboard: { data: [{ user_id: ALICE, total: 42 }] },
+      roster: { isError: true, hasData: true, names: { [ALICE]: "Alice" } },
+    });
+    permissionsState.list = ["members:view"];
+    render(<PointsPage />);
+
+    expect(screen.queryByText(/couldn't load member names/i)).toBeNull();
+  });
+
+  it("says nothing to a viewer who may not read the roster", () => {
+    setQueries({ roster: { isError: true, hasData: false } });
+    render(<PointsPage />);
+
+    expect(screen.queryByText(/couldn't load member names/i)).toBeNull();
+  });
+
+  it("says it while permissions are still unknown", () => {
+    setQueries({ roster: { isError: true, hasData: false } });
+    permissionsState.list = undefined;
+    render(<PointsPage />);
+
+    expect(liveStatus()).toHaveTextContent(/couldn't load member names/i);
+  });
 });
 
 describe("PointsPage failure states", () => {
@@ -510,7 +575,9 @@ describe("PointsPage success state", () => {
     expect(screen.getByText("Library session")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Search transactions")).toHaveValue("");
     expect(
-      screen.getByRole("combobox", { name: /filter transactions by category/i }),
+      screen.getByRole("combobox", {
+        name: /filter transactions by category/i,
+      }),
     ).toHaveTextContent("Category: All");
     expect(
       screen.getByRole("combobox", { name: /filter transactions by amount/i }),
@@ -852,7 +919,7 @@ describe("PointsPage subscription gating", () => {
     render(<PointsPage />);
 
     expect(adjust()).toBeEnabled();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(liveStatus()).not.toBeInTheDocument();
   });
 
   it("fails open when the chapter record cannot be read", () => {
@@ -931,9 +998,12 @@ describe("PointsPage transaction bulk actions", () => {
     render(<PointsPage />);
     selectFirstTransaction();
     // The button opens the file-type menu (#3969); picking one exports.
-    fireEvent.keyDown(screen.getByRole("button", { name: /export selected/i }), {
-      key: "Enter",
-    });
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: /export selected/i }),
+      {
+        key: "Enter",
+      },
+    );
     fireEvent.click(await screen.findByRole("menuitem", { name: "CSV" }));
 
     expect(exportRowsSpy).toHaveBeenCalledTimes(1);

@@ -71,7 +71,7 @@ describe("buildFindResults", () => {
     });
     expect(hit).toMatchObject({
       group: "Messages",
-      hint: "#cabinet · Oct 28",
+      hint: "#cabinet · October 28",
       href: "/chat?channel=c1&message=m1",
     });
   });
@@ -83,13 +83,17 @@ describe("buildFindResults", () => {
       channels: [],
       payload: {
         events: [
-          { id: "e1", name: "Cabinet meeting", start_time: "2026-11-09T19:00:00" },
+          {
+            id: "e1",
+            name: "Cabinet meeting",
+            start_time: "2026-11-09T19:00:00",
+          },
         ],
       },
       now: NOW,
     });
     expect(hit!.group).toBe("Events");
-    expect(hit!.hint).toMatch(/^Mon, Nov 9 · 7:00\sPM$/);
+    expect(hit!.hint).toMatch(/^Monday, November 9 · 7:00\sPM$/);
   });
 });
 
@@ -109,12 +113,16 @@ describe("backworkHint", () => {
         codes,
         NOW,
       ),
-    ).toBe("COGS 101 · Fall 2025 · added Sep 14, 2025");
+    ).toBe("COGS 101 · Fall 2025 · added September 14, 2025");
   });
 
   it("leaves out what it does not know", () => {
     expect(
-      backworkHint({ department_id: "unknown", course_number: "101" }, codes, NOW),
+      backworkHint(
+        { department_id: "unknown", course_number: "101" },
+        codes,
+        NOW,
+      ),
     ).toBe("101");
     expect(backworkHint({}, codes, NOW)).toBeUndefined();
   });

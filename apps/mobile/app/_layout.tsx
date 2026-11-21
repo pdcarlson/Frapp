@@ -1,32 +1,38 @@
-import { useEffect } from "react";
-import { Stack, type ErrorBoundaryProps } from "expo-router";
+import { useMemo } from "react";
+import { Stack, ThemeProvider, type ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import * as Sentry from "@sentry/react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+// Expo web only: lets sheet text fields blur without throwing (#5061).
+import "@/lib/text-input-focus-shim";
 import { useFonts } from "@expo-google-fonts/figtree";
 import * as SplashScreen from "expo-splash-screen";
 import { AppRuntime } from "@/components/app-runtime";
 import { ClientPolicyGate } from "@/components/client-policy-gate";
+import { LaunchCover } from "@/components/launch-cover";
 import { AppErrorScreen } from "@/components/route-error";
+import { RecordingBar } from "@/components/minutes/recording-bar";
 import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
+import { ItemMenuHost } from "@/components/item-actions-menu";
 import { AnalyticsProvider } from "@/lib/analytics-provider";
 import { ObservabilityIdentityProvider } from "@/lib/observability-identity-provider";
 import { AuthSessionProvider } from "@/lib/auth-session";
 import { KeyboardProviderGuarded } from "@/lib/keyboard";
-import {
-  FIGTREE_FACES,
-  FrappThemeProvider,
-  useFrappTheme,
-} from "@/lib/theme";
+import { FIGTREE_FACES, FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 import { withPostHogSentryCorrelation } from "@repo/observability/identified-posthog";
 import { initMobilePostHog } from "@/lib/posthog/client";
-import { buildMobileSentryOptions, mobileSentryDsn } from "@/lib/sentry/options";
+import { navigationThemeFor } from "@/lib/navigation-theme";
+import {
+  buildMobileSentryOptions,
+  mobileSentryDsn,
+} from "@/lib/sentry/options";
 import { readMobileSentryReleaseExtras } from "@/lib/sentry/release.runtime";
 import { startWhatsNewBootRead } from "@/lib/whats-new";
+import { startWhatsNewFresh } from "@/lib/whats-new-fresh";
 
 /**
  * Error reporting for the mobile app (issue #1299), reporting to the
@@ -58,6 +64,13 @@ initMobilePostHog();
  */
 void startWhatsNewBootRead();
 
+/**
+ * Which What's new lines this update brought, worked out once per process
+ * so an update counts even when the notes are never opened on it
+ * (`lib/whats-new-fresh.ts`).
+ */
+void startWhatsNewFresh();
+
 const sentryDsn = mobileSentryDsn();
 if (sentryDsn) {
   const options = buildMobileSentryOptions(
@@ -66,17 +79,29 @@ if (sentryDsn) {
   );
   Sentry.init({
     ...options,
+    // Replaces the SDK's default Expo Router integration (one navigation span
+    // per route change) with one that also times each route's first frame;
+    // screens add time to full display (`lib/sentry/screen-ready.tsx`). The
+    // speed budget is measured from these (#4342). Route params stay out of
+    // the spans while `sendDefaultPii` is false. The one integration set here
+    // rather than in `lib/sentry/options.ts`, which can't build one: it
+    // imports the SDK for types only.
+    integrations: [
+      Sentry.expoRouterIntegration({ enableTimeToInitialDisplay: true }),
+    ],
     beforeSend: withPostHogSentryCorrelation(options.beforeSend),
   });
 }
 
-// Hold the splash until Figtree is registered, so no screen ever paints in the
-// system font and then re-renders. hideAsync runs on error too — a failed font
-// load falls back to the system face rather than stranding the splash.
+// Hold the native splash until the launch logo has drawn the same emblem over
+// it (`components/launch-cover.tsx`, #5449). The logo then stays until the
+// screen the member lands on has its content, or about four seconds, so no
+// screen paints in the system font or behind its skeleton first.
 void SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
   const { tokens } = useFrappTheme();
+  const navigationTheme = useMemo(() => navigationThemeFor(tokens), [tokens]);
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.surface.background }}>
@@ -90,27 +115,37 @@ function RootLayoutContent() {
       <AppRuntime />
       {/* Signet is dark-only, so the status bar is statically light-on-dark. */}
       <StatusBar style="light" />
-      <Stack>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(app)" options={{ headerShown: false }} />
-      </Stack>
+      {/*
+        The navigators paint what no screen covers from this theme, which a
+        back swipe uncovers; without it they paint React Navigation's light
+        default (#3699, `lib/navigation-theme.ts`).
+      */}
+      <ThemeProvider value={navigationTheme}>
+        <Stack>
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          <Stack.Screen name="(app)" options={{ headerShown: false }} />
+        </Stack>
+      </ThemeProvider>
     </View>
   );
 }
 
 function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(FIGTREE_FACES);
+  const appMounted = Boolean(fontsLoaded || fontError);
 
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      void SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
+  return (
+    <>
+      {/* The app mounts once Figtree is registered (a failed load falls back to
+          the system face), under the launch logo, which covers it until its
+          first screen is ready. */}
+      {appMounted ? <RootProviders /> : null}
+      <LaunchCover appMounted={appMounted} />
+    </>
+  );
+}
 
-  if (!fontsLoaded && !fontError) {
-    return null;
-  }
-
+function RootProviders() {
   return (
     // Gesture handling must wrap everything that hosts gestures, and gorhom
     // sheets read safe-area insets for their detents, so both providers sit
@@ -143,6 +178,9 @@ function RootLayout() {
                         (`components/network-banner.tsx`).
                       */}
                       <NetworkBanner />
+                      <RecordingBar />
+                      {/* The glass menu `openItemMenu` opens from anywhere. */}
+                      <ItemMenuHost />
                     </ClientPolicyGate>
                   </KeyboardProviderGuarded>
                 </AnalyticsProvider>

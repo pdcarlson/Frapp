@@ -13,20 +13,23 @@ import { pngHeader } from "../lib/brand-pixels.mjs";
 export const STORE_SCALE = 3;
 
 /**
- * The App Store's 6.9" iPhone size: 440x956 points at 3x is 1320x2868 pixels.
- * Also the viewport every store screen is captured at, for both stores.
- * Apple's screenshot specifications (developer.apple.com → App Store Connect
- * help → Reference → Screenshot specifications, read 2026-09-22) list 1320x2868
- * portrait among the 6.9" sizes, ask for a 6.5" set only when no 6.9" set is
- * provided, and scale the smaller iPhone sizes from the set above them. That
- * is the published page, not the console: #2454 asks for the size App Store
- * Connect states at upload to be confirmed and recorded.
+ * The App Store size: 402x874 points at 3x is 1206x2622 pixels, the iPhone
+ * 16 Pro's screen. Also the viewport every store screen is captured at, for
+ * both stores.
+ *
+ * Until 2026-11-12 this was the 6.9" size from Apple's published spec,
+ * 440x956 at 3x (1320x2868). The console is what decides, and on 2026-11-05
+ * App Store Connect's only iPhone slot, "iPhone with Dynamic Island (medium
+ * display)", rejected 1320x2868, listed 1179x2556 and 1206x2622, took
+ * 1206x2622, and said it uses that one set for every iPhone display size
+ * (#2454). The upload that day was a scale-and-crop of the 1320 set; this
+ * renders the accepted size directly.
  */
 export const APP_STORE_PRESET = {
   name: "App Store",
   folder: "app-store",
-  viewport: { width: 440, height: 956 },
-  pixels: { width: 1320, height: 2868 },
+  viewport: { width: 402, height: 874 },
+  pixels: { width: 1206, height: 2622 },
 };
 
 /**

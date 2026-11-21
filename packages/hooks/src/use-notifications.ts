@@ -10,6 +10,8 @@ import {
 } from "@tanstack/react-query";
 import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { notificationSourceKey } from "./notification-rows";
+import { INBOX_FIRST_PAGE_SIZE } from "@repo/validation";
 
 /**
  * Query keys for this module.
@@ -206,7 +208,10 @@ export function useNotifications(limit?: number) {
   // Every pending receipt, the push tap's `on-open` ones included: mutation
   // filters match by key prefix.
   const pendingReads = useMutationState({
-    filters: { mutationKey: markNotificationReadMutationKey, status: "pending" },
+    filters: {
+      mutationKey: markNotificationReadMutationKey,
+      status: "pending",
+    },
     select: (mutation) => {
       const id = mutation.state.variables;
       return typeof id === "string"
@@ -214,22 +219,35 @@ export function useNotifications(limit?: number) {
         : null;
     },
   });
+  // Rows a clear still in flight names (#3948) are left out the same way, so
+  // they go on the tap and a refetch that lands first can't bring them back.
+  const pendingClears = useMutationState({
+    filters: { mutationKey: clearNotificationsMutationKey, status: "pending" },
+    select: (mutation) => {
+      const scope = mutation.state.variables as ClearScope | undefined;
+      return scope ? clearScopeKeys(scope).join("\n") : null;
+    },
+  });
   // Reduced to a string, so the `select` below keeps its identity (and the
   // query its memoized result) until the set of pending receipts changes.
   const pendingKey = pendingReads.filter(Boolean).sort().join("\n");
+  const clearingKey = pendingClears.filter(Boolean).sort().join("\n");
   const select = useMemo(() => {
     const pending = new Map<string, string>();
     for (const entry of pendingKey ? pendingKey.split("\n") : []) {
       const [id = "", sentAt = ""] = entry.split("\t");
       pending.set(id, sentAt);
     }
-    return <T,>(data: T): T => withPendingReads(data, pending);
-  }, [pendingKey]);
+    const clearing = new Set(clearingKey ? clearingKey.split("\n") : []);
+    return <T>(data: T): T =>
+      withPendingReads(withoutCleared(data, clearing), pending);
+  }, [pendingKey, clearingKey]);
   return useQuery({
     queryKey: notificationKeys.list(chapterId, limit),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/notifications", {
-        params: { query: { limit: limit ?? 50 } },
+        signal,
+        params: { query: { limit: limit ?? INBOX_FIRST_PAGE_SIZE } },
       });
       if (error) throw error;
       return data;
@@ -244,10 +262,10 @@ export function useNotificationPreferences(chapterId: string) {
   const client = useFrappClient();
   return useQuery({
     queryKey: notificationKeys.preferences(chapterId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/notifications/preferences",
-        { params: { query: { chapterId } } },
+        { signal, params: { query: { chapterId } } },
       );
       if (error) throw error;
       return data;
@@ -273,8 +291,8 @@ export function useUserSettings(options?: { enabled?: boolean }) {
     // The phone's presence runtime sits above the auth gate (#3917) and holds
     // the read until someone is signed in.
     enabled: options?.enabled ?? true,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/settings");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/settings", { signal });
       if (error) throw error;
       if (data === undefined) {
         throw new Error("GET /v1/settings answered with an empty body");
@@ -316,7 +334,10 @@ export function useRemovePushToken() {
  * own defaults. Its failures group in Sentry under `notifications`, not
  * `unkeyed` (`@repo/observability`'s `query-errors.ts`).
  */
-export const markNotificationReadMutationKey = ["notifications", "read"] as const;
+export const markNotificationReadMutationKey = [
+  "notifications",
+  "read",
+] as const;
 
 /**
  * The read receipt a push tap sends as it opens the app: the same write, under
@@ -400,6 +421,88 @@ export function invalidateNotificationLists(queryClient: QueryClient) {
 }
 
 /**
+ * What a clear removes (#3948): the entry's row ids and, for a conversation,
+ * its `notificationSourceKey`, so rows of it the list hid (past its page, or
+ * read under Unread) go with it, as the server deletes them.
+ */
+export interface ClearScope {
+  ids: readonly string[];
+  conversation?: { channelId: string; threadRootId?: string };
+}
+
+function conversationKey(conversation: {
+  channelId: string;
+  threadRootId?: string;
+}): string {
+  return notificationSourceKey({
+    target: { screen: "chat", ...conversation },
+  }) as string;
+}
+
+/** A clear's ids and conversation key, as one set of strings. */
+function clearScopeKeys(scope: ClearScope): string[] {
+  return scope.conversation
+    ? [...scope.ids, conversationKey(scope.conversation)]
+    : [...scope.ids];
+}
+
+/**
+ * The cached list without the rows `keys` names, by id or by conversation
+ * key; the same list if none goes.
+ */
+function withoutCleared<T>(data: T, keys: ReadonlySet<string>): T {
+  if (keys.size === 0 || !Array.isArray(data)) return data;
+  const kept = data.filter((row: unknown) => {
+    if (!row || typeof row !== "object") return true;
+    const { id, data: rowData } = row as CachedNotificationRow;
+    if (typeof id === "string" && keys.has(id)) return false;
+    const source = notificationSourceKey(rowData);
+    return !(source && keys.has(source));
+  });
+  return (kept.length === data.length ? data : kept) as T;
+}
+
+/** Identifies {@link useClearNotifications}'s writes. */
+const clearNotificationsMutationKey = ["notifications", "clear"] as const;
+
+/**
+ * Clear notifications from the member's list (#3948):
+ * `POST /v1/notifications/clear` with the rows' ids, the caller's own in the
+ * active chapter, and for a conversation's entry the conversation, so the
+ * server deletes the rest of it too.
+ *
+ * The rows leave the list on the tap, through `useNotifications`' overlay of
+ * pending clears, and on success leave every cached list (an unmounted one
+ * included, which the refetch below doesn't reach) before the overlay lifts;
+ * a failed clear simply stops hiding them. The lists then refetch.
+ */
+export function useClearNotifications() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: clearNotificationsMutationKey,
+    mutationFn: async (scope: ClearScope) => {
+      const result = await client.POST("/v1/notifications/clear", {
+        body: {
+          ids: [...scope.ids],
+          ...(scope.conversation ? { conversation: scope.conversation } : {}),
+        },
+      });
+      throwUnlessOk(result);
+      return result.data;
+    },
+    onSuccess: (_result, scope) => {
+      const gone = new Set(clearScopeKeys(scope));
+      queryClient.setQueriesData(
+        { predicate: (query) => isNotificationListKey(query.queryKey) },
+        (rows: unknown) => withoutCleared(rows, gone),
+      );
+      return invalidateNotificationLists(queryClient);
+    },
+  });
+}
+
+/**
  * The cached list with every row a pending read receipt names shown read
  * (#3788). `pending` maps a notification id to when its receipt was sent.
  */
@@ -411,7 +514,8 @@ function withPendingReads<T>(data: T, pending: ReadonlyMap<string, string>): T {
   return withRowsRead(
     data,
     (row) => {
-      const sentAt = typeof row.id === "string" ? pending.get(row.id) : undefined;
+      const sentAt =
+        typeof row.id === "string" ? pending.get(row.id) : undefined;
       if (sentAt === undefined) return false;
       stamp = sentAt;
       return true;
@@ -471,7 +575,9 @@ export function refetchIfChannelNotificationsShown(
   channelId: string,
 ): void {
   const shown = queryClient
-    .getQueriesData({ predicate: (query) => isNotificationListKey(query.queryKey) })
+    .getQueriesData({
+      predicate: (query) => isNotificationListKey(query.queryKey),
+    })
     .some(
       ([, rows]) =>
         Array.isArray(rows) &&
@@ -533,7 +639,9 @@ export function useMarkNotificationRead({
       );
       const firstFetchInFlight = queryClient
         .getQueryCache()
-        .findAll({ predicate: (query) => isNotificationListKey(query.queryKey) })
+        .findAll({
+          predicate: (query) => isNotificationListKey(query.queryKey),
+        })
         .some(
           (query) =>
             query.state.data === undefined &&
@@ -546,8 +654,14 @@ export function useMarkNotificationRead({
   });
 }
 
+function isIdScope(
+  scope: readonly string[] | { ids: readonly string[] } | undefined,
+): scope is { ids: readonly string[] } {
+  return !!scope && !Array.isArray(scope) && "ids" in scope;
+}
+
 /** Identifies {@link useMarkNotificationsRead}, for Sentry grouping (#3393). */
-export const markNotificationsReadMutationKey = [
+const markNotificationsReadMutationKey = [
   "notifications",
   "read-many",
 ] as const;
@@ -555,7 +669,9 @@ export const markNotificationsReadMutationKey = [
 /**
  * Mark the member's unread notifications read in one request (#3929):
  * `POST /v1/notifications/read`. Called with no screens it is "Mark all
- * read"; with screens it reads only the rows that point at them.
+ * read"; with screens it reads only the rows that point at them; with
+ * `{ ids }` only those rows, which is how opening an inbox entry reads every
+ * row the entry stands for (#3948).
  *
  * The server answers with the instant it stamped. On success that stamp goes
  * onto the matching cached rows created at or before it, so the dots clear at
@@ -567,20 +683,28 @@ export function useMarkNotificationsRead() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: markNotificationsReadMutationKey,
-    mutationFn: async (screens?: readonly string[]) => {
-      const result = await client.POST("/v1/notifications/read", {
-        body: screens && screens.length > 0 ? { screens: [...screens] } : {},
-      });
+    mutationFn: async (
+      scope?: readonly string[] | { ids: readonly string[] },
+    ) => {
+      const body = isIdScope(scope)
+        ? { ids: [...scope.ids] }
+        : scope && scope.length > 0
+          ? { screens: [...scope] }
+          : {};
+      const result = await client.POST("/v1/notifications/read", { body });
       throwUnlessOk(result);
       return result.data;
     },
-    onSuccess: (result, screens) => {
+    onSuccess: (result, scope) => {
       const readAt = result?.read_at;
+      const ids = isIdScope(scope) ? new Set(scope.ids) : null;
+      const screens = isIdScope(scope) ? undefined : scope;
       if (typeof readAt === "string") {
         const through = Date.parse(readAt);
         markCachedRowsRead(
           queryClient,
           (row) => {
+            if (ids && !ids.has(row.id as string)) return false;
             if (screens && screens.length > 0) {
               const screen = targetScreenOf(row);
               if (screen === null || !screens.includes(screen)) return false;
@@ -682,7 +806,12 @@ export function useUpdateNotificationPreference() {
       const restore = previousEnabledFor(previous, body.category);
       const next = applyPreferenceToRows(previous, body);
       if (next) queryClient.setQueryData(queryKey, next);
-      return { queryKey, category: body.category, restore, wrote: next !== null };
+      return {
+        queryKey,
+        category: body.category,
+        restore,
+        wrote: next !== null,
+      };
     },
     onError: (_error, _body, context) => {
       if (!context?.wrote) return;

@@ -20,6 +20,7 @@ import {
   POINTS_REASON_MAX_LENGTH,
 } from '@repo/validation';
 import type { PointTransaction } from '#domain/entities/point-transaction.entity';
+import type { AssertNever } from './drift-guard';
 
 /**
  * The only two categories `POST /v1/points/adjust` can write. Shared by the
@@ -97,7 +98,7 @@ export class AdjustPointsDto {
  *     changed under us stops being assignable and fails to compile. It does NOT
  *     catch key drift: an extra member is always legal, and `implements` cannot
  *     require an **optional** one.
- *   - the `Assert<Exclude<…>>` aliases at the bottom of this file catch **key**
+ *   - the `AssertNever<Exclude<…>>` aliases at the bottom of this file catch **key**
  *     drift in both directions, and name the offending field in the error. Same
  *     device as `chapter-response.dto.ts`, for the same reason.
  *
@@ -212,6 +213,7 @@ const TRANSACTION_CATEGORIES = [
   'FINE',
   'MANUAL',
   'STUDY',
+  'PREDICTION',
 ] as const;
 
 export class ListPointTransactionsQueryDto {
@@ -265,13 +267,14 @@ export class ListPointTransactionsQueryDto {
 /**
  * Compile-time key-drift guards between {@link AdjustPointsResponseDto} and the
  * ledger row it publishes. Each resolves to `never` while the two agree; when
- * they diverge the alias stops satisfying `Assert`'s constraint and the build
+ * they diverge the alias stops satisfying `AssertNever`'s constraint and the build
  * fails naming the field.
  */
-type Assert<T extends never> = T;
-
-/** Ledger fields {@link AdjustPointsResponseDto} forgot to declare. Must be `never`. */
-export type AdjustPointsResponseDtoMissingFields = Assert<
+/**
+ * Ledger fields {@link AdjustPointsResponseDto} forgot to declare. Must be `never`.
+ * @driftguard
+ */
+export type AdjustPointsResponseDtoMissingFields = AssertNever<
   Exclude<keyof PointTransaction, keyof AdjustPointsResponseDto>
 >;
 
@@ -279,7 +282,8 @@ export type AdjustPointsResponseDtoMissingFields = Assert<
  * Fields {@link AdjustPointsResponseDto} declares that the ledger row does not
  * carry. Must be `never`. `card_posted` is excluded because it is this route's
  * own outcome flag, not a column — the one deliberate addition.
+ * @driftguard
  */
-export type AdjustPointsResponseDtoExtraFields = Assert<
+export type AdjustPointsResponseDtoExtraFields = AssertNever<
   Exclude<keyof AdjustPointsResponseDto, keyof PointTransaction | 'card_posted'>
 >;

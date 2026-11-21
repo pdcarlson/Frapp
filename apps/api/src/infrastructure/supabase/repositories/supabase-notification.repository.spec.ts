@@ -2,6 +2,7 @@ import { SupabaseNotificationRepository } from './supabase-notification.reposito
 import {
   CHAPTER_A,
   CHAPTER_B,
+  USER_A,
   USER_SHARED,
   createTenantHarness,
   inA,
@@ -182,6 +183,214 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
     });
   });
 
+  describe('deleteMany (#3948)', () => {
+    it('deletes only the caller rows in the caller chapter', async () => {
+      const otherUsers = '0b000000-0000-4000-8000-000000000141';
+      const otherUsersTwin = '0a000000-0000-4000-8000-000000000141';
+      harness = createTenantHarness({
+        tables: {
+          notifications: [
+            ...seed().notifications,
+            inA({
+              id: otherUsersTwin,
+              user_id: USER_A,
+              title: 'Not yours',
+              body: '',
+              data: {},
+              read_at: null,
+              created_at: '2026-01-01T00:00:00.000Z',
+            }),
+            inB({
+              id: otherUsers,
+              user_id: USER_A,
+              title: 'Not yours',
+              body: '',
+              data: {},
+              read_at: null,
+              created_at: '2026-01-01T00:00:00.000Z',
+            }),
+          ],
+        },
+      });
+      repo = new SupabaseNotificationRepository(harness.client);
+
+      const cleared = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.deleteMany(USER_SHARED, CHAPTER_B, [NOTIF_A, NOTIF_B, otherUsers]),
+      );
+
+      expect(cleared).toBe(1);
+      expect(
+        harness
+          .rows('notifications')
+          .map((n) => n.id)
+          .sort(),
+      ).toEqual([NOTIF_A, otherUsersTwin, otherUsers].sort());
+    });
+  });
+
+  describe('deleteTaskCompletionRows (#5732)', () => {
+    const rows = [
+      {
+        id: 'review',
+        user_id: 'officer',
+        data: { target: { screen: 'tasks', taskId: 't-1', view: 'review' } },
+        created_at: '2026-01-01T00:01:02.000Z',
+      },
+      {
+        id: 'follower',
+        user_id: 'follower',
+        data: {
+          about: 'task-completed',
+          target: { screen: 'tasks', taskId: 't-1' },
+        },
+        created_at: '2026-01-01T00:01:02.000Z',
+      },
+      {
+        id: 'assigned',
+        user_id: 'assignee',
+        data: { target: { screen: 'tasks', taskId: 't-1' } },
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'earlier-review',
+        user_id: 'officer',
+        data: { target: { screen: 'tasks', taskId: 't-1', view: 'review' } },
+        created_at: '2026-01-01T00:00:30.000Z',
+      },
+      {
+        id: 'due-reminder',
+        user_id: 'assignee',
+        data: { target: { screen: 'tasks', taskId: 't-1' } },
+        created_at: '2026-01-01T00:02:00.000Z',
+      },
+      {
+        id: 'other-task',
+        user_id: 'officer',
+        data: { target: { screen: 'tasks', taskId: 't-2', view: 'review' } },
+        created_at: '2026-01-01T00:01:02.000Z',
+      },
+    ];
+
+    beforeEach(() => {
+      const row = (r: (typeof rows)[number], prefix: string) => ({
+        ...r,
+        id: `${prefix}-${r.id}`,
+        title: 'Moiz finished: Sweep',
+        body: '',
+        read_at: null,
+      });
+      harness = createTenantHarness({
+        tables: {
+          notifications: [
+            ...rows.map((r) => inA(row(r, 'a'))),
+            ...rows.map((r) => inB(row(r, 'b'))),
+          ],
+        },
+      });
+      repo = new SupabaseNotificationRepository(harness.client);
+    });
+
+    it("deletes every round's review and follower rows, not the task's other rows or another task's", async () => {
+      const cleared = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.deleteTaskCompletionRows(CHAPTER_B, 't-1'),
+      );
+
+      expect(cleared).toBe(3);
+      expect(
+        harness
+          .rows('notifications')
+          .map((n) => n.id as string)
+          .filter((id) => id.startsWith('b-'))
+          .sort(),
+      ).toEqual(['b-assigned', 'b-due-reminder', 'b-other-task']);
+      expect(harness.rows('notifications')).toHaveLength(9);
+    });
+  });
+
+  describe('deleteConversation (#3948)', () => {
+    const chat = (target: Record<string, unknown>, extra = {}) => ({
+      target: { screen: 'chat', channelId: 'c-1', ...target },
+      ...extra,
+    });
+    const convo = [
+      { id: 'old', data: chat({}), created_at: '2026-01-01T00:00:00.000Z' },
+      { id: 'read', data: chat({}), created_at: '2026-01-01T00:00:30.000Z' },
+      {
+        id: 'mention',
+        data: chat({}, { mentioned: true }),
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'thread',
+        data: chat({ threadRootId: 'm-1' }),
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'other',
+        data: chat({ channelId: 'c-2' }),
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      { id: 'late', data: chat({}), created_at: '2026-01-01T00:05:00.000Z' },
+    ];
+    const THROUGH = '2026-01-01T00:01:00.000Z';
+
+    beforeEach(() => {
+      const row = (r: (typeof convo)[number], prefix: string) => ({
+        ...r,
+        id: `${prefix}-${r.id}`,
+        user_id: USER_SHARED,
+        title: 'Alex',
+        body: 'hi',
+        read_at: null,
+      });
+      harness = createTenantHarness({
+        tables: {
+          notifications: [
+            ...convo.map((r) => inA(row(r, 'a'))),
+            ...convo.map((r) => inB(row(r, 'b'))),
+          ],
+        },
+      });
+      repo = new SupabaseNotificationRepository(harness.client);
+    });
+    const left = () =>
+      harness
+        .rows('notifications')
+        .map((n) => n.id as string)
+        .filter((id) => id.startsWith('b-'))
+        .sort();
+
+    it("deletes the channel's own rows up to now, not a mention, a thread, another channel or a later row", async () => {
+      const cleared = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.deleteConversation(
+          USER_SHARED,
+          CHAPTER_B,
+          { channelId: 'c-1' },
+          THROUGH,
+        ),
+      );
+
+      expect(cleared).toBe(2);
+      expect(left()).toEqual(['b-late', 'b-mention', 'b-other', 'b-thread']);
+      expect(harness.rows('notifications')).toHaveLength(10);
+    });
+
+    it("deletes only that thread's rows with a thread root", async () => {
+      const cleared = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.deleteConversation(
+          USER_SHARED,
+          CHAPTER_B,
+          { channelId: 'c-1', threadRootId: 'm-1' },
+          THROUGH,
+        ),
+      );
+
+      expect(cleared).toBe(1);
+      expect(left()).not.toContain('b-thread');
+      expect(left()).toHaveLength(5);
+    });
+  });
+
   describe('markAllRead (#3929)', () => {
     const rows = [
       {
@@ -266,6 +475,26 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
       });
     });
 
+    it('marks only the named rows, in the caller chapter only (#3948)', async () => {
+      const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.markAllRead(USER_SHARED, CHAPTER_B, READ_THROUGH, undefined, [
+          'b-chat',
+          'b-task',
+          'a-event',
+        ]),
+      );
+
+      expect(updated).toBe(2);
+      expect(readAtById()).toEqual({
+        ...chapterAUntouched,
+        'b-chat': READ_THROUGH,
+        'b-event': null,
+        'b-task': READ_THROUGH,
+        'b-late': null,
+        'b-read': '2025-12-31T00:00:00.000Z',
+      });
+    });
+
     it('marks only the rows that point at the named screens', async () => {
       const updated = await harness.expectTenantScoped(CHAPTER_B, () =>
         repo.markAllRead(USER_SHARED, CHAPTER_B, READ_THROUGH, [
@@ -286,6 +515,79 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
     });
   });
 
+  describe('rewriteChatMessageBody (#4418)', () => {
+    beforeEach(() => {
+      const chatRow = (
+        id: string,
+        chatMessageId: string | null,
+        userId = USER_SHARED,
+      ) => ({
+        id,
+        user_id: userId,
+        title: 'Alex in #general',
+        body: 'old words',
+        data: { target: { screen: 'chat', channelId: 'c-1' } },
+        chat_message_id: chatMessageId,
+        read_at: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+      harness = createTenantHarness({
+        tables: {
+          notifications: [
+            inA(chatRow('a-m1', 'm-1')),
+            inA(chatRow('a-m2', 'm-2')),
+            inA(chatRow('a-bundle', null)),
+            inA(chatRow('a-gone', 'm-1', USER_A)),
+            inB(chatRow('b-m1', 'm-1')),
+            inB(chatRow('b-m2', 'm-2')),
+            inB(chatRow('b-bundle', null)),
+            // Lost access to the channel since: an edit must not reach them.
+            inB(chatRow('b-gone', 'm-1', USER_A)),
+          ],
+        },
+      });
+      repo = new SupabaseNotificationRepository(harness.client);
+    });
+
+    it("rewrites only the caller chapter's rows that quote the message, for the readers named", async () => {
+      await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.rewriteChatMessageBody(CHAPTER_B, 'm-1', 'new words', [
+          USER_SHARED,
+        ]),
+      );
+
+      expect(
+        Object.fromEntries(
+          harness.rows('notifications').map((n) => [n.id, n.body]),
+        ),
+      ).toEqual({
+        'a-m1': 'old words',
+        'a-m2': 'old words',
+        'a-bundle': 'old words',
+        'a-gone': 'old words',
+        'b-m1': 'new words',
+        'b-m2': 'old words',
+        'b-bundle': 'old words',
+        'b-gone': 'old words',
+      });
+    });
+  });
+
+  it('create stores the chat message a row quotes (#4418)', async () => {
+    const created = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.create({
+        chapter_id: CHAPTER_B,
+        user_id: USER_SHARED,
+        title: 'Alex in #general',
+        body: 'Hello',
+        data: {},
+        chat_message_id: 'm-1',
+      }),
+    );
+
+    expect(created?.chat_message_id).toBe('m-1');
+  });
+
   it('create issues the row under the caller chapter', async () => {
     const created = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.create({
@@ -297,7 +599,7 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
       }),
     );
 
-    expect(created.chapter_id).toBe(CHAPTER_B);
+    expect(created?.chapter_id).toBe(CHAPTER_B);
     expect(
       harness.rows('notifications').filter((n) => n.chapter_id === CHAPTER_A),
     ).toHaveLength(1);

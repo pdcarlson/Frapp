@@ -29,6 +29,21 @@ export type AppliedSubscriptionWebhook = Chapter & {
   previous_subscription_status?: SubscriptionStatus;
 };
 
+/** A chapter's birthday post channel, and whether it may still write (#4959). */
+export interface ChapterBirthdayChannel {
+  id: string;
+  birthday_channel_id: string;
+  subscription_status: Chapter['subscription_status'];
+  past_due_since: string | null;
+}
+
+/** A chapter as the weekly recap push reads it (#4985). */
+export interface ChapterRecapPushTarget {
+  id: string;
+  name: string;
+  enabled_modules: Record<string, boolean> | null;
+}
+
 export interface IChapterRepository {
   findById(id: string): Promise<Chapter | null>;
   /**
@@ -37,6 +52,26 @@ export interface IChapterRepository {
    * (`ChapterService.listForUser`).
    */
   findByIds(ids: string[]): Promise<Chapter[]>;
+  /**
+   * When each chapter `userId` started since `since` was created, for the
+   * daily ceiling on starting chapters (`daily-send-limits.ts`). The starter
+   * is `legal_accepted_by`: onboarding stamps it with the account that
+   * submitted the wizard, and nothing else writes it.
+   */
+  findStartedAtByUserSince(userId: string, since: Date): Promise<string[]>;
+  /**
+   * Every chapter that picked a birthday post channel (#4959), with that
+   * channel and its billing state: the birthday sweep's work list, across
+   * chapters by design, read in pages so none is cut off at PostgREST's row
+   * cap.
+   */
+  findWithBirthdayChannel(): Promise<ChapterBirthdayChannel[]>;
+  /**
+   * Every chapter that isn't canceled, with its name and module switches: the
+   * weekly recap push's work list (#4985), across chapters by design, read in
+   * pages so none is cut off at PostgREST's row cap.
+   */
+  findForRecapPush(): Promise<ChapterRecapPushTarget[]>;
   /**
    * Whether the chapter has opted out of product analytics
    * (`chapters.analytics_opt_out`). Reads that one column, because analytics

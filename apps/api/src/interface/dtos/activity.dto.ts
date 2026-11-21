@@ -1,11 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, getSchemaPath } from '@nestjs/swagger';
+import { TASK_PROOF_KINDS, type TaskProofKind } from '@repo/validation';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsIn,
+  IsISO8601,
+  IsOptional,
   IsUUID,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 import { ACTIVITY_ITEM_KINDS } from '#domain/entities/activity-item-read.entity';
@@ -14,17 +18,50 @@ import type { ActivityItemRef } from '#domain/repositories/activity-item-read.re
 import { CHAT_LINK_MEMBER_STATES } from '#domain/entities/chat.entity';
 import type { ChatLinkMemberStateValue } from '#domain/entities/chat.entity';
 import type { ActivityLink } from '../../application/services/activity-link.service';
+import type {
+  ActivityReminder,
+  ChatMessageReminderRef,
+} from '../../application/services/chat-reminder.service';
 import { ChatMessageDto } from './chat.dto';
 import { TaskStatus } from '#domain/entities/task.entity';
+import { TaskGroupSummaryDto } from './task.dto';
 import type { ChannelType } from '#domain/entities/chat.entity';
-import { ACTIVITY_SECTIONS } from '../../application/services/activity.service';
+import {
+  ACTIVITY_SECTIONS,
+  ACTIVITY_WEEK_PARTS,
+  ARCHIVE_SECTIONS,
+} from '../../application/services/activity.service';
+import { STANDING_SECTIONS } from '../../application/services/activity-standing.service';
+import { RECAP_PARTS } from '../../application/services/activity-recap.service';
 import type {
+  ActivityRecap,
+  RecapPart,
+} from '../../application/services/activity-recap.service';
+import type {
+  ActivityStanding,
+  StandingPoints,
+  StandingRequiredEvents,
+  StandingSection,
+  StandingService,
+  StandingStudy,
+} from '../../application/services/activity-standing.service';
+import type {
+  ActivityArchive,
+  ActivityNow,
+  ActivityCard,
   ActivityEvent,
   ActivityHoursEntry,
   ActivityPoll,
+  ActivityProgress,
   ActivitySection,
   ActivityTask,
+  ActivityTaskGroup,
+  ActivityTaskItem,
   ActivityView,
+  ActivityWeek,
+  ActivityWeekCount,
+  ActivityWeekPart,
+  ArchiveSection,
 } from '../../application/services/activity.service';
 
 /**
@@ -119,6 +156,21 @@ export class ActivityTaskDto implements ActivityTask {
   })
   sent_back_at: string | null;
 
+  @ApiProperty({
+    enum: TASK_PROOF_KINDS,
+    description:
+      'What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done.',
+  })
+  proof_kind: TaskProofKind;
+
+  @ApiProperty({
+    type: () => TaskGroupSummaryDto,
+    nullable: true,
+    description:
+      'On a task for everyone, its group (#5492), as every task read carries it: each member’s copy has the same `id`, and the counts say how far the group is. Null for a one-person task.',
+  })
+  group: TaskGroupSummaryDto | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 
@@ -127,6 +179,91 @@ export class ActivityTaskDto implements ActivityTask {
       'Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
+}
+
+/**
+ * A task for everyone as one row of `made_by_you.task_items` (#5492): the
+ * group's `TaskGroupSummary`, plus what its copies share and enough of them to
+ * draw and open the row.
+ */
+export class ActivityTaskGroupDto
+  extends TaskGroupSummaryDto
+  implements ActivityTaskGroup
+{
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'A copy to open the group by (`GET /v1/tasks/{id}`, which carries the group): the caller’s own when they hold one, else an overdue copy, else one still open, else any.',
+  })
+  task_id: string;
+
+  @ApiProperty({
+    description:
+      'What the copies share, read from one not yet confirmed: a group edit leaves a confirmed copy as it was.',
+  })
+  title: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  description: string | null;
+
+  @ApiProperty({ format: 'date', example: '2026-11-20' })
+  due_date: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'The moment it is due, when it has a time of day.',
+  })
+  due_at: string | null;
+
+  @ApiProperty({ type: Number, nullable: true })
+  point_reward: number | null;
+
+  @ApiProperty({ enum: TASK_PROOF_KINDS })
+  proof_kind: TaskProofKind;
+
+  @ApiProperty({ description: 'Whether any copy is overdue.' })
+  overdue: boolean;
+
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    maxItems: 5,
+    description:
+      'Up to 5 of the members it went to, for faces: those overdue first, then those still open, then the rest. `total` says how many there are in all.',
+  })
+  preview_assignee_ids: string[];
+
+  @ApiProperty({ format: 'date-time', description: 'When the group was made.' })
+  created_at: string;
+}
+
+/** A one-person task in `made_by_you.task_items`. */
+export class ActivityTaskItemTaskDto {
+  @ApiProperty({ enum: ['task'] })
+  kind: 'task';
+
+  @ApiProperty({ type: () => ActivityTaskDto })
+  task: ActivityTaskDto;
+}
+
+/** A task for everyone, once, in `made_by_you.task_items`. */
+export class ActivityTaskItemGroupDto {
+  @ApiProperty({ enum: ['group'] })
+  kind: 'group';
+
+  @ApiProperty({ type: () => ActivityTaskGroupDto })
+  group: ActivityTaskGroupDto;
 }
 
 export class ActivityHoursEntryDto implements ActivityHoursEntry {
@@ -158,13 +295,33 @@ export class ActivityHoursEntryDto implements ActivityHoursEntry {
       'Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
+}
+
+export class ActivityProgressDto implements ActivityProgress {
+  @ApiProperty({ description: 'How many have answered: voted, or checked in.' })
+  done: number;
+
+  @ApiProperty({
+    description:
+      'Of how many can answer. Never 0 (a row with nobody to answer has no progress) and never less than `done`.',
+  })
+  total: number;
 }
 
 export class ActivityPollDto implements ActivityPoll {
   @ApiProperty({
     format: 'uuid',
     description:
-      'The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.',
+      'The chat message that is the poll card. It is served whole in `message`; this row carries no tallies by option. Its one count is `progress`, on an open poll the caller posted.',
   })
   message_id: string;
 
@@ -202,7 +359,8 @@ export class ActivityPollDto implements ActivityPoll {
     type: String,
     format: 'date-time',
     nullable: true,
-    description: 'Set when its creator closed it early.',
+    description:
+      'Set when it was closed early, by its creator or a channels:manage holder.',
   })
   closed_at: string | null;
 
@@ -211,6 +369,14 @@ export class ActivityPollDto implements ActivityPoll {
 
   @ApiProperty()
   has_voted: boolean;
+
+  @ApiProperty({
+    type: ActivityProgressDto,
+    nullable: true,
+    description:
+      'In `made_by_you`, on an open poll: how many of the other members who can read its channel have voted (#4792). Null everywhere else, when nobody else can read it, and when the count could not be read.',
+  })
+  progress: ActivityProgressDto | null;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
@@ -222,11 +388,87 @@ export class ActivityPollDto implements ActivityPoll {
   unread: boolean;
 
   @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
+
+  @ApiProperty({
     type: ChatMessageDto,
     description:
       'The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them.',
   })
   message: ActivityPoll['message'];
+}
+
+export class ActivityCardDto implements ActivityCard {
+  @ApiProperty({
+    enum: ['signup', 'headcount', 'form'],
+    description:
+      '`signup` for a sign-up sheet of slots, `headcount` for a Going / Can’t make it sign-up, `form` for a form card. Its read is recorded as `signup` for the first two and `form` for a form.',
+  })
+  kind: ActivityCard['kind'];
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'The chat message that is the card. A client opens it in chat, where it is answered.',
+  })
+  message_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    description:
+      'The channel’s name. A direct message’s is server-generated, so label those from `channel_type`.',
+  })
+  channel_name: string;
+
+  @ApiProperty({ enum: ACTIVITY_CHANNEL_TYPES })
+  channel_type: ChannelType;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  sender_id: string | null;
+
+  @ApiProperty()
+  title: string;
+
+  @ApiProperty({
+    description:
+      'How many slots a sign-up sheet has, or questions a form asks; 2 for a headcount.',
+  })
+  item_count: number;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When it stops taking answers. Null for a card with no end time.',
+  })
+  closes_at: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+
+  @ApiProperty({
+    description:
+      'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
+  })
+  unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 export class ActivityEventDto implements ActivityEvent {
@@ -265,12 +507,33 @@ export class ActivityEventDto implements ActivityEvent {
   check_in_open: boolean;
 
   @ApiProperty({
+    description:
+      'Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses.',
+  })
+  check_in_needs_location: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether checking in needs the code on an officer’s check-in screen: one has shown it and check-in is still open. A surface that can’t scan says to point the phone’s camera at the code instead of offering a check-in the server refuses. Read only while check-in is open; false otherwise.',
+  })
+  check_in_needs_code: boolean;
+
+  @ApiProperty({
     type: Boolean,
     nullable: true,
     description:
       'Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed.',
   })
   checked_in: boolean | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the caller checked in, read with `checked_in`. Null when they have not, when it was not read, and when the attendance row has no time.',
+  })
+  checked_in_at: string | null;
 
   @ApiProperty({
     type: String,
@@ -281,6 +544,14 @@ export class ActivityEventDto implements ActivityEvent {
   })
   created_by: string | null;
 
+  @ApiProperty({
+    type: ActivityProgressDto,
+    nullable: true,
+    description:
+      'In `made_by_you`, once check-in has opened: how many of the other members the event invites, and who can check in, have checked in (#4792). Excused members are left out. Null before check-in opens, everywhere else, when it invites nobody else who can check in, and when the count could not be read.',
+  })
+  progress: ActivityProgressDto | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 
@@ -289,6 +560,15 @@ export class ActivityEventDto implements ActivityEvent {
       'Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 /** A file the caller uploaded. Never served since #4291; see `ActivityMadeByYouDto.files`. */
@@ -318,6 +598,15 @@ export class ActivityLinkDto implements ActivityLink {
     example: 'docs.google.com',
   })
   host: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The linked page’s own name (a form’s or sheet’s title), read in the background after the link was posted. Null when the page had none worth showing (a private file’s sign-in page, or a page that names only the product) or has not been read yet: title the row by its kind instead.',
+    example: '5K volunteer shifts',
+  })
+  title: string | null;
 
   @ApiProperty({
     format: 'uuid',
@@ -367,6 +656,128 @@ export class ActivityLinkDto implements ActivityLink {
       'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
+}
+
+/**
+ * A reminder the caller set on a chat message (#4957), on their Activity
+ * page. Private to them.
+ */
+export class ActivityReminderDto implements ActivityReminder {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'The message it is about: opening the row opens chat at this message, and `PUT`/`DELETE /v1/reminders/messages/{message_id}` snooze and clear it.',
+  })
+  message_id: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Set when the message is a thread reply, which the channel’s timeline doesn’t show: opening the row opens this thread.',
+  })
+  thread_root_id: string | null;
+
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The channel’s name; null when the caller can no longer read the channel. A direct message’s is server-generated, so label those from `channel_type`.',
+  })
+  channel_name: string | null;
+
+  @ApiProperty({
+    enum: ACTIVITY_CHANNEL_TYPES,
+    nullable: true,
+    description: 'Null when the caller can no longer read the channel.',
+  })
+  channel_type: ChannelType | null;
+
+  @ApiProperty({
+    description:
+      'Who wrote the message. Empty when they can’t be named: unresolved, blocked by the caller, or in a channel the caller can no longer read.',
+  })
+  author_name: string;
+
+  @ApiProperty({
+    description:
+      'What the message says, cut as a push quotes it. The blocked-member tombstone for a member the caller blocked, `[message deleted]` for a deleted message, and an unavailable line when the caller can no longer read the channel.',
+  })
+  preview: string;
+
+  @ApiProperty({ format: 'date-time' })
+  message_created_at: string;
+
+  @ApiProperty({
+    description:
+      'False when the caller can no longer read the channel: the row can’t be opened, only cleared.',
+  })
+  message_available: boolean;
+
+  @ApiProperty({ format: 'date-time' })
+  remind_at: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the reminder’s push went out; null while it is still waiting.',
+  })
+  fired_at: string | null;
+
+  @ApiProperty({
+    description:
+      'Whether `remind_at` has passed. A due reminder waits on the caller and is counted in `needs_you_count` until they clear it.',
+  })
+  due: boolean;
+}
+
+/** `PUT /v1/reminders/messages/{messageId}`. */
+export class SetChatReminderDto {
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting a reminder again moves it, and one already sent fires again at the new time.',
+  })
+  @IsISO8601({ strict: true })
+  remind_at: string;
+}
+
+/** The caller’s reminder after `PUT /v1/reminders/messages/{messageId}`. */
+export class ChatReminderRefDto implements ChatMessageReminderRef {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  message_id: string;
+
+  @ApiProperty({ format: 'date-time' })
+  remind_at: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Always null after a set: a new time is a new reminder.',
+  })
+  fired_at: string | null;
 }
 
 /** `PUT /v1/activity/links/{id}/state`. */
@@ -385,7 +796,7 @@ export class ActivityItemRefDto implements ActivityItemRef {
   @ApiProperty({
     enum: ACTIVITY_ITEM_KINDS,
     description:
-      'Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`.',
+      'Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).',
   })
   @IsIn(ACTIVITY_ITEM_KINDS)
   kind: ActivityItemKind;
@@ -393,6 +804,17 @@ export class ActivityItemRefDto implements ActivityItemRef {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   item_id: string;
+}
+
+/** `PUT /v1/activity/snoozes`. */
+export class SnoozeActivityItemDto extends ActivityItemRefDto {
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'When the row comes back. In the future and at most 90 days away.',
+  })
+  @IsISO8601({ strict: true })
+  until: string;
 }
 
 /** `POST /v1/activity/reads`. */
@@ -438,22 +860,49 @@ export class ActivityNeedsYouDto {
       'Open polls from other members, in channels the caller can read, that the caller hasn’t voted on. Soonest closing first.',
   })
   polls: ActivityPollDto[];
+
+  @ApiProperty({
+    type: [ActivityCardDto],
+    description:
+      'Open sign-up sheets, headcounts and forms from other members, in channels the caller can read, that the caller hasn’t answered: no slot held on a sheet, neither answer on a headcount, no saved form response. Soonest closing first, then newest; one with no end time last.',
+  })
+  cards: ActivityCardDto[];
 }
 
 export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityPollDto],
     description:
-      'Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).',
+      'Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out of the read. A current client lists the open ones and finds the closed in `GET /v1/activity/archive` (#5127); the closed ones are served for phone builds from before it, which draw them as Archived polls (#4258).',
   })
   polls: ActivityPollDto[];
 
   @ApiProperty({
     type: [ActivityTaskDto],
     description:
-      'Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`.',
+      'Tasks the caller assigned, newest first, at most 25, each copy of a task for everyone its own row. A current client reads `task_items` instead, where a task for everyone is one row; this list is served unchanged for builds from before it, which list those not yet confirmed and find a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.',
   })
   tasks: ActivityTaskDto[];
+
+  @ApiProperty({
+    type: 'array',
+    items: {
+      oneOf: [
+        { $ref: getSchemaPath(ActivityTaskItemTaskDto) },
+        { $ref: getSchemaPath(ActivityTaskItemGroupDto) },
+      ],
+      discriminator: {
+        propertyName: 'kind',
+        mapping: {
+          task: getSchemaPath(ActivityTaskItemTaskDto),
+          group: getSchemaPath(ActivityTaskItemGroupDto),
+        },
+      },
+    },
+    description:
+      'What the caller assigned that isn’t finished, newest first, at most 25, a task for everyone counted once (#5492): `kind: task`, a one-person task not yet confirmed; `kind: group`, a task for everyone with a copy not yet confirmed, as one row. A confirmed one is in `GET /v1/activity/archive`. Empty unless the caller still holds `tasks:manage`.',
+  })
+  task_items: ActivityTaskItem[];
 
   @ApiProperty({
     type: [ActivityFileDto],
@@ -469,6 +918,71 @@ export class ActivityMadeByYouDto {
       'Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here.',
   })
   events: ActivityEventDto[];
+}
+
+export class ActivityWeekCountDto implements ActivityWeekCount {
+  @ApiProperty({ description: 'How many the caller has done this week.' })
+  done: number;
+
+  @ApiProperty({
+    description: '`done` plus what is still open; never less than `done`.',
+  })
+  total: number;
+}
+
+export class ActivityWeekDto implements ActivityWeek {
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'Where the week begins: the `week_start` the client named, or last Sunday at midnight UTC when it named none or one out of range.',
+  })
+  start: string;
+
+  @ApiProperty({
+    format: 'date-time',
+    description: 'Seven days after `start`.',
+  })
+  end: string;
+
+  @ApiProperty({
+    type: ActivityWeekCountDto,
+    nullable: true,
+    description:
+      'Events that start this week and invite the caller. Done: marked present or late. Still open: a required event not attended (ahead or missed), and an optional one whose check-in has not closed. An excused event, and an optional one the caller skipped, is left out. Null when Events is off or couldn’t be read.',
+  })
+  events: ActivityWeekCountDto | null;
+
+  @ApiProperty({
+    type: ActivityWeekCountDto,
+    nullable: true,
+    description:
+      'The caller’s own tasks. Done: marked done since the week began, confirmed or not. Still open: not done and due before the week ends, overdue ones included. Null when Tasks is off or couldn’t be read.',
+  })
+  tasks: ActivityWeekCountDto | null;
+
+  @ApiProperty({
+    type: ActivityWeekCountDto,
+    nullable: true,
+    description:
+      'Other members’ polls the caller can read. Done: first voted on since the week began. Still open: every `needs_you.polls` row, counted before its cap. Null when Polls is off or couldn’t be read.',
+  })
+  polls: ActivityWeekCountDto | null;
+
+  @ApiProperty({
+    type: ActivityWeekCountDto,
+    nullable: true,
+    description:
+      'Other members’ sign-up sheets, headcounts and forms. Done: first answered since the week began. Still open: every `needs_you.cards` row, counted before its cap. Null when the read failed.',
+  })
+  cards: ActivityWeekCountDto | null;
+
+  @ApiProperty({
+    enum: ACTIVITY_WEEK_PARTS,
+    isArray: true,
+    description:
+      'Parts that could not be read this time. Each is served null, as a part whose module is off is; this list tells the two apart.',
+  })
+  unavailable: ActivityWeekPart[];
 }
 
 export class ActivityDto implements ActivityView {
@@ -489,12 +1003,19 @@ export class ActivityDto implements ActivityView {
   })
   links: ActivityLinkDto[];
 
+  @ApiProperty({
+    type: [ActivityReminderDto],
+    description:
+      'Reminders the caller set on chat messages (#4957): those due that they haven’t cleared, newest first, then those still waiting, soonest first; at most 50 of each. Private to the caller. Due ones are counted in `needs_you_count` (so at most 50).',
+  })
+  reminders: ActivityReminderDto[];
+
   @ApiProperty({ type: ActivityMadeByYouDto })
   made_by_you: ActivityMadeByYouDto;
 
   @ApiProperty({
     description:
-      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t.',
+      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`, less what the caller snoozed (`snoozed_until`).',
   })
   needs_you_count: number;
 
@@ -507,6 +1028,13 @@ export class ActivityDto implements ActivityView {
   unavailable: ActivitySection[];
 
   @ApiProperty({
+    type: ActivityWeekDto,
+    description:
+      'How the caller’s week is going, for the ring at the top of the page (`spec/behavior/activity.md` § Week): what they finished since the week began and what is still theirs to do in it, by kind. Their own things only; what waits on their review is not counted.',
+  })
+  week: ActivityWeekDto;
+
+  @ApiProperty({
     type: String,
     format: 'date-time',
     nullable: true,
@@ -514,4 +1042,259 @@ export class ActivityDto implements ActivityView {
       'When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.',
   })
   unread_since: string | null;
+}
+
+/** The query of both Activity reads: where the caller's week begins. */
+export class ActivityWeekQueryDto {
+  @ApiProperty({
+    required: false,
+    format: 'date-time',
+    description:
+      'Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC.',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  week_start?: string;
+}
+
+/**
+ * The recap's week, named by the client's clock (#4983). Only `week_start`
+ * is the standing's; the two below let the client say where its last week
+ * began and on which day, which the server can't work out across a clock
+ * change or east of UTC+12.
+ */
+export class ActivityRecapQueryDto extends ActivityWeekQueryDto {
+  @ApiProperty({
+    required: false,
+    format: 'date-time',
+    description:
+      'Where the caller’s last week began, in their own time zone (the Sunday before `week_start`, at midnight). Used when it is within three hours of seven days before `week_start` (a clock change moves it by an hour); otherwise, or omitted, seven days before `week_start`.',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  last_week_start?: string;
+
+  @ApiProperty({
+    required: false,
+    example: '2026-11-08',
+    description:
+      'The calendar date of the last week’s first day in the caller’s time zone, for service entries, which are dated by day. Used when it is within a day of the day the server works out; otherwise, or omitted, the server’s day.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  first_day?: string;
+}
+
+export class StandingPointsDto implements StandingPoints {
+  @ApiProperty({ description: 'Points earned this semester.' })
+  total: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Place on this semester’s board, equal totals sharing a place. Null when the caller is not on the board.',
+  })
+  rank: number | null;
+
+  @ApiProperty({ description: 'How many members the board ranks.' })
+  ranked: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The caller’s points goal this semester (#1062), or null when the chapter sets none for them.',
+  })
+  goal: number | null;
+}
+
+export class StandingRequiredEventsDto implements StandingRequiredEvents {
+  @ApiProperty({
+    description:
+      'Required events since the semester began (or the caller joined), excused ones left out. An event counts once its check-in closes, or as soon as the caller checks in.',
+  })
+  required: number;
+
+  @ApiProperty({ description: 'Of `required`, those marked present or late.' })
+  attended: number;
+
+  @ApiProperty({ description: 'Required events the caller was excused from.' })
+  excused: number;
+}
+
+export class StandingServiceDto implements StandingService {
+  @ApiProperty({ description: 'Approved service minutes this semester.' })
+  approved_minutes: number;
+
+  @ApiProperty({ description: 'Service minutes waiting for approval.' })
+  pending_minutes: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The caller’s service goal this semester in minutes (#1062), or null for none.',
+  })
+  goal_minutes: number | null;
+}
+
+export class StandingStudyDto implements StandingStudy {
+  @ApiProperty({
+    description:
+      'Minutes from study sessions that started this week and have ended.',
+  })
+  minutes: number;
+
+  @ApiProperty({ format: 'date-time' })
+  week_start: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The caller’s study goal for the week in minutes (#1062), or null for none.',
+  })
+  goal_minutes: number | null;
+}
+
+export class ActivityStandingDto implements ActivityStanding {
+  @ApiProperty({
+    type: StandingPointsDto,
+    nullable: true,
+    description: 'Null when Points is off or couldn’t be read.',
+  })
+  points: StandingPointsDto | null;
+
+  @ApiProperty({
+    type: StandingRequiredEventsDto,
+    nullable: true,
+    description: 'Null when Events is off or couldn’t be read.',
+  })
+  required_events: StandingRequiredEventsDto | null;
+
+  @ApiProperty({
+    type: StandingServiceDto,
+    nullable: true,
+    description: 'Null when Hours is off or couldn’t be read.',
+  })
+  service: StandingServiceDto | null;
+
+  @ApiProperty({
+    type: StandingStudyDto,
+    nullable: true,
+    description: 'Null when Hours is off or couldn’t be read.',
+  })
+  study: StandingStudyDto | null;
+
+  @ApiProperty({
+    enum: STANDING_SECTIONS,
+    isArray: true,
+    description:
+      'Parts that could not be read this time. Each is served null; the others are unaffected.',
+  })
+  unavailable: StandingSection[];
+}
+
+export class ActivityRecapDto implements ActivityRecap {
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'Where last week began: seven days before the `week_start` sent (the start of the caller’s current week).',
+  })
+  start: string;
+
+  @ApiProperty({
+    format: 'date-time',
+    description: 'Where last week ended: the `week_start` sent.',
+  })
+  end: string;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Events that started last week, among those the caller can see, where they were marked present or late. Null when Events is off or couldn’t be read.',
+  })
+  events_attended: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The caller’s own tasks they marked done last week, confirmed or not; one sent back since is not counted. Null when Tasks is off or couldn’t be read.',
+  })
+  tasks_done: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Points awarded to the caller last week less points taken, from the ledger. Null when Points is off or couldn’t be read.',
+  })
+  points: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Service minutes the caller logged for last week’s days, approved or waiting. Null when Hours is off or couldn’t be read.',
+  })
+  service_minutes: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Minutes from the caller’s study sessions that started last week and have ended. Null when Hours is off or couldn’t be read.',
+  })
+  study_minutes: number | null;
+
+  @ApiProperty({
+    enum: RECAP_PARTS,
+    isArray: true,
+    description:
+      'Parts that could not be read this time. Each is served null; the others are unaffected.',
+  })
+  unavailable: RecapPart[];
+}
+
+export class ActivityNowDto implements ActivityNow {
+  @ApiProperty({
+    type: [ActivityEventDto],
+    description:
+      'Events on right now (from when check-in opens until the end, whether or not the caller checked in) that are the caller’s to see as on: invited and required of them, checked in to, or made by them, and every event on for a holder of `events:update`; never one the caller is excused from. `checked_in` and `checked_in_at` come from their attendance row: present or late counts as checked in. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off.',
+  })
+  events: ActivityEventDto[];
+}
+
+export class ActivityArchiveDto implements ActivityArchive {
+  @ApiProperty({
+    type: [ActivityEventDto],
+    description:
+      'Events that invited the caller whose check-in has closed (15 minutes after the end), ending in the last 30 days and starting after the caller joined, newest first, at most 25. Each meeting of a series is its own row. `checked_in` says whether the caller was marked present or late; `check_in_open` is always false.',
+  })
+  events: ActivityEventDto[];
+
+  @ApiProperty({
+    type: [ActivityTaskDto],
+    description:
+      'The caller’s own tasks marked done in the last 30 days, confirmed or still waiting on an officer, and, while the caller holds `tasks:manage`, the tasks they assigned that are confirmed. Most recently finished (confirmed or marked done) first, at most 25, from the 100 most recently made of each kind.',
+  })
+  tasks: ActivityTaskDto[];
+
+  @ApiProperty({
+    type: [ActivityPollDto],
+    description:
+      'Closed polls the caller posted, and closed polls from other members they voted in, from the chapter’s 100 newest poll cards and the caller’s own 100, in channels they can read. Most recently closed first, at most 25.',
+  })
+  polls: ActivityPollDto[];
+
+  @ApiProperty({
+    enum: ARCHIVE_SECTIONS,
+    isArray: true,
+    description:
+      'Sections that could not be read this time. Each is served empty; the others are unaffected.',
+  })
+  unavailable: ArchiveSection[];
 }

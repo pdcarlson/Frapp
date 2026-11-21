@@ -9,6 +9,7 @@ import { AppState } from "react-native";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
+import type { AwaitInvoicePaidResult } from "@repo/hooks";
 
 /**
  * s11 rendered: the open bills it lists, the shape it loads in, and where a
@@ -79,7 +80,9 @@ function deferred<T>() {
 let chapterId = "ch-tau-nu";
 let invoices: unknown[] = [];
 let invoicesPending = false;
-/** A failed read: TanStack keeps the last data beside `isError`. */
+/** When the list's data last arrived (TanStack's `dataUpdatedAt`). */
+let invoicesReadAt = 0;
+/** A failed first read: nothing loaded. A failed refetch keeps its rows. */
 let invoicesError = false;
 let viewerError = false;
 /** `null` while `/v1/users/me` hasn't answered. */
@@ -116,9 +119,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   // `isEnabled` follows the screen's `enabled`, as a TanStack result's does.
   useInvoices: (_userId?: string, options?: { enabled?: boolean }) => ({
-    data: invoicesPending ? undefined : invoices,
+    data: invoicesPending || invoicesError ? undefined : invoices,
     isPending: invoicesPending,
     isError: invoicesError,
+    dataUpdatedAt: invoicesReadAt,
     isFetching: false,
     isEnabled: options?.enabled ?? true,
     refetch: refetchInvoices,
@@ -253,6 +257,7 @@ beforeEach(() => {
   chapterId = "ch-tau-nu";
   invoices = [FALL];
   invoicesPending = false;
+  invoicesReadAt = 0;
   invoicesError = false;
   viewerError = false;
   viewerId = VIEWER;
@@ -260,7 +265,7 @@ beforeEach(() => {
   refetchInvoices.mockReset().mockResolvedValue(undefined);
   refetchViewer.mockReset().mockResolvedValue(undefined);
   payInvoice.mockReset().mockResolvedValue({ client_secret: "pi_secret" });
-  awaitPaid.mockReset().mockResolvedValue(false);
+  awaitPaid.mockReset().mockResolvedValue({ outcome: "pending" });
   presentPaymentSheet.mockReset().mockResolvedValue({ kind: "completed" });
 });
 
@@ -288,7 +293,7 @@ describe("Dues while dues is off", () => {
   it("sends a way in that skips More back to More, for the beta", () => {
     betaOff.keys = ["dues"];
     const tree = mount();
-    expect(redirects(tree).map((node) => node.props.href)).toEqual(["/more"]);
+    expect(redirects(tree).map((node) => node.props.href)).toEqual(["/you"]);
     expect(tree.root.findAllByType(BalanceCardSkeleton)).toHaveLength(0);
   });
 
@@ -377,7 +382,7 @@ describe("Dues with more than one open invoice", () => {
     const second = drawnText(rows[1]!);
     expect(second).toContain("Social fee");
     expect(second).toContain("$50.00");
-    expect(second).toMatch(/Due Oct\s?1/);
+    expect(second).toMatch(/Due October\s?1/);
     expect(screenText(tree)).toContain("OPEN");
   });
 
@@ -391,7 +396,7 @@ describe("Dues with more than one open invoice", () => {
 
 describe("Dues after a captured payment", () => {
   it("holds the paid invoice while its poll runs: Pending, Pay off as Confirming payment…, and the pending line in the card", async () => {
-    awaitPaid.mockReturnValue(deferred<boolean>().promise);
+    awaitPaid.mockReturnValue(deferred<AwaitInvoicePaidResult>().promise);
     const tree = mount();
     await tapPay(tree);
 
@@ -408,21 +413,20 @@ describe("Dues after a captured payment", () => {
   it("reads Confirming payment…, not Opening…, while the poll runs", async () => {
     // The sheet has closed; "Opening…" for the poll's ~24s says a sheet is on
     // its way that never comes.
-    const poll = deferred<boolean>();
+    const poll = deferred<AwaitInvoicePaidResult>();
     awaitPaid.mockReturnValue(poll.promise);
     const tree = mount();
     await tapPay(tree);
 
     expect(drawnText(cta(tree))).toBe("Confirming payment…");
     expect(card(tree)).toContain(PENDING_COPY);
-    await act(async () => poll.resolve(false));
+    await act(async () => poll.resolve({ outcome: "pending" }));
     expect(drawnText(cta(tree))).not.toBe("Opening…");
   });
 
   it("leaves Pay live under the pending line once the poll is over", async () => {
-    // Nothing the server sends says a payment failed, so a member who got
-    // the decline push pays again from here. The server refuses a second
-    // charge itself.
+    // A failure the server hasn't recorded yet (#3460) still needs a way to
+    // pay again from here. The server refuses a second charge itself.
     const tree = mount();
     await tapPay(tree);
 
@@ -436,7 +440,7 @@ describe("Dues after a captured payment", () => {
   it("stays confirming when the poll says PAID but the list still reads OPEN", async () => {
     // The poll's PAID re-reads the list, but that read is a round trip away.
     // A "Paid" line beside a Pending chip says two things at once.
-    awaitPaid.mockResolvedValue(true);
+    awaitPaid.mockResolvedValue({ outcome: "paid" });
     const tree = mount();
     await tapPay(tree);
 
@@ -446,7 +450,7 @@ describe("Dues after a captured payment", () => {
   });
 
   it("lets go once the list reads the invoice PAID, and says paid then", async () => {
-    awaitPaid.mockResolvedValue(true);
+    awaitPaid.mockResolvedValue({ outcome: "paid" });
     const tree = mount();
     await tapPay(tree);
 
@@ -457,6 +461,78 @@ describe("Dues after a captured payment", () => {
     expect(card(tree)).toContain(paidCopy("Fall dues"));
     expect(card(tree)).not.toContain("Pending");
     expect(screenText(tree)).not.toContain(PENDING_COPY);
+  });
+
+  describe("a failed payment (#3460)", () => {
+    const failedFall = (reason: string | null) => ({
+      ...FALL,
+      last_payment_failed_at: "2099-09-01T12:00:00Z",
+      last_payment_failure_reason: reason,
+    });
+
+    it("ends the hold with \"didn't go through\" when a later list read says it failed", async () => {
+      const tree = mount();
+      await tapPay(tree);
+      expect(card(tree)).toContain(PENDING_COPY);
+
+      invoices = [failedFall(DECLINED)];
+      invoicesReadAt = Date.now() + 1;
+      rerender(tree);
+
+      const failed = `Your payment didn't go through: Your card was declined. You can try again.`;
+      expect(card(tree)).toContain(failed);
+      expect(card(tree)).not.toContain("Pending");
+      expect(screenText(tree)).not.toContain(PENDING_COPY);
+      expect(flatten(line(tree, failed).props.style).color).toBe(DESTRUCTIVE);
+      expect(payButton(tree).props.disabled).toBe(false);
+    });
+
+    it("keeps the hold when the recorded failure is a decline from earlier in the same sheet", async () => {
+      // First card declined inside the sheet, second card went through: the
+      // decline is still on the row until the succeeded webhook lands.
+      const tree = mount();
+      await tapPay(tree);
+
+      invoices = [
+        { ...failedFall(DECLINED), last_payment_failed_at: "2020-01-01T00:00:00Z" },
+      ];
+      invoicesReadAt = Date.now() + 1;
+      rerender(tree);
+
+      expect(card(tree)).toContain("Pending");
+      expect(card(tree)).toContain(PENDING_COPY);
+      expect(screenText(tree)).not.toContain("didn't go through");
+    });
+
+    it("shows a failure that landed while the member was away on their return, then lets it go", async () => {
+      const tree = mount();
+      await tapPay(tree);
+      blur();
+
+      invoices = [failedFall(null)];
+      invoicesReadAt = Date.now() + 1;
+      rerender(tree);
+
+      await refocus();
+      const failed = "Your payment didn't go through. You can try again.";
+      expect(card(tree)).toContain(failed);
+      expect(screenText(tree)).not.toContain(PENDING_COPY);
+
+      blur();
+      await refocus();
+      expect(screenText(tree)).not.toContain(failed);
+    });
+
+    it("keeps the hold on a list read from before the payment, which can carry the last attempt's failure", async () => {
+      invoices = [failedFall(null)];
+      invoicesReadAt = 1;
+      const tree = mount();
+      await tapPay(tree);
+
+      expect(card(tree)).toContain("Pending");
+      expect(card(tree)).toContain(PENDING_COPY);
+      expect(screenText(tree)).not.toContain("didn't go through");
+    });
   });
 
   it("keeps the hold when the poll itself fails", async () => {
@@ -484,7 +560,7 @@ describe("Dues after a captured payment", () => {
       "Fall dues$425.00Pending",
     );
     expect(drawnText(openRow(tree, "inv-social"))).toMatch(
-      /^Social fee\$50\.00Due Oct\s?1$/,
+      /^Social fee\$50\.00Due October\s?1$/,
     );
     // Pay is still about Fall, for a retry.
     presentPaymentSheet.mockResolvedValueOnce({ kind: "canceled" });
@@ -531,7 +607,7 @@ describe("Dues after a captured payment", () => {
     // pays Social. Its end used to clear the flag Social's request had set,
     // putting a live "Pay now" under a request still in flight.
     invoices = [FALL, SOCIAL];
-    const fallPoll = deferred<boolean>();
+    const fallPoll = deferred<AwaitInvoicePaidResult>();
     const socialIntent = deferred<{ client_secret: string }>();
     awaitPaid.mockReturnValueOnce(fallPoll.promise);
     payInvoice
@@ -545,7 +621,7 @@ describe("Dues after a captured payment", () => {
     expect(paidFor(1)).toBe("inv-social");
     expect(drawnText(cta(tree))).toBe("Opening…");
 
-    await act(async () => fallPoll.resolve(false));
+    await act(async () => fallPoll.resolve({ outcome: "pending" }));
     expect(drawnText(cta(tree))).toBe("Opening…");
     expect(cta(tree).props.disabled).toBe(true);
 
@@ -557,7 +633,7 @@ describe("Dues after a captured payment", () => {
     // footnote's slot, so the line names the held invoice and the CTA's hint
     // says what a tap pays: Fall again, not the $50 Social fee.
     invoices = [FALL, SOCIAL];
-    const poll = deferred<boolean>();
+    const poll = deferred<AwaitInvoicePaidResult>();
     awaitPaid.mockReturnValueOnce(poll.promise);
     const tree = mount();
     await tapPay(tree);
@@ -567,7 +643,7 @@ describe("Dues after a captured payment", () => {
       pendingCopyFor("Fall dues"),
     );
 
-    await act(async () => poll.resolve(false));
+    await act(async () => poll.resolve({ outcome: "pending" }));
     expect(card(tree)).toContain("2 invoices open");
     expect(payButton(tree).props.disabled).toBe(false);
     expect(card(tree)).toContain(pendingCopyFor("Fall dues"));
@@ -582,8 +658,8 @@ describe("Dues after a captured payment", () => {
     // Pay for Social. Social's sheet completes and its poll starts; Fall's
     // poll ending then must not switch Pay back on under Social's.
     invoices = [FALL, SOCIAL];
-    const fallPoll = deferred<boolean>();
-    const socialPoll = deferred<boolean>();
+    const fallPoll = deferred<AwaitInvoicePaidResult>();
+    const socialPoll = deferred<AwaitInvoicePaidResult>();
     awaitPaid
       .mockReturnValueOnce(fallPoll.promise)
       .mockReturnValueOnce(socialPoll.promise);
@@ -595,11 +671,11 @@ describe("Dues after a captured payment", () => {
     expect(paidFor(1)).toBe("inv-social");
     expect(drawnText(cta(tree))).toBe("Confirming payment…");
 
-    await act(async () => fallPoll.resolve(false));
+    await act(async () => fallPoll.resolve({ outcome: "pending" }));
     expect(drawnText(cta(tree))).toBe("Confirming payment…");
     expect(cta(tree).props.disabled).toBe(true);
 
-    await act(async () => socialPoll.resolve(false));
+    await act(async () => socialPoll.resolve({ outcome: "pending" }));
     expect(drawnText(cta(tree))).toBe("Pay now");
   });
 
@@ -669,7 +745,7 @@ describe("Dues after a captured payment", () => {
       due_date: "2099-11-01",
     });
     invoices = [FALL, SOCIAL, LATER];
-    awaitPaid.mockResolvedValue(true);
+    awaitPaid.mockResolvedValue({ outcome: "paid" });
     const tree = mount();
     await tapPay(tree);
 
@@ -970,10 +1046,11 @@ describe("Dues after a captured payment", () => {
   });
 
   it("switches Pay back on after the poll's budget when a poll read never answers", async () => {
-    // Android times no request out (#3433), so the poll can hang for good.
+    // A poll read can run to the client's request timeout (#3433) and past
+    // the window; the stub never answers.
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      awaitPaid.mockReturnValue(new Promise<boolean>(() => {}));
+      awaitPaid.mockReturnValue(new Promise<AwaitInvoicePaidResult>(() => {}));
       const tree = mount();
       await tapPay(tree);
       expect(drawnText(cta(tree))).toBe("Confirming payment…");
@@ -996,7 +1073,7 @@ describe("Dues after a captured payment", () => {
     // doesn't wait for it.
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     try {
-      awaitPaid.mockReturnValue(new Promise<boolean>(() => {}));
+      awaitPaid.mockReturnValue(new Promise<AwaitInvoicePaidResult>(() => {}));
       const tree = mount();
       await tapPay(tree);
       appGoes("background");
@@ -1250,12 +1327,12 @@ describe("Dues on a new visit", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(2099, 8, 15, 20, 0));
     const tree = mount();
-    expect(chip(tree)).toMatch(/^Due Sep\s?15$/);
+    expect(chip(tree)).toMatch(/^Due September\s?15$/);
 
     appGoes("background");
     vi.setSystemTime(new Date(2099, 8, 16, 8, 0));
     appGoes("active");
-    expect(chip(tree)).toMatch(/^Past due Sep\s?15$/);
+    expect(chip(tree)).toMatch(/^Past due September\s?15$/);
   });
 
   it("takes the clock again when the member comes back to the screen", async () => {
@@ -1265,7 +1342,7 @@ describe("Dues on a new visit", () => {
     act(() => blur());
     vi.setSystemTime(new Date(2099, 8, 16, 8, 0));
     await refocus();
-    expect(chip(tree)).toMatch(/^Past due Sep\s?15$/);
+    expect(chip(tree)).toMatch(/^Past due September\s?15$/);
   });
 
   it("is done with the Paid line when the app comes back, as on a return to the screen", async () => {

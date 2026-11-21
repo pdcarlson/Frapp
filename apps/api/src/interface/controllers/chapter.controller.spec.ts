@@ -7,7 +7,6 @@ jest.mock('@repo/org-archetypes', () => ({
     vocabulary: {},
     customFields: [],
     workflows: [],
-    dues: {},
   })),
   getArchetype: jest.fn((key: string) => ({ key })),
 }));

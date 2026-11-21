@@ -277,7 +277,7 @@ link to somebody else's Discord admin and end up reading that server. Do not
 "simplify" the flow by binding on the callback.
 
 **Members linking their own Discord account use the same application and the
-same redirect URI.** Settings → Discord history (`/preferences?section=discord`, #2878) sends a member
+same redirect URI.** Settings → Linked apps (`/preferences?section=apps`, #2878) sends a member
 through Discord's sign-in with the `identify` scope alone and comes back to the
 same `/v1/discord/connect/callback`, so it needs no extra portal setup: once
 the bot path is available, so is linking. It parks and confirms for the same
@@ -361,20 +361,174 @@ caveat above; confirm it by eye in the portal until that caveat's first
 observation is recorded.
 
 **Where an import's attachment bytes go, and who bills them** ([ADR-26](../../../spec/architecture/adr/adr-26.md), #2848).
-Render bills a service's outbound bytes to the public internet, which includes its own requests to
-Supabase. An import's media is the largest thing the importer moves, so which hop carries the bytes
+The API's host bills its outbound bytes to the public internet (Google Cloud since 2026-11-17, Render
+before), which includes its own requests to Supabase. An import's media is the largest thing the importer moves, so which hop carries the bytes
 decides whose bill they land on:
 
 | Path | Where the bytes go | Billed as |
 | --- | --- | --- |
-| Upload (DiscordChatExporter) | The admin's browser PUTs each file to Storage through a signed URL | Nothing on Render. Upload into Storage is ingress on Supabase. |
-| Bot | The API sends the `discord-attachment-copy` Edge Function a batch of URLs and object paths. The function streams each file from Discord's CDN into Storage. | Render: a few hundred bytes of JSON per attachment. Supabase: open whether the function's upload to Storage counts as egress; #2851 records the reading from a staging import. |
-| Bot, before #2848 | Discord's CDN → the API → Storage, inside the API process | Render egress equal to the stored size (the measurement is in ADR-26's context). |
+| Upload (DiscordChatExporter) | The admin's browser PUTs each file to Storage through a signed URL | Nothing on the API's host. Upload into Storage is ingress on Supabase. |
+| Bot | The API sends the `discord-attachment-copy` Edge Function a batch of URLs and object paths. The function streams each file from Discord's CDN into Storage. | API host: a few hundred bytes of JSON per attachment. Supabase: open whether the function's upload to Storage counts as egress; #2851 records the reading from a staging import. |
+| Bot, before #2848 | Discord's CDN → the API → Storage, inside the API process | API host egress equal to the stored size (Render at the time; the measurement is in ADR-26's context). |
 | Reading the archive later (either path) | Storage → the member's device, through a signed URL | Supabase egress |
 
 The allowances and per-GB rates are the providers' to state and change:
-[Render bandwidth](https://render.com/docs/outbound-bandwidth) and
+[Google Cloud network pricing](https://cloud.google.com/vpc/network-pricing) and
 [Supabase egress](https://supabase.com/docs/guides/platform/manage-your-usage/egress). Supabase's
 quotas as of the Pro upgrade are in [`supabase.md` § Plan and quotas](supabase.md#plan-and-quotas).
 
 ---
+
+## 7B. Google Calendar
+
+**Optional.** Unset, the Subscribe menu's Google Calendar row hands Google the
+subscription link as before; set, it connects the member's Google account and
+Frapp writes their events and tasks into a calendar of its own there
+([`events.md` § Google Calendar](../../../spec/behavior/events.md#google-calendar),
+#3322). Everything below is provider-side configuration no repo state creates.
+Owner-only: it is the `signet-frapp` Google Cloud project (display name
+"Frapp sign-in", in the frapp.live organization since 2026-11-17:
+[`google-cloud.md`](google-cloud.md)), the one whose
+consent screen Google sign-in already uses (brand "Frapp", verified;
+publishing status In production, user type External:
+[`supabase.md`](supabase.md#auth-oauth-providers-google-and-apple)).
+
+1. **Enable the API.** Google Cloud console, project `signet-frapp` → APIs &
+   Services → Library → **Google Calendar API** → Enable.
+2. **Add the permission.** Google Auth Platform → Data Access → Add or remove
+   scopes → `https://www.googleapis.com/auth/calendar.app.created` ("Make
+   secondary Google calendars, and see, create, change and delete events on
+   them") → Update → Save. `openid` and `email` are there already for sign-in.
+   The console files it under non-sensitive or sensitive scopes. If
+   **sensitive**, Google reviews the app before the warning screen goes away
+   (the console's Verification Center; about 3 to 5 business days, with a
+   short video of the connect flow and a sentence on why: "Frapp makes one
+   calendar of its own and keeps the chapter's events on it; it reads nothing
+   else"). Until then members see "Google hasn't verified this app" and at
+   most 100 accounts can connect. Non-sensitive needs no review.
+3. **Make two clients**, one per environment, so production's secret is never
+   in staging (agent sandboxes read staging's Infisical, never prod's).
+   Google Auth Platform → Clients → Create client → type **Web
+   application**, name **Frapp Calendar (staging)** (a dashboard label;
+   members see the brand), one authorized redirect URI, exactly
+   `https://api-staging.frapp.live/v1/google-calendar/callback` (add
+   `http://localhost:3001/v1/google-calendar/callback` to try it locally,
+   on this client only). Then again, **Frapp Calendar (production)**, with only
+   `https://api.frapp.live/v1/google-calendar/callback`. Each also lists its
+   web app under Authorized JavaScript origins (`https://app.staging.frapp.live`,
+   `https://app.frapp.live`), for Drive's folder picker, which signs in with
+   the same client (§ 7C, #5583; added by the owner 2026-11-20). The redirect is the API's origin plus that path:
+   `API_URL` less any trailing `/v1`, as for Discord. Both are separate from
+   the sign-in Web clients ("Frapp Web (staging)" and "Frapp Web (production)"), whose secrets live in Supabase: these live in
+   Infisical.
+4. **Store the values in Infisical**, names only here: in staging, the
+   staging client's `GOOGLE_CALENDAR_CLIENT_ID` and
+   `GOOGLE_CALENDAR_CLIENT_SECRET`; in prod, the production client's. And
+   `GOOGLE_CALENDAR_TOKEN_KEY`, a different key per environment, made with
+   `echo "k1:$(openssl rand -base64 32)"`. All three or none: the API refuses
+   to boot on a partial set. Redeploy the API after the sync reaches Secret Manager: each
+   deploy pins the secret versions it finds (on staging, a re-run doesn't:
+   [`cloud-run.md` § Deploys](cloud-run.md#deploys)).
+
+**Verify after setup.** `GET /v1/google-calendar` (signed in, any chapter)
+answers `"available": true`. Then connect from the web Subscribe menu: Google's
+page names Frapp and asks only to make calendars and manage their events; back
+on Events, a toast says connected, and within a minute a calendar named
+"<chapter> (Frapp)" appears in Google Calendar holding the chapter's events.
+
+**What goes wrong.**
+
+| Symptom | Cause |
+| --- | --- |
+| Google says `redirect_uri_mismatch` | Step 3's redirect URI differs from the API's origin (`API_URL` less any trailing `/v1`) + `/v1/google-calendar/callback`, or the environment holds the other environment's client |
+| Connected, but nothing appears, and the API logs `Google Calendar sync failed for connection …: … accessNotConfigured` | Step 1: the sign-in works without the Calendar API, the first sync doesn't |
+| The member is told Frapp needs permission to make its calendar | They unticked it on Google's page, or step 2's scope is missing |
+| "Google hasn't verified this app" | Step 2's scope is sensitive and the review is pending |
+| Connected, but nothing appears | The API logs `Google Calendar sync failed for connection …` with Google's reason |
+
+## 7C. Google Drive
+
+**Optional.** Unset, Documents doesn't offer Google Drive; set, an officer can
+connect a chapter's Drive folder and Frapp copies its files into Documents and
+keeps them matching it
+([`chapter-docs.md` § Google Drive folder](../../../spec/behavior/chapter-docs.md#google-drive-folder),
+#5157). Frapp reads only what a chapter shares with its Drive account, or
+what anyone with the link can open. Reading needs no consent screen, no scope
+review and nothing on a Google sign-in client; only step 4's folder picker,
+which shares the folder for the officer, uses one (the Calendar client and the
+non-sensitive `drive.file` scope). Owner-only.
+
+**No key file (2026-11-17, #5434).** The frapp.live organization blocks
+service account key files (#5323), so the API signs in to Drive the way it
+signs in to Vertex AI: on Cloud Run, as its runtime identity
+`frapp-api-runtime`, which may mint tokens for one other account,
+`frapp-docs`. Chapters share with `frapp-docs`, never with the runtime
+identity, so what Drive grants stays on an account that can do nothing else.
+Each environment's project has its own `frapp-docs`, so a staging chapter can
+never read something shared with production.
+
+For each environment, staging first:
+
+1. **Run the setup script again** in Cloud Shell, signed in as
+   `pdcarlson@frapp.live`. It turns on the Google Drive API, makes
+   `frapp-docs` ("Frapp Documents (Google Drive)") and lets
+   `frapp-api-runtime` act as it (Service Account Token Creator on that one
+   account). Nothing else changes, and it makes no key.
+
+   ```bash
+   bash scripts/gcp/bootstrap.sh staging cs-project-6vw9f5xp
+   bash scripts/gcp/bootstrap.sh production cs-project-nyit2x59 --staging-project cs-project-6vw9f5xp
+   ```
+
+   Its last block prints `driveAccount:`, the address chapters share with.
+2. **In Infisical**, set two values in that environment (staging, then prod;
+   never the same values in both):
+   - `GOOGLE_DRIVE_SERVICE_ACCOUNT`: the `driveAccount:` address from step 1.
+   - `GOOGLE_DRIVE_PROOF_SECRET`: a new random value, `openssl rand -hex 32`.
+     It keys the codes that prove a folder or file is the chapter's (#5185).
+3. **Redeploy the API** once the sync has reached Secret Manager: each deploy
+   pins the secret versions it finds.
+
+4. **Google's folder picker** (#5583), so an officer signs in with Google and
+   picks the folder instead of sharing it with `frapp-docs` by hand. It
+   reuses that environment's Google Calendar client (§ 7B, with its web app
+   among the client's Authorized JavaScript origins), so it needs § 7B done
+   first, plus, in the `signet-frapp` project: the **Google Picker API**
+   and **Google Drive API** enabled, the `drive.file` scope added under
+   Google Auth Platform → Data Access (non-sensitive: no review), and one
+   browser **API key** restricted to the Google Picker API and the web
+   apps' addresses. That key goes in Infisical as `GOOGLE_PICKER_API_KEY`
+   in each environment; it is public by design (the browser loads the
+   picker with it), and the API serves it from `GET /v1/google-drive`, so
+   the web build needs no copy. Done by the owner 2026-11-20 for both environments
+   (staging's names read back from Infisical; production's from the session
+   notes). Without
+   `GOOGLE_PICKER_API_KEY` the panel keeps the share-and-paste-link flow.
+
+`GOOGLE_DRIVE_CREDENTIALS_JSON` (a key file) still works, for a laptop or a
+project the policy doesn't cover; leave it unset in staging and prod. Setting
+it beside `GOOGLE_DRIVE_SERVICE_ACCOUNT` fails boot.
+
+**Verify after setup.** `GET /v1/google-drive` (signed in as an officer with
+Manage documents) answers `"available": true` with the `frapp-docs` address.
+With step 4 done it also carries `"picker"`; in a test chapter, Connect
+Google Drive → Choose a folder in Google Drive, sign in, pick a folder you can
+edit, and Connect: within a minute its files appear there, and the folder's
+Share list in Drive shows `frapp-docs` as a Viewer. Without step 4, share a
+Drive folder with that address as a Viewer and connect it by its link.
+
+**What goes wrong.**
+
+| Symptom | Cause |
+| --- | --- |
+| The API won't boot: `GOOGLE_DRIVE_SERVICE_ACCOUNT needs GOOGLE_DRIVE_PROOF_SECRET`, or `must be a service account address` | Step 2 is half done, or holds something other than the address |
+| The API won't boot: `Only Cloud Run signs in without a key file` | `GOOGLE_DRIVE_SERVICE_ACCOUNT` reached a laptop or another host; leave it unset there |
+| `available` stays `false` after the deploy | The deploy pinned the secrets before the sync reached Secret Manager: step 3 again |
+| Connecting says it couldn't reach Google Drive, and the API logs `Google Drive: failed (403): act_as_PERMISSION_DENIED` (or `failed (404): act_as_NOT_FOUND`, or `no_runtime_token`) | Step 1 didn't finish, or step 2's address is wrong: `frapp-api-runtime` can't act as `frapp-docs`. Run step 1 again and check the address |
+| Connecting says it couldn't reach Google Drive, or a connected folder stops syncing and the API reports `accessNotConfigured` | The Google Drive API is off in the project: step 1 |
+| Choosing a folder says the browser blocked Google's sign-in window | Pop-ups are blocked for the web app; allow them |
+| Google's picker says "The API developer key is invalid" | `GOOGLE_PICKER_API_KEY` is restricted to the wrong addresses or APIs, or is another project's key |
+| `GET /v1/google-drive` answers `"picker": null` though `GOOGLE_PICKER_API_KEY` is set | `available` is false too (no Drive account yet: steps 1 and 2), `GOOGLE_CALENDAR_CLIENT_ID` is unset or isn't a Google client id (`<project number>-<id>.apps.googleusercontent.com`), or the deploy pinned the secrets before the sync (step 3) |
+| Google's sign-in shows `redirect_uri_mismatch` or `origin_mismatch` | The web app's address is missing from the Calendar client's Authorized JavaScript origins (§ 7B step 3) |
+| Connecting a picked folder says your organization doesn't let its folders be shared outside it | The officer's school or company Workspace blocks sharing outside it; a personal Google account's folder, or the admin, fixes it |
+| Connecting says Frapp can't see the folder, though it is shared | It was shared with the other environment's `frapp-docs`, or with a person instead of the address |

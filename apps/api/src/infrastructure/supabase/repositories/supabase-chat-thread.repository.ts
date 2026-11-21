@@ -9,6 +9,7 @@ import type {
   ChatThreadFollowRowState,
   ChatThreadFollowState,
   FollowedThreadUnread,
+  MemberThreadRow,
 } from '#domain/entities/chat.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { CHAT_MESSAGE_COLUMNS } from './supabase-chat-message.repository';
@@ -179,5 +180,49 @@ export class SupabaseChatThreadRepository implements IChatThreadRepository {
       ...row,
       unread_count: Number(row.unread_count) || 0,
     }));
+  }
+
+  async findMemberThreads(
+    chapterId: string,
+    userId: string,
+    channelIds: string[],
+    limit: number,
+  ): Promise<MemberThreadRow[]> {
+    if (channelIds.length === 0) return [];
+    const { data, error } = await this.supabase.rpc('get_member_threads', {
+      p_chapter_id: chapterId,
+      p_user_id: userId,
+      p_channel_ids: channelIds,
+      p_limit: limit,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => ({
+      ...row,
+      reply_count: Number(row.reply_count) || 0,
+      unread_count: Number(row.unread_count) || 0,
+    }));
+  }
+
+  async findFollowedChannelIds(
+    chapterId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase.rpc(
+      'get_member_thread_channel_ids',
+      { p_chapter_id: chapterId, p_user_id: userId },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => row.channel_id);
+  }
+
+  async findMessagesByIds(ids: string[]): Promise<ChatMessage[]> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('chat_messages')
+      .select(CHAT_MESSAGE_COLUMNS)
+      .in('id', unique);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
   }
 }

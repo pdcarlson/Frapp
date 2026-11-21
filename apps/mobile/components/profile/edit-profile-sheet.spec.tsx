@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ViewerProfile } from "@/lib/more/profile";
 import { screenText } from "@/test/screen-text";
@@ -19,24 +20,31 @@ let isPending = false;
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useUpdateUser: () => ({ mutate, isPending }),
+  usePermissionList: () => ["members:view"],
+  useChapterMajors: () => ["Mechanical Engineering", "Music"],
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));
 
-import { EditProfileSheet } from "./edit-profile-sheet";
+import { EditProfileSheet, type EditProfileField } from "./edit-profile-sheet";
 
 const PROFILE: ViewerProfile = {
   displayName: "Alex Rivera",
   initials: "AR",
   email: "alex@example.test",
+  phone: null,
   graduationYear: 2027,
   major: null,
   currentCity: "Troy, NY",
   currentCompany: null,
   bio: null,
   photoUrl: null,
+  birthdayMonth: null,
+  birthdayDay: null,
+  birthdayYear: null,
+  birthdayVisibility: "nobody",
 };
 
 /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
@@ -269,6 +277,47 @@ describe("EditProfileSheet (#3387)", () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
+  // #5282: the birthday's audience is a switch that names what it shares.
+  const shareSwitch = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        typeof node.props.onValueChange === "function" &&
+        node.props.accessibilityLabel === "Share my birthday with my chapter",
+    );
+
+  it("draws no share switch until a month and day are typed (#5282)", () => {
+    const tree = render();
+    expect(shareSwitch(tree)).toHaveLength(0);
+
+    type(tree, "Birthday month, 1 to 12", "3");
+    expect(shareSwitch(tree)).toHaveLength(0);
+    type(tree, "Birthday day", "14");
+    expect(shareSwitch(tree).length).toBeGreaterThan(0);
+    expect(shareSwitch(tree)[0]!.props.value).toBe(false);
+    expect(screenText(tree)).toContain("Only you see it.");
+  });
+
+  it("shares the birthday with the chapter when switched on (#5282)", () => {
+    const tree = render();
+    type(tree, "Birthday month, 1 to 12", "3");
+    type(tree, "Birthday day", "14");
+    act(() => {
+      shareSwitch(tree)[0]!.props.onValueChange(true);
+    });
+    expect(screenText(tree)).toContain(
+      "Members see the day, not the year, on your profile and the chapter calendar.",
+    );
+    act(() => {
+      saveButton(tree).props.onPress();
+    });
+    expect(mutate.mock.calls[0]![0]).toEqual({
+      birthday_month: 3,
+      birthday_day: 14,
+      birthday_year: null,
+      birthday_visibility: "chapter",
+    });
+  });
+
   it("sends a major", () => {
     const tree = render();
 
@@ -330,6 +379,13 @@ describe("EditProfileSheet (#3387)", () => {
     });
 
     expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a name the chapter locks read-only, saying who sets it (#5801)", () => {
+    const tree = render({ ...PROFILE, nameLocked: true });
+    expect(input(tree, "Name").props.editable).toBe(false);
+    expect(input(tree, "City").props.editable).toBe(true);
+    expect(screenText(tree)).toContain("Your chapter's officers set names.");
   });
 
   it("makes the fields read-only while a save runs", () => {
@@ -627,5 +683,299 @@ describe("EditProfileSheet (#3387)", () => {
       saveButton(tree).props.onPress();
     });
     expect(mutate.mock.calls[0]![0]).toEqual({ bio: "Pre-med." });
+  });
+});
+
+/**
+ * #5280. The You tab's rows open the sheet at the field tapped: once the sheet
+ * settles open it scrolls that field into view and focuses it, once a visit.
+ */
+describe("EditProfileSheet opens at a field (#5280)", () => {
+  const scrollTo = vi.fn();
+  const focus = new Map<string, ReturnType<typeof vi.fn>>();
+  const { lg } = signetDarkTokens.spacing;
+
+  beforeEach(() => {
+    scrollTo.mockReset();
+    focus.clear();
+  });
+
+  function renderAt(openAt: EditProfileField, profile = PROFILE) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <EditProfileSheet ref={ref} profile={profile} openAt={openAt} />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) => {
+            const type = element.type as unknown;
+            if (type === "BottomSheetModal")
+              return { dismiss, present: vi.fn() };
+            if (type === "BottomSheetScrollView") return { scrollTo };
+            if (type === "BottomSheetTextInput") {
+              const label = String(
+                (element.props as { accessibilityLabel?: string })
+                  .accessibilityLabel,
+              );
+              const spy = focus.get(label) ?? vi.fn();
+              focus.set(label, spy);
+              return { focus: spy };
+            }
+            return null;
+          },
+        },
+      );
+    });
+    mounted.push(tree);
+    act(() => {
+      modal(tree).props.onAnimate(-1, 0);
+    });
+    return tree;
+  }
+
+  /** What the layout pass reports: the sheet's height and its content's. */
+  function laidOut(tree: ReactTestRenderer, height: number, content: number) {
+    const scroll = tree.root.find(
+      (node) => (node.type as unknown) === "BottomSheetScrollView",
+    );
+    act(() => {
+      scroll.props.onLayout({ nativeEvent: { layout: { y: 0, height } } });
+      scroll.props.onContentSizeChange(0, content);
+    });
+  }
+
+  /** Places the block holding the field labelled `label` at `y`. */
+  function placed(
+    tree: ReactTestRenderer,
+    label: string,
+    y: number,
+    height = 48,
+  ) {
+    let block = input(tree, label).parent;
+    while (block && typeof block.props.onLayout !== "function") {
+      block = block.parent;
+    }
+    act(() => {
+      block!.props.onLayout({ nativeEvent: { layout: { y, height } } });
+    });
+  }
+
+  /** The keyboard has shrunk the sheet's body to `height`. */
+  function keyboardUp(tree: ReactTestRenderer, height: number) {
+    const scroll = tree.root.find(
+      (node) => (node.type as unknown) === "BottomSheetScrollView",
+    );
+    act(() => {
+      scroll.props.onLayout({ nativeEvent: { layout: { y: 0, height } } });
+    });
+  }
+
+  const settleOpen = (tree: ReactTestRenderer) =>
+    act(() => {
+      modal(tree).props.onChange(0);
+    });
+
+  it("waits for the sheet to settle open, then scrolls the field to the top and focuses it", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Bio", 500);
+
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(focus.get("Bio")).not.toHaveBeenCalled();
+
+    settleOpen(tree);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 500 - lg, animated: true });
+    expect(focus.get("Bio")).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes there once a visit, and again on the next visit", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Bio", 500);
+
+    settleOpen(tree);
+    settleOpen(tree);
+    expect(focus.get("Bio")).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      modal(tree).props.onDismiss();
+    });
+    act(() => {
+      modal(tree).props.onAnimate(-1, 0);
+    });
+    settleOpen(tree);
+    expect(focus.get("Bio")).toHaveBeenCalledTimes(2);
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves a field near the top where it is, so the header stays in view", () => {
+    const tree = renderAt("displayName");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Name", 72);
+
+    settleOpen(tree);
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(focus.get("Name")).toHaveBeenCalledTimes(1);
+  });
+
+  it("never scrolls past the end of the content", () => {
+    const tree = renderAt("company", { ...PROFILE, graduationYear: 2020 });
+    laidOut(tree, 600, 1400);
+    placed(tree, "Company", 1300);
+
+    settleOpen(tree);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 800, animated: true });
+    expect(focus.get("Company")).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't scroll a form shorter than the sheet", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 700, 640);
+    placed(tree, "Bio", 450, 100);
+
+    settleOpen(tree);
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(focus.get("Bio")).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks the field again once the keyboard has shrunk the sheet, and only then", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 700, 700);
+    placed(tree, "Bio", 450, 100);
+    settleOpen(tree);
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    keyboardUp(tree, 450);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 250, animated: true });
+
+    keyboardUp(tree, 700);
+    keyboardUp(tree, 300);
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing as the sheet finishes closing", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Bio", 500);
+
+    act(() => {
+      modal(tree).props.onChange(-1);
+    });
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(focus.get("Bio")).not.toHaveBeenCalled();
+  });
+
+  it("scrolls to a field that shares a row, by its row", () => {
+    const tree = renderAt("graduationYear");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Graduation year", 400);
+
+    settleOpen(tree);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 400 - lg, animated: true });
+    expect(focus.get("Graduation year")).toHaveBeenCalledTimes(1);
+  });
+
+  it("scrolls a birthday to its heading and focuses the month", () => {
+    const tree = renderAt("birthdayMonth");
+    laidOut(tree, 600, 1400);
+    const heading = tree.root.find(
+      (node) =>
+        typeof node.props.onLayout === "function" &&
+        node.findAll(
+          (child) =>
+            (child.type as unknown) === "Text" &&
+            child.props.children === "Birthday",
+        ).length > 0 &&
+        node.findAll(
+          (child) => (child.type as unknown) === "BottomSheetTextInput",
+        ).length === 0,
+    );
+    act(() => {
+      heading.props.onLayout({
+        nativeEvent: { layout: { y: 380, height: 20 } },
+      });
+    });
+    placed(tree, "Birthday month, 1 to 12", 412, 72);
+
+    settleOpen(tree);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 380 - lg, animated: true });
+    expect(focus.get("Birthday month, 1 to 12")).toHaveBeenCalledTimes(1);
+  });
+
+  // The You tab draws City from the stored year; a year typed ahead and kept
+  // from a failed save must not leave that row opening a sheet without it.
+  it("keeps City and Company while the stored year shows them, under a year typed ahead", () => {
+    const graduate = { ...PROFILE, graduationYear: 2020, currentCity: null };
+    const tree = renderAt("city", graduate);
+    type(tree, "Graduation year", "2099");
+    expect(input(tree, "City").props.value).toBe("");
+
+    settleOpen(tree);
+    expect(focus.get("City")).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a birthday at its month", () => {
+    const tree = renderAt("birthdayMonth");
+    settleOpen(tree);
+    expect(focus.get("Birthday month, 1 to 12")).toHaveBeenCalledTimes(1);
+    expect(focus.get("Birthday day")).not.toHaveBeenCalled();
+  });
+
+  it("raises no keyboard while a save runs, when the fields are read-only", () => {
+    isPending = true;
+    const tree = renderAt("phone");
+    settleOpen(tree);
+    expect(focus.get("Phone")).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditProfileSheet — Major suggests the chapter's majors (#5778)", () => {
+  const suggestions = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.accessibilityLabel === "Majors in your chapter",
+    );
+
+  it("lists matching majors while Major has focus, and a tap takes one", () => {
+    const tree = render();
+    expect(suggestions(tree)).toHaveLength(0);
+    act(() => {
+      input(tree, "Major").props.onFocus();
+    });
+    type(tree, "Major", "mech");
+    const [list] = suggestions(tree);
+    expect(list).toBeDefined();
+    expect(
+      screenText({ root: list } as unknown as ReactTestRenderer),
+    ).toContain("Mechanical Engineering");
+    expect(
+      screenText({ root: list } as unknown as ReactTestRenderer),
+    ).not.toContain("Music");
+    const row = list!.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        screenText({ root: node } as unknown as ReactTestRenderer) ===
+          "Mechanical Engineering",
+    );
+    act(() => {
+      row.props.onPress();
+    });
+    expect(input(tree, "Major").props.value).toBe("Mechanical Engineering");
+    // Now an exact match: nothing left to suggest.
+    expect(suggestions(tree)).toHaveLength(0);
+  });
+
+  it("hides the list when Major loses focus", () => {
+    const tree = render();
+    act(() => {
+      input(tree, "Major").props.onFocus();
+    });
+    expect(suggestions(tree)).toHaveLength(1);
+    act(() => {
+      input(tree, "Major").props.onBlur();
+    });
+    expect(suggestions(tree)).toHaveLength(0);
   });
 });

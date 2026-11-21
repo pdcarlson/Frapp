@@ -9,9 +9,6 @@ import { Observable, tap } from 'rxjs';
 import type { RequestContext } from '../types/request-context.types';
 import { emitSanitizedHttpRequestLog } from '../utils/http-request-log';
 
-export { forwardedShape } from '../utils/http-request-log';
-export type { ForwardedShape } from '../utils/http-request-log';
-
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HTTP');

@@ -22,6 +22,23 @@ export function chatMessagesKey(channelId: string) {
   return [CHAT_MESSAGE_QUERY_ROOT, channelId, "messages"] as const;
 }
 
+/**
+ * The channel id in a `chatMessagesKey`, or `null` for any other key, other
+ * `["chat", …]` keys included. The one test of that key's shape: a caller
+ * matching timelines in the query cache uses this rather than reading indexes.
+ */
+export function chatMessagesChannelId(
+  queryKey: readonly unknown[],
+): string | null {
+  const [root, channelId, leaf] = queryKey;
+  return root === CHAT_MESSAGE_QUERY_ROOT &&
+    typeof channelId === "string" &&
+    leaf === "messages" &&
+    queryKey.length === 3
+    ? channelId
+    : null;
+}
+
 /** A message thread's parent and the viewer's follow (#3785). */
 export function chatThreadKey(channelId: string, rootId: string) {
   return [CHAT_MESSAGE_QUERY_ROOT, channelId, "thread", rootId] as const;
@@ -57,14 +74,11 @@ export function messageCacheKey(
 }
 
 /** Prefix that marks a `chat_message_actions.action_type` as an emoji reaction. */
-export const REACTION_ACTION_PREFIX = "reaction:";
+const REACTION_ACTION_PREFIX = "reaction:";
 
 export function reactionActionType(emoji: string): string {
   return `${REACTION_ACTION_PREFIX}${emoji}`;
 }
-
-/** Alias of `reactionActionType` for callers that want the inverse-symmetric name. */
-export const actionTypeFromEmoji = reactionActionType;
 
 export function emojiFromActionType(actionType: string): string | null {
   return actionType.startsWith(REACTION_ACTION_PREFIX)
@@ -114,6 +128,12 @@ export const CHAT_MESSAGE_KINDS = [
   "imported",
   "loading",
   "announcement",
+  "signup",
+  "form",
+  "ask_answer",
+  // An officer's role picker (#4958): members tap to join or leave the
+  // Non-chapter business roles it lists.
+  "role_picker",
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
@@ -157,6 +177,10 @@ export interface RawChatMessage {
   thread_reply_count?: number | null;
   thread_last_reply_at?: string | null;
   thread_recent_sender_ids?: string[] | null;
+  /** The parent's newest reply not deleted (#4297); see `ThreadSummary.last_reply`. */
+  thread_last_reply?: RawThreadLastReply | null;
+  /** The copy of the message this row forwards (#4864); see `ChatMessage.forwarded_from`. */
+  forwarded_from?: RawForwardedFrom | null;
   /**
    * Whether the server evaluated the viewer's block list and found this row's
    * sender on it (#2257, `spec/behavior/chat/README.md` § The masking contract).
@@ -267,6 +291,12 @@ export interface ChatMessage {
    */
   attachment_photos?: readonly AttachmentPhoto[];
   /**
+   * The GIF this message is (#4631), from `metadata.gif`, which only the
+   * server writes, after holding its URL to the GIF provider's media host.
+   * A GIF message has no text and no files. Absent on every other message.
+   */
+  gif?: MessageGif;
+  /**
    * Who the body mentions, plus a reply's quoted author, as the API resolved
    * it (`users.id`). The one
    * per-message answer to "was I addressed": the in-body chip marks any
@@ -288,6 +318,15 @@ export interface ChatMessage {
    * carries it.
    */
   thread?: ThreadSummary | null;
+  /**
+   * When this message forwards another (#4864), the server's copy of the
+   * original as it was at forward time; `null` on every other message. A
+   * copy, not a live reference: an edit to the original leaves it alone,
+   * and a delete blanks it (`ForwardedFrom.deleted`). The row's own
+   * `content` is the forwarder's comment, and may be empty. Optional so a
+   * hand-built message need not name it; `normalizeRow` always sets it.
+   */
+  forwarded_from?: ForwardedFrom | null;
   /**
    * Whether the **server** masked this row for the viewer, set on every row
    * rather than only the masked ones (#2257).
@@ -402,7 +441,7 @@ export type ReplayRequest = {
  * sends neither; a replay is meaningless without both, since the whole point is
  * to re-send the original key to the original channel.
  */
-export type PointsAdjustBody = Omit<
+type PointsAdjustBody = Omit<
   components["schemas"]["AdjustPointsDto"],
   "channel_id" | "client_message_id"
 > & {
@@ -437,13 +476,163 @@ export interface ThreadSummary {
   last_reply_at: string | null;
   /** Up to three, newest first. */
   recent_sender_ids: string[];
+  /**
+   * The newest reply that isn't deleted, for the thread card's preview line
+   * (#4297). `null` (or absent, on a row from an older server) when there is
+   * none to show, including on a read that masked a replier the viewer
+   * blocked. The Realtime echo carries it unmasked, so a client shows it only
+   * through `threadPreviewVisible`.
+   */
+  last_reply?: ThreadLastReply | null;
+}
+
+/** The parent's copy of its newest reply, as the API serves it. */
+interface RawThreadLastReply {
+  id?: unknown;
+  sender_id?: unknown;
+  content?: unknown;
+  kind?: unknown;
+  attachment_count?: unknown;
+  has_gif?: unknown;
+  created_at?: unknown;
+  sender_blocked?: unknown;
+}
+
+/** The parent's copy of its newest reply, read defensively (#4297). */
+export interface ThreadLastReply {
+  id: string;
+  sender_id: string | null;
+  /** Cut to 500 characters by the server; flatten it with `replyPreviewText`. */
+  content: string;
+  kind: ChatMessageKind;
+  attachment_count: number;
+  /**
+   * The reply is a GIF (#4657), so the card reads "Jake: GIF". Always set by
+   * `normalizeRow`; optional so a preview built by hand needn't say no.
+   */
+  has_gif?: boolean;
+  created_at: string;
+  /**
+   * The server's verdict that it withheld this preview because the viewer
+   * blocked its replier (`content` is then empty). Only a REST read sets it;
+   * `mergeServerRow` carries it onto the parent's next Realtime echo while the
+   * same replier's reply is still the latest, as it carries a masked
+   * message's `sender_blocked`.
+   */
+  sender_blocked: boolean;
+}
+
+/** A forward's copy of its original, as the API serves it (#4864). */
+export interface RawForwardedFrom {
+  message_id?: unknown;
+  channel_id?: unknown;
+  sender_id?: unknown;
+  author_name?: unknown;
+  content?: unknown;
+  gif?: unknown;
+  attachment_count?: unknown;
+  created_at?: unknown;
+  deleted?: unknown;
+  sender_blocked?: unknown;
+}
+
+/**
+ * A forward's copy of its original, read defensively (#4864,
+ * `spec/behavior/chat/README.md` § Forward).
+ */
+export interface ForwardedFrom {
+  /** The original message's id. */
+  message_id: string;
+  /**
+   * The channel the original lives in. Never a name: a reader names it only
+   * when its own channel list holds this id, so a private channel's name
+   * never reaches someone outside it.
+   */
+  channel_id: string | null;
+  /** The original's author, or `null` (the system actor, an unlinked import, a blanked copy). */
+  sender_id: string | null;
+  /** The author's display name at forward time; "Deleted User" after their account is gone. */
+  author_name: string | null;
+  /** The original's text as written (markdown and `@handles` included); may be empty. */
+  content: string;
+  /** The original's GIF, under the same checks as `metadata.gif`. */
+  gif: MessageGif | null;
+  /** How many files the original carried. The files themselves stay with it. */
+  attachment_count: number;
+  /** The original's `created_at`. */
+  created_at: string;
+  /**
+   * The original was deleted, so the server blanked this copy: no author,
+   * text, GIF or files. Readers say so (`FORWARDED_ORIGINAL_DELETED`), and no
+   * block list applies to it, since nothing is left to hide.
+   */
+  deleted: boolean;
+  /**
+   * The server's verdict that it withheld this copy because the viewer
+   * blocked its author (`content` and `gif` then empty), as
+   * `ThreadLastReply.sender_blocked` is for a thread preview. Only a REST
+   * read sets it; `mergeServerRow` carries it onto the row's next Realtime
+   * echo. A client applies its own list too (`forwardedSnapshotVisible`).
+   */
+  sender_blocked: boolean;
+}
+
+/**
+ * A forward's copy of its original, or `null` when the row carries none or
+ * one this client can't read: without the original's id there is no copy.
+ */
+export function forwardedFromOf(raw: unknown): ForwardedFrom | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as RawForwardedFrom;
+  if (typeof r.message_id !== "string" || r.message_id.length === 0) {
+    return null;
+  }
+  const deleted = r.deleted === true;
+  return {
+    message_id: r.message_id,
+    channel_id: typeof r.channel_id === "string" ? r.channel_id : null,
+    sender_id: !deleted && typeof r.sender_id === "string" ? r.sender_id : null,
+    author_name:
+      !deleted && typeof r.author_name === "string" ? r.author_name : null,
+    content: !deleted && typeof r.content === "string" ? r.content : "",
+    gif: deleted ? null : messageGifOf({ gif: r.gif }),
+    attachment_count: deleted
+      ? 0
+      : attachmentCount({ attachment_count: r.attachment_count }),
+    created_at: typeof r.created_at === "string" ? r.created_at : "",
+    deleted,
+    sender_blocked: !deleted && r.sender_blocked === true,
+  };
+}
+
+/**
+ * The parent's newest reply, or `null` when the row carries none or one this
+ * client can't read: without its id there is no reply to classify.
+ */
+function threadLastReplyOf(
+  raw: RawThreadLastReply | null | undefined,
+): ThreadLastReply | null {
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.id !== "string" || raw.id.length === 0) return null;
+  return {
+    id: raw.id,
+    sender_id: typeof raw.sender_id === "string" ? raw.sender_id : null,
+    content: typeof raw.content === "string" ? raw.content : "",
+    kind: coerceKind(typeof raw.kind === "string" ? raw.kind : null),
+    attachment_count: attachmentCount({
+      attachment_count: raw.attachment_count,
+    }),
+    has_gif: raw.has_gif === true,
+    created_at: typeof raw.created_at === "string" ? raw.created_at : "",
+    sender_blocked: raw.sender_blocked === true,
+  };
 }
 
 /**
  * The parent's thread summary, or `null` when it has no replies. Defensive
  * like `attachmentCount`: an absent or malformed count is no thread.
  */
-export function threadSummaryOf(row: RawChatMessage): ThreadSummary | null {
+function threadSummaryOf(row: RawChatMessage): ThreadSummary | null {
   const count = row.thread_reply_count;
   if (typeof count !== "number" || !Number.isFinite(count) || count < 1) {
     return null;
@@ -456,6 +645,7 @@ export function threadSummaryOf(row: RawChatMessage): ThreadSummary | null {
           .filter((id): id is string => typeof id === "string")
           .slice(0, 3)
       : [],
+    last_reply: threadLastReplyOf(row.thread_last_reply),
   };
 }
 
@@ -503,9 +693,11 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     client_message_id: clientId,
     attachment_count: attachmentCount(row.metadata),
     ...attachmentPhotosField(row.metadata),
+    ...gifField(row.metadata),
     mentions: mentionIds(row.mentions),
     thread_root_id: row.thread_root_id ?? null,
     thread: threadSummaryOf(row),
+    forwarded_from: forwardedFromOf(row.forwarded_from),
     // Absent means the row reached us by a path with no viewer to mask against
     // (the Postgres Changes echo), never "the sender is fine" — see
     // `RawChatMessage.sender_blocked`.
@@ -562,6 +754,7 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
       ...(message.attachment_photos
         ? { attachment_photos: message.attachment_photos }
         : {}),
+      ...(message.gif ? { gif: message.gif } : {}),
     },
     is_pinned: message.is_pinned,
     pinned_at: message.pinned_at,
@@ -576,6 +769,8 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
     thread_reply_count: message.thread?.reply_count ?? 0,
     thread_last_reply_at: message.thread?.last_reply_at ?? null,
     thread_recent_sender_ids: message.thread?.recent_sender_ids ?? [],
+    thread_last_reply: message.thread?.last_reply ?? null,
+    forwarded_from: message.forwarded_from ?? null,
     ...(message._blockEvaluated
       ? { sender_blocked: message.sender_blocked }
       : {}),
@@ -661,6 +856,120 @@ function attachmentPhotosField(metadata: unknown): {
 }
 
 /**
+ * A GIF message's GIF (`metadata.gif`, #4631), as the API's
+ * `GifService.messageGif` wrote it.
+ */
+export interface MessageGif {
+  provider: string;
+  id: string;
+  /** Short words for a screen reader; may be empty. */
+  title: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+/** What a client sends: the picker result's GIF and the token the API signed it with. */
+export interface OutgoingGif extends MessageGif {
+  token: string;
+}
+
+/**
+ * A send's `gif`, as `POST /v1/channels/{id}/messages` takes it: the one
+ * shape for a channel message and a thread reply, since the API checks the
+ * token over these fields.
+ */
+export function gifRequestBody(gif: OutgoingGif) {
+  return {
+    id: gif.id,
+    title: gif.title || undefined,
+    url: gif.url,
+    width: gif.width,
+    height: gif.height,
+    token: gif.token,
+  };
+}
+
+/** The API's own bound on a GIF's edges (`MAX_GIF_EDGE` in its GIF port). */
+const MAX_GIF_EDGE = 4096;
+
+/** The hosts GIF media may come from: the GIF provider's own (KLIPY). */
+const GIF_MEDIA_HOSTS: readonly string[] = ["klipy.com"];
+
+/** Whether a URL is the GIF provider's own https media, as the API requires. */
+function isGifMediaUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.port)
+    return false;
+  const host = url.hostname.toLowerCase();
+  return GIF_MEDIA_HOSTS.some(
+    (media) => host === media || host.endsWith(`.${media}`),
+  );
+}
+
+/**
+ * Reads `metadata.gif` defensively, as a spreadable field. Anything but the
+ * provider's own https media and two whole edges in range reads as no GIF, so
+ * a malformed row, or one written before the server owned the key, never
+ * draws an image from anywhere else.
+ */
+export function messageGifOf(metadata: unknown): MessageGif | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  const raw = (metadata as Record<string, unknown>)["gif"];
+  if (!raw || typeof raw !== "object") return null;
+  const { provider, id, title, url, width, height } = raw as Record<
+    string,
+    unknown
+  >;
+  if (typeof url !== "string" || !isGifMediaUrl(url)) return null;
+  const edge = (value: unknown) =>
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= MAX_GIF_EDGE;
+  if (!edge(width) || !edge(height)) return null;
+  return {
+    provider: typeof provider === "string" ? provider : "",
+    id: typeof id === "string" ? id : "",
+    title: typeof title === "string" ? title : "",
+    url,
+    width: width as number,
+    height: height as number,
+  };
+}
+
+/**
+ * A GIF's box in the thread, from its stored edges, so the row never jumps
+ * on load: as large as fits `max`, never larger than the GIF itself, and
+ * never under a pixel on a side.
+ */
+export function gifBoxSize(
+  gif: Pick<MessageGif, "width" | "height">,
+  max: { width: number; height: number },
+): { width: number; height: number } {
+  const width = Math.max(
+    1,
+    Math.round(
+      Math.min(gif.width, max.width, (max.height * gif.width) / gif.height),
+    ),
+  );
+  return {
+    width,
+    height: Math.max(1, Math.round((width * gif.height) / gif.width)),
+  };
+}
+
+function gifField(metadata: unknown): { gif?: MessageGif } {
+  const gif = messageGifOf(metadata);
+  return gif ? { gif } : {};
+}
+
+/**
  * `mentions` defensively: only an array of strings counts. A missing column
  * (an older cached row, a masked one) is no mentions, not an error.
  */
@@ -680,6 +989,8 @@ export function optimisticMessage(args: {
   replyToId?: string | null;
   /** How many files this send is carrying, so the pending row is not blank. */
   attachmentCount?: number;
+  /** The GIF this send is, drawn at once from the picker's own result. */
+  gif?: MessageGif | null;
 }): ChatMessage {
   return {
     id: args.clientMessageId,
@@ -697,10 +1008,14 @@ export function optimisticMessage(args: {
     // reconnect — so a zero here renders an attachment-only message as a
     // completely blank bubble to its own sender, for as long as it is queued.
     attachment_count: args.attachmentCount ?? 0,
+    ...(args.gif ? { gif: args.gif } : {}),
     mentions: [],
     kind: args.kind ?? "text",
     payload: args.payload ?? null,
     reply_to_id: args.replyToId ?? null,
+    // A forward is sent by its own route, which answers with the server's
+    // row; nothing optimistic carries a copy.
+    forwarded_from: null,
     is_pinned: false,
     pinned_at: null,
     flag: null,

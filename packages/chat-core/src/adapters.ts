@@ -1,3 +1,6 @@
+import type { MentionPick } from "@repo/validation";
+import type { OutgoingGif } from "./types";
+
 /**
  * The platform ports for `@repo/chat-core`.
  *
@@ -32,7 +35,7 @@ export interface NetworkState {
   subscribe(onChange: (online: boolean) => void): () => void;
 }
 
-export type OutboxStatus = "queued" | "failed";
+type OutboxStatus = "queued" | "failed";
 
 /** An uploaded file waiting to be attached to a queued message. */
 export interface OutboxAttachment {
@@ -49,6 +52,24 @@ export interface OutboxAttachment {
   height?: number | null;
   thumbhash?: string | null;
   previewStoragePath?: string | null;
+}
+
+/**
+ * A staged file as `POST /v1/channels/{id}/messages` and
+ * `POST /v1/scheduled-messages` take it (`MessageAttachmentDto`): the one
+ * shape for a send now and a send later (#4971).
+ */
+export function attachmentRequestBody(attachment: OutboxAttachment) {
+  return {
+    storage_path: attachment.storagePath,
+    filename: attachment.filename,
+    content_type: attachment.contentType,
+    byte_size: attachment.byteSize ?? undefined,
+    width: attachment.width ?? undefined,
+    height: attachment.height ?? undefined,
+    thumbhash: attachment.thumbhash ?? undefined,
+    preview_storage_path: attachment.previewStoragePath ?? undefined,
+  };
 }
 
 export interface OutboxRow {
@@ -72,6 +93,14 @@ export interface OutboxRow {
    * object and a message that has lost its file.
    */
   attachments?: OutboxAttachment[] | null;
+  /** The GIF this message is (#4631); optional, for rows older builds queued. */
+  gif?: OutgoingGif | null;
+  /**
+   * The members the `@` picker wrote into `body` (#3835), so a flushed send
+   * reads its mentions as the live one would have. Optional, for rows older
+   * builds queued, which resolve by name.
+   */
+  mentionPicks?: MentionPick[] | null;
   attempts: number;
   queuedAt: number;
   status: OutboxStatus;

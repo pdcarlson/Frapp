@@ -308,9 +308,10 @@ describe("codeWithoutComments", () => {
   });
 });
 
-describe("the notification drawer's row hover (#1208)", () => {
+describe("the notification list's row hover (#1208)", () => {
   /*
-   * The drawer is a `SheetContent`, so every row sits on `--popover`. Rows are
+   * The list is a `PopoverContent` (a `SheetContent` until 2026-11-12), so
+   * every row sits on `--popover`. Rows are
    * flat and transparent since 2026-11-05 (components.md § Chrome weight), and
    * unread is a dot, so read and unread share one hover: `--card-hover`,
    * measured in `elevation-contrast.spec.ts`. Pinned here because a hover
@@ -319,7 +320,7 @@ describe("the notification drawer's row hover (#1208)", () => {
    * replaced is exactly the decorative accent the audit took out.
    */
   const drawer = codeWithoutComments(
-    join(WEB, "components", "layout", "dashboard-notification-drawer.tsx"),
+    join(WEB, "components", "layout", "notifications-popover.tsx"),
   );
 
   it("paints exactly one background hover, the neutral lift", () => {
@@ -356,26 +357,47 @@ describe("rows inside a popover hover up, never down a step (#2399, #3826)", () 
 
 describe("--muted is a text tone, never a fill under text (#3826)", () => {
   /*
-   * `--muted` is `#9E9E9E` since the 2026-11-09 text ladder (foundations.md
-   * §4). As a fill it puts foreground text at 2.46:1 and the accent text at
-   * 1.64:1, so a quiet fill takes a ladder step or `--card-hover`. Two
+   * `--muted` has been a light grey since the 2026-11-09 text ladder
+   * (foundations.md §4; `#A8A8A8` since 2026-11-12). As a fill it put
+   * foreground text at 2.46:1 and the accent text at 1.64:1 when this was
+   * written, so a quiet fill takes a ladder step or `--card-hover`. Two
    * non-text uses are allowed, named here so a third is a decision: the
-   * switch's unchecked thumb and the chat-density preview bars. An alpha wash
-   * (`bg-muted/40`) composites dark enough to keep text over AA.
+   * switch's unchecked thumb and the chat-density preview bars. One literal
+   * is allowed by itself, not its whole file: the task photo's loading
+   * placeholder, an empty `aria-hidden` `block bg-muted/40` span, since the
+   * rest of `task-photo.tsx` puts text on fills.
+   *
+   * An alpha wash is held too (#3999). This guard used to let any
+   * `bg-muted/N` through on the claim that a wash composites dark enough to
+   * keep text over AA. That depends on the surface under it: on the
+   * 2026-11-12 ladder a `/40` wash puts `--muted-foreground` at 5.41:1 on
+   * `--background` but 3.95:1 on `--card` and 3.55:1 on `--popover`, and a
+   * class can't know which it lands on. The Discord import's scan-warnings
+   * box (on `--background`, so passing) was the one wash under text; it is
+   * `bg-card` now.
    */
   const ALLOWED = new Set([
     "apps/web/components/ui/switch.tsx",
     "apps/web/components/profile/chat-density-control.tsx",
   ]);
+  const ALLOWED_LITERALS = new Map([
+    [
+      "apps/web/components/tasks/task-photo.tsx",
+      new Set(["block bg-muted/40"]),
+    ],
+  ]);
 
-  it("finds no solid or hover bg-muted outside the allowed non-text sites", () => {
+  it("finds no bg-muted fill, solid, hover or alpha, outside the allowed non-text sites", () => {
     const hits = productSourceFiles()
       .filter((path) => !ALLOWED.has(relative(REPO, path)))
-      .filter((path) =>
-        classLiterals(path).some((text) =>
-          /(?<![\w-])bg-muted(?![\w/-])/.test(text),
-        ),
-      )
+      .filter((path) => {
+        const allowed = ALLOWED_LITERALS.get(relative(REPO, path));
+        return classLiterals(path).some(
+          (text) =>
+            !allowed?.has(text.trim()) &&
+            /(?<![\w-])bg-muted(?![\w-])/.test(text),
+        );
+      })
       .map((path) => relative(REPO, path));
     expect(hits).toEqual([]);
   });
@@ -423,7 +445,7 @@ describe("global-error's hand copy of the Secondary button", () => {
     join(WEB, "app", "global-error.tsx"),
     "utf8",
   );
-  const copy = /className="([^"]*\bborder-input\b[^"]*)"/
+  const copy = /className="([^"]*\bborder-control-edge\b[^"]*)"/
     .exec(globalError)?.[1]
     ?.split(/\s+/);
   const rendered = cn(buttonVariants({ variant: "secondary", size: "sm" }))
@@ -456,8 +478,10 @@ describe("global-error's hand copy of the Secondary button", () => {
 });
 
 describe("the overlay close controls are text-toned and named (#1208)", () => {
-  // The value half is in `elevation-contrast.spec.ts`: `--muted` on
-  // `--popover` misses the text gate, `--muted-foreground` clears it. All three
+  // The value half is in `elevation-contrast.spec.ts`. `--muted` on
+  // `--popover` missed the text gate when this was written (#1208) and clears
+  // it since the 2026-11-09 text ladder; a named control still takes
+  // `--muted-foreground`, the secondary reading tone. All three
   // draw an X glyph on `--popover` (the toast's default variant included).
   it.each(["dialog.tsx", "sheet.tsx", "toast.tsx"])("%s", (file) => {
     const source = codeWithoutComments(join(WEB, "components", "ui", file));

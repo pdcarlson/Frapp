@@ -1,7 +1,11 @@
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { auditLineText, readSystemAuditPayload } from "./cards";
 import { replyPreviewText } from "./reply-preview";
-import type { ChatMessage, ChatMessageKind } from "./types";
+import {
+  forwardedFromOf,
+  type ChatMessage,
+  type ChatMessageKind,
+} from "./types";
 
 /**
  * One channel's latest message as `GET /v1/channels/latest` serves it: what a
@@ -19,6 +23,50 @@ export interface ChannelLatestMessage {
   payload: Record<string, unknown> | null;
   attachment_count: number;
   created_at: string;
+  /**
+   * A forward's copy of its original (#4864), as the server serves it (masked
+   * for a blocked author). Optional: absent from an older server.
+   */
+  forwarded_from?: unknown;
+  /**
+   * The latest message is a GIF (#4657), so the row reads "Jake: GIF".
+   * Optional: absent from an older server.
+   */
+  has_gif?: boolean;
+  /**
+   * Read receipts (#5519): on a DM or group DM whose latest message is the
+   * viewer's, `sent` or `read`, as the server decided it (each member's
+   * switch, blocks, and "everyone has read it" in a group). Null or absent
+   * otherwise, and from an older server.
+   */
+  read_status?: string | null;
+}
+
+/** What a Messages row says about the viewer's own last message (#5519). */
+export type ConversationReadStatus = "sent" | "read";
+
+/** The status's words, for a screen reader and a tooltip. */
+export const CONVERSATION_READ_STATUS_LABEL: Record<
+  ConversationReadStatus,
+  string
+> = { sent: "Sent", read: "Read" };
+
+/**
+ * The check a Messages row draws before its last line (#5519): one for sent,
+ * two for read, or none. Only the viewer's own message has one, and only
+ * where the server sent a status, so a channel, someone else's message, and
+ * an older server all draw none. Never re-derived from read times here: the
+ * server alone knows who turned read receipts off.
+ */
+export function conversationReadStatus(
+  latest: ChannelLatestMessage | null | undefined,
+  viewerId: string | null,
+): ConversationReadStatus | null {
+  if (!latest || viewerId === null || latest.sender_id !== viewerId) {
+    return null;
+  }
+  const status = latest.read_status;
+  return status === "sent" || status === "read" ? status : null;
 }
 
 /** The preview of a channel with no message yet, so every row is two lines. */
@@ -40,13 +88,16 @@ export interface PreviewNames {
   fallbackLabel: (author: PreviewAuthor) => string;
 }
 
-export interface PreviewAuthor {
+interface PreviewAuthor {
   sender_id: string | null;
   author_name: string | null;
 }
 
-/** A name's first word, so a row reads "Jake: ..." the way Messages does. */
-function firstName(label: string): string {
+/**
+ * A name's first word, so a row reads "Jake: ..." the way Messages does. The
+ * thread card's preview names its replier the same way (`threadPreviewParts`).
+ */
+export function firstName(label: string): string {
   return label.trim().split(/\s+/)[0] || label;
 }
 
@@ -66,9 +117,12 @@ function shortLabel(author: PreviewAuthor, names: PreviewNames): string {
  *   the thread shows it as a sentence from Frapp.
  * - Anything else is the sender's first name and the message's one-line text
  *   (`replyPreviewText`, which also names a file-only message or a card with
- *   no text): "Jake: I've got the van". The viewer's own reads "You: ...". A
- *   1:1 DM drops the other person's name, since the row is already titled
- *   with it; a group DM keeps it, since the row names several people.
+ *   no text): "Jake: I've got the van". The viewer's own reads "You: ...",
+ *   except where the row draws a sent or read check before it
+ *   ({@link conversationReadStatus}, #5519), which already says it is theirs,
+ *   as WhatsApp's rows do. A 1:1 DM drops the other person's name, since the
+ *   row is already titled with it; a group DM keeps it, since the row names
+ *   several people.
  */
 export function channelPreviewLine(
   latest: ChannelLatestMessage,
@@ -91,13 +145,17 @@ export function channelPreviewLine(
     content: latest.content,
     attachment_count: latest.attachment_count,
     kind: latest.kind as ChatMessageKind,
+    forwarded_from: forwardedFromOf(latest.forwarded_from),
+    has_gif: latest.has_gif === true,
   });
 
   if (latest.kind === "system_audit" || latest.sender_id === SYSTEM_SENDER_ID) {
     return text;
   }
   const own = viewerId !== null && latest.sender_id === viewerId;
-  if (own) return `You: ${text}`;
+  if (own) {
+    return conversationReadStatus(latest, viewerId) ? text : `You: ${text}`;
+  }
   if (isOneToOne) return text;
   return `${shortLabel(latest, options)}: ${text}`;
 }

@@ -14,7 +14,7 @@ neither asks Vercel to fetch a commit.
 | Channel | Workflow | Path |
 | --- | --- | --- |
 | Staging (web + landing) | `deploy-staging.yml` (**Deploy staging**), after CI succeeds on `main`, when web or landing changed (#2865) | inject Infisical `staging` → `vercel pull --environment=preview` → `vercel build` on each app's own keys → migrations, API deploy and verify → `vercel deploy --prebuilt` → alias the staging hostnames → delete all but the newest staging deployments |
-| Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → migrations, Render deploy and health check → `vercel deploy --prebuilt --prod` |
+| Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → migrations, API deploy (Cloud Run since #5228) and health check → `vercel deploy --prebuilt --prod` |
 
 **Uploads are one archive per deploy, not one request per file (`--archive=tgz`, since
 2026-09-06).** The team is on Vercel's free plan, whose upload API allows **5000 requests per 24
@@ -22,7 +22,7 @@ hours** (`code: "api-upload-free"`). A per-file prebuilt Next.js upload is thous
 every traced `node_modules` file under `functions/*.func` — and six merges to `main` on 2026-09-06
 exhausted the budget: staging run 34062542629 failed with `Too many requests - try again in 24
 hours`, and the same failure on the production path lands in the upload step, after the apply and
-the Render deploy. With `--archive=tgz` the CLI tars `.vercel/output` and uploads a handful of
+the API deploy. With `--archive=tgz` the CLI tars `.vercel/output` and uploads a handful of
 parts, so the cap stops mattering. If the cap is ever hit anyway, the deploy fails closed (nothing
 partial is aliased) and clears on its own 24 hours after the first counted upload — or sooner on a
 paid plan, which is the owner's call, not a workflow's.
@@ -100,7 +100,7 @@ default 307 to `www.frapp.live` and keeps the path (read from the project's doma
 
 A merge to `main` never moves these hostnames. Only the `--prod` upload re-points them, and only a
 Deploy production run with scope `full` that isn't a dry run and gets past the migration apply,
-the Render deploy and the health check reaches that upload. A dry run, a `migrations-only` run,
+the API deploy and the health check reaches that upload. A dry run, a `migrations-only` run,
 or a run that fails earlier leaves them where they were. The run's `release` job then tags the
 shipped commit `vX.Y.Z`. If tagging fails after a live ship, `production-release-pin.mjs` raises
 its own alert. Anything merged since the last such run is on the staging hostnames, not here. On 2026-09-28 the
@@ -136,15 +136,18 @@ app.frapp.live      CNAME  cname.vercel-dns.com
 staging.frapp.live       CNAME  cname.vercel-dns.com
 app.staging.frapp.live   CNAME  cname.vercel-dns.com
 
-# API (Render — fill in after creating Render services)
-api.frapp.live           CNAME  <frapp-api-prod>.onrender.com
-api-staging.frapp.live   CNAME  <frapp-api-staging>.onrender.com
+# API (Cloud Run, each behind its own Google load balancer: cloud-run.md § Address)
+api.frapp.live                     A      34.8.133.226
+candidate.api.frapp.live           A      34.8.133.226
+api-staging.frapp.live             A      136.81.202.162
+candidate.api-staging.frapp.live   A      136.81.202.162
+# plus one _acme-challenge CNAME per API host, which proves the certificates
 ```
 
 This list is not the whole zone. The zone also holds mail records, and not all of them are written down or have been read back, so a DNS move (#2508) starts from an export of the live zone, not from this list. Known so far:
 
 - **Google Workspace mail:** `frapp.live MX 1 smtp.google.com` (read back 2026-09-24). Business Starter was added that day. `team@frapp.live`, the published support address, is an alias of its one user, `pdcarlson@frapp.live`. Before that, no `@frapp.live` address had a mailbox. Delivery to the new mailbox was still unproven when this was written (#2556). Any Workspace SPF, DKIM or site-verification TXT records at the apex have not been read back.
-- **Google Search Console:** a `google-site-verification` TXT record at the apex verifies the Domain property `frapp.live` for the owner's personal Google account, which owns the Cloud project behind Google sign-in. Google's OAuth brand verification needs it: an earlier attempt was flagged "The website of your home page URL https://www.frapp.live is not registered to you" while the property was verified only under `pdcarlson@frapp.live`. **Keep it**, through a DNS move too. *2026-09-28: added in Squarespace DNS by the owner. Search Console then reported "Ownership verified", method "Domain name provider", as the owner reported on [#2758](https://github.com/pdcarlson/Frapp/issues/2758) ([#2669](https://github.com/pdcarlson/Frapp/issues/2669) has the rename session). No agent has read the record back, and its value isn't copied here.*
+- **Google Search Console:** a `google-site-verification` TXT record at the apex verifies the Domain property `frapp.live` for `pdcarlson@frapp.live`, the only Owner of the Cloud project behind Google sign-in ([`google-cloud.md` § The sign-in project](google-cloud.md#the-sign-in-project)). Google's OAuth brand verification needs a project Owner to be a verified owner of the home page's domain: an earlier attempt was flagged "The website of your home page URL https://www.frapp.live is not registered to you" while the property was verified only under `pdcarlson@frapp.live` and the project belonged to the owner's personal account. **Keep it**, through a DNS move too, and don't delete a `google-site-verification` record without first knowing whose it is: Search Console doesn't show a Domain property's token after verification. *2026-09-28: the owner's personal account, then the project's owner, added its own record and was verified ([#2758](https://github.com/pdcarlson/Frapp/issues/2758)). 2026-11-17 ([#5323](https://github.com/frapplive/Frapp/issues/5323)): after the personal account was removed from the project, `pdcarlson@frapp.live` added the property again (its Search Console listed no property beforehand) and was verified ("Ownership verified", method "Domain name provider"). Whether that added a new TXT record or matched one left from its September verification isn't recorded. Two `google-site-verification` records were then at the apex; the owner deleted one and reported unverifying the personal account, which Search Console allows only once that account's record is gone. So the record left is not the personal account's, and is most likely `pdcarlson@frapp.live`'s; that holds until Google's next recheck finds `pdcarlson@frapp.live` still verified, which nobody has read yet. No agent has read the record back, and its value isn't copied here. The apex also holds an `anthropic-domain-verification` TXT record (seen in Squarespace on 2026-11-17).*
 - **Resend:** the sending domains `mail.frapp.live` and `mail.staging.frapp.live` carry Supabase Auth SMTP (Magic Link sign-in) and invite mail. The older apex `frapp.live` Resend domain also stays until nothing uses it. Those domains and `_dmarc.frapp.live` (`v=DMARC1; p=none;`) are covered in [`supabase.md` § Auth settings](supabase.md#auth-settings-hosted-dashboard-or-management-api). The record names and values are in the Resend dashboard and aren't copied here.
 
 The registration was bought through Google. Google Admin → Billing → Subscriptions lists it as **Domain Registration** (Active, annual plan), and Squarespace's help says Google Workspace manages the billing of a domain it resells. Nobody has yet checked whether Squarespace's own billing view carries a renewal for it too (#2527). `pdcarlson@frapp.live` is the only login to both consoles.

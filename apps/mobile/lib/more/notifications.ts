@@ -1,20 +1,23 @@
 /**
  * Narrowing and grouping for s14 (Notifications), over `GET /v1/notifications`.
  *
- * ## The category label is derived, not read
+ * What a row looks like (its picture, its kind's badge, the name's colour, the
+ * mention chips) is `@repo/hooks/notification-rows`, shared with the web
+ * drawer (#4346), and needs the viewer and the roster, so the screen works it
+ * out from `title`, `body` and `data` here. This module only narrows the
+ * rows, resolves where a tap goes, and groups them by day.
  *
- * The reference draws a category under each row — "Events · 4:00 PM". A
- * notification row does **not** store its category: `NotificationService`
- * persists `data: payload.data ?? {}` and forwards `category` only to the push
- * provider, for delivery telemetry. What the row does carry is the deep-link
- * target every payload includes (`spec/behavior/notifications.md` § Deep
- * Linking), so the label is derived from `data.target.screen`. That is the
- * honest source; inventing a category from the title's wording would not be.
- *
- * Rows whose target names no known screen fall back to no label rather than to
- * a guessed one.
+ * The category word that sat under each row ("Events · 4:00 PM") was derived
+ * from `data.target.screen` here until #4346; the kind's badge or tile says it
+ * now, and its words are read to a screen reader.
  */
-import { dayDelta, parseInstantOrBareLocalNoon } from "@repo/formatting";
+import {
+  groupNotificationsBySource,
+  notificationConversation,
+  notificationEntryCount,
+  notificationWhen,
+  type NotificationFilter,
+} from "@repo/hooks/notification-rows";
 import { isRecord, records, str } from "./narrow";
 import {
   resolveNotificationTarget,
@@ -25,8 +28,8 @@ export interface NotificationRow {
   id: string;
   title: string;
   body: string | null;
-  /** `null` when the row carries no recognizable target. */
-  categoryLabel: string | null;
+  /** The row's `data`, as served, for `notificationLook`. */
+  data: unknown;
   /**
    * Where tapping the row goes.
    *
@@ -42,7 +45,28 @@ export interface NotificationRow {
   /** Local clock time, e.g. `"4:00 PM"`. */
   time: string;
   createdAt: string;
+  /** Unread while any row in the entry is (#3948). */
   isUnread: boolean;
+  /**
+   * "14 messages" when the entry stands for a conversation's rows, newest
+   * first, collapsed into one (#3948); absent or `null` for a single row.
+   */
+  count?: string | null;
+  /**
+   * Ids of the entry's unread rows, which opening it reads (#3948); absent
+   * means just `id` when `isUnread`.
+   */
+  unreadIds?: string[];
+  /**
+   * Every row id the entry stands for, newest first, which a clear removes
+   * (#3948); absent means just `id`.
+   */
+  ids?: string[];
+  /**
+   * The conversation a clear deletes on the server (#3948), rows the list
+   * didn't load or hid under Unread included; absent for a row on its own.
+   */
+  conversation?: { channelId: string; threadRootId?: string } | null;
 }
 
 export interface NotificationGroup {
@@ -51,83 +75,10 @@ export interface NotificationGroup {
   rows: NotificationRow[];
 }
 
-/**
- * `data.target.screen` → the label drawn under a row.
- *
- * Keyed on the screen names the API actually emits — every `screen:` in a
- * `target: {` across `apps/api/src`, which is the list to re-derive from
- * rather than a count kept here: `chat`, `events`, `tasks`, `billing`,
- * `points`, `service`, `members`, `chat_reports` and `discord_import`. Each has a label — an
- * emitted screen missing here is the bug C7 (#998) found, when an invite
- * notification (`invite.service.ts` sends `screen: 'members'`) navigated
- * correctly to the directory while rendering with no category label at all,
- * which is the one thing this map exists to produce.
- *
- * `chat_reports` is the officer new-report notification
- * (`ChatReportService`). Mobile has no report queue, so the row routes to the
- * notification list (`lib/notifications/targets.ts`), but it is still labelled:
- * an officer reading it here should see what kind of notice it is. The same
- * holds for `discord_import`, the notice that a Discord import ended
- * (`DiscordImportWorkerService`), whose page is web-only.
- *
- * The extra keys below (`event`, `event-details`, `task`, `dues`, `study`) are
- * not emitted by anything today. They are kept because a label that is merely
- * absent costs a member nothing, whereas guessing a *route* would send them
- * somewhere wrong — which is why `lib/notifications/targets.ts` maps only the
- * emitted screens it has a route for and falls back rather than tolerating
- * spelling variants. Anything unmapped here gets no label.
- */
-const SCREEN_LABELS: Record<string, string> = {
-  chat: "Chat",
-  chat_reports: "Reports",
-  discord_import: "Discord import",
-  event: "Events",
-  events: "Events",
-  "event-details": "Events",
-  task: "Tasks",
-  tasks: "Tasks",
-  points: "Points",
-  billing: "Billing",
-  dues: "Billing",
-  service: "Service hours",
-  study: "Study hours",
-  members: "Directory",
-};
-
 function targetScreen(data: unknown): string | null {
   if (!isRecord(data)) return null;
   const target = data.target;
   return isRecord(target) ? str(target, "screen") : null;
-}
-
-export function categoryLabelFor(data: unknown): string | null {
-  const screen = targetScreen(data);
-  return screen ? (SCREEN_LABELS[screen] ?? null) : null;
-}
-
-function parseCreatedAt(value: string): Date | null {
-  // Full ISO timestamps pass through; a bare `YYYY-MM-DD` (not what the API
-  // writes today) still keeps its calendar day east and west of Greenwich.
-  return parseInstantOrBareLocalNoon(value);
-}
-
-function formatTime(value: string): string | null {
-  const date = parseCreatedAt(value);
-  if (!date) return null;
-  return date.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-/** `Mon`, `Aug 12` — what an older row shows in place of a clock time. */
-function formatDay(value: string, now: Date): string | null {
-  const date = parseCreatedAt(value);
-  if (!date) return null;
-  const withinAWeek = dayDelta(date, now) < 7;
-  return withinAWeek
-    ? date.toLocaleDateString(undefined, { weekday: "short" })
-    : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function toRow(
@@ -139,38 +90,56 @@ function toRow(
   const createdAt = str(row, "created_at");
   if (!id || !title || !createdAt) return null;
 
-  const created = parseCreatedAt(createdAt);
-  if (!created) return null;
-  const isToday = dayDelta(now, created) === 0;
+  // The day and time by the web drawer's own rule (`notificationWhen`).
+  const when = notificationWhen(createdAt, now);
+  if (!when) return null;
 
   return {
     id,
     title,
     body: str(row, "body"),
-    categoryLabel: categoryLabelFor(row.data),
-    target: resolveNotificationTarget(row.data),
-    time: (isToday ? formatTime(createdAt) : formatDay(createdAt, now)) ?? "",
+    data: row.data,
+    // A chat row tied to one message opens chat at it (#4977; a reminder
+    // since #4957). A single-message row names it only in `chat_message_id`.
+    target: resolveNotificationTarget(row.data, str(row, "chat_message_id")),
+    time: when.time,
     createdAt,
     // `read_at` is nullable and set on read; absent means unread.
     isUnread: str(row, "read_at") === null,
-    isToday,
+    isToday: when.isToday,
   };
 }
 
 /**
- * Rows grouped TODAY / EARLIER, newest first within each, as drawn.
+ * Entries grouped TODAY / EARLIER, newest first within each, as drawn.
  *
- * Empty groups are dropped so a member with only older activity does not see a
- * TODAY heading over nothing.
+ * One entry per conversation (`groupNotificationsBySource`, shared with the
+ * web drawer, #3948): a channel's rows collapse into its newest, which says
+ * how many messages it stands for and is unread while any of them is. Under
+ * `"unread"` read rows are left out first. An entry sits on its newest row's
+ * day. Empty groups are dropped so a member with only older activity does not
+ * see a TODAY heading over nothing.
  */
 export function selectNotificationGroups(
   data: unknown,
   now: Date,
+  filter: NotificationFilter = "all",
 ): NotificationGroup[] {
-  const rows = records(data)
+  const sorted = records(data)
     .map((row) => toRow(row, now))
     .filter((row): row is NotificationRow & { isToday: boolean } => !!row)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const rows = groupNotificationsBySource(sorted, {
+    isUnread: (row) => row.isUnread,
+    filter,
+  }).map((entry) => ({
+    ...entry.lead,
+    isUnread: entry.unreadIds.length > 0,
+    count: notificationEntryCount(entry),
+    unreadIds: entry.unreadIds,
+    ids: entry.rows.map((row) => row.id),
+    conversation: notificationConversation(entry.lead.data),
+  }));
 
   const groups: NotificationGroup[] = [
     { heading: "TODAY", rows: rows.filter((row) => row.isToday) },
@@ -179,12 +148,30 @@ export function selectNotificationGroups(
   return groups.filter((group) => group.rows.length > 0);
 }
 
-/** Ids of every unread row — what "Mark all read" fans out over. */
+/** Ids of every unread row: whether anything is left for "Mark all read". */
 export function selectUnreadIds(data: unknown): string[] {
   return records(data)
     .filter((row) => str(row, "read_at") === null)
     .map((row) => str(row, "id"))
     .filter((id): id is string => !!id);
+}
+
+/**
+ * Ids of read rows whose target is **not** chat: the in-app rows whose pushes
+ * `clearReadNonChatNotifications` may take out of the tray (#4011). Chat rows
+ * are left to the channel counts (`clearReadChatNotifications`) and to their
+ * message's delete (`dismissDeletedMessagePushes`, #4470).
+ */
+export function selectReadNonChatIds(data: unknown): Set<string> {
+  const ids = new Set<string>();
+  for (const row of records(data)) {
+    if (str(row, "read_at") === null || targetScreen(row.data) === "chat") {
+      continue;
+    }
+    const id = str(row, "id");
+    if (id) ids.add(id);
+  }
+  return ids;
 }
 
 /**

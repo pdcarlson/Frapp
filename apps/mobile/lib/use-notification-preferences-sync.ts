@@ -127,7 +127,7 @@ function normalizeTimeZone(value: unknown): string {
  * An alias rather than its own `Record<…>` so this screen and web's Profile
  * card name one type: the shape is the catalog's, not this hook's.
  */
-export type CategoryState = NotificationCategoryState;
+type CategoryState = NotificationCategoryState;
 
 /** A concrete quiet-hour window. Times are `HH:mm`; `tz` is an IANA zone name. */
 export type QuietHoursWindow = {
@@ -141,7 +141,7 @@ export type QuietHoursWindow = {
  * (the first read, or a new chapter's preferences): the screen must not call
  * that "Saving…" (#2938). `pending` is a write.
  */
-export type SyncIndicator = "synced" | "loading" | "pending" | "cached" | "retry";
+type SyncIndicator = "synced" | "loading" | "pending" | "cached" | "retry";
 
 /**
  * The quiet-hour fields of `GET /v1/settings`. Picked from the contract's type
@@ -191,7 +191,7 @@ const LEGACY_CATEGORY_KEYS: Record<string, NotificationCategoryKey> = {
  * every change, and a key nothing reads would otherwise live on that device
  * forever (this is what #266 found with `digestEmailsEnabled`).
  */
-export function parseCachedPreferences(value: unknown): CachedPreferences | null {
+function parseCachedPreferences(value: unknown): CachedPreferences | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   if (typeof candidate.quietHoursEnabled !== "boolean") return null;
@@ -218,7 +218,7 @@ export function parseCachedPreferences(value: unknown): CachedPreferences | null
   return { quietHoursEnabled: candidate.quietHoursEnabled, categories };
 }
 
-export function defaultQuietHoursWindow(): QuietHoursWindow {
+function defaultQuietHoursWindow(): QuietHoursWindow {
   return {
     start: DEFAULT_QUIET_HOURS_START,
     end: DEFAULT_QUIET_HOURS_END,
@@ -271,6 +271,14 @@ export type NotificationPreferencesSync = {
   setQuietHoursEnabled: (value: boolean) => void;
   categories: CategoryState;
   setCategory: (key: NotificationCategoryKey, value: boolean) => void;
+  /**
+   * Whether the category switches can be changed. False while signed in with
+   * no chapter resolved: preferences are chapter-scoped, so there is nothing to
+   * PATCH, and the first chapter-scoped read replaces the mirror wholesale, so
+   * a local-only flip would be silently dropped (#5104). Signed out they stay
+   * editable, because the screen says those are saved on this device only.
+   */
+  categoriesEditable: boolean;
   /** The window that is in force (or that re-enabling would restore). */
   quietHoursWindow: QuietHoursWindow;
   /** Edit start/end/tz. Invalid times are ignored. */
@@ -479,9 +487,14 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     (key: NotificationCategoryKey, value: boolean) => {
       // Same reasoning as the quiet-hours switch: the local mirror is the
       // fallback the derived state reads when no server answer exists, so it is
-      // written on every toggle. Preferences are also chapter-scoped, so
-      // without a chapter there is nothing to PATCH against and this is all
-      // that happens.
+      // written on every toggle.
+      //
+      // Signed in without a chapter, nothing is written at all, not even the
+      // mirror: preferences are chapter-scoped, so there is nothing to PATCH,
+      // and when a chapter resolves its read replaces the mirror wholesale and
+      // the flip would vanish (#5104). The screen disables the switches for
+      // this state (`categoriesEditable`); this guard is the backstop.
+      if (isAuthenticated && !chapterId) return;
       setCached((current) => ({
         ...current,
         categories: { ...current.categories, [key]: value },
@@ -556,6 +569,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     setQuietHoursEnabled,
     categories,
     setCategory,
+    categoriesEditable: !isAuthenticated || chapterId !== null,
     quietHoursWindow,
     setQuietHoursWindow,
     isHydrated,

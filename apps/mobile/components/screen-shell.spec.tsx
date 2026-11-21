@@ -9,7 +9,7 @@ import { getSignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { screenText, textHeadings } from "@/test/screen-text";
 import { expectBackRow } from "@/test/back-row";
-import { BACK_TO_MORE } from "./back-row";
+import { BACK_TO_YOU } from "./back-row";
 import { floatingScreenLayout } from "@/lib/floating-chrome";
 
 // The back row paints the chapter accent; its value is back-row.spec.tsx's.
@@ -129,7 +129,7 @@ describe("ScreenShell subtitle (#3023)", () => {
 
 /**
  * #3022. A screen reached from another one passes `back`, and the shell draws
- * the board's `‹ More` row above the title. A tab's own screen passes none.
+ * the board's `‹ You` row above the title. A tab's own screen passes none.
  */
 describe("ScreenShell back row (#3022)", () => {
   it("draws no back row when none is passed", () => {
@@ -144,22 +144,22 @@ describe("ScreenShell back row (#3022)", () => {
 
   it("draws the passed back row above the title, and it goes there", () => {
     const tree = render(
-      <ScreenShell back={BACK_TO_MORE} title="Dues">
+      <ScreenShell back={BACK_TO_YOU} title="Dues">
         <Text>Body</Text>
       </ScreenShell>,
     );
 
-    expect(screenText(tree)).toBe("More\nDues\nBody");
-    expectBackRow(tree, "More", "/more");
+    expect(screenText(tree)).toBe("You\nDues\nBody");
+    expectBackRow(tree, "You", "/you");
   });
 });
 
 /** #3387. s15's Edit sits at the far end of its back row, as the board draws it. */
 describe("ScreenShell back-row action (#3387)", () => {
-  it("draws the action on the back row, after `‹ More`", () => {
+  it("draws the action on the back row, after `‹ You`", () => {
     const tree = render(
       <ScreenShell
-        back={BACK_TO_MORE}
+        back={BACK_TO_YOU}
         backAction={<Text testID="edit">Edit</Text>}
         title="Profile"
       >
@@ -167,13 +167,13 @@ describe("ScreenShell back-row action (#3387)", () => {
       </ScreenShell>,
     );
 
-    expect(screenText(tree)).toBe("More\nEdit\nProfile\nBody");
-    // One view holds `‹ More` and the action side by side: the back row's own.
+    expect(screenText(tree)).toBe("You\nEdit\nProfile\nBody");
+    // One view holds `‹ You` and the action side by side: the back row's own.
     const row = backRowView(tree);
     const [action] = tree.root.findAllByProps({ testID: "edit" });
     expect(row.findAll((node) => node === action)).toHaveLength(1);
     expect(
-      row.findAll((node) => node.props.accessibilityLabel === "Back to More")
+      row.findAll((node) => node.props.accessibilityLabel === "Back to You")
         .length,
     ).toBeGreaterThan(0);
     expect(row.props.style).toMatchObject({ flexDirection: "row" });
@@ -273,6 +273,32 @@ describe("ScreenShell over the floating tab bar", () => {
   };
   const lg = getSignetTokens("dark").spacing.lg;
 
+  it("reports its scroll for the bar's fold on a tab, and not on a pushed screen (#4904)", () => {
+    const scrollProps = (tree: ReactTestRenderer) =>
+      tree.root.find((node) => (node.type as unknown) === "ScrollView").props;
+    const onTab = scrollProps(
+      renderInTabs(
+        <ScreenShell title="Events">
+          <Text>Body</Text>
+        </ScreenShell>,
+      ),
+    );
+    expect(typeof onTab.onScroll).toBe("function");
+    expect(onTab.scrollEventThrottle).toBe(16);
+    expect(typeof onTab.onContentSizeChange).toBe("function");
+    expect(typeof onTab.onLayout).toBe("function");
+
+    const pushed = scrollProps(
+      render(
+        <ScreenShell title="Dues">
+          <Text>Body</Text>
+        </ScreenShell>,
+      ),
+    );
+    expect(pushed.onScroll).toBeUndefined();
+    expect(pushed.scrollEventThrottle).toBeUndefined();
+  });
+
   it("ends its scroll clear of the bar", () => {
     const tree = renderInTabs(
       <ScreenShell title="Events">
@@ -313,7 +339,7 @@ describe("ScreenShell over the floating tab bar", () => {
 
   it("pins the back row inside the safe area's content, reading no insets", () => {
     const tree = render(
-      <ScreenShell back={BACK_TO_MORE} title="Dues">
+      <ScreenShell back={BACK_TO_YOU} title="Dues">
         <Text>Body</Text>
       </ScreenShell>,
     );

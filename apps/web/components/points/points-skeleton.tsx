@@ -8,7 +8,7 @@ import {
 import { stateMicrocopy } from "@/lib/state-microcopy";
 
 /**
- * `/points` while it loads: the period toggle and Adjust points, the balance,
+ * `/points` while it loads: Adjust points in the header, the period toggle, the balance,
  * then the leaderboard beside My transactions on the page's 0.9/1.1 grid.
  */
 export function PointsPageSkeleton() {
@@ -16,13 +16,13 @@ export function PointsPageSkeleton() {
     <PageSkeleton
       label={stateMicrocopy.points.loading}
       className="@container space-y-6"
-      actions={
-        <>
-          <SkeletonControl className="w-[208px]" />
-          <SkeletonControl className="w-[124px]" />
-        </>
-      }
+      actions={<SkeletonControl className="w-[124px]" />}
     >
+      {/* The window choice, a row in the body; Adjust points is in the
+          page header with the page's actions. */}
+      <div className="flex min-h-[34px] items-center">
+        <SkeletonControl className="w-[208px]" />
+      </div>
       <div className="space-y-2">
         <Skeleton className="h-[11px] w-16" />
         <Skeleton className="h-7 w-24" />

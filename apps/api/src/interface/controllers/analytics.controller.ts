@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Post,
+  Req,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -19,6 +20,8 @@ import { ContentFreePropertyError } from '@repo/validation';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { requestAppVersion } from '../http/request-app';
+import type { RequestContext } from '../types/request-context.types';
 import {
   CurrentUser,
   OptionalChapterId,
@@ -40,13 +43,13 @@ export class AnalyticsController {
   @Get('identity')
   @ApiOperation({
     summary:
-      "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt.",
+      "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter the caller belongs to is in context). Lets the client attribute events without ever holding the salt.",
   })
   @ApiOkResponse({ type: IdentityResponseDto })
-  getIdentity(
+  async getIdentity(
     @CurrentUser('id') userId: string,
     @OptionalChapterId() chapterId?: string,
-  ): IdentityResponseDto {
+  ): Promise<IdentityResponseDto> {
     // `enabled: false` tells the client SDK to stay dark (no key configured).
     // Chapter opt-out does not hide these digests — Sentry still needs
     // `user.id`. Event capture remains gated in AnalyticsService.
@@ -54,7 +57,10 @@ export class AnalyticsController {
     return {
       distinct_id: distinctId,
       enabled: distinctId !== null,
-      chapter_group_id: this.analytics.getChapterGroupId(chapterId),
+      chapter_group_id: await this.analytics.getMemberChapterGroupId(
+        userId,
+        chapterId,
+      ),
     };
   }
 
@@ -70,12 +76,14 @@ export class AnalyticsController {
   async track(
     @CurrentUser('id') userId: string,
     @Body() dto: TrackEventDto,
+    @Req() request: RequestContext,
   ): Promise<TrackEventResponseDto> {
     try {
       await this.analytics.trackFromClient(dto.name, userId, {
         chapterId: dto.chapter_id,
         properties: dto.properties,
         app: dto.app,
+        appVersion: requestAppVersion(request),
       });
     } catch (error) {
       // Only a content/PII payload, or one setting a reserved key, is a caller

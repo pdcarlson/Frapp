@@ -16,7 +16,7 @@
 import { parseBareDateLocalNoon, parseInstant } from "@repo/formatting";
 import { num, records, str } from "../more/narrow";
 
-export type InvoiceStatus = "DRAFT" | "OPEN" | "PAID" | "VOID";
+type InvoiceStatus = "DRAFT" | "OPEN" | "PAID" | "VOID";
 
 export interface InvoiceRow {
   id: string;
@@ -28,6 +28,14 @@ export interface InvoiceRow {
   status: InvoiceStatus;
   dueDate: string;
   paidAt: string | null;
+  /**
+   * When the member's latest card payment on this invoice failed, as the
+   * server recorded it from Stripe's `payment_intent.payment_failed` (#3460);
+   * null while it hasn't. The pay endpoint clears it on each new attempt.
+   */
+  paymentFailedAt: string | null;
+  /** Stripe's member-facing decline message for that failure, when sent. */
+  paymentFailureReason: string | null;
 }
 
 const STATUSES: ReadonlySet<string> = new Set<InvoiceStatus>([
@@ -56,6 +64,8 @@ function toRow(row: Record<string, unknown>): InvoiceRow | null {
     status: rawStatus as InvoiceStatus,
     dueDate,
     paidAt: str(row, "paid_at"),
+    paymentFailedAt: str(row, "last_payment_failed_at"),
+    paymentFailureReason: str(row, "last_payment_failure_reason"),
   };
 }
 
@@ -120,11 +130,11 @@ export function formatAmount(cents: number): string {
 }
 
 function shortDate(date: Date): string {
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return date.toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
 
 /**
- * A bare `YYYY-MM-DD` calendar date → `"Sep 15"`.
+ * A bare `YYYY-MM-DD` calendar date → `"September 15"`.
  *
  * Parsed at local noon: a bare date at UTC midnight renders as the previous day
  * west of Greenwich, and UTC noon as the next day at UTC+12 and east (#3026).
@@ -141,7 +151,7 @@ function formatCalendarDate(value: string): string {
   return shortDate(date);
 }
 
-/** A full ISO instant → `"Feb 3"` in the member's own zone. */
+/** A full ISO instant → `"February 3"` in the member's own zone. */
 function formatInstant(value: string): string | null {
   const date = parseInstant(value);
   return date ? shortDate(date) : null;
@@ -220,7 +230,7 @@ export function selectOpenInvoicesByDueDate(rows: InvoiceRow[]): InvoiceRow[] {
  * the member tapped Pay.
  *
  * Exported rather than inlined because two surfaces need the same rule — the
- * Dues card and the More hub's trailing chip — and two copies of a tie-break
+ * Dues card and the You tab's trailing chip — and two copies of a tie-break
  * rule are two chips naming different invoices the moment it changes.
  */
 export function selectNextDueInvoice(rows: InvoiceRow[]): InvoiceRow | null {
@@ -230,7 +240,7 @@ export function selectNextDueInvoice(rows: InvoiceRow[]): InvoiceRow | null {
 /**
  * A history row's meta line.
  *
- * TODO-DESIGN: Canvas draws a payment method here (`Paid Feb 3 · Visa ··4242`,
+ * TODO-DESIGN: Canvas draws a payment method here (`Paid February 3 · Visa ··4242`,
  * `Apple Pay`, `plan (3 of 3)`). None of it is reachable. `financial_invoices`
  * has no method column, and `billing.md` states outright that "invoice DTOs do
  * not expose Stripe fields" — the only source is

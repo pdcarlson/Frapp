@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { TaskWho } from "@repo/validation";
 import {
+  createRequestOf,
   duePresets,
-  dueTimePassed,
-  editDraftOf,
   formatDueFieldLabel,
-  taskEditBody,
   parsePointReward,
+  taskCreatedLine,
   validateNewTask,
+  whoTakesPhotos,
 } from "./create-task";
 
 function at(year: number, month: number, day: number, hour = 12): Date {
@@ -59,13 +60,13 @@ describe("duePresets", () => {
 describe("formatDueFieldLabel", () => {
   it("renders the drawn weekday-and-date label", () => {
     expect(formatDueFieldLabel("2026-08-21", at(2026, 8, 1))).toBe(
-      "Fri, Aug 21",
+      "Friday, August 21",
     );
   });
 
   it("shows the year on a date outside the current one (#3928)", () => {
     expect(formatDueFieldLabel("2027-03-14", at(2026, 11, 9))).toBe(
-      "Sun, Mar 14, 2027",
+      "Sunday, March 14, 2027",
     );
   });
 
@@ -101,17 +102,149 @@ describe("validateNewTask", () => {
   const draft = {
     title: "Collect ride-share forms",
     dueDate: "2026-08-21",
-    assigneeId: "member-1",
+    who: { kind: "person", userId: "member-1" } as TaskWho | null,
     pointsInput: "5",
   };
 
   it("builds the request body CreateTaskDto expects", () => {
-    expect(validateNewTask(draft)).toEqual({
+    const body = validateNewTask(draft);
+    expect(body).toEqual({
       title: "Collect ride-share forms",
-      assignee_id: "member-1",
+      who: { kind: "person", userId: "member-1" },
       due_date: "2026-08-21",
       point_reward: 5,
     });
+    expect(createRequestOf(body!)).toEqual({
+      route: "task",
+      body: {
+        title: "Collect ride-share forms",
+        assignee_id: "member-1",
+        due_date: "2026-08-21",
+        point_reward: 5,
+      },
+    });
+  });
+
+  it("sends a repeating task's rule with it, never to Up for grabs (#5119)", () => {
+    const rule = "FREQ=WEEKLY;BYDAY=FR;TZID=America/New_York";
+    const body = { ...validateNewTask(draft)!, recurrence_rule: rule };
+    expect(createRequestOf(body)).toEqual({
+      route: "task",
+      body: {
+        title: "Collect ride-share forms",
+        assignee_id: "member-1",
+        due_date: "2026-08-21",
+        point_reward: 5,
+        recurrence_rule: rule,
+      },
+    });
+    const open = createRequestOf({
+      ...body,
+      who: { kind: "someone", target: { kind: "chapter" } },
+    });
+    expect(open.route).toBe("open");
+    expect(open.body).not.toHaveProperty("recurrence_rule");
+  });
+
+  it("sends From with a task or a copy each, never to Up for grabs or with a repeat (#5473)", () => {
+    const body = { ...validateNewTask(draft)!, followed_by: "tier:t-exec" };
+    expect(createRequestOf(body).body).toMatchObject({
+      assignee_id: "member-1",
+      followed_by: "tier:t-exec",
+    });
+    const group = createRequestOf({
+      ...body,
+      who: { kind: "each", target: { kind: "role", id: "r1" } },
+    });
+    expect(group.body).toMatchObject({
+      audience: "everyone",
+      audience_role_id: "r1",
+      followed_by: "tier:t-exec",
+    });
+    const open = createRequestOf({
+      ...body,
+      who: { kind: "someone", target: { kind: "chapter" } },
+    });
+    expect(open.route).toBe("open");
+    expect(open.body).not.toHaveProperty("followed_by");
+    const repeating = createRequestOf({
+      ...body,
+      recurrence_rule: "FREQ=WEEKLY;BYDAY=FR;TZID=America/New_York",
+    });
+    expect(repeating.body).not.toHaveProperty("followed_by");
+  });
+
+  it("sends a copy each for everyone in a tier (#5473)", () => {
+    const tier = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "tier", id: "t-exec" } },
+    });
+    expect(createRequestOf(tier!).body).toMatchObject({
+      audience: "everyone",
+      audience_tier_id: "t-exec",
+    });
+  });
+
+  it("sends a task for everyone as an audience, with no member (#4295 step 3)", () => {
+    const body = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "chapter" } },
+    });
+    expect(createRequestOf(body!)).toEqual({
+      route: "task",
+      body: {
+        title: "Collect ride-share forms",
+        audience: "everyone",
+        due_date: "2026-08-21",
+        point_reward: 5,
+      },
+    });
+  });
+
+  it("sends a copy each for a role or several people (2026-11-18)", () => {
+    const role = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "role", id: "r1" } },
+    });
+    expect(createRequestOf(role!).body).toMatchObject({
+      audience: "everyone",
+      audience_role_id: "r1",
+    });
+    const people = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "people", userIds: ["a", "b"] } },
+    });
+    expect(createRequestOf(people!).body).toMatchObject({
+      assignee_ids: ["a", "b"],
+    });
+    // A list of one is that person.
+    const one = validateNewTask({
+      ...draft,
+      who: { kind: "each", target: { kind: "people", userIds: ["a"] } },
+    });
+    expect(createRequestOf(one!).body).toMatchObject({ assignee_id: "a" });
+  });
+
+  it("posts one task up for grabs for someone in a set, without photos", () => {
+    const body = validateNewTask({
+      ...draft,
+      who: { kind: "someone", target: { kind: "group", id: "g1" } },
+    });
+    expect(
+      createRequestOf({ ...body!, reference_photo_paths: ["p.jpg"] }),
+    ).toEqual({
+      route: "open",
+      body: {
+        title: "Collect ride-share forms",
+        due_date: "2026-08-21",
+        point_reward: 5,
+        group_id: "g1",
+      },
+    });
+    expect(
+      whoTakesPhotos({ kind: "someone", target: { kind: "chapter" } }),
+    ).toBe(false);
+    expect(whoTakesPhotos({ kind: "person", userId: "a" })).toBe(true);
   });
 
   it("omits point_reward when no points are offered", () => {
@@ -143,83 +276,41 @@ describe("validateNewTask", () => {
 
   it("refuses a draft the server would reject", () => {
     expect(validateNewTask({ ...draft, title: "   " })).toBeNull();
-    expect(validateNewTask({ ...draft, assigneeId: null })).toBeNull();
+    expect(validateNewTask({ ...draft, who: null })).toBeNull();
+    expect(
+      validateNewTask({
+        ...draft,
+        who: { kind: "each", target: { kind: "people", userIds: [] } },
+      }),
+    ).toBeNull();
     expect(validateNewTask({ ...draft, dueDate: "21/08/2026" })).toBeNull();
     expect(validateNewTask({ ...draft, pointsInput: "-4" })).toBeNull();
   });
 });
 
-describe("editing a task (#4296)", () => {
-  const task = {
-    id: "t1",
+describe("taskCreatedLine", () => {
+  it("says a task up for grabs was posted there, not assigned", () => {
+    expect(taskCreatedLine("Sam", false)).toBe("Assigned to Sam.");
+    expect(taskCreatedLine(null, false, true)).toBe("Posted to Up for grabs.");
+  });
+});
+
+describe("validateNewTask proof kind (#4635)", () => {
+  const base = {
     title: "Sweep",
-    assigneeId: "u1",
-    dueDay: "2026-09-29",
-    dueAt: null as string | null,
-    pointReward: 5 as number | null,
-    storedStatus: "TODO",
+    dueDate: "2026-09-29",
+    who: { kind: "person", userId: "u1" } as TaskWho | null,
+    pointsInput: "",
   };
-
-  it("opens a timed task on its local day and time", () => {
-    const at = new Date(2026, 8, 29, 17, 30);
-    const draft = editDraftOf({ ...task, dueAt: at.toISOString() });
-    expect(draft).toMatchObject({
-      title: "Sweep",
-      dueDate: "2026-09-29",
-      dueTime: "17:30",
-      assigneeId: "u1",
-      pointsInput: "5",
-    });
-  });
-
-  it("sends only the changed fields, the due as a pair", () => {
+  it("sends a proof kind only when it asks for something", () => {
+    const now = new Date(2026, 8, 27, 12);
     expect(
-      taskEditBody(task, {
-        title: "Sweep",
-        assignee_id: "u1",
-        due_date: "2026-09-29",
-        point_reward: 5,
-      }),
-    ).toEqual({});
-    const at = new Date(2026, 8, 29, 17, 0).toISOString();
-    expect(
-      taskEditBody(task, {
-        title: "Mop",
-        assignee_id: "u2",
-        due_date: "2026-09-29",
-        due_at: at,
-      }),
-    ).toEqual({
-      title: "Mop",
-      assignee_id: "u2",
-      due_date: "2026-09-29",
-      due_at: at,
-      point_reward: null,
-    });
-  });
-
-  it("takes the time off with due_at null", () => {
-    const at = new Date(2026, 8, 29, 17, 0).toISOString();
-    expect(
-      taskEditBody(
-        { ...task, dueAt: at },
-        {
-          title: "Sweep",
-          assignee_id: "u1",
-          due_date: "2026-09-29",
-          point_reward: 5,
-        },
-      ),
-    ).toEqual({ due_date: "2026-09-29", due_at: null });
-  });
-
-  it("doesn't refuse a task's own time for having passed, only a new one", () => {
-    const now = new Date(2026, 8, 29, 18, 0);
-    const kept = { dueDate: "2026-09-29", dueTime: "17:00" };
-    expect(dueTimePassed(kept, now)).toBe(true);
-    expect(dueTimePassed(kept, now, kept)).toBe(false);
-    expect(
-      dueTimePassed({ dueDate: "2026-09-29", dueTime: "17:30" }, now, kept),
-    ).toBe(true);
+      validateNewTask({ ...base, proofKind: "none" }, now),
+    ).not.toHaveProperty("proof_kind");
+    expect(validateNewTask({ ...base, proofKind: "photo" }, now)).toMatchObject(
+      {
+        proof_kind: "photo",
+      },
+    );
   });
 });

@@ -6,8 +6,11 @@ import {
   useQueryClient,
   type InvalidateQueryFilters,
 } from "@tanstack/react-query";
+import { useCallback } from "react";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { displayNameOrNull } from "./display-names";
+import { usePermissionPreview } from "./permission-preview";
 
 /**
  * `enabled: false` keeps an observer from fetching, for a caller mounted where
@@ -18,8 +21,8 @@ export function useCurrentUser(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["user", "me"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/users/me");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/users/me", { signal });
       if (error) throw error;
       return data;
     },
@@ -55,6 +58,23 @@ function userIdOf(data: unknown): string | null {
   return typeof raw === "string" && raw.length > 0 ? raw : null;
 }
 
+/**
+ * The viewer's display name, or `null` until it is known or when it is blank.
+ * Narrowed at runtime for the reason {@link useViewerUserId} gives. Ask's
+ * greeting reads it (#4904).
+ */
+export function useViewerDisplayName(options?: {
+  enabled?: boolean;
+}): string | null {
+  const query = useCurrentUser(options);
+  const data: unknown = query.data;
+  const raw =
+    data && typeof data === "object" && "display_name" in data
+      ? (data as { display_name?: unknown }).display_name
+      : null;
+  return displayNameOrNull(typeof raw === "string" ? raw : null);
+}
+
 export function useUpdateUser() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -65,7 +85,15 @@ export function useUpdateUser() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (saved) => {
+    // A refused save may mean the name was locked since the row was read
+    // (#5801): read it again so Profile shows the lock.
+    onError: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["user", "me"],
+        exact: true,
+      });
+    },
+    onSuccess: (saved, body) => {
       // The PATCH answers with the whole updated row, in the shape
       // `GET /v1/users/me` serves (both sign the photo), so it goes straight
       // into the cache: a form that closes on success closes onto it, without
@@ -81,6 +109,16 @@ export function useUpdateUser() {
       // cancels a GET that left before the PATCH landed, which would
       // otherwise answer last and put the pre-save row back.
       void invalidateProfileReads(queryClient);
+      // A major or graduation year puts the member in that major's or year's
+      // automatic group at once (#5778), so the groups and the mention list
+      // that offer it are read again rather than left a minute stale.
+      if ("major" in body || "graduation_year" in body) {
+        void queryClient.invalidateQueries({
+          predicate: ({ queryKey }) =>
+            queryKey[0] === "roles" &&
+            (queryKey[2] === "groups" || queryKey[2] === "mention-roles"),
+        });
+      }
     },
   });
 }
@@ -229,13 +267,25 @@ export function useMyPermissions(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const enabled = (options?.enabled ?? true) && !!chapterId;
+  // "View as a role" (#4072): the previewed set replaces the viewer's own in
+  // what screens read. `select` runs per observer, so the cached answer (and
+  // every invalidation of it) stays the viewer's own.
+  const preview = usePermissionPreview();
+  const select = useCallback(
+    <T extends { permissions?: unknown }>(data: T): T =>
+      preview ? { ...data, permissions: [...preview] } : data,
+    [preview],
+  );
   return useQuery({
     queryKey: ["user", "me", "permissions", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/users/me/permissions");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/users/me/permissions", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
+    select,
     staleTime: 60_000,
     gcTime: 10 * 60_000,
     enabled,

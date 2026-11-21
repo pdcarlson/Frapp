@@ -1,4 +1,13 @@
-import { Redirect, Stack, usePathname } from "expo-router";
+import {
+  Redirect,
+  Stack,
+  useGlobalSearchParams,
+  usePathname,
+} from "expo-router";
+import {
+  inviteFromParams,
+  type InviteParams,
+} from "@/lib/onboarding/invite-token";
 import { useAuthGateDestination } from "@/lib/onboarding/use-auth-gate";
 
 /**
@@ -22,7 +31,7 @@ export const unstable_settings = {
  *
  * Join (s02) and first-run (s03) are *routed to* from `resolveAuthGate` once
  * `GET /v1/chapters` is in, not merely reachable. The chapter picker stays a
- * deliberate destination from More — it is exempt when the gate says `tabs` so
+ * deliberate destination from Chat home's chapter menu — it is exempt when the gate says `tabs` so
  * a finished member can still switch chapters.
  *
  * `create-chapter` (#1102 / #1084) is the first-officer wizard. Listing it
@@ -31,17 +40,18 @@ export const unstable_settings = {
  * once onboarding is marked complete, staying on s03 would strand them (the
  * #957 finding). They are allowed only while the gate destination is join /
  * welcome respectively.
- *
- * `#1102` named this list `PRE_CHAPTER_ROUTES`; this PR named it
- * `DELIBERATE_AUTH_ROUTES`. Both spellings are kept and must stay in lockstep
- * so `/create-chapter` cannot drop off one of them.
  */
-const DELIBERATE_AUTH_ROUTES = ["/chapter-picker", "/create-chapter"];
-const PRE_CHAPTER_ROUTES = DELIBERATE_AUTH_ROUTES;
+const DELIBERATE_AUTH_ROUTES = [
+  "/chapter-picker",
+  "/create-chapter",
+  // An invite to another chapter, for a member who has one (#4341).
+  "/join-another",
+];
 
 export default function AuthLayout() {
   const pathname = usePathname();
   const destination = useAuthGateDestination();
+  const params = useGlobalSearchParams<InviteParams>();
 
   if (destination === "hold") {
     return null;
@@ -74,10 +84,22 @@ export default function AuthLayout() {
     return <Redirect href="/welcome" />;
   }
 
+  // `tabs` and an invite link, which opens on `/join`: a member's goes to the
+  // second-chapter card instead of s02 (#4341). The link is marked handled by
+  // `useMemberInviteHandoff`, which takes it from the same URL.
+  const linkInvite = pathname === "/join" ? inviteFromParams(params) : null;
+  if (linkInvite) {
+    return (
+      <Redirect
+        href={{ pathname: "/join-another", params: { token: linkInvite } }}
+      />
+    );
+  }
+
   // `tabs` — bounce out of this group unless the member opened a deliberate
   // post-auth screen. Join and welcome are *not* exempt here: once onboarding
   // is marked complete, staying on s03 would strand them (the #957 finding).
-  if (PRE_CHAPTER_ROUTES.includes(pathname)) {
+  if (DELIBERATE_AUTH_ROUTES.includes(pathname)) {
     return <Stack screenOptions={{ headerShown: false }} />;
   }
 

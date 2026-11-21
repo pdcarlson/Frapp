@@ -1,0 +1,7 @@
+# Leaves a You page by its drawn back row, the way a member would, and
+# checks it lands on You.
+appId: live.frapp.mobile
+---
+- tapOn: "Back to You"
+- assertVisible:
+    id: "tab-you"

@@ -1,6 +1,8 @@
 import { messageFlagView } from "@repo/chat-core/flags";
+import { readRolePickerPayload } from "@repo/chat-core/role-pickers";
 import { useMemo, type ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import {
   readAnnouncementBody,
   readEventPayload,
@@ -11,9 +13,12 @@ import {
   readTaskPayload,
 } from "@repo/chat-core/cards";
 import {
+  hiddenForwardedText,
   hiddenQuoteText,
+  threadPreviewVisible,
   tombstoneCanUnblock,
   visibleReactions,
+  withForwardedMasked,
   type BlockState,
   type MaskedRefreshState,
   type ThreadRow,
@@ -22,8 +27,10 @@ import { dayDividerLabel } from "@repo/chat-core/grouping";
 import { StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { canOpenMessageActions } from "@repo/chat-core/message-actions";
+import { useChatDensity } from "@/lib/chat/chat-density";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { AnnouncementCard } from "./announcement-card";
+import { AskAnswerCard } from "./ask-answer-card";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import type { ChatCardFrameProps } from "./chat-card";
 import { EventCard } from "./event-card";
@@ -34,6 +41,9 @@ import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
 import { RushCard } from "./rush-card";
+import { SignupCard } from "./signup-card";
+import { RolePickerCard } from "./role-picker-card";
+import { FormCard } from "./form-card";
 import { SystemAuditLine } from "./system-audit-card";
 import { TaskCard } from "./task-card";
 
@@ -56,7 +66,10 @@ import { TaskCard } from "./task-card";
  *   own included: a reaction is its author's own text, and the server's mask
  *   (#2494) does not reach reaction rows cached before a block.
  * - **A quoted parent** the list hides is never handed down. The row gets
- *   `replyParent: null` and the placeholder to draw instead (#2312 §1).
+ *   `replyParent: null` and the placeholder to draw instead (#2312 §1). A
+ *   forwarded parent's copy is masked the same way (`withForwardedMasked`).
+ * - **A forward's copy** (#4864) is classified by its original author, so a
+ *   blocked author's words draw as the placeholder inside the forwarder's row.
  */
 export interface ThreadMessageRowProps {
   row: ThreadRow;
@@ -89,6 +102,11 @@ export interface ThreadMessageRowProps {
   ) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll: (messageId: string) => void;
+  /**
+   * A sign-up card's Close sign-ups (#3926) or a form card's Close form
+   * (step 3), its creator's or a moderator's.
+   */
+  onCloseCard: (messageId: string, kind: ClosableCardKind) => void;
   onRetry: (clientMessageId: string) => void;
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
@@ -108,6 +126,10 @@ export interface ThreadMessageRowProps {
    * Absent where the channel offers no threads (a 1:1 DM).
    */
   onOpenThread?: (message: ChatMessage) => void;
+  /** Replies new to the viewer in this row's thread, if it has one (#4297). */
+  threadUnread?: number;
+  /** A member's photo by id, for the thread card's faces (#4297). */
+  memberAvatarFor?: (userId: string) => string | null;
 }
 
 export function ThreadMessageRow(props: ThreadMessageRowProps) {
@@ -140,6 +162,7 @@ function ThreadMessageRowBody({
   blockState,
   onVote,
   onClosePoll,
+  onCloseCard,
   onRetry,
   onDiscard,
   onReact,
@@ -151,8 +174,12 @@ function ThreadMessageRowBody({
   maskedRefresh,
   onReload,
   onOpenThread,
+  threadUnread = 0,
+  memberAvatarFor,
 }: ThreadMessageRowProps) {
   const { message: cached, visibility } = row;
+  // Before any early return: a hook (the card row's Bubbles side, below).
+  const density = useChatDensity(cached.channel_id);
 
   if (visibility === "tombstone") {
     const senderId = cached.sender_id;
@@ -177,14 +204,34 @@ function ThreadMessageRowBody({
   // The flag (#3921), with the flagger's name dropped when the viewer blocked
   // them: a Realtime echo carries `flagged_by` raw.
   const flag = messageFlagView(cached, viewerId, blockState, nameFor);
+  // The thread card's latest-reply preview (#4297), only where the viewer's
+  // block list clears its replier: the parent's echo carries it raw.
+  const lastReply = cached.thread?.last_reply ?? null;
+  const threadPreview =
+    lastReply && threadPreviewVisible(lastReply, cached, blockState, viewerId)
+      ? lastReply
+      : null;
   const message: ChatMessage =
     reactions === cached.reactions ? cached : { ...cached, reactions };
 
   const hiddenParent = replyParent
     ? hiddenQuoteText(replyParent, blockState, viewerId)
     : null;
-  const quotedParent = hiddenParent === null ? replyParent : null;
+  // A forwarded parent's copy previews only where the list clears its
+  // author, as its own card draws it (#4864).
+  const quotedParent =
+    hiddenParent === null && replyParent
+      ? withForwardedMasked(replyParent, blockState, viewerId)
+      : hiddenParent === null
+        ? replyParent
+        : null;
   const replyParentHidden = hiddenParent ?? undefined;
+  // A forward's copy is its original author's words, classified on their own
+  // (#4864): a blocked author's copy draws as the block placeholder.
+  const forwardedHidden =
+    cached.forwarded_from && !cached.is_deleted
+      ? hiddenForwardedText(cached.forwarded_from, cached, blockState, viewerId)
+      : null;
 
   const openActions = canOpenMessageActions(cached, viewerId)
     ? () => onOpenActions(cached)
@@ -237,7 +284,7 @@ function ThreadMessageRowBody({
           onOpenActions: openActions,
           onJumpToParent: message.reply_to_id ? onJumpToParent : undefined,
         },
-        { onVote, onClosePoll },
+        { onVote, onClosePoll, onCloseCard, nameFor },
       );
   if (card) {
     const quote = message.reply_to_id ? (
@@ -261,6 +308,7 @@ function ThreadMessageRowBody({
         startsRun={startsRun}
         quote={quote}
         flag={flag}
+        threadSpine={message.thread ? { hasPreview: !!threadPreview } : null}
         onOpenActions={openActions}
         onOpenProfile={onOpenProfile}
       >
@@ -272,6 +320,17 @@ function ThreadMessageRowBody({
             summary={message.thread}
             nameFor={nameFor}
             roleColorFor={roleColorFor}
+            avatarFor={memberAvatarFor}
+            // Under the viewer's own card on the right in Bubbles, as under
+            // their own text (`MessageItem`).
+            align={
+              density === "bubbles" && message.sender_id === viewerId
+                ? "end"
+                : "start"
+            }
+            unread={threadUnread}
+            preview={threadPreview}
+            viewerId={viewerId}
             onPress={onOpenThread ? () => onOpenThread(cached) : undefined}
             onImportantRow={flag?.important === true}
           />
@@ -291,6 +350,7 @@ function ThreadMessageRowBody({
       endsRun={endsRun}
       replyParent={quotedParent}
       replyParentHidden={replyParentHidden}
+      forwardedHidden={forwardedHidden}
       onRetry={onRetry}
       onDiscard={onDiscard}
       onReact={onReact}
@@ -299,6 +359,9 @@ function ThreadMessageRowBody({
       onJumpToParent={onJumpToParent}
       onOpenProfile={onOpenProfile}
       onOpenThread={onOpenThread ? () => onOpenThread(cached) : undefined}
+      threadUnread={threadUnread}
+      threadPreview={threadPreview}
+      memberAvatarFor={memberAvatarFor}
       flag={flag}
     />
   );
@@ -316,13 +379,16 @@ function ThreadMessageRowBody({
  * Not cards on mobile: `dues`, which web draws as a "coming soon" card, and
  * `loading`, the placeholder for a heavy write in flight, which the + sheet's
  * Task, Service hours and Event forms send (#3865); it reads as its text
- * ("Creating task …") until the server's card replaces it.
+ * ("Creating task …") until the server's card replaces it. And `form`
+ * (#3926 step 3), drawn as its title until the phone's form card lands.
  */
 function cardFor(
   frame: ChatCardFrameProps,
   row: {
     onVote: ThreadMessageRowProps["onVote"];
     onClosePoll: ThreadMessageRowProps["onClosePoll"];
+    onCloseCard: ThreadMessageRowProps["onCloseCard"];
+    nameFor: ThreadMessageRowProps["nameFor"];
   },
 ): ReactNode | null {
   const { message } = frame;
@@ -335,6 +401,28 @@ function cardFor(
           onClosePoll={row.onClosePoll}
         />
       );
+    case "signup":
+      // A sign-up claim is a card action, the same path a poll vote takes.
+      return (
+        <SignupCard
+          {...frame}
+          nameFor={row.nameFor}
+          onClaim={row.onVote}
+          onCloseSignup={(id) => row.onCloseCard(id, "signup")}
+        />
+      );
+    case "form":
+      // Answered on its own page (`FormFillPage`), never on the card.
+      return (
+        <FormCard
+          {...frame}
+          onCloseForm={(id) => row.onCloseCard(id, "form")}
+        />
+      );
+    case "ask_answer":
+      // An answer its asker posted (#4713). Never null: a payload this build
+      // can't read still draws the answer's words.
+      return <AskAnswerCard message={message} nameFor={row.nameFor} />;
     case "event": {
       const payload = readEventPayload(message);
       return payload ? <EventCard {...frame} payload={payload} /> : null;
@@ -350,6 +438,11 @@ function cardFor(
     case "hours": {
       const payload = readHoursPayload(message);
       return payload ? <HoursCard {...frame} payload={payload} /> : null;
+    }
+    case "role_picker": {
+      // An officer's Join / Leave list (#4958); unreadable, it is its title.
+      const payload = readRolePickerPayload(message);
+      return payload ? <RolePickerCard {...frame} payload={payload} /> : null;
     }
     case "rush": {
       const payload = readRushPayload(message);
@@ -372,7 +465,7 @@ function cardFor(
  * caption, 12.5 / 600. The only place a date appears in the thread; the label
  * is `dayDividerLabel`, the one web uses.
  */
-export function DayDivider({ createdAt }: { createdAt: string }) {
+function DayDivider({ createdAt }: { createdAt: string }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   return (

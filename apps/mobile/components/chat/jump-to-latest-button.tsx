@@ -2,11 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-
-/** Its accessible name, by whether something new landed below. */
-export function jumpToLatestLabel(hasNew: boolean): string {
-  return hasNew ? "New messages. Jump to latest" : "Jump to latest";
-}
+import { jumpToLatestLabel } from "@repo/chat-core/jump-to-latest";
 
 const SIZE = 40;
 const DOT = 10;

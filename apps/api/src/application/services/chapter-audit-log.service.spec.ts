@@ -290,6 +290,27 @@ describe('ChapterAuditLogService', () => {
       );
     });
 
+    it('turns a Logs kind into the actions it holds', async () => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      await service.list('chapter-1', PRESIDENT, { kind: 'members' });
+
+      const [, options] = mockRepo.findByChapter.mock.calls[0];
+      expect(options.actions).toEqual(
+        expect.arrayContaining(['member_removed', 'member_renamed']),
+      );
+      expect(options.actions).not.toContain('role_created');
+    });
+
+    it('refuses an unknown kind with a 400, not an empty list', async () => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      await expect(
+        service.list('chapter-1', PRESIDENT, { kind: 'billing' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
     // Same regression as the `before` pin below, extended to the window: the
     // bounds are parsed to compare them and must reach the repository as the
     // caller's original strings. `new Date(x).toISOString()` would truncate

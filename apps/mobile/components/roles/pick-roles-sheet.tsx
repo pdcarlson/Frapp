@@ -1,0 +1,75 @@
+import { forwardRef } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
+import type { PickableRole } from "@repo/hooks";
+import { SignetTokens } from "@repo/theme/signet";
+import { PICK_ROLES_COPY } from "@repo/validation";
+import { PickRolesList } from "@/components/roles/pick-roles-list";
+import {
+  SheetBackToClose,
+  SheetGrabber,
+  SheetScrim,
+  TallSheetHeader,
+  useSheetBackgroundStyle,
+  useSheetClose,
+  useTallSheetProps,
+  SHEET_STACK_BEHAVIOR,
+} from "@/components/sheet-scaffold";
+import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
+
+/**
+ * Add roles (#4958): the Non-chapter business roles a member adds and removes
+ * themselves, one switch each, as Discord's onboarding questions and
+ * Carl-bot's reaction roles hand out interest roles. Each pick saves at once
+ * and the role's channels appear in Chat, so there is no Save to find.
+ *
+ * Opened from the Directory's title row for now: where it lives is
+ * provisional (Shawn, 2026-11-14), and the sheet is self-contained so moving
+ * its button is the whole move.
+ */
+export const PickRolesSheet = forwardRef<
+  BottomSheetModal,
+  { roles: readonly PickableRole[] }
+>(function PickRolesSheet({ roles }, ref) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const backgroundStyle = useSheetBackgroundStyle();
+  const tallSheet = useTallSheetProps();
+  const closeSheet = useSheetClose(ref);
+  return (
+    <BottomSheetModal
+      ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
+      {...tallSheet}
+      backgroundStyle={backgroundStyle}
+      handleComponent={SheetGrabber}
+      backdropComponent={SheetScrim}
+    >
+      <SheetBackToClose onClose={closeSheet} />
+      <BottomSheetScrollView
+        onAccessibilityEscape={closeSheet}
+        contentContainerStyle={styles.content}
+      >
+        <TallSheetHeader title="Add roles" onClose={closeSheet} />
+        <Text style={styles.lede}>{PICK_ROLES_COPY.lede}</Text>
+        <PickRolesList roles={roles} />
+        <View style={styles.footer} />
+      </BottomSheetScrollView>
+    </BottomSheetModal>
+  );
+});
+
+function createStyles(tokens: SignetTokens) {
+  return StyleSheet.create({
+    content: {
+      paddingHorizontal: tokens.spacing.lg,
+      gap: tokens.spacing.md,
+    },
+    lede: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    footer: { height: tokens.spacing.xl },
+  });
+}

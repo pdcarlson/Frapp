@@ -5,6 +5,7 @@ import {
   DELETE_CHANNEL_CONFIRM_BODY,
   DELETE_CHANNEL_LABEL,
   deleteChannelConfirmTitle,
+  deleteChannelTypeLabel,
   useDeleteChannel,
 } from "@repo/hooks";
 import type { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -31,6 +32,11 @@ export function useDeleteChannelFlow(
         title: deleteChannelConfirmTitle(channel.name),
         description: DELETE_CHANNEL_CONFIRM_BODY,
         confirmLabel: DELETE_CHANNEL_LABEL,
+        // Delete stays disabled until the name is typed exactly (#3838).
+        typeToConfirm: {
+          label: deleteChannelTypeLabel(channel.name),
+          text: channel.name,
+        },
       });
       if (!confirmed) return;
       try {

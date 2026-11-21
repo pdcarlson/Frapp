@@ -27,6 +27,9 @@ describe('InviteController', () => {
       findByChapter: jest.fn(),
       findPendingForVerifiedEmail: jest.fn(),
       revoke: jest.fn(),
+      findInvitableRoleIds: jest.fn(),
+      findChapterLinkView: jest.fn(),
+      createChapterLink: jest.fn(),
     };
 
     const mockAuthService = {
@@ -75,6 +78,60 @@ describe('InviteController', () => {
         dto.role,
       );
       expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('chapter links (#5633)', () => {
+    it('answers every link, the default role, and its link', async () => {
+      const brothers = { id: 'link-1', role: 'Brother' };
+      const pledges = { id: 'link-2', role: 'Pledge' };
+      jest.spyOn(inviteService, 'findChapterLinkView').mockResolvedValue({
+        link: brothers,
+        links: [pledges, brothers],
+        defaultRole: 'Brother',
+      } as any);
+
+      await expect(
+        controller.getChapterLink('chapter-1', 'user-1'),
+      ).resolves.toEqual({
+        link: brothers,
+        links: [pledges, brothers],
+        default_role: 'Brother',
+      });
+      expect(inviteService.findChapterLinkView).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+      );
+    });
+
+    it('makes a link at the role the officer picked', async () => {
+      jest
+        .spyOn(inviteService, 'createChapterLink')
+        .mockResolvedValue({ id: 'link-2' } as any);
+
+      await controller.createChapterLink('chapter-1', 'user-1', {
+        role: 'Pledge',
+      });
+
+      expect(inviteService.createChapterLink).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        'Pledge',
+      );
+    });
+
+    it('makes one at the default role for a build that posts no body', async () => {
+      jest
+        .spyOn(inviteService, 'createChapterLink')
+        .mockResolvedValue({ id: 'link-1' } as any);
+
+      await controller.createChapterLink('chapter-1', 'user-1', undefined);
+
+      expect(inviteService.createChapterLink).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        undefined,
+      );
     });
   });
 
@@ -182,10 +239,30 @@ describe('InviteController', () => {
         .spyOn(inviteService, 'findByChapter')
         .mockResolvedValue(expectedResult as any);
 
-      const result = await controller.list(chapterId);
+      const result = await controller.list(chapterId, 'user-1');
 
-      expect(inviteService.findByChapter).toHaveBeenCalledWith(chapterId);
+      // The caller decides which invites they see (#4546).
+      expect(inviteService.findByChapter).toHaveBeenCalledWith(
+        chapterId,
+        'user-1',
+      );
       expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('listInvitableRoles (#4546)', () => {
+    it("answers the caller's invitable role ids", async () => {
+      jest
+        .spyOn(inviteService, 'findInvitableRoleIds')
+        .mockResolvedValue(['role-a', 'role-b']);
+
+      const result = await controller.listInvitableRoles('chapter-1', 'user-1');
+
+      expect(inviteService.findInvitableRoleIds).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+      );
+      expect(result).toEqual({ role_ids: ['role-a', 'role-b'] });
     });
   });
 
@@ -236,6 +313,18 @@ describe('InviteController', () => {
       expect(params).toEqual(['user-1', 'a@school.edu']);
     });
 
+    // `GET /v1/invites/mine` is a read, but it needs the Auth user, so it
+    // keeps `getUser` (#5043). Were it ever marked `@VerifySessionLocally()`,
+    // the decorator refuses rather than read "no verified email".
+    it('refuses a session verified locally instead of answering null', () => {
+      expect(() =>
+        resolveParams({
+          appUser: { id: 'user-1' },
+          locallyVerifiedAuthId: 'auth-1',
+        }),
+      ).toThrow(/remove @VerifySessionLocally\(\)/);
+    });
+
     it('reads no address while the account is unconfirmed', () => {
       const params = resolveParams({
         appUser: { id: 'user-1' },
@@ -261,9 +350,13 @@ describe('InviteController', () => {
 
       jest.spyOn(inviteService, 'revoke').mockResolvedValue(undefined);
 
-      const result = await controller.revoke(chapterId, inviteId);
+      const result = await controller.revoke(chapterId, 'user-1', inviteId);
 
-      expect(inviteService.revoke).toHaveBeenCalledWith(inviteId, chapterId);
+      expect(inviteService.revoke).toHaveBeenCalledWith(
+        inviteId,
+        chapterId,
+        'user-1',
+      );
       expect(result).toEqual({ success: true });
     });
   });

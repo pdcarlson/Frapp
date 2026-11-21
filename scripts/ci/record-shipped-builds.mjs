@@ -2,12 +2,13 @@
 
 // Record the store builds a Deploy production run uploaded (#3111).
 //
-// `_mobile-build.yml`'s `build` job builds the commit production now serves on
-// EAS and uploads it to TestFlight and the Play internal track. Every build
-// uploaded there must be listed in `apps/mobile/store/shipped-builds.json`
-// before a tester can install it, because that list arms the required
-// `api-contract-check` gate (`apps/mobile/store/README.md` § Shipped builds and
-// the API contract). This is the `record` job's whole work: it turns each
+// `_mobile-build.yml`'s `ios` and `android` jobs each build the commit
+// production now serves on a GitHub runner (`eas build --local`, #5162) and
+// upload it to TestFlight or the Play internal track. Every build uploaded
+// there must be listed in `apps/mobile/store/shipped-builds.json` before a
+// tester can install it, because that list arms the required
+// `api-contract-check` gate (`apps/mobile/store/README.md` § Shipped builds
+// and the API contract). This is the `record` job's whole work: it turns each
 // uploaded build into one entry, opens the pull request that adds them, and
 // writes the run's summary of what was built and uploaded.
 //
@@ -20,56 +21,69 @@
 // so nothing here needs git credentials or a push.
 //
 // ── What gets recorded ──────────────────────────────────────────────────────
-// A build is recorded when EAS reports it `FINISHED` and its upload step
-// succeeded. Since #3483 that step submits with `--no-wait`, so "succeeded"
-// means EAS accepted the submission, which may still sit in Expo's queue; the
-// run's `confirm` job reports whether each upload then finished. An entry for
-// one that failed makes the contract gate stricter than it needs to be, but
-// it also points each deploy's client check at a build nobody runs, so
-// `confirm` says to drop it (the store README's exception). Anything else is
-// reported and left out:
+// A build is recorded when its job reports it built (`FINISHED`) and its
+// upload step succeeded. Since #3483 that step submits with `--no-wait`, so
+// "succeeded" means EAS accepted the submission, which may still sit in
+// Expo's queue; the run's `confirm` job reports whether each upload then
+// finished. An entry for one that failed makes the contract gate stricter
+// than it needs to be, but it also points each deploy's client check at a
+// build nobody runs, so `confirm` says to drop it (the store README's
+// exception). Anything else is reported and left out:
 //   * a build that didn't finish, or whose upload failed or never ran: it is
 //     on no store track, and the README's rule is to record a build when it is
-//     first uploaded. The build job is already red for it, and the summary
-//     says how to finish by hand;
-//   * a build EAS made from any commit but the validated SHA: refused, and
-//     this job fails. That is the "never newer than production" rule failing,
-//     and it must not become an entry that says otherwise.
-// The values are EAS's own (`appVersion`, `appBuildVersion`), the version and
-// build number the binary sends in `X-Client-Version`, and the result is
-// validated with the registry's own `parseRegistry` (`lib/shipped-builds-registry.mjs`)
-// before it is written.
+//     first uploaded. Its job is already red for it, and the summary says what
+//     to do next;
+//   * a build from any commit but the validated SHA: refused, and this job
+//     fails. That is the "never newer than production" rule failing, and it
+//     must not become an entry that says otherwise. The build job refuses to
+//     hand one on already; this is the second check.
+// The values are the ones the build job read (`appVersion` from `app.json`,
+// `appBuildVersion` from eas-cli's increment of EAS's remote build number,
+// checked against the binary's Info.plist on iOS): the version and build
+// number the binary sends in `X-Client-Version`. The result is validated with
+// the registry's own `parseRegistry` (`lib/shipped-builds-registry.mjs`) before
+// it is written.
+//
+// ── Why it merges itself ────────────────────────────────────────────────────
+// With AUTO_MERGE `true` (`_mobile-build.yml` sets it), its `merge-record`
+// job turns on squash auto-merge for this PR once `confirm` saw every upload
+// finish. Paul asked for this on 2026-11-12: the next `auto` ship can't see
+// a build until its entry is on `main`, and a record PR waiting on him made
+// that ship build the same version again. Not here, at open: `confirm` can
+// wait hours in Expo's queue, and a PR that merged first would record an
+// upload that then failed (a `mobile-v*` tag for a build in no store, and an
+// `auto` plan that sends that version an update no binary can take). Its
+// required checks still hold it, `api-contract-check` above all. This job
+// writes the PR's number as the `pr` step output for `merge-record`.
 //
 // ── How it fails ────────────────────────────────────────────────────────────
 // Exits 1 when a build it should record can't be (no token, an API refusal, a
 // wrong commit, a malformed version), and the summary then lists the entries
 // to add by hand. Exits 0 when everything uploaded is recorded, including when
 // nothing was uploaded: the build job's own red row carries that failure. A
-// build job that succeeded but handed over no builds is a wiring fault, and
+// build job that succeeded but handed over no build is a wiring fault, and
 // exits 1.
 //
-// Env inputs:
-//   EAS_BUILDS        — `needs.build.outputs.builds`: the wait step's last read
-//                       of every started build, `{ id, platform, status,
-//                       appVersion, appBuildVersion, gitCommitHash }` each
-//                       (`{ id, status: "UNREAD" }` for one it couldn't read);
-//                       empty when the wait didn't run or report
-//   EAS_STARTED_IOS, EAS_STARTED_ANDROID
-//                     — the build id each start step reported, or the wait's
-//                       retry of it once started (#3812), empty when that
-//                       platform never started: names a build the wait didn't
-//   TAG_MOVED         — `true` when a tag check found production on another
-//                       commit: nothing from this run may be uploaded, by hand
-//                       either
-//   TAG_BEFORE_BUILD, TAG_BEFORE_UPLOAD
+// Env inputs, for each of IOS and ANDROID (`<P>`):
+//   <P>_RESULT        — `needs.<p>.result`: success, failure, cancelled, or
+//                       skipped when the platform wasn't requested
+//   <P>_BUILD         — the job's `build` output: `{ platform, status,
+//                       appVersion, appBuildVersion, gitCommitHash }`, set
+//                       only once the build step succeeded
+//   <P>_UPLOAD        — the upload step's outcome, empty when it didn't run
+//   <P>_TAG_MOVED     — `true` when that job's tag check found production on
+//                       another commit: nothing from this run may be
+//                       uploaded, by hand either
+//   <P>_TAG_BEFORE_BUILD, <P>_TAG_BEFORE_UPLOAD
 //                     — each tag check's outcome. A `failure` without
-//                       TAG_MOVED is a failed read, not a moved production
-//   BUILD_RESULT      — `needs.build.result`
+//                       <P>_TAG_MOVED is a failed read, not a moved production
+// and once:
 //   PLATFORM          — the requested platform: ios, android or all
-//   IOS_UPLOAD        — the iOS upload step's outcome, empty when it didn't run
-//   ANDROID_UPLOAD    — the Android upload step's outcome, the same
 //   DEPLOY_SHA        — the validated SHA the run shipped and built
 //   GH_TOKEN          — the base-sync App token; empty when the mint failed
+//   AUTO_MERGE        — `true` when `merge-record` will turn on auto-merge; only the
+//                       PR body and the summary read it
+//   GITHUB_OUTPUT     — where the opened PR's number goes, as `pr`
 //   GITHUB_REPOSITORY — owner/repo
 //   RUN_URL, RUN_ID, RUN_ATTEMPT — this run, for the branch, the PR and the summary
 //   GITHUB_STEP_SUMMARY — where the summary goes
@@ -92,10 +106,10 @@ const DISPLAY = Object.freeze({ ios: "iOS", android: "Android" });
 const STORE = Object.freeze({ ios: "TestFlight", android: "the Play internal track" });
 
 /**
- * The wait step's build list as an array, or null when there is no usable
- * list (empty, not JSON, not an array of objects).
+ * A build job's `build` output as an object, or null when there is none
+ * (empty, not JSON, not an object).
  */
-export function parseBuilds(raw) {
+export function parseBuild(raw) {
   if (typeof raw !== "string" || raw.trim() === "") return null;
   let parsed;
   try {
@@ -103,20 +117,25 @@ export function parseBuilds(raw) {
   } catch {
     return null;
   }
-  if (!Array.isArray(parsed)) return null;
-  if (!parsed.every((b) => b !== null && typeof b === "object" && !Array.isArray(b))) return null;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   return parsed;
 }
+
+/** A job's status in the summary when it handed over no build. */
+const UNBUILT = Object.freeze({ failure: "failed", cancelled: "cancelled", skipped: "not built", success: "no build reported" });
 
 /**
  * Decide, per requested platform, what was built, what was uploaded and what
  * gets recorded.
  *
+ * @param {object} args
+ * @param {{ ios?: object, android?: object }} args.jobs — per platform, `{ result, build, upload }`:
+ *   the job's result, its parsed `build` output (or null), and its upload step's outcome
  * @returns {{ rows: object[], entries: object[], problems: string[] }}
  *   `rows` feed the summary, one per requested platform; `entries` are the
  *   `shipped-builds.json` entries to add; `problems` fail the job.
  */
-export function planRecord({ builds, platform, uploads, sha, recorded, buildResult, started = {} }) {
+export function planRecord({ jobs, platform, sha, recorded }) {
   const rows = [];
   const entries = [];
   const problems = [];
@@ -124,50 +143,36 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
   if (!requested) {
     return { rows, entries, problems: [`PLATFORM must be ios, android or all; got '${platform}'.`] };
   }
-  if (builds === null && buildResult === "success") {
-    problems.push(
-      "The build job succeeded but handed over no build list (`needs.build.outputs.builds` is empty or not a JSON array). Nothing can be recorded from it; read the build job's log for the EAS build ids.",
-    );
-  }
 
   for (const store of requested) {
-    const matches = (builds ?? []).filter((b) => b.platform === EAS_PLATFORM[store]);
-    const upload = uploads[store] || "not run";
+    const { result = "", build = null, upload = "" } = jobs[store] ?? {};
     // `planned`: an entry for this build is in `entries`. Whether it reached
     // the registry is the PR's outcome, which only `summary` knows.
-    const row = { store, buildId: null, status: "not built", version: null, build: null, upload, planned: false, refused: false };
+    const row = { store, status: UNBUILT[result] ?? "not built", version: null, build: null, upload: upload || "not run", planned: false, refused: false };
     rows.push(row);
 
-    if (matches.length > 1) {
-      problems.push(`EAS listed ${matches.length} ${DISPLAY[store]} builds for one run; expected one.`);
+    if (!build) {
+      if (result === "success") {
+        problems.push(`The ${DISPLAY[store]} job succeeded but handed over no build (its \`build\` output is empty or not a JSON object). Nothing can be recorded from it; read that job's log for the version it built.`);
+      }
       continue;
     }
-    const [found] = matches;
-    if (!found) {
-      // Started, but the wait never reported it: name it, so nobody starts a
-      // second build while this one may still finish.
-      if (started[store]) {
-        row.buildId = started[store];
-        row.status = "unreported";
-      }
-      if (builds !== null && buildResult === "success") {
-        problems.push(`${DISPLAY[store]} was requested, and the build job reported no ${DISPLAY[store]} build.`);
-      }
+    if (build.platform !== EAS_PLATFORM[store]) {
+      problems.push(`The ${DISPLAY[store]} job handed over a build of '${build.platform}'. Not recorded.`);
       continue;
     }
 
-    row.buildId = typeof found.id === "string" ? found.id : null;
-    row.status = typeof found.status === "string" ? found.status : "unknown";
-    row.version = typeof found.appVersion === "string" ? found.appVersion : null;
-    row.build = typeof found.appBuildVersion === "string" ? found.appBuildVersion : null;
+    row.status = typeof build.status === "string" ? build.status : "unknown";
+    row.version = typeof build.appVersion === "string" ? build.appVersion : null;
+    row.build = typeof build.appBuildVersion === "string" ? build.appBuildVersion : null;
 
     // Checked before anything else about a build: a binary from another
     // commit may be newer than production, and recording it would say the
-    // opposite. An unfinished build may not have reported its commit yet.
-    if (found.gitCommitHash !== sha && (row.status === "FINISHED" || found.gitCommitHash)) {
+    // opposite.
+    if (build.gitCommitHash !== sha) {
       row.refused = true;
       problems.push(
-        `EAS built ${DISPLAY[store]} (${row.buildId ?? "no id"}) from ${found.gitCommitHash ?? "an unreported commit"}, not the validated ${sha}. Not recorded. Don't let testers install it: it may call routes production doesn't serve.`,
+        `${DISPLAY[store]} was built from ${build.gitCommitHash ?? "an unreported commit"}, not the validated ${sha}. Not recorded. Don't let testers install it: it may call routes production doesn't serve.`,
       );
       continue;
     }
@@ -175,7 +180,7 @@ export function planRecord({ builds, platform, uploads, sha, recorded, buildResu
 
     if (!row.version || !/^\d+\.\d+\.\d+$/.test(row.version) || !row.build || !/^[1-9]\d*$/.test(row.build)) {
       problems.push(
-        `EAS reported ${DISPLAY[store]} version '${row.version}' and build '${row.build}' for ${row.buildId}, which shipped-builds.json can't hold. Record it by hand from the EAS build page.`,
+        `The ${DISPLAY[store]} job reported version '${row.version}' and build '${row.build}', which shipped-builds.json can't hold. Record it by hand from the binary in TestFlight or Play Console.`,
       );
       continue;
     }
@@ -195,20 +200,25 @@ export function prTitle(entries) {
   return `chore(mobile): record ${entries.map(label).join(" and ")} in shipped-builds.json`;
 }
 
-export function prBody({ entries, rows, sha, runUrl, repo }) {
-  const byStore = new Map(rows.map((r) => [r.store, r]));
+export function prBody({ entries, sha, runUrl, repo, autoMerge = false }) {
   return [
-    `[Deploy production](${runUrl}) shipped \`${sha}\`, built it on EAS, and submitted these builds to the stores without releasing them:`,
+    `[Deploy production](${runUrl}) shipped \`${sha}\`, built it on GitHub's runners, and submitted these builds to the stores without releasing them:`,
     "",
-    "| Platform | Version | Build | Submitted to | EAS build |",
-    "| --- | --- | --- | --- | --- |",
-    ...entries.map(
-      (e) => `| ${DISPLAY[e.platform]} | ${e.version} | ${e.build} | ${STORE[e.platform]} | \`${byStore.get(e.platform)?.buildId ?? "unknown"}\` |`,
-    ),
+    "| Platform | Version | Build | Submitted to |",
+    "| --- | --- | --- | --- |",
+    ...entries.map((e) => `| ${DISPLAY[e.platform]} | ${e.version} | ${e.build} | ${STORE[e.platform]} |`),
     "",
-    `This adds one \`${REGISTRY_PATH}\` entry per submitted build, so this PR's \`api-contract-check\` holds the API to the contract at \`${sha}\` ([\`apps/mobile/store/README.md\` § Shipped builds and the API contract](https://github.com/${repo}/blob/main/apps/mobile/store/README.md#shipped-builds-and-the-api-contract)). Merge it before any tester installs one of these builds: until then the gate doesn't protect them.`,
+    `This adds one \`${REGISTRY_PATH}\` entry per submitted build, so this PR's \`api-contract-check\` holds the API to the contract at \`${sha}\` ([\`apps/mobile/store/README.md\` § Shipped builds and the API contract](https://github.com/${repo}/blob/main/apps/mobile/store/README.md#shipped-builds-and-the-api-contract)). ${
+      autoMerge
+        ? "It merges itself once the run's `confirm` job sees every upload finish and its required checks pass, so the next `auto` ship sees these builds. Until it has merged, the gate doesn't protect them."
+        : "Merge it before any tester installs one of these builds: until then the gate doesn't protect them."
+    }`,
     "",
-    `EAS accepted each submission, and Expo may still be uploading it. [The run](${runUrl})'s \`confirm\` job says whether each upload finished. If one failed, drop its entry before merging, or, once this has merged, move it to the registry's \`dropped\` list in a PR of its own.`,
+    `EAS accepted each submission, and Expo may still be uploading it. [The run](${runUrl})'s \`confirm\` job says whether each upload finished. If one failed, ${
+      autoMerge
+        ? "that job leaves auto-merge off and comments here: drop the failed build's entry and merge this by hand, or, once this has merged,"
+        : "drop its entry before merging, or, once this has merged,"
+    } move it to the registry's \`dropped\` list in a PR of its own.`,
     "",
     `**If \`api-contract-check\` fails here,** \`main\` has already changed the API in a way these builds can't take (it is ahead of \`${sha}\`). Fix that on \`main\` before the next production ship, or waive a route no shipped binary calls as the README says, then re-run the check. Don't merge around it.`,
     "",
@@ -219,10 +229,10 @@ export function prBody({ entries, rows, sha, runUrl, repo }) {
 /**
  * Open the pull request that adds `entries`, from `main`'s current tip.
  *
- * @returns {Promise<{ outcome: "opened", url: string, branch: string } | { outcome: "already-recorded" }>}
+ * @returns {Promise<{ outcome: "opened", url: string, number: number, branch: string, autoMerge: boolean } | { outcome: "already-recorded" }>}
  * @throws {Error} naming the call that failed
  */
-export async function openRecordPr({ token, repo, fetchImpl, entries, rows, sha, runUrl, runId, runAttempt }) {
+export async function openRecordPr({ token, repo, fetchImpl, entries, sha, runUrl, runId, runAttempt, autoMerge = false }) {
   const call = async (method, path, body) => {
     const res = await ghRequest({ token, fetchImpl, method, path, body, retry: method === "GET" });
     if (!res.ok) {
@@ -258,55 +268,44 @@ export async function openRecordPr({ token, repo, fetchImpl, entries, rows, sha,
     title,
     head: branch,
     base: "main",
-    body: prBody({ entries: added, rows, sha, runUrl, repo }),
+    body: prBody({ entries: added, sha, runUrl, repo, autoMerge }),
   });
   if (typeof pr?.html_url !== "string") throw new Error("POST /pulls returned no pull request URL.");
-  return { outcome: "opened", url: pr.html_url, branch };
+  return { outcome: "opened", url: pr.html_url, number: pr.number, branch, autoMerge };
 }
-
-const STILL_RUNNING = new Set(["NEW", "IN_QUEUE", "IN_PROGRESS", "PENDING_CANCEL", "UNREAD", "unreported"]);
 
 /**
  * What to do about one row that wasn't recorded, or null when there's nothing
- * to do. `tag`: `{ moved, beforeBuild, beforeUpload }` from the two tag
- * checks. `blockRerun`: another platform uploaded, is still building, or
- * finished and waits for an upload, so a re-run (which builds every platform
- * again) would duplicate it.
+ * to do. `tag`: `{ moved, beforeBuild, beforeUpload }` from that platform's
+ * two tag checks. Each platform builds in its own job, so **Re-run failed
+ * jobs** builds only the one that failed, and its binary isn't kept: a re-run
+ * builds it again, with a new build number.
  */
-export function nextStep(row, { sha, tag = {}, blockRerun = false }) {
+export function nextStep(row, { sha, tag = {} }) {
   const name = DISPLAY[row.store];
   // A planned row is the PR's, or the "Not recorded" block's when the PR failed.
   if (row.planned || row.refused) return null;
   if (tag.moved) {
     return `${name} was not uploaded: production has shipped another commit since this run, so nothing built from \`${sha}\` may reach testers. The next store build comes from the next ship.`;
   }
-  // The same flag CI passes: a hand upload must not create the TestFlight
-  // group CI deliberately doesn't.
-  const submit = (id) =>
-    `\`npm run eas -- submit --platform ${row.store} --profile production --id ${id} --non-interactive${row.store === "ios" ? " --no-auto-testflight-setup" : ""}\` from the repo root`;
-  if (row.status === "FINISHED" && row.upload !== "success" && row.buildId) {
+  const rerun = `use **Re-run failed jobs** on this run: it builds only ${name}, with a new build number, uploads it and records it, and refuses if production has shipped another commit since`;
+  if (row.status === "FINISHED" && row.upload !== "success") {
     if (tag.beforeUpload === "failure") {
-      return `${name} built, and was not uploaded because the latest-tag check before uploading failed without finding production moved: it couldn't read the tags, or the latest \`v*\` tag isn't a \`vX.Y.Z\` release (its log says which). Once that's resolved, and \`${sha}\` is the latest \`v*\` tag, upload it by hand with ${submit(row.buildId)} and record it. Don't re-run: that builds every platform again.`;
+      return `${name} built, and was not uploaded because the latest-tag check before uploading failed without finding production moved: it couldn't read the tags, or the latest \`v*\` tag isn't a \`vX.Y.Z\` release (its log says which). Once that's resolved, ${rerun}.`;
     }
-    return `${name} built but did not upload (\`${row.upload}\`). After fixing the cause, upload it by hand with ${submit(row.buildId)}, then record it as \`apps/mobile/store/README.md\` § Shipped builds says. Don't re-run: that builds every platform again.`;
-  }
-  if (STILL_RUNNING.has(row.status) && row.buildId) {
-    return `${name} (\`${row.buildId}\`) had not finished when the job stopped waiting, and may still finish on EAS. Don't start another build: when it finishes, and \`${sha}\` is still the latest \`v*\` tag, upload it with ${submit(row.buildId)} and record it by hand.`;
+    return `${name} built but did not upload (\`${row.upload}\`; the job's log says why). Once the cause is fixed, ${rerun}.`;
   }
   if (tag.beforeBuild === "failure") {
-    return `${name} didn't start: the latest-tag check before building failed without finding production moved: it couldn't read the tags, or the latest \`v*\` tag isn't a \`vX.Y.Z\` release (its log says which). Once that's resolved, use **Re-run failed jobs** on this run.`;
+    return `${name} didn't start: the latest-tag check before building failed without finding production moved: it couldn't read the tags, or the latest \`v*\` tag isn't a \`vX.Y.Z\` release (its log says which). Once that's resolved, ${rerun}.`;
   }
-  if (blockRerun) {
-    return `${name} didn't build (\`${row.status}\`), while another platform uploaded, is still building, or waits for its upload. Fix the cause, then build and upload ${name} by hand from the latest \`v*\` tag (\`docs/ops/deployment/mobile.md\` § 6.6, By hand) and record it. Don't re-run: that builds the other platform again.`;
-  }
-  return `${name} didn't build (\`${row.status}\`). Once the cause is fixed, use **Re-run failed jobs** on this run; it refuses if production has shipped another commit since.`;
+  return `${name} didn't build (\`${row.status}\`). Once the cause is fixed, ${rerun}.`;
 }
 
 /** The run summary: what was built, uploaded and recorded, and what's left. */
-export function summary({ sha, rows, entries, pr, problems, tag = {} }) {
+export function summary({ sha, rows, entries, pr, problems, tags = {} }) {
   const lines = [`### Store builds — \`${sha}\``, ""];
-  lines.push("| Platform | EAS build | Status | Version (build) | Upload | Recorded |");
-  lines.push("| --- | --- | --- | --- | --- | --- |");
+  lines.push("| Platform | Status | Version (build) | Upload | Recorded |");
+  lines.push("| --- | --- | --- | --- | --- |");
   // From the PR's outcome, not the plan: a planned entry whose PR never
   // opened is not recorded, and the block below lists it.
   const recordedAs = (r) => {
@@ -317,14 +316,14 @@ export function summary({ sha, rows, entries, pr, problems, tag = {} }) {
   };
   for (const r of rows) {
     const version = r.version || r.build ? `${r.version ?? "?"} (${r.build ?? "?"})` : "—";
-    lines.push(
-      `| ${DISPLAY[r.store]} | ${r.buildId ? `\`${r.buildId}\`` : "—"} | \`${r.status}\` | ${version} | \`${r.upload}\` | ${recordedAs(r)} |`,
-    );
+    lines.push(`| ${DISPLAY[r.store]} | \`${r.status}\` | ${version} | \`${r.upload}\` | ${recordedAs(r)} |`);
   }
   lines.push("");
   lines.push("> Production and the version tag don't depend on anything here: a failure leaves both as they are.", "");
   const uploaded = rows.some((r) => r.upload === "success");
-  if (pr?.outcome === "opened") {
+  if (pr?.outcome === "opened" && pr.autoMerge) {
+    lines.push(`**Recorded in ${pr.url}.** It merges itself once the \`confirm\` job sees every upload finish.`, "");
+  } else if (pr?.outcome === "opened") {
     lines.push(`**Recorded in ${pr.url}.** Merge it before any tester installs these builds.`, "");
   } else if (pr?.outcome === "already-recorded") {
     lines.push(`Every submitted build is already listed in \`${REGISTRY_PATH}\` on \`main\`; no PR was needed.`, "");
@@ -332,13 +331,7 @@ export function summary({ sha, rows, entries, pr, problems, tag = {} }) {
     lines.push("Nothing was uploaded, so nothing was recorded.", "");
   }
   for (const r of rows) {
-    const blockRerun = rows.some(
-      (o) =>
-        o !== r &&
-        !o.refused &&
-        (o.upload === "success" || (o.status === "FINISHED" && !o.planned) || STILL_RUNNING.has(o.status)),
-    );
-    const step = nextStep(r, { sha, tag, blockRerun });
+    const step = nextStep(r, { sha, tag: tags[r.store] });
     if (step) lines.push(`- ${step}`);
   }
   if (problems.length > 0) {
@@ -358,22 +351,24 @@ export function summary({ sha, rows, entries, pr, problems, tag = {} }) {
 }
 
 /** The job's work, with its I/O injected. Returns the exit code. */
-export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Date(), writeSummary, log = console.log }) {
+export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Date(), writeSummary, writeOutput = () => {}, log = console.log }) {
   const sha = env.DEPLOY_SHA ?? "";
   if (!/^[0-9a-f]{40}$/.test(sha)) {
     log(`::error::DEPLOY_SHA must be a full 40-character commit SHA; got '${sha}'.`);
     return 1;
   }
-  const builds = parseBuilds(env.EAS_BUILDS);
-  const plan = planRecord({
-    builds,
-    platform: env.PLATFORM,
-    uploads: { ios: env.IOS_UPLOAD, android: env.ANDROID_UPLOAD },
-    sha,
-    recorded: now.toISOString().slice(0, 10),
-    buildResult: env.BUILD_RESULT,
-    started: { ios: env.EAS_STARTED_IOS, android: env.EAS_STARTED_ANDROID },
-  });
+  const jobs = {};
+  const tags = {};
+  for (const store of ["ios", "android"]) {
+    const key = store.toUpperCase();
+    jobs[store] = { result: env[`${key}_RESULT`] ?? "", build: parseBuild(env[`${key}_BUILD`]), upload: env[`${key}_UPLOAD`] ?? "" };
+    tags[store] = {
+      moved: env[`${key}_TAG_MOVED`] === "true",
+      beforeBuild: env[`${key}_TAG_BEFORE_BUILD`],
+      beforeUpload: env[`${key}_TAG_BEFORE_UPLOAD`],
+    };
+  }
+  const plan = planRecord({ jobs, platform: env.PLATFORM, sha, recorded: now.toISOString().slice(0, 10) });
   const problems = [...plan.problems];
 
   let pr = null;
@@ -387,11 +382,11 @@ export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Da
           repo: env.GITHUB_REPOSITORY,
           fetchImpl,
           entries: plan.entries,
-          rows: plan.rows,
           sha,
           runUrl: env.RUN_URL,
           runId: env.RUN_ID,
           runAttempt: env.RUN_ATTEMPT,
+          autoMerge: env.AUTO_MERGE === "true",
         });
       } catch (error) {
         problems.push(`The shipped-builds PR could not be opened: ${error.message}`);
@@ -399,18 +394,20 @@ export async function recordShippedBuilds({ env, fetchImpl = fetch, now = new Da
     }
   }
 
-  const tag = { moved: env.TAG_MOVED === "true", beforeBuild: env.TAG_BEFORE_BUILD, beforeUpload: env.TAG_BEFORE_UPLOAD };
-  writeSummary(summary({ sha, rows: plan.rows, entries: plan.entries, pr, problems, tag }));
+  writeSummary(summary({ sha, rows: plan.rows, entries: plan.entries, pr, problems, tags }));
   for (const problem of problems) log(`::error::${problem}`);
   if (pr?.outcome === "opened") log(`Opened ${pr.url} from ${pr.branch}.`);
+  if (pr?.outcome === "opened" && Number.isInteger(pr.number)) writeOutput(`pr=${pr.number}\n`);
   return problems.length > 0 ? 1 : 0;
 }
 
 async function main() {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  const outputPath = process.env.GITHUB_OUTPUT;
   const code = await recordShippedBuilds({
     env: process.env,
     writeSummary: (text) => (summaryPath ? appendFileSync(summaryPath, text) : process.stdout.write(text)),
+    writeOutput: (text) => outputPath && appendFileSync(outputPath, text),
   });
   process.exitCode = code;
 }

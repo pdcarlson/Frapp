@@ -5,7 +5,6 @@ import {
   POLLS_OFF_COPY,
   buildPollMessage,
   canClosePoll,
-  isPollCardClosed,
   isMultiChoicePoll,
   currentPollPicks,
   makePollOptionId,
@@ -20,6 +19,7 @@ import {
   pollsGateReason,
   readPollPayload,
 } from "./polls";
+import { isCardClosed } from "./card-closing";
 import type { ChatMessage } from "./types";
 
 describe("pollsGateOf (#3012)", () => {
@@ -115,7 +115,7 @@ describe("buildPollMessage (#3701)", () => {
     expect(readPollPayload(message)).toEqual(payload);
     // It never closes on its own, and says so; a timed card reads as before.
     const farFuture = Date.parse("2999-01-01T00:00:00.000Z");
-    expect(isPollCardClosed(payload, farFuture)).toBe(false);
+    expect(isCardClosed(payload, farFuture)).toBe(false);
     expect(pollCardEyebrow(payload, farFuture)).toBe("Poll · No end date");
     const timed = { ...payload, closes_at: "2026-11-10T18:30:00.000Z" };
     expect(pollCardEyebrow(timed, closesAt.getTime() - 1)).toBe("Poll");
@@ -176,28 +176,43 @@ describe("a multi-choice poll card (#3793)", () => {
     }) as unknown as ChatMessage;
 
   it("builds the mode onto the card only when asked, and reads it back", () => {
-    const input = { question: "Which days?", options: ["Fri", "Sat"], closesAt: null };
+    const input = {
+      question: "Which days?",
+      options: ["Fri", "Sat"],
+      closesAt: null,
+    };
     const one = buildPollMessage(input).payload;
     expect(one).not.toHaveProperty("choice_mode");
     expect(isMultiChoicePoll(one)).toBe(false);
     const many = buildPollMessage({ ...input, multiple: true }).payload;
     expect(many.choice_mode).toBe("multi");
-    expect(readPollPayload({ payload: many } as unknown as ChatMessage)).toEqual(many);
+    expect(
+      readPollPayload({ payload: many } as unknown as ChatMessage),
+    ).toEqual(many);
   });
 
   it("reads a card without the mode, or marked single, as single-choice", () => {
     const read = (payload: object) =>
       readPollPayload({ payload } as unknown as ChatMessage)!;
     expect(read(single)).not.toHaveProperty("choice_mode");
-    expect(read({ ...single, choice_mode: "single" })).not.toHaveProperty("choice_mode");
-    expect(read({ ...single, choice_mode: null })).not.toHaveProperty("choice_mode");
+    expect(read({ ...single, choice_mode: "single" })).not.toHaveProperty(
+      "choice_mode",
+    );
+    expect(read({ ...single, choice_mode: null })).not.toHaveProperty(
+      "choice_mode",
+    );
     // Anything else votes as multi on the server, so it reads as multi here.
     expect(read({ ...single, choice_mode: "many" }).choice_mode).toBe("multi");
   });
 
   it("tallies a single-choice card as before", () => {
     const tally = tallyPollVotes(
-      votes([["u1", "a"], ["u2", "a"], ["me", "b"], ["u3", "zzz"]]),
+      votes([
+        ["u1", "a"],
+        ["u2", "a"],
+        ["me", "b"],
+        ["u3", "zzz"],
+      ]),
       options,
       "me",
     );
@@ -256,8 +271,12 @@ describe("a multi-choice poll card (#3793)", () => {
     expect(pollVotePayload(single, ["a"], "a")).toEqual({ option_id: "a" });
     // Multi-choice: add, in the card's order; tap again to clear.
     expect(pollVotePayload(multi, [], "c")).toEqual({ option_id: ["c"] });
-    expect(pollVotePayload(multi, ["c"], "a")).toEqual({ option_id: ["a", "c"] });
-    expect(pollVotePayload(multi, ["a", "c"], "a")).toEqual({ option_id: ["c"] });
+    expect(pollVotePayload(multi, ["c"], "a")).toEqual({
+      option_id: ["a", "c"],
+    });
+    expect(pollVotePayload(multi, ["a", "c"], "a")).toEqual({
+      option_id: ["c"],
+    });
     expect(pollVotePayload(multi, ["c"], "c")).toEqual({ option_id: [] });
   });
 
@@ -279,7 +298,9 @@ describe("a multi-choice poll card (#3793)", () => {
 
   it("tells a member they can pick several", () => {
     expect(pollChoiceHint(multi, false)).toBe("Select one or more");
-    expect(pollChoiceHint(multi, true)).toBe("More than one choice was allowed");
+    expect(pollChoiceHint(multi, true)).toBe(
+      "More than one choice was allowed",
+    );
   });
 });
 
@@ -314,23 +335,36 @@ describe("a poll card closed early (#3794)", () => {
   });
 
   it("is closed once closed early, whatever the deadline says", () => {
-    expect(isPollCardClosed(open, NOW)).toBe(false);
-    expect(isPollCardClosed(closed, NOW)).toBe(true);
+    expect(isCardClosed(open, NOW)).toBe(false);
+    expect(isCardClosed(closed, NOW)).toBe(true);
   });
 
   it("is still closed by its deadline, and never by one that doesn't parse", () => {
     expect(
-      isPollCardClosed({ ...open, closes_at: "2026-06-01T11:59:59.000Z" }, NOW),
+      isCardClosed({ ...open, closes_at: "2026-06-01T11:59:59.000Z" }, NOW),
     ).toBe(true);
-    expect(isPollCardClosed({ ...open, closes_at: "" }, NOW)).toBe(false);
-    expect(isPollCardClosed({ ...open, closes_at: "soon" }, NOW)).toBe(false);
+    expect(isCardClosed({ ...open, closes_at: "" }, NOW)).toBe(false);
+    expect(isCardClosed({ ...open, closes_at: "soon" }, NOW)).toBe(false);
   });
 
-  const ON = { pollsGate: "on" as const, canCreatePolls: true };
+  it("is closed at its deadline itself, as the API's isPollClosed is (#4696)", () => {
+    const due = { ...open, closes_at: "2026-06-01T12:00:00.000Z" };
+    expect(pollCardEyebrow(due, NOW)).toBe("Poll · Closed");
+    expect(pollCardEyebrow(due, NOW - 1)).toBe("Poll");
+    expect(
+      canClosePoll(asMessage(due), due, "creator", NOW, {
+        pollsGate: "on",
+        canManageChannels: false,
+      }),
+    ).toBe(false);
+  });
 
-  it("offers Close poll to the creator of an open, confirmed card only", () => {
+  const ON = { pollsGate: "on" as const, canManageChannels: false };
+  const MOD = { pollsGate: "on" as const, canManageChannels: true };
+
+  it("offers Close poll to the creator of an open, confirmed card", () => {
     expect(canClosePoll(asMessage(open), open, "creator", NOW, ON)).toBe(true);
-    // Anyone else, or an unresolved viewer.
+    // Anyone else without channels:manage, or an unresolved viewer.
     expect(canClosePoll(asMessage(open), open, "member", NOW, ON)).toBe(false);
     expect(canClosePoll(asMessage(open), open, null, NOW, ON)).toBe(false);
     // Already closed, early or by its deadline.
@@ -348,14 +382,21 @@ describe("a poll card closed early (#3794)", () => {
     expect(canClosePoll(deleted, open, "creator", NOW, ON)).toBe(false);
   });
 
-  it("withholds it where the close route would refuse the creator", () => {
-    // No polls:create: a New Member can post a card (#3007) but not close it.
+  it("offers it to a member who manages channels on anyone's open card (#4046)", () => {
+    const noDeadline = { ...open, closes_at: null };
     expect(
-      canClosePoll(asMessage(open), open, "creator", NOW, {
-        ...ON,
-        canCreatePolls: false,
-      }),
-    ).toBe(false);
+      canClosePoll(asMessage(noDeadline), noDeadline, "officer", NOW, MOD),
+    ).toBe(true);
+    // Still not on a closed or deleted card, nor to an unresolved viewer.
+    expect(canClosePoll(asMessage(closed), closed, "officer", NOW, MOD)).toBe(
+      false,
+    );
+    const deleted = asMessage(open, { is_deleted: true });
+    expect(canClosePoll(deleted, open, "officer", NOW, MOD)).toBe(false);
+    expect(canClosePoll(asMessage(open), open, null, NOW, MOD)).toBe(false);
+  });
+
+  it("withholds it where the close route would refuse", () => {
     // Polls off, or not yet known to be on.
     for (const pollsGate of ["off", "loading", "error"] as const) {
       expect(

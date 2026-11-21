@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAlpha } from "@repo/color";
+import { applyAlpha, parseHex, relativeLuminance } from "@repo/color";
 import {
   AA_NON_TEXT,
   AA_TEXT,
@@ -12,6 +12,7 @@ import {
   SURFACE,
   statusTint,
   INDISTINGUISHABLE,
+  LADDER_STEP_FLOOR,
   TEXT,
 } from "@/tests/signet-contrast";
 
@@ -40,6 +41,8 @@ import {
  * the call-site half is `elevation-call-sites.spec.ts` beside this file.
  */
 
+const luminance = (hex: string) => relativeLuminance(parseHex(hex)!);
+
 describe("the aliases that made two fills invisible (deleted, #3036)", () => {
   // These two stay as the record of why the ShadCN names were wrong (see the
   // file header: they hold for any value): the scaffold's `--accent`
@@ -60,13 +63,42 @@ describe("the aliases that made two fills invisible (deleted, #3036)", () => {
   });
 });
 
+describe("every ladder step is a gentle step up (2026-11-19)", () => {
+  // The owner's pick on 2026-11-19 ("softer steps than today"): the groups
+  // mockup's violet near-black ladder, stepping 1.08 / 1.10 / 1.15. Each step
+  // must still rise (a step that does not is an alias, the defect at the top of
+  // this file) and clear LADDER_STEP_FLOOR, and none may be harder than the
+  // 2026-11-12 ladder's steps (#3826, 1.17 / 1.15 / 1.16) it replaced. The
+  // hairline, not the fill, is what separates a column, a card and a menu now.
+  const LADDER = [
+    ["--background", SURFACE.background],
+    ["--surface-1", SURFACE.surface1],
+    ["--card", SURFACE.card],
+    ["--popover", SURFACE.popover],
+  ] as const;
+  it.each(
+    LADDER.slice(1).map((step, i) => [
+      LADDER[i]![0],
+      step[0],
+      LADDER[i]![1],
+      step[1],
+    ]),
+  )("%s to %s", (_lower, _upper, lower, upper) => {
+    expect(luminance(upper)).toBeGreaterThan(luminance(lower));
+    expect(ratio(upper, lower)).toBeGreaterThanOrEqual(LADDER_STEP_FLOOR);
+    expect(ratio(upper, lower)).toBeLessThanOrEqual(INDISTINGUISHABLE);
+  });
+});
+
 describe("a state cannot elevate above the step it renders in", () => {
   it("would have caught the attendance panel's card inside a sheet", () => {
     // `--popover` is the top of the ladder, so a `--card` panel inside a
     // `SheetContent` is a step DOWN — it reads as a hole, not as elevation.
-    expect(ratio(SURFACE.card, SURFACE.popover)).toBeLessThan(
-      INDISTINGUISHABLE,
-    );
+    // Until the 2026-11-12 ladder (#3826) the step was also imperceptible;
+    // since then it is visible (1.15:1 on the 2026-11-19 ladder), which makes
+    // the hole plainer, not better.
+    expect(ratio(SURFACE.card, SURFACE.popover)).toBeCloseTo(1.146, 2);
+    expect(luminance(SURFACE.card)).toBeLessThan(luminance(SURFACE.popover));
   });
 
   it("shows that dropping the fill improves the boundary rather than costing one", () => {
@@ -151,12 +183,25 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
    * elevated step lifted toward white, which is distinct from every step by
    * being above all of them.
    */
-  it("is --popover lifted 6% toward white, so a ladder change cannot leave it behind", () => {
+  it("is the lowest step perceptibly above --popover in its hue, so a ladder change cannot leave it behind", () => {
     // An opaque literal (no `color-mix` floor), held to its derivation here
     // rather than trusted to be re-derived by whoever next moves the ladder.
-    expect(CARD_HOVER.toUpperCase()).toBe(
-      applyAlpha("#ffffff", 0.06, SURFACE.popover).toUpperCase(),
-    );
+    // Until the 2026-11-12 ladder (#3826) the derivation was `--popover` lifted
+    // 6% toward white; on the lighter `--popover` that overshot what the text
+    // on it can afford (role-colors-contrast.spec.ts), so it is the first
+    // step that clears the perceptible bound, and no higher. Since the
+    // 2026-11-19 violet ladder the step keeps `--popover`'s tint: every
+    // channel rises by the same amount, as the ladder's own steps do.
+    const { r, g, b } = parseHex(SURFACE.popover)!;
+    const lift = (n: number) =>
+      "#" +
+      [r + n, g + n, b + n]
+        .map((c) => c.toString(16).padStart(2, "0"))
+        .join("")
+        .toUpperCase();
+    let n = 0;
+    while (ratio(lift(n), SURFACE.popover) < INDISTINGUISHABLE) n += 1;
+    expect(CARD_HOVER.toUpperCase()).toBe(lift(n));
   });
 
   it.each(STEPS)("reads as a state on %s", (_name, step) => {
@@ -165,25 +210,38 @@ describe("a card-filled control hovers above the ladder (#1220)", () => {
     expect(ratio(CARD_HOVER, step)).toBeGreaterThan(INDISTINGUISHABLE);
   });
 
-  it("keeps the label over the text gate", () => {
-    expect(ratio(TEXT.foreground, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
+  it.each([
+    ["foreground", TEXT.foreground],
+    ["muted-foreground", TEXT.mutedForeground],
+    ["muted", TEXT.muted],
+  ] as const)("keeps %s text over the text gate on it", (_name, tone) => {
+    // A hovered row's title, its sub-line and its timestamp all sit on it,
+    // and since 2026-11-09 it is also the quiet fill under text. `--muted` is
+    // the one the 2026-11-12 ladder (#3826) had to lift for: at `#9E9E9E` it
+    // fell to 4.18:1 here. The 7:1 reading floor is the four ladder steps';
+    // on this state fill the gate is AA (`--muted-foreground` 7.24:1 on the 2026-11-19 ladder, 6.42:1 on the 2026-11-12 one).
+    expect(ratio(tone, CARD_HOVER)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("does not need a chapter: a white alpha would have, and failed on --background", () => {
     // The recipe weighed first: `rgba(255,255,255,.06)` tracks its container
     // the way a hairline does, which is the problem. Over `--background` it
-    // composites to about the button's own card rest fill, so hovering a page
-    // level Secondary button changed nothing.
+    // composited to about the button's own card rest fill on the 2026-11-05
+    // ladder, so hovering a page level Secondary button changed nothing. On
+    // the 2026-11-12 ladder (#3826) it lands *under* the card rest fill, so
+    // the hover would step down instead: the same defect, the other way.
     const alphaOverBackground = applyAlpha("#ffffff", 0.06, SURFACE.background);
-    expect(ratio(alphaOverBackground, SURFACE.card)).toBeLessThan(1.05);
+    expect(luminance(alphaOverBackground)).toBeLessThan(
+      luminance(SURFACE.card),
+    );
   });
 });
 
 /** #1208's floor: no row hover in the shell sits under this against its container. */
 const ROW_HOVER_FLOOR = 1.03;
 
-describe("the notification drawer's rows hover off the sheet (#1208)", () => {
-  // The drawer is a `SheetContent`, so every row's container is `--popover`.
+describe("the notification list's rows hover off the popover (#1208)", () => {
+  // The list is a `PopoverContent`, so every row's container is `--popover`.
   // Rows are flat and transparent there (components.md § Chrome weight).
 
   it("lifts a row off the sheet with --card-hover", () => {

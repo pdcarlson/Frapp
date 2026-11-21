@@ -1,5 +1,6 @@
+import { CALENDAR_KIND_HUE } from "@repo/hooks/activity-agenda";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
@@ -10,7 +11,9 @@ const {
   mockOffline,
   permissionsState,
   realtimeCalls,
+  deleteMutate,
 } = vi.hoisted(() => ({
+  deleteMutate: vi.fn(),
   eventQueryState: {
     isLoading: false,
     isError: false,
@@ -38,14 +41,18 @@ const {
 
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
 // stub the live hooks so the sheet renders without a query client / API.
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  // The event's Now pill (#5777) runs for real.
+  eventNowPill: (await importOriginal<typeof import("@repo/hooks")>())
+    .eventNowPill,
+  useNow: () => Date.now(),
   useEvent: () => ({
     data: eventQueryState.data,
     isLoading: eventQueryState.isLoading,
     isError: eventQueryState.isError,
     error: eventQueryState.error,
   }),
-  useDeleteEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteEvent: () => ({ mutateAsync: deleteMutate, isPending: false }),
   useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
   // Edit and Delete both hit paid-ops event routes, so the sheet reads the
   // chapter's subscription now (#841). Existing cases default to active.
@@ -64,6 +71,21 @@ vi.mock("@repo/hooks", () => ({
     refetch: vi.fn(),
   }),
   useActiveChapterId: () => "chap-1",
+  useRequiredOfViewer: () => () => excuseState.required,
+  useViewerUserId: () => excuseState.viewerId,
+}));
+
+// Excuses (#3735): the blocks have their own spec (`event-excuses.spec.tsx`);
+// here, only whether the sheet mounts them.
+const excuseState = vi.hoisted(() => ({
+  required: false,
+  viewerId: null as string | null,
+}));
+vi.mock("@/components/events/event-excuses", () => ({
+  MyExcuse: ({ required }: { required: boolean }) => (
+    <div data-testid="my-excuse" data-required={String(required)} />
+  ),
+  ExcuseReview: () => <div data-testid="excuse-review" />,
 }));
 
 vi.mock("@/lib/providers/network-provider", async () => {
@@ -90,22 +112,60 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+// The agenda and attachments have their own spec (`event-agenda.spec.tsx`);
+// here, what the sheet hands them (#4934).
+vi.mock("@/components/events/event-agenda", () => ({
+  EventMeetingLists: ({
+    lists,
+    canEdit,
+    checkOffOpen,
+    documentsOn,
+  }: {
+    lists: { agenda: { text: string }[]; attachments: { title: string }[] };
+    canEdit: boolean;
+    checkOffOpen?: boolean;
+    documentsOn: boolean | null;
+  }) => (
+    <div
+      data-testid="event-lists"
+      data-can-edit={String(canEdit)}
+      data-check-off={String(checkOffOpen)}
+      data-documents={String(documentsOn)}
+      data-agenda={lists.agenda.map((item) => item.text).join("|")}
+      data-attachments={lists.attachments.map((item) => item.title).join("|")}
+    />
+  ),
+}));
+
+// The minutes entry has its own spec (`event-minutes.spec.tsx`).
+vi.mock("@/components/meetings/event-minutes", () => ({
+  EventMinutes: () => null,
+  useMeetingsModuleOn: () => false,
+}));
+
 vi.mock("@/components/events/attendance-panel", () => ({
   AttendancePanel: () => <div data-testid="attendance-roster" />,
 }));
 
-vi.mock("@/components/events/my-check-in", () => ({
+vi.mock("@/components/events/my-check-in", async (importOriginal) => ({
+  // The zone rule stays real: the sheet's zone tests read through it.
+  checkInZoneState: (
+    await importOriginal<typeof import("@/components/events/my-check-in")>()
+  ).checkInZoneState,
   MyCheckIn: ({
     zone,
     eventUnavailable,
+    eventPending,
   }: {
     zone: string;
     eventUnavailable?: boolean;
+    eventPending?: boolean;
   }) => (
     <div
       data-testid="my-check-in"
       data-zone={zone}
       data-unavailable={String(Boolean(eventUnavailable))}
+      data-pending={String(Boolean(eventPending))}
     />
   ),
 }));
@@ -129,6 +189,8 @@ beforeEach(() => {
   permissionsState.isError = false;
   realtimeCalls.length = 0;
   mockOffline.value = false;
+  excuseState.required = false;
+  excuseState.viewerId = null;
   Object.assign(eventQueryState, {
     isLoading: false,
     isError: false,
@@ -154,10 +216,9 @@ describe("EventDetailSheet who's coming", () => {
       />,
     );
 
+    // The form's own words for it (`describeAttendance`), in its row.
     expect(screen.getByText("Who's coming")).toBeInTheDocument();
-    expect(screen.getByText("Only the roles below")).toBeInTheDocument();
-    expect(screen.getByText("Exec")).toBeInTheDocument();
-    expect(screen.getByText("Required")).toBeInTheDocument();
+    expect(screen.getByText(/^Exec required/)).toBeInTheDocument();
   });
 
   it("says the default alone when no role is set apart", () => {
@@ -193,7 +254,7 @@ describe("EventDetailSheet series", () => {
     },
   ];
 
-  it("lists the series' upcoming meetings under the one it opened, and opens another", async () => {
+  it("links the series' next meeting rather than listing every date", async () => {
     const user = userEvent.setup();
     const onSelectOccurrence = vi.fn();
     render(
@@ -201,7 +262,7 @@ describe("EventDetailSheet series", () => {
         open
         onOpenChange={() => {}}
         usingPreviewData
-        event={baseEvent}
+        event={{ ...baseEvent, recurrence_rule: "WEEKLY" }}
         series={series}
         onSelectOccurrence={onSelectOccurrence}
         onRequestEdit={() => {}}
@@ -209,19 +270,28 @@ describe("EventDetailSheet series", () => {
       />,
     );
 
-    const list = within(
-      screen.getByRole("region", { name: "Upcoming in this series" }),
-    );
-    const meetings = list.getAllByRole("button");
-    expect(meetings).toHaveLength(3);
-    // The one open is marked and isn't a way to reopen itself.
-    expect(meetings[0]).toHaveAttribute("aria-current", "true");
-    expect(meetings[0]).toBeDisabled();
-
-    await user.click(meetings[2]!);
+    // Paul 2026-11-19: "don't need to see all the upcoming series events".
+    expect(screen.queryByText("Upcoming in this series")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /^Next / }));
     expect(onSelectOccurrence).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "e3" }),
+      expect.objectContaining({ id: "e2" }),
     );
+  });
+
+  it("offers no next meeting from the series' last one", () => {
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{ ...series[2]!, recurrence_rule: "WEEKLY" }}
+        series={series}
+        onSelectOccurrence={() => {}}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^Next / })).toBeNull();
   });
 
   it("badges a generated meeting with the series' rule it was handed", () => {
@@ -548,6 +618,24 @@ describe("EventDetailSheet schedule and policy", () => {
     expect(screen.getByText(/· 5:00\s?– 7:00\sPM$/)).toBeInTheDocument();
   });
 
+  it("wears the events kind mark, and Required in its hue when it requires the viewer (#5560)", () => {
+    excuseState.required = true;
+    const { unmount } = renderSheet(baseEvent);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByTestId("event-kind-mark")).toHaveAttribute(
+      "data-hue",
+      CALENDAR_KIND_HUE.events,
+    );
+    expect(within(dialog).getByText("Required")).toBeInTheDocument();
+    unmount();
+
+    excuseState.required = false;
+    renderSheet(baseEvent);
+    expect(
+      within(screen.getByRole("dialog")).queryByText("Required"),
+    ).toBeNull();
+  });
+
   it("names the cadence in words and draws nothing for a one-time event", () => {
     const { unmount } = renderSheet({
       ...baseEvent,
@@ -604,7 +692,7 @@ describe("EventDetailSheet loading", () => {
 describe("EventDetailSheet required badge", () => {
   // A status, so danger as the events list and mobile draw it, never the
   // chapter accent (components.md §5).
-  it("draws required-for-everyone as the danger badge", () => {
+  it("says required-for-everyone in words", () => {
     render(
       <EventDetailSheet
         open
@@ -615,9 +703,8 @@ describe("EventDetailSheet required badge", () => {
         onEventDeleted={() => {}}
       />,
     );
-    const badge = screen.getByText("Required for everyone");
-    expect(badge.className).toContain("text-destructive-text");
-    expect(badge.className).not.toContain("text-accent-text");
+    // Said in Who's coming's row, in the form's words.
+    expect(screen.getByText("Required for everyone")).toBeInTheDocument();
   });
 });
 
@@ -642,10 +729,7 @@ describe("EventDetailSheet preview", () => {
 });
 
 describe("EventDetailSheet for a live event, by role (#3855)", () => {
-  function renderLive(
-    event: Record<string, unknown> = baseEvent,
-    open = true,
-  ) {
+  function renderLive(event: Record<string, unknown> = baseEvent, open = true) {
     return render(
       <EventDetailSheet
         open={open}
@@ -719,7 +803,9 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     permissionsState.fetchStatus = "idle";
     renderLive();
 
-    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit event" }),
+    ).toBeInTheDocument();
   });
 
   it("drops the subscription while the sheet is closed", () => {
@@ -759,6 +845,44 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     );
   });
 
+  // #4808: only the event's own read says whether an officer's code is needed.
+  it("says to scan once the event's read says the code is required, and no zone line contradicts it", () => {
+    permissionsState.value = ["members:view"];
+    eventQueryState.data = {
+      ...baseEvent,
+      check_in_zone: null,
+      check_in_needs_code: true,
+    };
+    renderLive();
+
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-zone",
+      "code",
+    );
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-pending",
+      "false",
+    );
+    expect(
+      screen.queryByText("No zone, so members can check in from anywhere"),
+    ).toBeNull();
+    expect(
+      screen.getByText(/An officer's screen is showing the code/),
+    ).toBeInTheDocument();
+  });
+
+  it("holds the check-in block until the event's own read lands", () => {
+    permissionsState.value = ["members:view"];
+    eventQueryState.isLoading = true;
+    eventQueryState.data = undefined;
+    renderLive();
+
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-pending",
+      "true",
+    );
+  });
+
   it("keeps check-in through a failed refetch of an event it still holds", () => {
     // A throttled background refetch keeps its data; one 429 must not take
     // Check in away.
@@ -780,33 +904,99 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     permissionsState.fetchStatus = "paused";
     renderLive();
 
-    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit event" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Delete event" }),
     ).toBeInTheDocument();
   });
 
   it("gives an officer the roster and the header actions, as well as their own check-in", () => {
-    permissionsState.value = [
-      "members:view",
-      "events:update",
-      "events:delete",
-    ];
+    permissionsState.value = ["members:view", "events:update", "events:delete"];
     renderLive();
 
     expect(screen.getByTestId("attendance-roster")).toBeInTheDocument();
     expect(screen.getByTestId("my-check-in")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit event" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Delete event" }),
     ).toBeInTheDocument();
+  });
+
+  it("reads details, then the agenda, then attendance (Paul 2026-11-19)", () => {
+    permissionsState.value = ["members:view", "events:update"];
+    renderLive();
+    const details = screen.getByText("When");
+    const agenda = screen.getByTestId("event-lists");
+    const roster = screen.getByTestId("attendance-roster");
+    const follows = (a: Element, b: Element) =>
+      Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(details, agenda)).toBe(true);
+    expect(follows(agenda, roster)).toBe(true);
+  });
+
+  it("lets the agenda be ticked off only once the meeting has started", () => {
+    permissionsState.value = ["members:view", "events:update"];
+    const { unmount } = renderLive();
+    expect(screen.getByTestId("event-lists")).toHaveAttribute(
+      "data-check-off",
+      "true",
+    );
+    unmount();
+    const later = {
+      ...baseEvent,
+      start_time: "2099-07-01T18:00:00.000Z",
+      end_time: "2099-07-01T19:00:00.000Z",
+    };
+    eventQueryState.data = later;
+    renderLive(later);
+    expect(screen.getByTestId("event-lists")).toHaveAttribute(
+      "data-check-off",
+      "false",
+    );
+  });
+
+  it("hands the meeting's agenda and attachments to their sections, editable only by an officer with a real answer (#4934)", () => {
+    const withLists = {
+      ...baseEvent,
+      agenda: [{ id: "a1", text: "Treasurer report", done: false }, "junk"],
+      attachments: [
+        { id: "x1", kind: "link", url: "https://a.example", title: "Budget" },
+        { id: "x2", kind: "link", url: "javascript:alert(1)", title: "Bad" },
+      ],
+    };
+    eventQueryState.data = withLists;
+    permissionsState.value = ["members:view"];
+    const { unmount } = renderLive(withLists);
+    const lists = () => screen.getByTestId("event-lists");
+    expect(lists()).toHaveAttribute("data-agenda", "Treasurer report");
+    // A link that isn't http or https is never handed on to be drawn.
+    expect(lists()).toHaveAttribute("data-attachments", "Budget");
+    expect(lists()).toHaveAttribute("data-can-edit", "false");
+    unmount();
+
+    permissionsState.value = ["members:view", "events:update"];
+    const officer = renderLive(withLists);
+    expect(lists()).toHaveAttribute("data-can-edit", "true");
+    officer.unmount();
+
+    // Unanswerable permissions keep the Edit icon, but not these writes.
+    permissionsState.value = undefined;
+    permissionsState.fetchStatus = "paused";
+    renderLive(withLists);
+    expect(lists()).toHaveAttribute("data-can-edit", "false");
   });
 
   it("splits Edit from Delete by their own permissions", () => {
     permissionsState.value = ["members:view", "events:update"];
     renderLive();
 
-    expect(screen.getByRole("button", { name: "Edit event" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit event" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete event" })).toBeNull();
     // The roster is `events:update`'s, not `events:delete`'s.
     expect(screen.getByTestId("attendance-roster")).toBeInTheDocument();
@@ -829,7 +1019,10 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
       { lat: 5, lng: 6 },
     ];
     const { unmount } = renderLive({ ...baseEvent, check_in_zone: zone });
-    expect(screen.getByTestId("my-check-in")).toHaveAttribute("data-zone", "zone");
+    expect(screen.getByTestId("my-check-in")).toHaveAttribute(
+      "data-zone",
+      "zone",
+    );
     unmount();
 
     renderLive({ ...baseEvent, check_in_zone: zone.slice(0, 2) });
@@ -837,5 +1030,136 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
       "data-zone",
       "malformed",
     );
+  });
+});
+
+describe("EventDetailSheet delete (#3667)", () => {
+  // Still ahead, so a series delete would reach it.
+  const upcoming = {
+    ...baseEvent,
+    start_time: "2099-07-01T18:00:00.000Z",
+    end_time: "2099-07-01T19:00:00.000Z",
+  };
+  function renderLive(event: Record<string, unknown>) {
+    permissionsState.value = ["events:delete", "members:view"];
+    deleteMutate.mockReset();
+    deleteMutate.mockResolvedValue(undefined);
+    return render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={event}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+  }
+
+  it("asks which events to delete from a repeating series", async () => {
+    const user = userEvent.setup();
+    renderLive({ ...upcoming, parent_event_id: "h1" });
+    await user.click(screen.getByRole("button", { name: "Delete event" }));
+    expect(screen.getByText("Delete a repeating event")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "All upcoming events" }),
+    );
+    expect(deleteMutate).toHaveBeenCalledWith({ id: "e1", scope: "series" });
+  });
+
+  it("deletes only this one when asked", async () => {
+    const user = userEvent.setup();
+    renderLive({ ...upcoming, recurrence_rule: "WEEKLY" });
+    await user.click(screen.getByRole("button", { name: "Delete event" }));
+    await user.click(screen.getByRole("button", { name: "This event only" }));
+    expect(deleteMutate).toHaveBeenCalledWith({ id: "e1", scope: "instance" });
+  });
+
+  it("doesn't ask for a one-time event", async () => {
+    const user = userEvent.setup();
+    renderLive(upcoming);
+    await user.click(screen.getByRole("button", { name: "Delete event" }));
+    expect(screen.queryByText("Delete a repeating event")).toBeNull();
+    await user.click(
+      within(
+        screen.getByRole("dialog", { name: "Delete Exec Sync?" }),
+      ).getByRole("button", { name: "Delete event" }),
+    );
+    expect(deleteMutate).toHaveBeenCalledWith({ id: "e1", scope: "instance" });
+  });
+});
+
+describe("EventDetailSheet excuses (#3735)", () => {
+  function renderLive(event: Record<string, unknown>) {
+    return render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        event={event}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+  }
+
+  it("hands the member's block whether the event requires them", () => {
+    excuseState.required = true;
+    renderLive(baseEvent);
+    expect(screen.getByTestId("my-excuse")).toHaveAttribute(
+      "data-required",
+      "true",
+    );
+  });
+
+  it("shows the Excuses list to the event's creator, and to no other member", () => {
+    permissionsState.value = ["members:view"];
+    excuseState.viewerId = "u-creator";
+    renderLive({ ...baseEvent, created_by: "u-creator" });
+    expect(screen.getByTestId("excuse-review")).toBeInTheDocument();
+    cleanup();
+    renderLive({ ...baseEvent, created_by: "someone-else" });
+    expect(screen.queryByTestId("excuse-review")).toBeNull();
+  });
+
+  it("shows the Excuses list to an officer who can edit events", () => {
+    permissionsState.value = ["events:update", "members:view"];
+    renderLive({ ...baseEvent, created_by: "someone-else" });
+    expect(screen.getByTestId("excuse-review")).toBeInTheDocument();
+  });
+});
+
+describe("EventDetailSheet Now pill (#5777)", () => {
+  it("says the event is on until its end, and nothing for one long over", () => {
+    const { unmount } = render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{
+          ...baseEvent,
+          start_time: new Date(Date.now() - 40 * 60_000).toISOString(),
+          end_time: new Date(Date.now() + 20 * 60_000).toISOString(),
+        }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("event-now-pill")).toHaveTextContent(
+      /^Now · until /,
+    );
+    unmount();
+
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("event-now-pill")).toBeNull();
   });
 });

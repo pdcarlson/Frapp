@@ -23,7 +23,7 @@
 // API, with a non-force ref update: a branch that moved since it was read
 // refuses it, and nothing is ever rewritten.
 
-import { ghRequest } from "./lib/github.mjs";
+import { ghCaller, ghRequest } from "./lib/github.mjs";
 import {
   REGISTRY_PATH,
   compareRegistries,
@@ -92,17 +92,6 @@ export function planRegistryMerge({ mergeBaseText, headText, baseText }) {
 
 const label = (e) => `${e.platform} ${e.version} (${e.build})`;
 
-/** A `ghRequest` that returns the data or throws naming the call. */
-function caller({ token, fetchImpl }) {
-  return async (method, path, body) => {
-    const res = await ghRequest({ token, fetchImpl, method, path, body, retry: method === "GET" });
-    if (!res.ok) {
-      const detail = typeof res.data === "string" ? res.data : res.data?.message ?? "";
-      throw new Error(`${method} ${path.split("?")[0]} failed (HTTP ${res.status}${detail ? `: ${detail}` : ""})`);
-    }
-    return res.data;
-  };
-}
 
 /**
  * Read a conflicted PR and decide whether its merge with the base is
@@ -117,7 +106,7 @@ export async function planRegistryConflict({ token, repo, pr, baseSha, fetchImpl
   if (pr?.head?.repo?.full_name !== repo || typeof headSha !== "string" || typeof branch !== "string") {
     return { ok: false, reason: "the head branch is not in this repository" };
   }
-  const call = caller({ token, fetchImpl });
+  const call = ghCaller({ token, fetchImpl });
   try {
     const compare = await call("GET", `/repos/${repo}/compare/${baseSha}...${headSha}`);
     const mergeBaseSha = compare?.merge_base_commit?.sha;
@@ -172,8 +161,8 @@ export async function planRegistryConflict({ token, repo, pr, baseSha, fetchImpl
  * @returns {Promise<{ resolved: true, sha: string } | { resolved: false, reason: string }>}
  */
 export async function pushRegistryMerge({ token, pushToken, repo, plan, baseRef, baseSha, fetchImpl = fetch }) {
-  const read = caller({ token, fetchImpl });
-  const write = caller({ token: pushToken, fetchImpl });
+  const read = ghCaller({ token, fetchImpl });
+  const write = ghCaller({ token: pushToken, fetchImpl });
   try {
     const baseCommit = await read("GET", `/repos/${repo}/git/commits/${baseSha}`);
     const tree = await write("POST", `/repos/${repo}/git/trees`, {

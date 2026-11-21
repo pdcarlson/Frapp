@@ -8,31 +8,55 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const TOKEN_EXPIRY_MARGIN_MS = 90_000;
 
 /**
- * A JWT's `exp` and `iat` in epoch milliseconds, read from its payload without
- * verifying it (the API verifies). `null` for anything that isn't a three-part
- * JWT with a numeric `exp`; `issuedAt` is `null` when `iat` is missing.
+ * A JWT's payload, decoded without verifying it (the API verifies). `null` for
+ * anything that isn't a three-part JWT with an object payload.
  */
-export function accessTokenTimes(
+export function accessTokenPayload(
   token: string,
-): { expiresAt: number; issuedAt: number | null } | null {
+): Record<string, unknown> | null {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   try {
     const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
     const payload: unknown = JSON.parse(atob(padded));
-    if (!payload || typeof payload !== "object") return null;
-    const { exp, iat } = payload as { exp?: unknown; iat?: unknown };
-    if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
-    return {
-      expiresAt: exp * 1000,
-      issuedAt:
-        typeof iat === "number" && Number.isFinite(iat) ? iat * 1000 : null,
-    };
+    return payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }
 }
+
+/**
+ * A JWT's `exp` and `iat` in epoch milliseconds. `null` for anything that
+ * isn't a JWT with a numeric `exp`; `issuedAt` is `null` when `iat` is missing.
+ */
+export function accessTokenTimes(
+  token: string,
+): { expiresAt: number; issuedAt: number | null } | null {
+  const payload = accessTokenPayload(token);
+  if (!payload) return null;
+  const { exp, iat } = payload;
+  if (typeof exp !== "number" || !Number.isFinite(exp)) return null;
+  return {
+    expiresAt: exp * 1000,
+    issuedAt:
+      typeof iat === "number" && Number.isFinite(iat) ? iat * 1000 : null,
+  };
+}
+
+/** The reader, plus the one way to make it stop trusting what it learned. */
+export type FreshAuthTokenReader = (() => Promise<string | null>) & {
+  /**
+   * Drop the learned clock offset. The SDK's `onUnauthorized` calls it: a 401
+   * means a token the reader called current wasn't, so the offset is the
+   * first suspect. Without this, an offset learned from a token that only
+   * looked newly issued, or before the OS corrected the device clock, stayed
+   * for the life of the process and kept expired tokens going out.
+   */
+  forgetClockOffset: () => void;
+};
 
 /**
  * The SDK's `getAuthToken` for mobile: the mirrored token, unless it is about
@@ -61,17 +85,19 @@ export function accessTokenTimes(
  * running an hour fast, every new token would look stale and every request
  * would wait on a refresh. So when a refresh hands back a new token, its `iat`
  * (Auth's "now", give or take the round trip) sets the device-to-Auth offset,
- * and later checks use it: skew costs one refresh, not one per request.
+ * and later checks use it: skew costs one refresh, not one per request. A 401
+ * drops what it learned ({@link FreshAuthTokenReader.forgetClockOffset}), so a
+ * wrong offset costs one refused request rather than every one after it.
  */
 export function createFreshAuthTokenReader(deps: {
   readToken: () => Promise<string | null>;
   getSupabase: () => SupabaseClient | null;
   now?: () => number;
-}): () => Promise<string | null> {
+}): FreshAuthTokenReader {
   const now = deps.now ?? Date.now;
   /** Auth's clock minus the device's, learned from the last refresh. */
   let offsetMs = 0;
-  return async () => {
+  const read = async (): Promise<string | null> => {
     const token = await deps.readToken();
     if (!token) return token;
     const times = accessTokenTimes(token);
@@ -89,13 +115,22 @@ export function createFreshAuthTokenReader(deps: {
       // No error and no session is a signed-out client. Send no token rather
       // than one Auth has already let go of.
       const fresh = data.session?.access_token ?? null;
-      // Learn the offset only when the token Auth just handed back still looks
+      // Learn the offset only when Auth just issued a token and it still looks
       // stale: with a right clock a refreshed token has its full lifetime
-      // left, so only skew explains it. An older token returned unrefreshed
-      // never moves the offset.
+      // left, so only skew explains it.
+      //
+      // "Just issued" is load-bearing. When a refresh fails while the stored
+      // token is inside the margin but not yet past `exp`, supabase-js hands
+      // back that same token unrefreshed and reports no error. It looks stale
+      // too, and its `iat` is about an hour old, so learning from it set the
+      // offset to minus an hour: every token after that looked an hour
+      // younger than it was, and expired ones went out unrefreshed. That is
+      // the 401 burst FRAPP-API-E caught again on ios/0.11.0+20, 2026-11-12.
       const freshTimes = fresh ? accessTokenTimes(fresh) : null;
       if (
+        fresh !== token &&
         freshTimes?.issuedAt != null &&
+        freshTimes.issuedAt > (times.issuedAt ?? Number.NEGATIVE_INFINITY) &&
         freshTimes.expiresAt - (now() + offsetMs) <= TOKEN_EXPIRY_MARGIN_MS
       ) {
         offsetMs = freshTimes.issuedAt - now();
@@ -105,4 +140,9 @@ export function createFreshAuthTokenReader(deps: {
       return token;
     }
   };
+  return Object.assign(read, {
+    forgetClockOffset: () => {
+      offsetMs = 0;
+    },
+  });
 }

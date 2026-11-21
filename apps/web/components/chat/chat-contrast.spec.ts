@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { ROLE_COLOR_PALETTE } from "@repo/validation";
 import { applyAlpha } from "@repo/color";
 import {
   AA_NON_TEXT,
   AA_TEXT,
   BODY_TEXT,
+  CARD_HOVER,
   accentFour,
   accentRolesFor,
   DESTRUCTIVE_TEXT,
@@ -99,8 +101,8 @@ describe("chat message rows", () => {
   });
 
   it("keeps the two reading tones at 7:1 on the whole ladder (#3826)", () => {
-    // The owner's "you have to squint" (2026-11-09): body and secondary text
-    // were 6.6-7.9:1 with `--muted-foreground` under 7 on `--popover`. The
+    // The owner's "you have to squint" (2026-11-09): secondary text
+    // (`--muted-foreground`) was 6.6-7.9:1, under 7 on `--popover`. The
     // lifted text ladder (foundations.md §4) holds both over 7 everywhere.
     for (const [name, bg] of Object.entries(SURFACE)) {
       expect(
@@ -112,6 +114,20 @@ describe("chat message rows", () => {
         `--muted-foreground over ${name}`,
       ).toBeGreaterThanOrEqual(BODY_TEXT);
     }
+  });
+
+  it("holds text on --card-hover, the fill above the ladder (#3999)", () => {
+    // No ladder step, so the loop above skips it, but text sits on it: a
+    // hovered or selected row, the segmented control's pick, a menu's open
+    // item. Body text keeps 7:1. Secondary text is held to AA only: on the
+    // 2026-11-12 ladder `--card-hover` rose to #3B3B3B and
+    // `--muted-foreground` measured 6.42:1 there (8.01:1 at the old #2C2C2C); 7.24:1 on the 2026-11-19 #34323A.
+    expect(ratio(TEXT.foreground, CARD_HOVER)).toBeGreaterThanOrEqual(
+      BODY_TEXT,
+    );
+    expect(ratio(TEXT.mutedForeground, CARD_HOVER)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
   });
 
   it("keeps every caption tone over AA on the whole ladder", () => {
@@ -162,6 +178,21 @@ describe("a row that mentions the viewer", () => {
           ratio(MENTION_CHIP.text, bg),
           `${seed} ${state} mention chip`,
         ).toBeGreaterThanOrEqual(AA_TEXT);
+        // The timestamp, and the author's name in their role colour. Both sit
+        // on the tint too, and they are what a lighter tint costs first: the
+        // 2026-11-12 ladder (#3826) tried taking the tint from scale step 5,
+        // which put a green chapter's hovered Violet name at 3.70:1 and the
+        // timestamp at 3.94:1. Step 4 with a 15% hover mix is what holds both.
+        expect(
+          ratio(TEXT.muted, bg),
+          `${seed} ${state} timestamp`,
+        ).toBeGreaterThanOrEqual(AA_TEXT);
+        for (const swatch of ROLE_COLOR_PALETTE) {
+          expect(
+            ratio(swatch.hex, bg),
+            `${seed} ${state} author in ${swatch.label}`,
+          ).toBeGreaterThanOrEqual(AA_TEXT);
+        }
       }
     }
   });
@@ -229,6 +260,20 @@ describe("reaction chips", () => {
       expect(ratio(text, fill), `${seed} reacted chip`).toBeGreaterThanOrEqual(
         AA_TEXT,
       );
+    }
+  });
+
+  it("keeps Frapp's crest in the @ list readable on its tint for every chapter seed", () => {
+    // `mention-list.tsx` draws the crest (`text-primary`) on an
+    // `bg-accent-subtle` disc (#5476). The crest is a glyph, so the floor is
+    // the non-text one; neither the accent engine nor any other spec holds
+    // these two roles to a ratio.
+    for (const seed of SEEDS) {
+      const roles = accentRolesFor(seed);
+      expect(
+        ratio(roles["--primary"]!, roles["--accent-subtle"]!),
+        `${seed} @ list crest`,
+      ).toBeGreaterThanOrEqual(AA_NON_TEXT);
     }
   });
 
@@ -413,13 +458,24 @@ describe("semantic text on its own 13% tint", () => {
 });
 
 describe("the channel rail", () => {
-  it("keeps a read row's title legible against the rail fill", () => {
-    // The read/unread distinction is carried by weight and tone, so the quieter
-    // of the two tones still has to clear AA — otherwise "read" reads as
-    // "disabled".
-    expect(
-      ratio(TEXT.mutedForeground, SURFACE.surface1),
-    ).toBeGreaterThanOrEqual(AA_TEXT);
+  it("keeps the quietest row title legible against the rail fill", () => {
+    // A read row's title is `--muted-foreground` (#4147); the quietest is a
+    // muted row's, in `--muted` (#3999). Both have to clear AA on the row's
+    // rest and hover fills, or "read" and "muted" read as "disabled".
+    for (const [name, bg] of Object.entries({
+      background: SURFACE.background,
+      "surface-1": SURFACE.surface1,
+      card: SURFACE.card,
+    })) {
+      expect(
+        ratio(TEXT.mutedForeground, bg),
+        `read title over ${name}`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+      expect(
+        ratio(TEXT.muted, bg),
+        `muted title over ${name}`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
   });
 
   it("keeps the selected row's accent text AA on its tint, per seed", () => {

@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsISO8601,
@@ -21,11 +22,34 @@ import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   MAX_CHECK_IN_OPENS_MINUTES,
   POINTS_ADJUSTMENT_MAX,
-  RECURRENCE_RULES,
+  LEGACY_CHILD_COUNT,
+  MAX_REPEAT_INTERVAL,
+  MAX_REPEAT_RULE_LENGTH,
+  MAX_SERIES_MEETINGS,
+  EVENT_AGENDA_ITEM_MAX,
+  EVENT_AGENDA_MAX,
+  EVENT_ATTACHMENT_KINDS,
+  EVENT_ATTACHMENT_TITLE_MAX,
+  EVENT_ATTACHMENTS_MAX,
+  TASK_PROOF_LINK_MAX,
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
+  EVENT_NOTES_MAX_LENGTH,
+  tooLongRefusal,
+  type EventAgendaItem,
+  type EventAgendaTabledFrom,
+  type EventAttachment,
 } from '@repo/validation';
+import { IsRepeatRule } from '../decorators/is-repeat-rule.decorator';
 import type { Event } from '#domain/entities/event.entity';
 import type { GeofenceCoordinate } from '#domain/entities/study.entity';
 import { GeofenceCoordinateDto } from './study.dto';
+import type { AssertNever } from './drift-guard';
+import {
+  EVENT_ROLE_ID_MAX_LENGTH,
+  EVENT_ROLE_IDS_MAX,
+} from '#domain/constants/field-limits';
 
 /**
  * Swagger/validation description shared by the create and update zone fields.
@@ -35,20 +59,150 @@ import { GeofenceCoordinateDto } from './study.dto';
 const CHECK_IN_ZONE_DESCRIPTION =
   'Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.';
 
-export class CreateEventDto {
-  @ApiProperty()
+/**
+ * Swagger description shared by the create and update rule fields. The format
+ * is owned by `packages/validation/src/recurrence.ts`.
+ */
+const RECURRENCE_RULE_DESCRIPTION =
+  `Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of ${LEGACY_CHILD_COUNT.WEEKLY}, ${LEGACY_CHILD_COUNT.BIWEEKLY} or ${LEGACY_CHILD_COUNT.MONTHLY} meetings after the first, still accepted from older phone builds) ` +
+  'or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: ' +
+  `FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-${MAX_REPEAT_INTERVAL}, ` +
+  'BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), ' +
+  `exactly one of COUNT (2-${MAX_SERIES_MEETINGS} meetings, the first included) or UNTIL (YYYYMMDD, inclusive), ` +
+  'and TZID (the zone whose wall clock the series keeps).';
+
+/**
+ * Where a tabled agenda item came from (#5534). Set only by the API, when a
+ * suggested tabled item is added; a save keeps the stored value by the
+ * item's id and ignores what is sent, so a client may send the item back
+ * as it read it.
+ */
+export class EventAgendaTabledFromDto implements EventAgendaTabledFrom {
+  @ApiProperty({
+    description: 'The posted minutes that first tabled this matter.',
+  })
   @IsString()
-  @MaxLength(255)
+  @MaxLength(64)
+  meeting_id: string;
+
+  @ApiProperty({ description: 'That meeting’s start (ISO 8601).' })
+  @IsString()
+  @MaxLength(64)
+  start_time: string;
+
+  @ApiProperty({
+    minimum: 1,
+    description: 'How many meetings have tabled it so far.',
+  })
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  times: number;
+}
+
+/** One agenda item (#4934, `spec/behavior/events.md` § Agenda and attachments). */
+export class EventAgendaItemDto implements EventAgendaItem {
+  @ApiProperty({
+    maxLength: 64,
+    description:
+      "The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event.",
+  })
+  @IsString()
+  @MaxLength(64)
+  id: string;
+
+  @ApiProperty({ maxLength: EVENT_AGENDA_ITEM_MAX })
+  @IsString()
+  @MaxLength(EVENT_AGENDA_ITEM_MAX)
+  text: string;
+
+  @ApiProperty({ description: 'Checked off during the meeting.' })
+  @IsStrictBoolean()
+  done: boolean;
+
+  @ApiPropertyOptional({
+    type: EventAgendaTabledFromDto,
+    nullable: true,
+    description:
+      'Set on an item added from an earlier meeting’s Tabled list (#5534): the agenda shows "Tabled from {day}". Read-only: a save keeps the stored value for the same item id and ignores this field.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EventAgendaTabledFromDto)
+  tabled_from?: EventAgendaTabledFromDto | null;
+}
+
+/**
+ * One attachment (#4934): a titled link, or one of the chapter's Chapter
+ * Files documents. A flat shape rather than a `oneOf`, so the SDK type stays
+ * one object; `kind` says which of `url` and `document_id` it carries.
+ */
+export class EventAttachmentDto {
+  @ApiProperty({
+    maxLength: 64,
+    description: "The client's id for the attachment. Unique within the event.",
+  })
+  @IsString()
+  @MaxLength(64)
+  id: string;
+
+  @ApiProperty({ enum: EVENT_ATTACHMENT_KINDS })
+  @IsIn([...EVENT_ATTACHMENT_KINDS])
+  kind: EventAttachment['kind'];
+
+  @ApiPropertyOptional({
+    maxLength: TASK_PROOF_LINK_MAX,
+    description: "A `link` attachment's address: http or https only.",
+  })
+  @ValidateIf((o: EventAttachmentDto) => o.kind === 'link')
+  @IsString()
+  @MaxLength(TASK_PROOF_LINK_MAX)
+  url?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400.",
+  })
+  @ValidateIf((o: EventAttachmentDto) => o.kind === 'document')
+  @IsUUID()
+  document_id?: string;
+
+  @ApiProperty({
+    maxLength: EVENT_ATTACHMENT_TITLE_MAX,
+    description:
+      'What the list shows. For a document, its name when it was attached.',
+  })
+  @IsString()
+  @MaxLength(EVENT_ATTACHMENT_TITLE_MAX)
+  title: string;
+}
+
+const AGENDA_DESCRIPTION = `This meeting's agenda, in order: at most ${EVENT_AGENDA_MAX} short items. Sent whole; it replaces the stored list, and \`[]\` clears it (null is refused). Belongs to this one meeting: with \`scope: 'series'\` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.`;
+const ATTACHMENTS_DESCRIPTION = `This meeting's attachments, in order: at most ${EVENT_ATTACHMENTS_MAX} titled links or Chapter Files documents. Sent whole; it replaces the stored list, and \`[]\` clears it. Per meeting, like \`agenda\`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.`;
+
+export class CreateEventDto {
+  @ApiProperty({ maxLength: EVENT_NAME_MAX_LENGTH })
+  @IsString()
+  @MaxLength(EVENT_NAME_MAX_LENGTH, {
+    message: tooLongRefusal("the event's name", EVENT_NAME_MAX_LENGTH),
+  })
   name: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_DESCRIPTION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_DESCRIPTION_MAX_LENGTH, {
+    message: tooLongRefusal('the description', EVENT_DESCRIPTION_MAX_LENGTH),
+  })
   description?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_LOCATION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_LOCATION_MAX_LENGTH, {
+    message: tooLongRefusal('the location', EVENT_LOCATION_MAX_LENGTH),
+  })
   location?: string;
 
   @ApiProperty()
@@ -59,7 +213,11 @@ export class CreateEventDto {
   @IsISO8601()
   end_time: string;
 
-  @ApiPropertyOptional({ default: 10 })
+  @ApiPropertyOptional({
+    default: 10,
+    description:
+      "Points for attending. On create, kept only when the caller holds `events:update`; anyone else's event is stored with 0, whatever is sent (#3709).",
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -68,50 +226,65 @@ export class CreateEventDto {
   @Max(POINTS_ADJUSTMENT_MAX)
   point_value?: number;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      "Whether everyone the event invites must attend. On create, kept only when the caller holds `events:update`; anyone else's event is stored as optional, with each role in `required_role_ids` moved to `optional_role_ids` (#3709).",
+  })
   @IsOptional()
   @IsStrictBoolean()
   is_mandatory?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)',
+    description: RECURRENCE_RULE_DESCRIPTION,
+    maxLength: MAX_REPEAT_RULE_LENGTH,
   })
   @IsOptional()
   @IsString()
-  // Only the three rules the generator understands. Anything else was accepted
-  // and then silently generated nothing; on a series edit that meant deleting
-  // the future occurrences and rebuilding none of them. `null` still clears a
+  @MaxLength(MAX_REPEAT_RULE_LENGTH)
+  // Only rules the generator can step. Anything else was once accepted and
+  // then silently generated nothing; on a series edit that meant deleting the
+  // future occurrences and rebuilding none of them. `null` still clears a
   // series (@IsOptional short-circuits this).
-  @IsIn(RECURRENCE_RULES)
+  @IsRepeatRule()
   recurrence_rule?: string;
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles that must attend. See `others_invited` for members holding none of the listed roles.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   required_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description: 'Roles invited but not required.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   optional_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   excluded_role_ids?: string[];
 
   @ApiPropertyOptional({
@@ -122,10 +295,39 @@ export class CreateEventDto {
   @IsStrictBoolean()
   others_invited?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_NOTES_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_NOTES_MAX_LENGTH, {
+    message: tooLongRefusal('the notes', EVENT_NOTES_MAX_LENGTH),
+  })
   notes?: string;
+
+  @ApiPropertyOptional({
+    type: [EventAgendaItemDto],
+    description: AGENDA_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_AGENDA_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAgendaItemDto)
+  agenda?: EventAgendaItemDto[];
+
+  @ApiPropertyOptional({
+    type: [EventAttachmentDto],
+    description: ATTACHMENTS_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_ATTACHMENTS_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAttachmentDto)
+  attachments?: EventAttachmentDto[];
 
   @ApiPropertyOptional({
     type: [GeofenceCoordinateDto],
@@ -193,21 +395,17 @@ export class CreateEventDto {
 }
 
 /**
- * Response contract for `POST /v1/events`.
+ * The event row as the API serves it: the shared body of the create, list and
+ * read responses.
  *
- * This route previously declared no response schema, which openapi-typescript
- * renders as `content?: never` — so `data` reached the SDK typed `never` and
- * `/event` could not read `card_posted` without an unchecked cast (#1717). The
- * event fields are flattened at the top level exactly as the route already
- * returned them: the **parent** row. Recurring children are side effects of
- * create and are not in this body; do not invent an `occurrences[]` field.
- *
- * Drift between this class and the event row is caught the same way as
- * `AdjustPointsResponseDto`: `implements Event` for type drift, and the
- * `Assert<Exclude<…>>` aliases below for key drift. `card_posted` is the one
- * deliberate extra field.
+ * These routes once declared no response schema, which openapi-typescript
+ * renders as `content?: never` (or no content at all), so callers cast the
+ * fields they read (#1717, #4867). Drift between this class and the event row
+ * is caught the same way as `AdjustPointsResponseDto`: `implements Event` for
+ * type drift, and the `AssertNever<Exclude<…>>` aliases at the end of this file for
+ * key drift.
  */
-export class CreateEventResponseDto implements Event {
+export class EventResponseDto implements Event {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
@@ -261,6 +459,15 @@ export class CreateEventResponseDto implements Event {
   @ApiProperty({ type: String, nullable: true })
   notes: string | null;
 
+  @ApiProperty({ type: [EventAgendaItemDto], description: AGENDA_DESCRIPTION })
+  agenda: EventAgendaItem[];
+
+  @ApiProperty({
+    type: [EventAttachmentDto],
+    description: ATTACHMENTS_DESCRIPTION,
+  })
+  attachments: EventAttachment[];
+
   @ApiProperty({
     type: [GeofenceCoordinateDto],
     nullable: true,
@@ -299,12 +506,32 @@ export class CreateEventResponseDto implements Event {
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+}
 
+/**
+ * Response contract for `POST /v1/events`: the **parent** row, flattened at the
+ * top level exactly as the route returns it. Recurring children are side
+ * effects of create and are not in this body; do not invent an
+ * `occurrences[]` field. `card_posted` is the one deliberate extra field.
+ */
+export class CreateEventResponseDto extends EventResponseDto {
   @ApiPropertyOptional({
     description:
       'Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch.',
   })
   card_posted?: boolean;
+}
+
+/**
+ * Response contract for `GET /v1/events/:id`: the row plus whether check-in
+ * now needs the officer's code (#4808).
+ */
+export class EventDetailResponseDto extends EventResponseDto {
+  @ApiProperty({
+    description:
+      "Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority.",
+  })
+  check_in_needs_code: boolean;
 }
 
 /**
@@ -319,20 +546,28 @@ const EVENT_SCOPE_DESCRIPTION =
   'Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.';
 
 export class UpdateEventDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_NAME_MAX_LENGTH })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLength(EVENT_NAME_MAX_LENGTH, {
+    message: tooLongRefusal("the event's name", EVENT_NAME_MAX_LENGTH),
+  })
   name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_DESCRIPTION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_DESCRIPTION_MAX_LENGTH, {
+    message: tooLongRefusal('the description', EVENT_DESCRIPTION_MAX_LENGTH),
+  })
   description?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_LOCATION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_LOCATION_MAX_LENGTH, {
+    message: tooLongRefusal('the location', EVENT_LOCATION_MAX_LENGTH),
+  })
   location?: string;
 
   @ApiPropertyOptional()
@@ -360,44 +595,55 @@ export class UpdateEventDto {
   is_mandatory?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)',
+    description: RECURRENCE_RULE_DESCRIPTION,
+    maxLength: MAX_REPEAT_RULE_LENGTH,
   })
   @IsOptional()
   @IsString()
-  // Only the three rules the generator understands. Anything else was accepted
-  // and then silently generated nothing; on a series edit that meant deleting
-  // the future occurrences and rebuilding none of them. `null` still clears a
+  @MaxLength(MAX_REPEAT_RULE_LENGTH)
+  // Only rules the generator can step. Anything else was once accepted and
+  // then silently generated nothing; on a series edit that meant deleting the
+  // future occurrences and rebuilding none of them. `null` still clears a
   // series (@IsOptional short-circuits this).
-  @IsIn(RECURRENCE_RULES)
+  @IsRepeatRule()
   recurrence_rule?: string;
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles that must attend. See `others_invited` for members holding none of the listed roles.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   required_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description: 'Roles invited but not required.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   optional_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   excluded_role_ids?: string[];
 
   @ApiPropertyOptional({
@@ -408,10 +654,39 @@ export class UpdateEventDto {
   @IsStrictBoolean()
   others_invited?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_NOTES_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_NOTES_MAX_LENGTH, {
+    message: tooLongRefusal('the notes', EVENT_NOTES_MAX_LENGTH),
+  })
   notes?: string;
+
+  @ApiPropertyOptional({
+    type: [EventAgendaItemDto],
+    description: `${AGENDA_DESCRIPTION} Once the meeting has started only check-offs (\`done\`) change: adding, removing, moving or rewording an item is a 409 \`event.agenda_locked\`.`,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_AGENDA_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAgendaItemDto)
+  agenda?: EventAgendaItemDto[];
+
+  @ApiPropertyOptional({
+    type: [EventAttachmentDto],
+    description: ATTACHMENTS_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_ATTACHMENTS_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAttachmentDto)
+  attachments?: EventAttachmentDto[];
 
   @ApiPropertyOptional({
     type: [GeofenceCoordinateDto],
@@ -489,23 +764,25 @@ export class DeleteEventQueryDto {
 }
 
 /**
- * Compile-time key-drift guards between {@link CreateEventResponseDto} and the
+ * Compile-time key-drift guards between {@link EventResponseDto} and the
  * event row it publishes. Each resolves to `never` while the two agree; when
- * they diverge the alias stops satisfying `Assert`'s constraint and the build
+ * they diverge the alias stops satisfying `AssertNever`'s constraint and the build
  * fails naming the field.
  */
-type Assert<T extends never> = T;
-
-/** Event fields {@link CreateEventResponseDto} forgot to declare. Must be `never`. */
-export type CreateEventResponseDtoMissingFields = Assert<
-  Exclude<keyof Event, keyof CreateEventResponseDto>
+/**
+ * Event fields {@link EventResponseDto} forgot to declare. Must be `never`.
+ * @driftguard
+ */
+export type EventResponseDtoMissingFields = AssertNever<
+  Exclude<keyof Event, keyof EventResponseDto>
 >;
 
 /**
- * Fields {@link CreateEventResponseDto} declares that the event row does not
- * carry. Must be `never`. `card_posted` is excluded because it is this route's
- * own outcome flag, not a column — the one deliberate addition.
+ * Fields {@link EventResponseDto} declares that the event row does not carry.
+ * Must be `never`. Route-specific additions (`card_posted`,
+ * `check_in_needs_code`) live on the subclasses, not here.
+ * @driftguard
  */
-export type CreateEventResponseDtoExtraFields = Assert<
-  Exclude<keyof CreateEventResponseDto, keyof Event | 'card_posted'>
+export type EventResponseDtoExtraFields = AssertNever<
+  Exclude<keyof EventResponseDto, keyof Event>
 >;

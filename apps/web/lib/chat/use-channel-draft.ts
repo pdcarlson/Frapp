@@ -110,7 +110,8 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
    * The restore below has to settle two texts against each other from inside a
    * promise, and a promise created in an effect closes over the render that
    * created it. It must emphatically **not** read the shell's last keystroke:
-   * by the time Dexie answers, the editor has mounted and the member may have
+   * by the time Dexie answers, the editor (or, while its code loads, the
+   * controlled stand-in shell, #5050) has mounted and the member may have
    * kept typing into it for a hundred milliseconds, and settling against the
    * older value would throw all of that away and move their caret.
    */
@@ -254,6 +255,9 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
     becomes `draft` on the very render that supplies the channel id — which is
     the render that mounts `<Composer>`. That is the whole shell-to-editor
     handoff: no seed prop, and nothing to correct after the editor is built.
+    While the editor's code loads, `<Composer>` draws a second `ComposerShell`
+    (#5050) controlled by this same `draft`: it shows the settle below when
+    Dexie answers, and it reports only keystrokes, never its own value.
   */
   const draft = channelId ? draftState : "";
 
@@ -299,43 +303,45 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
           // worth an error report.
         });
       }, SAVE_DEBOUNCE_MS);
-
     },
     [channelId, scope, cancelPendingSave],
   );
 
-  const clearAfterSend = useCallback(async (sent: string) => {
-    // Bumped either way: a restore still in flight would put back a draft
-    // from before this send, over whatever the composer shows now.
-    restoreEpoch.current += 1;
-    typedBeforeChannel.current = false;
-    const current = latest.current.trim();
-    // Typed since Send was pressed: that text is the next message, and its
-    // own debounced save owns the Dexie row now (chat-core cleared the old
-    // one before the POST), so neither memory nor the table is touched.
-    if (current && current !== sent.trim()) return;
-    latest.current = "";
-    setDraftState("");
-    if (!channelId) return;
-    if (!scope) {
-      /*
+  const clearAfterSend = useCallback(
+    async (sent: string) => {
+      // Bumped either way: a restore still in flight would put back a draft
+      // from before this send, over whatever the composer shows now.
+      restoreEpoch.current += 1;
+      typedBeforeChannel.current = false;
+      const current = latest.current.trim();
+      // Typed since Send was pressed: that text is the next message, and its
+      // own debounced save owns the Dexie row now (chat-core cleared the old
+      // one before the POST), so neither memory nor the table is touched.
+      if (current && current !== sent.trim()) return;
+      latest.current = "";
+      setDraftState("");
+      if (!channelId) return;
+      if (!scope) {
+        /*
         Sent before the scope resolved, so there is no key to delete under yet.
         Record it rather than dropping it: without this the row stays on disk
         and the member meets a draft they already sent, restored over an empty
         composer the next time they open the channel. The effect above drains
         this the moment a scope arrives.
       */
-      pendingClears.current.add(channelId);
-      return;
-    }
-    // Same Dexie drafts table `sendMessage` already cleared best-effort. A
-    // second fault must not reject a send that already posted (#1718).
-    try {
-      await clearDraft(scope, channelId);
-    } catch {
-      // Best-effort — in-flight saveDraft races are why this call exists.
-    }
-  }, [channelId, scope]);
+        pendingClears.current.add(channelId);
+        return;
+      }
+      // Same Dexie drafts table `sendMessage` already cleared best-effort. A
+      // second fault must not reject a send that already posted (#1718).
+      try {
+        await clearDraft(scope, channelId);
+      } catch {
+        // Best-effort — in-flight saveDraft races are why this call exists.
+      }
+    },
+    [channelId, scope],
+  );
 
   return { draft, setDraft, cancelPendingSave, clearAfterSend };
 }

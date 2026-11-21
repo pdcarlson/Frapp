@@ -1,0 +1,406 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  Logger,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiProduces,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Response } from 'express';
+import {
+  ASK_STREAM_CONTENT_TYPE,
+  ASK_STREAM_KEEPALIVE,
+  ASK_STREAM_VERSION,
+  FALLBACK_TIME_ZONE,
+  encodeAskStreamEvent,
+  isSupportedTimeZone,
+} from '@repo/validation';
+import { LanguageModelError } from '#domain/adapters/language-model.interface';
+import { SystemPermissions } from '#domain/constants/permissions';
+import { TIME_ZONE_HEADER } from '#domain/constants/time-zone-header';
+import { AskDiagnosticsService } from '../../application/services/ask/ask-diagnostics.service';
+import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
+import { AskDictationService } from '../../application/services/ask/ask-dictation.service';
+import { AskSuggestionsService } from '../../application/services/ask/ask-suggestions.service';
+import { AskService } from '../../application/services/ask/ask.service';
+import { AnalyticsService } from '../../application/services/analytics.service';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import {
+  CurrentChapterId,
+  CurrentEnabledModules,
+  CurrentMember,
+  CurrentUser,
+} from '../decorators/current-user.decorator';
+import { RequirePermissions } from '../decorators/permissions.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
+import { ActResponseDto } from '../dtos/act.dto';
+import {
+  AskDiagnosticsDto,
+  AskDictationRequestDto,
+  AskDictationResponseDto,
+  AskRequestDto,
+  AskStatusDto,
+  AskSuggestionsDto,
+} from '../dtos/ask.dto';
+import { AiEnabledGuard } from '../guards/ai-enabled.guard';
+import { ChapterGuard } from '../guards/chapter.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
+import { requestApp, requestAppVersion } from '../http/request-app';
+import type {
+  MemberContext,
+  RequestContext,
+} from '../types/request-context.types';
+
+const AI_OFF = {
+  description: 'AI is off on this server (`ai.not_available`).',
+};
+const KEEPALIVE_MS = 15_000;
+
+/**
+ * The PostHog event one question sends (#4713,
+ * `spec/behavior/observability.md` § AI question events): which door it came
+ * through and whether it followed an earlier turn, never a word of it.
+ */
+export const ASK_QUESTION_EVENT = 'ai-question-asked';
+
+/**
+ * Ask Frapp (#450, `spec/behavior/ai.md`): a member's question, answered
+ * from their chapter's sources, streamed. For a client that shows proposal
+ * cards (`actions`), words that ask for something to be done end in a card
+ * to confirm instead (`AskConversationService`); the route still changes
+ * nothing.
+ *
+ * `AiEnabledGuard` first, so a server with `AI_ENABLED` off answers 404
+ * `ai.not_available` on every route here. Then the member, their chapter and
+ * `ai:use`. The chapter's Ask switch and the member's answer on the AI sheet
+ * are checked before the stream opens and again by the gateway before every
+ * model call.
+ */
+@ApiTags('AI')
+@ApiBearerAuth()
+@UseGuards(AiEnabledGuard, SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.AI_USE)
+@Controller('ai/ask')
+export class AskController {
+  private readonly logger = new Logger(AskController.name);
+
+  constructor(
+    private readonly askService: AskService,
+    private readonly conversation: AskConversationService,
+    private readonly diagnostics: AskDiagnosticsService,
+    private readonly suggestions: AskSuggestionsService,
+    private readonly analytics: AnalyticsService,
+    private readonly dictation: AskDictationService,
+  ) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'What Ask needs to know before the first question',
+    description:
+      'Whether questions and answers are being kept by the beta diagnostics window, which a client must show before it sends a question.',
+  })
+  @ApiOkResponse({ type: AskStatusDto })
+  @ApiNotFoundResponse(AI_OFF)
+  async status(
+    @CurrentChapterId() chapterId: string,
+    @CurrentMember() member: MemberContext,
+  ): Promise<AskStatusDto> {
+    const diagnostics = await this.diagnostics.view(
+      chapterId,
+      member.role_ids,
+      new Date(),
+    );
+    return { saved_until: diagnostics.ends_at, diagnostics };
+  }
+
+  @Get('suggestions')
+  @ApiOperation({
+    summary: 'What Ask opens with for this member',
+    description:
+      'Up to three questions and one request, each built from a record the caller’s own account holds right now (their next event, their open tasks, what they owe, minutes they can read, their points). No model is called, and the chapter’s Ask switch and the AI sheet are not checked: nothing here leaves the server. Each question is one Ask could answer for this caller. Empty when there is nothing to ask about.',
+  })
+  @ApiOkResponse({ type: AskSuggestionsDto })
+  @ApiNotFoundResponse(AI_OFF)
+  async openingSuggestions(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentMember() member: MemberContext,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Headers(TIME_ZONE_HEADER) timeZoneHeader: string | undefined,
+  ): Promise<AskSuggestionsDto> {
+    return {
+      suggestions: await this.suggestions.suggest({
+        chapterId,
+        userId,
+        roleIds: member.role_ids,
+        enabledModules,
+        timeZone: isSupportedTimeZone(timeZoneHeader)
+          ? timeZoneHeader
+          : FALLBACK_TIME_ZONE,
+      }),
+    };
+  }
+
+  @Post()
+  @HttpCode(200)
+  @ThrottleFanOutWrite()
+  @ApiOperation({
+    summary: 'Ask a question; the answer is streamed',
+    description: `The response is Server-Sent Events. Each \`data:\` line is one JSON event of the Ask stream format, version ${ASK_STREAM_VERSION}, defined in \`@repo/validation\` (\`AskStreamEventSchema\`): \`start\`, \`status\`, \`step\` (how each read ended, from a server that answers through the tool loop), \`text\` deltas, then one \`done\` carrying the checked answer with its citations and sources, or \`error\`. Text deltas are a preview; the answer is what \`done\` carries. A request sent with \`actions\` can end with one \`proposal\` instead of \`done\`, carrying the answer \`POST /v1/ai/act\` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.`,
+  })
+  @ApiProduces(ASK_STREAM_CONTENT_TYPE)
+  @ApiOkResponse({
+    description: 'The event stream.',
+    content: { [ASK_STREAM_CONTENT_TYPE]: { schema: { type: 'string' } } },
+  })
+  @ApiForbiddenResponse({
+    description:
+      'The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`).',
+  })
+  @ApiNotFoundResponse(AI_OFF)
+  async ask(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Headers(TIME_ZONE_HEADER) timeZoneHeader: string | undefined,
+    @Body() dto: AskRequestDto,
+    @Res() response: Response,
+    @Req() request: Pick<RequestContext, 'headers'>,
+  ): Promise<void> {
+    // Before any header is sent, so these arrive as ordinary errors.
+    await this.askService.assertMayAsk(chapterId, userId);
+
+    // A question the member was allowed to ask, counted by its door. Not a
+    // feature event: Ask belongs to no module. Never awaited and never in
+    // the answer's way.
+    this.analytics
+      .track(ASK_QUESTION_EVENT, userId, {
+        chapterId,
+        properties: {
+          door: dto.door ?? 'ask',
+          is_follow_up: (dto.history?.length ?? 0) > 0,
+        },
+        app: requestApp(request),
+        appVersion: requestAppVersion(request),
+      })
+      .catch(() => undefined);
+
+    const abort = new AbortController();
+    // `close` also fires after a normal end; aborting then does nothing.
+    response.on('close', () => abort.abort());
+    // A member who left while the guards and the consent read ran: `close`
+    // has already fired and will not fire again, so nothing would stop the
+    // work or its spend.
+    if (response.destroyed) return;
+    response.status(200).set({
+      'Content-Type': `${ASK_STREAM_CONTENT_TYPE}; charset=utf-8`,
+      'Cache-Control': 'no-cache, no-transform',
+      // Tells a buffering proxy to pass each event through as it is written.
+      'X-Accel-Buffering': 'no',
+    });
+    response.flushHeaders();
+    const keepalive = setInterval(() => {
+      response.write(ASK_STREAM_KEEPALIVE);
+    }, KEEPALIVE_MS);
+
+    try {
+      for await (const event of this.conversation.converse({
+        chapterId,
+        userId,
+        question: dto.question,
+        ...(dto.history === undefined ? {} : { history: dto.history }),
+        actions: dto.actions === true,
+        answerCards: dto.answer_cards === true,
+        ...(dto.from ? { from: dto.from } : {}),
+        ...(dto.effort === undefined ? {} : { effort: dto.effort }),
+        ...(dto.door === undefined ? {} : { door: dto.door }),
+        enabledModules,
+        timeZone: isSupportedTimeZone(timeZoneHeader)
+          ? timeZoneHeader
+          : FALLBACK_TIME_ZONE,
+        // The notice is shown in Ask's own field and nowhere in a channel,
+        // so a question from a channel is never kept in the diagnostics
+        // window, whatever the request says: a channel's turn asked again
+        // from the Ask card would otherwise carry the card's flag (#4713).
+        savedNoticeShown:
+          dto.saved_notice_shown === true && dto.door !== 'chat_private',
+        signal: abort.signal,
+      })) {
+        if (abort.signal.aborted) break;
+        response.write(
+          encodeAskStreamEvent(
+            event.type === 'act'
+              ? {
+                  v: ASK_STREAM_VERSION,
+                  type: 'proposal',
+                  // The same answer `POST /v1/ai/act` gives, so a card is
+                  // one shape wherever it came from.
+                  act: { ...ActResponseDto.from(event.outcome) },
+                }
+              : event,
+          ),
+        );
+      }
+    } catch (error) {
+      // The member closed the panel or went offline: nobody to tell.
+      if (!abort.signal.aborted) {
+        const retryable =
+          error instanceof LanguageModelError ? error.retryable : true;
+        // The provider saying it is overloaded is its weather, not our bug:
+        // the member is offered Try again (`retryable` below), and it goes at
+        // `warning` under a site of its own, so it stays out of the API
+        // error-spike monitor (which counts `error` only) and can't take the
+        // throttle slot of a real failure here. A timeout, a dropped
+        // connection or a rate limit can be ours (egress, a timeout set too
+        // short, our own tier), and like anything else stays `error`.
+        const providerOverloaded =
+          error instanceof LanguageModelError && error.kind === 'overloaded';
+        reportCaughtFailure(this.logger, {
+          level: providerOverloaded ? 'warning' : 'error',
+          site: providerOverloaded
+            ? 'ask-stream-provider-overloaded'
+            : 'ask-stream',
+          message: 'Ask: the answer failed after the stream began',
+          // A `LanguageModelError` carries no provider text; anything else
+          // here is a database or programming error, which carries none of
+          // the question or the answer either.
+          error,
+        });
+        response.write(
+          encodeAskStreamEvent({
+            v: ASK_STREAM_VERSION,
+            type: 'error',
+            code: 'ai.ask.failed',
+            retryable,
+          }),
+        );
+      }
+    } finally {
+      clearInterval(keepalive);
+      response.end();
+    }
+  }
+
+  @Post('dictation')
+  @HttpCode(200)
+  @ThrottleFanOutWrite()
+  @ApiOperation({
+    summary: 'Tidy up words dictated into Ask',
+    description:
+      'The words the phone’s own speech recogniser heard, tidied for the member to read, edit and send themselves (#5276, `spec/behavior/ai.md` § Ask Frapp, Dictation): filler words and false starts out, only the last version of a self-correction kept, punctuation and capitalisation in, times and counts as digits. Never answered, and no fact, name or meaning changed. The words go to Frapp AI’s model provider to be tidied; nothing is stored or logged, and nothing is posted or sent as a question. A provider refusal, a reply the model got wrong, a provider failure, a spend cap, or a cleanup that comes back empty or much longer than what was said all answer 200 with the words as sent, trimmed, so nothing the member said is lost.',
+  })
+  @ApiOkResponse({ type: AskDictationResponseDto })
+  @ApiForbiddenResponse({
+    description:
+      'The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). The phone keeps the recogniser’s words.',
+  })
+  @ApiNotFoundResponse(AI_OFF)
+  async cleanDictation(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: AskDictationRequestDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<AskDictationResponseDto> {
+    // The member left Ask: stop the model call and its spend. `close` also
+    // fires after a normal end, when aborting does nothing.
+    const abort = new AbortController();
+    response.on('close', () => abort.abort());
+    if (response.destroyed) abort.abort();
+    return {
+      text: await this.dictation.clean({
+        chapterId,
+        userId,
+        text: dto.text,
+        signal: abort.signal,
+      }),
+    };
+  }
+
+  @Post('diagnostics')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Turn on the beta diagnostics window (president only)',
+    description:
+      'The president’s yes: for 14 days from now, questions asked in Ask and their answers are kept, encrypted, for the Frapp team. Offered to one chapter only. The end date is fixed; the window turns itself off and deletes what it kept. Recorded in the audit log.',
+  })
+  @ApiOkResponse({ type: AskDiagnosticsDto })
+  @ApiForbiddenResponse({
+    description:
+      'The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`).',
+  })
+  @ApiConflictResponse({
+    description: 'A window is already on (`ai.ask.diagnostics.already_on`).',
+  })
+  @ApiNotFoundResponse({
+    description:
+      'AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`).',
+  })
+  startDiagnostics(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentMember() member: MemberContext,
+  ): Promise<AskDiagnosticsDto> {
+    return this.diagnostics.start(
+      chapterId,
+      { userId, roleIds: member.role_ids },
+      new Date(),
+    );
+  }
+}
+
+/**
+ * Turning the Ask diagnostics window off (#4315). Its own controller, without
+ * `AiEnabledGuard`, so a president can end a window and delete what it kept
+ * even after `AI_ENABLED` goes off (#4504); otherwise only the 14-day sweep,
+ * which runs either way, would end it. Nor does it need `ai:use`: the service
+ * lets only the chapter's president stop a window, and it starts nothing.
+ */
+@ApiTags('AI')
+@ApiBearerAuth()
+@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@Controller('ai/ask')
+export class AskDiagnosticsStopController {
+  constructor(private readonly diagnostics: AskDiagnosticsService) {}
+
+  @Delete('diagnostics')
+  @ApiOperation({
+    summary: 'Turn off the beta diagnostics window (president only)',
+    description:
+      'Ends the window now and deletes everything it kept. Recorded in the audit log.',
+  })
+  @ApiOkResponse({ type: AskDiagnosticsDto })
+  @ApiForbiddenResponse({
+    description:
+      'The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`).',
+  })
+  @ApiNotFoundResponse({
+    description:
+      'No window is open and none is offered to this chapter (`ai.ask.diagnostics.not_offered`). Answers the same whether or not AI is on.',
+  })
+  stopDiagnostics(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentMember() member: MemberContext,
+  ): Promise<AskDiagnosticsDto> {
+    return this.diagnostics.stop(chapterId, {
+      userId,
+      roleIds: member.role_ids,
+    });
+  }
+}

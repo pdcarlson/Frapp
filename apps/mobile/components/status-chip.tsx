@@ -8,7 +8,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * "status color @ 13% alpha / no border / status color / Paid / Overdue /
  * status only — never decorative."
  *
- * Extracted on its third copy. The More hub's "Past due Sep 15" chip and the
+ * Extracted on its third copy. The You tab's "Past due Sep 15" chip and the
  * dues balance card's "Past due Sep 15" chip are the same claim about the same
  * invoice, and the copies had already drifted — one produced its height from a
  * fixed `height: 24`, the other from vertical padding, so they rendered at
@@ -29,13 +29,16 @@ export function StatusChip({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  // §5: only danger needs its text lifted for AA on its own tint (3.82:1 to
-  // 4.85:1 solid, 5.07:1 up lifted), the same tone web's danger Badge draws.
-  // The tint keeps the solid hue.
+  // §5: danger and info need their text lifted for AA on their own tint, the
+  // same tones web's Badge draws (info since the 2026-11-12 surface ladder,
+  // #3826, put solid info at 3.46:1 on its tint over a card). The tint keeps
+  // the solid hue.
   const text =
     hue === tokens.color.semantic.destructive
       ? tokens.color.semantic.destructiveText
-      : hue;
+      : hue === tokens.color.semantic.info
+        ? tokens.color.semantic.infoText
+        : hue;
 
   return (
     <View style={[styles.chip, { backgroundColor: tint(hue) }]}>
@@ -54,9 +57,8 @@ export function StatusChip({
  * that prop is the point of it: a status is never the chapter accent. s06 and
  * s07 used to hand-roll this chip as a hairline-bordered muted one, which §5
  * reserves for "quiet metadata that must not read as a status", so the one
- * badge the spec gives the accent was the one not wearing it. The chat cards'
- * `PointsChip` (`components/chat/chat-card.tsx`) still draws that hairline
- * chip; moving it is tracked with the chat cards' own work.
+ * badge the spec gives the accent was the one not wearing it. That hairline
+ * chip is now {@link HairlineChip}, for the metadata §5 does give it.
  */
 export function AccentChip({ label }: { label: string }) {
   const { tokens } = useFrappTheme();
@@ -72,6 +74,35 @@ export function AccentChip({ label }: { label: string }) {
       ]}
     >
       <Text style={[styles.text, { color: accent }]}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * §5's Hairline kind — no fill, 1px `border.hairline`, `text.mutedForeground`
+ * text — for quiet metadata that must not read as a status: the Events list's
+ * Mandatory (#4132, as web's `<Badge variant="outline">` since #3822: a red
+ * pill on every row of a chapter whose meetings are all required drowned the
+ * list), on the Events list, Event detail and the chat event card; the chat
+ * cards' "+N pts" (`PointsChip`); and the Activity outline badges ("To do",
+ * "Required", "Closed"). Same
+ * geometry as {@link StatusChip}, so it sits beside the others at one height.
+ */
+export function HairlineChip({ label }: { label: string }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
+  return (
+    <View
+      style={[
+        styles.chip,
+        styles.bordered,
+        { borderColor: tokens.color.border.hairline },
+      ]}
+    >
+      <Text style={[styles.text, { color: tokens.color.text.mutedForeground }]}>
+        {label}
+      </Text>
     </View>
   );
 }

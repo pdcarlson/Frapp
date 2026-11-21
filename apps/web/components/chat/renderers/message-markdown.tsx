@@ -1,7 +1,13 @@
 "use client";
 
-import { createContext, memo, useContext, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import {
+  createContext,
+  memo,
+  useContext,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
+import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { isSafeHref } from "@repo/chat-core/links";
 import {
@@ -28,8 +34,11 @@ import { cn } from "@/lib/utils";
  * `content`: the renderers between the row and this body need not thread it.
  */
 export const MentionOpenerContext = createContext<
-  ((token: string) => (() => void) | null) | null
+  ((token: string) => MentionOpener | null) | null
 >(null);
+
+/** Opens the chip's member; the chip comes along so a popout can sit by it. */
+export type MentionOpener = (event: MouseEvent<HTMLElement>) => void;
 
 /**
  * One chip: the `<mark>` the plugin built, which paints it. A chip that opens
@@ -76,7 +85,22 @@ function chipToken(props: Record<string, unknown>): string | null {
 
 /** The formatting set plus the mention chip (`MESSAGE_RENDER_ELEMENTS`). */
 const ALLOWED_ELEMENTS = MESSAGE_RENDER_ELEMENTS;
-const ALLOWED: ReadonlySet<string> = new Set(ALLOWED_ELEMENTS);
+
+type RemarkPlugin = NonNullable<Options["remarkPlugins"]>[number];
+
+/**
+ * What a surface that draws something other than a message adds to the
+ * pipeline: Ask's answer (#5429, `@repo/chat-core/ask-markdown`). Its passes
+ * run right after the depth cap, before `remark-breaks`; its elements join
+ * the allowlist and its components the map. It draws its own names, so a body
+ * drawn with extras gets no mention chips. Mobile's `parseMessageMarkdown`
+ * takes the same. Pass a stable object: the body is memoized on its props.
+ */
+export interface MessageMarkdownExtras {
+  remarkPlugins: readonly RemarkPlugin[];
+  allowedElements: readonly string[];
+  components: Components;
+}
 
 /**
  * The body's line structure, shared with mobile (`markdown-flow.ts` in
@@ -92,10 +116,16 @@ const ALLOWED: ReadonlySet<string> = new Set(ALLOWED_ELEMENTS);
  * under it (`components.md` §11 § What rides the row). With no markers after
  * it, a closing newline draws no extra line.
  */
-function rehypeMessageFlow({ source }: { source: string }) {
+function rehypeMessageFlow({
+  source,
+  allowed,
+}: {
+  source: string;
+  allowed: ReadonlySet<string>;
+}) {
   return (root: HastNode): void => {
     const { children, endsOnOwnLine } = layOutMessageBody(root.children ?? [], {
-      allowed: ALLOWED,
+      allowed,
       source,
     });
     if (endsOnOwnLine && children.length > 0) {
@@ -124,15 +154,18 @@ function rehypeMessageFlow({ source }: { source: string }) {
 export const MessageMarkdown = memo(function MessageMarkdown({
   content,
   chips,
+  extras,
 }: {
   content: string;
   /** Which `@`-tokens really pinged someone (`useMentionChips`); all when left out. */
   chips?: (token: string) => boolean;
+  extras?: MessageMarkdownExtras;
 }) {
   // Decided from the source, before remark sees it: a body remark would take
   // seconds to parse renders as its raw text instead. See `skipsMarkdownParse`
   // (#2209, #2664).
   const flatten = skipsMarkdownParse(content);
+  const allowed = extras?.allowedElements ?? ALLOWED_ELEMENTS;
   return (
     <ReactMarkdown
       // The depth cap goes first: every pass after it recurses once per
@@ -142,18 +175,32 @@ export const MessageMarkdown = memo(function MessageMarkdown({
       // The mention plugin needs the RAW body, not the decoded text remark
       // hands it — `&#64;Jane` is a mention to the renderer and to nobody
       // else. See `markdown-mentions.ts` in `@repo/chat-core`.
-      remarkPlugins={[
-        [remarkDepthCap, { content, flatten }],
-        remarkBreaks,
-        [
-          remarkMentionChips,
-          { content, chips, properties: { className: MENTION_CHIP } },
-        ],
-      ]}
+      remarkPlugins={
+        extras
+          ? [
+              [remarkDepthCap, { content, flatten }],
+              // Before `remark-breaks`, while every text node has its position.
+              ...extras.remarkPlugins,
+              remarkBreaks,
+            ]
+          : [
+              [remarkDepthCap, { content, flatten }],
+              remarkBreaks,
+              [
+                remarkMentionChips,
+                { content, chips, properties: { className: MENTION_CHIP } },
+              ],
+            ]
+      }
       // Last, so it lays out the tree that renders.
       // `source` is the string remark parses, which the positions index into.
-      rehypePlugins={[[rehypeMessageFlow, { source: flatten ? "" : content }]]}
-      allowedElements={ALLOWED_ELEMENTS}
+      rehypePlugins={[
+        [
+          rehypeMessageFlow,
+          { source: flatten ? "" : content, allowed: new Set(allowed) },
+        ],
+      ]}
+      allowedElements={allowed}
       unwrapDisallowed
       components={{
         p: ({ children }) => <p className="m-0 inline">{children}</p>,
@@ -208,6 +255,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         // inline and block cases share one visual language; `pre` would only
         // double the padding/background around it.
         pre: ({ children }) => <>{children}</>,
+        ...extras?.components,
       }}
     >
       {flatten ? "" : content}

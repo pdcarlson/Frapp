@@ -4,20 +4,33 @@ import {
   Text,
   View,
 } from "react-native";
-import Svg, { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import { MemberAvatar } from "@/components/member-avatar";
 import type { MemberAvatarTint } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
+import { type FocusReturn, focusReturnOf } from "@/lib/overlay";
+import {
+  AuditGlyph,
+  LockGlyph,
+  MuteGlyph,
+} from "@/components/chat/card-glyphs";
+import { CheckAllGlyph, CheckGlyph } from "@/components/control-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { SkeletonBlock, SkeletonRegion } from "@/components/state-block";
+import { type ChannelMark } from "@repo/hooks/channel-start";
 import {
   HIDE_CONVERSATION_LABEL,
   countsAddressMember,
+  countsLookUnread,
   PIN_TO_TOP_LABEL,
   UNPIN_FROM_TOP_LABEL,
 } from "@repo/hooks";
+import {
+  CONVERSATION_READ_STATUS_LABEL,
+  type ConversationReadStatus,
+} from "@repo/chat-core/channel-preview";
 
 /**
  * One row of the s04 channel list.
@@ -47,6 +60,10 @@ import {
  * `text.disabled`).
  * Chat home's rows are one line (no preview, no time, owner 2026-11-07); the
  * preview line is for the Messages list, where a DM's last line is the point.
+ * A Messages row also carries the last message's time at the end of its name
+ * line and, on the member's own last message, a sent or read check before
+ * the line, with the badge at the line's end (#5519, Paul, 2026-11-18), as
+ * WhatsApp lays out its inbox.
  *
  * The row itself never takes a fill at rest. It used to lift every unread row onto
  * `surface1`, which on a busy chapter striped the list in card-coloured bars
@@ -61,12 +78,18 @@ import {
  */
 
 /** A DM row's avatar diameter. */
-const DIRECT_AVATAR_SIZE = 34;
+export const DIRECT_AVATAR_SIZE = 34;
 
 export interface ChannelRowProps {
   name: string;
   /** DM/group rows draw an avatar; channel rows draw a `#` sigil. */
   isDirect?: boolean;
+  /**
+   * A channel row's mark (`channelMarkFor` in `@repo/hooks/channel-start`):
+   * `#`, a lock for a private or role-gated channel (#4134), or the audit
+   * shield. Unset, a channel row draws `#`. DM rows ignore it.
+   */
+  mark?: ChannelMark;
   /**
    * A one-to-one DM's other member's photo, drawn over the initials. `null`
    * (a group DM, or no photo) keeps the initials.
@@ -93,8 +116,21 @@ export interface ChannelRowProps {
    */
   preview?: string | null;
   /**
+   * When the last message was sent (`formatConversationTime`), at the end of
+   * the name line on a Messages row (#5519). Leave it out for a one-line row.
+   */
+  time?: string | null;
+  /** The same instant written out in full, for the row's spoken label. */
+  timeLabel?: string | null;
+  /**
+   * The check before the member's own last line (#5519): one for sent, two
+   * in the chapter accent for read (`conversationReadStatus`). Null or absent
+   * draws none.
+   */
+  readStatus?: ConversationReadStatus | null;
+  /**
    * The member muted this channel. The row stays where it is, drawn quiet: a
-   * read row's title whatever its count, and a crossed-out bell after the
+   * read row's title whatever its count, and a crossed-out speaker after the
    * name, so a busy muted channel doesn't shout from the top of the list.
    */
   isMuted?: boolean;
@@ -118,13 +154,17 @@ export interface ChannelRowProps {
    * (`ChannelActionsMenu`) beside the press. Without it a long press falls
    * back to `onHide`, as before #2877. Also a named accessibility action,
    * "Channel actions", since a long press is not discoverable by a screen
-   * reader; that one has no press point, so its event is `undefined`.
+   * reader; that one has no press point, so its event is `undefined`, and
+   * `trigger` names the row, for the menu to hand focus back to on close.
    */
-  onLongPress?: (event: GestureResponderEvent | undefined) => void;
+  onLongPress?: (
+    event: GestureResponderEvent | undefined,
+    trigger?: FocusReturn | null,
+  ) => void;
 }
 
 /** The menu action's `name`; its spoken label is "Channel actions". */
-export const ACTIONS_ACTION = "actions";
+const ACTIONS_ACTION = "actions";
 
 /** The accessibility action's `name`; its spoken label is `HIDE_CONVERSATION_LABEL`. */
 export const HIDE_ACTION = "hide";
@@ -145,10 +185,14 @@ export function badgeLabel(unreadCount: number, mentionCount: number): string {
 export function ChannelRow({
   name,
   isDirect = false,
+  mark = "hash",
   avatarUrl = null,
   avatarTint = null,
   isPinned = false,
   preview,
+  time = null,
+  timeLabel = null,
+  readStatus = null,
   isMuted = false,
   unreadCount,
   mentionCount,
@@ -159,6 +203,7 @@ export function ChannelRow({
 }: ChannelRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const brand = useChapterBranding();
   // Red means "you were addressed": an @-mention, or anything unread in a
   // direct message (foundations.md §5). The DM half was missing here until
   // #2877, so an unread DM drew a neutral badge while web drew it red; the
@@ -168,12 +213,14 @@ export function ChannelRow({
     unreadCount,
     mentionCount,
   });
-  // A mention always implies an unread row even if the counts ever disagree —
-  // a red badge over a read-styled row would be a contradiction on screen.
-  const isUnread = unreadCount > 0 || hasMention;
   // Muted rows read as read unless they address the member: a mention gets
-  // past a mute, as it does for push.
-  const looksUnread = isUnread && (!isMuted || hasMention);
+  // past a mute, as it does for push. The same rule decides what a folded
+  // section header counts and what Unread only keeps (#3999).
+  const looksUnread = countsLookUnread(
+    isDirect,
+    { unreadCount, mentionCount },
+    isMuted,
+  );
 
   return (
     <PressableRow
@@ -181,10 +228,17 @@ export function ChannelRow({
       accessibilityLabel={accessibilityLabelFor({
         name,
         isDirect,
+        restriction: isDirect
+          ? null
+          : mark === "private" || mark === "role-gated"
+            ? mark
+            : null,
         unreadCount,
         mentionCount,
         isMuted,
         preview,
+        readStatus,
+        timeLabel: timeLabel ?? time,
       })}
       onPress={onPress}
       onLongPress={onLongPress ?? onHide}
@@ -212,7 +266,9 @@ export function ChannelRow({
         onLongPress || onTogglePin || onHide
           ? (event) => {
               const action = event.nativeEvent.actionName;
-              if (action === ACTIONS_ACTION) onLongPress?.(undefined);
+              if (action === ACTIONS_ACTION) {
+                onLongPress?.(undefined, focusReturnOf(event));
+              }
               if (action === PIN_ACTION) onTogglePin?.();
               if (action === HIDE_ACTION) onHide?.();
             }
@@ -220,9 +276,7 @@ export function ChannelRow({
       }
       style={[styles.row, preview == null ? styles.rowOneLine : null]}
     >
-      {looksUnread ? (
-        <View testID="channel-row-unread-pip" style={styles.unreadPip} />
-      ) : null}
+      {looksUnread ? <UnreadPip testID="channel-row-unread-pip" /> : null}
       {isDirect ? (
         <MemberAvatar
           uri={avatarUrl}
@@ -232,7 +286,7 @@ export function ChannelRow({
           style={styles.avatar}
           textStyle={styles.avatarText}
         />
-      ) : (
+      ) : mark === "hash" ? (
         <Text
           style={[
             styles.sigil,
@@ -245,6 +299,19 @@ export function ChannelRow({
         >
           #
         </Text>
+      ) : (
+        <SigilGlyph
+          mark={mark === "audit" ? "audit" : "lock"}
+          // The sigil's own three states: read, unread, muted.
+          color={
+            looksUnread
+              ? tokens.color.text.foreground
+              : isMuted
+                ? tokens.color.text.disabled
+                : tokens.color.text.muted
+          }
+          size={tokens.typography.role.title.size}
+        />
       )}
 
       <View style={styles.body}>
@@ -262,45 +329,138 @@ export function ChannelRow({
           >
             {name}
           </Text>
-          {isMuted ? <MutedGlyph color={tokens.color.text.muted} /> : null}
+          {isMuted ? <MutedMark color={tokens.color.text.muted} /> : null}
+          {time ? (
+            <Text
+              numberOfLines={1}
+              style={looksUnread ? styles.timeUnread : styles.timeRead}
+            >
+              {time}
+            </Text>
+          ) : null}
         </View>
         {preview != null ? (
-          <Text
-            numberOfLines={1}
-            style={looksUnread ? styles.previewUnread : styles.previewRead}
-          >
-            {/* A space, not "", so a pending line keeps its height. */}
-            {preview || " "}
-          </Text>
+          <View style={styles.previewLine}>
+            {readStatus ? (
+              <ReadStatusMark
+                status={readStatus}
+                color={
+                  readStatus === "read" ? brand.accent : tokens.color.text.muted
+                }
+              />
+            ) : null}
+            <Text
+              numberOfLines={1}
+              style={[
+                looksUnread ? styles.previewUnread : styles.previewRead,
+                styles.previewText,
+              ]}
+            >
+              {/* A space, not "", so a pending line keeps its height. */}
+              {preview || " "}
+            </Text>
+            {/* On a two-line row the badge ends the last line, under the
+                time, as WhatsApp's does (#5519). */}
+            {hasMention ? (
+              <View style={styles.badgeSlot}>
+                <UnreadBadge
+                  unreadCount={unreadCount}
+                  mentionCount={mentionCount}
+                />
+              </View>
+            ) : null}
+          </View>
         ) : null}
       </View>
 
-      <View style={styles.trailing}>
-        {/* A number only when it addresses the member, as Discord does: a
-            merely unread channel says so with its bold name (2026-11-07). */}
-        {hasMention ? (
-          <UnreadBadge unreadCount={unreadCount} mentionCount={mentionCount} />
-        ) : null}
-      </View>
+      {preview == null ? (
+        <View style={styles.trailing}>
+          {/* A number only when it addresses the member, as Discord does: a
+              merely unread channel says so with its bold name (2026-11-07). */}
+          {hasMention ? (
+            <UnreadBadge
+              unreadCount={unreadCount}
+              mentionCount={mentionCount}
+            />
+          ) : null}
+        </View>
+      ) : null}
     </PressableRow>
   );
 }
 
 /**
- * A bell with a slash, after a muted row's name. Decorative: the row's label
- * says "muted".
+ * Discord's unread pip on a row's leading edge, in the bleed before its mark.
+ * Shared with the thread rows under a channel (`channel-thread-rows.tsx`).
  */
-function MutedGlyph({ color }: { color: string }) {
+export function UnreadPip({ testID }: { testID?: string }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return <View testID={testID} style={styles.unreadPip} />;
+}
+
+/**
+ * One check for sent, two for read (#5519), at 14 before the last line: the
+ * shapes web draws (Lucide's `Check` and `CheckCheck`). Decorative: the row's
+ * label says "Sent" or "Read".
+ */
+function ReadStatusMark({
+  status,
+  color,
+}: {
+  status: ConversationReadStatus;
+  color: string;
+}) {
+  const Glyph = status === "read" ? CheckAllGlyph : CheckGlyph;
   return (
-    <Svg width={14} height={14} viewBox="0 0 24 24" accessible={false}>
-      <Path
-        d="M6 10a6 6 0 0 1 10.4-4.1M18 10c0 4 1.6 5.6 2.2 6.4.2.3 0 .6-.3.6H8M9.5 20a2.6 2.6 0 0 0 5 0M4 4l16 16"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        fill="none"
-      />
-    </Svg>
+    <View
+      testID={`channel-row-${status}`}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <Glyph color={color} size={14} />
+    </View>
+  );
+}
+
+/**
+ * The lock or audit shield in the `#`'s slot and colour, at the sigil's size
+ * (the title role's 18). Decorative: the row's label says "private channel".
+ */
+function SigilGlyph({
+  mark,
+  color,
+  size,
+}: {
+  mark: "lock" | "audit";
+  color: string;
+  size: number;
+}) {
+  const Glyph = mark === "lock" ? LockGlyph : AuditGlyph;
+  return (
+    <View
+      testID={`channel-row-${mark}`}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <Glyph focused={false} accent={color} muted={color} size={size} />
+    </View>
+  );
+}
+
+/**
+ * The crossed-out speaker (`MuteGlyph`, web's row's mark) after a muted row's
+ * name, at 14 in the muted text hue. Decorative: the row's label says "muted".
+ */
+function MutedMark({ color }: { color: string }) {
+  return (
+    <View
+      testID="channel-row-muted"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <MuteGlyph active focused accent={color} muted={color} size={14} />
+    </View>
   );
 }
 
@@ -344,7 +504,7 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    <SkeletonRegion label="Loading channels" style={styles.skeletonList}>
+    <SkeletonRegion label="Loading channels" style={styles.skeletonList} flush>
       <View style={styles.skeletonCaption}>
         <SkeletonBlock
           width={tokens.spacing["3xl"]}
@@ -374,20 +534,35 @@ export function ChannelListSkeleton({ rows = 5 }: { rows?: number }) {
 export function accessibilityLabelFor({
   name,
   isDirect,
+  restriction = null,
   unreadCount,
   mentionCount,
   isMuted = false,
   preview,
+  readStatus = null,
+  timeLabel = null,
 }: {
   name: string;
   isDirect: boolean;
+  /**
+   * A locked row (#4134): a `PRIVATE` channel is said to be private; a
+   * `ROLE_GATED` one is limited to some roles, which may be every member's,
+   * so it is not called private (`channelStartCopy`).
+   */
+  restriction?: "private" | "role-gated" | null;
   unreadCount: number;
   mentionCount: number;
   isMuted?: boolean;
   preview?: string | null;
+  /** The member's own last message: sent or read (#5519). */
+  readStatus?: ConversationReadStatus | null;
+  /** When the last message was sent, said after everything else. */
+  timeLabel?: string | null;
 }): string {
   const subject = isDirect ? name : `#${name}`;
   const parts: string[] = [subject];
+  if (restriction === "private") parts.push("private channel");
+  if (restriction === "role-gated") parts.push("limited to some roles");
   if (isMuted) parts.push("muted");
   if (mentionCount > 0) {
     parts.push(
@@ -397,9 +572,37 @@ export function accessibilityLabelFor({
   if (unreadCount > 0) {
     parts.push(`${unreadCount} unread`);
   }
-  // The preview last, after the counts a member listens for first.
+  // The preview after the counts a member listens for first, then whether
+  // the other side has read it, then when (#5519).
   if (preview) parts.push(preview);
+  if (readStatus) parts.push(CONVERSATION_READ_STATUS_LABEL[readStatus]);
+  if (timeLabel) parts.push(timeLabel);
   return parts.join(", ");
+}
+
+/**
+ * A row title's three states, shared with the thread rows under a channel
+ * (`channel-thread-rows.tsx`): unread is white at 700, read is grey at 400
+ * (2026-11-08), muted is the muted hue.
+ */
+export function channelTitleStyles(tokens: SignetTokens) {
+  return {
+    titleUnread: {
+      ...typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.foreground,
+    },
+    titleRead: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+    },
+    titleMuted: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.muted,
+    },
+  };
 }
 
 function createStyles(tokens: SignetTokens) {
@@ -437,8 +640,14 @@ function createStyles(tokens: SignetTokens) {
       height: tokens.typography.role.body.lineHeight,
       justifyContent: "center",
     },
+    // One slot for every mark, the glyphs' width, so a locked row's name
+    // lines up with a `#` row's, as web's rail sets both in one 16px slot.
+    // The `#` stays at the slot's start, on the gutter line. A minimum, not
+    // a width: the `#` scales with the system text size and the glyphs
+    // don't, so at a large setting it grows past the slot rather than clip.
     sigil: {
       ...typeRole(tokens.typography.role.title),
+      minWidth: tokens.typography.role.title.size,
       color: tokens.color.text.muted,
     },
     sigilUnread: {
@@ -484,22 +693,7 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       gap: 2,
     },
-    // Unread is white at 700, read is grey at 400 (2026-11-08).
-    titleUnread: {
-      ...typeRole({
-        ...tokens.typography.role.body,
-        weight: tokens.typography.weight.bold,
-      }),
-      color: tokens.color.text.foreground,
-    },
-    titleRead: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
-    titleMuted: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.muted,
-    },
+    ...channelTitleStyles(tokens),
     previewUnread: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
@@ -507,6 +701,33 @@ function createStyles(tokens: SignetTokens) {
     previewRead: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+    },
+    previewLine: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+    },
+    previewText: {
+      flex: 1,
+    },
+    // No height of its own, so the 24pt badge sits centred on the caption
+    // line without making a row taller when a message arrives (pending and
+    // live states never shift layout).
+    badgeSlot: {
+      height: 0,
+      justifyContent: "center",
+      overflow: "visible",
+    },
+    // The time keeps the preview's caption step and its read/unread hues.
+    timeRead: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      marginLeft: "auto",
+    },
+    timeUnread: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      marginLeft: "auto",
     },
     trailing: {
       alignItems: "flex-end",

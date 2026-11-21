@@ -16,4 +16,8 @@ regexes = [
   # dummy Stripe PaymentIntent client_secret fixture used in API specs
   # (matches the exact fake value only, never real pi_..._secret_... material).
   '''pi_123_secret_abc''',
+  # the made-up calendar link token in an early commit of #4586's OpenAPI
+  # example (CalendarFeedLinkDto), never a real link; the example now reads
+  # `token=your-private-token` (exact value only).
+  '''3q2-7wLx9Vb0mH1e8nYkC4oPq5rS6tU7vW8xY9zA0bC''',
 ]

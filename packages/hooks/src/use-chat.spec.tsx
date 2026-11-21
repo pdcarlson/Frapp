@@ -1,53 +1,40 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import {
+  CHANNEL_LATEST_MESSAGES_KEY,
+  CHANNEL_LIST_KEY,
+  CHANNEL_UNREAD_COUNTS_KEY,
   useChannelUnreadCounts,
   useMarkChannelRead,
+  useMarkMessageUnread,
   markChannelReadMutationKey,
   useLeaveChannel,
   useSetChannelDisplayLock,
   canSetChannelDisplayLock,
   useAuthorAvatars,
+  useMessageAttachments,
   useChannelNotificationPreferences,
   useSetChannelNotificationLevel,
   useUploadSignedUrl,
+  useForwardMessage,
   channelSetFingerprint,
   CHANNEL_NOTIFICATION_PREFERENCES_KEY,
+  useCreateChannel,
+  useUpdateChannel,
+  useDeleteChannel,
 } from "./use-chat";
-import { FrappClientProvider } from "./use-frapp-client";
-import React from "react";
-
-function createTestQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-      mutations: {
-        retry: false,
-      },
-    },
-  });
-}
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 function createWrapper(queryClient: QueryClient, mockClient: unknown) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      // A member in a chapter: the channel reads wait for one (#4094,
-      // `chapter-scope.spec.tsx` covers the no-chapter path).
-      chapterId="chapter-1"
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    // A member in a chapter: the channel reads wait for one (#4094,
+    // `chapter-scope.spec.tsx` covers the no-chapter path).
+    chapterId: "chapter-1",
+    displayName: "Wrapper",
+  });
 }
 
 describe("useChannelUnreadCounts", () => {
@@ -71,7 +58,9 @@ describe("useChannelUnreadCounts", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockGet).toHaveBeenCalledWith("/v1/channels/unread");
+    expect(mockGet).toHaveBeenCalledWith("/v1/channels/unread", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data).toEqual(rows);
   });
 
@@ -102,6 +91,43 @@ describe("useChannelUnreadCounts", () => {
   });
 });
 
+describe("useMarkMessageUnread (#3723)", () => {
+  it("waits for a read stamp in flight, then moves the cursor and refreshes the badges", async () => {
+    const queryClient = createTestQueryClient();
+    const order: string[] = [];
+    let finishRead!: () => void;
+    const mockPost = vi.fn((path: string) => {
+      order.push(path);
+      if (path === "/v1/channels/{id}/read") {
+        return new Promise((resolve) => {
+          finishRead = () =>
+            resolve({ data: {}, response: { ok: true, status: 200 } });
+        });
+      }
+      return Promise.resolve({ data: {}, response: { ok: true, status: 201 } });
+    });
+    const wrapper = createWrapper(queryClient, { POST: mockPost });
+    const read = renderHook(() => useMarkChannelRead(), { wrapper });
+    const unread = renderHook(() => useMarkMessageUnread(), { wrapper });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    read.result.current.mutate("chan-1");
+    await waitFor(() => expect(order).toEqual(["/v1/channels/{id}/read"]));
+    unread.result.current.mutate("msg-1");
+    // Still holding: the stamp hasn't landed.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(order).toEqual(["/v1/channels/{id}/read"]);
+
+    finishRead();
+    await waitFor(() => expect(unread.result.current.isSuccess).toBe(true));
+    expect(mockPost).toHaveBeenLastCalledWith(
+      "/v1/channels/messages/{messageId}/unread",
+      { params: { path: { messageId: "msg-1" } } },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
+  });
+});
+
 describe("useMarkChannelRead", () => {
   let queryClient: QueryClient;
 
@@ -109,14 +135,26 @@ describe("useMarkChannelRead", () => {
     queryClient = createTestQueryClient();
   });
 
-  it("posts to the channel's read endpoint and invalidates channel queries", async () => {
+  it("posts to the channel's read endpoint and re-reads the summaries and channel metadata, not the per-message reads", async () => {
     const mockPost = vi.fn().mockResolvedValue({
       data: { success: true },
       error: undefined,
       response: { ok: true, status: 200 },
     });
     const mockClient = { POST: mockPost };
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    // Everything that lives under the `["channels"]` prefix on an open chat.
+    const keys = {
+      unread: CHANNEL_UNREAD_COUNTS_KEY,
+      latest: CHANNEL_LATEST_MESSAGES_KEY,
+      list: CHANNEL_LIST_KEY,
+      categories: ["channels", "categories"],
+      detail: ["channels", "chan-1"],
+      otherDetail: ["channels", "chan-2"],
+      pins: ["channels", "chan-1", "pins"],
+      avatars: ["channels", "chan-1", "avatars", "x"],
+      attachments: ["channels", "chan-1", "messages", "m-1", "attachments"],
+    } as const;
+    for (const key of Object.values(keys)) queryClient.setQueryData(key, []);
 
     const { result } = renderHook(() => useMarkChannelRead(), {
       wrapper: createWrapper(queryClient, mockClient),
@@ -129,15 +167,36 @@ describe("useMarkChannelRead", () => {
     expect(mockPost).toHaveBeenCalledWith("/v1/channels/{id}/read", {
       params: { path: { id: "chan-1" } },
     });
-    // Badges come from the ["channels", "unread"] key; invalidating the
-    // broader ["channels"] key is what makes a mark-read clear them via
-    // React Query's prefix matching, without a second, narrower invalidation
-    // that could drift out of sync with the unread query's own key.
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
+    // The summaries and the channel metadata are re-read: opening a channel
+    // is when the rail catches up with other members' channel changes. The
+    // per-message reads under the prefix are not: refetching them on every
+    // open (a signed URL re-minted per attachment) was part of the open
+    // burst (#4709).
+    const invalidated = Object.fromEntries(
+      Object.entries(keys).map(([name, key]) => [
+        name,
+        queryClient.getQueryState(key)?.isInvalidated,
+      ]),
+    );
+    expect(invalidated).toEqual({
+      unread: true,
+      latest: true,
+      list: true,
+      categories: true,
+      detail: true,
+      otherDetail: false,
+      pins: false,
+      avatars: false,
+      attachments: false,
+    });
   });
 
   it("surfaces an error without invalidating anything", async () => {
-    const body = { statusCode: 403, error: "Forbidden", message: "Not a member" };
+    const body = {
+      statusCode: 403,
+      error: "Forbidden",
+      message: "Not a member",
+    };
     const mockPost = vi.fn().mockResolvedValue({
       data: undefined,
       error: body,
@@ -160,7 +219,9 @@ describe("useMarkChannelRead", () => {
 
   it("clears the channel's cached chat notifications and refetches the inbox only when it showed one (#3788)", async () => {
     // Seeded entries no component observes need a gc window to survive.
-    queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } });
+    queryClient.setDefaultOptions({
+      queries: { retry: false, gcTime: Infinity },
+    });
     const mockPost = vi.fn().mockResolvedValue({
       data: { success: true },
       error: undefined,
@@ -168,7 +229,11 @@ describe("useMarkChannelRead", () => {
     });
     const listKey = ["notifications", "chapter-1", undefined];
     queryClient.setQueryData(listKey, [
-      { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "chan-1" } } },
+      {
+        id: "n-1",
+        read_at: null,
+        data: { target: { screen: "chat", channelId: "chan-1" } },
+      },
     ]);
     // Shares the `notifications` prefix, but a read can't change it.
     const prefsKey = ["notifications", "preferences", "chapter-1"];
@@ -191,12 +256,16 @@ describe("useMarkChannelRead", () => {
 
     invalidateSpy.mockClear();
     result.current.mutate("chan-1");
-    // The second success is the one that just invalidated `["channels"]`.
+    // The second success is the one that just invalidated the unread counts.
     await waitFor(() =>
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] }),
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["channels", "latest"],
+        exact: true,
+      }),
     );
-    // Nothing left to clear: one invalidation (channels), no list refetch.
-    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    // Nothing left to clear: the read's own five keys (summaries, list,
+    // categories, detail), no notification-list refetch.
+    expect(invalidateSpy).toHaveBeenCalledTimes(5);
     expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
   });
 
@@ -244,9 +313,10 @@ describe("useMarkChannelRead", () => {
 describe("useSetChannelDisplayLock (#3787)", () => {
   it("puts the lock and refetches the channel list", async () => {
     const queryClient = createTestQueryClient();
-    const mockPut = vi
-      .fn()
-      .mockResolvedValue({ data: { id: "c-1", display_locked: true }, error: null });
+    const mockPut = vi.fn().mockResolvedValue({
+      data: { id: "c-1", display_locked: true },
+      error: null,
+    });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useSetChannelDisplayLock(), {
       wrapper: createWrapper(queryClient, { PUT: mockPut }),
@@ -267,12 +337,16 @@ describe("canSetChannelDisplayLock (#3787)", () => {
 
   it("lets the creator and a channels:manage holder set it", () => {
     expect(canSetChannelDisplayLock(channel, "u-creator", [])).toBe(true);
-    expect(canSetChannelDisplayLock(channel, "u-x", ["channels:manage"])).toBe(true);
+    expect(canSetChannelDisplayLock(channel, "u-x", ["channels:manage"])).toBe(
+      true,
+    );
     expect(canSetChannelDisplayLock(channel, "u-x", ["*"])).toBe(true);
   });
 
   it("refuses anyone else, a channel with no creator, and every DM", () => {
-    expect(canSetChannelDisplayLock(channel, "u-x", ["members:view"])).toBe(false);
+    expect(canSetChannelDisplayLock(channel, "u-x", ["members:view"])).toBe(
+      false,
+    );
     expect(
       canSetChannelDisplayLock({ type: "PUBLIC", created_by: null }, null, []),
     ).toBe(false);
@@ -332,13 +406,19 @@ describe("useLeaveChannel", () => {
   });
 
   it("refetches the inbox when it shows an unread chat row for the hidden DM (#3788)", async () => {
-    queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } });
+    queryClient.setDefaultOptions({
+      queries: { retry: false, gcTime: Infinity },
+    });
     const mockPost = vi
       .fn()
       .mockResolvedValue({ data: { success: true }, error: null });
     const listKey = ["notifications", "chapter-1", undefined];
     const rows = [
-      { id: "n-1", read_at: null, data: { target: { screen: "chat", channelId: "dm-1" } } },
+      {
+        id: "n-1",
+        read_at: null,
+        data: { target: { screen: "chat", channelId: "dm-1" } },
+      },
     ];
     queryClient.setQueryData(listKey, rows);
     const { result } = renderHook(() => useLeaveChannel(), {
@@ -354,7 +434,9 @@ describe("useLeaveChannel", () => {
 
   it("surfaces an error without invalidating anything", async () => {
     const mockError = new Error("leave failed");
-    const mockPost = vi.fn().mockResolvedValue({ data: null, error: mockError });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: mockError });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => useLeaveChannel(), {
@@ -366,6 +448,177 @@ describe("useLeaveChannel", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toEqual(mockError);
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("useMessageAttachments", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  const file = (id: string, messageId: string) => ({
+    id,
+    message_id: messageId,
+    filename: "photo.jpg",
+    content_type: "image/jpeg",
+    byte_size: 1,
+    width: null,
+    height: null,
+    download_url: `https://signed/${id}`,
+  });
+
+  it("sends one request for every row that mounts together (#5667)", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: { "m-1": [file("a-1", "m-1")], "m-2": [file("a-2", "m-2")] },
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => [
+        useMessageAttachments("chan-1", "m-1", true),
+        useMessageAttachments("chan-1", "m-2", true),
+        useMessageAttachments("chan-1", "m-3", true),
+      ],
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
+    );
+
+    await waitFor(() =>
+      expect(result.current.every((q) => q.isSuccess)).toBe(true),
+    );
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(mockGet).toHaveBeenCalledWith(
+      "/v1/channels/{id}/messages/attachments",
+      {
+        params: {
+          path: { id: "chan-1" },
+          query: { message_ids: "m-1,m-2,m-3" },
+        },
+      },
+    );
+    expect(result.current[0]!.data?.map((a) => a.id)).toEqual(["a-1"]);
+    expect(result.current[1]!.data?.map((a) => a.id)).toEqual(["a-2"]);
+    // A message the server answered with nothing reads as no files, not loading.
+    expect(result.current[2]!.data).toEqual([]);
+    // Each message keeps its own cache entry, so the image viewer still joins it.
+    expect(
+      queryClient.getQueryData([
+        "channels",
+        "chan-1",
+        "messages",
+        "m-2",
+        "attachments",
+      ]),
+    ).toEqual([file("a-2", "m-2")]);
+  });
+
+  it("splits a long list at the server's cap of 50 ids", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const ids = Array.from(
+      { length: 60 },
+      (_, i) => `m-${String(i).padStart(2, "0")}`,
+    );
+
+    const { result } = renderHook(
+      () => ids.map((id) => useMessageAttachments("chan-1", id, true)),
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
+    );
+
+    await waitFor(() =>
+      expect(result.current.every((q) => q.isSuccess)).toBe(true),
+    );
+    expect(mockGet).toHaveBeenCalledTimes(2);
+    const sizes = mockGet.mock.calls.map(
+      ([, init]) =>
+        (
+          init as { params: { query: { message_ids: string } } }
+        ).params.query.message_ids.split(",").length,
+    );
+    expect(sizes.sort()).toEqual([10, 50]);
+  });
+
+  it("fails every row of a request that fails, and sends nothing when disabled", async () => {
+    const mockGet = vi
+      .fn()
+      .mockResolvedValue({ data: undefined, error: { message: "boom" } });
+
+    const { result } = renderHook(
+      () => [
+        useMessageAttachments("chan-1", "m-1", true),
+        useMessageAttachments("chan-1", "m-2", false),
+      ],
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
+    );
+
+    await waitFor(() => expect(result.current[0]!.isError).toBe(true));
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        mockGet.mock.calls[0]![1] as {
+          params: { query: { message_ids: string } };
+        }
+      ).params.query.message_ids,
+    ).toEqual("m-1");
+    expect(result.current[1]!.fetchStatus).toBe("idle");
+  });
+
+  it("drops a cancelled row from a batch not yet sent, and still answers its neighbour", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: { "m-1": [file("a-1", "m-1")] },
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => [
+        useMessageAttachments("chan-1", "m-1", true),
+        useMessageAttachments("chan-1", "m-2", true),
+      ],
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
+    );
+    // Before the batch's tick: the second row's query is cancelled.
+    await queryClient.cancelQueries({
+      queryKey: ["channels", "chan-1", "messages", "m-2", "attachments"],
+    });
+
+    await waitFor(() => expect(result.current[0]!.isSuccess).toBe(true));
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        mockGet.mock.calls[0]![1] as {
+          params: { query: { message_ids: string } };
+        }
+      ).params.query.message_ids,
+    ).toEqual("m-1");
+    expect(result.current[1]!.isSuccess).toBe(false);
+  });
+
+  it("sends each channel's messages under that channel", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: {}, error: null });
+
+    const { result } = renderHook(
+      () => [
+        useMessageAttachments("chan-1", "m-1", true),
+        useMessageAttachments("chan-2", "m-2", true),
+      ],
+      { wrapper: createWrapper(queryClient, { GET: mockGet }) },
+    );
+
+    await waitFor(() =>
+      expect(result.current.every((q) => q.isSuccess)).toBe(true),
+    );
+    const sent = mockGet.mock.calls.map(([, init]) => {
+      const { path, query } = (
+        init as {
+          params: { path: { id: string }; query: { message_ids: string } };
+        }
+      ).params;
+      return [path.id, query.message_ids];
+    });
+    expect(sent.sort()).toEqual([
+      ["chan-1", "m-1"],
+      ["chan-2", "m-2"],
+    ]);
   });
 });
 
@@ -398,6 +651,7 @@ describe("useAuthorAvatars", () => {
     expect(mockPost).toHaveBeenCalledWith(
       "/v1/channels/{id}/messages/avatars",
       {
+        signal: expect.any(AbortSignal),
         params: { path: { id: "chan-1" } },
         body: { message_ids: ["msg-1"] },
       },
@@ -427,6 +681,7 @@ describe("useAuthorAvatars", () => {
     expect(mockPost).toHaveBeenCalledWith(
       "/v1/channels/{id}/messages/avatars",
       {
+        signal: expect.any(AbortSignal),
         params: { path: { id: "chan-1" } },
         body: { message_ids: ["msg-3"] },
       },
@@ -531,17 +786,15 @@ describe("channelSetFingerprint", () => {
         { id: "b", name: "alumni" },
       ]),
     );
-    expect(
-      channelSetFingerprint([{ id: "a", name: "general" }]),
-    ).not.toBe(
+    expect(channelSetFingerprint([{ id: "a", name: "general" }])).not.toBe(
       channelSetFingerprint([
         { id: "a", name: "general" },
         { id: "b", name: "alumni" },
       ]),
     );
-    expect(
-      channelSetFingerprint([{ id: "a", name: "general" }]),
-    ).not.toBe(channelSetFingerprint([{ id: "a", name: "announcements" }]));
+    expect(channelSetFingerprint([{ id: "a", name: "general" }])).not.toBe(
+      channelSetFingerprint([{ id: "a", name: "announcements" }]),
+    );
   });
 
   it("changes with every field the server default reads (#2771)", () => {
@@ -593,6 +846,7 @@ describe("useChannelNotificationPreferences", () => {
 
     expect(mockGet).toHaveBeenCalledWith(
       "/v1/channels/notification-preferences",
+      { signal: expect.any(AbortSignal) },
     );
     expect(result.current.data).toEqual(rows);
   });
@@ -650,7 +904,7 @@ describe("useChannelNotificationPreferences", () => {
       { channel_id: "chan-1", level: "mentions" },
     ]);
 
-    // Mark-read invalidates `["channels"]`. Same ids and names → same
+    // Mark-read re-reads the channel list. Same ids and names → same
     // fingerprint → the prefs query must not fire again.
     channels = [{ id: "chan-1", name: "general" }];
     await queryClient.invalidateQueries({ queryKey: ["channels"] });
@@ -727,9 +981,7 @@ describe("useSetChannelNotificationLevel", () => {
 
   it("invalidates the preferences query on error so the control does not keep a level the server never stored", async () => {
     const mockError = new Error("preference write failed");
-    const mockPut = vi
-      .fn()
-      .mockResolvedValue({ data: null, error: mockError });
+    const mockPut = vi.fn().mockResolvedValue({ data: null, error: mockError });
     const mockClient = { PUT: mockPut };
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -748,6 +1000,64 @@ describe("useSetChannelNotificationLevel", () => {
   });
 });
 
+describe("channel-set mutations (create, update, delete)", () => {
+  const ok = vi.fn().mockResolvedValue({ data: {}, error: null });
+  const cases = [
+    {
+      name: "useCreateChannel",
+      run: () => {
+        const { result } = renderHook(() => useCreateChannel(), {
+          wrapper: createWrapper(queryClient, { POST: ok }),
+        });
+        result.current.mutate({ name: "general", type: "PUBLIC" });
+        return result;
+      },
+    },
+    {
+      name: "useUpdateChannel",
+      run: () => {
+        const { result } = renderHook(() => useUpdateChannel(), {
+          wrapper: createWrapper(queryClient, { PATCH: ok }),
+        });
+        result.current.mutate({ id: "chan-1", body: { name: "renamed" } });
+        return result;
+      },
+    },
+    {
+      name: "useDeleteChannel",
+      run: () => {
+        const { result } = renderHook(() => useDeleteChannel(), {
+          wrapper: createWrapper(queryClient, { DELETE: ok }),
+        });
+        result.current.mutate("chan-1");
+        return result;
+      },
+    },
+  ] as const;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  for (const { name, run } of cases) {
+    it(`${name} re-reads the channel list and the notification levels`, async () => {
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const result = run();
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
+      });
+      if (name === "useUpdateChannel") {
+        expect(invalidateSpy).toHaveBeenCalledWith({
+          queryKey: ["members", "chapter-1", "channel"],
+        });
+      }
+    });
+  }
+});
+
 describe("useUploadSignedUrl", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -757,7 +1067,9 @@ describe("useUploadSignedUrl", () => {
     // A legacy .doc usually arrives with `type: ""`. The chat bucket's MIME
     // allowlist rejects an empty Content-Type, so the resolved type the
     // composer requested the URL with is the one that must go on the PUT.
-    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }) as Response);
+    const fetchMock = vi.fn(
+      async () => ({ ok: true, status: 200 }) as Response,
+    );
     vi.stubGlobal("fetch", fetchMock);
     const file = new File(["bytes"], "minutes.doc", { type: "" });
 
@@ -776,5 +1088,135 @@ describe("useUploadSignedUrl", () => {
       body: file,
       headers: { "content-type": "application/msword" },
     });
+  });
+});
+
+describe("useForwardMessage (#4864)", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  const created = { id: "m2", channel_id: "chan-dest", content: "" };
+
+  it("posts the destination, the comment and the caller's key, then re-reads the two summaries exactly", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: created,
+      error: undefined,
+      response: { ok: true, status: 201 },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useForwardMessage(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    const row = await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "look",
+      clientMessageId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(row).toEqual(created);
+    expect(mockPost).toHaveBeenCalledWith(
+      "/v1/channels/messages/{messageId}/forward",
+      {
+        params: { path: { messageId: "m1" } },
+        body: {
+          channel_id: "chan-dest",
+          content: "look",
+          client_message_id: "11111111-1111-4111-8111-111111111111",
+        },
+      },
+    );
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+        exact: true,
+      }),
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+      exact: true,
+    });
+    // Never the prefix, which would re-read the list and every channel.
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ["channels"] });
+  });
+
+  it("sends no content for a blank comment and draws a key when none is given", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: created,
+      error: undefined,
+      response: { ok: true, status: 201 },
+    });
+    const { result } = renderHook(() => useForwardMessage(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "   ",
+    });
+
+    const body = mockPost.mock.calls[0]![1].body;
+    expect(body).not.toHaveProperty("content");
+    expect(body.client_message_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  it("sends the comment's @ picks as mention_picks, and none without a comment (#4907)", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: created,
+      error: undefined,
+      response: { ok: true, status: 201 },
+    });
+    const { result } = renderHook(() => useForwardMessage(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+    const picks = [{ user_id: "u-jane", label: "Jane Doe" }];
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "@Jane Doe look",
+      mentionPicks: picks,
+    });
+    expect(mockPost.mock.calls[0]![1].body.mention_picks).toEqual(picks);
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: " ",
+      mentionPicks: picks,
+    });
+    expect(mockPost.mock.calls[1]![1].body).not.toHaveProperty("mention_picks");
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "look",
+      mentionPicks: [],
+    });
+    expect(mockPost.mock.calls[2]![1].body).not.toHaveProperty("mention_picks");
+  });
+
+  it("throws with the status on a refusal and re-reads nothing", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Not allowed" },
+      response: { ok: false, status: 403 },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const { result } = renderHook(() => useForwardMessage(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    await expect(
+      result.current.mutateAsync({ messageId: "m1", channelId: "chan-dest" }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });

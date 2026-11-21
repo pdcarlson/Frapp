@@ -10,10 +10,10 @@
 // depends on used to be checked only after it:
 //   * the API's own boot check, `validateEnv`
 //     (`apps/api/src/config/env.validation.ts`), which first ran when the new
-//     Render instance booted: after the migrations and the Edge Functions;
+//     API instance booted: after the migrations and the Edge Functions;
 //   * `SUPABASE_FUNCTIONS_DEPLOY_TOKEN`, read by `deploy-edge-functions.mjs`
 //     after the apply;
-//   * `API_HEALTHCHECK_URL`, read by the served-commit check after the Render
+//   * `API_HEALTHCHECK_URL`, read by the served-commit check after the API
 //     deploy. (Staging's plan already requires it; production has no plan.)
 // A bad value then failed with the schema already moved. The client checks
 // after the served-commit check (`smoke-deployed-api.mjs`, #3113) read the same
@@ -25,7 +25,7 @@
 // ── What it runs ────────────────────────────────────────────────────────────
 // The rules are the DEPLOYED commit's, on purpose: its `validateEnv` is what
 // will boot. `_deploy.yml` builds the API before any secret is injected, the
-// same build the Render image runs, and this loads the compiled module from
+// same build the API image runs, and this loads the compiled module from
 // the workspace. Only this harness comes from the trusted copy, so a rollback
 // to a commit from before it still has one. A commit with no
 // `env.validation.ts` at all skips the boot check with a warning; one that has
@@ -33,10 +33,13 @@
 //
 // `validateEnv` gets only the names the Infisical injection added (the job's
 // environment minus the baseline `record-env-baseline.mjs` wrote just before
-// it). That is the store the Render sync copies: same environment, path `/`
-// (`docs/internal/environment/SECRETS_MANAGEMENT.md` § 5). So this proves what
-// Infisical holds, and nothing about Render: a failed or stale sync, or a row
-// set by hand on the service, is invisible from here.
+// it). That is the store the Secret Manager sync copies: same environment,
+// path `/` (`docs/internal/environment/SECRETS_MANAGEMENT.md` § 5), and the
+// Cloud Run deploy pins each revision to those versions. So this proves what
+// Infisical holds, and nothing about Secret Manager: a failed or stale sync is
+// invisible from here. It also gets what Cloud Run itself sets
+// (`CLOUD_RUN_PLATFORM`), because the API boots there and some settings are
+// valid only there.
 //
 // ── In a child process with no store in its environment ─────────────────────
 // Loading the module runs third-party code from this commit's `node_modules`
@@ -68,19 +71,19 @@
 // version, so `0.9.1` passed while every recorded build was `0.9.0`, and the
 // client check after the deploy (`smoke-deployed-api.mjs`) caught it only with
 // the new API already serving it and every install of that platform on the
-// blocking update screen. Infisical's sync copies a changed value to Render,
-// and a running service keeps the value it booted with until it restarts
+// blocking update screen. Infisical's sync copies a changed value to Secret
+// Manager, and a running revision keeps the value it booted with until it restarts
 // (AGENTS.md § Credentials and secrets), so a bad minimum usually goes live
-// with the next API deploy. Not always: a restart outside a deploy run (a
-// crash, a manual one, a sync set to redeploy) turns it on with no run to stop
-// it, and only the next run's client check sees it. When this run deploys the
+// with the next API deploy, which pins the new versions. Not always: a
+// revision deployed outside a deploy run (by hand from the console) turns it
+// on with no run to stop it, and only the next run's client check sees it. When this run deploys the
 // API, each platform's minimum is put to the same probe that check sends
 // (`clientProbes`, from the TRUSTED ref, as there) and judged by a copy of the
 // API's own rule (`lib/client-version.mjs`). A
 // minimum that would answer that probe `update_required: true` fails a
 // production run and warns on staging, where a minimum above the current
 // version is how the update gate is tested. The client check stays, as the
-// live confirmation of whatever value Render really holds.
+// live confirmation of whatever value the service really holds.
 //
 // What it checked, and anything it skipped, goes to the step summary too, so a
 // dry run's summary can point at it rather than restate it.
@@ -120,6 +123,17 @@ import { parseEnvBaseline } from "./lib/vercel-build-env.mjs";
 /** The boot check's source, and where the API's build puts it. */
 export const BOOT_CHECK_SOURCE = join("apps", "api", "src", "config", "env.validation.ts");
 export const BOOT_CHECK_BUILD = join("apps", "api", "dist", "config", "env.validation.js");
+
+/**
+ * What Cloud Run sets on every revision, added to the config the boot check is
+ * handed. The API deploys only to Cloud Run (`deploy-cloud-run.mjs`, which
+ * reserves these names), and `validateEnv` accepts some settings only there:
+ * `GOOGLE_DRIVE_SERVICE_ACCOUNT` or `GOOGLE_VERTEX_PROJECT` without a key file
+ * sign in as the service's own identity (`runtime-platform.ts`). Checked
+ * without it, a config the service accepts was refused and every deploy
+ * stopped (#5542). The value is a stand-in: only its presence is read.
+ */
+export const CLOUD_RUN_PLATFORM = Object.freeze({ K_SERVICE: "deploy-config-check" });
 
 const FLAGS = ["CHECK_API_BOOT", "DEPLOYS_FUNCTIONS", "VERIFIES_API"];
 
@@ -220,10 +234,11 @@ function runChild(modulePath) {
 }
 
 /**
- * Run the deployed commit's `validateEnv` on `config` in the child. Returns
- * `{ status: "ok" | "skipped" | "failed", message }`.
+ * Run the deployed commit's `validateEnv` on `config`, plus what the platform
+ * sets (`CLOUD_RUN_PLATFORM`), in the child. Only `config`'s values are
+ * redacted and counted. Returns `{ status: "ok" | "skipped" | "failed", message }`.
  */
-export function runBootCheck({ root, config, childEnv, exists = existsSync, spawn = spawnSync }) {
+export function runBootCheck({ root, config, childEnv, platform = CLOUD_RUN_PLATFORM, exists = existsSync, spawn = spawnSync }) {
   if (!exists(join(root, BOOT_CHECK_SOURCE))) {
     return {
       status: "skipped",
@@ -236,7 +251,8 @@ export function runBootCheck({ root, config, childEnv, exists = existsSync, spaw
   const result = spawn(process.execPath, [SELF, CHILD_FLAG, join(root, BOOT_CHECK_BUILD)], {
     cwd: root,
     env: childEnv,
-    input: JSON.stringify(config),
+    // The platform's names last, as Cloud Run sets them over anything configured.
+    input: JSON.stringify({ ...config, ...platform }),
     stdio: ["pipe", "ignore", "ignore", "pipe"],
     timeout: CHILD_TIMEOUT_MS,
   });
@@ -449,7 +465,7 @@ function main() {
   if (problems.length > 0) {
     console.error(
       `${problems.length} problem(s). Nothing has been applied or deployed. Fix the value in Infisical, never on ` +
-        `Render or Vercel (AGENTS.md § Credentials and secrets), then re-run.`,
+        `Google Cloud or Vercel (AGENTS.md § Credentials and secrets), then re-run.`,
     );
     return 1;
   }

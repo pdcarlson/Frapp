@@ -2,7 +2,6 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import * as WebBrowser from "expo-web-browser";
 import { Alert } from "react-native";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FloatingCreateButton } from "@/components/floating-create-button";
@@ -43,9 +42,18 @@ const LOADED = {
   isFetching: false,
 };
 
+const accessQuery = vi.hoisted(() => ({
+  data: undefined as
+    { options: unknown[]; always: string[] | null } | undefined,
+  isSuccess: false,
+  isError: false,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   usePermissionList: () => permissions,
+  // Who can see (#5216): unread by default, so the upload sheet shows no row.
+  useDocumentAccessOptions: () => accessQuery,
   useDocuments: (...args: unknown[]) => {
     documentsArgs.push(args);
     return {
@@ -76,6 +84,27 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useSetDocumentPin: () => ({ mutateAsync: setPin, isPending: false }),
 }));
 
+// The download and the share sheet (#4409) are `document-file.ts`'s, pinned
+// in its own spec. This stand-in presents at once, unless a spec holds the
+// sheet up (`holdSheet`), and records each document whose sheet appeared.
+const presented: string[] = [];
+let holdSheet: Promise<void> | null = null;
+async function presentAtOnce(
+  _id: string,
+  payload: unknown,
+  shouldPresent: () => boolean,
+): Promise<boolean> {
+  if (!shouldPresent()) return true;
+  presented.push((payload as { forcedDownloadUrl: string }).forcedDownloadUrl);
+  await holdSheet;
+  return true;
+}
+const shareDocument = vi.fn(presentAtOnce);
+vi.mock("@/lib/more/document-file", () => ({
+  shareDocumentFile: (...args: Parameters<typeof shareDocument>) =>
+    shareDocument(...args),
+}));
+
 // A purple stand-in, so a glyph painted house gold (`gold.askText`) fails.
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({
@@ -92,6 +121,10 @@ import { InlineNote } from "@/components/inline-note";
 import { UploadDocumentSheet } from "@/components/documents/upload-document-sheet";
 import { DocumentActionsSheet } from "@/components/documents/document-actions-sheet";
 import { MarkedCards } from "@/components/documents/marked-cards";
+import { DocumentTiles } from "@/components/documents/document-tiles";
+import { PinGlyph, StarGlyph } from "@/components/documents/document-glyphs";
+import { ListLayoutToggle } from "@/components/list-layout-toggle";
+import { resetListLayoutsForTests, setListLayout } from "@/lib/list-layout";
 
 const present = vi.fn();
 const mounted: ReactTestRenderer[] = [];
@@ -144,11 +177,10 @@ afterEach(() => {
   setStar.mockReset();
   starsFailed = false;
   setPin.mockReset();
-  // Back to the suite-wide stand-in (vitest.setup.ts), a browser dismissed at
-  // once, after a spec that held one open.
-  vi.mocked(WebBrowser.openBrowserAsync).mockResolvedValue({
-    type: "dismiss",
-  } as WebBrowser.WebBrowserResult);
+  resetListLayoutsForTests();
+  presented.length = 0;
+  holdSheet = null;
+  shareDocument.mockReset().mockImplementation(presentAtOnce);
   act(() => {
     for (const tree of mounted.splice(0)) tree.unmount();
   });
@@ -359,6 +391,52 @@ describe("Documents states and rows", () => {
     expect(screenText(tree)).toContain("No documents yet.");
   });
 
+  it("says not everyone can see a file with its own list or in a limited folder (#5216)", () => {
+    folderRows = [
+      { id: "f1", name: "Exec", sort_order: 0, who_can_see: ["tier:t-1"] },
+      { id: "f2", name: "Rush", sort_order: 1 },
+    ];
+    documentRows = [
+      {
+        id: "d1",
+        title: "Budget",
+        folder: "Exec",
+        created_at: "2026-10-03T12:00:00Z",
+      },
+      {
+        id: "d2",
+        title: "Bids",
+        folder: "Rush",
+        who_can_see: ["role:r-1"],
+        created_at: "2026-10-02T12:00:00Z",
+      },
+      {
+        id: "d3",
+        title: "Schedule",
+        folder: "Rush",
+        created_at: "2026-10-01T12:00:00Z",
+      },
+      // Their own upload in a folder they no longer pass, so not listed.
+      {
+        id: "d4",
+        title: "Ledger",
+        folder: "Treasury",
+        created_at: "2026-09-30T12:00:00Z",
+      },
+    ];
+    const tree = render();
+    const values = Object.fromEntries(
+      tree.root
+        .findAllByType(ListRow)
+        .map((row) => [row.props.label, row.props.accessibilityValue]),
+    );
+
+    expect(values.Budget).toContain("Not everyone can see this");
+    expect(values.Bids).toContain("Not everyone can see this");
+    expect(values.Schedule ?? "").not.toContain("Not everyone can see this");
+    expect(values.Ledger).toContain("Not everyone can see this");
+  });
+
   it("marks only the opening row busy, and greys out none", async () => {
     documentRows = [
       { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
@@ -383,14 +461,14 @@ describe("Documents states and rows", () => {
     ]);
 
     await act(async () => {
-      settle({ downloadUrl: "https://signed/bylaws" });
+      settle({ forcedDownloadUrl: "https://signed/bylaws" });
     });
     expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
   });
 
   // A tap on another row while one is opening used to be dropped without a
   // sign. Now the latest tap wins: the spinner moves, and the first row's
-  // URL, landing late, opens nothing.
+  // URL, landing late, presents nothing.
   it("lets a tap on another row win while the first is still opening", async () => {
     documentRows = [
       { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
@@ -403,8 +481,6 @@ describe("Documents states and rows", () => {
           settle[id] = resolve;
         }),
     );
-    const openBrowser = vi.mocked(WebBrowser.openBrowserAsync);
-    openBrowser.mockClear();
     const tree = render();
     const rows = () => tree.root.findAllByType(ListRow);
 
@@ -418,17 +494,71 @@ describe("Documents states and rows", () => {
     expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
 
     await act(async () => {
-      settle.d1!({ downloadUrl: "https://signed/bylaws" });
+      settle.d1!({ forcedDownloadUrl: "https://signed/bylaws" });
     });
-    expect(openBrowser).not.toHaveBeenCalled();
+    expect(shareDocument).not.toHaveBeenCalled();
     expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
 
     await act(async () => {
-      settle.d2!({ downloadUrl: "https://signed/minutes" });
+      settle.d2!({ forcedDownloadUrl: "https://signed/minutes" });
     });
-    expect(openBrowser).toHaveBeenCalledTimes(1);
-    expect(openBrowser).toHaveBeenCalledWith("https://signed/minutes");
+    expect(shareDocument).toHaveBeenCalledTimes(1);
+    expect(shareDocument).toHaveBeenCalledWith(
+      "d2",
+      { forcedDownloadUrl: "https://signed/minutes" },
+      expect.any(Function),
+    );
+    expect(presented).toEqual(["https://signed/minutes"]);
     expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
+  });
+
+  // The same race one step later (#4409): the first row's file is still
+  // downloading when the member taps another. Its sheet must not come up over
+  // the document asked for since.
+  it("presents no sheet for a file that lands after another row was tapped", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    download.mockImplementation(async (id: string) => ({
+      forcedDownloadUrl: `https://signed/${id}`,
+    }));
+    const landed: Record<string, () => void> = {};
+    shareDocument.mockImplementation(
+      (id: string, payload: unknown, shouldPresent: () => boolean) =>
+        new Promise((resolve) => {
+          landed[id] = () => {
+            if (shouldPresent()) {
+              presented.push(
+                (payload as { forcedDownloadUrl: string }).forcedDownloadUrl,
+              );
+            }
+            resolve(true);
+          };
+        }),
+    );
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    expect(rows().map((row) => row.props.busy)).toEqual([true, false]);
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
+
+    await act(async () => {
+      landed.d1!();
+    });
+    expect(presented).toEqual([]);
+    await act(async () => {
+      landed.d2!();
+    });
+    expect(presented).toEqual(["https://signed/d2"]);
+    expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
+    expect(screenText(tree)).not.toContain("couldn't be opened");
   });
 
   // The same race, settled by a failure: the first row's signed URL is
@@ -450,11 +580,6 @@ describe("Documents states and rows", () => {
           settle[id] = { resolve, reject };
         }),
     );
-    const openBrowser = vi.mocked(WebBrowser.openBrowserAsync);
-    openBrowser.mockClear();
-    openBrowser.mockResolvedValue({
-      type: "dismiss",
-    } as WebBrowser.WebBrowserResult);
     const tree = render();
     const rows = () => tree.root.findAllByType(ListRow);
 
@@ -472,34 +597,54 @@ describe("Documents states and rows", () => {
     expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
 
     await act(async () => {
-      settle.d2!.resolve({ downloadUrl: "https://signed/minutes" });
+      settle.d2!.resolve({ forcedDownloadUrl: "https://signed/minutes" });
     });
-    expect(openBrowser).toHaveBeenCalledWith("https://signed/minutes");
+    expect(presented).toEqual(["https://signed/minutes"]);
     expect(screenText(tree)).not.toContain("couldn't be opened");
     expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
   });
 
-  // Once a document's browser is on its way up, a tap that reaches another
-  // row does nothing. iOS refuses a second presentation, and that refusal
-  // would show "couldn't be opened" over the document that did open.
-  it("starts no second browser while the first is still being presented", async () => {
+  // A file that couldn't be downloaded or shared (an expired link, no
+  // network, a type the library doesn't take) says so under the list.
+  it("says the document couldn't be opened when the download or sheet fails", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
+    download.mockResolvedValue({ forcedDownloadUrl: "https://signed/d1" });
+    shareDocument.mockResolvedValueOnce(false);
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    expect(screenText(tree)).toContain("couldn't be opened");
+    expect(rows()[0]!.props.busy).toBe(false);
+  });
+
+  // A stale tap's failed download (an expired link, say) lands while the
+  // member waits on a newer row: it says nothing, and the newer row opens.
+  it("keeps a stale tap's failed download off the screen", async () => {
     documentRows = [
       { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
       { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
     ];
     download.mockImplementation(async (id: string) => ({
-      downloadUrl: `https://signed/${id}`,
+      forcedDownloadUrl: `https://signed/${id}`,
     }));
-    const openBrowser = vi.mocked(WebBrowser.openBrowserAsync);
-    openBrowser.mockClear();
-    let dismiss!: () => void;
-    openBrowser.mockImplementation(() =>
-      openBrowser.mock.calls.length === 1
-        ? new Promise((resolve) => {
-            dismiss = () =>
-              resolve({ type: "dismiss" } as WebBrowser.WebBrowserResult);
-          })
-        : Promise.reject(new Error("Another web browser is already open")),
+    const landed: Record<string, (ok: boolean) => void> = {};
+    shareDocument.mockImplementation(
+      (id: string, payload: unknown, shouldPresent: () => boolean) =>
+        new Promise((resolve) => {
+          landed[id] = (ok) => {
+            if (ok && shouldPresent()) {
+              presented.push(
+                (payload as { forcedDownloadUrl: string }).forcedDownloadUrl,
+              );
+            }
+            resolve(ok);
+          };
+        }),
     );
     const tree = render();
     const rows = () => tree.root.findAllByType(ListRow);
@@ -507,13 +652,129 @@ describe("Documents states and rows", () => {
     await act(async () => {
       rows()[0]!.props.onPress();
     });
-    expect(openBrowser).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    await act(async () => {
+      landed.d1!(false);
+    });
+    expect(screenText(tree)).not.toContain("couldn't be opened");
+    await act(async () => {
+      landed.d2!(true);
+    });
+    expect(presented).toEqual(["https://signed/d2"]);
+    expect(screenText(tree)).not.toContain("couldn't be opened");
+  });
+
+  // A stale tap that finishes while a newer row's sheet is up must leave the
+  // one-sheet guard alone: clearing it would let a third tap start a second
+  // presentation, which iOS refuses with "couldn't be opened".
+  it("keeps the one-sheet guard while a stale tap finishes under another row's sheet", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+      { id: "d3", title: "Roster", created_at: "2026-09-01T12:00:00Z" },
+    ];
+    const settle: Record<string, (value: unknown) => void> = {};
+    download.mockImplementation(
+      (id: string) =>
+        new Promise((resolve) => {
+          settle[id] = resolve;
+        }),
+    );
+    let dismiss!: () => void;
+    holdSheet = new Promise((resolve) => {
+      dismiss = resolve;
+    });
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    await act(async () => {
+      settle.d2!({ forcedDownloadUrl: "https://signed/d2" });
+    });
+    expect(presented).toEqual(["https://signed/d2"]);
+    // d1 lands now, stale, and finishes while d2's sheet is up.
+    await act(async () => {
+      settle.d1!({ forcedDownloadUrl: "https://signed/d1" });
+    });
+    await act(async () => {
+      rows()[2]!.props.onPress();
+    });
+    expect(download).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      dismiss();
+    });
+  });
+
+  // Back pops s12. A file still downloading then lands with no screen to
+  // present over: no sheet comes up over wherever the member went.
+  it("presents nothing for a file that lands after s12 has closed", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
+    download.mockResolvedValue({ forcedDownloadUrl: "https://signed/d1" });
+    let land!: () => void;
+    shareDocument.mockImplementation(
+      (_id: string, payload: unknown, shouldPresent: () => boolean) =>
+        new Promise((resolve) => {
+          land = () => {
+            if (shouldPresent()) {
+              presented.push(
+                (payload as { forcedDownloadUrl: string }).forcedDownloadUrl,
+              );
+            }
+            resolve(true);
+          };
+        }),
+    );
+    const tree = render();
+
+    await act(async () => {
+      tree.root.findAllByType(ListRow)[0]!.props.onPress();
+    });
+    act(() => tree.unmount());
+    mounted.splice(mounted.indexOf(tree), 1);
+    await act(async () => {
+      land();
+    });
+    expect(presented).toEqual([]);
+  });
+
+  // Once a document's sheet is up, a tap that reaches another row does
+  // nothing. iOS refuses a second presentation, and that refusal would show
+  // "couldn't be opened" over the document that did open.
+  it("starts no second sheet while the first is still up", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    download.mockImplementation(async (id: string) => ({
+      forcedDownloadUrl: `https://signed/${id}`,
+    }));
+    let dismiss!: () => void;
+    holdSheet = new Promise((resolve) => {
+      dismiss = resolve;
+    });
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    expect(presented).toEqual(["https://signed/d1"]);
 
     await act(async () => {
       rows()[1]!.props.onPress();
     });
     expect(download).toHaveBeenCalledTimes(1);
-    expect(openBrowser).toHaveBeenCalledTimes(1);
+    expect(presented).toEqual(["https://signed/d1"]);
     expect(screenText(tree)).not.toContain("couldn't be opened");
     expect(rows().map((row) => row.props.busy)).toEqual([true, false]);
 
@@ -591,8 +852,18 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
           node.props.onPress
         ) === "function",
     );
-  const openPanel = (tree: ReactTestRenderer) =>
-    act(() => byLabel(tree, "Sort and filter").props.onPress());
+  // The filter and sort sheets (#5278), by their titles.
+  const sheet = (tree: ReactTestRenderer, title: string) =>
+    tree.root.find(
+      (node) =>
+        node.props.title === title &&
+        Array.isArray(node.props.options) &&
+        typeof node.props.onSelect === "function",
+    );
+  const sheetLabels = (tree: ReactTestRenderer, title: string) =>
+    (sheet(tree, title).props.options as { label: string }[]).map(
+      (option) => option.label,
+    );
 
   function loaded() {
     documentRows = LIBRARY;
@@ -614,7 +885,7 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     expect(documentsArgs.every((args) => args.length === 0)).toBe(true);
     act(() => byLabel(tree, "Search documents").props.onChangeText(""));
     expect(screenText(tree)).toContain(
-      "Uploaded Oct 1 by Ana Ruiz · Finance · Spreadsheet",
+      "Uploaded October 1 by Ana Ruiz · Finance · Spreadsheet",
     );
   });
 
@@ -630,20 +901,58 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     expect(rowLabels(tree)).toEqual(["Alumni mixer flyer", "Budget FY2026"]);
   });
 
-  it("sorts and filters from the Sort & filter panel, and counts what is set", () => {
+  it("sorts from the control over the list and filters from the chips, each naming its pick", () => {
     const tree = loaded();
-    openPanel(tree);
+    expect(byLabel(tree, "Sort: Name A–Z")).toBeDefined();
 
-    act(() => byLabel(tree, "Sort documents").props.onSelect("newest"));
+    act(() => sheet(tree, "Sort by").props.onSelect("newest"));
     expect(rowLabels(tree)).toEqual([
       "Budget FY2026",
       "Alumni mixer flyer",
       "Chapter bylaws",
     ]);
 
-    act(() => byLabel(tree, "Filter by uploader").props.onSelect("u-ryan"));
+    expect(byLabel(tree, "Sort: Newest first")).toBeDefined();
+
+    act(() => sheet(tree, "Uploaded by").props.onSelect("u-ryan"));
     expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
-    expect(byLabel(tree, "Sort and filter, 2 set")).toBeDefined();
+    expect(byLabel(tree, "Uploaded by: Ryan Castellano")).toBeDefined();
+    // Clear leads the row once a filter is set. It leaves the order and
+    // what was typed: the search is not one of the row's filters.
+    act(() => byLabel(tree, "Search documents").props.onChangeText("c"));
+    act(() => byLabel(tree, "Clear filters").props.onPress());
+    expect(byLabel(tree, "Search documents").props.value).toBe("c");
+    expect(byLabel(tree, "Sort: Newest first")).toBeDefined();
+    act(() => byLabel(tree, "Search documents").props.onChangeText(""));
+    expect(rowLabels(tree)).toHaveLength(3);
+    // Nothing set, no Clear.
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityLabel === "Clear filters",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("opens each chip's sheet and the sort's with one tap", () => {
+    const tree = loaded();
+    for (const label of [
+      "Type",
+      "Uploaded by",
+      "Date added",
+      "Sort: Name A–Z",
+    ]) {
+      present.mockClear();
+      act(() => byLabel(tree, label).props.onPress());
+      expect(present).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("names a date pick on its chip and lights it", () => {
+    const tree = loaded();
+    act(() => sheet(tree, "Date added").props.onSelect("30d"));
+    const chip = byLabel(tree, "Date added: Last 30 days");
+    expect(chip.props.accessibilityState).toEqual({ selected: true });
+    expect(sheet(tree, "Date added").props.selected).toBe("30d");
   });
 
   it("filters by file type, from the declared type or the stored name", () => {
@@ -658,17 +967,19 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
     ];
     names = { "u-ryan": "Ryan Castellano", "u-ana": "Ana Ruiz" };
     const tree = render();
-    openPanel(tree);
-    const types = byLabel(tree, "Filter by file type");
-    expect(
-      (types.props.chips as { label: string }[]).map((chip) => chip.label),
-    ).toEqual(["Any type", "PDF", "Spreadsheet", "Other"]);
+    expect(sheetLabels(tree, "File type")).toEqual([
+      "Any type",
+      "PDF",
+      "Spreadsheet",
+      "Other",
+    ]);
 
-    act(() => types.props.onSelect("spreadsheet"));
+    act(() => sheet(tree, "File type").props.onSelect("spreadsheet"));
     expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
-    expect(byLabel(tree, "Sort and filter, 1 set")).toBeDefined();
+    expect(byLabel(tree, "Type: Spreadsheet")).toBeDefined();
 
-    act(() => byLabel(tree, "Filter by file type").props.onSelect(null));
+    act(() => sheet(tree, "File type").props.onSelect(null));
+    expect(byLabel(tree, "Type")).toBeDefined();
     act(() => byLabel(tree, "Search documents").props.onChangeText("pdf"));
     expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
   });
@@ -676,45 +987,28 @@ describe("Documents search, filters, sort and delete, as web's (#3938)", () => {
   it("offers This semester only once the archives have loaded", () => {
     semesterRows = undefined;
     const tree = loaded();
-    openPanel(tree);
-    const dateLabels = () =>
-      (
-        byLabel(tree, "Filter by date added").props.chips as { label: string }[]
-      ).map((chip) => chip.label);
-    expect(dateLabels()).toEqual(["Any time", "Last 30 days"]);
+    expect(sheetLabels(tree, "Date added")).toEqual([
+      "Any time",
+      "Last 30 days",
+    ]);
 
     semesterRows = [
       { end_date: "2026-08-31", created_at: "2026-09-01T00:00:00Z" },
     ];
     const later = loaded();
-    act(() => byLabel(later, "Sort and filter").props.onPress());
-    act(() =>
-      byLabel(later, "Filter by date added").props.onSelect("semester"),
-    );
+    act(() => sheet(later, "Date added").props.onSelect("semester"));
     expect(rowLabels(later)).toEqual(["Alumni mixer flyer", "Budget FY2026"]);
   });
 
   it("says a filter matched nothing and clears it", () => {
     const tree = loaded();
-    openPanel(tree);
-    act(() => byLabel(tree, "Filter by uploader").props.onSelect("u-ryan"));
+    act(() => sheet(tree, "Uploaded by").props.onSelect("u-ryan"));
     act(() => byLabel(tree, "Search documents").props.onChangeText("budget"));
     const note = tree.root.findByType(InlineNote);
     expect(screenText(tree)).toContain("No documents match “budget”.");
     expect(note.props.action.label).toBe("Clear filters");
     act(() => note.props.action.onPress());
     expect(rowLabels(tree)).toHaveLength(3);
-  });
-
-  it("says when the library hit the 1,000-row cap", () => {
-    documentRows = Array.from({ length: 1000 }, (_, index) => ({
-      id: `d-${index}`,
-      title: `File ${index}`,
-      created_at: "2026-08-12T14:00:00.000Z",
-    }));
-    expect(screenText(render())).toContain(
-      "Showing the newest 1,000 documents.",
-    );
   });
 
   it("deletes from the long-press sheet, after a confirm, for chapter_docs:manage only", async () => {
@@ -877,47 +1171,34 @@ describe("Documents pinned and starred (#3934)", () => {
     ]);
   });
 
-  it("filters to Pinned, Starred or either from the panel, with the search (#4290)", () => {
+  it("filters to Pinned, Starred or either from the chip row, with the search (#4290)", () => {
     const tree = loaded();
-    const press = (label: string) =>
-      act(() =>
-        tree.root
-          .find(
-            (node) =>
-              node.props.accessibilityLabel === label &&
-              typeof node.props.onPress === "function",
-          )
-          .props.onPress(),
-      );
     const toggle = (label: string) =>
       tree.root.find(
         (node) =>
           node.props.accessibilityRole === "togglebutton" &&
           node.props.label === label,
       );
-    press("Sort and filter");
-    expect(toggle("Starred").props.accessibilityState).toEqual({ checked: false });
+    expect(toggle("Starred").props.accessibilityState).toEqual({
+      checked: false,
+    });
 
     act(() => toggle("Starred").props.onPress());
-    expect(toggle("Starred").props.accessibilityState).toEqual({ checked: true });
+    expect(toggle("Starred").props.accessibilityState).toEqual({
+      checked: true,
+    });
     // Any filter swaps the cards for the list, the tiers leading it.
     expect(tree.root.findAllByType(MarkedCards)).toHaveLength(0);
     expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
-    // It counts as one filter on the Sort & filter chip.
+    // Clear leads the row while a filter is on.
     expect(
       tree.root.findAll(
-        (node) => node.props.accessibilityLabel === "Sort and filter, 1 set",
+        (node) => node.props.accessibilityLabel === "Clear filters",
       ).length,
     ).toBeGreaterThan(0);
 
     act(() => toggle("Pinned").props.onPress());
     expect(rowLabels(tree)).toEqual(["Chapter bylaws", "Budget FY2026"]);
-    // Each toggle is one filter on the chip.
-    expect(
-      tree.root.findAll(
-        (node) => node.props.accessibilityLabel === "Sort and filter, 2 set",
-      ).length,
-    ).toBeGreaterThan(0);
 
     act(() => toggle("Starred").props.onPress());
     expect(rowLabels(tree)).toEqual(["Chapter bylaws"]);
@@ -940,7 +1221,9 @@ describe("Documents pinned and starred (#3934)", () => {
         typeof node.props.action?.onPress === "function",
     );
     act(() => clear.props.action.onPress());
-    expect(toggle("Pinned").props.accessibilityState).toEqual({ checked: false });
+    expect(toggle("Pinned").props.accessibilityState).toEqual({
+      checked: false,
+    });
     expect(rowLabels(tree)).toEqual([
       "Alumni mixer flyer",
       "Budget FY2026",
@@ -950,15 +1233,6 @@ describe("Documents pinned and starred (#3934)", () => {
 
   it("keeps a file unstarred from the sheet under Starred until the filter changes (#4290)", async () => {
     const tree = loaded();
-    act(() =>
-      tree.root
-        .find(
-          (node) =>
-            node.props.accessibilityLabel === "Sort and filter" &&
-            typeof node.props.onPress === "function",
-        )
-        .props.onPress(),
-    );
     const starredToggle = () =>
       tree.root.find(
         (node) =>
@@ -1106,10 +1380,12 @@ describe("Documents pinned and starred (#3934)", () => {
     folderRows = FOLDERS;
     starRows = { folder_ids: ["f-3"], document_ids: [] };
     const tree = render();
-    const rush = (folderChips(tree).props.chips as {
-      label: string;
-      mark?: React.ReactElement<{ children: React.ReactNode }>;
-    }[]).find((chip) => chip.label === "Rush")!;
+    const rush = (
+      folderChips(tree).props.chips as {
+        label: string;
+        mark?: React.ReactElement<{ children: React.ReactNode }>;
+      }[]
+    ).find((chip) => chip.label === "Rush")!;
     const marks = React.Children.toArray(rush.mark!.props.children);
     expect(marks).toHaveLength(2);
   });
@@ -1131,9 +1407,9 @@ describe("Documents pinned and starred (#3934)", () => {
 
     permissions = ["chapter_docs:manage"];
     const officer = loaded();
-    expect(
-      card(officer, "Chapter bylaws").props.accessibilityActions,
-    ).toEqual([{ name: "longpress", label: "Star, pin or delete" }]);
+    expect(card(officer, "Chapter bylaws").props.accessibilityActions).toEqual([
+      { name: "longpress", label: "Star, pin or delete" },
+    ]);
   });
 
   it("takes no press on a card whose file is being deleted", async () => {
@@ -1168,5 +1444,368 @@ describe("Documents pinned and starred (#3934)", () => {
     expect(screenText(render())).toContain(
       "Couldn't load your stars. Pull down to try again.",
     );
+  });
+});
+
+/**
+ * #4175: List or Grid, its switch on the title row and kept on this phone.
+ * Grid lays the same rows out two to a line as tiles that take the row's tap
+ * and long press, so the layout changes nothing a member can do.
+ */
+describe("Documents folder tree (#5337)", () => {
+  // A synced Drive tree, named by path as Drive sync names its folders.
+  const FOLDERS = [
+    { id: "t-1", name: "Town in Fiji", sort_order: 0 },
+    { id: "t-2", name: "Town in Fiji / Rush", sort_order: 1 },
+    { id: "t-3", name: "Town in Fiji / Rush / 2024", sort_order: 2 },
+    { id: "t-4", name: "Town in Fiji / Rush / 2025", sort_order: 3 },
+    { id: "t-5", name: "Town in Fiji / Formal", sort_order: 4 },
+    { id: "t-6", name: "Bylaws", sort_order: 5 },
+  ];
+  const LIBRARY = [
+    {
+      id: "d-1",
+      title: "2024 flyer",
+      folder: "Town in Fiji / Rush / 2024",
+      created_at: "2026-08-12T14:00:00.000Z",
+    },
+    {
+      id: "d-2",
+      title: "Rush schedule",
+      folder: "Town in Fiji / Rush",
+      created_at: "2026-08-13T14:00:00.000Z",
+    },
+  ];
+
+  function loaded() {
+    documentRows = LIBRARY;
+    folderRows = FOLDERS;
+    starRows = { folder_ids: [], document_ids: [] };
+    return render();
+  }
+  const folderChips = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAllByType(FilterChips)
+      .find((chips) => chips.props.accessibilityLabel === "Filter by folder")!;
+  const chips = (tree: ReactTestRenderer) =>
+    (
+      folderChips(tree).props.chips as {
+        value: string | null;
+        label: string;
+        trailing?: unknown;
+        accessibilityLabel?: string;
+      }[]
+    ).map((chip) => chip.accessibilityLabel ?? chip.label);
+  const rowLabels = (tree: ReactTestRenderer) =>
+    tree.root.findAllByType(ListRow).map((row) => row.props.label as string);
+
+  it("shows the top level, marking a folder that holds folders", () => {
+    expect(chips(loaded())).toEqual([
+      "All",
+      "Town in Fiji, holds folders",
+      "Bylaws",
+    ]);
+  });
+
+  it("steps into a folder that holds folders, its own files one tap away", () => {
+    const tree = loaded();
+    act(() => folderChips(tree).props.onSelect("Town in Fiji / Rush"));
+    expect(chips(tree)).toEqual([
+      "Back to Town in Fiji",
+      "Rush",
+      "2024",
+      "2025",
+    ]);
+    expect(folderChips(tree).props.selected).toBe("Town in Fiji / Rush");
+    // Rush's own files only, not its folders'.
+    expect(rowLabels(tree)).toEqual(["Rush schedule"]);
+  });
+
+  it("names where a pinned folder lives when it leads the top row, and on its card", () => {
+    documentRows = LIBRARY;
+    folderRows = FOLDERS.map((entry) =>
+      entry.id === "t-3"
+        ? { ...entry, pinned_at: "2026-11-17T00:00:00.000Z" }
+        : entry,
+    );
+    starRows = { folder_ids: [], document_ids: [] };
+    const tree = render();
+    const top = folderChips(tree).props.chips as {
+      label: string;
+      accessibilityLabel?: string;
+    }[];
+    expect(top[1]).toMatchObject({
+      label: "2024 · Rush",
+      accessibilityLabel: "2024, in Town in Fiji / Rush",
+    });
+    expect(screenText(tree)).toContain("In Town in Fiji / Rush · 1 file");
+  });
+
+  it("keeps a folder that holds none among its siblings, and steps back out", () => {
+    const tree = loaded();
+    act(() => folderChips(tree).props.onSelect("Town in Fiji / Rush / 2024"));
+    expect(chips(tree)).toEqual([
+      "Back to Town in Fiji",
+      "Rush",
+      "2024",
+      "2025",
+    ]);
+    expect(rowLabels(tree)).toEqual(["2024 flyer"]);
+    act(() => folderChips(tree).props.onSelect("Town in Fiji"));
+    expect(chips(tree)).toEqual([
+      "Back to All",
+      "Town in Fiji",
+      "Rush, holds folders",
+      "Formal",
+    ]);
+    act(() => folderChips(tree).props.onSelect(null));
+    expect(chips(tree)[0]).toBe("All");
+  });
+});
+
+describe("Documents as a grid (#4175)", () => {
+  const tiles = (tree: ReactTestRenderer) =>
+    tree.root
+      .findByType(DocumentTiles)
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string",
+      );
+
+  it("offers List and Grid on the title row, on List until picked", () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
+    const tree = render();
+    expect(tree.root.findByType(ListLayoutToggle).props.screen).toBe(
+      "documents",
+    );
+    expect(tree.root.findAllByType(DocumentTiles)).toHaveLength(0);
+    expect(tree.root.findAllByType(ListRow)).toHaveLength(1);
+  });
+
+  it("lays the files out as tiles, two to a line, naming each file's type", () => {
+    documentRows = [
+      {
+        id: "d1",
+        title: "Bylaws",
+        created_at: "2026-10-02T12:00:00Z",
+        storage_path: "c/d1/bylaws.pdf",
+      },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+      {
+        id: "d3",
+        title: "Roster",
+        created_at: "2026-09-01T12:00:00Z",
+        storage_path: "c/d3/roster.xlsx",
+      },
+    ];
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+    expect(tree.root.findAllByType(ListRow)).toHaveLength(0);
+    expect(tiles(tree).map((tile) => tile.props.accessibilityLabel)).toEqual([
+      "Bylaws",
+      "Minutes",
+      "Roster",
+    ]);
+    const text = screenText(tree);
+    expect(text).toContain("PDF");
+    expect(text).toContain("Excel spreadsheet");
+  });
+
+  it("opens a file on a tap and its sheet on a long press, as a row does", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
+    download.mockResolvedValue({ forcedDownloadUrl: "https://signed/bylaws" });
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+
+    await act(async () => {
+      tiles(tree)[0]!.props.onPress();
+    });
+    expect(download).toHaveBeenCalledWith("d1");
+
+    act(() => tiles(tree)[0]!.props.onLongPress());
+    expect(
+      tree.root.findByType(DocumentActionsSheet).props.target,
+    ).toMatchObject({
+      kind: "document",
+      id: "d1",
+      name: "Bylaws",
+    });
+  });
+
+  it("marks a pinned or starred tile, on screen and for a screen reader", () => {
+    documentRows = [
+      {
+        id: "d1",
+        title: "Bylaws",
+        created_at: "2026-10-02T12:00:00Z",
+        pinned_at: "2026-10-03T12:00:00Z",
+      },
+      { id: "d2", title: "Budget", created_at: "2026-10-01T12:00:00Z" },
+      { id: "d3", title: "Flyer", created_at: "2026-09-01T12:00:00Z" },
+    ];
+    starRows = { folder_ids: [], document_ids: ["d1", "d2"] };
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+    const value = (label: string) =>
+      tiles(tree).find((tile) => tile.props.accessibilityLabel === label)!.props
+        .accessibilityValue;
+    expect(value("Bylaws")).toEqual({
+      text: "Pinned for the chapter, Starred",
+    });
+    expect(value("Budget")).toEqual({ text: "Starred" });
+    expect(value("Flyer")).toBeUndefined();
+    const grid = tree.root.findByType(DocumentTiles);
+    expect(grid.findAllByType(PinGlyph)).toHaveLength(1);
+    expect(grid.findAllByType(StarGlyph)).toHaveLength(2);
+  });
+
+  it("keeps an upload in flight as a row above the tiles", () => {
+    permissions = ["*"];
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+    act(() => {
+      tree.root
+        .find((node) => typeof node.props.onPending === "function")
+        .props.onPending({ title: "Look at this", failed: null });
+    });
+    const rows = tree.root.findAllByType(ListRow);
+    expect(rows.map((row) => [row.props.label, row.props.description])).toEqual(
+      [["Look at this", "Uploading…"]],
+    );
+    expect(tiles(tree).map((tile) => tile.props.accessibilityLabel)).toEqual([
+      "Bylaws",
+    ]);
+  });
+
+  it("takes no second press or long press on a tile whose file is opening", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    download.mockReturnValue(new Promise(() => undefined));
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+    await act(async () => {
+      tiles(tree)[0]!.props.onPress();
+    });
+    const [opening, idle] = tiles(tree);
+    expect(opening!.props.disabled).toBe(true);
+    expect(opening!.props.accessibilityState).toEqual({ busy: true });
+    expect(opening!.props.onLongPress).toBeUndefined();
+    expect(opening!.props.accessibilityActions).toBeUndefined();
+    // The other tile still takes both, as the other rows do.
+    expect(idle!.props.disabled).toBe(false);
+    expect(idle!.props.onLongPress).toBeInstanceOf(Function);
+  });
+});
+
+/**
+ * Who can see (#5216): the lock a list row wears (above) on the other places
+ * a file or folder shows: folder chips, grid tiles, and Pinned and Starred
+ * cards.
+ */
+describe("Documents locks beyond the list (#5216)", () => {
+  const locks = (node: { findAll: ReactTestRenderer["root"]["findAll"] }) =>
+    node.findAll((child) => child.props.testID === "document-limited").length;
+
+  const limitedLibrary = () => {
+    folderRows = [
+      {
+        id: "f1",
+        name: "Exec",
+        sort_order: 0,
+        who_can_see: ["tier:t-1"],
+        pinned_at: "2026-10-01T12:00:00Z",
+      },
+      { id: "f2", name: "Rush", sort_order: 1 },
+    ];
+    documentRows = [
+      {
+        id: "d1",
+        title: "Budget",
+        folder: "Exec",
+        created_at: "2026-10-03T12:00:00Z",
+        pinned_at: "2026-10-03T12:00:00Z",
+      },
+      {
+        id: "d2",
+        title: "Schedule",
+        folder: "Rush",
+        created_at: "2026-10-01T12:00:00Z",
+        pinned_at: "2026-10-03T12:00:00Z",
+      },
+    ];
+  };
+
+  it("locks a limited folder's chip and no other", () => {
+    limitedLibrary();
+    const tree = render();
+    const chips = tree.root
+      .findAllByType(FilterChips)
+      .find((node) => node.props.accessibilityLabel === "Filter by folder")!
+      .props.chips as { label: string; mark?: React.ReactElement }[];
+    const drawn = (mark: React.ReactElement) => {
+      let mounted!: ReactTestRenderer;
+      act(() => {
+        mounted = create(mark);
+      });
+      const count = locks(mounted.root);
+      act(() => mounted.unmount());
+      return count;
+    };
+    const marked = chips
+      .filter((chip) => chip.mark)
+      .map((chip) => [chip.label, drawn(chip.mark!)]);
+    expect(marked).toEqual([["Exec", 1]]);
+  });
+
+  it("locks a limited tile and says so", () => {
+    limitedLibrary();
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+    const tiles = tree.root
+      .findByType(DocumentTiles)
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string",
+      );
+    const budget = tiles.find((t) => t.props.accessibilityLabel === "Budget")!;
+    const schedule = tiles.find(
+      (t) => t.props.accessibilityLabel === "Schedule",
+    )!;
+    expect(locks(budget)).toBe(1);
+    expect(budget.props.accessibilityValue.text).toContain(
+      "Not everyone can see this",
+    );
+    expect(locks(schedule)).toBe(0);
+  });
+
+  it("locks a limited Pinned card, folder or file", () => {
+    limitedLibrary();
+    const tree = render();
+    const cards = tree.root
+      .findByType(MarkedCards)
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string",
+      );
+    const limited = cards
+      .filter((card) => locks(card) > 0)
+      .map((card) => card.props.accessibilityValue?.text);
+    expect(limited).toEqual([
+      "Not everyone can see this",
+      "Not everyone can see this",
+    ]);
+    expect(cards.length).toBe(3);
   });
 });

@@ -10,6 +10,21 @@
  */
 
 import { dayDelta } from "@repo/formatting";
+import {
+  isSentBack,
+  isTaskStatus,
+  myTasksGroup,
+  readLiveTaskPhotos,
+  readTaskSeries,
+  type LiveTaskPhoto,
+  type MyTasksGroup,
+} from "@repo/hooks";
+import {
+  taskNeedsSignOff,
+  taskSignedOffAutomatically,
+  type TaskProofKind,
+  type TaskSeriesLine,
+} from "@repo/validation";
 import { num, records, str } from "@/lib/more/narrow";
 import { daysSinceCompletion, parseTaskDate } from "./format";
 import { isOpenTask } from "./transitions";
@@ -25,13 +40,10 @@ import { isOpenTask } from "./transitions";
  */
 const COMPLETED_RETENTION_DAYS = 7;
 
-/** Days ahead that still counts as "this week" — a rolling window, not a calendar one. */
-const THIS_WEEK_DAYS = 7;
-
 export interface TaskRowModel {
   id: string;
   title: string;
-  /** Free text the officer wrote when assigning it. Read in the detail sheet. */
+  /** Free text the officer wrote when assigning it. Read on the task screen. */
   description: string | null;
   /** Who assigned it: the member an unconfirmed completion is waiting on. */
   createdBy: string | null;
@@ -47,6 +59,8 @@ export interface TaskRowModel {
   /** Whom it is assigned to. */
   assigneeId: string | null;
   completedAt: string | null;
+  /** Who marked it done (#5732); null while open or from an older read. */
+  completedBy: string | null;
   /** When an officer confirmed it; `null` while it waits on one. */
   confirmedAt: string | null;
   pointReward: number | null;
@@ -55,6 +69,112 @@ export interface TaskRowModel {
   isOverdue: boolean;
   /** Its checklist, in order (#4003); empty for none. */
   subtasks: TaskRowSubtask[];
+  /** What Mark done needs (#4635): nothing, photos or a link. */
+  proofKind: TaskProofKind;
+  /** The assignee's link proof, while the completion stands. */
+  proofLink: string | null;
+  /** When and why an officer last sent it back (#4635). */
+  sentBackAt: string | null;
+  sentBackReason: string | null;
+  /** The assignee's reply sent with Mark done. */
+  completionNote: string | null;
+  /** Reference photos, then proof photos, each in order (#4635). */
+  photos: LiveTaskPhoto[];
+  /** When it was assigned: the task screen's first History line (#5492). */
+  createdAt: string | null;
+  /** The group task this is one member's copy of (#4295 step 3), or `null`. */
+  groupId: string | null;
+  /** The minutes it was suggested from (#5562): read for their name now. */
+  meetingId: string | null;
+  /**
+   * The tier, role or group it is from (#5473, `tasks.md` § Following a
+   * task), as `tier:<id>` / `role:<id>` / `group:<id>`, or `null` for a task
+   * from its creator alone.
+   */
+  followedBy: string | null;
+  /** That tier's, role's or group's name now; `null` once deleted. */
+  followedByName: string | null;
+  /**
+   * The group this copy is one of (#4295 step 3; 2026-11-18): who the task
+   * went to and how far along the copies are, or `null` for one person's.
+   */
+  group: TaskRowGroup | null;
+  /**
+   * The Up for grabs posting it was claimed from, or `null`: its assignee
+   * can give it back until it is done.
+   */
+  openTaskId: string | null;
+  /**
+   * The repeating series this task is a copy of (#5119): its rule, next day
+   * and whether it ended, or `null` for a task that doesn't repeat.
+   */
+  series: TaskSeriesLine | null;
+}
+
+/** A group task's summary, as the task reads carry it (`group`). */
+export interface TaskRowGroup {
+  audience: string;
+  /** The role or chapter group it went to (`role`, `group`), else `null`. */
+  targetId: string | null;
+  targetName: string | null;
+  total: number;
+  /** Copies marked done, confirmed or still waiting on an officer. */
+  done: number;
+  confirmed: number;
+}
+
+function toGroup(value: unknown): TaskRowGroup | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const audience = str(record, "audience");
+  if (!audience) return null;
+  return {
+    audience,
+    targetId: str(record, "target_id"),
+    targetName: str(record, "target_name"),
+    total: num(record, "total") ?? 0,
+    done: num(record, "done") ?? 0,
+    confirmed: num(record, "confirmed") ?? 0,
+  };
+}
+
+/**
+ * Whether an officer sent the task back and it waits on its assignee
+ * (Needs changes, #4635), by the shared rule (`isSentBack`).
+ */
+export function rowIsSentBack(row: TaskRowModel): boolean {
+  const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : undefined;
+  const status = isTaskStatus(row.displayStatus)
+    ? row.displayStatus
+    : (stored ?? "TODO");
+  return isSentBack({
+    status,
+    stored_status: stored,
+    sent_back_at: row.sentBackAt,
+  });
+}
+
+/** Whether a completion of this task waits on an officer (#4635, decision C). */
+export function rowNeedsSignOff(row: TaskRowModel): boolean {
+  return taskNeedsSignOff({
+    point_reward: row.pointReward,
+    proof_kind: row.proofKind,
+  });
+}
+
+/**
+ * Whether the completion was signed off as it was marked done, needing no
+ * sign-off (#4635), rather than confirmed by an officer: it can still be
+ * taken back.
+ */
+export function rowSignedOffAutomatically(row: TaskRowModel): boolean {
+  return taskSignedOffAutomatically({
+    points_awarded: row.pointsAwarded,
+    completed_at: row.completedAt,
+    confirmed_at: row.confirmedAt,
+    point_reward: row.pointReward,
+    proof_kind: row.proofKind,
+  });
 }
 
 export interface TaskRowSubtask {
@@ -77,14 +197,20 @@ function toSubtasks(value: unknown): TaskRowSubtask[] {
   return rows;
 }
 
+/**
+ * The board by My tasks' groups (#4295 step 5): Today (overdue first), This
+ * week, Later, by the rule web's My tasks uses (`myTasksGroup`).
+ */
 export interface TaskBoard {
-  dueThisWeek: TaskRowModel[];
-  later: TaskRowModel[];
+  groups: Record<MyTasksGroup, TaskRowModel[]>;
   /** Rows kept after filtering — what distinguishes an empty board from a full one. */
   total: number;
 }
 
-const EMPTY_BOARD: TaskBoard = { dueThisWeek: [], later: [], total: 0 };
+const EMPTY_BOARD: TaskBoard = {
+  groups: { today: [], week: [], later: [] },
+  total: 0,
+};
 
 /** One `GET /v1/tasks` row as the board draws it, or `null` if it can't be. */
 export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
@@ -109,6 +235,7 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     dueAt: str(row, "due_at"),
     assigneeId: str(row, "assignee_id"),
     completedAt: str(row, "completed_at"),
+    completedBy: str(row, "completed_by"),
     confirmedAt: str(row, "confirmed_at"),
     pointReward: num(row, "point_reward"),
     pointsAwarded: row.points_awarded === true,
@@ -119,6 +246,23 @@ export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
     isDone: !isOpenTask(storedStatus ?? displayStatus),
     isOverdue: displayStatus === "OVERDUE",
     subtasks: toSubtasks(row.subtasks),
+    proofKind:
+      row.proof_kind === "photo" || row.proof_kind === "link"
+        ? row.proof_kind
+        : "none",
+    proofLink: str(row, "proof_link"),
+    sentBackAt: str(row, "sent_back_at"),
+    sentBackReason: str(row, "sent_back_reason"),
+    completionNote: str(row, "completion_note"),
+    photos: readLiveTaskPhotos(row.photos),
+    createdAt: str(row, "created_at"),
+    groupId: str(row, "group_id"),
+    meetingId: str(row, "meeting_id"),
+    followedBy: str(row, "followed_by"),
+    followedByName: str(row, "followed_by_name"),
+    group: toGroup(row.group),
+    openTaskId: str(row, "open_task_id"),
+    series: readTaskSeries(row.series),
   };
 }
 
@@ -185,8 +329,11 @@ export function selectTaskRows(
 ): TaskBoard {
   if (!viewerUserId) return EMPTY_BOARD;
 
-  const dueThisWeek: RankedRow[] = [];
-  const later: RankedRow[] = [];
+  const groups: Record<MyTasksGroup, RankedRow[]> = {
+    today: [],
+    week: [],
+    later: [],
+  };
 
   for (const raw of records(data)) {
     if (str(raw, "assignee_id") !== viewerUserId) continue;
@@ -215,25 +362,29 @@ export function selectTaskRows(
       if (sinceDone !== null && sinceDone > COMPLETED_RETENTION_DAYS) continue;
     }
 
-    // Overdue rows land in DUE THIS WEEK rather than a section of their own:
-    // Canvas draws no OVERDUE section, and an overdue task is the most urgent
-    // thing the board can say — burying it below "this week" would invert that.
-    // The 7-day boundary is not arbitrary either: `formatDueSubtitle` switches
-    // from a weekday name to an absolute date at exactly `days < 7`, and the
-    // drawing agrees (its LATER row reads "Due Aug 22").
-    if (days !== null && days < THIS_WEEK_DAYS) {
-      dueThisWeek.push({ row, days });
-    } else {
-      later.push({ row, days });
-    }
+    // Today, This week or Later by the shared rule. An overdue row leads
+    // Today rather than taking a section of its own: it is the most urgent
+    // thing the board can say, and burying it under a later heading would
+    // invert that (Canvas draws no OVERDUE section either). A finished row
+    // whose day has passed stays in Today too, where it was finished, until
+    // it retires above.
+    const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : null;
+    const shown = isTaskStatus(row.displayStatus) ? row.displayStatus : stored;
+    const group = myTasksGroup(
+      { due_date: row.dueDay ?? row.dueDate, due_at: row.dueAt, status: shown },
+      now,
+    );
+    groups[group].push({ row, days });
   }
 
-  dueThisWeek.sort(compareRows);
-  later.sort(compareRows);
-
+  const sorted = (rows: RankedRow[]) =>
+    rows.sort(compareRows).map((entry) => entry.row);
   return {
-    dueThisWeek: dueThisWeek.map((entry) => entry.row),
-    later: later.map((entry) => entry.row),
-    total: dueThisWeek.length + later.length,
+    groups: {
+      today: sorted(groups.today),
+      week: sorted(groups.week),
+      later: sorted(groups.later),
+    },
+    total: groups.today.length + groups.week.length + groups.later.length,
   };
 }

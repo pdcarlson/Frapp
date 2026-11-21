@@ -10,8 +10,10 @@ export const ACCENT_PREVIEW_INK = [
 /**
  * The better of the two tones on `fill`, and its ratio. Always the better one
  * rather than the first that clears AA, so the result is defined for every
- * input, including a fill where neither tone clears it (the caller then says
- * so). `null` when `fill` is not a hex colour.
+ * input, including a fill where neither tone clears it. The page no longer
+ * warns about that case, because no colour it keeps reaches it on today's
+ * ladder (#4388); `settings-contrast.spec.ts` sweeps for it. `null` when
+ * `fill` is not a hex colour.
  *
  * Its own module so `settings-contrast.spec.ts` measures the ink the page
  * renders, not a copy of the ladder.
@@ -30,9 +32,9 @@ export function previewInkFor(
 }
 
 /**
- * A failing ratio for either Accent-card warning (the preview's label ink, or a
- * check the save reported), to one decimal and truncated, not rounded: both
- * sentences say the figure is under 4.5:1, and rounding would print 4.46 as
+ * A failing ratio for the Accent card's server disclosure (a check the save
+ * reported), to one decimal and truncated, not rounded: the sentence says the
+ * figure is under 4.5:1, and rounding would print 4.46 as
  * "4.5:1, under the 4.5:1 minimum". The epsilon keeps a ratio whose float sits
  * a hair under a tenth (0.7 + 0.1 is 0.7999…) from dropping a tenth.
  */

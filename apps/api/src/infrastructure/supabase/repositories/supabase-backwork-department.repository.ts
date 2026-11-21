@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { findDepartmentByCode } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type {
   FrappSupabaseClient,
@@ -26,18 +27,18 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
     return data || [];
   }
 
+  /**
+   * Trimmed and case-insensitive (#3918, `findDepartmentByCode`): "math"
+   * finds "MATH". Matched here rather than with `ilike`, which would need
+   * its wildcards escaped and would miss a stored code with stray spaces; a
+   * chapter's department list is short.
+   */
   async findByCode(
     chapterId: string,
     code: string,
   ): Promise<BackworkDepartment | null> {
-    const { data, error } = await this.supabase
-      .from('backwork_departments')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .eq('code', code)
-      .maybeSingle();
-    if (error) throw new SupabaseQueryError(error);
-    return data;
+    const departments = await this.findByChapter(chapterId);
+    return findDepartmentByCode(departments, code) ?? null;
   }
 
   async create(

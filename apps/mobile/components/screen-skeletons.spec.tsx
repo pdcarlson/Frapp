@@ -30,7 +30,6 @@ vi.mock("@/components/profile/profile-photo", () => ({
   PROFILE_PHOTO_SIZE: 84,
   ProfilePhoto: "ProfilePhoto",
 }));
-vi.mock("@/lib/ask/flag", () => ({ isAskAvailable: () => false }));
 
 import {
   SkeletonBlock,
@@ -40,7 +39,8 @@ import {
 } from "./state-block";
 import { HistoryRow, HistoryRowsSkeleton } from "./history-row";
 import { ListRow, ListRowSkeleton, ListSection } from "./list-section";
-import { TaskRow, TaskRowSkeleton } from "./tasks/task-row";
+import { TaskListSkeleton, TaskRow, TaskRowSkeleton } from "./tasks/task-row";
+import { TaskDetailSkeleton } from "./tasks/task-facts";
 import { ChoiceRow, ChoiceRowSkeleton } from "./auth/choice-row";
 import { CardListSkeleton } from "./card-list-skeleton";
 import { BalanceCardSkeleton } from "./dues/balance-card";
@@ -48,13 +48,13 @@ import { StartCardSkeleton } from "./study/start-card";
 import { ThreadSkeleton } from "./chat/thread-skeleton";
 import { ChannelListSkeleton } from "./chat/channel-row";
 import { JoinedChannelsSkeleton } from "./onboarding/joined-channels-card";
-import { EventListSkeleton } from "@/app/(app)/(tabs)/events";
+import { EventsCalendarSkeleton } from "@/components/events/events-calendar";
 import { EventDetailSkeleton } from "@/app/(app)/event-details";
 import {
   NotificationListRow,
   NotificationListSkeleton,
 } from "@/app/(app)/notifications";
-import { ProfileSkeleton } from "@/app/(app)/profile";
+import { ProfileSkeleton } from "@/components/you/profile-sections";
 
 /**
  * components.md §10: "the skeleton mirrors the layout it becomes — same
@@ -159,7 +159,8 @@ describe("SkeletonText", () => {
     expect(tree.root.findAllByType(SkeletonBlock).length).toBeGreaterThan(0);
     expect(bar(tree).height).toBe(13);
     expect(bar(tree).width).toBe("100%");
-    expect(bar(tree).backgroundColor).toBe(tokens.color.surface.popover);
+    // The step above a card on a screen (`lib/surfaces.ts`).
+    expect(bar(tree).backgroundColor).toBe(tokens.color.surface.card);
   });
 });
 
@@ -213,7 +214,7 @@ describe("SkeletonRegion", () => {
     const style = flatten(
       tree.root.findByType("Animated.View" as never).props.style,
     );
-    expect(style.backgroundColor).toBe(tokens.color.surface.popover);
+    expect(style.backgroundColor).toBe(tokens.color.surface.card);
     expect(style.borderRadius).toBe(tokens.radius.chip);
     expect(style.opacity).not.toBe(0.1);
   });
@@ -244,7 +245,7 @@ describe("Every skeleton draws its shapes with SkeletonBlock", () => {
     ["ThreadSkeleton", <ThreadSkeleton key="t" />],
     ["ChannelListSkeleton", <ChannelListSkeleton key="ch" />],
     ["JoinedChannelsSkeleton", <JoinedChannelsSkeleton key="j" />],
-    ["EventListSkeleton", <EventListSkeleton key="e" />],
+    ["EventsCalendarSkeleton", <EventsCalendarSkeleton key="e" />],
     ["EventDetailSkeleton", <EventDetailSkeleton key="ed" />],
     ["NotificationListSkeleton", <NotificationListSkeleton key="n" />],
     ["ProfileSkeleton", <ProfileSkeleton key="p" />],
@@ -257,7 +258,7 @@ describe("Every skeleton draws its shapes with SkeletonBlock", () => {
       .filter(
         (view) =>
           flatten(view.props.style).backgroundColor ===
-          tokens.color.surface.popover,
+          tokens.color.surface.card,
       );
     expect(handDrawn).toHaveLength(0);
     expect(tree.root.findAllByType(SkeletonBlock).length).toBeGreaterThan(0);
@@ -274,38 +275,83 @@ describe("Every skeleton draws its shapes with SkeletonBlock", () => {
   });
 });
 
+/**
+ * #5109. A bar is one step above what it sits on. On a phone screen that is
+ * `surface1` for a bar straight on the page and `card` for one inside a card,
+ * so a loading screen is no louder than the content it stands for.
+ */
+describe("Skeleton bars take the step above their own ground", () => {
+  const { surface } = tokens.color;
+  const fills = (tree: ReactTestRenderer) =>
+    tree.root
+      .findAllByType("Animated.View" as never)
+      .map((view) => flatten(view.props.style).backgroundColor);
+
+  it.each([
+    ["ThreadSkeleton", <ThreadSkeleton key="t" />],
+    ["ChannelListSkeleton", <ChannelListSkeleton key="ch" />],
+    ["EventsCalendarSkeleton", <EventsCalendarSkeleton key="e" />],
+    ["NotificationListSkeleton", <NotificationListSkeleton key="n" />],
+    ["ProfileSkeleton", <ProfileSkeleton key="p" />],
+    ["TaskListSkeleton", <TaskListSkeleton key="tl" />],
+    ["TaskDetailSkeleton", <TaskDetailSkeleton key="td" />],
+  ])("%s: every bar on the page takes surface1", (_, node) => {
+    const all = fills(render(node));
+    expect(all.length).toBeGreaterThan(0);
+    expect(new Set(all)).toEqual(new Set([surface.surface1]));
+  });
+
+  it("CardListSkeleton: the card's bars take card, the rest surface1", () => {
+    const withCard = fills(
+      render(
+        <CardListSkeleton
+          label="Loading"
+          card={<BalanceCardSkeleton />}
+          summary
+        />,
+      ),
+    );
+    const cardOnly = fills(
+      render(
+        <SkeletonRegion label="Loading">
+          <BalanceCardSkeleton />
+        </SkeletonRegion>,
+      ),
+    );
+    expect(cardOnly.length).toBeGreaterThan(0);
+    expect(withCard.slice(0, cardOnly.length)).toEqual(
+      cardOnly.map(() => surface.card),
+    );
+    expect(new Set(withCard.slice(cardOnly.length))).toEqual(
+      new Set([surface.surface1]),
+    );
+  });
+});
+
 describe("Screen skeletons sit on their screen's frames", () => {
   const views = (tree: ReactTestRenderer) =>
     tree.root.findAllByType("View" as never).map((v) => flatten(v.props.style));
 
-  it("Events: a day caption over the next-event card, then a caption and flat rows", () => {
-    const tree = render(<EventListSkeleton rows={3} />);
-    const cards = views(tree).filter(
-      (style) => style.borderRadius === tokens.radius.cardLarge,
+  it("Calendar: the month row, seven columns of weeks, then the day heading", () => {
+    const tree = render(<EventsCalendarSkeleton />);
+    // No card: the loaded month sits on the floor (#5310 dropped the List and
+    // its next-event card).
+    expect(
+      views(tree).filter(
+        (style) => style.borderRadius === tokens.radius.cardLarge,
+      ),
+    ).toHaveLength(0);
+    // The weekday initials are real; each week is seven cells, each with a
+    // bar where the day's number sits.
+    const weeks = views(tree).filter(
+      (style) => style.flexDirection === "row" && style.minHeight === undefined,
     );
-    // One card, as the loaded list draws only the next event as a card.
-    expect(cards).toHaveLength(1);
-    expect(cards[0]).toMatchObject({
-      flexDirection: "row",
-      gap: tokens.spacing.md,
-      padding: tokens.spacing.lg,
-      borderWidth: 1,
-      backgroundColor: tokens.color.surface.card,
-    });
-    // No date column: the day is the caption over the rows (#3707).
-    expect(views(tree).filter((style) => style.width === 52)).toHaveLength(0);
-    const flat = views(tree).filter(
-      (style) =>
-        style.minHeight === tokens.touch.minimum &&
-        style.paddingVertical === tokens.spacing.md,
-    );
-    expect(flat).toHaveLength(3);
-    // Hairline-split: no rule above the first row.
-    expect(flat.map((style) => style.borderTopWidth ?? 0)).toEqual([
-      0,
-      expect.any(Number),
-      expect.any(Number),
-    ]);
+    expect(weeks.length).toBeGreaterThanOrEqual(5);
+    expect(
+      tree.root
+        .findAllByType(SkeletonBlock)
+        .filter((block) => block.props.width === 18),
+    ).toHaveLength(35);
   });
 
   it("Event details: the check-in card's frame, and no section an event may not carry", () => {
@@ -330,7 +376,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
             id: "n-1",
             title: "Dues reminder",
             body: "Spring dues are open.",
-            categoryLabel: "Dues",
+            data: { target: { screen: "billing" } },
             time: "9:41 PM",
             isUnread: false,
             target: { pathname: "/dues" },
@@ -348,7 +394,9 @@ describe("Screen skeletons sit on their screen's frames", () => {
     );
   });
 
-  it("Profile: the photo's circle, two stat cards and the five detail rows every profile draws", () => {
+  // The You tab's head (#3839): its rows draw at once, and Details waits for
+  // the profile, so the skeleton is the head alone.
+  it("Profile: the photo's circle and the name lines, no stat cards and no detail rows (#5281)", () => {
     const tree = render(<ProfileSkeleton />);
     const photo = tree.root
       .findAllByType("Animated.View" as never)
@@ -359,10 +407,10 @@ describe("Screen skeletons sit on their screen's frames", () => {
       views(tree).filter(
         (style) =>
           style.flex === 1 &&
-          style.backgroundColor === tokens.color.surface.card,
+          style.backgroundColor === tokens.color.surface.surface1,
       ),
-    ).toHaveLength(2);
-    expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(5);
+    ).toHaveLength(0);
+    expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(0);
   });
 
   it("Joined channels: rows on the card row's frame", () => {
@@ -425,6 +473,7 @@ describe("Placeholder rows sit on their real row's frame", () => {
           dueAt: null,
           assigneeId: null,
           completedAt: null,
+          completedBy: null,
           confirmedAt: null,
           pointReward: 5,
           pointsAwarded: false,
@@ -433,6 +482,20 @@ describe("Placeholder rows sit on their real row's frame", () => {
           createdBy: null,
           isOverdue: false,
           subtasks: [],
+          proofKind: "none",
+          proofLink: null,
+          sentBackAt: null,
+          sentBackReason: null,
+          completionNote: null,
+          photos: [],
+          createdAt: null,
+          groupId: null,
+          meetingId: null,
+          followedBy: null,
+          followedByName: null,
+          group: null,
+          openTaskId: null,
+          series: null,
         }}
         now={new Date("2026-11-05T12:00:00Z")}
       />,
@@ -540,9 +603,7 @@ describe("Loading states stay shaped like their screens", () => {
    * the per-screen pass didn't reach. This list only shrinks.
    */
   const GENERIC_ALLOWED = new Set([
-    "components/ask/answer-card.tsx",
-    // List-shaped, so these two are owed their own skeletons (#3522).
-    "components/directory/member-detail-sheet.tsx",
+    // List-shaped, so this one is owed its own skeleton (#3522).
     "components/settings/blocked-members-sheet.tsx",
     "components/state-block.tsx",
   ]);

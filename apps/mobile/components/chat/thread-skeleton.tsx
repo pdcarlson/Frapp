@@ -36,7 +36,7 @@ export function ThreadSkeleton({ channelId }: { channelId?: string | null }) {
 
   if (compact) {
     return (
-      <SkeletonRegion label="Loading messages" style={styles.container}>
+      <SkeletonRegion label="Loading messages" style={styles.container} flush>
         {Array.from({ length: ROWS * 2 }, (_, index) => (
           <View key={index} style={[styles.compactRow]}>
             <SkeletonBlock
@@ -56,7 +56,7 @@ export function ThreadSkeleton({ channelId }: { channelId?: string | null }) {
   }
 
   return (
-    <SkeletonRegion label="Loading messages" style={styles.container}>
+    <SkeletonRegion label="Loading messages" style={styles.container} flush>
       {Array.from({ length: ROWS }, (_, index) => (
         <View key={index} style={styles.row}>
           <SkeletonBlock

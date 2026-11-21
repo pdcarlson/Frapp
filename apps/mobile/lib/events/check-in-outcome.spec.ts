@@ -11,9 +11,13 @@ import {
   ALREADY_CHECKED_IN_COPY,
   CHECK_IN_CODE_REFUSED_MESSAGE,
   CHECK_IN_LOCATION_DENIED_COPY,
+  CHECK_IN_NEEDS_CODE_MESSAGE,
+  CHECK_IN_NEEDS_LOCATION_MESSAGES,
+  needsLocationRefusal,
   CHECK_IN_TOKEN_FIELD,
   checkInFailure,
   checkInSuccess,
+  needsScannedCode,
 } from "./check-in-outcome";
 
 /** A file of the API's source, read by the specs that keep a copy honest. */
@@ -187,6 +191,58 @@ describe("checkInFailure", () => {
         }),
       ).toBe(false);
     });
+  });
+});
+
+describe("needsLocationRefusal", () => {
+  it("knows both of the API's no-location refusals, word for word", () => {
+    const source = apiSource("application/services/attendance.service.ts")
+      // The service splits long strings across lines; compare the words.
+      .replace(/'\s*\+?\s*'/g, "")
+      .replace(/\s+/g, " ");
+    for (const message of CHECK_IN_NEEDS_LOCATION_MESSAGES) {
+      expect(source).toContain(message);
+    }
+  });
+
+  it("is a 400 with one of them, and nothing else", () => {
+    for (const message of CHECK_IN_NEEDS_LOCATION_MESSAGES) {
+      expect(needsLocationRefusal({ statusCode: 400, message })).toBe(true);
+      expect(needsLocationRefusal({ statusCode: 403, message })).toBe(false);
+    }
+    expect(
+      needsLocationRefusal({
+        statusCode: 400,
+        message: "Check-in is only allowed during the event time window",
+      }),
+    ).toBe(false);
+    expect(needsLocationRefusal(new Error("offline"))).toBe(false);
+  });
+});
+
+describe("CHECK_IN_NEEDS_CODE_MESSAGE", () => {
+  it("is the API's refusal of a check-in with no code, word for word", () => {
+    expect(apiSource("application/services/attendance.service.ts")).toContain(
+      `'${CHECK_IN_NEEDS_CODE_MESSAGE}'`,
+    );
+  });
+
+  it("is told apart from every other refusal", () => {
+    expect(
+      needsScannedCode({
+        statusCode: 403,
+        message: CHECK_IN_NEEDS_CODE_MESSAGE,
+      }),
+    ).toBe(true);
+    expect(
+      needsScannedCode({
+        statusCode: 403,
+        message: CHECK_IN_CODE_REFUSED_MESSAGE,
+      }),
+    ).toBe(false);
+    expect(needsScannedCode(new Error(CHECK_IN_NEEDS_CODE_MESSAGE))).toBe(
+      false,
+    );
   });
 });
 

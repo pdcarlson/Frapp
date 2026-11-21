@@ -1,3 +1,4 @@
+import { reservedMentionName } from "@repo/validation";
 import type { StagedChannel, StagedRole } from "./upload-step";
 
 /**
@@ -64,8 +65,10 @@ function words(name: string): string[] {
  * educator, not a pledge, and matching it to New Member would let every
  * pledge read the officer channels.
  *
- * Member is the exception, matched only as the WHOLE name. It is the widest
- * role a chapter has, and "member" ends too many officer titles ("Board
+ * The Actives role (`MEMBER`, once Member, then Everyone until #5802) is the
+ * exception, matched only as the WHOLE name: a Discord "Brothers" role still
+ * lands on it, so its channels open to the chapter's actives. It is the
+ * widest role an officer gives, and "member" ends too many officer titles ("Board
  * Member", "Cabinet Member") for a suffix to be safe: a wrong guess there
  * opens an exec channel to everyone.
  */
@@ -250,6 +253,7 @@ export function roleIssues(
     if (choice?.action !== "new") continue;
     const name = choice.name.trim();
     const clash = existing.get(name.toLowerCase());
+    const reserved = reservedMentionName(name);
     if (!name) {
       issues.push({
         roleId: role.roleId,
@@ -259,6 +263,13 @@ export function roleIssues(
       issues.push({
         roleId: role.roleId,
         message: `The new role for ${role.roleName} needs a shorter name (at most ${maxNameLength} characters).`,
+      });
+    } else if (reserved !== null) {
+      // `@everyone` names the chapter's Everyone role, and no other (#4191);
+      // `@here` is the members online, never a role (2026-11-12).
+      issues.push({
+        roleId: role.roleId,
+        message: `"${name}" is what @${reserved} reads as. Give the new role for ${role.roleName} another name.`,
       });
     } else if (clash) {
       issues.push({

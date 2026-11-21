@@ -18,8 +18,8 @@
  * classes and the nav glyphs) so the picture cannot drift far from the app.
  * The renderers themselves are not mounted: each one reads a real message and
  * mutates through the API. The words follow the app's too: the task badge
- * reads `@repo/hooks`' labels, and the typing line names nobody, sitting above
- * the composer as `chat-shell.tsx` puts it.
+ * reads `@repo/hooks`' labels, and the typing line names its typist, sitting
+ * above the composer as `chat-shell.tsx` puts it.
  *
  * **It is an officer's view of a meeting in progress.** The checked-in count
  * is shown only to members who can read attendance (`event-card.tsx`), and
@@ -56,7 +56,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { STATUS_BADGE } from "@/components/chat/renderers/task-card";
+import { taskStatusKind } from "@/components/tasks/task-status";
 import {
   meterFillClassName,
   meterTrackDenseClassName,
@@ -85,6 +85,8 @@ const AT = {
 export const SHOWCASE_FINAL = 12900;
 const HOLD_UNTIL = SHOWCASE_FINAL + 3400;
 const FADE_MS = 500;
+/** Who the scene shows typing: one of its own authors, named as the app names them. */
+const SHOWCASE_TYPIST = "Sam Okafor";
 const LOOP_AT = HOLD_UNTIL + FADE_MS;
 
 const CHECKED_IN = { from: 12, to: 31 } as const;
@@ -207,16 +209,19 @@ function Body({ children }: { children: React.ReactNode }) {
 function EventCard({ t }: { t: number }) {
   const checkedIn = Math.round(
     CHECKED_IN.from +
-      (CHECKED_IN.to - CHECKED_IN.from) * progress(t, AT.checkInFrom, AT.checkInTo),
+      (CHECKED_IN.to - CHECKED_IN.from) *
+        progress(t, AT.checkInFrom, AT.checkInTo),
   );
   return (
     <Card className={cn(MESSAGE_CARD, ENTER)}>
-      <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+      <div
+        className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}
+      >
         <EventsGlyph className="h-4 w-4" /> Event
       </div>
       <p className="mt-2 text-base font-bold">Chapter meeting</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
-        <span>Today, 8:00 – 9:00 PM</span>
+        <span>Tonight · 8:00 – 9:00 PM</span>
         <span aria-hidden="true">·</span>
         <span className="inline-flex items-center gap-1">
           <LocationGlyph className="h-4 w-4" />
@@ -239,26 +244,34 @@ function EventCard({ t }: { t: number }) {
 
 function TaskCard({ t }: { t: number }) {
   const status: TaskStatus =
-    t >= AT.taskDone ? "COMPLETED" : t >= AT.taskStarted ? "IN_PROGRESS" : "TODO";
+    t >= AT.taskDone
+      ? "COMPLETED"
+      : t >= AT.taskStarted
+        ? "IN_PROGRESS"
+        : "TODO";
   const confirmed = t >= AT.taskConfirmed;
   const label = taskStatusLabel({ status, points_awarded: confirmed });
   return (
     <Card className={cn(MESSAGE_CARD, ENTER)}>
       <div className="flex items-center justify-between gap-6">
-        <div className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}>
+        <div
+          className={cn(EYEBROW, "flex items-center gap-1.5 text-accent-text")}
+        >
           <TasksGlyph className="h-4 w-4" /> Task
         </div>
         {/* Keyed on the status so each change re-enters, which is the scene's one flourish. */}
         <Badge
           key={label}
-          variant={STATUS_BADGE[status]}
+          variant={taskStatusKind({ status, points_awarded: confirmed })}
           className="motion-safe:animate-count-up gap-1"
         >
           {confirmed ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
           {label}
         </Badge>
       </div>
-      <p className="mt-2 text-base font-bold">Grab the projector from the library</p>
+      <p className="mt-2 text-base font-bold">
+        Grab the projector from the library
+      </p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
         <span>Sam Okafor → Eli Park</span>
         <span aria-hidden="true">·</span>
@@ -277,7 +290,7 @@ function PollCard({ t }: { t: number }) {
   ];
   const total = options.reduce((sum, option) => sum + option.count, 0);
   return (
-    <Card className={cn(MESSAGE_CARD, "w-72", ENTER)}>
+    <Card className={cn(MESSAGE_CARD, ENTER)}>
       <p className={cn(EYEBROW, "text-muted-foreground")}>Poll</p>
       <div className="mt-2 text-base font-bold">Formal theme?</div>
       <ul className="mt-3 space-y-2">
@@ -298,7 +311,10 @@ function PollCard({ t }: { t: number }) {
               </span>
               <div className={cn("mt-1", meterTrackDenseClassName)}>
                 <div
-                  className={cn(meterFillClassName, "transition-[width] duration-200")}
+                  className={cn(
+                    meterFillClassName,
+                    "transition-[width] duration-200",
+                  )}
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -313,16 +329,21 @@ function PollCard({ t }: { t: number }) {
   );
 }
 
-/** `chat-shell.tsx`'s line, word for word: typing names nobody. */
+/** `chat-shell.tsx`'s line: it names who is typing (`typingLabel`). */
 function Typing() {
   return (
     <p className="shrink-0 px-5 pb-1 text-caption text-muted-foreground motion-safe:animate-fade-in">
-      Someone is typing…
+      {SHOWCASE_TYPIST} is typing…
     </p>
   );
 }
 
-const CHANNELS = ["general", "announcements", "social", "philanthropy"] as const;
+const CHANNELS = [
+  "general",
+  "announcements",
+  "social",
+  "philanthropy",
+] as const;
 
 /**
  * The scene's frame: a chapter rail from `xl` up (below it the thread column
@@ -364,7 +385,9 @@ export function ChapterShowcase({ className }: { className?: string }) {
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-5">
               <span className="font-bold text-foreground"># general</span>
-              <span className="text-caption text-muted-foreground">48 members</span>
+              <span className="text-caption text-muted-foreground">
+                48 members
+              </span>
             </div>
             <div
               className={cn(

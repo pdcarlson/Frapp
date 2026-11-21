@@ -26,7 +26,8 @@ beforeAll(() => {
     };
   }
   if (!HTMLElement.prototype.releasePointerCapture) {
-    HTMLElement.prototype.releasePointerCapture = function releasePointerCapture() {};
+    HTMLElement.prototype.releasePointerCapture =
+      function releasePointerCapture() {};
   }
 });
 
@@ -137,6 +138,24 @@ describe("SlashPalette", () => {
     expect(screen.getByText("/event")).toBeInTheDocument();
     expect(screen.getByText("/poll")).toBeInTheDocument();
     expect(screen.getByText("/announce")).toBeInTheDocument();
+  });
+
+  // #3414: the server refuses an announcement from anyone who can't post in
+  // the announcements channel, so the palette doesn't offer it to them.
+  it("leaves /announce out for a member who can't post announcements", () => {
+    render(
+      <SlashPalette
+        open
+        isModuleEnabled={() => true}
+        canAnnounce={false}
+        status="ready"
+        onSelect={noop}
+        onOpenChange={noop}
+      />,
+    );
+
+    expect(screen.getByText("/event")).toBeInTheDocument();
+    expect(screen.queryByText("/announce")).not.toBeInTheDocument();
   });
 
   // #396: Radix's `DialogContent` never sets `aria-modal` on its own

@@ -18,6 +18,14 @@ export class DiscordAuthorLinkDto {
     type: String,
     nullable: true,
     description:
+      "The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543).",
+  })
+  discord_user_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
       'What Discord called the linked account when it was linked. Display only.',
   })
   discord_username: string | null;

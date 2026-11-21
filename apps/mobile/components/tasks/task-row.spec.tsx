@@ -46,12 +46,27 @@ function row(overrides: Partial<TaskRowModel> = {}): TaskRowModel {
     dueAt: null,
     assigneeId: "me",
     completedAt: null,
+    completedBy: null,
     confirmedAt: null,
     pointReward: 5,
     pointsAwarded: false,
     isDone: false,
     isOverdue: false,
     subtasks: [],
+    proofKind: "none",
+    proofLink: null,
+    sentBackAt: null,
+    sentBackReason: null,
+    completionNote: null,
+    photos: [],
+    createdAt: null,
+    groupId: null,
+    meetingId: null,
+    followedBy: null,
+    followedByName: null,
+    group: null,
+    openTaskId: null,
+    series: null,
     ...overrides,
   };
 }
@@ -128,9 +143,95 @@ describe("TaskRow — the overdue colour", () => {
       />,
     );
 
-    expect(styleOfText(tree, "Due Sep 30").color).toBe(
+    expect(styleOfText(tree, "Due September 30").color).toBe(
       signetDarkTokens.color.text.mutedForeground,
     );
+  });
+});
+
+describe("TaskRow — a task a group follows (#5473)", () => {
+  it("says who it is from at the end of its line, and to a screen reader", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          dueDate: "2026-09-30",
+          followedBy: "tier:t-exec",
+          followedByName: "Exec board",
+        })}
+        now={NOW}
+        onToggle={() => {}}
+        onOpen={() => {}}
+      />,
+    );
+    expect(texts(tree)).toContain("Due September 30 · From Exec board");
+    const labelled = tree.root.findAll(
+      (node) =>
+        typeof node.props?.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.includes("From Exec board"),
+    );
+    expect(labelled.length).toBeGreaterThan(0);
+  });
+
+  it("says nothing of it on a task from its creator alone", () => {
+    const tree = render(
+      <TaskRow row={row({ dueDate: "2026-09-30" })} now={NOW} onToggle={() => {}} />,
+    );
+    expect(texts(tree).join(" ")).not.toContain("From");
+  });
+});
+
+describe("TaskRow — a copy of a group task (#5699)", () => {
+  it("names who it went to and how far they are, not the member alone", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          dueDate: "2026-09-30",
+          groupId: "group-1",
+          group: {
+            audience: "everyone",
+            targetId: null,
+            targetName: null,
+            total: 20,
+            done: 14,
+            confirmed: 9,
+          },
+        })}
+        now={NOW}
+        onToggle={() => {}}
+      />,
+    );
+    expect(texts(tree)).toContain("Due September 30 · Everyone · 14 of 20 done");
+  });
+
+  it("names the role, tier or group a copy went to", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          dueDate: "2026-09-30",
+          groupId: "group-2",
+          group: {
+            audience: "tier",
+            targetId: "t-exec",
+            targetName: "Exec board",
+            total: 4,
+            done: 1,
+            confirmed: 0,
+          },
+        })}
+        now={NOW}
+        onToggle={() => {}}
+      />,
+    );
+    expect(texts(tree)).toContain(
+      "Due September 30 · Everyone in Exec board · 1 of 4 done",
+    );
+  });
+
+  it("says nothing of it on a task for one person", () => {
+    const tree = render(
+      <TaskRow row={row({ dueDate: "2026-09-30" })} now={NOW} onToggle={() => {}} />,
+    );
+    expect(texts(tree).join(" ")).not.toContain("Everyone");
   });
 });
 
@@ -150,7 +251,7 @@ describe("TaskRow — press feedback", () => {
     const resting = flatten(pressable.props.style({ pressed: false }));
 
     expect(pressable.props.android_ripple?.color).toMatch(/^rgba\(/);
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.surface1);
     expect(held).not.toHaveProperty("opacity");
     expect(resting).not.toHaveProperty("backgroundColor");
     expect(resting).not.toHaveProperty("borderRadius");
@@ -252,16 +353,16 @@ describe("TaskRow — the completed row", () => {
     expect(Number(container.opacity)).toBeLessThan(1);
   });
 
-  it("marks an awarded reward in the success role", () => {
+  it("marks an awarded reward with a check, in the muted text (#5570)", () => {
     const tree = render(<TaskRow row={done} now={NOW} />);
-    expect(texts(tree)).toContain("+15 ✓");
-    expect(styleOfText(tree, "+15 ✓").color).toBe(
-      signetDarkTokens.color.semantic.success,
+    expect(texts(tree)).toContain("+15 pts ✓");
+    expect(styleOfText(tree, "+15 pts ✓").color).toBe(
+      signetDarkTokens.color.text.mutedForeground,
     );
   });
 });
 
-describe("TaskRow — the points chip", () => {
+describe("TaskRow — the points", () => {
   it("draws nothing for a task carrying no reward", () => {
     const tree = render(
       <TaskRow
@@ -273,7 +374,19 @@ describe("TaskRow — the points chip", () => {
     expect(texts(tree).some((text) => text.startsWith("+"))).toBe(false);
   });
 
-  it("keeps a completed-but-unconfirmed reward on the accent chip", () => {
+  // #5570: the points are muted text, never louder than the title.
+  it("draws the points in the muted text, under the title's weight", () => {
+    const tree = render(
+      <TaskRow row={row({ pointReward: 5 })} now={NOW} onToggle={() => {}} />,
+    );
+    const points = styleOfText(tree, "+5 pts");
+    expect(points.color).toBe(signetDarkTokens.color.text.mutedForeground);
+    expect(points.fontSize).toBeLessThan(
+      signetDarkTokens.typography.role.label.size,
+    );
+  });
+
+  it("keeps a completed-but-unconfirmed reward unchecked", () => {
     const tree = render(
       <TaskRow
         row={row({
@@ -285,8 +398,8 @@ describe("TaskRow — the points chip", () => {
         now={NOW}
       />,
     );
-    expect(texts(tree)).toContain("+15");
-    expect(styleOfText(tree, "+15").color).toBe("#CB9FFF");
+    expect(texts(tree)).toContain("+15 pts");
+    expect(texts(tree)).not.toContain("+15 pts ✓");
   });
 });
 
@@ -317,7 +430,7 @@ describe("TaskRow — the checkbox stays off the accent", () => {
       />,
     );
     const style = box(tree);
-    expect(style.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
+    expect(style.backgroundColor).toBe(signetDarkTokens.color.surface.card);
     expect(style.borderColor).toBe(signetDarkTokens.color.border.input);
     const flat = JSON.stringify(tree.toJSON());
     expect(flat).toContain(signetDarkTokens.color.text.mutedForeground);
@@ -397,5 +510,111 @@ describe("TaskRow — two targets and the shared words", () => {
       }),
     );
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TaskRow — status words and photos (#4635)", () => {
+  const status = (tree: ReactTestRenderer) =>
+    texts(tree).find(
+      (text) => text.includes(" · ") || /Due|Done|Waiting|Confirmed/.test(text),
+    );
+
+  it("says Needs changes ahead of the due line on a sent-back task", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          storedStatus: "IN_PROGRESS",
+          displayStatus: "IN_PROGRESS",
+          sentBackAt: "2026-08-16T12:00:00Z",
+          sentBackReason: "Floor is still sticky",
+        })}
+        now={NOW}
+      />,
+    );
+    expect(status(tree)).toMatch(/^Needs changes · Due/);
+  });
+
+  it("says Done for a completion that needed no sign-off", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          storedStatus: "COMPLETED",
+          displayStatus: "COMPLETED",
+          isDone: true,
+          pointsAwarded: true,
+          pointReward: null,
+        })}
+        now={NOW}
+      />,
+    );
+    expect(texts(tree)).toContain("Done");
+    expect(texts(tree)).not.toContain("Confirmed");
+  });
+
+  it("counts its reference photos beside the due", () => {
+    const tree = render(
+      <TaskRow
+        row={row({
+          photos: [
+            { id: "a", kind: "reference", storage_path: "a" },
+            { id: "b", kind: "reference", storage_path: "b" },
+            { id: "c", kind: "proof", storage_path: "c" },
+          ],
+        })}
+        now={NOW}
+      />,
+    );
+    expect(status(tree)).toMatch(/· 2 photos$/);
+  });
+
+  it("names the box's move for a task that asks for a photo", () => {
+    const tree = render(
+      <TaskRow
+        row={row({ proofKind: "photo" })}
+        now={NOW}
+        onOpen={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+    const rowPress = tree.root.find(
+      (node) => (node.type as unknown) === "Pressable",
+    );
+    expect(rowPress.props.accessibilityActions).toEqual([
+      { name: "toggle", label: "Mark done with a photo" },
+    ]);
+  });
+});
+
+describe("TaskRow — a repeating task (#5119)", () => {
+  const series = {
+    recurrence_rule: "FREQ=WEEKLY;BYDAY=TU;TZID=America/New_York",
+    next_due_date: "2026-08-25",
+    ended: false,
+  };
+
+  it("says how often it comes after its due, and a screen reader hears it in words", () => {
+    const tree = render(
+      <TaskRow row={row({ series })} now={NOW} onToggle={() => {}} />,
+    );
+    const line = texts(tree).find((text) => text.includes("↻"));
+    expect(line).toMatch(/ · ↻ Weekly$/);
+    const labelled = tree.root.findAll(
+      (node) =>
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.includes("repeats weekly"),
+    );
+    expect(labelled.length).toBeGreaterThan(0);
+    act(() => tree.unmount());
+  });
+
+  it("says nothing of a series that ended, or once the copy is done", () => {
+    for (const each of [
+      row({ series: { ...series, ended: true } }),
+      row({ series, isDone: true, storedStatus: "COMPLETED" }),
+    ]) {
+      const tree = render(<TaskRow row={each} now={NOW} onToggle={() => {}} />);
+      expect(texts(tree).some((text) => text.includes("↻"))).toBe(false);
+      act(() => tree.unmount());
+    }
   });
 });

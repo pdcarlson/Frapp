@@ -10,9 +10,9 @@ import { resolveChapterAccentColor } from "@/components/settings/resolve-chapter
  * verdicts on real colours are pinned in `settings-contrast.spec.ts`.
  */
 
-/** The dark card and house gold the real caller passes. */
+/** The dark popover step and house gold the real caller passes. */
 const DARK = {
-  background: signetDarkTokens.color.surface.card,
+  background: signetDarkTokens.color.surface.popover,
   fallbackAccent: signetDarkTokens.color.gold.house,
 };
 const ratio = (fg: string, bg: string) =>
@@ -58,14 +58,17 @@ describe("resolveChapterAccentColor — the Settings preview's surface", () => {
   });
 
   it("passes an accent that clears AA only after 2dp rounding", () => {
-    // #FF0400 scores 4.4985 on the dark card: below 4.5 exactly, 4.50 rounded.
+    // #EE6500 scores 4.4972 on `--popover`: below 4.5 exactly, 4.50 rounded.
     // Chapters already use colours in that band (see `ratioOn`), so exact
     // comparison would quietly flip the preview's verdict on them.
     // (neutral ladder, 2026-11-05: the darker card lifted the old example,
-    // `#FF3100`, to 4.86, out of the band, so this is the band's red now.)
-    expect(ratio("#FF0400", DARK.background)).toBeLessThan(4.5);
-    expect(resolveChapterAccentColor("#FF0400", DARK)).toMatchObject({
-      resolvedAccent: "#FF0400",
+    // `#FF3100`, to 4.86, out of the band, and `#FF0400` took its place; the
+    // 2026-11-12 ladder's lighter card drops `#FF0400` under it, #3826, so
+    // the band's example was `#EB6100`; on 2026-11-19 the preview moved to
+    // `--popover`, the ladder's lightest step, and `#EE6500` took its place.)
+    expect(ratio("#EE6500", DARK.background)).toBeLessThan(4.5);
+    expect(resolveChapterAccentColor("#EE6500", DARK)).toMatchObject({
+      resolvedAccent: "#EE6500",
       fallbackApplied: false,
       contrastOnBackground: 4.5,
       reason: "ok",

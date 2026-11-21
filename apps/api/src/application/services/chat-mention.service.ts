@@ -1,31 +1,78 @@
+import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+  CLASS_STANDINGS,
+  classStanding,
+  EVERYONE_MENTION_NAME,
   extractMentionTokens,
   foldMentionName,
+  HERE_MENTION_NAME,
+  isEveryoneRole,
+  reservedMentionName,
   resolveMentions,
   sendMentionReading,
+  type MentionPick,
   type MentionRole,
 } from '@repo/validation';
 import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
-import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  SystemPermissions,
+  SystemRoleKeys,
+} from '#domain/constants/permissions';
 import type { ChapterMemberIdentity } from '#domain/entities/member.entity';
-import type { Role } from '#domain/entities/role.entity';
+import type { Role, RoleTier } from '#domain/entities/role.entity';
+import type {
+  ChapterGroup,
+  ChapterGroupMembership,
+} from '#domain/entities/chapter-group.entity';
+import {
+  ROLE_TIER_REPOSITORY,
+  type IRoleTierRepository,
+} from '#domain/repositories/role-tier.repository.interface';
+import {
+  CHAPTER_GROUP_REPOSITORY,
+  type IChapterGroupRepository,
+} from '#domain/repositories/chapter-group.repository.interface';
 import type { ChatMessage } from '#domain/entities/chat.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 import { RbacService } from './rbac.service';
+import { ChapterPresenceReader } from './chapter-presence-reader.service';
+import { withMembers } from './chapter-group.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
-/** A chapter role as the mention picker and the resolver see it. */
+/**
+ * A chapter role, tier or group as the mention picker and the resolver see
+ * it. `role_id` is the tier's or group's id for those (#4076).
+ */
 export interface MentionRoleView extends MentionRole {
+  kind: 'role' | 'tier' | 'group';
   color: string | null;
   /**
    * The role's own switch (`roles.mentionable`): whether any member may ping
    * it. `mentionable` is that, or the sender being able to ping any role.
    */
   open_to_all: boolean;
+}
+
+/**
+ * One row of `GET /v1/channels/mention-roles`: the picker's fields only, not
+ * `open_to_all`. Shared by that route and `GET /v1/bootstrap` (#4709) so the
+ * two answer alike.
+ */
+export function toMentionRoleEntry({
+  role_id,
+  kind,
+  name,
+  color,
+  mentionable,
+}: MentionRoleView): Pick<
+  MentionRoleView,
+  'role_id' | 'kind' | 'name' | 'color' | 'mentionable'
+> {
+  return { role_id, kind, name, color, mentionable };
 }
 
 /**
@@ -51,7 +98,43 @@ export class ChatMentionService {
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
     private readonly rbac: RbacService,
+    private readonly presence: ChapterPresenceReader,
+    @Inject(ROLE_TIER_REPOSITORY)
+    private readonly tierRepo: IRoleTierRepository,
+    @Inject(CHAPTER_GROUP_REPOSITORY)
+    private readonly groupRepo: IChapterGroupRepository,
   ) {}
+
+  /**
+   * The chapter's tiers and groups with who is in each (#4076), for the
+   * resolver and the picker. A failed read costs only those mentions, as a
+   * failed roles read costs only the role ones.
+   */
+  private async readSets(chapterId: string): Promise<MentionSets> {
+    const lost = (site: string, what: string) => (error: unknown) => {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site,
+        message: `Failed to read ${what} for mentions in chapter ${chapterId}; resolving without them`,
+        error,
+      });
+      return null;
+    };
+    const [tiers, groups] = await Promise.all([
+      this.tierRepo
+        .findByChapter(chapterId)
+        .catch(lost('chat-mention-tiers-read', 'tiers')),
+      Promise.all([
+        this.groupRepo.findByChapter(chapterId),
+        this.groupRepo.findMemberships(chapterId),
+      ]).catch(lost('chat-mention-groups-read', 'groups')),
+    ]);
+    return {
+      tiers: tiers ?? [],
+      groups: groups?.[0] ?? [],
+      memberships: groups?.[1] ?? [],
+    };
+  }
 
   /**
    * Every `users.id` that `content` mentions, resolved against the sender's
@@ -73,9 +156,10 @@ export class ChatMentionService {
     senderId: string,
     content: string,
     replyTo: ReplyTarget | null = null,
+    picks: readonly MentionPick[] = [],
   ): Promise<string[]> {
     return withMention(
-      await this.resolveBody(chapterId, senderId, content),
+      await this.resolveBody(chapterId, senderId, content, 'read', picks),
       replyPingTarget(senderId, replyTo),
     );
   }
@@ -91,6 +175,13 @@ export class ChatMentionService {
    * `quotedAuthorId` is `undefined` when the quoted message could not be read.
    * Then every previous mention is kept: an edit cannot tell the ping apart,
    * and losing it to a read blip is worse than keeping a name the edit removed.
+   *
+   * `@here` is not re-read on an edit: it keeps the members the previous
+   * body's `@here` reached, so an edit never pings someone who came online
+   * since, and one that adds `@here` pings nobody new, as on Discord.
+   *
+   * `picks` are the members picked into the previous body and the new one
+   * (#3835), each read with its own.
    */
   async resolveForEdit(
     chapterId: string,
@@ -98,8 +189,16 @@ export class ChatMentionService {
     content: string,
     previousMentions: readonly string[],
     quotedAuthorId: string | null | undefined,
+    previousContent: string = '',
+    picks: EditPicks = { previous: [], next: [] },
   ): Promise<string[]> {
-    const body = await this.resolveBody(chapterId, senderId, content);
+    const body = await this.resolveBody(
+      chapterId,
+      senderId,
+      content,
+      { previousContent, previousMentions, previousPicks: picks.previous },
+      picks.next,
+    );
     if (quotedAuthorId === undefined) {
       return previousMentions.reduce(withMention, body);
     }
@@ -111,10 +210,17 @@ export class ChatMentionService {
     );
   }
 
+  /**
+   * `here` says who `@here` may reach: `'read'` reads who is online now (a
+   * send), and an edit's previous body and mentions say who it reached then
+   * ({@link reachedByHere}).
+   */
   private async resolveBody(
     chapterId: string,
     senderId: string,
     content: string,
+    here: HereSource,
+    picks: readonly MentionPick[] = [],
   ): Promise<string[]> {
     // Parse before querying. `content.includes('@')` admits every email
     // address, every `@here`, and every `user@host` in a pasted log, all of
@@ -129,8 +235,9 @@ export class ChatMentionService {
       // `findChapterMemberIdentities`. Roles in parallel, since a token can
       // name either. A failed roles read costs only the role mentions: member
       // mentions resolved before roles existed, and still do without them.
-      const [candidates, roles] = await Promise.all([
+      const [candidates, sets, roles] = await Promise.all([
         this.memberRepo.findChapterMemberIdentities(chapterId),
+        this.readSets(chapterId),
         this.rbac.findByChapter(chapterId).catch((error: unknown) => {
           // Only the role mentions are lost, and the member ones still
           // land: `warning` (#4096).
@@ -145,7 +252,7 @@ export class ChatMentionService {
       ]);
       if (candidates.length === 0) return [];
 
-      const views = mentionRoleViews(roles, candidates);
+      const views = mentionRoleViews(roles, candidates, sets);
       // The sender's permissions cost two more reads, so they are fetched only
       // when a token names a role that is switched off, the one case they decide.
       // Re-read as the resolver will (`sendMentionReading`), now that the
@@ -154,7 +261,7 @@ export class ChatMentionService {
       const named = new Set(
         extractMentionTokens(
           content,
-          sendMentionReading(candidates, views),
+          sendMentionReading(candidates, views, picks),
         ).map(foldMentionName),
       );
       const needsOfficer = views.some(
@@ -165,12 +272,32 @@ export class ChatMentionService {
             await this.rbac.getEffectivePermissions(chapterId, senderId),
           )
         : false;
+      const allowed = views.map((view) => withMentionable(view, officer));
 
-      return resolveMentions(
-        content,
-        candidates,
-        views.map((view) => withMentionable(view, officer)),
-      );
+      // Who `@here` reaches is worked out only once the sender may use it:
+      // reading who is online is a join on the chapter's presence topic, the
+      // costliest read here, and neither an ordinary send nor a member's
+      // `@here` that reaches nobody should wait on it.
+      const hereView = allowed.find((view) => view.name === HERE_MENTION_NAME);
+      if (
+        hereView?.mentionable &&
+        tokens.some((token) => foldMentionName(token) === HERE_MENTION_NAME)
+      ) {
+        // On a send the sender is always among who their own `@here`
+        // reaches: they are here, sending it, whatever the presence read says
+        // (Paul, 2026-11-13: "that should ping me too"). It lights their own
+        // row and nothing else: the push, the unread badge and catch-up all
+        // skip a sender's own message. An edit keeps what the send stored.
+        hereView.member_ids =
+          here === 'read'
+            ? withSender(
+                [...((await this.presence.onlineUserIds(chapterId)) ?? [])],
+                senderId,
+              )
+            : reachedByHere(here, candidates, allowed);
+      }
+
+      return resolveMentions(content, candidates, allowed, picks);
     } catch (error) {
       // `error`: the message still sends, but everyone it named goes
       // unpinged and is never pinged later, so a fault here (a broken query,
@@ -188,23 +315,76 @@ export class ChatMentionService {
 
   /**
    * The chapter's roles as `userId`'s mention picker offers them, in the
-   * chapter's role order: each with whether this member may ping it. A role
-   * nobody holds is left out, since it would reach nobody.
+   * chapter's role order, then its tiers and groups (#4076): each with whether
+   * this member may ping it. One nobody holds is left out, since it would
+   * reach nobody.
    */
   async listMentionRoles(
     chapterId: string,
     userId: string,
   ): Promise<MentionRoleView[]> {
-    const [candidates, roles, permissions] = await Promise.all([
+    const [candidates, roles, permissions, sets] = await Promise.all([
       this.memberRepo.findChapterMemberIdentities(chapterId),
       this.rbac.findByChapter(chapterId),
       this.rbac.getEffectivePermissions(chapterId, userId),
+      this.readSets(chapterId),
     ]);
     const officer = canPingAnyRole(permissions);
-    return mentionRoleViews(roles, candidates)
+    // `@here` holds nobody here, so it is left out with the empty roles: it
+    // is no role, and the clients add its row after `@everyone`'s
+    // (`withHereMention`), which is the switch it follows.
+    return mentionRoleViews(roles, candidates, sets)
       .filter((view) => view.member_ids.length > 0)
       .map((view) => withMentionable(view, officer));
   }
+}
+
+/** `ids` with `senderId` last, once. */
+function withSender(ids: string[], senderId: string): string[] {
+  return ids.includes(senderId) ? ids : [...ids, senderId];
+}
+
+/** Where `@here`'s members come from: read now (a send), or an edit's earlier body. */
+type HereSource =
+  | 'read'
+  | {
+      previousContent: string;
+      previousMentions: readonly string[];
+      /** The picks the earlier body was read with (#3835). */
+      previousPicks?: readonly MentionPick[];
+    };
+
+/** An edit's picks: the ones its earlier body was read with, and the new body's. */
+export interface EditPicks {
+  previous: readonly MentionPick[];
+  next: readonly MentionPick[];
+}
+
+/**
+ * The members an edited message's earlier `@here` reached: its mentions less
+ * the ones its body names otherwise, by name or role. None when the earlier
+ * body had no `@here`, so an edit that adds it reaches nobody new. A member
+ * both named and reached by `@here` counts as named, so editing their name
+ * out takes the mention away, as editing out any name does.
+ */
+function reachedByHere(
+  edit: Exclude<HereSource, 'read'>,
+  candidates: readonly ChapterMemberIdentity[],
+  views: readonly MentionRoleView[],
+): string[] {
+  const hadHere = extractMentionTokens(edit.previousContent).some(
+    (token) => foldMentionName(token) === HERE_MENTION_NAME,
+  );
+  if (!hadHere) return [];
+  const named = new Set(
+    resolveMentions(
+      edit.previousContent,
+      candidates,
+      views.filter((view) => view.name !== HERE_MENTION_NAME),
+      edit.previousPicks ?? [],
+    ),
+  );
+  return edit.previousMentions.filter((id) => !named.has(id));
 }
 
 /** The parts of a quoted message the reply ping reads. */
@@ -227,7 +407,7 @@ export type ReplyTarget = Pick<ChatMessage, 'sender_id' | 'is_deleted'>;
  * drops a recipient who blocked the sender, and the unread counts skip a
  * blocked member's messages.
  */
-export function replyPingTarget(
+function replyPingTarget(
   senderId: string,
   replyTo: ReplyTarget | null,
 ): string | null {
@@ -259,12 +439,22 @@ export function canPingAnyRole(permissions: readonly string[]): boolean {
 
 /**
  * Every role of the chapter with its holders, in role order, and its own
- * switch. `mentionable` is left for the caller to set, since it depends on
- * who is sending.
+ * switch, then `@here`. `mentionable` is left for the caller to set, since it
+ * depends on who is sending.
+ *
+ * `@here` (2026-11-12) holds nobody yet: `resolveBody` fills it with the
+ * members online once the sender may use it. It follows the Everyone role's
+ * switch, as Discord's one permission covers `@everyone` and `@here`, and is
+ * officers-only where a chapter has no Everyone role. With no roles read at
+ * all (a failed read) there is no `@here`, so the token reaches nobody without
+ * asking for the sender's permissions, which would fail the same way. A role
+ * an older chapter named "Here" before the name was reserved is left out, so
+ * the token means one thing.
  */
 export function mentionRoleViews(
   roles: readonly Role[],
   members: readonly ChapterMemberIdentity[],
+  sets: Partial<MentionSets> = {},
 ): MentionRoleView[] {
   const holders = new Map<string, string[]>();
   for (const member of members) {
@@ -274,13 +464,26 @@ export function mentionRoleViews(
       else holders.set(roleId, [member.user_id]);
     }
   }
-  return [...roles]
+  const views: MentionRoleView[] = [...roles]
+    .filter(
+      (role) =>
+        isEveryoneRole(role) ||
+        reservedMentionName(role.name) !== HERE_MENTION_NAME,
+    )
     .sort((a, b) => a.display_order - b.display_order)
     .map((role) => {
-      const memberIds = holders.get(role.id) ?? [];
+      // The Everyone role is `@everyone` (#4191): it reaches every member of
+      // the chapter, not only the members whose rows hold it, and it is named
+      // as Discord writes it. Whether the sender may use it is still the
+      // role's own switch, which is off for Everyone until a chapter opens it.
+      const everyone = isEveryoneRole(role);
+      const memberIds = everyone
+        ? members.map((member) => member.user_id)
+        : (holders.get(role.id) ?? []);
       return {
         role_id: role.id,
-        name: role.name,
+        kind: 'role' as const,
+        name: everyone ? EVERYONE_MENTION_NAME : role.name,
         color: role.color,
         member_ids: memberIds,
         // A row read before the column existed has no value: on, its default.
@@ -288,6 +491,208 @@ export function mentionRoleViews(
         mentionable: false,
       };
     });
+  views.push(
+    ...mentionTierViews(sets.tiers ?? [], roles, holders),
+    ...mentionGroupViews(
+      sets.groups ?? [],
+      sets.memberships ?? [],
+      // With no roles read (a failed read), what a major or a standing gives
+      // way to isn't known, so neither is offered: a chapter's own "Seniors"
+      // role must not hand its pings to the class for one failed read.
+      roles.length > 0
+        ? namesAutomaticGroupsGiveWayTo(roles, members, sets)
+        : null,
+    ),
+  );
+  if (roles.length === 0) return views;
+  const everyone = roles.find(isEveryoneRole);
+  views.push({
+    role_id: everyone?.id ?? HERE_MENTION_NAME,
+    kind: 'role',
+    name: HERE_MENTION_NAME,
+    color: null,
+    member_ids: [],
+    open_to_all: everyone ? everyone.mentionable !== false : false,
+    mentionable: false,
+  });
+  return views;
+}
+
+/** The chapter's tiers and groups, with who is in each group (#4076). */
+export interface MentionSets {
+  tiers: readonly RoleTier[];
+  groups: readonly ChapterGroup[];
+  memberships: readonly ChapterGroupMembership[];
+}
+
+/** A tier or group whose name reads as `@everyone` or `@here` is no target. */
+function nameIsFree(name: string): boolean {
+  return reservedMentionName(name) === null;
+}
+
+/**
+ * Each tier as a mention (#4076, Paul 2026-11-11: "that tier name is
+ * pingable"): it reaches every member holding a role in it, the hidden
+ * Everyone role included (its holders are the tier's members as much as
+ * anyone's), so a member whose role leaves the tier stops getting it. In tier
+ * order, highest first, with the tier's own switch.
+ *
+ * A tier holding the Everyone role, or since #5802 the Actives role (the old
+ * Everyone row), reaches nearly the whole chapter, so it is `@everyone` under
+ * another name: it also follows that role's switch (#4191, officers only by
+ * default), or `@Members` would let any member ping everyone past the rule
+ * `@everyone` keeps.
+ */
+function mentionTierViews(
+  tiers: readonly RoleTier[],
+  roles: readonly Role[],
+  holders: ReadonlyMap<string, readonly string[]>,
+): MentionRoleView[] {
+  return [...tiers]
+    .filter((tier) => nameIsFree(tier.name))
+    .sort((a, b) => a.position - b.position)
+    .map((tier) => {
+      const inTier = roles.filter((role) => role.tier_id === tier.id);
+      const everyone = inTier.find(
+        (role) =>
+          isEveryoneRole(role) || role.system_key === SystemRoleKeys.MEMBER,
+      );
+      return {
+        role_id: tier.id,
+        kind: 'tier' as const,
+        name: tier.name,
+        color: null,
+        member_ids: [
+          ...new Set(inTier.flatMap((role) => holders.get(role.id) ?? [])),
+        ],
+        open_to_all:
+          tier.mentionable !== false &&
+          (!everyone || everyone.mentionable !== false),
+        mentionable: false,
+      };
+    });
+}
+
+/**
+ * The names, folded as a mention folds them, that a major's group and a
+ * class year's standing give way to (#5778, #5786): every role, tier and other kind of group of the chapter, and
+ * every member's name and first name. A member types their own major, so
+ * without this anyone could join an officer role's pings by saving its name
+ * ("Exec Board"), or take a hand-typed `@Art` from a member named Art. A
+ * major named like one of these isn't a mention target; its group still
+ * lists, and the other set keeps the name.
+ */
+function namesAutomaticGroupsGiveWayTo(
+  roles: readonly Role[],
+  members: readonly ChapterMemberIdentity[],
+  sets: Partial<MentionSets>,
+): ReadonlySet<string> {
+  const names = [
+    ...roles.map((role) => role.name),
+    ...(sets.tiers ?? []).map((tier) => tier.name),
+    ...(sets.groups ?? [])
+      .filter((group) => group.kind !== 'major')
+      .map((group) => group.name),
+    ...members.flatMap((member) => {
+      const name = member.display_name;
+      return [name, name.trim().split(/\s+/)[0] ?? ''];
+    }),
+  ];
+  return new Set(names.map(foldMentionName).filter((name) => name.length > 0));
+}
+
+/**
+ * The id a class year's standing row carries (#5786): a name-based UUID
+ * (RFC 4122 version 5) of the group's id and the standing, so it is still a
+ * UUID, as `MentionRoleDto.role_id` promises, the same on every read, and
+ * never the group's own. Nothing looks it up; a picker only keys rows by it.
+ */
+export function standingMentionId(groupId: string, standing: string): string {
+  const bytes = createHash('sha1')
+    .update(`frapp:class-standing:${groupId}:${standing}`)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** The class standings (#5786), folded as a mention folds a name. */
+const STANDING_NAMES: ReadonlySet<string> = new Set(
+  CLASS_STANDINGS.map(foldMentionName),
+);
+
+/**
+ * Each group as a mention (#4076): it reaches the group's members now, as
+ * `chapter_group_memberships` reads them, with the group's own switch.
+ * Manual groups first, then pledge classes, class years and majors. A major
+ * named like a role, tier, other group, member or class standing is left out
+ * ({@link namesAutomaticGroupsGiveWayTo}).
+ *
+ * A class year with a standing also goes by it (#5786): in 2026-27,
+ * `@Sophomores` is listed just before `@Class of 2029`, reaching the same
+ * members with the same switch. It has its own id
+ * ({@link standingMentionId}), so a picker keying rows by id, as every
+ * installed build does, never sees two rows share one. The
+ * standing gives way as a major does: while the chapter has a role, tier,
+ * other group or member by that name, the name is theirs alone, so a
+ * chapter's own "Sophomores" role keeps meaning what it did until an officer
+ * deletes it.
+ *
+ * `taken` is `null` when the chapter's roles couldn't be read: then no major
+ * or standing is offered, since what it would give way to isn't known.
+ */
+function mentionGroupViews(
+  groups: readonly ChapterGroup[],
+  memberships: readonly ChapterGroupMembership[],
+  taken: ReadonlySet<string> | null = new Set(),
+  now: Date = new Date(),
+): MentionRoleView[] {
+  return (
+    withMembers(
+      groups.filter(
+        (group) =>
+          nameIsFree(group.name) &&
+          !(
+            group.kind === 'major' &&
+            (!taken ||
+              taken.has(foldMentionName(group.name)) ||
+              // A major named "Seniors" must not join `@Seniors` (#5786).
+              STANDING_NAMES.has(foldMentionName(group.name)))
+          ),
+      ),
+      memberships,
+    )
+      // An automatic group nobody is in (a class not yet given members) is
+      // left out, as the Groups page leaves it out.
+      .filter((group) => group.kind === 'manual' || group.member_ids.length > 0)
+      .flatMap((group) => {
+        const view = {
+          role_id: group.id,
+          kind: 'group' as const,
+          name: group.name,
+          color: group.color,
+          member_ids: group.member_ids,
+          open_to_all: group.mentionable !== false,
+          mentionable: false,
+        };
+        const standing =
+          group.kind === 'class_year'
+            ? classStanding(group.class_year, now)
+            : null;
+        return standing && taken && !taken.has(foldMentionName(standing))
+          ? [
+              {
+                ...view,
+                role_id: standingMentionId(group.id, standing),
+                name: standing,
+              },
+              view,
+            ]
+          : [view];
+      })
+  );
 }
 
 function withMentionable(

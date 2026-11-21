@@ -3,7 +3,7 @@ import { isBlockableSender } from "@repo/chat-core/blocks";
 import type { BlockListStatus } from "@repo/validation";
 
 /**
- * The member sheet's Message action (#2773): start, or reopen, a 1:1 DM with
+ * The member profile's Message action (#2773): start, or reopen, a 1:1 DM with
  * the member on screen. `POST /v1/channels/dm` is get-or-create, so a member
  * you already have a DM with gets that thread back, and opening it again is
  * also what brings back a DM you hid (`reopenHidden` on chat home relies on
@@ -105,18 +105,7 @@ export function messageRowDescription(state: MessageRowState): string | null {
 
 export const MESSAGE_CHECKING_BLOCK_LIST = "Checking your block list first.";
 /** A read that failed, whether a retry can run now or waits for the network. */
-export const MESSAGE_BLOCK_LIST_UNCHECKED = "Couldn't check your block list first.";
-
-/**
- * The channel id out of a `POST /v1/channels/dm` response, or `null` when the
- * body has none, so the caller reports a failure instead of navigating to a
- * thread with no id.
- */
-export function dmChannelIdOf(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
-  const id = (data as { id?: unknown }).id;
-  return typeof id === "string" && id.length > 0 ? id : null;
-}
+const MESSAGE_BLOCK_LIST_UNCHECKED = "Couldn't check your block list first.";
 
 export function startDmFailedTitle(name: string): string {
   return `Couldn't message ${name}`;

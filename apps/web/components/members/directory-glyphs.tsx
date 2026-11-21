@@ -21,7 +21,9 @@
  * illustrated by two more pairs — `ArrowUp`/`ArrowDown` for sort direction and
  * `List`/`LayoutGrid` for view mode — and both controls are gone: the
  * greenfield lane replaced four sortable table headers with one sort select and
- * deleted the table/card view toggle outright.
+ * deleted the table/card view toggle outright. The List/Grid toggle that came
+ * back in #4175 is drawn in words, as Events' List/Calendar is, so it brought
+ * no icon pair back.
  *
  * The two silhouettes the Directory shares with the shell's nav intents are
  * re-exported rather than redrawn — a second copy of the same path data is the
@@ -32,7 +34,7 @@ import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 
-export { RolesGlyph, SearchGlyph } from "@/components/layout/nav-glyphs";
+export { SearchGlyph } from "@/components/layout/nav-glyphs";
 
 export type DirectoryGlyphProps = DuotoneGlyphProps;
 

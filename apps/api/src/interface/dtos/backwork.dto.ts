@@ -2,8 +2,10 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsDefined,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -12,9 +14,11 @@ import {
   MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  MAX_BACKWORK_DRAFT_BATCH,
   MAX_BACKWORK_ZIP_FILES,
   MAX_COURSE_NAME_LENGTH,
   MAX_COURSE_NICKNAMES,
@@ -24,6 +28,7 @@ import {
 import { INT4_MAX } from '#domain/constants/field-limits';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { splitIdList } from './id-list-query';
 
 const SEMESTERS = ['Spring', 'Summer', 'Fall', 'Winter'] as const;
 const ASSIGNMENT_TYPES = [
@@ -79,34 +84,37 @@ export class BackworkUploadUrlResponseDto {
   resource_id: string;
 }
 
-export class ConfirmBackworkUploadDto {
-  @ApiProperty({ description: 'Storage path returned from upload-url' })
-  @IsString()
-  storage_path: string;
-
-  @ApiProperty({ description: 'SHA-256 hash of the uploaded file' })
-  @IsString()
-  file_hash: string;
-
-  @ApiPropertyOptional()
+/**
+ * A document's metadata, shared by the confirm body and a draft edit (#5208).
+ * Every field is optional. In a draft edit, a field sent as `null` clears it.
+ */
+export class BackworkFieldsDto {
+  @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   title?: string;
 
-  @ApiPropertyOptional({ description: 'Department code (e.g. "CS")' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Department code (e.g. "CS")',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   department_code?: string;
 
-  @ApiPropertyOptional({ description: 'Course number (e.g. "101")' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Course number (e.g. "101")',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   course_number?: string;
 
   @ApiPropertyOptional({
+    nullable: true,
     description:
       'The course\'s name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course.',
     maxLength: MAX_COURSE_NAME_LENGTH,
@@ -116,51 +124,158 @@ export class ConfirmBackworkUploadDto {
   @MaxLength(MAX_COURSE_NAME_LENGTH)
   course_name?: string;
 
-  @ApiPropertyOptional({ description: 'Professor name' })
+  @ApiPropertyOptional({ nullable: true, description: 'Professor name' })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   professor_name?: string;
 
-  @ApiPropertyOptional({ maximum: YEAR_MAX })
+  @ApiPropertyOptional({ nullable: true, maximum: YEAR_MAX })
   @IsOptional()
   @IsInt()
   @Min(1900)
   @Max(YEAR_MAX)
   year?: number;
 
-  @ApiPropertyOptional({ enum: SEMESTERS })
+  @ApiPropertyOptional({ nullable: true, enum: SEMESTERS })
   @IsOptional()
   @IsIn(SEMESTERS)
   semester?: string;
 
-  @ApiPropertyOptional({ enum: ASSIGNMENT_TYPES })
+  @ApiPropertyOptional({ nullable: true, enum: ASSIGNMENT_TYPES })
   @IsOptional()
   @IsIn(ASSIGNMENT_TYPES)
   assignment_type?: string;
 
-  @ApiPropertyOptional({ maximum: INT4_MAX })
+  @ApiPropertyOptional({ nullable: true, maximum: INT4_MAX })
   @IsOptional()
   @IsInt()
   @Min(1)
   @Max(INT4_MAX)
   assignment_number?: number;
 
-  @ApiPropertyOptional({ enum: DOCUMENT_VARIANTS })
+  @ApiPropertyOptional({ nullable: true, enum: DOCUMENT_VARIANTS })
   @IsOptional()
   @IsIn(DOCUMENT_VARIANTS)
   document_variant?: string;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ nullable: true, type: [String] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+}
+
+export class ConfirmBackworkUploadDto extends BackworkFieldsDto {
+  @ApiProperty({ description: 'Storage path returned from upload-url' })
+  @IsString()
+  storage_path: string;
+
+  @ApiProperty({
+    description:
+      'SHA-256 hash of the uploaded file, as 64 lowercase hex characters',
+    pattern: '^[0-9a-f]{64}$',
+  })
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
+  file_hash: string;
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsStrictBoolean()
   is_redacted?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Save as a draft: the fields are kept as sent, not filed, and only the uploader sees the file until it is published (POST /v1/backwork/drafts/publish).',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  draft?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'For a draft: false when it was saved without anyone looking at its pages (bulk upload\'s "Save the rest"). Such a draft is not read by the AI fill and can\'t be published until POST /v1/backwork/drafts/{id}/check. Left out, the draft counts as checked.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  pages_checked?: boolean;
+}
+
+/** A draft whose pages the uploader has looked at, with the new file when they added boxes. */
+export class CheckBackworkDraftDto {
+  @ApiPropertyOptional({
+    description:
+      'Storage path from upload-url of the file flattened again with the boxes added during the check. Leave out when no box was added.',
+  })
+  @IsOptional()
+  @IsString()
+  storage_path?: string;
+
+  @ApiPropertyOptional({
+    description: 'SHA-256 hash of that file. Required with storage_path.',
+  })
+  @ValidateIf((dto: CheckBackworkDraftDto) => dto.storage_path !== undefined)
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
+  file_hash?: string;
+}
+
+export class BackworkDraftFileUrlDto {
+  @ApiProperty({
+    description:
+      "A link to the draft's stored file, good for five minutes, for the uploader's browser to show its pages.",
+  })
+  url: string;
+}
+
+/** Ids of the caller's own drafts, for an edit or a publish. */
+class BackworkDraftIdsDto {
+  @ApiProperty({
+    type: [String],
+    maxItems: MAX_BACKWORK_DRAFT_BATCH,
+    description: "The caller's drafts. Other ids are left out.",
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_BACKWORK_DRAFT_BATCH)
+  @IsUUID(undefined, { each: true })
+  ids: string[];
+}
+
+export class UpdateBackworkDraftsDto extends BackworkDraftIdsDto {
+  @ApiProperty({
+    type: BackworkFieldsDto,
+    description:
+      'Fields to set on every listed draft. Fields left out keep their value; a field sent as null clears it.',
+  })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => BackworkFieldsDto)
+  fields: BackworkFieldsDto;
+}
+
+export class PublishBackworkDraftsDto extends BackworkDraftIdsDto {}
+
+export class BackworkDraftFailureDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ description: 'Why it stayed a draft, in words to show.' })
+  message: string;
+}
+
+export class PublishBackworkDraftsResponseDto {
+  @ApiProperty({
+    type: 'array',
+    items: { type: 'object' },
+    description: 'The filed resources.',
+  })
+  published: object[];
+
+  @ApiProperty({ type: [BackworkDraftFailureDto] })
+  failed: BackworkDraftFailureDto[];
 }
 
 export class UpdateDepartmentDto {
@@ -283,24 +398,6 @@ export class MergeBackworkTaxonomyResponseDto {
   reassigned: number;
 }
 
-/**
- * One comma-separated value, or the key repeated: both arrive as a list.
- * Lowercased, because Postgres answers with lowercase ids and the service
- * matches them back by string, and de-duplicated, so 50 copies of one id
- * don't mint 50 links. A part that isn't a string passes through for
- * `@IsUUID` to refuse.
- */
-function splitIdList(value: unknown): unknown[] {
-  const parts: unknown[] = Array.isArray(value) ? value : [value];
-  const ids = parts
-    .flatMap((part) => (typeof part === 'string' ? part.split(',') : [part]))
-    .map((part) =>
-      typeof part === 'string' ? part.trim().toLowerCase() : part,
-    )
-    .filter((part) => part !== '');
-  return [...new Set(ids)];
-}
-
 export class BackworkDownloadUrlsQueryDto {
   @ApiProperty({
     description: `Comma-separated resource ids to sign, at most ${MAX_BACKWORK_ZIP_FILES}`,
@@ -333,4 +430,40 @@ export class BackworkDownloadUrlsResponseDto {
       'In the order asked. An id not in this chapter, or that could not be signed, is left out.',
   })
   files: BackworkDownloadUrlDto[];
+}
+
+export class BackworkDraftFillResponseDto {
+  @ApiProperty({
+    enum: [
+      'filled',
+      'nothing_found',
+      'unreadable',
+      'not_redacted',
+      'not_checked',
+      'refused',
+      'unavailable',
+      'invalid_output',
+    ],
+    description:
+      '`filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `not_checked` (saved without its pages being looked at, so it waits for the uploader to check it), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).',
+  })
+  status: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'The fields this fill set. Absent when the draft is unchanged.',
+  })
+  filled?: string[];
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description:
+      'The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since.',
+  })
+  draft?: object;
+
+  @ApiPropertyOptional()
+  reason?: string;
 }

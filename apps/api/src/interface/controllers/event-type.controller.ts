@@ -35,8 +35,9 @@ import {
  *
  * Reads need `members:view`, like the events they label. Writes need
  * `events:update`: the officers who may edit any event decide what kinds there
- * are and what each is worth, since a member who can only create events gets
- * a type's points without choosing them. Same module and tier as
+ * are and what each is worth. A member who can only create events picks a
+ * type to name the event, and its points and required default don't apply
+ * (#3709, `EventService.create`). Same module and tier as
  * `EventController`.
  */
 @ApiTags('Event types')

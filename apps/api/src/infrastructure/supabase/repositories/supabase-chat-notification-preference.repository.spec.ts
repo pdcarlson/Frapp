@@ -650,9 +650,11 @@ describe('SupabaseChatNotificationPreferenceRepository — tenant scope', () => 
       range: () => chain,
       then: (resolve: (v: typeof failure) => unknown) => resolve(failure),
     };
+    // `as never`: `from`'s return type is a union over tables and views (the
+    // schema has one view since #4076), which a hand-built chain can't match.
     jest.spyOn(failing.client, 'from').mockReturnValue({
       select: () => chain,
-    });
+    } as never);
     const failingRepo = new SupabaseChatNotificationPreferenceRepository(
       failing.client,
     );

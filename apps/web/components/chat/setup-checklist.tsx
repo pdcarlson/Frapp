@@ -27,7 +27,7 @@ export function SetupChecklistSection() {
 }
 
 /** The drawn list, without hooks, so a test can render one directly. */
-export function SetupChecklistView({
+function SetupChecklistView({
   checklist,
   onHide,
 }: {

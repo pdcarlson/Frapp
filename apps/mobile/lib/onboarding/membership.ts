@@ -1,14 +1,13 @@
 /**
  * Which membership the first-run gate cares about.
  *
- * Web's tutorial keys off the *active* membership
- * (`apps/web/components/onboarding/onboarding-tutorial.tsx`). Mobile does the
- * same when the JWT carries `active_chapter_id`. The claim is absent when the
- * user has no membership (production until first onboard) or when the hook is
- * disabled as an incident mitigation — #805's dashboard toggle is on, so the
- * empty-prod case is "no membership", not "hook off". A sole membership is then
- * the only one we can attribute — a multi-chapter account with no claim is not
- * forced through s03 (they already have a chapter they can open from More).
+ * The *active* membership, when the JWT carries `active_chapter_id`. The
+ * claim is absent when the user has no membership (production until first
+ * onboard) or when the hook is disabled as an incident mitigation — #805's
+ * dashboard toggle is on, so the empty-prod case is "no membership", not
+ * "hook off". A sole membership is then the only one we can attribute — a
+ * multi-chapter account with no claim is not forced through s03 (they
+ * already have a chapter they can open from You).
  */
 
 export type OnboardingMembership = {

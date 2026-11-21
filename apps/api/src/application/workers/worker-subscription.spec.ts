@@ -353,7 +353,7 @@ describe('WorkerSubscription', () => {
         await jest.advanceTimersByTimeAsync(gapMs);
       };
 
-      // Literals on purpose: `render.md` § 5.5 states these two numbers, and a
+      // Literals on purpose: `api-process.md` § In-process chat workers states these two numbers, and a
       // test written in terms of the constants would follow them anywhere.
       it('means three drops inside 30 minutes', async () => {
         expect(WORKER_SUBSCRIPTION_UNSTABLE_DROPS).toBe(3);

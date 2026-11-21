@@ -35,17 +35,11 @@ vi.mock("@/lib/chat/block-actions", async () => {
   };
 });
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#C49A3A",
-    accentPrimary: "#C49A3A",
-    accentOnPrimary: "#2B2009",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, MUTED_GOLD_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(MUTED_GOLD_BRANDING);
+});
 
 import {
   MessageActionsSheet,
@@ -123,6 +117,24 @@ describe("MessageActionsSheet — Flag (#3921)", () => {
     expect(funny.props.accessibilityState).toEqual({ checked: true });
 
     act(() => funny.props.onPress());
+
+    expect(onFlag).toHaveBeenCalledWith("m1", null);
+  });
+
+  // #3909: nothing in the audit log takes a new flag; one already there can
+  // come off.
+  it("offers only the current flag, to take it off, in the audit log", () => {
+    const onFlag = vi.fn();
+    const tree = render(
+      { ...BASE, flag: { current: "important", removeOnly: true } },
+      onFlag,
+    );
+    const chips = flagChips(tree);
+    expect(chips.map((chip) => chip.props.accessibilityLabel)).toEqual([
+      "Important",
+    ]);
+
+    act(() => chips[0]!.props.onPress());
 
     expect(onFlag).toHaveBeenCalledWith("m1", null);
   });

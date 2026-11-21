@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { selectDownloadUrl, selectForcedDownloadUrl } from "./document-download";
+import {
+  selectDownloadUrl,
+  selectForcedDownloadUrl,
+} from "./document-download";
 
 // #1040: web read `download_url` at two call sites and opened `undefined`,
 // because `ChapterDocumentService.findById` returns `downloadUrl` and
@@ -45,7 +48,10 @@ describe("selectDownloadUrl", () => {
   // A blank camelCase value must not shadow a usable snake_case one.
   it("falls through to snake_case when the camelCase value is blank", () => {
     expect(
-      selectDownloadUrl({ downloadUrl: "   ", download_url: "https://signed/url" }),
+      selectDownloadUrl({
+        downloadUrl: "   ",
+        download_url: "https://signed/url",
+      }),
     ).toBe("https://signed/url");
   });
 
@@ -59,7 +65,10 @@ describe("selectDownloadUrl", () => {
 describe("selectForcedDownloadUrl", () => {
   it("reads forcedDownloadUrl", () => {
     expect(
-      selectForcedDownloadUrl({ downloadUrl: "https://a", forcedDownloadUrl: "https://b" }),
+      selectForcedDownloadUrl({
+        downloadUrl: "https://a",
+        forcedDownloadUrl: "https://b",
+      }),
     ).toBe("https://b");
   });
 

@@ -1,6 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import {
   useConfirmDocumentUpload,
   useCreateDocumentFolder,
@@ -12,35 +12,12 @@ import {
   useSetDocumentPin,
   useSetDocumentStar,
   withStar,
+  documentAccessChoices,
 } from "./use-documents";
-import { FrappClientProvider } from "./use-frapp-client";
-import React from "react";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
-function createTestQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
-}
-
-function createWrapper(queryClient: QueryClient, mockClient: unknown) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
-}
+const createWrapper = (queryClient: QueryClient, mockClient: unknown) =>
+  createHookWrapper({ queryClient, client: mockClient });
 
 describe("useDocuments", () => {
   let queryClient: QueryClient;
@@ -65,6 +42,7 @@ describe("useDocuments", () => {
     });
 
     expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      signal: expect.any(AbortSignal),
       params: { query: { folder: "finance", search: undefined } },
     });
   });
@@ -85,6 +63,7 @@ describe("useDocuments", () => {
     });
 
     expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      signal: expect.any(AbortSignal),
       params: { query: { folder: undefined, search: "bylaws" } },
     });
   });
@@ -105,6 +84,7 @@ describe("useDocuments", () => {
     });
 
     expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      signal: expect.any(AbortSignal),
       params: { query: { folder: undefined, search: undefined } },
     });
   });
@@ -256,24 +236,13 @@ describe("document folder mutations", () => {
 
   // The page test mocks these three hooks away, so this file is the only place
   // the request shape and the invalidation key are actually observed.
-  function chapterWrapper(mockClient: unknown, chapterId = "chap-1") {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        chapterId={chapterId}
-        client={
-          mockClient as unknown as ReturnType<
-            typeof import("@repo/api-sdk").createFrappClient
-          >
-        }
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "ChapterWrapper";
-    return Wrapper;
-  }
+  const chapterWrapper = (mockClient: unknown, chapterId = "chap-1") =>
+    createHookWrapper({
+      client: mockClient,
+      queryClient,
+      chapterId,
+      displayName: "ChapterWrapper",
+    });
 
   it("creates a folder through POST /v1/documents/folders", async () => {
     const mockPost = vi.fn().mockResolvedValue({ data: {}, error: null });
@@ -403,7 +372,9 @@ describe("document stars and pins (#3934)", () => {
       wrapper: createWrapper(queryClient, { GET: mockGet }),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockGet).toHaveBeenCalledWith("/v1/documents/stars");
+    expect(mockGet).toHaveBeenCalledWith("/v1/documents/stars", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data).toEqual({
       folder_ids: ["f1"],
       document_ids: [],
@@ -539,5 +510,49 @@ describe("document stars and pins (#3934)", () => {
     expect(mockDelete).toHaveBeenCalledWith("/v1/documents/folders/{id}/pin", {
       params: { path: { id: "f1" } },
     });
+  });
+});
+
+describe("documentAccessChoices (#5216)", () => {
+  const data = {
+    options: [{ entry: "tier:exec", kind: "tier", label: "Exec" }],
+    always: ["tier:exec"],
+  };
+
+  it("offers a list once options load, keeping the caller's tiers", () => {
+    const choices = documentAccessChoices({
+      data,
+      isSuccess: true,
+      isError: false,
+    });
+    expect(choices.canLimit).toBe(true);
+    expect(choices.optionsState).toBe("ready");
+    expect(choices.locked).toEqual(["tier:exec"]);
+  });
+
+  it("keeps the field when a background refetch fails over good data", () => {
+    const choices = documentAccessChoices({
+      data,
+      isSuccess: false,
+      isError: true,
+    });
+    expect(choices.canLimit).toBe(true);
+    expect(choices.optionsState).toBe("ready");
+  });
+
+  it("offers no list outside every tier, or before anything loads", () => {
+    expect(
+      documentAccessChoices({
+        data: { options: [], always: null },
+        isSuccess: true,
+        isError: false,
+      }).canLimit,
+    ).toBe(false);
+    const failed = documentAccessChoices({ isSuccess: false, isError: true });
+    expect(failed.canLimit).toBe(false);
+    expect(failed.optionsState).toBe("error");
+    expect(
+      documentAccessChoices({ isSuccess: false, isError: false }).optionsState,
+    ).toBe("loading");
   });
 });

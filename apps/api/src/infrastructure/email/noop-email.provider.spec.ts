@@ -4,6 +4,7 @@ const params = {
   to: 'member@example.com',
   joinUrl: 'https://app.frapp.live/join?token=abc',
   role: 'Member',
+  validDays: 7,
 };
 
 describe('NoopEmailProvider', () => {

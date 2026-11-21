@@ -12,9 +12,10 @@ import * as validation from '@repo/validation';
  * is one the API still throws.
  *
  * The clients' query-error reporters send a client-contract code at `error`
- * level and treat anything else as member-caused, so an unclassified code
- * would be quietly read as member-caused. This scan makes adding a code a
- * decision instead.
+ * level, leave a 4xx with a member-caused code out of Sentry altogether
+ * (2026-11-13), and report anything else at `warning`. Listing a code as
+ * member-caused therefore silences it; this scan makes that a decision
+ * instead of an accident.
  *
  * It is a syntax scan of `new …Exception({ … })` objects under `src`, outside
  * specs. Inside one, a code is a dotted lowercase string literal

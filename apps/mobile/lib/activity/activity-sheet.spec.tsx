@@ -5,10 +5,16 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { activityGroups, type Activity } from "@repo/hooks";
+import {
+  activityGroups,
+  activityReviewRows,
+  activityToDos,
+  type Activity,
+} from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { moduleDisabledMessage } from "@repo/validation";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import type { ActivityRowActionState } from "@/lib/activity/row-action";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { screenText } from "@/test/screen-text";
 
@@ -20,16 +26,9 @@ import { screenText } from "@/test/screen-text";
  */
 
 const cards = vi.hoisted(() => ({
-  task: [] as Record<string, unknown>[],
   event: [] as Record<string, unknown>[],
   poll: [] as Record<string, unknown>[],
   hours: [] as Record<string, unknown>[],
-}));
-vi.mock("@/components/chat/task-card", () => ({
-  TaskCard: (props: Record<string, unknown>) => {
-    cards.task.push(props);
-    return null;
-  },
 }));
 vi.mock("@/components/chat/event-card", () => ({
   EventCard: (props: Record<string, unknown>) => {
@@ -103,7 +102,23 @@ const READ = {
         created_at: "2026-11-01T00:00:00.000Z",
       },
     ],
-    task_confirmations: [],
+    task_confirmations: [
+      {
+        id: "task-2",
+        title: "Sweep the porch",
+        due_date: "2099-01-01",
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        assignee_id: "sam",
+        assignee_name: "Sam",
+        created_by: "me",
+        created_by_name: "Me",
+        point_reward: 10,
+        completed_at: "2026-11-02T00:00:00.000Z",
+        confirmed_at: null,
+        created_at: "2026-11-01T00:00:00.000Z",
+      },
+    ],
     hours_approvals: [
       {
         id: "entry-1",
@@ -152,9 +167,11 @@ const READ = {
 
 /** The real row the screen would hand the sheet for one kind. */
 function rowOf(kind: ActivityRow["kind"]): ActivityRow {
-  return activityGroups(READ, "all")
-    .flatMap((group) => group.rows)
-    .find((row) => row.kind === kind) as ActivityRow;
+  return [
+    ...activityReviewRows(READ),
+    ...activityToDos(READ).map((todo) => todo.dated),
+    ...activityGroups(READ).flatMap((group) => group.rows),
+  ].find((row) => row.kind === kind) as ActivityRow;
 }
 
 const mounted: ReactTestRenderer[] = [];
@@ -169,18 +186,30 @@ const linkActions = {
   remove: vi.fn(),
 };
 
+const reminderActions = {
+  open: vi.fn(),
+  snooze: vi.fn(),
+  done: vi.fn(),
+};
+
 const present = vi.fn();
 const dismiss = vi.fn();
 
-function sheetElement(row: ActivityRow | null, viewerId: string | null) {
+function sheetElement(
+  row: ActivityRow | null,
+  viewerId: string | null,
+  rowActionState: ActivityRowActionState = "idle",
+) {
   return (
     <FrappThemeProvider>
       <ActivitySheet
         row={row}
         viewerId={viewerId}
+        rowActionState={rowActionState}
         onActed={onActed}
         onClosed={onClosed}
         linkActions={linkActions}
+        reminderActions={reminderActions}
       />
     </FrappThemeProvider>
   );
@@ -189,10 +218,11 @@ function sheetElement(row: ActivityRow | null, viewerId: string | null) {
 function render(
   row: ActivityRow | null,
   viewerId: string | null = "me",
+  rowActionState: ActivityRowActionState = "idle",
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(sheetElement(row, viewerId), {
+    tree = create(sheetElement(row, viewerId, rowActionState), {
       // `vitest.setup.ts` mocks `BottomSheetModal` as a host string, so the
       // sheet's ref lands on whatever this returns for it.
       createNodeMock: (element) =>
@@ -242,25 +272,25 @@ describe("Activity sheet (#3897)", () => {
     it("stays down with no row, and presents once when a row is opened", () => {
       const tree = render(null);
       expect(present).not.toHaveBeenCalled();
-      act(() => tree.update(sheetElement(rowOf("task"), "me")));
+      act(() => tree.update(sheetElement(rowOf("event"), "me")));
       expect(present).toHaveBeenCalledTimes(1);
     });
 
     it("does not present again when a re-read hands the same row down as a new object", () => {
-      const tree = render(rowOf("task"));
+      const tree = render(rowOf("event"));
       expect(present).toHaveBeenCalledTimes(1);
-      act(() => tree.update(sheetElement({ ...rowOf("task") }, "me")));
+      act(() => tree.update(sheetElement({ ...rowOf("event") }, "me")));
       expect(present).toHaveBeenCalledTimes(1);
     });
 
     it("presents again for a different row", () => {
-      const tree = render(rowOf("task"));
+      const tree = render(rowOf("event"));
       act(() => tree.update(sheetElement(rowOf("hours"), "me")));
       expect(present).toHaveBeenCalledTimes(2);
     });
 
     it("tells the screen when the sheet has gone", () => {
-      const tree = render(rowOf("task"));
+      const tree = render(rowOf("event"));
       act(() => {
         modal(tree).props.onDismiss();
       });
@@ -268,7 +298,7 @@ describe("Activity sheet (#3897)", () => {
     });
 
     it("closes from the header's X", () => {
-      const tree = render(rowOf("task"));
+      const tree = render(rowOf("event"));
       act(() => {
         button(tree, "Close").props.onPress();
       });
@@ -276,19 +306,18 @@ describe("Activity sheet (#3897)", () => {
     });
   });
 
-  it("draws chat's task card from the row, as a confirmed message of the viewer's", () => {
-    render(rowOf("task"));
-    const props = cards.task.at(-1)!;
-    expect(props.viewerId).toBe("me");
-    expect(props.isConfirmed).toBe(true);
-    expect(props.payload).toMatchObject({
-      task_id: "task-1",
-      title: "Book the venue",
-      assignee_user_id: "me",
-      point_reward: 10,
-    });
-    // Not a message in a channel: no message actions to open.
-    expect(props.onOpenActions).toBeUndefined();
+  it("draws no card for a task row, a review included: every task is its own screen (#5492, #5513)", () => {
+    const review = rowOf("task");
+    expect(review.key).toBe("needs-confirm:task:task-2");
+    const own = activityToDos(READ)
+      .map((todo) => todo.dated)
+      .find((row) => row.kind === "task")!;
+    expect(own.key).toBe("needs:task:task-1");
+    for (const row of [review, own]) {
+      const tree = render(row);
+      for (const list of Object.values(cards)) expect(list).toHaveLength(0);
+      expect(screenText(tree)).not.toContain("Loading your account…");
+    }
   });
 
   it("draws chat's event card with the member's own attendance answer", () => {
@@ -314,8 +343,8 @@ describe("Activity sheet (#3897)", () => {
   });
 
   it("waits for the viewer's id before drawing a card", () => {
-    const tree = render(rowOf("task"), null);
-    expect(cards.task).toHaveLength(0);
+    const tree = render(rowOf("event"), null);
+    expect(cards.event).toHaveLength(0);
     expect(screenText(tree)).toContain("Loading your account…");
   });
 
@@ -358,7 +387,7 @@ describe("Activity sheet (#3897)", () => {
       expect(poll.value.close).not.toHaveBeenCalled();
     });
 
-    it("opens the poll's channel from Open in chat", () => {
+    it("opens the poll in its channel from Open in chat", () => {
       const tree = render(rowOf("poll"));
       const push = vi.mocked(useRouter().push);
       act(() => {
@@ -366,7 +395,7 @@ describe("Activity sheet (#3897)", () => {
       });
       expect(push).toHaveBeenCalledWith({
         pathname: "/chat-thread",
-        params: { channelId: "chan-1" },
+        params: { channelId: "chan-1", focusMessageId: "msg-1" },
       });
       // The sheet goes first, or it would sit over the thread.
       expect(dismiss).toHaveBeenCalledTimes(1);
@@ -429,6 +458,23 @@ describe("Activity sheet (#3897)", () => {
       expect(button(tree, "Approve").props.disabled).toBe(false);
     });
 
+    it("holds Approve and Reject while the row's own Approve sends, and records it once it lands (#4437)", () => {
+      const sending = render(rowOf("hours"), "me", "busy");
+      expect(button(sending, "Approve").props.disabled).toBe(true);
+      expect(button(sending, "Reject").props.disabled).toBe(true);
+      const landed = render(rowOf("hours"), "me", "done");
+      expect(screenText(landed)).toContain(
+        "Approved. Points are awarded per the chapter rate.",
+      );
+      expect(
+        landed.root.findAll(
+          (node) =>
+            (node.type as unknown) === "Pressable" &&
+            node.props.accessibilityLabel === "Approve",
+        ),
+      ).toHaveLength(0);
+    });
+
     it("says a subscription refusal in a member's words", async () => {
       review.mutateAsync.mockRejectedValue({
         statusCode: 403,
@@ -481,6 +527,7 @@ describe("Activity sheet (#3897)", () => {
         id: "l1",
         url: "https://forms.gle/abc",
         host: "forms.gle",
+        title: null,
         message_id: "m1",
         thread_root_id: null,
         channel_id: "chan-1",
@@ -530,6 +577,87 @@ describe("Activity sheet (#3897)", () => {
         button(officer, "Remove for everyone").props.onPress();
       });
       expect(linkActions.remove).toHaveBeenCalledWith(linkRow);
+    });
+  });
+
+  describe("a message reminder (#4957)", () => {
+    const reminder = {
+      id: "r1",
+      message_id: "m1",
+      thread_root_id: null,
+      channel_id: "chan-1",
+      channel_name: "rush",
+      channel_type: "PUBLIC",
+      author_name: "Olive",
+      preview: "Bring the banner Friday",
+      message_created_at: "2026-11-10T15:00:00.000Z",
+      message_available: true,
+      remind_at: "2026-11-14T09:00:00.000Z",
+      fired_at: "2026-11-14T09:00:00.000Z",
+      due: true,
+    };
+    const reminderRow = (overrides: Record<string, unknown> = {}) =>
+      ({
+        kind: "reminder",
+        key: "reminder:r1",
+        title: reminder.preview,
+        detail: "Olive · #rush · Reminded Today · 9:00 AM",
+        badge: { label: "Due", variant: "warning" },
+        reminder: { ...reminder, ...overrides },
+        unread: false,
+        readRef: null,
+      }) as unknown as ActivityRow;
+
+    it("shows the message's words and who wrote it", () => {
+      const text = screenText(render(reminderRow()));
+      expect(text).toContain("Bring the banner Friday");
+      expect(text).toContain("Olive · #rush");
+      expect(text).toContain("Snooze");
+    });
+
+    it.each([
+      ["Open message", "open"],
+      ["Done", "done"],
+    ] as const)(
+      "closes the sheet, then hands %s to the screen",
+      (label, key) => {
+        const row = reminderRow();
+        const tree = render(row);
+        act(() => {
+          button(tree, label).props.onPress();
+        });
+        expect(dismiss).toHaveBeenCalledTimes(1);
+        expect(reminderActions[key]).toHaveBeenCalledWith(row);
+      },
+    );
+
+    it("snoozes to a preset, closing the sheet first", () => {
+      const row = reminderRow();
+      const tree = render(row);
+      act(() => {
+        button(tree, "Tomorrow").props.onPress();
+      });
+      expect(dismiss).toHaveBeenCalledTimes(1);
+      expect(reminderActions.snooze).toHaveBeenCalledWith(row, "tomorrow");
+    });
+
+    it("calls moving one still to come changing its time, not a snooze", () => {
+      const text = screenText(render(reminderRow({ due: false })));
+      expect(text).toContain("Change the time");
+      expect(text).not.toContain("Snooze");
+    });
+
+    it("offers only Done on a message the member can't read any more", () => {
+      const tree = render(reminderRow({ message_available: false }));
+      expect(() => button(tree, "Open message")).toThrow();
+      expect(() => button(tree, "Tomorrow")).toThrow();
+      expect(screenText(tree)).toContain(
+        "You can't see this conversation any more",
+      );
+      act(() => {
+        button(tree, "Done").props.onPress();
+      });
+      expect(reminderActions.done).toHaveBeenCalledTimes(1);
     });
   });
 });

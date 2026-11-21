@@ -9,6 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CHAPTER_BILLING_BETA_OFF,
   fileExtension,
   isAllowedUploadExtension,
   isAllowedUploadMime,
@@ -266,6 +267,13 @@ export class ChapterService {
       name,
       university,
       ...config,
+      // Chapter billing is off for the beta, so the chapter starts usable
+      // rather than at the schema default `incomplete`, which refuses every
+      // paid-ops write until a checkout nobody is asked to do. Last, so no
+      // config key can override it. `CHAPTER_BILLING_BETA_OFF` owns the why.
+      ...(CHAPTER_BILLING_BETA_OFF
+        ? { subscription_status: 'active' as const }
+        : {}),
     });
 
     // The starting tiers are rows from here on: the chapter can rename,
@@ -312,6 +320,8 @@ export class ChapterService {
         is_system: roleDef.is_system,
         display_order: roleDef.display_order,
         color: roleDef.color ?? null,
+        // Every seeded role is mentionable but Everyone.
+        mentionable: 'mentionable' in roleDef ? roleDef.mentionable : true,
       };
     });
 
@@ -337,10 +347,15 @@ export class ChapterService {
         'President role not found during chapter creation',
       );
     }
+    // The founder is an active too (#5802), so their profile carries a base
+    // role; the database appends Everyone.
+    const activesRole = roles.find(
+      (r) => r.system_key === SystemRoleKeys.MEMBER,
+    );
     await this.memberRepo.create({
       user_id: userId,
       chapter_id: chapter.id,
-      role_ids: presidentRole ? [presidentRole.id] : [],
+      role_ids: [presidentRole.id, ...(activesRole ? [activesRole.id] : [])],
       has_completed_onboarding: true,
     });
 
@@ -371,7 +386,6 @@ export class ChapterService {
         chapter_id: chapter.id,
         name: channelDef.name,
         description: channelDef.description,
-        is_audit_log: 'is_audit_log' in channelDef && channelDef.is_audit_log,
         ...channelAccessColumns(
           seededList(channelDef.who_can_see),
           seededList(channelDef.who_can_post),
@@ -555,8 +569,7 @@ export class ChapterService {
    * actually guarantees "never silently unaudited", and the specs should not
    * be read as promising it.
    *
-   * `ChatBridgeWorkerService` mirrors member-visible rows into `#chapter-audit`
-   * off a Realtime subscription, so there is no chat call to make here.
+   * Officers read the row on the Logs page; there is no chat call to make here.
    */
   private async recordProfileAudit(
     chapterId: string,
@@ -598,11 +611,8 @@ export class ChapterService {
 
     // Not written when nothing changed. The Settings form re-sends every stored
     // value on save (see the accent_color note above), so without this an
-    // officer who opened Settings and pressed Save without editing would mirror
-    // a "chapter profile updated" message into the member-visible
-    // `#chapter-audit` channel — and one carrying no information, since
-    // `ChatBridgeWorkerService.summarize` renders an empty diff as a bare
-    // action name.
+    // officer who opened Settings and pressed Save without editing would log
+    // a "chapter profile updated" entry carrying no information.
     //
     // Stated about this writer only, deliberately. Two earlier attempts at this
     // comment characterised `chapter-config.service.ts` and got it wrong both

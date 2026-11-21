@@ -1,5 +1,7 @@
-export type SubscriptionStatus =
-  'incomplete' | 'active' | 'past_due' | 'canceled';
+import type { SubscriptionStatus } from '@repo/validation';
+
+/** `@repo/validation`'s, the one declaration the clients read too. */
+export type { SubscriptionStatus };
 
 export interface Chapter {
   id: string;
@@ -74,4 +76,16 @@ export interface Chapter {
   // default rather than leaving it dangling — optional here for the same
   // projection reason as the columns above.
   default_invite_role_id?: string | null;
+  /**
+   * The channel the chapter's happy-birthday posts go to (#4959), or null for
+   * none, the default. A deleted channel clears it (`on delete set null`).
+   */
+  birthday_channel_id?: string | null;
+  /**
+   * Whether settled members may change their own name (#5801). False, the
+   * default, locks it for a member of this chapter alone; officers holding
+   * `roles:manage` still can.
+   * `spec/behavior/members.md` § Profiles.
+   */
+  members_can_change_name?: boolean;
 }

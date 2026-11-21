@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -12,7 +13,7 @@ import { can, statusLabel } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { useRefetchAll } from "@/components/pull-to-refresh";
-import { BACK_TO_MORE } from "@/components/back-row";
+import { BACK_TO_YOU } from "@/components/back-row";
 import { HistoryRow, HistoryRowsSkeleton } from "@/components/history-row";
 import { SectionHeader } from "@/components/list-section";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
@@ -25,6 +26,7 @@ import {
   summarizeServiceEntries,
 } from "@/lib/more/service-hours";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * Service hours: the member's approved total, their history, and the s20 "Log
@@ -91,11 +93,11 @@ export default function ServiceHoursScreen() {
   }, []);
 
   function renderList() {
-    if (viewerQuery.isError) {
+    if (viewerQuery.isError && viewerQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load your account"
-          body="Your service hours are filtered to you, so this has to load first."
+          body={describeLoadFailure(viewerQuery.error)}
           onRetry={() => void viewerQuery.refetch()}
           isRetrying={viewerQuery.isFetching}
         />
@@ -107,7 +109,7 @@ export default function ServiceHoursScreen() {
     // the id lands, so `isPending` alone would not cover it.
     if (viewerUserId === null || entriesQuery.isPending)
       return (
-        <SkeletonRegion label="Loading service entries">
+        <SkeletonRegion label="Loading service entries" flush>
           {/* About an "Approved" chip's width, where each status lands. */}
           <HistoryRowsSkeleton
             rows={3}
@@ -115,11 +117,11 @@ export default function ServiceHoursScreen() {
           />
         </SkeletonRegion>
       );
-    if (entriesQuery.isError) {
+    if (entriesQuery.isError && entriesQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load your service hours"
-          body="If you belong to more than one chapter, pick one from More → Switch chapter first."
+          body={describeLoadFailure(entriesQuery.error)}
           onRetry={() => void entriesQuery.refetch()}
           isRetrying={entriesQuery.isFetching}
         />
@@ -158,7 +160,7 @@ export default function ServiceHoursScreen() {
 
   return (
     <ScreenShell
-      back={BACK_TO_MORE}
+      back={BACK_TO_YOU}
       title="Service hours"
       refresh={refresh}
       // Filing is `service:log` (`POST /v1/service-entries`), which the seeded
@@ -203,18 +205,22 @@ export default function ServiceHoursScreen() {
         key={chapterId ?? "no-chapter"}
         ref={sheetRef}
         now={now}
+        // Kept past this screen (#4593): going back and coming here again
+        // opens Log hours on the entry left in it.
+        keptDraft="service-hours-log"
       />
     </ScreenShell>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     summaryCard: {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     summaryLabelRow: {

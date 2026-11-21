@@ -153,8 +153,9 @@ export function useImportantMessages(
 
   const query = useQuery({
     queryKey: key,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/channels/{id}/important", {
+        signal,
         params: { path: { id: channel! } },
       });
       if (error) throw error;

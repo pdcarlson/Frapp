@@ -667,6 +667,81 @@ describe('tenant-scope harness', () => {
       expect((data as { id: string }[])[0].id).toBe('b2');
     });
 
+    it('caps only the top-level rows with a limit, never with an embed’s', async () => {
+      const harness = createTenantHarness({
+        tables: {
+          widgets: [
+            inA({ id: ROW_A, created_at: '2026-01-01' }),
+            inB({ id: ROW_B, created_at: '2026-01-01' }),
+            inA({ id: 'a2', created_at: '2026-06-01' }),
+            inB({ id: 'b2', created_at: '2026-06-01' }),
+          ],
+        },
+      });
+
+      const { data } = await (harness.client as any)
+        .from('widgets')
+        .select('*, parts(id)')
+        .eq('chapter_id', CHAPTER_B)
+        .order('created_at', { ascending: false })
+        // The top-level limit first, so an embed's limit read as the
+        // top-level one would overwrite it and cut the result to one row.
+        .limit(5)
+        .limit(1, { referencedTable: 'parts' });
+
+      expect((data as { id: string }[]).map((row) => row.id)).toEqual([
+        'b2',
+        ROW_B,
+      ]);
+    });
+
+    describe('a filter on an embedded column', () => {
+      /** Each parent embeds two children; only `keep` children pass the filter. */
+      const parents = () =>
+        createTenantHarness({
+          tables: {
+            widgets: [
+              inA({ id: ROW_A, parts: [{ ok: true }, { ok: false }] }),
+              inB({ id: ROW_B, parts: [{ ok: true }, { ok: false }] }),
+              inA({ id: 'a2', parts: [{ ok: false }, { ok: false }] }),
+              inB({ id: 'b2', parts: [{ ok: false }, { ok: false }] }),
+            ],
+          },
+        });
+      const read = async (columns: string) => {
+        const harness = parents();
+        const { data } = await (harness.client as any)
+          .from('widgets')
+          .select(columns)
+          .eq('chapter_id', CHAPTER_B)
+          .eq('parts.ok', true);
+        return data as { id: string; parts: unknown[] }[];
+      };
+
+      it('drops a parent whose embed it empties under !inner, and narrows the rest', async () => {
+        expect(await read('*, parts!inner(ok)')).toEqual([
+          expect.objectContaining({ id: ROW_B, parts: [{ ok: true }] }),
+        ]);
+      });
+
+      it('keeps every parent, its embed narrowed, without !inner', async () => {
+        expect(await read('*, parts(ok)')).toEqual([
+          expect.objectContaining({ id: ROW_B, parts: [{ ok: true }] }),
+          expect.objectContaining({ id: 'b2', parts: [] }),
+        ]);
+      });
+
+      it('reads an aliased embed by its alias, whitespace and hints aside', async () => {
+        // The seed carries the embed under its alias, as PostgREST returns it.
+        expect(
+          await read('id,\n  parts:widget_parts!widgets_parts_fkey (ok)'),
+        ).toEqual([
+          expect.objectContaining({ id: ROW_B, parts: [{ ok: true }] }),
+          expect.objectContaining({ id: 'b2', parts: [] }),
+        ]);
+      });
+    });
+
     it('parses .or() literals and the not. prefix', async () => {
       const harness = createTenantHarness({
         tables: {

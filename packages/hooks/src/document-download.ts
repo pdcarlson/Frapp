@@ -32,7 +32,10 @@
  * `if (!url) throw` and surface the "couldn't fetch download link" toast rather
  * than opening a blank tab.
  */
-function nonBlankString(record: Record<string, unknown>, key: string): string | null {
+function nonBlankString(
+  record: Record<string, unknown>,
+  key: string,
+): string | null {
   const raw = record[key];
   return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
 }
@@ -41,15 +44,18 @@ export function selectDownloadUrl(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const record = data as Record<string, unknown>;
   return (
-    nonBlankString(record, "downloadUrl") ?? nonBlankString(record, "download_url")
+    nonBlankString(record, "downloadUrl") ??
+    nonBlankString(record, "download_url")
   );
 }
 
 /**
  * The link that saves a document rather than showing it: `forcedDownloadUrl`
  * on `GET /v1/documents/{id}` (#3849), signed with `Content-Disposition:
- * attachment`. Only documents carry it; backwork and older servers don't, so
- * a caller falls back to `selectDownloadUrl`, which opens the file instead.
+ * attachment`. Only documents carry it. Backwork has no inline link, so its
+ * `downloadUrl` is itself a forced download (#3867); an older documents server
+ * lacks it, and a caller falls back to `selectDownloadUrl`, which opens the
+ * file instead.
  */
 export function selectForcedDownloadUrl(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;

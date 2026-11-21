@@ -1,7 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import React from "react";
 import {
   PROFILE_QUERY_FILTERS,
   useConfirmAvatar,
@@ -11,36 +10,24 @@ import {
   useRequestAvatarUploadUrl,
   useUpdateUser,
 } from "./use-user";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const createWrapper = (
   queryClient: QueryClient,
   mockClient: unknown,
   chapterId: string | null = "test-chapter",
-) => {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId={chapterId}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
-};
+) =>
+  createHookWrapper({
+    queryClient,
+    client: mockClient,
+    chapterId,
+  });
 
 describe("useMyPermissions", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   it("returns the permission set when the request succeeds", async () => {
@@ -57,7 +44,9 @@ describe("useMyPermissions", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockClient.GET).toHaveBeenCalledWith("/v1/users/me/permissions");
+    expect(mockClient.GET).toHaveBeenCalledWith("/v1/users/me/permissions", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data).toEqual({
       permissions: ["members:view", "events:create"],
     });
@@ -95,9 +84,7 @@ describe("profile mutations (#732, #3387)", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   it("mints the upload URL with the body it was given", async () => {
@@ -296,6 +283,40 @@ describe("profile mutations (#732, #3387)", () => {
   // A GET of the profile that left before the PATCH landed must not answer
   // last and put the pre-save row back. Real invalidation, no harness: the
   // save's refetch has to cancel the held GET.
+  it("refreshes the groups and the mention list after a major or year, and only then (#5778)", async () => {
+    const mockClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: { id: "u-1" },
+        error: undefined,
+      }),
+    };
+    const keys = {
+      groups: ["roles", "ch-1", "groups"],
+      mentions: ["roles", "ch-1", "mention-roles"],
+      roles: ["roles", "ch-1"],
+    };
+    const seed = () => {
+      for (const key of Object.values(keys)) queryClient.setQueryData(key, []);
+    };
+    const stale = () =>
+      Object.fromEntries(
+        Object.entries(keys).map(([name, key]) => [
+          name,
+          queryClient.getQueryState(key)?.isInvalidated ?? false,
+        ]),
+      );
+    const { result } = renderHook(() => useUpdateUser(), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    seed();
+    await result.current.mutateAsync({ bio: "Hi" });
+    expect(stale()).toEqual({ groups: false, mentions: false, roles: false });
+
+    await result.current.mutateAsync({ major: "Industrial Systems" });
+    expect(stale()).toEqual({ groups: true, mentions: true, roles: false });
+  });
+
   it("keeps the saved row over a profile GET that was already in flight", async () => {
     const before = { id: "u-1", display_name: "Old Name" };
     const saved = { id: "u-1", display_name: "Alex Rivera" };

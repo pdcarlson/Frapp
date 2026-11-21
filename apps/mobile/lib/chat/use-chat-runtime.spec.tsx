@@ -76,6 +76,8 @@ vi.mock("@repo/chat-core/chat-client", () => ({ flushOutbox: vi.fn() }));
 vi.mock("@/lib/supabase", () => ({ getSupabaseClient: () => ({}) }));
 vi.mock("@/lib/connection/monitor", () => ({ connectionMonitor: {} }));
 vi.mock("./chat-scope", () => ({ useChatScope: () => null }));
+const dismissDeletedMessagePushes = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/notifications/push", () => ({ dismissDeletedMessagePushes }));
 vi.mock("./draft-store", () => ({ getDraftStore: () => ({}) }));
 vi.mock("./outbox-store", () => ({ getOutboxStore: () => ({}) }));
 vi.mock("./key-value-store", () => ({
@@ -88,8 +90,9 @@ vi.mock("./network-state", () => ({
   }),
 }));
 
-const { useChatRealtimeBinding, useChatRuntime } =
+const { useChatActionContext, useChatRealtimeBinding, useChatRuntime } =
   await import("./use-chat-runtime");
+const { flushOutbox } = await import("@repo/chat-core/chat-client");
 const { chatRealtime, createBackfillFetcher } =
   await import("@repo/chat-core/realtime-manager");
 
@@ -110,6 +113,8 @@ describe("useChatRealtimeBinding", () => {
     viewerReads.length = 0;
     vi.mocked(chatRealtime.configure).mockClear();
     vi.mocked(chatRealtime.resume).mockClear();
+    onMessageActivity.mockClear();
+    dismissDeletedMessagePushes.mockClear();
   });
   afterEach(() => {
     viewer.id = null;
@@ -180,11 +185,31 @@ describe("useChatRealtimeBinding", () => {
   it("hands the manager the activity handler that keeps chat home live (#3698)", async () => {
     renderHook(() => useChatRealtimeBinding(), { wrapper: queryWrapper() });
 
-    await waitFor(() =>
-      expect(chatRealtime.configure).toHaveBeenLastCalledWith(
-        expect.objectContaining({ onMessageActivity }),
-      ),
-    );
+    await waitFor(() => expect(chatRealtime.configure).toHaveBeenCalled());
+    const { onMessageActivity: bound } = vi.mocked(chatRealtime.configure).mock
+      .lastCall![0] as { onMessageActivity: (activity: unknown) => void };
+    const activity = { type: "message", channelId: "c1", senderId: "u2" };
+    bound(activity);
+    expect(onMessageActivity).toHaveBeenCalledWith(activity);
+    expect(dismissDeletedMessagePushes).not.toHaveBeenCalled();
+  });
+
+  it("takes a message deleted live out of the tray by its id, an edit not (#4470)", async () => {
+    renderHook(() => useChatRealtimeBinding(), { wrapper: queryWrapper() });
+
+    await waitFor(() => expect(chatRealtime.configure).toHaveBeenCalled());
+    const { onMessageActivity: bound } = vi.mocked(chatRealtime.configure).mock
+      .lastCall![0] as { onMessageActivity: (activity: unknown) => void };
+    bound({
+      type: "changed",
+      channelId: "c1",
+      messageId: "m1",
+      deleted: false,
+    });
+    expect(dismissDeletedMessagePushes).not.toHaveBeenCalled();
+    bound({ type: "changed", channelId: "c1", messageId: "m2", deleted: true });
+    expect(dismissDeletedMessagePushes).toHaveBeenCalledWith(new Set(["m2"]));
+    expect(onMessageActivity).toHaveBeenCalledTimes(2);
   });
 
   it("resumes the manager on the way back from the background, not from inactive (#3698)", () => {
@@ -240,6 +265,24 @@ describe("useChatRuntime", () => {
       expect(result.current.ctx).toBe(first);
       result.current.ctx?.track?.("outbox-queued", { attempts: 0 });
       expect(next).toHaveBeenCalledWith("outbox-queued", { attempts: 0 });
+    } finally {
+      viewer.id = null;
+    }
+  });
+});
+
+describe("useChatActionContext (#4297)", () => {
+  it("hands back the runtime's ctx without flushing the outbox, which the channel's runtime owns", async () => {
+    viewer.id = "viewer-1";
+    try {
+      vi.mocked(flushOutbox).mockClear();
+      const { result } = renderHook(() => useChatActionContext(), {
+        wrapper: queryWrapper(),
+      });
+      expect(result.current.ctx).not.toBeNull();
+      // The runtime's own flush, for contrast: it runs once booted.
+      renderHook(() => useChatRuntime(), { wrapper: queryWrapper() });
+      await waitFor(() => expect(flushOutbox).toHaveBeenCalledTimes(1));
     } finally {
       viewer.id = null;
     }

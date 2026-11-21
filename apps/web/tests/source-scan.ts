@@ -18,7 +18,7 @@ import ts from "typescript";
 export const REPO = join(__dirname, "..", "..", "..");
 
 /** Where product code lives in each Next app; `tests/` is harness code. */
-export const ROOTS = [
+const ROOTS = [
   "apps/web/app",
   "apps/web/components",
   "apps/web/lib",

@@ -24,19 +24,23 @@
  * The owner approved renders of the real app as the store screenshots
  * (#2454), and the store binary has no Ask (#2259), so the store set is a
  * different list from the marketing one above, not a subset of its output.
- * Each screen is captured once, at the 6.9" iPhone viewport, then framed by
+ * Each screen is captured once, at the iPhone viewport App Store Connect takes, then framed by
  * `store-frames.mjs` (caption, phone, one lifted card) for both stores:
  *
- *   store-raw/         the seven bare captures, 1320x2868 (440x956 at 3x)
- *   app-store/         the framed set, 1320x2868
+ *   store-raw/         the seven bare captures, 1206x2622 (402x874 at 3x)
+ *   app-store/         the framed set, 1206x2622
  *   google-play/       the framed set, 1242x2208 (9:16; Play caps the long
  *                      side at 2x the short, which the App Store size passes)
  *
- * No Ask shot, no reference board, and a hard stop: if any ✦ Ask surface is on
- * screen — which is what an Expo server started with `EXPO_PUBLIC_ASK_ENABLED`
- * set looks like — the run deletes all three folders and exits non-zero, so a
- * flag-on dev server can never produce a store set. Run it with the flag
- * unset. The presets and the checks each file must pass live in
+ * No Ask shot, no reference board, and a hard stop: if an AI surface is in a
+ * shot (see `ASK_ON_SCREEN`), which takes an API running with `AI_ENABLED`
+ * on, the run deletes all three folders and exits non-zero. Run it against
+ * the default stack, where AI is off. Until 2026-11-12 the entry was a header
+ * pill behind a build flag, `EXPO_PUBLIC_ASK_ENABLED`, and this stop saw it on
+ * every tab. For a day the entry was a bar inside the + panel, which no shot
+ * opens; since #4702 it is the Ask Frapp bar above the tab bar, on every tab
+ * again for a member with Ask, so the stop sees it there too.
+ * The presets and the checks each file must pass live in
  * `store-screenshots.mjs`; any failed check deletes the folders, like the Ask
  * refusal. Procedure and the sizes' provenance:
  * `docs/ops/deployment/mobile.md` § 6.4 and § 6.5.
@@ -260,28 +264,13 @@ const APP_SCREENS = [
   {
     slug: "01-home-chat",
     route: "/",
-    label: "s04 — Chat home (chapter channels, UP NEXT, ✦ Ask pill)",
+    label: "s04 — Chat home (chapter channels, UP NEXT)",
     ready: GENERAL_ROW_SHOWN,
   },
-  {
-    slug: "02-ask-answer",
-    // Deliberately not the `/ask` route. Ask is a sheet hosted by Chat home and
-    // Events behind the ✦ pill, never a screen of its own
-    // (`spec/ui/mobile/navigation.md` § Global entries outside the tab bar);
-    // `app/(app)/ask.tsx` exists only to keep old `frapp://ask` links landing
-    // somewhere real and says so in its own header comment. Shooting the route photographs a deliberately bare shell — the
-    // pill on s04 is where a member actually opens this.
-    route: "/",
-    label: "s17 — Ask sheet over Chat home, answered with citations",
-    async act(page) {
-      await page.getByLabel("Ask", { exact: true }).first().click();
-      await page.waitForTimeout(1200);
-      await page.getByText("When's the next mandatory event?").first().click();
-    },
-    // The citation chip only exists on an `answered` result, so this waits out
-    // the sheet's deliberate in-flight state rather than racing it.
-    ready: () => document.body.innerText.includes("Bylaws"),
-  },
+  // There is no `02-ask-answer` shot since 2026-11-12. It photographed Ask
+  // answering from a hand-written table behind a build flag, both deleted when
+  // Ask got its real API. The seeded demo stack runs with AI off, so it has no
+  // Ask to shoot; the later slugs keep their numbers so existing sets line up.
   {
     slug: "03-chat-thread",
     route: "/",
@@ -334,12 +323,14 @@ const STORE_SCREENS = [
     route: "/",
     label: "Chat home — chapter channels, unread counts, UP NEXT",
     // The #general row alone is the channels query (`GENERAL_ROW_SHOWN` says
-    // why not a section header); UP NEXT and the unread badges come from
-    // separate queries (events/tasks, unread counts), so wait for both.
+    // why not a section header); UP NEXT and the unread state come from
+    // separate queries (events/tasks, unread counts), so wait for both. An
+    // unread row draws no number since #4220 (white name and a pip), so the
+    // count is read from the row's spoken label ("#exec, 4 unread").
     ready: () =>
       Boolean(document.querySelector('[aria-label^="#general"]')) &&
       document.body.innerText.includes("UP NEXT") &&
-      /\n\d+\n/.test(document.body.innerText),
+      Boolean(document.querySelector('[aria-label$=" unread"]')),
   },
   {
     slug: "02-events",
@@ -375,9 +366,10 @@ const STORE_SCREENS = [
     // A task row as well as the points card: the card lands on its own, and
     // without a row the shot is the "You're all clear" empty state. The demo
     // seed assigns roster #1, the account this signs in as, two open tasks.
+    // A row is read by its points pill: since rows open their task they are
+    // buttons on web, with no checkbox role or aria-checked (`task-row.tsx`).
     ready: () =>
-      /House rank\s*#\d+/.test(document.body.innerText) &&
-      Boolean(document.querySelector('[role="checkbox"]')),
+      /House rank\s*#\d+[\s\S]*\+\d+ pts/.test(document.body.innerText),
   },
   {
     slug: "06-study",
@@ -397,16 +389,27 @@ const STORE_SCREENS = [
 ];
 
 /**
- * Whether any Ask surface is on screen: the ✦ glyph, the pill's accessible
- * name, or a leaf whose whole text is "Ask" (the pill's label, or the `ask`
- * route's own title when the build has Ask). Runs in the page.
+ * Whether an AI surface is in the shot. Since #4702 Ask's entry is the bar
+ * above the tab bar, a button named "Ask Frapp", on every tab for a member
+ * with Ask. Also matched: a row that only exists with AI on (the Tasks tab's
+ * "N suggested tasks"), the words "Ask Frapp" (the sheet's title, should a
+ * shot ever open one), and the ✦ glyph and bare "Ask" the entry used before,
+ * so an old bundle is still refused. Runs in the page.
  */
 const ASK_ON_SCREEN = () =>
   document.body.innerText.includes("✦") ||
-  Boolean(document.querySelector('[aria-label="Ask"]')) ||
-  [...document.querySelectorAll("body *")].some(
-    (el) => el.childElementCount === 0 && el.textContent.trim() === "Ask",
-  );
+  Boolean(
+    document.querySelector('[aria-label="Ask"], [aria-label="Ask Frapp"]'),
+  ) ||
+  [...document.querySelectorAll("body *")].some((el) => {
+    if (el.childElementCount !== 0) return false;
+    const text = el.textContent.trim();
+    return (
+      text === "Ask" ||
+      text === "Ask Frapp" ||
+      /^\d+ suggested tasks?$/.test(text)
+    );
+  });
 
 class AskOnScreenError extends Error {}
 
@@ -533,9 +536,9 @@ async function captureRunningApp(
       // checked is what is saved.
       if (noAsk && (await page.evaluate(ASK_ON_SCREEN))) {
         throw new AskOnScreenError(
-          `${slug}: an Ask surface is on screen. The store binary has no Ask ` +
-            `(#2259), so this server must be started with ` +
-            `EXPO_PUBLIC_ASK_ENABLED unset. Refusing to write a store set.`,
+          `${slug}: an AI surface is on screen. Production has no AI ` +
+            `(#2259), so the API behind this capture must run with ` +
+            `AI_ENABLED off. Refusing to write a store set.`,
         );
       }
 

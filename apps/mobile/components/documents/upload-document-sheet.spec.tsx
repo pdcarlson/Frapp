@@ -22,18 +22,32 @@ import { signetDarkTokens } from "@repo/theme/signet";
  */
 
 const pickDocumentPhoto = vi.fn();
+const pickDocumentFile = vi.fn();
 const uploadDocumentPhoto = vi.fn();
+/** Whether the binary has the file picker; off for the photo-only specs. */
+const canPickFiles = vi.fn(() => false);
 
 vi.mock("@/lib/more/document-upload", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/more/document-upload")>()),
   pickDocumentPhoto: () => pickDocumentPhoto(),
+  pickDocumentFile: () => pickDocumentFile(),
+  canPickFiles: () => canPickFiles(),
   uploadDocumentPhoto: (...args: unknown[]) => uploadDocumentPhoto(...args),
+}));
+
+const accessQuery = vi.hoisted(() => ({
+  data: undefined as
+    { options: unknown[]; always: string[] | null } | undefined,
+  isSuccess: false,
+  isError: false,
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRequestDocumentUploadUrl: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUpload: () => ({ mutateAsync: vi.fn() }),
+  // Who can see (#5216): unread by default, so no row shows.
+  useDocumentAccessOptions: () => accessQuery,
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -42,6 +56,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import {
+  FILES_ROW_META,
   RETRY_KEEPS_DRAFT,
   UploadDocumentSheet,
 } from "./upload-document-sheet";
@@ -71,6 +86,7 @@ const SENT = {
   },
   title: "IMG_2041.jpg",
   folder: null,
+  whoCanSee: null,
 };
 
 const dismiss = vi.fn();
@@ -81,7 +97,7 @@ const ref = React.createRef<never>();
 
 function render(
   initialFolder: string | null = null,
-  { opened = true }: { opened?: boolean } = {},
+  { opened = true, keptDraft }: { opened?: boolean; keptDraft?: string } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -93,6 +109,7 @@ function render(
           initialFolder={initialFolder}
           onUploaded={onUploaded}
           onPending={onPending}
+          keptDraft={keptDraft}
         />
       </FrappThemeProvider>,
       {
@@ -108,8 +125,11 @@ function render(
   return tree;
 }
 
+// The upload sheet is the first modal; Who can see's step mounts after it.
 const modal = (tree: ReactTestRenderer) =>
-  tree.root.find((node) => (node.type as unknown) === "BottomSheetModal");
+  tree.root.findAll(
+    (node) => (node.type as unknown) === "BottomSheetModal",
+  )[0]!;
 
 /** What gorhom reports as `present()` starts bringing the sheet up. */
 function open(tree: ReactTestRenderer) {
@@ -182,6 +202,9 @@ async function pressUpload(tree: ReactTestRenderer) {
 
 beforeEach(() => {
   pickDocumentPhoto.mockReset();
+  pickDocumentFile.mockReset();
+  canPickFiles.mockReset();
+  canPickFiles.mockReturnValue(false);
   uploadDocumentPhoto.mockReset();
   dismiss.mockReset();
   onUploaded.mockReset();
@@ -263,7 +286,7 @@ describe("UploadDocumentSheet (#3399)", () => {
 
     expect(uploadDocumentPhoto).toHaveBeenCalledWith(
       PHOTO,
-      { title: "Minutes — Aug 14", folder: "Bylaws" },
+      { title: "Minutes — Aug 14", folder: "Bylaws", whoCanSee: null },
       expect.any(Object),
       undefined,
     );
@@ -282,7 +305,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
-      { title: "", folder: "Minutes" },
+      { title: "", folder: "Minutes", whoCanSee: null },
       expect.any(Object),
       undefined,
     );
@@ -296,7 +319,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
-      { title: "", folder: null },
+      { title: "", folder: null, whoCanSee: null },
       expect.any(Object),
       undefined,
     );
@@ -410,7 +433,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenCalledWith(
       PHOTO,
-      { title: "Minutes — Aug 14", folder: "Bylaws" },
+      { title: "Minutes — Aug 14", folder: "Bylaws", whoCanSee: null },
       expect.any(Object),
       undefined,
     );
@@ -419,6 +442,125 @@ describe("UploadDocumentSheet (#3399)", () => {
     open(tree);
     expect(screenText(tree)).toContain("Choose a photo");
     expect(titleInput(tree).props.value).toBe("");
+  });
+
+  // Paul, 2026-11-13 (#4593): "keep the draft". Documents' own sheet goes
+  // when the member goes back, and the draft is there next time.
+  it("keeps the draft past its screen, until Cancel gives it up", async () => {
+    const first = render(null, { keptDraft: "documents-upload" });
+    await choose(first);
+    act(() => {
+      titleInput(first).props.onChangeText("Minutes");
+    });
+    act(() => first.unmount());
+
+    const second = render(null, { keptDraft: "documents-upload" });
+    expect(screenText(second)).toContain("IMG_2041.jpg");
+    expect(titleInput(second).props.value).toBe("Minutes");
+    act(() => {
+      pressable(second, "Cancel").props.onPress();
+    });
+    act(() => second.unmount());
+
+    const third = render(null, { keptDraft: "documents-upload" });
+    expect(screenText(third)).toContain("Choose a photo");
+  });
+
+  it("keeps nothing past its screen without a name, as the + sheet's", async () => {
+    const first = render();
+    await choose(first);
+    act(() => first.unmount());
+    const second = render();
+    expect(screenText(second)).toContain("Choose a photo");
+  });
+
+  it("doesn't offer an upload running when the screen was left, but keeps it if it fails", async () => {
+    let settle: (result: DocumentUploadResult) => void = () => {};
+    uploadDocumentPhoto.mockReturnValue(
+      new Promise<DocumentUploadResult>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const first = render(null, { keptDraft: "documents-upload" });
+    await choose(first);
+    await pressUpload(first);
+    act(() => first.unmount());
+
+    const second = render(null, { keptDraft: "documents-upload" });
+    expect(screenText(second)).toContain("Choose a photo");
+    act(() => second.unmount());
+
+    await act(async () => {
+      settle({ status: "refused", reason: "offline", final: false });
+    });
+    const third = render(null, { keptDraft: "documents-upload" });
+    expect(screenText(third)).toContain("IMG_2041.jpg");
+  });
+
+  it("keeps the bytes a failed upload sent after the screen was left, for the retry", async () => {
+    let settle: (result: DocumentUploadResult) => void = () => {};
+    uploadDocumentPhoto.mockReturnValue(
+      new Promise<DocumentUploadResult>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const first = render(null, { keptDraft: "documents-upload" });
+    await choose(first);
+    await pressUpload(first);
+    act(() => first.unmount());
+    await act(async () => {
+      settle({
+        status: "refused",
+        reason: "offline",
+        final: false,
+        sent: SENT,
+      });
+    });
+
+    const second = render(null, { keptDraft: "documents-upload" });
+    // Title and folder hold still for the retry, and the sheet says why.
+    expect(titleInput(second).props.editable).toBe(false);
+    expect(screenText(second)).toContain(RETRY_KEEPS_DRAFT);
+    uploadDocumentPhoto.mockResolvedValue({ status: "uploaded", title: "x" });
+    await pressUpload(second);
+    expect(uploadDocumentPhoto.mock.calls.at(-1)![3]).toMatchObject({
+      uploaded: SENT.uploaded,
+    });
+  });
+
+  it("leaves a later visit's draft alone when an upload from before lands or fails", async () => {
+    for (const outcome of [
+      { status: "uploaded", title: "IMG_2041.jpg" },
+      { status: "refused", reason: "offline", final: false },
+    ] as DocumentUploadResult[]) {
+      let settle: (result: DocumentUploadResult) => void = () => {};
+      uploadDocumentPhoto.mockReturnValue(
+        new Promise<DocumentUploadResult>((resolve) => {
+          settle = resolve;
+        }),
+      );
+      const first = render(null, { keptDraft: "documents-upload" });
+      await choose(first);
+      await pressUpload(first);
+      act(() => first.unmount());
+
+      const second = render(null, { keptDraft: "documents-upload" });
+      await choose(second);
+      act(() => {
+        titleInput(second).props.onChangeText("Agenda");
+      });
+      act(() => second.unmount());
+      await act(async () => {
+        settle(outcome);
+      });
+
+      const third = render(null, { keptDraft: "documents-upload" });
+      expect(titleInput(third).props.value).toBe("Agenda");
+      act(() => {
+        pressable(third, "Cancel").props.onPress();
+      });
+      act(() => third.unmount());
+    }
   });
 
   it("drops the draft on Cancel", async () => {
@@ -936,7 +1078,7 @@ describe("UploadDocumentSheet (#3399)", () => {
     await pressUpload(tree);
     expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
       PHOTO,
-      { title: "Minutes", folder: null },
+      { title: "Minutes", folder: null, whoCanSee: null },
       expect.any(Object),
       expect.objectContaining({ title: "Minutes", folder: null }),
     );
@@ -1150,5 +1292,304 @@ describe("UploadDocumentSheet (#3399)", () => {
     mounted.push(tree);
 
     expect(screenText(tree)).not.toContain("Folder");
+  });
+});
+
+describe("UploadDocumentSheet with Files (#3401)", () => {
+  const PDF: PickedImage = {
+    uri: "file:///cache/Bylaws 2026.pdf",
+    filename: "Bylaws 2026.pdf",
+    contentType: "application/pdf",
+    byteSize: 1_258_291,
+  };
+
+  beforeEach(() => {
+    canPickFiles.mockReturnValue(true);
+  });
+
+  it("offers a file and a photo with nothing picked", () => {
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("Choose a file");
+    expect(text).toContain(FILES_ROW_META);
+    expect(text).toContain("Choose a photo");
+    expect(uploadButton(tree).props.accessibilityHint).toBe(
+      "Choose a file or a photo first.",
+    );
+  });
+
+  it("files a PDF picked from Files, and reads where it came from", async () => {
+    pickDocumentFile.mockResolvedValue({ status: "picked", image: PDF });
+    const tree = render();
+    await act(async () => {
+      pressable(tree, "Choose a file").props.onPress();
+    });
+    expect(pickDocumentFile).toHaveBeenCalledTimes(1);
+    expect(pickDocumentPhoto).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain("Bylaws 2026.pdf");
+    expect(screenText(tree)).toContain("from Files");
+    expect(uploadDocumentPhoto).not.toHaveBeenCalled();
+
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "uploaded",
+      title: "Bylaws 2026.pdf",
+    });
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenCalledWith(
+      PDF,
+      { title: "", folder: null, whoCanSee: null },
+      expect.anything(),
+      undefined,
+    );
+    expect(onUploaded).toHaveBeenCalledWith("Bylaws 2026.pdf");
+  });
+
+  it("reads a photo's source as Photos", async () => {
+    pickDocumentPhoto.mockResolvedValue({ status: "picked", image: PHOTO });
+    const tree = render();
+    await act(async () => {
+      pressable(tree, "Choose a photo").props.onPress();
+    });
+    expect(screenText(tree)).toContain("from Photos");
+  });
+
+  it("says why Files turned a pick down", async () => {
+    pickDocumentFile.mockResolvedValue({
+      status: "refused",
+      reason: "Documents can be up to 25 MB.",
+    });
+    const tree = render();
+    await act(async () => {
+      pressable(tree, "Choose a file").props.onPress();
+    });
+    expect(screenText(tree)).toContain("Documents can be up to 25 MB.");
+    expect(uploadButton(tree).props.accessibilityState.disabled).toBe(true);
+  });
+
+  it("shows both sources again on Change, keeping the pick until a new one lands", async () => {
+    pickDocumentFile.mockResolvedValue({ status: "picked", image: PDF });
+    const tree = render();
+    await act(async () => {
+      pressable(tree, "Choose a file").props.onPress();
+    });
+    act(() => {
+      pressable(tree, `Change file, ${PDF.filename}`).props.onPress();
+    });
+    expect(screenText(tree)).toContain("Choose a photo");
+    // Still held: Upload stays on, and backing out of a picker loses nothing.
+    expect(uploadButton(tree).props.accessibilityState.disabled).toBe(false);
+    pickDocumentPhoto.mockResolvedValue({ status: "cancelled" });
+    await act(async () => {
+      pressable(tree, "Choose a photo").props.onPress();
+    });
+    act(() => {
+      pressable(tree, `Keep ${PDF.filename}`).props.onPress();
+    });
+    expect(screenText(tree)).toContain("from Files");
+
+    act(() => {
+      pressable(tree, `Change file, ${PDF.filename}`).props.onPress();
+    });
+    pickDocumentPhoto.mockResolvedValue({ status: "picked", image: PHOTO });
+    await act(async () => {
+      pressable(tree, "Choose a photo").props.onPress();
+    });
+    expect(screenText(tree)).toContain("IMG_2041.jpg");
+    expect(screenText(tree)).toContain("from Photos");
+    expect(screenText(tree)).not.toContain("Bylaws 2026.pdf");
+  });
+
+  it("keeps a held retry through Change until a new pick lands", async () => {
+    pickDocumentFile.mockResolvedValue({ status: "picked", image: PDF });
+    const tree = render();
+    await act(async () => {
+      pressable(tree, "Choose a file").props.onPress();
+    });
+    uploadDocumentPhoto.mockResolvedValueOnce({
+      status: "refused",
+      reason: "Couldn't upload that file. Try again in a moment.",
+      final: false,
+      sent: { ...SENT, image: PDF, title: PDF.filename },
+    });
+    await pressUpload(tree);
+    open(tree);
+    act(() => {
+      pressable(tree, `Change file, ${PDF.filename}`).props.onPress();
+    });
+    pickDocumentFile.mockResolvedValue({ status: "cancelled" });
+    await act(async () => {
+      pressable(tree, "Choose a file").props.onPress();
+    });
+    act(() => {
+      pressable(tree, `Keep ${PDF.filename}`).props.onPress();
+    });
+    uploadDocumentPhoto.mockResolvedValueOnce({
+      status: "uploaded",
+      title: PDF.filename,
+    });
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PDF,
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ image: PDF }),
+    );
+  });
+
+  it("reopens a kept draft from Files reading from Files", async () => {
+    pickDocumentFile.mockResolvedValue({ status: "picked", image: PDF });
+    const first = render(null, { keptDraft: "documents-upload-files" });
+    await act(async () => {
+      pressable(first, "Choose a file").props.onPress();
+    });
+    act(() => first.unmount());
+    const second = render(null, { keptDraft: "documents-upload-files" });
+    expect(screenText(second)).toContain("Bylaws 2026.pdf");
+    expect(screenText(second)).toContain("from Files");
+    act(() => {
+      pressable(second, "Cancel").props.onPress();
+    });
+  });
+});
+
+describe("UploadDocumentSheet who can see (#5216)", () => {
+  const EXEC = {
+    entry: "tier:t-exec",
+    kind: "tier",
+    id: "t-exec",
+    name: "Executive board",
+    color: null,
+    tier_id: null,
+    user_ids: ["u-1", "u-2"],
+  };
+
+  beforeEach(() => {
+    accessQuery.data = { options: [EXEC], always: [] };
+    accessQuery.isSuccess = true;
+  });
+
+  afterEach(() => {
+    accessQuery.data = undefined;
+    accessQuery.isSuccess = false;
+  });
+
+  const accessSheet = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        "question" in node.props &&
+        "locked" in node.props &&
+        typeof node.props.onChange === "function",
+    );
+
+  it("reads Same as folder under a folder, and Everyone with none", () => {
+    const tree = render("Minutes");
+    expect(pressable(tree, "Who can see: Same as folder")).toBeTruthy();
+    act(() => {
+      pressable(tree, "None").props.onPress();
+    });
+    expect(pressable(tree, "Who can see: Everyone")).toBeTruthy();
+  });
+
+  it("files the list the uploader chose", async () => {
+    const tree = render(null);
+    await choose(tree);
+    act(() => {
+      accessSheet(tree).props.onChange(["tier:t-exec"]);
+    });
+    expect(pressable(tree, "Who can see: Executive board")).toBeTruthy();
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "uploaded",
+      title: "IMG_2041.jpg",
+    });
+
+    await pressUpload(tree);
+
+    expect(uploadDocumentPhoto).toHaveBeenCalledWith(
+      PHOTO,
+      { title: "", folder: null, whoCanSee: ["tier:t-exec"] },
+      expect.any(Object),
+      undefined,
+    );
+  });
+
+  it("keeps the setter's tiers on the list it hands the picker", () => {
+    accessQuery.data = { options: [EXEC], always: ["tier:t-exec"] };
+    const tree = render(null);
+    expect(accessSheet(tree).props.locked).toEqual(["tier:t-exec"]);
+  });
+
+  it("holds Upload while Chosen roles holds nothing", async () => {
+    const tree = render(null);
+    await choose(tree);
+    act(() => {
+      accessSheet(tree).props.onChange([]);
+    });
+    expect(uploadButton(tree).props.accessibilityState).toMatchObject({
+      disabled: true,
+    });
+    expect(uploadButton(tree).props.accessibilityHint).toBe(
+      "Pick who can see it first.",
+    );
+  });
+
+  it("keeps the chosen list with a draft past its screen", async () => {
+    const first = render(null, { keptDraft: "documents-upload" });
+    await choose(first);
+    act(() => {
+      accessSheet(first).props.onChange(["tier:t-exec"]);
+    });
+    act(() => first.unmount());
+
+    const second = render(null, { keptDraft: "documents-upload" });
+    expect(pressable(second, "Who can see: Executive board")).toBeTruthy();
+    act(() => {
+      pressable(second, "Cancel").props.onPress();
+    });
+  });
+
+  it("holds the list a failed confirm was sent with", async () => {
+    const tree = render(null);
+    await choose(tree);
+    act(() => {
+      accessSheet(tree).props.onChange(["tier:t-exec"]);
+    });
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      sent: {
+        image: PHOTO,
+        uploaded: {
+          storagePath: "chapters/c/documents/d/IMG_2041.jpg",
+          filename: "IMG_2041.jpg",
+          contentType: "image/jpeg",
+          byteSize: PHOTO.byteSize,
+        },
+        title: "",
+        folder: null,
+        whoCanSee: ["tier:t-exec"],
+      },
+    });
+    await pressUpload(tree);
+
+    // The row is held; even a change that reached the draft isn't what's shown.
+    act(() => {
+      accessSheet(tree).props.onChange(null);
+    });
+    const row = pressable(tree, "Who can see: Executive board");
+    expect(row.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(row.props.accessibilityHint).toBe(RETRY_KEEPS_DRAFT);
+  });
+
+  it("offers no row to a member outside every tier", () => {
+    accessQuery.data = { options: [EXEC], always: null };
+    const tree = render(null);
+    expect(
+      tree.root.findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith("Who can see:"),
+      ),
+    ).toHaveLength(0);
   });
 });

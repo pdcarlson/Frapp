@@ -6,26 +6,21 @@ import {
   type ReactTestInstance,
   type ReactTestRenderer,
 } from "react-test-renderer";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // A purple chapter's accent, deliberately not house gold, so a glyph or time
 // that slipped back to the accent or a `gold.*` token would show up in an
 // assertion (the strip draws no accent: foundations.md §6).
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
-import { expectRoundedRipple } from "@/test/pressable-row";
+import { ForwardGlyph } from "@/components/control-glyphs";
+import { LeadTile } from "@/components/lead-tile";
+import { ListSection } from "@/components/list-section";
 import { formatDayHeading } from "@repo/formatting";
 import {
   formatDayWord,
@@ -110,8 +105,9 @@ describe("selectNextEvent", () => {
   });
 
   it("survives a non-array, a null, and rows missing required fields", () => {
-    // `GET /v1/events` infers as `never` in the SDK, so this is fed whatever the
-    // runtime actually returns — the selector must not throw on any of it.
+    // The selector narrows at the boundary (it predates the events route's
+    // schema, #4867), so it is fed whatever a runtime could return — it must
+    // not throw on any of it.
     expect(selectNextEvent(undefined, NOW)).toBeNull();
     expect(selectNextEvent(null, NOW)).toBeNull();
     expect(selectNextEvent("not a list", NOW)).toBeNull();
@@ -336,13 +332,14 @@ describe("formatDueDate", () => {
 });
 
 describe("isDueUrgent", () => {
-  it("is true for overdue, today, and tomorrow", () => {
+  it("is true only once the due time has passed (#4133)", () => {
     expect(isDueUrgent(at(2026, 6, 1), NOW)).toBe(true);
-    expect(isDueUrgent(at(2026, 7, 16, 23), NOW)).toBe(true);
-    expect(isDueUrgent(at(2026, 7, 17, 1), NOW)).toBe(true);
+    expect(isDueUrgent(at(2026, 7, 16, 11), NOW)).toBe(true);
   });
 
-  it("is false further out", () => {
+  it("is false later today, tomorrow and further out", () => {
+    expect(isDueUrgent(at(2026, 7, 16, 23), NOW)).toBe(false);
+    expect(isDueUrgent(at(2026, 7, 17, 1), NOW)).toBe(false);
     expect(isDueUrgent(at(2026, 7, 18), NOW)).toBe(false);
   });
 
@@ -353,6 +350,14 @@ describe("isDueUrgent", () => {
 
 describe("UpNextStrip rows", () => {
   const VIEWER = "viewer-1";
+  // Each strip subscribes to the shared clock; unmounting stops its interval
+  // so the next describe's fake timers own the clock.
+  const mounted: ReactTestRenderer[] = [];
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+  });
 
   function renderStrip(): ReactTestRenderer {
     let tree!: ReactTestRenderer;
@@ -383,7 +388,15 @@ describe("UpNextStrip rows", () => {
         </FrappThemeProvider>,
       );
     });
+    mounted.push(tree);
     return tree;
+  }
+
+  /** A Text node's words, nested Text included. */
+  function textOf(node: ReactTestInstance): string {
+    return node.children
+      .map((child) => (typeof child === "string" ? child : textOf(child)))
+      .join("");
   }
 
   function rows(tree: ReactTestRenderer) {
@@ -392,61 +405,75 @@ describe("UpNextStrip rows", () => {
     );
   }
 
-  it("leads both rows with a muted glyph and never draws the accent", () => {
+  it("leads both rows with a neutral tile and never draws the accent", () => {
     const tree = renderStrip();
     const [eventRow, taskRow] = rows(tree);
 
-    // Each tab glyph is two filled Paths; the second is the full-strength
+    // Each nav glyph is two filled Paths; the second is the full-strength
     // outline, so its fill is the glyph's hue.
-    const outline = (row: ReactTestInstance) =>
-      row.findAll((node) => (node.type as unknown as string) === "Path")[1]!;
-    expect(outline(eventRow!).props.fill).toBe(
-      signetDarkTokens.color.text.muted,
-    );
-    expect(outline(taskRow!).props.fill).toBe(
-      signetDarkTokens.color.text.muted,
-    );
+    const outline = (tile: ReactTestInstance) =>
+      tile.findAll((node) => (node.type as unknown as string) === "Path")[1]!;
+    for (const row of [eventRow!, taskRow!]) {
+      const tile = row.findByType(LeadTile);
+      expect(tile.props.size).toBe("lead");
+      expect(tile.props.on).toBe("card");
+      // A state row's tile is never tinted (foundations.md §6, A place's hue).
+      expect(tile.props.hue).toBeUndefined();
+      expect(outline(tile).props.fill).toBe(
+        signetDarkTokens.color.text.mutedForeground,
+      );
+      expect(
+        tile.find((node) => (node.type as unknown as string) === "Svg").props
+          .width,
+      ).toBe(20);
+    }
     expect(JSON.stringify(tree.toJSON())).not.toContain("#CB9FFF");
-    for (const svg of [eventRow!, taskRow!].map((row) =>
-      row.find((node) => (node.type as unknown as string) === "Svg"),
-    )) {
-      expect(svg.props.width).toBe(20);
+  });
+
+  // #4610: on one line with its context and time, a title was cut mid word.
+  it("gives each title its own line, with when and where under it", () => {
+    const [eventRow, taskRow] = rows(renderStrip());
+    const lines = (row: ReactTestInstance) =>
+      row
+        .findAll(
+          (node) =>
+            (node.type as unknown as string) === "Text" &&
+            node.props.numberOfLines === 1,
+        )
+        .map((node) => textOf(node));
+    expect(lines(eventRow!)).toEqual([
+      "Chapter meeting",
+      "Today 6:00 PM · Great Hall",
+    ]);
+    expect(lines(taskRow!)).toEqual(["Ride-share list", "Due tomorrow"]);
+  });
+
+  it("ends each row in the drawn chevron of a row that opens something", () => {
+    for (const row of rows(renderStrip())) {
+      expect(row.findAllByType(ForwardGlyph)).toHaveLength(1);
     }
   });
 
-  it("gives both rows the shared list-row press feedback", () => {
-    for (const row of rows(renderStrip())) {
+  it("holds both rows in one card, with the card's press feedback", () => {
+    const tree = renderStrip();
+    expect(tree.root.findAllByType(ListSection)).toHaveLength(1);
+    const all = rows(tree);
+    expect(all).toHaveLength(2);
+    for (const row of all) {
       expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
-      // The suite's react-native stub runs as iOS.
+      // The suite's react-native stub runs as iOS. On a card the lift is the
+      // step above it.
       expect(row.props.style({ pressed: true })).toContainEqual({
         backgroundColor: signetDarkTokens.color.surface.card,
       });
       expect(row.props.style({ pressed: false })).toContain(null);
     }
   });
-
-  // Each row pads itself by `sm` and bleeds it into the screen gutter, as
-  // Chat home's channel rows do, so the glyph stays on the gutter line and the
-  // press lift clears it. The bleed sits on the clip that rounds the ripple
-  // (`PressableRow`), so the row is where it was.
-  it("bleeds each row's padding into the screen gutter, inside a rounded clip", () => {
-    const all = rows(renderStrip());
-    expect(all).toHaveLength(2);
-    for (const row of all) {
-      const { clip, resting } = expectRoundedRipple(
-        row,
-        signetDarkTokens.radius.control,
-      );
-      expect(resting.paddingHorizontal).toBe(signetDarkTokens.spacing.sm);
-      expect(clip.marginHorizontal).toBe(-signetDarkTokens.spacing.sm);
-      expect(resting).not.toHaveProperty("marginHorizontal");
-    }
-  });
 });
 
 describe("formatDayWord", () => {
-  // The strip and the Events tab's day headings say a day the same way.
-  it("is the Events tab's day heading, the year included outside this one", () => {
+  // The strip and the Calendar's day headings say a day the same way.
+  it("is the Calendar's day heading, the year included outside this one", () => {
     for (const day of [
       at(2026, 7, 16),
       at(2026, 7, 17),
@@ -460,5 +487,42 @@ describe("formatDayWord", () => {
     expect(formatDayWord(new Date(at(2027, 0, 5)), NOW)).toBe(
       "January 5, 2027",
     );
+  });
+});
+
+describe("UpNextStrip clock", () => {
+  // Chat home never unmounts, so the strip has to move with the clock on its
+  // own. Before, it memoised one `new Date()` at mount: a meeting that had
+  // already started stayed UP NEXT until the app was killed.
+  it("drops an event once it starts, without a remount", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(NOW);
+      const events = [
+        {
+          id: "e1",
+          name: "Chapter meeting",
+          location: null,
+          start_time: new Date(NOW.getTime() + 60_000).toISOString(),
+        },
+      ];
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = create(
+          <FrappThemeProvider>
+            <UpNextStrip events={events} tasks={[]} viewerUserId="viewer-1" />
+          </FrappThemeProvider>,
+        );
+      });
+      expect(JSON.stringify(tree.toJSON())).toContain("Chapter meeting");
+
+      act(() => {
+        vi.advanceTimersByTime(2 * 60_000);
+      });
+      expect(tree.toJSON()).toBeNull();
+      act(() => tree.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { contrastRatio, parseHex } from "@repo/color";
-import { ROLE_COLOR_PALETTE } from "@repo/validation";
+import { ROLE_COLOR_PALETTE, roleColorForHue } from "@repo/validation";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -97,9 +97,9 @@ describe("memberAvatarHue", () => {
 
 describe("memberAvatarTint contrast", () => {
   // Every role color can reach an avatar (officers), so all ten are checked,
-  // Sand (6.07) and Slate (5.51) included, not only the eight hashed hues.
+  // Sand (6.01) and Slate (5.44) included, not only the eight hashed hues.
   it.each(ROLE_COLOR_PALETTE.map((s) => [s.label, s.hex] as const))(
-    "%s initials read at AA on their 18%% tint",
+    "%s initials read at AA on their 14%% tint",
     (_label, hex) => {
       const tint = memberAvatarTint(hex);
       expect(tint.text).toBe(hex);
@@ -107,9 +107,32 @@ describe("memberAvatarTint contrast", () => {
     },
   );
 
-  it("reproduces the #3860 measurements", () => {
-    expect(memberAvatarTint("#F2994A").fill).toBe("#443426");
-    expect(ratio("#F2994A", memberAvatarTint("#F2994A").fill)).toBeCloseTo(5.34, 1);
-    expect(ratio("#B392F0", memberAvatarTint("#B392F0").fill)).toBeCloseTo(4.79, 1);
+  // A custom role hue (#5784) reaches an avatar the same way; every slider
+  // position is checked, one every 2 degrees.
+  it("keeps every custom role hue's initials at AA on their tint", () => {
+    for (let hue = 0; hue < 360; hue += 2) {
+      const hex = roleColorForHue(hue).hex;
+      const tint = memberAvatarTint(hex);
+      expect(
+        ratio(tint.text, tint.fill),
+        `${hue}° ${hex}`,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+  });
+
+  it("reproduces the #3860 measurements, re-seated for the #3826 ladder", () => {
+    // #3860 measured 18% over the old `--popover`: Orange `#443426` at 5.34:1,
+    // Violet 4.79:1. 14% over the `--card` paints nearly the same fill
+    // (`#43362B` on the 2026-11-12 card; `#3D2E2A` on the darker 2026-11-19
+    // violet card, which only raises the initials' contrast).
+    expect(memberAvatarTint("#F2994A").fill).toBe("#3D2E2A");
+    expect(ratio("#F2994A", memberAvatarTint("#F2994A").fill)).toBeCloseTo(
+      5.81,
+      1,
+    );
+    expect(ratio("#B392F0", memberAvatarTint("#B392F0").fill)).toBeCloseTo(
+      5.19,
+      1,
+    );
   });
 });

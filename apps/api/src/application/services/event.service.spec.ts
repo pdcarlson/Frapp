@@ -1,3 +1,4 @@
+import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Event } from '#domain/entities/event.entity';
 import {
@@ -12,6 +13,7 @@ describe('EventService', () => {
   let mockMemberRepo: EventServiceFixture['mockMemberRepo'];
   let mockRbacService: EventServiceFixture['mockRbacService'];
   let mockEventTypeRepo: EventServiceFixture['mockEventTypeRepo'];
+  let mockScreenRepo: EventServiceFixture['mockScreenRepo'];
 
   beforeEach(async () => {
     ({
@@ -20,7 +22,78 @@ describe('EventService', () => {
       mockMemberRepo,
       mockRbacService,
       mockEventTypeRepo,
+      mockScreenRepo,
     } = await createEventServiceFixture());
+  });
+
+  // #4808: the reads tell web when a check-in without the code is refused.
+  describe('checkInNeedsCode', () => {
+    // baseEvent: 18:00–19:00 UTC, check-in opens 10 minutes before.
+    const during = new Date('2026-02-26T18:30:00.000Z');
+    const liveScreen = {
+      event_id: 'evt-1',
+      reported_by: 'officer-1',
+      chapter_id: 'ch-1',
+      lat: null,
+      lng: null,
+      accuracy_m: null,
+      located_at: null,
+      shown_at: during.toISOString(),
+      expires_at: '2026-02-26T19:15:00.000Z',
+    };
+
+    it('says the code is needed while a screen is live, and not before', async () => {
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'user-1', during),
+      ).resolves.toBe(false);
+      mockScreenRepo.findLive.mockResolvedValue([liveScreen]);
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'user-1', during),
+      ).resolves.toBe(true);
+      expect(mockScreenRepo.findLive).toHaveBeenLastCalledWith(
+        'evt-1',
+        'ch-1',
+        during.toISOString(),
+      );
+    });
+
+    it('says no to the officer whose own screen is live (2026-11-17)', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([liveScreen]);
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'officer-1', during),
+      ).resolves.toBe(false);
+      // Another officer who isn't hosting still needs the code.
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'officer-2', during),
+      ).resolves.toBe(true);
+    });
+
+    it('reads no screens outside the check-in window', async () => {
+      mockScreenRepo.findLive.mockResolvedValue([liveScreen]);
+      for (const at of [
+        '2026-02-26T17:40:00.000Z', // before it opens
+        '2026-02-27T12:00:00.000Z', // the next day
+      ]) {
+        await expect(
+          service.checkInNeedsCode(baseEvent, 'user-1', new Date(at)),
+        ).resolves.toBe(false);
+      }
+      expect(mockScreenRepo.findLive).not.toHaveBeenCalled();
+    });
+
+    it('says no, and reports it, when the screens cannot be read', async () => {
+      mockScreenRepo.findLive.mockRejectedValue(new Error('db down'));
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+      await expect(
+        service.checkInNeedsCode(baseEvent, 'user-1', during),
+      ).resolves.toBe(false);
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ site: 'event-check-in-screen-read' }),
+      );
+      reported.mockRestore();
+    });
   });
 
   it('should find event by id', async () => {
@@ -64,6 +137,44 @@ describe('EventService', () => {
       required_role_ids: ['role-officer'],
       others_invited: false,
     };
+
+    describe('visibleToAll', () => {
+      const viewer = (permissions: string[], role_ids: string[] = []) => ({
+        permissions: new Set(permissions),
+        role_ids,
+      });
+
+      it('keeps an event only when every viewer could read it, by the list’s rule', async () => {
+        mockEventRepo.findByIds.mockResolvedValue([baseEvent, targetedEvent]);
+        const ids = [baseEvent.id, targetedEvent.id, 'evt-gone'];
+
+        // An officer by role and a holder of `events:update` both read the
+        // targeted event; a plain member does not.
+        await expect(
+          service.visibleToAll(ids, 'ch-1', [
+            viewer([], ['role-officer']),
+            viewer(['events:update']),
+            viewer(['*']),
+          ]),
+        ).resolves.toEqual(new Set([baseEvent.id, targetedEvent.id]));
+        await expect(
+          service.visibleToAll(ids, 'ch-1', [
+            viewer([], ['role-officer']),
+            viewer(['members:view'], ['role-member']),
+          ]),
+        ).resolves.toEqual(new Set([baseEvent.id]));
+        // One read however many viewers, scoped to the chapter.
+        expect(mockEventRepo.findByIds).toHaveBeenLastCalledWith(ids, 'ch-1');
+        expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+      });
+
+      it('reads nothing for no ids', async () => {
+        await expect(service.visibleToAll([], 'ch-1', [])).resolves.toEqual(
+          new Set(),
+        );
+        expect(mockEventRepo.findByIds).not.toHaveBeenCalled();
+      });
+    });
 
     describe('findCreatedBy', () => {
       it('reads only the maker’s events, from the given end, capped', async () => {
@@ -308,19 +419,45 @@ describe('EventService', () => {
     });
   });
 
+  it('tells its created-listeners, and a failing one never fails the create (#5790)', async () => {
+    mockEventRepo.create.mockResolvedValue(baseEvent);
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+    const heard: string[] = [];
+    service.onCreated(async () => {
+      throw new Error('listener down');
+    });
+    service.onCreated(async (chapterId, event) => {
+      heard.push(`${chapterId}:${event.id}`);
+    });
+    const result = await service.create({
+      chapter_id: 'ch-1',
+      name: 'Chapter Meeting',
+      start_time: baseEvent.start_time,
+      end_time: baseEvent.end_time,
+      created_by: 'user-officer',
+    });
+    expect(result).toEqual(baseEvent);
+    expect(heard).toEqual([`ch-1:${baseEvent.id}`]);
+  });
+
   it('should create an event with valid times', async () => {
     mockEventRepo.create.mockResolvedValue(baseEvent);
+    // An officer (`events:update`): the spec's default of 10 points applies.
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
 
     const result = await service.create({
       chapter_id: 'ch-1',
       name: 'Chapter Meeting',
       start_time: baseEvent.start_time,
       end_time: baseEvent.end_time,
+      created_by: 'user-officer',
     });
 
     expect(mockEventRepo.create).toHaveBeenCalledWith({
       chapter_id: 'ch-1',
       name: 'Chapter Meeting',
+      agenda: [],
+      attachments: [],
       description: null,
       location: null,
       start_time: baseEvent.start_time,
@@ -341,10 +478,157 @@ describe('EventService', () => {
       check_in_opens_minutes: 10,
       // No type picked.
       event_type_id: null,
-      // No caller named: no creator recorded.
-      created_by: null,
+      created_by: 'user-officer',
     });
+    expect(mockRbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+      'ch-1',
+      'user-officer',
+      ['events:update'],
+    );
     expect(result).toEqual(baseEvent);
+  });
+
+  // #3709: any member with `events:create` makes an event, but making anyone
+  // required and attaching points stay with `events:update` holders.
+  describe('a member who cannot edit events', () => {
+    const create = (extra: Record<string, unknown> = {}) =>
+      service.create({
+        chapter_id: 'ch-1',
+        name: 'Study night',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        created_by: 'user-member',
+        ...extra,
+      });
+
+    beforeEach(() => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+      mockRbacService.memberHasAnyPermission.mockResolvedValue(false);
+    });
+
+    it('creates an optional event that carries no points', async () => {
+      await create({ point_value: 10, is_mandatory: false });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          point_value: 0,
+          is_mandatory: false,
+          created_by: 'user-member',
+        }),
+      );
+    });
+
+    it('stores no points when none are sent either', async () => {
+      await create();
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ point_value: 0 }),
+      );
+    });
+
+    it('may still set roles optional or not invited', async () => {
+      await create({
+        optional_role_ids: ['role-seniors'],
+        excluded_role_ids: ['role-new'],
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          optional_role_ids: ['role-seniors'],
+          excluded_role_ids: ['role-new'],
+        }),
+      );
+    });
+
+    // Lowered, not refused (#3709): app builds already installed copy a
+    // type's "required for everyone" into the form, and a refusal would leave
+    // the member retrying a save that can never succeed.
+    it('stores an event required for everyone as optional for everyone', async () => {
+      await create({ is_mandatory: true });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          is_mandatory: false,
+          required_role_ids: null,
+          others_invited: true,
+          point_value: 0,
+        }),
+      );
+    });
+
+    it('keeps a role it made required invited, as optional, and nobody else', async () => {
+      // An older build's "required for officers": `others_invited` omitted,
+      // which reads as "only the listed roles" while a role is required.
+      await create({
+        required_role_ids: ['role-officers'],
+        optional_role_ids: ['role-seniors'],
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          is_mandatory: false,
+          required_role_ids: null,
+          optional_role_ids: ['role-seniors', 'role-officers'],
+          // Written out: a null with no required role left would read as
+          // "everyone" and open the event to the whole chapter.
+          others_invited: false,
+        }),
+      );
+    });
+
+    it('keeps everyone else invited when the request said so', async () => {
+      await create({
+        required_role_ids: ['role-officers'],
+        others_invited: true,
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          required_role_ids: null,
+          optional_role_ids: ['role-officers'],
+          others_invited: true,
+        }),
+      );
+    });
+
+    it('treats a create with no maker as a member', async () => {
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Study night',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        point_value: 25,
+      });
+
+      expect(mockRbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ point_value: 0 }),
+      );
+    });
+  });
+
+  it('lets an events:update holder make an event required with points', async () => {
+    mockEventRepo.create.mockResolvedValue(baseEvent);
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+
+    await service.create({
+      chapter_id: 'ch-1',
+      name: 'Chapter Meeting',
+      start_time: baseEvent.start_time,
+      end_time: baseEvent.end_time,
+      created_by: 'user-officer',
+      point_value: 25,
+      is_mandatory: true,
+      required_role_ids: ['role-officers'],
+    });
+
+    expect(mockEventRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        point_value: 25,
+        is_mandatory: true,
+        required_role_ids: ['role-officers'],
+      }),
+    );
   });
 
   it('records who made the event (#3897)', async () => {

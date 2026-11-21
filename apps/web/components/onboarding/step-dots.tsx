@@ -3,7 +3,7 @@
  * two spellings of it in this one directory.
  *
  * `chapter-wizard.tsx` drew four `flex-1` bars (`bg-primary` / `bg-border`) and
- * `onboarding-tutorial.tsx` drew eight fixed `h-1.5 w-4` pills with the same
+ * the first-run slideshow (deleted in #5080) drew eight fixed `h-1.5 w-4` pills with the same
  * two tones. Two live spellings of one indicator is what the cutover rule
  * forbids, and it was already producing drift: only one of them shipped a
  * textual counter.
@@ -12,8 +12,8 @@
  * `components/shared/meter.ts` measured the five candidates across all 19
  * seeded chapter colours and `bg-border` came fourth of five on the
  * relationship that carries the data (3.298:1 fill-vs-track, against
- * `--background`'s 4.701) — and the tutorial's indicator renders inside a
- * `DialogContent`, where `bg-popover` and `bg-accent-subtle` collapse to
+ * `--background`'s 4.701) — and the first-run slideshow's indicator (deleted
+ * with it, #5080) rendered inside a `DialogContent`, where `bg-popover` and `bg-accent-subtle` collapse to
  * 1.000:1 and 1.001:1 outright.
  * `--background` is the bottom of the ladder, so it recedes below whatever
  * container it is placed in and cannot invert. That table is not re-derived
@@ -27,7 +27,7 @@
  * name for the thing the bars draw, and `role="group"` carries it so the label
  * is announced when focus enters the flow.
  *
- * The fill is the chapter accent. Both consumers mount inside `DashboardShell`,
+ * The fill is the chapter accent. Its consumers mount inside `DashboardShell`,
  * so the accent bridge is live and §5's "accent-worthy stat" reading applies —
  * progress through a flow is a tally, not a status.
  */

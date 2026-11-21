@@ -36,6 +36,24 @@ function press(ref: React.RefObject<MentionListHandle | null>, key: string) {
 }
 
 describe("MentionList", () => {
+  it("says who @everyone and @here reach instead of Role", () => {
+    renderList(
+      ["everyone", "here"].map((name) => ({
+        kind: "role" as const,
+        id: name,
+        label: name,
+        displayName: name,
+        avatarUrl: null,
+      })),
+    );
+    expect(screen.getByRole("option", { name: /everyone/ })).toHaveTextContent(
+      "Notifies the whole channel",
+    );
+    expect(screen.getByRole("option", { name: /here/ })).toHaveTextContent(
+      "Notifies who's online",
+    );
+  });
+
   it("draws a role row with the group glyph and says it is a role", () => {
     const { command } = renderList([
       ...ITEMS.slice(0, 1),
@@ -230,5 +248,29 @@ describe("MentionList — selectedIndex clamped synchronously, not only via effe
       ref.current!.onKeyDown({ event: { key: "Enter" } as KeyboardEvent } as never);
     });
     expect(command).toHaveBeenCalledWith(ITEMS[2]);
+  });
+});
+
+describe("MentionList — Frapp's own row (#4713)", () => {
+  const FRAPP: MentionSuggestionItem = {
+    kind: "ask",
+    id: "ask-frapp",
+    label: "Frapp",
+    displayName: "Frapp",
+    avatarUrl: null,
+  };
+
+  it("draws the crest and says the answer is private, not that it is a role", () => {
+    const { command } = renderList([...ITEMS.slice(0, 1), FRAPP]);
+    const row = screen.getByRole("option", { name: /Frapp/ });
+    expect(row).toHaveTextContent("Only you see the answer");
+    expect(row).not.toHaveTextContent("Role");
+    // On the chapter's tint, not the grey disc a role gets (#5476).
+    expect(row.querySelector("[data-mention-ask-glyph]")).toHaveClass(
+      "bg-accent-subtle",
+    );
+    expect(row.querySelector("[data-mention-role-glyph]")).toBeNull();
+    act(() => row.click());
+    expect(command).toHaveBeenCalledWith(FRAPP);
   });
 });

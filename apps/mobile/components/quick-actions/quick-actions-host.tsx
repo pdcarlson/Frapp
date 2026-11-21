@@ -1,5 +1,4 @@
 import {
-  Component,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -11,21 +10,28 @@ import {
 import { AccessibilityInfo, AppState } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { useActiveChapterId, useDocumentFolders, useEvents } from "@repo/hooks";
+import {
+  useActiveChapterId,
+  useAsk,
+  useDocumentFolders,
+  useEvents,
+} from "@repo/hooks";
+import { AskSheet } from "@/components/ask/ask-sheet";
 import {
   UploadDocumentSheet,
   type PendingDocumentUpload,
 } from "@/components/documents/upload-document-sheet";
 import { NewEventSheet } from "@/components/events/new-event-sheet";
-import { reportRouteError } from "@/components/route-error";
+import { DropBoundary } from "@/components/drop-boundary";
+import { useMeetingQuickActions } from "@/components/quick-actions/meeting-actions";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
-import { resolveCheckInWindow } from "@/lib/events/format";
+import { taskCreatedLine } from "@/lib/tasks/create-task";
 import { selectEventRows } from "@/lib/events/select";
 import { selectDocumentFolders } from "@/lib/more/documents";
 import type { QuickActionKey } from "@/lib/quick-actions";
 
-type SheetKey = "newEvent" | "newTask" | "logHours" | "upload";
+type SheetKey = "newEvent" | "newTask" | "logHours" | "upload" | "ask";
 
 const NONE: ReadonlySet<SheetKey> = new Set();
 
@@ -54,6 +60,8 @@ export function useQuickActionsHost({
   events: boolean;
 }): {
   run: (key: QuickActionKey) => void;
+  /** Opens Ask Frapp, for a member who has it (the bar above the tab bar). */
+  ask: () => void;
   sheets: ReactNode;
   /** The last create's confirmation, for a few seconds, or `null`. */
   notice: string | null;
@@ -66,12 +74,14 @@ export function useQuickActionsHost({
   const taskRef = useRef<BottomSheetModal>(null);
   const hoursRef = useRef<BottomSheetModal>(null);
   const uploadRef = useRef<BottomSheetModal>(null);
+  const askRef = useRef<BottomSheetModal>(null);
   const refs: Record<SheetKey, RefObject<BottomSheetModal | null>> = useMemo(
     () => ({
       newEvent: eventRef,
       newTask: taskRef,
       logHours: hoursRef,
       upload: uploadRef,
+      ask: askRef,
     }),
     [],
   );
@@ -96,6 +106,8 @@ export function useQuickActionsHost({
     setNotice((prev) => ({ id: (prev?.id ?? 0) + 1, text }));
     AccessibilityInfo.announceForAccessibility(text);
   }, []);
+  const meetings = useMeetingQuickActions({ confirm });
+  const { newMinutes } = meetings;
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => {
@@ -169,32 +181,15 @@ export function useQuickActionsHost({
         case "study":
           router.push("/study");
           return;
-        case "checkIn": {
-          // The one event whose check-in is open now goes straight to the
-          // scanner. None, or several at once, goes to Events to choose.
-          const at = new Date();
-          const open = selectEventRows(eventsQuery.data, at).filter(
-            (row) =>
-              resolveCheckInWindow(
-                row.start_time,
-                row.end_time,
-                at,
-                row.check_in_opens_minutes,
-              ).state === "open",
-          );
-          if (open.length === 1) {
-            router.push({
-              pathname: "/check-in",
-              params: { eventId: open[0].id },
-            });
-          } else {
-            router.navigate("/events");
-          }
+        case "newMinutes":
+          newMinutes();
           return;
-        }
+        case "search":
+          router.push("/search");
+          return;
         case "hostCheckIn": {
           // The event an officer would host: the soonest still checkable-in,
-          // as More's Host check-in row picks it.
+          // as You's Host check-in row picks it.
           const next = selectEventRows(eventsQuery.data, new Date())[0];
           if (next) {
             router.push({
@@ -202,17 +197,28 @@ export function useQuickActionsHost({
               params: { eventId: next.id },
             });
           } else {
-            router.navigate("/events");
+            router.push("/events");
           }
           return;
         }
       }
     },
-    [eventsQuery.data, openSheet, router],
+    [eventsQuery.data, openSheet, router, newMinutes],
   );
+
+  const ask = useCallback(() => openSheet("ask"), [openSheet]);
 
   const sheets = (
     <>
+      {meetings.sheets}
+      {mounted.has("ask") ? (
+        <AskSheetBoundary
+          key={`ask-${chapterId ?? "none"}`}
+          onError={() => dropSheet("ask")}
+        >
+          <AskSheet ref={askRef} />
+        </AskSheetBoundary>
+      ) : null}
       {mounted.has("newEvent") ? (
         <SheetBoundary
           key={`event-${chapterId ?? "none"}`}
@@ -233,12 +239,9 @@ export function useQuickActionsHost({
           <NewTaskSheet
             ref={taskRef}
             now={now}
-            onCreated={(assigneeName, wasSelf) =>
-              confirm(
-                wasSelf
-                  ? "Added to your tasks."
-                  : `Assigned to ${assigneeName ?? "your chapter member"}.`,
-              )
+            offerGroups
+            onCreated={(assigneeName, wasSelf, upForGrabs) =>
+              confirm(taskCreatedLine(assigneeName, wasSelf, upForGrabs))
             }
           />
         </SheetBoundary>
@@ -279,28 +282,53 @@ export function useQuickActionsHost({
     </>
   );
 
-  return { run, sheets, notice: notice?.text ?? null };
+  return {
+    run,
+    ask,
+    sheets,
+    notice: notice?.text ?? null,
+  };
 }
 
 /** Catches a sheet's render error, reports it, and lets the host drop it. */
-export class SheetBoundary extends Component<
-  { onError: () => void; children: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
+export function SheetBoundary({
+  onError,
+  children,
+}: {
+  onError: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <DropBoundary boundary="sheet" onError={onError}>
+      {children}
+    </DropBoundary>
+  );
+}
 
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: unknown): void {
-    reportRouteError(error, { boundary: "sheet" });
-    this.props.onError();
-  }
-
-  render(): ReactNode {
-    return this.state.failed ? null : this.props.children;
-  }
+/**
+ * The Ask sheet's boundary. The conversation is held above the sheet now
+ * (`lib/ask/ask-conversation.tsx`, #4713), so dropping the sheet no longer
+ * drops the turn that threw: without a new conversation the next open would
+ * draw the same turn and fail the same way.
+ */
+function AskSheetBoundary({
+  onError,
+  children,
+}: {
+  onError: () => void;
+  children: ReactNode;
+}) {
+  const { reset } = useAsk();
+  return (
+    <SheetBoundary
+      onError={() => {
+        reset();
+        onError();
+      }}
+    >
+      {children}
+    </SheetBoundary>
+  );
 }
 
 /** Upload needs the chapter's folders, read only once it is asked for. */

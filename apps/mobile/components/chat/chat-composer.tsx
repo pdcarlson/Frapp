@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   ActivityIndicator,
   Image,
@@ -10,22 +17,39 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { MemberAvatar } from "@/components/member-avatar";
+import Svg, { Circle, Path } from "react-native-svg";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
-import type { MemberAvatarTint } from "@repo/hooks";
+import { useCleanDictation, type MemberAvatarTint } from "@repo/hooks";
 import {
-  activeMentionQuery,
-  spacedMentionNames,
-  mentionPickerEntries,
+  ASK_COPY,
+  ASK_DICTATION_MAX_LENGTH,
+  CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   type MentionCandidate,
-  type MentionPickerEntry,
+  type MentionPick,
+  withoutObjectReplacement,
 } from "@repo/validation";
-import { initialsFor } from "@/lib/more/narrow";
 import { SignetTokens } from "@repo/theme/signet";
-import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import {
+  DICTATION_COPY,
+  DictationDone,
+  DictationHeard,
+  DictationListening,
+  DictationMic,
+  DictationNotice,
+  DictationOriginal,
+  DictationTidying,
+  DICTATION_MIC_SIZE,
+} from "@/components/dictation/dictation-controls";
+import { useFieldDictation } from "@/components/dictation/use-field-dictation";
 import { CloseGlyph, RetryGlyph } from "@/components/control-glyphs";
-import { NavGlyph } from "@/components/nav-glyph";
-import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
+import {
+  MentionPicker,
+  mentionPickFor,
+  useMentionPicker,
+  type MentionRoleRow,
+} from "./mention-picker";
+import { ON_MEDIA_DISC, ON_MEDIA_INK } from "./on-media";
 import {
   type ChapterBranding,
   useChapterBranding,
@@ -88,6 +112,20 @@ import {
  * the caret out of the handle, closes it; with no member matching it says so,
  * as web's does.
  *
+ * **Frapp is in that list for a member with Ask** (`ask`, #4713), as its
+ * first row (#5476; the order is `mentionPickerRows`'s), with the crest and
+ * "Only you see the answer". A message that names `@Frapp` is a question for Frapp
+ * and is never posted (`components/ask/ask-in-channel.tsx`); the screen
+ * decides that on Send, and while the draft names it the send button is
+ * called "Ask Frapp" and the screen says above the composer that only the
+ * member will see it.
+ *
+ * **A long press on Send schedules the message** (`onSchedule`, #4956), as
+ * Slack's phone app does: it opens Schedule message, and a screen reader gets
+ * the same as a "Schedule message" action on Send. While the member has
+ * messages scheduled in the channel, a line above the input says how many and
+ * when the next goes (`scheduled`), and opens their list.
+ *
  * This is a plain `TextInput`, deliberately. `BottomSheetTextInput` is mandatory
  * only *inside* a gorhom sheet (`spec/ui/mobile/patterns.md` § Bottom sheets);
  * the thread is a full route, so a plain input is correct and a sheet input
@@ -105,7 +143,7 @@ export interface ComposerContext {
 }
 
 /** The strip's cancel, spoken. */
-export function composerCancelLabel(kind: ComposerContext["kind"]): string {
+function composerCancelLabel(kind: ComposerContext["kind"]): string {
   return kind === "reply" ? "Cancel reply" : "Cancel edit";
 }
 
@@ -123,11 +161,16 @@ export interface ChatComposerProps {
   /** Photos staged for the next send, each uploading, ready or failed. */
   photos?: StagedPhoto[];
   /**
-   * Opens the + sheet (#3865: Photo, Poll, Event, Task, Service hours), which
-   * says itself what can't be used and why. Omit to render no + at all, as
+   * Opens the + sheet (#3865, trimmed in #5772: Photo, GIF, Poll, Event,
+   * Task), which says itself what can't be used and why. Omit to render no + at all, as
    * while editing, rather than an inert one.
    */
   onOpenPlus?: () => void;
+  /**
+   * What the + says to a screen reader, where it opens something narrower
+   * than the full sheet: a message thread's + opens the GIF picker (#4657).
+   */
+  plusLabel?: string;
   /**
    * Holds the + dark, still visible, where nothing it offers can work: a
    * channel the member can't post in. The reason rides `disabledHint`.
@@ -154,16 +197,46 @@ export interface ChatComposerProps {
    * which offers members only.
    */
   mentionRoles?: readonly MentionRoleRow[];
+  /**
+   * A member picked from the `@` list (#3835): who, and the label written
+   * for them. The parent sends it beside the body, so the pick reaches that
+   * member or nobody even if the roster changes before it lands.
+   */
+  onPickMember?: (pick: MentionPick) => void;
+  /**
+   * A member with Ask, in a composer that can ask from where it is (#4713):
+   * `@` offers Frapp. `naming` is true while the draft names `@Frapp`, so
+   * Send will ask instead of posting. Null or absent for everyone else.
+   */
+  ask?: { naming: boolean } | null;
+  /**
+   * Opens Schedule message (#4956), from a long press on Send or a screen
+   * reader's "Schedule message" action. Omit where nothing can be scheduled
+   * (an edit, a channel the member can't post in).
+   */
+  onSchedule?: () => void;
+  /**
+   * The line above the input while the member has messages scheduled here:
+   * its words, how many didn't send, and what a tap on it opens. `null` for
+   * none.
+   */
+  scheduled?: { label: string; failed: number; onOpen: () => void } | null;
+  /**
+   * What dictation's words are for, such as the channel's id (#5772). When it
+   * changes, a dictation in progress is dropped, so a channel switched in
+   * place never gets words heard for another.
+   */
+  dictationTarget?: string | null;
+  /**
+   * Whether dictated words go to Frapp AI to be tidied. False lands them as
+   * the phone heard them: in a DM or group DM, which Frapp AI never reads
+   * (privacy policy, Frapp AI), and until the channel is known.
+   */
+  tidyDictation?: boolean;
 }
 
-/** A role as the picker offers it: a subset of `MentionRoleDto`. */
-export interface MentionRoleRow {
-  role_id: string;
-  name: string;
-  mentionable: boolean;
-}
-
-type PickerEntry = MentionPickerEntry<MentionCandidate, MentionRoleRow>;
+/** Dictation's cleanup where nothing may reach Frapp AI: the words as heard. */
+const KEEP_AS_HEARD = async (): Promise<string | null> => null;
 
 export function ChatComposer({
   value,
@@ -175,6 +248,7 @@ export function ChatComposer({
   hintTone = "muted",
   photos = [],
   onOpenPlus,
+  plusLabel = "Add a photo, poll, event and more",
   plusDisabled = false,
   onRemovePhoto,
   onRetryPhoto,
@@ -184,6 +258,12 @@ export function ChatComposer({
   avatarFor,
   avatarTintFor,
   mentionRoles,
+  onPickMember,
+  ask = null,
+  onSchedule,
+  scheduled = null,
+  dictationTarget = null,
+  tidyDictation = false,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -191,11 +271,6 @@ export function ChatComposer({
   const { height: windowHeight } = useWindowDimensions();
   const inputRef = useRef<TextInput>(null);
   const contextKind = context?.kind ?? null;
-  // Reply and Edit are both "type now": open the keyboard with the strip.
-  // Keyed on the kind, so it runs when one starts, not on every keystroke.
-  useEffect(() => {
-    if (contextKind) inputRef.current?.focus();
-  }, [contextKind]);
   const isEditing = contextKind === "edit";
   const mention = useMentionPicker(
     inputRef,
@@ -203,17 +278,62 @@ export function ChatComposer({
     onChangeText,
     mentionCandidates,
     mentionRoles,
+    ask !== null,
   );
+  const sendClear = useClearedOnSend(inputRef, value);
+  // An edit opened just after a send is the member's own typing: nothing in
+  // it is the box's leftover copy of what was sent.
+  const endSendWindow = sendClear.endWindow;
+  useEffect(() => {
+    if (isEditing) endSendWindow();
+  }, [isEditing, endSendWindow]);
+
+  // Dictation (#5772, Ask's own from #5276): talk, tap Done, and the words
+  // land in the box to read and send. Tidied only where the composer says so:
+  // never in a DM or group DM, whose words Frapp AI never receives.
+  const cleanDictation = useCleanDictation();
+  const field = useFieldDictation({
+    value,
+    setValue: onChangeText,
+    max: CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+    // One go is capped by what the cleanup takes, as well as by the message.
+    cap: ASK_DICTATION_MAX_LENGTH,
+    clean: tidyDictation ? cleanDictation : KEEP_AS_HEARD,
+    // Words heard for one draft never land in another: a channel switch in
+    // place, or a reply or edit opened mid-dictation, drops them.
+    target: `${dictationTarget ?? ""}|${contextKind ?? ""}`,
+  });
+  const { dictation, original, roomLeft } = field;
+  const listening = dictation.phase === "listening";
+  const tidying = dictation.phase === "cleaning";
+  const canDictate = dictation.available && canSend && roomLeft > 0;
+  // Reply and Edit are both "type now": open the keyboard with the strip.
+  // Keyed on the kind, so it runs when one starts, not on every keystroke.
+  // While dictation listens or tidies the box is swapped out, so the focus
+  // waits for it to come back.
+  const dictating = listening || tidying;
+  useEffect(() => {
+    if (contextKind && !dictating) inputRef.current?.focus();
+  }, [contextKind, dictating]);
 
   // An empty or whitespace-only body is not a send — unless a photo is
   // staged. A photo-only message is a real message, uploaded or still
   // uploading, and gating it on the text alone would strand it with the send
-  // button greyed out and no way to explain why.
-  const isSendable = canSend && (value.trim().length > 0 || photos.length > 0);
+  // button greyed out and no way to explain why. A body that is only U+FFFC,
+  // the placeholder a keyboard leaves for a sticker it couldn't insert, is
+  // empty too: the server saves it as spaces and refuses it (#4346).
+  const isSendable =
+    canSend &&
+    !tidying &&
+    (withoutObjectReplacement(value).trim().length > 0 || photos.length > 0);
 
   // The sheet greys what can't work this second and says why, so the + itself
   // only waits for the photo library it opened and for the chat runtime.
   const canOpenPlus = !!onOpenPlus && !plusDisabled && !isPicking && canSend;
+  // Scheduling saves no edit, so an edit doesn't offer it. A draft naming
+  // `@Frapp` does: the sheet says it can't be scheduled, where a long press
+  // that fell through to Send would ask Frapp on release.
+  const canSchedule = !!onSchedule && isSendable && !isEditing;
 
   return (
     <View style={styles.wrapper}>
@@ -227,6 +347,34 @@ export function ChatComposer({
         >
           {disabledHint}
         </Text>
+      ) : null}
+
+      {scheduled ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            scheduled.failed > 0
+              ? `${scheduled.label}, ${scheduled.failed} not sent`
+              : scheduled.label
+          }
+          accessibilityHint="Opens your scheduled messages."
+          hitSlop={{ top: 8, bottom: 8 }}
+          onPress={scheduled.onOpen}
+          style={({ pressed }) => [
+            styles.scheduled,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <ScheduledGlyph color={tokens.color.text.mutedForeground} />
+          <Text numberOfLines={1} style={styles.scheduledText}>
+            {scheduled.label}
+            {scheduled.failed > 0 ? (
+              <Text style={styles.scheduledFailed}>
+                {` · ${scheduled.failed} not sent`}
+              </Text>
+            ) : null}
+          </Text>
+        </Pressable>
       ) : null}
 
       {context ? (
@@ -311,7 +459,7 @@ export function ChatComposer({
                     pressed ? styles.pressed : null,
                   ]}
                 >
-                  <CloseGlyph color={THUMB_REMOVE_INK} size={14} />
+                  <CloseGlyph color={ON_MEDIA_INK} size={14} />
                 </Pressable>
               </View>
             );
@@ -324,8 +472,31 @@ export function ChatComposer({
           avatarFor={avatarFor}
           avatarTintFor={avatarTintFor}
           suggestions={mention.suggestions}
-          onPick={mention.pick}
-          styles={styles}
+          onPick={(entry) => {
+            mention.pick(entry.label);
+            const pick = mentionPickFor(entry);
+            if (pick) onPickMember?.(pick);
+          }}
+        />
+      ) : null}
+
+      {listening ? <DictationHeard live={dictation.live} /> : null}
+      {dictation.notice !== null && dictation.phase === "idle" ? (
+        <DictationNotice
+          failure={dictation.notice}
+          onDismiss={dictation.dismiss}
+          fullText={
+            field.fullBy === "cap"
+              ? DICTATION_COPY.notice.fullDictation
+              : DICTATION_COPY.notice.fullMessage
+          }
+        />
+      ) : null}
+      {original !== null && dictation.phase === "idle" ? (
+        <DictationOriginal
+          onPress={() => {
+            field.restoreOriginal();
+          }}
         />
       ) : null}
 
@@ -333,7 +504,7 @@ export function ChatComposer({
         {onOpenPlus ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Add a photo, poll, event and more"
+            accessibilityLabel={plusLabel}
             accessibilityState={{ disabled: !canOpenPlus, busy: isPicking }}
             disabled={!canOpenPlus}
             onPress={onOpenPlus}
@@ -355,234 +526,377 @@ export function ChatComposer({
           </Pressable>
         ) : null}
 
-        <TextInput
-          ref={inputRef}
-          accessibilityLabel={placeholder}
-          editable={canSend}
-          multiline
-          onChangeText={onChangeText}
-          onSelectionChange={mention.onSelectionChange}
-          onFocus={mention.onFocus}
-          onBlur={mention.onBlur}
-          placeholder={placeholder}
-          placeholderTextColor={tokens.color.text.muted}
-          style={
-            isEditing
-              ? [
-                  styles.input,
-                  styles.inputEditing,
-                  // Never more than a third of the screen, so the message
-                  // list and the strip stay in view above the keyboard.
-                  {
-                    maxHeight: Math.min(
-                      editMaxHeight(tokens),
-                      windowHeight / 3,
-                    ),
-                  },
-                ]
-              : styles.input
-          }
-          value={value}
-        />
-
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            context?.kind === "edit" ? "Save edit" : "Send message"
-          }
-          accessibilityState={{ disabled: !isSendable }}
-          disabled={!isSendable}
-          onPress={onSend}
-          style={({ pressed }) => [
-            styles.send,
-            !isSendable ? styles.sendDisabled : null,
-            pressed ? styles.pressed : null,
-          ]}
-        >
-          <Text
+        {listening || tidying ? (
+          <View
             style={[
-              styles.sendGlyph,
-              !isSendable ? styles.sendGlyphDisabled : null,
+              styles.input,
+              styles.dictating,
+              listening
+                ? {
+                    borderColor: brand.accent,
+                    backgroundColor: tint(brand.accent),
+                  }
+                : null,
             ]}
           >
-            ↑
-          </Text>
-        </Pressable>
+            {listening ? (
+              <DictationListening
+                live={dictation.live}
+                onCancel={dictation.cancel}
+                accent={brand.accent}
+              />
+            ) : (
+              <DictationTidying live={dictation.live} />
+            )}
+          </View>
+        ) : (
+          <View style={styles.field}>
+            <TextInput
+              ref={inputRef}
+              accessibilityLabel={placeholder}
+              editable={canSend}
+              multiline
+              onChangeText={(next) => {
+                if (sendClear.isStaleEcho(next)) return;
+                mention.onChangeText(next);
+              }}
+              onSelectionChange={mention.onSelectionChange}
+              onFocus={mention.onFocus}
+              onBlur={mention.onBlur}
+              placeholder={placeholder}
+              placeholderTextColor={tokens.color.text.muted}
+              style={
+                isEditing
+                  ? [
+                      styles.input,
+                      styles.inputEditing,
+                      canDictate ? styles.inputWithMic : null,
+                      // Never more than a third of the screen, so the message
+                      // list and the strip stay in view above the keyboard.
+                      {
+                        maxHeight: Math.min(
+                          editMaxHeight(tokens),
+                          windowHeight / 3,
+                        ),
+                      },
+                    ]
+                  : canDictate
+                    ? [styles.input, styles.inputWithMic]
+                    : styles.input
+              }
+              value={value}
+            />
+            {canDictate ? (
+              <View style={styles.mic}>
+                <DictationMic
+                  onPress={() => {
+                    field.start();
+                  }}
+                />
+              </View>
+            ) : null}
+          </View>
+        )}
+
+        {listening ? (
+          <DictationDone
+            onPress={dictation.finish}
+            fill={brand.accentPrimary}
+            color={brand.accentOnPrimary}
+          />
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              context?.kind === "edit"
+                ? "Save edit"
+                : ask?.naming
+                  ? ASK_COPY.name
+                  : "Send message"
+            }
+            accessibilityHint={
+              ask?.naming && context?.kind !== "edit"
+                ? ASK_COPY.only_you_hint
+                : undefined
+            }
+            accessibilityState={{ disabled: !isSendable }}
+            accessibilityActions={
+              canSchedule
+                ? [{ name: "schedule", label: "Schedule message" }]
+                : undefined
+            }
+            onAccessibilityAction={(event) => {
+              if (event.nativeEvent.actionName === "schedule") onSchedule?.();
+            }}
+            disabled={!isSendable}
+            onLongPress={canSchedule ? onSchedule : undefined}
+            onPress={() => {
+              sendClear.markSent();
+              field.clearOriginal();
+              dictation.dismiss();
+              onSend();
+            }}
+            style={({ pressed }) => [
+              styles.send,
+              !isSendable ? styles.sendDisabled : null,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <Text
+              style={[
+                styles.sendGlyph,
+                !isSendable ? styles.sendGlyphDisabled : null,
+              ]}
+            >
+              ↑
+            </Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
 }
 
-/** The picker's state, read off the draft and where the caret sits in it. */
-function useMentionPicker(
-  inputRef: RefObject<TextInput | null>,
-  value: string,
-  onChangeText: (next: string) => void,
-  candidates: readonly MentionCandidate[] | undefined,
-  roles: readonly MentionRoleRow[] | undefined,
-) {
-  const [focused, setFocused] = useState(false);
-  const [caret, setCaret] = useState<number | null>(null);
-  // Where the caret goes once a pick's text has reached the input. Set
-  // straight away it would land in the old, shorter draft.
-  const pendingCaret = useRef<number | null>(null);
-
-  useEffect(() => {
-    const target = pendingCaret.current;
-    if (target === null || target > value.length) return;
-    pendingCaret.current = null;
-    inputRef.current?.setSelection?.(target, target);
-  }, [inputRef, value]);
-
-  // No selection event yet (a restored draft) reads as a caret at the end.
-  const at = Math.min(caret ?? value.length, value.length);
-  // The names that hold a space, so a pick inside "@Jane Doe" replaces all of
-  // it, not "@Jane" with " Doe" left behind (#3825).
-  const spacedNames = useMemo(
-    () =>
-      spacedMentionNames(
-        candidates ?? [],
-        (roles ?? []).map((role) => role.name),
-      ),
-    [candidates, roles],
+/**
+ * The scheduled line's mark: a clock, stroked like the task sheet's time
+ * field (`components/tasks/due-time-field.tsx`), where web draws lucide's
+ * `CalendarClock`.
+ */
+function ScheduledGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24">
+      <Circle
+        cx={12}
+        cy={12}
+        r={8.5}
+        stroke={color}
+        strokeWidth={1.9}
+        fill="none"
+      />
+      <Path
+        d="M12 7.5V12l3 2"
+        stroke={color}
+        strokeWidth={1.9}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
-  const active =
-    focused && candidates ? activeMentionQuery(value, at, spacedNames) : null;
-  // A filter over one chapter's roster, cheap enough to run every render.
-  const suggestions: PickerEntry[] =
-    active && candidates
-      ? mentionPickerEntries(candidates, roles ?? [], active.query)
-      : [];
-
-  const pick = (label: string) => {
-    if (!active) return;
-    // The whole handle goes, the part after the caret too: a caret dropped
-    // into a finished `@JaneDoe` reopens the list, and keeping its tail would
-    // write `@JaneDoe Doe`.
-    const after = value.slice(active.end);
-    // One space after the handle, reusing one already there, as web's does.
-    const spaced = after.startsWith(" ");
-    const inserted = `@${label}${spaced ? "" : " "}`;
-    const next = value.slice(0, active.start) + inserted + after;
-    const nextCaret = active.start + inserted.length + (spaced ? 1 : 0);
-    setCaret(nextCaret);
-    if (next === value) {
-      // Nothing to send to the input, so no render will run the effect.
-      inputRef.current?.setSelection?.(nextCaret, nextCaret);
-      return;
-    }
-    pendingCaret.current = nextCaret;
-    onChangeText(next);
-  };
-
-  return {
-    open: active !== null,
-    suggestions,
-    pick,
-    onSelectionChange: (event: {
-      nativeEvent: { selection: { start: number; end: number } };
-    }) => {
-      const { start, end } = event.nativeEvent.selection;
-      // A range selected is not a caret in a handle.
-      setCaret(start === end ? end : -1);
-    },
-    onFocus: () => setFocused(true),
-    onBlur: () => setFocused(false),
-  };
 }
 
 /**
- * The member list `@` opens, between the staged strips and the input, so it
- * sits right above where the handle is typed and the keyboard stays up.
- * Each row is a 44pt touch target (components.md §2) with the 24pt avatar
- * (photo, else initials) the channel member list draws; four rows show and the rest scroll.
- * `keyboardShouldPersistTaps` lets the first tap pick, rather than only close
- * the keyboard.
+ * How long after Send the native box's leftover copy of the sent text can
+ * still arrive. A keystroke JS had not read yet comes within a frame or two.
+ * iOS autocorrect can be slower: a correction pending as Send is tapped (the
+ * underlined "thsy" that would become "that") is committed by the keyboard
+ * after the send, putting the whole corrected message back in the box, and in
+ * Paul's report (iOS, 2026-11-17) it landed after the 300ms retry had run.
+ * Nobody has measured how late it can come: three seconds is a guess, three
+ * times the old window, and the match in `isCopyOfSent` is kept narrow so
+ * the longer window costs little. react-native#29073 is the same race.
  */
-function MentionPicker({
-  suggestions,
-  onPick,
-  avatarFor,
-  avatarTintFor,
-  styles,
-}: {
-  suggestions: readonly PickerEntry[];
-  avatarFor?: (userId: string) => string | null;
-  avatarTintFor?: (userId: string) => MemberAvatarTint;
-  onPick: (label: string) => void;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  if (suggestions.length === 0) {
-    return (
-      <View style={styles.mentionList}>
-        <Text style={styles.mentionEmpty}>No matching members</Text>
-      </View>
-    );
-  }
-  return (
-    <ScrollView
-      accessibilityLabel="Members and roles to mention"
-      keyboardShouldPersistTaps="always"
-      style={[styles.mentionList, styles.mentionListScroll]}
-    >
-      {suggestions.map((entry) => {
-        const name =
-          entry.kind === "member" ? entry.member.display_name : entry.role.name;
-        return (
-          <Pressable
-            key={
-              entry.kind === "member"
-                ? entry.member.user_id
-                : `role:${entry.role.role_id}`
-            }
-            accessibilityRole="button"
-            accessibilityLabel={
-              entry.kind === "member"
-                ? `Mention ${name}`
-                : `Mention everyone in the ${name} role`
-            }
-            onPress={() => onPick(entry.label)}
-            style={({ pressed }) => [
-              styles.mentionRow,
-              pressed ? styles.mentionRowPressed : null,
-            ]}
-          >
-            {entry.kind === "member" ? (
-              <MemberAvatar
-                uri={avatarFor?.(entry.member.user_id) ?? null}
-                initials={initialsFor(name)}
-                size={MENTION_AVATAR_SIZE}
-                tint={avatarTintFor?.(entry.member.user_id) ?? null}
-                style={styles.mentionAvatar}
-                textStyle={styles.mentionAvatarText}
-              />
-            ) : (
-              // A role has no face: the Roles nav glyph, as web's row and
-              // the web sidebar draw it, neutral (foundations.md §6).
-              <View style={styles.mentionAvatar}>
-                <NavGlyph
-                  paths={NAV_GLYPHS.roles}
-                  color={styles.mentionAvatarText.color}
-                  size={MENTION_ROLE_GLYPH_SIZE}
-                />
-              </View>
-            )}
-            <Text numberOfLines={1} style={styles.mentionName}>
-              {name}
-            </Text>
-            {entry.kind === "role" ? (
-              <Text style={styles.mentionKind}>Role</Text>
-            ) : null}
-          </Pressable>
-        );
-      })}
-    </ScrollView>
-  );
+const SENT_ECHO_MS = 3000;
+/**
+ * When the clear is retried after a send, or after a copy is turned away, in
+ * milliseconds and on top of one a frame later: as a busy thread catches up,
+ * then across the window in which a late autocorrect can still put the text
+ * back without telling JS.
+ */
+const CLEAR_RETRIES_MS = [100, 300, 700, 1500, SENT_ECHO_MS] as const;
+/** The shortest message, in code points, that gets a copy check at all. */
+const ECHO_MIN = 3;
+
+/** The words of `text`, split on whitespace. */
+function wordsOf(text: string): string[] {
+  return text.split(/\s+/).filter((word) => word !== "");
 }
 
-const MENTION_AVATAR_SIZE = 24;
-const MENTION_ROLE_GLYPH_SIZE = 14;
-const MENTION_ROWS_SHOWN = 4;
+/**
+ * Edit distance between two sequences, counting a swap of neighbours as one
+ * edit (so "teh" is one from "the"): optimal string alignment.
+ */
+function editDistance<T>(a: readonly T[], b: readonly T[]): number {
+  const rows = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) =>
+      i === 0 ? j : j === 0 ? i : 0,
+    ),
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let best = Math.min(
+        rows[i - 1][j] + 1,
+        rows[i][j - 1] + 1,
+        rows[i - 1][j - 1] + cost,
+      );
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        best = Math.min(best, rows[i - 2][j - 2] + 1);
+      }
+      rows[i][j] = best;
+    }
+  }
+  return rows[a.length][b.length];
+}
+
+/**
+ * Whether `next`, arriving just after a send of `sent`, is the box's leftover
+ * copy of it rather than the member typing. The copy is the sent text, or it
+ * with the keystroke or correction that was in flight applied, so it reads
+ * almost the same word for word:
+ *
+ * - A message of several words: the copy has the same number of words, give
+ *   or take one (autocorrect can split "submitproof"), and is at most 15% of
+ *   its letters away from the sent text (at least 2). A prediction or a
+ *   first word tapped into the empty box is one word, so it is never taken
+ *   for a longer message's copy, and dictating the next message only trips
+ *   it when it is nearly the same message.
+ * - A message of one word: the copy is one word too, and is the same word
+ *   with a letter or two added, removed, changed or swapped, in any case
+ *   ("thnaks" back as "Thanks"). A one-word prediction tapped within the
+ *   window that is that close to the word just sent is taken for the copy:
+ *   the price of catching the copy at all.
+ *
+ * A message shorter than `ECHO_MIN` code points has no copy check, since a
+ * member repeating "k" or an emoji types exactly what was sent.
+ */
+function isCopyOfSent(next: string, sent: string): boolean {
+  if (Array.from(sent.trim()).length < ECHO_MIN) return false;
+  const was = wordsOf(sent);
+  const now = wordsOf(next);
+  if (now.length === 0) return false;
+  if (was.length === 1) {
+    if (now.length !== 1) return false;
+    const before = Array.from(was[0].toLocaleLowerCase());
+    const after = Array.from(now[0].toLocaleLowerCase());
+    return editDistance(before, after) <= 2;
+  }
+  if (now.length < 2 || Math.abs(now.length - was.length) > 1) return false;
+  const before = Array.from(was.join(" "));
+  const after = Array.from(now.join(" "));
+  const allowed = Math.max(2, Math.floor(before.length * 0.15));
+  if (Math.abs(before.length - after.length) > allowed) return false;
+  return editDistance(before, after) <= allowed;
+}
+
+/**
+ * Makes the box on screen actually empty after a send, not only the draft.
+ *
+ * A send empties the draft, and React Native passes that to the native field
+ * as a `setTextAndSelection` command stamped with the last event count JS has
+ * seen. The native field drops a command whose count is behind its own, so if
+ * the keyboard had sent an event JS hadn't caught up with when Send was tapped
+ * (the last keystroke, an autocorrect or a prediction settling), the clear is
+ * thrown away and the sent text stays in the box. The draft then reads empty
+ * while the box doesn't, the next keystroke reports the whole old text plus
+ * the new letter, and the member can send it again (Winston on iOS,
+ * 2026-11-12, #4632; react-native#37722, and Expensify's same composer bug in
+ * Expensify/App#37896).
+ *
+ * iOS autocorrect is a later form of the same thing (Paul, 2026-11-17): a
+ * correction pending at the tap is committed after the send, and the whole
+ * message comes back with the word fixed ("...do thsy" sent, "...do that"
+ * back in the box), after the early retries. Reports on react-native#29073
+ * say it doesn't always reach JS as a change; that is not checked on a device
+ * here, so both are covered.
+ *
+ * - A change carrying the box's copy of the sent text (`isCopyOfSent`) is
+ *   turned away by `isStaleEcho`. The input then sees its text differ from
+ *   `value` and sends the draft again, stamped with the newer count, which
+ *   the field accepts. The retries below also start over from that moment,
+ *   in case the resend is dropped too.
+ * - A copy that never reaches JS is cleared by retrying the clear through
+ *   `SENT_ECHO_MS` (`CLEAR_RETRIES_MS`) while the draft is still empty. A
+ *   retry against a field the member has typed into since is dropped by the
+ *   same count check, so it can't take their new letters, and one against an
+ *   already empty field changes nothing. After an edit's save hands back a
+ *   non-empty draft there is no retry, so a silent copy there is not caught.
+ *
+ * The check runs within `SENT_ECHO_MS` of the tap, while the draft is no
+ * longer the sent text, unless the change reads as typing onto the draft (an
+ * edit's save hands the box back the member's draft, and that is theirs to
+ * type on). The first change that isn't a copy closes the window, and so
+ * does opening an edit (`endWindow`), so once the member has typed a letter
+ * of the next message nothing is turned away.
+ *
+ * What is sent is what the box showed at the tap, typo included: JS learns
+ * of the correction only after the message has gone.
+ */
+function useClearedOnSend(
+  inputRef: RefObject<TextInput | null>,
+  value: string,
+) {
+  const valueRef = useRef(value);
+  // In the layout phase, as RN re-arms `clear()` with the new event count: a
+  // retry that fires between the commit and the passive effects would read a
+  // stale empty draft and wipe the member's first letter.
+  useLayoutEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+  const sent = useRef<{
+    text: string;
+    at: number;
+    echoOpen: boolean;
+    /** When the retries count from: the tap, or the last turned-away copy. */
+    retryFrom: number;
+  } | null>(null);
+  const [echoes, setEchoes] = useState(0);
+
+  const markSent = useCallback(() => {
+    const at = Date.now();
+    sent.current = {
+      text: valueRef.current,
+      at,
+      echoOpen: true,
+      retryFrom: at,
+    };
+  }, []);
+
+  const endWindow = useCallback(() => {
+    if (sent.current) sent.current.echoOpen = false;
+  }, []);
+
+  useEffect(() => {
+    const last = sent.current;
+    if (value !== "" || !last || last.text === "") return;
+    const now = Date.now();
+    if (now - last.at > SENT_ECHO_MS) return;
+    const elapsed = now - last.retryFrom;
+    const clear = () => {
+      if (valueRef.current === "") inputRef.current?.clear();
+    };
+    const frame = requestAnimationFrame(clear);
+    const timers = CLEAR_RETRIES_MS.filter((at) => at > elapsed).map((at) =>
+      setTimeout(clear, at - elapsed),
+    );
+    return () => {
+      cancelAnimationFrame(frame);
+      timers.forEach(clearTimeout);
+    };
+    // `echoes` starts the retries over after a turned-away copy.
+  }, [inputRef, value, echoes]);
+
+  const isStaleEcho = useCallback((next: string) => {
+    const last = sent.current;
+    if (!last || !last.echoOpen) return false;
+    const draft = valueRef.current;
+    const now = Date.now();
+    const echo =
+      now - last.at <= SENT_ECHO_MS &&
+      draft !== last.text &&
+      isCopyOfSent(next, last.text) &&
+      !(draft !== "" && (next.startsWith(draft) || draft.startsWith(next)));
+    if (!echo) {
+      last.echoOpen = false;
+    } else {
+      last.retryFrom = now;
+      setEchoes((count) => count + 1);
+    }
+    return echo;
+  }, []);
+
+  return { markSent, isStaleEcho, endWindow };
+}
 
 /**
  * The input's line height. With body type's 16/25 and 12pt of padding above
@@ -594,6 +908,8 @@ const MENTION_ROWS_SHOWN = 4;
  */
 const INPUT_LINE_HEIGHT = 20;
 const INPUT_BORDER = 1;
+/** The dictation mic's size (`DictationMic`). */
+
 /** Lines an edit shows before it scrolls; a draft stops at `maxHeight: 120`. */
 const EDIT_MAX_LINES = 10;
 
@@ -621,9 +937,6 @@ function editMaxHeight(tokens: SignetTokens): number {
 const THUMB_SIZE = 64;
 /** How far a thumb's remove badge sits in from its corner. */
 const THUMB_BADGE_INSET = 4;
-/** Photo-overlay ink, fixed in both themes: it sits on the picture, not the surface. */
-const THUMB_REMOVE_DISC = "rgba(0,0,0,0.72)";
-const THUMB_REMOVE_INK = "#FFFFFF";
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   // What is left of the 44pt floor once one line and the border are drawn,
@@ -639,6 +952,20 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       paddingBottom: tokens.spacing.sm + 2,
       gap: tokens.spacing.sm,
       backgroundColor: tokens.color.surface.background,
+    },
+    scheduled: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-start",
+      gap: tokens.spacing.xs,
+    },
+    scheduledText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      flexShrink: 1,
+    },
+    scheduledFailed: {
+      color: tokens.color.semantic.destructiveText,
     },
     hint: {
       ...typeRole(tokens.typography.role.caption),
@@ -683,7 +1010,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       width: 24,
       height: 24,
       borderRadius: 12,
-      backgroundColor: THUMB_REMOVE_DISC,
+      backgroundColor: ON_MEDIA_DISC,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -725,58 +1052,6 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       alignItems: "flex-end",
       gap: tokens.spacing.sm,
     },
-    // The composer's surface recipe, so the list reads as part of the composer
-    // rather than a floating card over the thread.
-    mentionList: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingVertical: tokens.spacing.xs,
-    },
-    mentionListScroll: {
-      maxHeight:
-        MENTION_ROWS_SHOWN * tokens.touch.minimum + 2 * tokens.spacing.xs,
-    },
-    mentionRow: {
-      minHeight: tokens.touch.minimum,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      paddingHorizontal: tokens.spacing.sm,
-    },
-    mentionRowPressed: {
-      backgroundColor: tokens.color.surface.popover,
-    },
-    mentionAvatar: {
-      width: MENTION_AVATAR_SIZE,
-      height: MENTION_AVATAR_SIZE,
-      borderRadius: avatarRadius(MENTION_AVATAR_SIZE),
-      backgroundColor: tokens.color.surface.popover,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    mentionAvatarText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    mentionName: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-      flexShrink: 1,
-    },
-    // "Role" at the end of a role row, as web's says it.
-    mentionKind: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-      marginLeft: "auto",
-    },
-    mentionEmpty: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.xs,
-    },
     input: {
       flex: 1,
       minHeight: tokens.touch.minimum,
@@ -785,7 +1060,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       maxHeight: 120,
       borderRadius: tokens.radius.control,
       borderWidth: INPUT_BORDER,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md + 2,
       // Top and bottom set apart, not `paddingVertical`: iOS gives a multiline
@@ -806,6 +1081,26 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     // An edit is typed at the message's own line height; the padding keeps
     // one line at the 44pt floor, so the box only grows with the text.
+    // The box holds the input and, at its right end, the dictation mic.
+    field: {
+      flex: 1,
+    },
+    // Room for the 32pt mic inside the box's right end.
+    inputWithMic: {
+      paddingRight: DICTATION_MIC_SIZE + tokens.spacing.sm,
+    },
+    // 32pt centred in the one-line 44pt box, pinned to its foot as it grows.
+    mic: {
+      position: "absolute",
+      right: (tokens.touch.minimum - DICTATION_MIC_SIZE) / 2,
+      bottom: (tokens.touch.minimum - DICTATION_MIC_SIZE) / 2,
+    },
+    // The waveform or the pulsing words, in the box's own frame.
+    dictating: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingLeft: tokens.spacing.sm,
+    },
     inputEditing: {
       paddingTop: editPaddingY,
       paddingBottom: editPaddingY,

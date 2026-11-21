@@ -3,9 +3,13 @@ import {
   attendanceFromEvent,
   attendanceInvitesNobody,
   attendanceToWire,
+  attendanceChoices,
+  attendanceOfRole,
+  attendanceRows,
   describeAttendance,
   eventAttendanceFor,
   eventLimitsAudience,
+  eventInvitedRoleNames,
   eventOthersInvited,
   othersInvitedForCreate,
   eventRequiresAnyone,
@@ -131,34 +135,121 @@ describe("describeAttendance", () => {
     );
   });
 
-  it("names up to two roles that differ", () => {
+  it("names the roles set apart, then the default", () => {
     expect(
       describeAttendance(
         { everyone: "required", roles: { new: "not_invited" } },
         name,
       ),
-    ).toBe("Required for everyone, not invited for New Members");
+    ).toBe("New Members not invited, everyone else required");
   });
 
-  it("counts more than two", () => {
+  it("groups by answer, required first, and shortens past two", () => {
     expect(
       describeAttendance(
         {
           everyone: "optional",
-          roles: { a: "required", b: "required", c: "required" },
+          roles: {
+            c: "required",
+            a: "required",
+            b: "required",
+            new: "not_invited",
+          },
         },
         name,
       ),
-    ).toBe("Optional for everyone, 3 roles differ");
+    ).toBe("A, B +1 required, New Members not invited, everyone else optional");
   });
 
-  it("names an invite-only audience", () => {
+  it("says nobody else is invited for an invite-only audience", () => {
     expect(
       describeAttendance(
-        { everyone: "not_invited", roles: { exec: "required" } },
+        {
+          everyone: "not_invited",
+          roles: { exec: "required", new: "optional" },
+        },
         name,
       ),
-    ).toBe("Executive Board only, required");
+    ).toBe(
+      "Executive Board required, New Members optional, nobody else invited",
+    );
+  });
+
+  it("says nobody is invited yet when nothing is", () => {
+    expect(
+      describeAttendance({ everyone: "not_invited", roles: {} }, name),
+    ).toBe("Nobody invited yet");
+  });
+});
+
+describe("attendanceRows", () => {
+  const roles = [
+    { id: "b", name: "Brothers" },
+    { id: "a", name: "Alumni" },
+    { id: "o", name: "Officers" },
+    { id: "n", name: "New Members" },
+  ];
+
+  it("puts the roles set apart first, then the rest, each by name", () => {
+    expect(
+      attendanceRows(roles, ["o", "a"], "", "Removed role").map((r) => r.id),
+    ).toEqual(["a", "o", "b", "n"]);
+  });
+
+  it("keeps a row for a role deleted since, so it can be reset", () => {
+    expect(attendanceRows(roles, ["gone"], "", "Removed role")[0]).toEqual({
+      id: "gone",
+      name: "Removed role",
+    });
+  });
+
+  it("matches every typed word", () => {
+    expect(
+      attendanceRows(roles, [], "new mem", "Removed role").map((r) => r.id),
+    ).toEqual(["n"]);
+  });
+
+  it("offers a hidden role (Everyone, #4191) only once it is set apart", () => {
+    const withEveryone = [
+      ...roles,
+      { id: "e", name: "Everyone", hidden: true },
+    ];
+    expect(
+      attendanceRows(withEveryone, [], "", "Removed role").map((r) => r.id),
+    ).toEqual(["a", "b", "n", "o"]);
+    expect(
+      attendanceRows(withEveryone, ["e"], "", "Removed role").map((r) => r.id),
+    ).toEqual(["e", "a", "b", "n", "o"]);
+  });
+});
+
+describe("attendanceChoices", () => {
+  it("drops Required unless allowed or already held", () => {
+    expect(attendanceChoices("optional", true)).toEqual([
+      "required",
+      "optional",
+      "not_invited",
+    ]);
+    expect(attendanceChoices("optional", false)).toEqual([
+      "optional",
+      "not_invited",
+    ]);
+    expect(attendanceChoices("required", false)).toEqual([
+      "required",
+      "optional",
+      "not_invited",
+    ]);
+  });
+});
+
+describe("attendanceOfRole", () => {
+  it("reads a role's own answer, else the default", () => {
+    const draft = {
+      everyone: "optional" as const,
+      roles: { o: "required" as const },
+    };
+    expect(attendanceOfRole(draft, "o")).toBe("required");
+    expect(attendanceOfRole(draft, "b")).toBe("optional");
   });
 });
 
@@ -202,5 +293,33 @@ describe("others_invited on a row written without it", () => {
         attendanceToWire({ everyone: "not_invited", roles: { o: "optional" } }),
       ),
     ).toBe(false);
+  });
+});
+
+describe("eventInvitedRoleNames (#5562)", () => {
+  const roles = [
+    { id: "r1", name: "Exec" },
+    { id: "r2", name: "Brothers" },
+  ];
+  it("names the invited roles, required then optional", () => {
+    expect(
+      eventInvitedRoleNames(
+        {
+          others_invited: false,
+          required_role_ids: ["r1"],
+          optional_role_ids: ["r2"],
+        },
+        roles,
+      ),
+    ).toBe("Exec, Brothers");
+  });
+  it("is null when everyone is invited or no listed role is known", () => {
+    expect(eventInvitedRoleNames({ others_invited: true }, roles)).toBeNull();
+    expect(
+      eventInvitedRoleNames(
+        { others_invited: false, required_role_ids: ["gone"] },
+        roles,
+      ),
+    ).toBeNull();
   });
 });

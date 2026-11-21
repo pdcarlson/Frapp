@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import type { QuickActionKey } from "@/lib/quick-actions";
+import { QUICK_ACTION_LABELS, type QuickActionKey } from "@/lib/quick-actions";
 
 const haptic = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/haptics", () => ({ selectionHaptic: haptic }));
@@ -16,11 +16,13 @@ type Node = ReactTestRenderer["root"];
 const OFFICER: QuickActionKey[] = [
   "newTask",
   "message",
-  "checkIn",
+  "invite",
   "hostCheckIn",
   "logHours",
   "study",
   "upload",
+  "invite",
+  "newEvent",
 ];
 
 const props = {
@@ -67,18 +69,51 @@ const byLabel = (root: Node, label: string) =>
 
 describe("the panel at rest", () => {
   it("draws each action as a button that runs it", () => {
-    const tree = render(["message", "checkIn", "logHours"]);
+    const tree = render(["message", "invite", "logHours"]);
     const labels = pressables(tree.root)
       .map((node) => node.props.accessibilityLabel)
       .filter(Boolean);
-    expect(labels).toEqual(["Message", "Check in", "Log hours"]);
+    expect(labels).toEqual(["Message", "Invite", "Log hours"]);
 
-    act(() => byLabel(tree.root, "Check in")!.props.onPress());
-    expect(props.onRun).toHaveBeenCalledWith("checkIn");
+    act(() => byLabel(tree.root, "Invite")!.props.onPress());
+    expect(props.onRun).toHaveBeenCalledWith("invite");
+  });
+
+  it("lays six out three to a row, in the same cells as editing", () => {
+    // The cells were thirds of the panel's outer width, a hairline wider
+    // than the row inside the glass border, so the third wrapped and six
+    // drew as three rows of two (2026-11-13).
+    const widthOf = (node: Node) =>
+      [node.props.style]
+        .flat(Infinity)
+        .reduce<number | undefined>((w, style) => style?.width ?? w, undefined);
+    const resting = render(OFFICER.slice(0, 6));
+    const cells = OFFICER.slice(0, 6).map((key) =>
+      widthOf(byLabel(resting.root, QUICK_ACTION_LABELS[key])!),
+    );
+    const cell = cells[0]!;
+    // Rows fill from the left, as the edit grid's slots do: a centred short
+    // row would jump sideways when a hold starts editing.
+    const rows = resting.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        [node.props.style].flat(Infinity).some((st) => st?.flexWrap === "wrap"),
+    );
+    const justify = [rows.props.style]
+      .flat(Infinity)
+      .reduce<string | undefined>(
+        (j, st) => st?.justifyContent ?? j,
+        undefined,
+      );
+    expect(justify ?? "flex-start").toBe("flex-start");
+    expect(new Set(cells)).toEqual(new Set([cell]));
+    // Three fit inside the 374pt panel less its border and 10pt padding.
+    expect(cell * 3).toBeLessThanOrEqual(374 - 20 - 2);
+    expect(cell * 3).toBeGreaterThan(374 - 20 - 5);
   });
 
   it("starts editing on a hold, on an action or between them", () => {
-    const tree = render(["message", "checkIn"]);
+    const tree = render(["message", "invite"]);
     act(() => byLabel(tree.root, "Message")!.props.onLongPress());
     expect(props.onEditingChange).toHaveBeenCalledWith(true);
     expect(haptic).toHaveBeenCalledTimes(1);
@@ -129,9 +164,9 @@ describe("the panel at rest", () => {
 
 describe("editing in place", () => {
   it("puts a remove control on each placed action", () => {
-    const tree = render(["message", "checkIn"], true);
+    const tree = render(["message", "invite"], true);
     act(() => byLabel(tree.root, "Remove Message")!.props.onPress());
-    expect(props.onSave).toHaveBeenCalledWith(["checkIn"]);
+    expect(props.onSave).toHaveBeenCalledWith(["invite"]);
   });
 
   it("adds from the Add row at the end", () => {
@@ -140,16 +175,22 @@ describe("editing in place", () => {
     expect(props.onSave).toHaveBeenCalledWith(["message", "study"]);
   });
 
-  it("holds the Add row once six are placed", () => {
-    const six = OFFICER.slice(0, 6);
-    const tree = render(six, true);
-    const add = byLabel(tree.root, "Add Upload")!;
-    expect(add.props.disabled).toBe(true);
-    expect(add.props.accessibilityState).toEqual({ disabled: true });
+  it("still adds once six are placed, and holds the Add row at nine", () => {
+    const six = render(OFFICER.slice(0, 6), true);
+    expect(byLabel(six.root, "Add Upload")!.props.disabled).toBe(false);
+    const eight = render(OFFICER.slice(0, 8), true, [
+      ...OFFICER.slice(0, 8),
+      "newEvent",
+    ]);
+    act(() => byLabel(eight.root, "Add New event")!.props.onPress());
+    expect(props.onSave).toHaveBeenCalledWith(OFFICER);
+    // Nine of nine: nothing is left to add, so the Add row is gone.
+    const nine = render(OFFICER, true);
+    expect(byLabel(nine.root, "Add Upload")).toBeUndefined();
   });
 
   it("lets a screen reader remove and move, one place at a time", () => {
-    const tree = render(["message", "checkIn", "logHours"], true);
+    const tree = render(["message", "invite", "logHours"], true);
     const placed = (label: string) =>
       tree.root.findAll(
         (node) =>
@@ -162,7 +203,7 @@ describe("editing in place", () => {
         (action) => action.name,
       );
     expect(names("Message")).toEqual(["remove", "moveLater"]);
-    expect(names("Check in")).toEqual(["remove", "moveEarlier", "moveLater"]);
+    expect(names("Invite")).toEqual(["remove", "moveEarlier", "moveLater"]);
     expect(names("Log hours")).toEqual(["remove", "moveEarlier"]);
 
     const act11y = (label: string, actionName: string) =>
@@ -171,20 +212,20 @@ describe("editing in place", () => {
           nativeEvent: { actionName },
         }),
       );
-    act11y("Check in", "moveLater");
+    act11y("Invite", "moveLater");
     expect(props.onSave).toHaveBeenLastCalledWith([
       "message",
       "logHours",
-      "checkIn",
+      "invite",
     ]);
-    act11y("Check in", "moveEarlier");
+    act11y("Invite", "moveEarlier");
     expect(props.onSave).toHaveBeenLastCalledWith([
-      "checkIn",
+      "invite",
       "message",
       "logHours",
     ]);
     act11y("Log hours", "remove");
-    expect(props.onSave).toHaveBeenLastCalledWith(["message", "checkIn"]);
+    expect(props.onSave).toHaveBeenLastCalledWith(["message", "invite"]);
   });
 
   it("leaves editing on Done", () => {
@@ -194,7 +235,7 @@ describe("editing in place", () => {
   });
 
   it("moves an action to where it is dropped, and keeps that order", () => {
-    const tree = render(["message", "checkIn", "logHours"], true);
+    const tree = render(["message", "invite", "logHours"], true);
     const detectors = tree.root.findAll(
       (node) => (node.type as unknown) === "GestureDetector",
     );
@@ -210,15 +251,48 @@ describe("editing in place", () => {
     act(() => drag.onFinalize());
 
     expect(props.onSave).toHaveBeenCalledWith([
-      "checkIn",
+      "invite",
       "logHours",
       "message",
     ]);
     expect(haptic).toHaveBeenCalled();
   });
 
+  it("drags into and out of the third row at nine", () => {
+    const tree = render(OFFICER, true);
+    const detectors = tree.root.findAll(
+      (node) => (node.type as unknown) === "GestureDetector",
+    );
+    expect(detectors).toHaveLength(9);
+    const handlers = (i: number) =>
+      detectors[i].props.gesture.handlers as Record<
+        string,
+        (event?: object) => void
+      >;
+
+    // The first action, two rows down and two cells right: the last slot.
+    const first = handlers(0);
+    act(() => first.onStart());
+    act(() => first.onUpdate({ translationX: 240, translationY: 200 }));
+    act(() => first.onFinalize());
+    expect(props.onSave).toHaveBeenLastCalledWith([
+      ...OFFICER.slice(1),
+      OFFICER[0],
+    ]);
+
+    // The last action, two rows up and two cells left: the first slot.
+    const last = handlers(8);
+    act(() => last.onStart());
+    act(() => last.onUpdate({ translationX: -240, translationY: -200 }));
+    act(() => last.onFinalize());
+    expect(props.onSave).toHaveBeenLastCalledWith([
+      OFFICER[8],
+      ...OFFICER.slice(0, 8),
+    ]);
+  });
+
   it("saves nothing for a drag that ends where it started", () => {
-    const tree = render(["message", "checkIn"], true);
+    const tree = render(["message", "invite"], true);
     const [first] = tree.root.findAll(
       (node) => (node.type as unknown) === "GestureDetector",
     );
@@ -230,5 +304,104 @@ describe("editing in place", () => {
     act(() => drag.onUpdate({ translationX: 10, translationY: 4 }));
     act(() => drag.onFinalize());
     expect(props.onSave).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Ask Frapp left the panel for a bar above the tab bar (#4702, Paul
+ * 2026-11-13: "not only when you open the plus menu"), so the panel is the
+ * actions and nothing else.
+ */
+describe("Ask Frapp", () => {
+  it("has no row in the panel", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <QuickActionsPanel
+            shown={["message"]}
+            available={OFFICER}
+            width={374}
+            editing={false}
+            canEdit
+            {...props}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(
+      tree.root.findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.includes("Ask"),
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+/**
+ * WCAG 2.2 relative-luminance contrast of two opaque `#RRGGBB` colours.
+ * `@repo/color`'s `contrastRatio` is the repo's one implementation, but
+ * `apps/mobile/package.json` (a frozen hotspot) doesn't declare that package,
+ * so this spec carries the formula, with the same 0.03928 threshold.
+ */
+function contrast(a: string, b: string): number {
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => {
+      const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi! + 0.05) / (lo! + 0.05);
+}
+
+describe("the edit badges' glyphs (#4393)", () => {
+  // WCAG 1.4.11: a glyph that carries meaning needs 3:1 on what it sits on.
+  const NON_TEXT = 3;
+
+  // Every badge of a kind: six actions are addable here, one removable.
+  const glyphsOn = (root: Node, path: string) => {
+    const fillOf = (node: Node) =>
+      [node.props.style]
+        .flat(Infinity)
+        .reduce<string | undefined>(
+          (fill, style) => style?.backgroundColor ?? fill,
+          undefined,
+        );
+    const glyphs = root.findAll(
+      (node) => (node.type as unknown) === "Path" && node.props.d === path,
+    );
+    expect(glyphs.length).toBeGreaterThan(0);
+    return glyphs.map((glyph) => {
+      // The badge is the nearest ancestor that paints a fill.
+      let badge = glyph.parent;
+      while (badge && !fillOf(badge)) badge = badge.parent;
+      // A faded ancestor would draw the pair at a lower ratio than the one
+      // measured here (the add tray dims its faces), so nothing above the
+      // glyph may carry opacity.
+      for (let node = glyph.parent; node; node = node.parent) {
+        const opacity = [node.props.style]
+          .flat(Infinity)
+          .reduce<number>((o, style) => style?.opacity ?? o, 1);
+        expect(opacity, "a badge glyph sits under a faded ancestor").toBe(1);
+      }
+      return { ink: glyph.props.stroke as string, fill: fillOf(badge!)! };
+    });
+  };
+
+  it("draws the add badge's plus at 3:1 or better on its success fill", () => {
+    const tree = render(["message"], true);
+    for (const { ink, fill } of glyphsOn(tree.root, "M5 2v6M2 5h6")) {
+      expect(contrast(ink, fill)).toBeGreaterThanOrEqual(NON_TEXT);
+    }
+  });
+
+  it("draws the remove badge's minus at 3:1 or better on its fill", () => {
+    const tree = render(["message"], true);
+    for (const { ink, fill } of glyphsOn(tree.root, "M2 5h6")) {
+      expect(contrast(ink, fill)).toBeGreaterThanOrEqual(NON_TEXT);
+    }
   });
 });

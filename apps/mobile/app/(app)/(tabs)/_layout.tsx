@@ -1,15 +1,14 @@
 import { Tabs, type ErrorBoundaryProps } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/tabs";
 import {
+  ActivityTabGlyph,
   ChatGlyph,
-  EventsGlyph,
-  MoreGlyph,
-  TasksGlyph,
+  MessagesGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
+import { YouTabAvatar } from "@/components/you-tab-avatar";
 import { AppErrorScreen } from "@/components/route-error";
 import { GlassTabBar } from "@/components/glass-tab-bar";
-import { TourHost } from "@/components/onboarding/tour";
 import { WhatsNewHost } from "@/components/whats-new/whats-new-host";
 import { SCREEN_TITLES } from "@/lib/back-target";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -26,7 +25,14 @@ function renderTabBar(props: BottomTabBarProps) {
 }
 
 /**
- * The locked 4-tab IA (spec/ui/mobile/navigation.md §"Tab bar — 4 tabs, locked").
+ * The 4-tab IA (spec/ui/mobile/navigation.md § Tab bar): Chat, Activity,
+ * Messages and You. The four tabs are the owner's pick of 2026-11-12
+ * (#4610); the third was Calendar (the `events` route) until #5310 (Paul's
+ * direction B, 2026-11-17) gave it to Messages, which had been a door on
+ * Chat home, and made Calendar a pushed month opened from Activity's
+ * Calendar row. The task board left the bar for a pushed screen in #4610: a
+ * member's tasks are Activity's first rows. You (#3839) is the member's
+ * profile and the hub More used to be, drawn as their own avatar.
  *
  * There is no Home tab — chat is home. This navigator holds only the four
  * tabs. Every other screen in the app is pushed onto the stack above it
@@ -60,9 +66,7 @@ export default function TabLayout() {
   });
 
   return (
-    // The first-run tour's host wraps the navigator, so its dim covers the
-    // screens and the floating bar both (`components/onboarding/tour.tsx`).
-    <TourHost>
+    <>
       <Tabs
         // On a tab, Android's back button returns to the tab the member came
         // from rather than straight to Chat (the default, "firstRoute").
@@ -84,7 +88,7 @@ export default function TabLayout() {
           headerShown: false,
         }}
       >
-        {/* ── The four locked tabs ─────────────────────────────────────────── */}
+        {/* ── The four tabs ────────────────────────────────────────────────── */}
         <Tabs.Screen
           name="index"
           options={{
@@ -93,35 +97,38 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="events"
+          name="activity"
           options={{
-            title: SCREEN_TITLES.events,
+            title: SCREEN_TITLES.activity,
             tabBarIcon: ({ focused }) => (
-              <EventsGlyph {...glyphPaint(focused)} />
+              <ActivityTabGlyph {...glyphPaint(focused)} />
             ),
           }}
         />
         <Tabs.Screen
-          name="tasks"
+          name="messages"
           options={{
-            title: SCREEN_TITLES.tasks,
+            title: SCREEN_TITLES.messages,
             tabBarIcon: ({ focused }) => (
-              <TasksGlyph {...glyphPaint(focused)} />
+              <MessagesGlyph {...glyphPaint(focused)} />
             ),
           }}
         />
         <Tabs.Screen
-          name="more"
+          name="you"
           options={{
-            title: SCREEN_TITLES.more,
-            tabBarIcon: ({ focused }) => <MoreGlyph {...glyphPaint(focused)} />,
+            title: SCREEN_TITLES.you,
+            tabBarIcon: ({ focused }) => (
+              <YouTabAvatar focused={focused} accent={accent} />
+            ),
           }}
         />
       </Tabs>
       {/* What's new opens by itself once after an update brings a new entry
-          or new lines, never on a launch the tour is due (`lib/whats-new.ts`). */}
+          or new lines, never on a launch the welcome card is due
+          (`lib/whats-new.ts`). */}
       <WhatsNewHost />
-    </TourHost>
+    </>
   );
 }
 

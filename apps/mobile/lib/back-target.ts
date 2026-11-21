@@ -3,6 +3,8 @@ import {
   NavigationContext,
   NavigationRouteContext,
 } from "expo-router/react-navigation";
+import type { Href } from "expo-router";
+import { goBackTo } from "@/lib/href";
 
 /**
  * Going back through the stack (`spec/ui/mobile/navigation.md` § Going back).
@@ -23,27 +25,59 @@ import {
  */
 export const SCREEN_TITLES = {
   index: "Chat",
-  events: "Events",
+  activity: "Activity",
+  // Tab 3 since #5310, where Calendar was; a pushed screen behind Chat
+  // home's door until then.
+  messages: "Messages",
+  // Tab 4 since #3839: the member's profile and the hub that was More.
+  you: "You",
+  // A pushed screen since #5310, opened from Activity's Calendar row. The
+  // route stays `events` so links and notification targets keep working; it
+  // holds tasks too, so it is named for the calendar (#4610).
+  events: "Calendar",
+  // One day's hour grid, pushed from the month's day heading (#5310).
+  "calendar-day": "Day",
+  // A pushed screen since #4610, opened from Activity, Calendar and Up next.
   tasks: "Tasks",
-  more: "More",
+  // One task, pushed from a task row (#5492).
+  "task-details": "Task",
   // The thread names a channel, which a capsule has no room for; "Chat" is
   // where the member is going back to.
   "chat-thread": "Chat",
   "event-details": "Event",
   notifications: "Notifications",
-  activity: "Activity",
-  messages: "Messages",
+  // Pushed from Chat home (#5139).
+  search: "Search",
   preferences: "Settings",
-  profile: "Profile",
   "service-hours": "Service hours",
   study: "Study hours",
   dues: "Dues",
   documents: "Documents",
   directory: "Directory",
+  // A member's profile, pushed from the Directory or chat (#5568).
+  member: "Profile",
   invite: "Invite members",
   "check-in": "Check in",
   "host-check-in": "Host check-in",
   "whats-new": "What's new",
+  "finish-profile": "Finish your profile",
+  minutes: "Minutes",
+  // One meeting's minutes: the capsule over it says where back goes.
+  "minutes-details": "Minutes",
+  // A meeting's transcript, pushed from its minutes (Paul, 2026-11-18).
+  "minutes-transcript": "Transcript",
+  "minutes-series": "Series",
+  // Tasks and, since #3930, events: `AI_SUGGESTION_COPY.listHeading`.
+  "suggested-tasks": "Suggested",
+  "arrange-channels": "Arrange channels",
+  "chapter-settings": "Chapter settings",
+  "chapter-roles": "Roles and groups",
+  // Pushed from Chapter settings (Paul, 2026-11-21).
+  "chapter-logs": "Logs",
+  // A tier's and a role's pages are titled by their own name, which a
+  // capsule has no room for, so both read as the list they belong to.
+  "role-tier": "Roles",
+  role: "Roles",
 } as const satisfies Record<string, string>;
 
 /** The group in `app/(app)/` that holds the tab navigator. */
@@ -148,4 +182,21 @@ export function useHoldSwipeBack(hold: boolean): void {
       for (const at of held) at.setOptions({ gestureEnabled: true });
     };
   }, [navigation, hold]);
+}
+
+/**
+ * Leaves a pushed record screen the way its back capsule does: pops it to
+ * whatever is under it, or, on a cold link with nothing under it, goes to
+ * `fallback` (a task's screen to the board, a member's to the Directory).
+ * For a screen that closes itself once its record is gone or done with.
+ */
+export function leaveScreen(
+  router: Parameters<typeof goBackTo>[0] & {
+    canGoBack: () => boolean;
+    back: () => void;
+  },
+  fallback: Href,
+): void {
+  if (router.canGoBack()) router.back();
+  else goBackTo(router, fallback);
 }

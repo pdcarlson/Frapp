@@ -20,42 +20,33 @@ let permissions: string[] = [
   "roles:manage",
 ];
 
-vi.mock("@repo/hooks", () => ({
-  useCurrentChapter: () => mockCurrentChapter(),
-  useMyPermissions: () => ({
-    data: { permissions: mockPermissions() },
-    isPending: false,
-    isError: false,
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => mockCurrentChapter(),
+    permissions: () => mockPermissions(),
+    orgConfig: () => mockOrgConfig(),
+    overrides: {
+      useSemesterRollover: () => ({
+        mutateAsync: mockRollover,
+        isPending: false,
+      }),
+    },
   }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: mockRollover, isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useOrgConfig: () => ({
-    data: mockOrgConfig(),
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-}));
+);
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(),
+);
 
-vi.mock("next/navigation", () => ({
-  // `tab=semester`: board `4d` gives Semester its own rail entry, so the
-  // rollover form no longer sits at the bottom of the default Chapter tab.
-  // Landing the page on the tab under test is also what the nav's own deep
-  // links do.
-  useSearchParams: () => new URLSearchParams("tab=semester"),
-}));
+// `tab=semester`: board `4d` gives Semester its own rail entry, so the
+// rollover form no longer sits at the bottom of the default Chapter tab.
+// Landing the page on the tab under test is also what the nav's own deep
+// links do.
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(
+    () => new URLSearchParams("tab=semester"),
+  ),
+);
 
 vi.mock("@/components/shared/can", () => ({
   Can: ({
@@ -70,16 +61,16 @@ vi.mock("@/components/shared/can", () => ({
     ) : null,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
-}));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(),
+);
 
 const { SettingsPage } = await import("./settings-page");
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
 const promoteSwitch = () =>
-  screen.getByRole("switch", { name: /promote every new member to member/i });
+  screen.getByRole("switch", { name: /make every new member a full member/i });
 
 /** Fill the three required fields and submit, leaving the confirm dialog open. */
 async function submitRollover(user: ReturnType<typeof userEvent.setup>) {
@@ -157,12 +148,14 @@ describe("semester rollover — New Member promotion (#285)", () => {
     // The officer has to be told what the extra box does at the point of
     // confirming — a bulk role change is not undoable in one step.
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent(/promoted to Member/i);
+    expect(dialog).toHaveTextContent(/becomes a full member/i);
     expect(dialog).toHaveTextContent(/keep any other roles they hold/i);
     expect(dialog).toHaveTextContent(/cannot be undone/i);
     // Case-sensitive: "New Member" title-cased to match how the role is
     // displayed everywhere else, not vocab()'s sentence-case "New member".
-    expect(dialog).toHaveTextContent("Every New Member is also promoted");
+    expect(dialog).toHaveTextContent(
+      "Every New Member also becomes a full member",
+    );
   });
 
   it("stays silent about promotion when it was not requested", async () => {
@@ -172,7 +165,7 @@ describe("semester rollover — New Member promotion (#285)", () => {
     await submitRollover(user);
 
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).not.toHaveTextContent(/promoted to Member/i);
+    expect(dialog).not.toHaveTextContent(/becomes a full member/i);
   });
 
   it("does not fire the rollover at all when the confirmation is dismissed", async () => {
@@ -194,7 +187,7 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.queryByRole("switch", { name: /promote every new member/i }),
+      screen.queryByRole("switch", { name: /make every new member/i }),
     ).not.toBeInTheDocument();
     // The rollover itself is still available — only the extra option is gated.
     expect(
@@ -222,16 +215,22 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+      screen.getByRole("switch", {
+        name: /make every aspirant a full member/i,
+      }),
     ).toBeInTheDocument();
 
     await user.click(
-      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+      screen.getByRole("switch", {
+        name: /make every aspirant a full member/i,
+      }),
     );
     await submitRollover(user);
 
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent(/every aspirant is also promoted/i);
+    expect(dialog).toHaveTextContent(
+      /every aspirant also becomes a full member/i,
+    );
     expect(dialog).not.toHaveTextContent(/new member/i);
   });
 
@@ -255,7 +254,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+      screen.getByRole("switch", {
+        name: /make every aspirant a full member/i,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -275,7 +276,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByRole("switch", { name: /promote every aspirant to member/i }),
+      screen.getByRole("switch", {
+        name: /make every aspirant a full member/i,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -290,7 +293,9 @@ describe("semester rollover — New Member promotion (#285)", () => {
     render(<SettingsPage />);
 
     expect(
-      screen.getByRole("switch", { name: /promote every recruits to member/i }),
+      screen.getByRole("switch", {
+        name: /make every recruits a full member/i,
+      }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("switch", { name: /recruitss/i }),

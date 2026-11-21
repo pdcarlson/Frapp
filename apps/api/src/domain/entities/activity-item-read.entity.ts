@@ -9,6 +9,8 @@
  * - `poll`: a poll card, by its chat message id.
  * - `event`: an event.
  * - `link`: a sign-up link (`chat_message_links.id`).
+ * - `signup`: a sign-up sheet or headcount card, by its chat message id.
+ * - `form`: a form card, by its chat message id.
  */
 export const ACTIVITY_ITEM_KINDS = [
   'task',
@@ -16,6 +18,8 @@ export const ACTIVITY_ITEM_KINDS = [
   'poll',
   'event',
   'link',
+  'signup',
+  'form',
 ] as const;
 export type ActivityItemKind = (typeof ACTIVITY_ITEM_KINDS)[number];
 
@@ -36,4 +40,18 @@ export interface ActivityItemRead {
   kind: ActivityItemKind;
   item_id: string;
   read_at: string;
+}
+
+/**
+ * One member's snooze of one Activity item (#4982, `spec/behavior/activity.md`
+ * § Snooze): the row leaves their list until `until`, then comes back. Kept
+ * after it ends, since when it came back decides whether it is unread.
+ */
+export interface ActivityItemSnooze {
+  user_id: string;
+  chapter_id: string;
+  kind: ActivityItemKind;
+  item_id: string;
+  until: string;
+  created_at: string;
 }

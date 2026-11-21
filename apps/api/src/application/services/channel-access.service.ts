@@ -6,6 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AUDIT_LOG_READ_ONLY_REFUSAL,
+  auditLogAllowsChange,
+  EVERYONE_MEMBER_LIST_HEADING,
+  type ChatMessageChange,
+} from '@repo/validation';
+import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
 } from '#domain/repositories/chat.repository.interface';
@@ -21,13 +27,70 @@ import type {
   ChatMessage,
 } from '#domain/entities/chat.entity';
 import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
+import type { Member } from '#domain/entities/member.entity';
 import {
   canAccessChannel,
   EMPTY_ACCESS_HOLDER,
+  listsNameGroups,
   needsAccessHolder,
 } from '#domain/utils/channel-access';
 import type { ChannelOperation } from '#domain/utils/channel-access';
-import { RbacService } from './rbac.service';
+import { RbacService, type ChapterMemberAccess } from './rbac.service';
+
+/**
+ * The refusal for any write in the audit log (`#chapter-audit`, #3909):
+ * `@repo/validation`'s sentence, which its member copy keys on.
+ */
+export const AUDIT_LOG_READ_ONLY_MESSAGE = AUDIT_LOG_READ_ONLY_REFUSAL;
+
+/**
+ * What a message is authorized for (`ChannelAccessService.assertMessageAccess`):
+ * a channel operation, or a named change to a message already there, which
+ * authorizes as a `modify` and then meets the audit log's rule for that
+ * change and that line ({@link auditLogAllowsChange}). A bare `modify` is not
+ * accepted, so every change says which it is.
+ */
+export type MessageOperation =
+  Exclude<ChannelOperation, 'modify'> | ChatMessageChange;
+
+const MESSAGE_CHANGES: ReadonlySet<string> = new Set<ChatMessageChange>([
+  'delete',
+  'pin',
+  'unpin',
+  'flag',
+  'unflag',
+]);
+
+function isMessageChange(
+  operation: MessageOperation,
+): operation is ChatMessageChange {
+  return MESSAGE_CHANGES.has(operation);
+}
+
+/** The channel operation a message operation authorizes as. */
+function channelOperationOf(operation: MessageOperation): ChannelOperation {
+  return isMessageChange(operation) ? 'modify' : operation;
+}
+
+/**
+ * Refuse a change the audit log doesn't take on this line: a new pin or flag
+ * on any line, or a delete of one of Frapp's entries. Taking a pin or flag
+ * off, and deleting a line a member wrote there before the channel became
+ * read-only, go on to the caller's own rule.
+ */
+function assertAuditLogTakes(
+  channel: Pick<ChatChannel, 'is_audit_log'>,
+  message: Pick<ChatMessage, 'kind' | 'sender_id'>,
+  operation: MessageOperation,
+): void {
+  if (
+    channel.is_audit_log &&
+    isMessageChange(operation) &&
+    !auditLogAllowsChange(operation, message)
+  ) {
+    throw new ForbiddenException(AUDIT_LOG_READ_ONLY_MESSAGE);
+  }
+}
 
 /**
  * The projection `canAccessChannel` decides on. Spelled once so the single-read
@@ -35,7 +98,19 @@ import { RbacService } from './rbac.service';
  * and wiring it into only one call site would let the list admit a channel the
  * single read denies, which is precisely the asymmetry #1001 was.
  */
-function toPredicateChannel(channel: ChatChannel) {
+/** What {@link toPredicateChannel} reads off a channel row. */
+export type ChannelAccessFields = Pick<
+  ChatChannel,
+  | 'id'
+  | 'type'
+  | 'member_ids'
+  | 'who_can_see'
+  | 'who_can_post'
+  | 'archived_at'
+  | 'is_audit_log'
+>;
+
+function toPredicateChannel(channel: Omit<ChannelAccessFields, 'id'>) {
   return {
     type: channel.type,
     member_ids: channel.member_ids,
@@ -46,15 +121,52 @@ function toPredicateChannel(channel: ChatChannel) {
   };
 }
 
+/**
+ * Whether a chapter member reads a channel: the one composition both reader
+ * lists use ({@link ChannelAccessService.listChannelMembers},
+ * {@link ChannelAccessService.readersOf}), so they cannot drift.
+ */
+function canReadAs(
+  channel: ReturnType<typeof toPredicateChannel>,
+  member: Pick<ChapterMemberAccess, 'user_id' | 'channel_access'>,
+): boolean {
+  return canAccessChannel({
+    channel,
+    userId: member.user_id,
+    isChapterMember: true,
+    holder: member.channel_access,
+    operation: 'read',
+  });
+}
+
 /** One reader of a channel, from {@link ChannelAccessService.listChannelMembers}. */
 export interface ChannelMemberEntry {
   user_id: string;
-  /** The member's highest role's `display_order` (lower ranks higher); `null` when they hold none. */
+  /**
+   * Where the member's highest-ranked role sits in the chapter's roles in
+   * rank order (tier, then the role's order in its tier), 0 for the top;
+   * lower ranks higher, `null` when they hold none.
+   */
   role_rank: number | null;
   /** That role's id, the key the list groups readers under; `null` with `role_rank`. */
   role_id: string | null;
-  /** That role's name, the group's heading; `null` with `role_rank`. */
+  /**
+   * The group's heading: that role's name, or "Members" for the Everyone
+   * role (#4191); `null` with `role_rank`. Kept for app builds that group
+   * by role; current builds group by tier.
+   */
   role_name: string | null;
+  /**
+   * The member's title: their highest-ranked role's name, or `null` for the
+   * Everyone role (no title) or no role.
+   */
+  title: string | null;
+  /** The highest tier any of their roles is in, the group the list files them under; `null` for none. */
+  tier_id: string | null;
+  /** That tier's name, the group's heading; `null` with `tier_id`. */
+  tier_name: string | null;
+  /** That tier's position (1 is the top tier); `null` with `tier_id`. */
+  tier_rank: number | null;
 }
 
 /**
@@ -129,8 +241,10 @@ export class ReportedMessageGrant {
  * The first half of the grant arm of `ChannelAccessService.assertMessageAccess`:
  * what a grant may be used for, decided from the grant and the arguments alone.
  *
- * - **`'read'` only.** A report authorizes removing content, never authoring
- *   it; an edit or an upload URL is a `'post'` and a grant must not carry one.
+ * - **`'read'` or `'delete'` only.** A report authorizes removing content,
+ *   never authoring it or changing it any other way: an edit or an upload URL
+ *   is a `'post'`, a pin or flag is the channel's business, and a grant
+ *   carries none of them. The removal still meets the audit log's rule.
  * - **The grant names this message, in this chapter.** The report was read
  *   chapter-scoped and its `message_id` fresh, so a mismatch is a caller
  *   pointing a real grant at a sibling message, or at another chapter —
@@ -140,9 +254,9 @@ function assertGrantNames(
   grant: ReportedMessageGrant,
   messageId: string,
   chapterId: string,
-  operation: ChannelOperation,
+  operation: MessageOperation,
 ): void {
-  if (operation !== 'read') {
+  if (operation !== 'read' && operation !== 'delete') {
     throw new ForbiddenException('A report does not grant write access');
   }
   if (grant.chapterId !== chapterId || grant.messageId !== messageId) {
@@ -203,7 +317,11 @@ export class ChannelAccessService {
     const predicateChannel = toPredicateChannel(channel);
     const holder =
       isChapterMember && needsAccessHolder(predicateChannel, operation)
-        ? await this.rbac.getChannelAccessHolder(chapterId, member?.role_ids)
+        ? await this.rbac.getChannelAccessHolder(
+            chapterId,
+            member,
+            listsNameGroups(predicateChannel),
+          )
         : EMPTY_ACCESS_HOLDER;
 
     const allowed = canAccessChannel({
@@ -215,6 +333,21 @@ export class ChannelAccessService {
     });
 
     if (!allowed) {
+      // A reader refused a write in the audit log is told why. Anyone who
+      // can't read it gets the generic answer, as for any other channel.
+      if (
+        channel.is_audit_log &&
+        operation !== 'read' &&
+        canAccessChannel({
+          channel: predicateChannel,
+          userId,
+          isChapterMember,
+          holder,
+          operation: 'read',
+        })
+      ) {
+        throw new ForbiddenException(AUDIT_LOG_READ_ONLY_MESSAGE);
+      }
       throw new ForbiddenException('You do not have access to this channel');
     }
 
@@ -227,9 +360,10 @@ export class ChannelAccessService {
    * member the same {@link canAccessChannel} predicate admits, with the rank
    * of their highest role for sorting. Names, avatars, role colors and
    * presence are joined on the client from the roster and the presence socket
-   * it already holds, so this read carries ids and ranks only.
+   * it already holds, so this read carries ids, ranks, titles and tiers only.
    *
-   * Three reads for any channel type (`RbacService.getChapterMemberAccess`),
+   * Four reads for any channel type (`RbacService.getChapterMemberAccess`
+   * with its tiers),
    * never one role lookup per member: a listed channel in a chapter of 150
    * would otherwise cost ~300 queries per open.
    *
@@ -248,24 +382,84 @@ export class ChannelAccessService {
       userId,
       'read',
     );
-    const access = await this.rbac.getChapterMemberAccess(chapterId);
-    const predicateChannel = toPredicateChannel(channel);
-    return access
-      .filter((member) =>
-        canAccessChannel({
-          channel: predicateChannel,
-          userId: member.user_id,
-          isChapterMember: true,
-          holder: member.channel_access,
-          operation: 'read',
-        }),
-      )
-      .map((member) => ({
+    return (await this.channelReaders(channel, chapterId, true)).map(
+      (member) => ({
         user_id: member.user_id,
-        role_rank: member.top_role_order,
+        role_rank: member.top_role_rank,
         role_id: member.top_role?.id ?? null,
-        role_name: member.top_role?.name ?? null,
-      }));
+        // Everyone (#4191) is offered by no list, so its holders read as the
+        // rest of the chapter rather than as a role called Everyone.
+        role_name: member.top_role
+          ? member.top_role.everyone
+            ? EVERYONE_MEMBER_LIST_HEADING
+            : member.top_role.name
+          : null,
+        title:
+          member.top_role && !member.top_role.everyone
+            ? member.top_role.name
+            : null,
+        tier_id: member.top_tier?.id ?? null,
+        tier_name: member.top_tier?.name ?? null,
+        tier_rank: member.top_tier?.position ?? null,
+      }),
+    );
+  }
+
+  /**
+   * Every chapter member who can read `channel`, with what each holds: the
+   * audience behind {@link listChannelMembers}, for a caller that has to ask
+   * something of each reader (whether everyone in the channel could open
+   * what an Ask Frapp answer drew on, `AskPostService`, #4713). The caller
+   * authorizes the channel first; this decides nothing about the caller.
+   */
+  async channelReaders(
+    channel: ChatChannel,
+    chapterId: string,
+    withTiers = false,
+  ): Promise<ChapterMemberAccess[]> {
+    const predicateChannel = toPredicateChannel(channel);
+    const access = await this.rbac.getChapterMemberAccess(
+      chapterId,
+      listsNameGroups(predicateChannel),
+      undefined,
+      withTiers,
+    );
+    return access.filter((member) => canReadAs(predicateChannel, member));
+  }
+
+  /**
+   * Who can read each of `channels`, by user id: {@link listChannelMembers}'
+   * rule for many channels at once, from one chapter-wide resolve however
+   * many there are (Activity's vote counts, #4792). The caller has already
+   * established it may read these channels; nothing is checked for it here.
+   * `roster` is the chapter's `members` rows when the caller already reads
+   * them (#4908), passed through to the resolve.
+   */
+  async readersOf(
+    chapterId: string,
+    channels: readonly ChannelAccessFields[],
+    roster?: () => Promise<readonly Member[]>,
+  ): Promise<Map<string, Set<string>>> {
+    if (channels.length === 0) return new Map();
+    const predicates = channels.map((channel) => ({
+      id: channel.id,
+      predicate: toPredicateChannel(channel),
+    }));
+    const access = await this.rbac.getChapterMemberAccess(
+      chapterId,
+      predicates.some(({ predicate }) => listsNameGroups(predicate)),
+      roster,
+    );
+    return new Map(
+      predicates.map(({ id, predicate }) => [
+        id,
+        new Set(
+          access
+            .filter((member) => canReadAs(predicate, member))
+            .map((member) => member.user_id),
+        ),
+      ]),
+    );
   }
 
   /**
@@ -274,11 +468,15 @@ export class ChannelAccessService {
    * channel the caller cannot see (or in another chapter) is rejected.
    *
    * `operation` defaults to `'read'`, which is right for actions that don't
-   * author channel content (delete, pin, react, vote, bookmark). Pass `'post'`
-   * for anything that writes member-authored content into the channel —
-   * otherwise the post-side gates (read-only channels, the Alumni lifecycle
-   * rule) are bypassed by editing an existing message instead of sending a new
-   * one.
+   * write into the channel (react, bookmark). A card response (a vote, a
+   * sign-up claim, a form's answers) passes `'answer'`, so an archived channel
+   * and the audit log refuse it (#4695). Pass `'post'` for anything that
+   * writes member-authored content into the channel — otherwise the post-side
+   * gates (read-only channels, the Alumni lifecycle rule) are bypassed by
+   * editing an existing message instead of sending a new one. A change to the
+   * message itself names which (`'delete'`, `'pin'`, `'unpin'`, `'flag'`,
+   * `'unflag'`): it authorizes as a `modify`, then meets the audit log's rule
+   * for that change on this line ({@link assertAuditLogTakes}).
    *
    * Lives here, beside `assertChannelAccess`, for the reason that method's own
    * docblock gives: more than one surface authorizes a message now (`ChatService`
@@ -298,7 +496,7 @@ export class ChannelAccessService {
     messageId: string,
     chapterId: string,
     userId: string,
-    operation: ChannelOperation = 'read',
+    operation: MessageOperation = 'read',
     grant?: ReportedMessageGrant,
   ): Promise<ChatMessage> {
     // A grant is checked against what it names before anything is read, so
@@ -307,15 +505,21 @@ export class ChannelAccessService {
     const message = await this.messageRepo.findById(messageId);
     if (!message) throw new NotFoundException('Message not found');
     if (grant) {
-      await this.assertGrantedMessageInChapter(message, chapterId, userId);
+      const channel = await this.assertGrantedMessageInChapter(
+        message,
+        chapterId,
+        userId,
+      );
+      assertAuditLogTakes(channel, message, operation);
       return message;
     }
+    let channel: ChatChannel;
     try {
-      await this.assertChannelAccess(
+      channel = await this.assertChannelAccess(
         message.channel_id,
         chapterId,
         userId,
-        operation,
+        channelOperationOf(operation),
       );
     } catch (error) {
       // A message whose channel is in another chapter surfaces as a
@@ -326,6 +530,7 @@ export class ChannelAccessService {
       }
       throw error;
     }
+    assertAuditLogTakes(channel, message, operation);
     return message;
   }
 
@@ -341,12 +546,16 @@ export class ChannelAccessService {
    * - **The caller is a member of the chapter.** `ChapterGuard` already proved
    *   it on the request path; re-checking here keeps the predicate honest for
    *   any other caller, as `assertChannelAccess` does.
+   *
+   * Returns the channel, for the audit log's rule the caller applies next: a
+   * report on one of Frapp's entries there can be filed and dismissed, but
+   * can't take the entry out of the record (#3909).
    */
   private async assertGrantedMessageInChapter(
     message: ChatMessage,
     chapterId: string,
     userId: string,
-  ): Promise<void> {
+  ): Promise<ChatChannel> {
     const channel = await this.channelRepo.findById(
       message.channel_id,
       chapterId,
@@ -359,6 +568,7 @@ export class ChannelAccessService {
     if (!member) {
       throw new ForbiddenException('You do not have access to this channel');
     }
+    return channel;
   }
 
   /**
@@ -496,7 +706,13 @@ export class ChannelAccessService {
       needsAccessHolder(toPredicateChannel(channel), 'post'),
     );
     const holder = needsHolder
-      ? await this.holderFor(chapterId, userId)
+      ? await this.holderFor(
+          chapterId,
+          userId,
+          channels.some((channel) =>
+            listsNameGroups(toPredicateChannel(channel)),
+          ),
+        )
       : EMPTY_ACCESS_HOLDER;
 
     return channels.map((channel) => ({
@@ -526,7 +742,13 @@ export class ChannelAccessService {
       needsAccessHolder(toPredicateChannel(channel), 'read'),
     );
     const holder = needsHolder
-      ? await this.rbac.getChannelAccessHolder(chapterId, roleIds)
+      ? await this.rbac.getChannelAccessHolder(
+          chapterId,
+          { user_id: userId, role_ids: roleIds ?? [] },
+          candidates.some((channel) =>
+            listsNameGroups(toPredicateChannel(channel)),
+          ),
+        )
       : EMPTY_ACCESS_HOLDER;
 
     return candidates.filter((channel) =>
@@ -541,11 +763,15 @@ export class ChannelAccessService {
   }
 
   /** The caller's holder, from their membership row in `chapterId`. */
-  private async holderFor(chapterId: string, userId: string) {
+  private async holderFor(
+    chapterId: string,
+    userId: string,
+    withGroups: boolean,
+  ) {
     const member = await this.memberRepo.findByUserAndChapter(
       userId,
       chapterId,
     );
-    return this.rbac.getChannelAccessHolder(chapterId, member?.role_ids);
+    return this.rbac.getChannelAccessHolder(chapterId, member, withGroups);
   }
 }

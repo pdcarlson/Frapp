@@ -23,7 +23,10 @@
  */
 
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
-import { moduleRefusalFromServerMessage } from "@repo/validation";
+import {
+  CHECK_IN_MODULE_OFF_LINE,
+  moduleRefusalFromServerMessage,
+} from "@repo/validation";
 
 /** The module this write was refused for, or `null` for any other failure. */
 export function moduleRefusalOf(error: unknown): { moduleKey: string } | null {
@@ -41,8 +44,7 @@ export function moduleRefusalOf(error: unknown): { moduleKey: string } | null {
  * on: `hours` is "Service hours", and check-in belongs to "Events".
  */
 export const MODULE_REFUSAL_COPY = {
-  checkIn:
-    "Check-in is turned off for your chapter right now. An officer can turn events back on.",
+  checkIn: CHECK_IN_MODULE_OFF_LINE,
   /** `POST /v1/events`, the New event sheet, under `@RequireModule('events')`. */
   event:
     "Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.",

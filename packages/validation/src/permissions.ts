@@ -115,6 +115,16 @@ export const MEMBER_JOINED_AUDIENCE: readonly (readonly string[])[] = [
   ["members:view", "roles:manage"],
 ];
 
+/**
+ * Who is sent the weekly recap push (#4985): whoever can read the recap,
+ * `GET /v1/activity/recap`'s permission. `ActivityRecapPushService` in the API
+ * sends to them, and the `recap` row of `NOTIFICATION_CATEGORIES` is drawn
+ * for them.
+ */
+export const RECAP_PUSH_AUDIENCE: readonly (readonly string[])[] = [
+  ["members:view"],
+];
+
 /** Does `permissions` satisfy every permission in at least one of `sets`? */
 export function canAllOfAny(
   sets: readonly (readonly string[])[],
@@ -165,6 +175,18 @@ export const CHAPTER_PROFILE_PERMISSIONS = [
 ] as const;
 
 /**
+ * What it takes to read the chapter's Logs: `GET /v1/audit-log` carries
+ * `chapter-config:view` and `members:view` (both required). **The one
+ * spelling** for the clients' gates: web's Logs tab (`settings-access.ts`),
+ * the phone's Logs row (`chapterSettingsAccess`) and the settings search
+ * entry (`settings-search.ts`).
+ */
+export const CHAPTER_LOGS_PERMISSIONS = [
+  "chapter-config:view",
+  "members:view",
+] as const;
+
+/**
  * What it takes to create an event: `POST /v1/events` carries `events:create`,
  * and `EventController` adds `members:view` at class level, which
  * `PermissionsGuard` requires alongside it (AND, not override). Offering a
@@ -181,38 +203,3 @@ export const EVENT_CREATE_PERMISSIONS = [
   "events:create",
   "members:view",
 ] as const;
-
-/**
- * The role ids whose holder can open chat, the roster and events (#3670): a
- * role whose permissions grant `members:view` (so `*` counts). The seeded flag
- * doesn't count on its own, because a seeded role's permissions are editable.
- * Web's member sheet calls it with the chapter's roles; mobile's roles sheet
- * calls it per role (`parseRoleOptions`). `transfer_presidency` applies the
- * same rule in SQL.
- */
-export function memberAccessRoleIds(
-  roles: readonly {
-    id: string;
-    permissions?: readonly string[] | null;
-  }[],
-): Set<string> {
-  const ids = new Set<string>();
-  for (const role of roles) {
-    if (can("members:view", role.permissions)) ids.add(role.id);
-  }
-  return ids;
-}
-
-/**
- * True when a role change is the one that takes away member access: some id
- * in `before` grants it and none in `after` does. A member who already lacked
- * it is not warned again on every save.
- */
-export function removesMemberAccess(
-  before: readonly string[],
-  after: readonly string[],
-  accessIds: ReadonlySet<string>,
-): boolean {
-  const grants = (ids: readonly string[]) => ids.some((id) => accessIds.has(id));
-  return grants(before) && !grants(after);
-}

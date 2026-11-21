@@ -7,9 +7,13 @@
  */
 
 export {
+  /**
+   * @public The hex validators are this entry's documented surface
+   * (`spec/behavior/observability.md`), unconsumed until a client needs one.
+   */
   validatedDistinctId,
+  /** @public See `validatedDistinctId`. */
   validatedChapterGroupId,
-  fetchAnalyticsIdentity,
   observabilityIdentityQueryKey,
   isObservabilityIdentitySubjectReady,
   observabilityIdentityQueryOptions,
@@ -24,27 +28,24 @@ export {
   isAnalyticsCaptureOptedOut,
   applyAnalyticsOptOut,
   applyAnalyticsIdentity,
-  applyObservabilityIdentity,
   applyFetchedObservabilityIdentity,
   namedAnalyticsEventBody,
   resetPostHog,
-  getPostHogDistinctId,
-  getPostHogSessionId,
-  getPostHogReplayId,
+  /**
+   * @public The documented client flag check (`spec/behavior/observability.md`
+   * § Client product flags); no web or mobile code calls it yet.
+   */
   isProductFlagEnabled,
   captureSentryErrorCorrelated,
   createRouteViewRecorder,
 } from "./posthog-adapter";
-export type {
-  PostHogAdapter,
-  MemoryPostHogCall,
-  NamedAnalyticsEventApp,
-  NamedAnalyticsEventBody,
-  NamedAnalyticsEventProperties,
-} from "./posthog-adapter";
 
 export {
+  /**
+   * @public The documented identified Sentry attach
+   * (`spec/behavior/observability.md`); clients reach it through
+   * `withPostHogSentryCorrelation`.
+   */
   attachPostHogCorrelation,
   withPostHogSentryCorrelation,
 } from "./sentry-posthog-correlation";
-export type { CorrelatableSentryEvent } from "./sentry-posthog-correlation";

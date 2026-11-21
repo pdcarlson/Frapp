@@ -1,0 +1,270 @@
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ASK_DICTATION_MAX_LENGTH,
+  ASK_DOORS,
+  ASK_EFFORTS,
+  ASK_HISTORY_ANSWER_MAX_LENGTH,
+  ASK_HISTORY_MAX_TURNS,
+  ASK_PROPOSALS_MAX,
+  ASK_QUESTION_MAX_LENGTH,
+  type AskDoor,
+  type AskEffort,
+} from '@repo/validation';
+import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
+import { Trim } from '../decorators/trim.decorator';
+
+export class AskHistoryTurnDto {
+  @ApiProperty({
+    description: 'What the member typed in that turn.',
+    maxLength: ASK_QUESTION_MAX_LENGTH,
+  })
+  @Trim()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(ASK_QUESTION_MAX_LENGTH)
+  question: string;
+
+  @ApiProperty({
+    description:
+      'What Ask answered, or empty when the turn had no answer to carry (a proposal, nothing found, or an answer that drew on channel messages).',
+    maxLength: ASK_HISTORY_ANSWER_MAX_LENGTH,
+  })
+  @IsString()
+  @MaxLength(ASK_HISTORY_ANSWER_MAX_LENGTH)
+  answer: string;
+
+  @ApiPropertyOptional({
+    description:
+      'True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  suggested?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'How many cards that turn came with. A count only: the server writes the line that stands for them, so a follow-up is read knowing cards are already in front of the member.',
+    minimum: 1,
+    maximum: ASK_PROPOSALS_MAX,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(ASK_PROPOSALS_MAX)
+  cards?: number;
+}
+
+export class AskFromDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The channel the member had open.',
+  })
+  @IsOptional()
+  @IsUUID()
+  channel_id?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The event the member had open.',
+  })
+  @IsOptional()
+  @IsUUID()
+  event_id?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The task the member had open.',
+  })
+  @IsOptional()
+  @IsUUID()
+  task_id?: string;
+}
+
+export class AskRequestDto {
+  @ApiProperty({
+    description: 'The question, in the member’s own words.',
+    example: 'What do the bylaws say about quorum?',
+    maxLength: ASK_QUESTION_MAX_LENGTH,
+  })
+  @Trim()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(ASK_QUESTION_MAX_LENGTH)
+  question: string;
+
+  @ApiPropertyOptional({
+    description:
+      'True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  saved_notice_shown?: boolean;
+
+  @ApiPropertyOptional({
+    type: [AskHistoryTurnDto],
+    maxItems: ASK_HISTORY_MAX_TURNS,
+    description:
+      'The conversation before this question, oldest first, so a follow-up is understood. The server keeps nothing between questions; the client holds the conversation and sends it.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(ASK_HISTORY_MAX_TURNS)
+  // An array is an object to the nested check, and one inside this list
+  // would pass with no question or answer on it.
+  @IsObject({ each: true })
+  @ValidateNested({ each: true })
+  @Type(() => AskHistoryTurnDto)
+  history?: AskHistoryTurnDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  actions?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'True when the client draws the cards an answer comes with (`answer.proposals` on `done`). Read only with `actions`, by a server that answers through the tool loop: a turn can then be an answer with cards under it, or up to five cards. Without it a turn comes with at most one card, sent as a `proposal` event in place of the answer.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  answer_cards?: boolean;
+
+  @ApiPropertyOptional({
+    enum: ASK_DOORS,
+    description:
+      'Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.',
+  })
+  @IsOptional()
+  @IsIn(ASK_DOORS)
+  door?: AskDoor;
+
+  @ApiPropertyOptional({
+    type: AskFromDto,
+    nullable: true,
+    description:
+      'What the member had open when they asked, so "this channel" or "this event" means something. Each id is looked up as the caller, and one they cannot open is dropped. Accepted from any client; read only by a server that answers through the tool loop, and not yet by that one.',
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AskFromDto)
+  from?: AskFromDto | null;
+
+  @ApiPropertyOptional({
+    enum: ASK_EFFORTS,
+    description:
+      'How hard to work on the question: `default`, or `more` when the member asked Frapp to think harder. Accepted from any client; not read yet.',
+  })
+  @IsOptional()
+  @IsIn(ASK_EFFORTS)
+  effort?: AskEffort;
+}
+
+export class AskDiagnosticsDto {
+  @ApiProperty({
+    description:
+      'Whether this chapter is the one the beta diagnostics window may be turned on for.',
+  })
+  offered: boolean;
+
+  @ApiProperty({
+    description:
+      'Whether the caller may turn it on or off: the chapter’s president.',
+  })
+  can_change: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the open window ends, or null when nothing is being kept.',
+  })
+  ends_at: string | null;
+}
+
+export class AskStatusDto {
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'While the beta diagnostics window is on for this chapter: questions and answers in Ask are kept until this time, and the client must say so before a question is sent. Null when nothing is kept.',
+  })
+  saved_until: string | null;
+
+  @ApiProperty({ type: AskDiagnosticsDto })
+  diagnostics: AskDiagnosticsDto;
+}
+
+export class AskSuggestionDto {
+  @ApiProperty({
+    description:
+      'What the suggestion is about. A client shows the text and does not need to know every kind.',
+    example: 'event',
+  })
+  kind: string;
+
+  @ApiProperty({
+    description: 'The words to show, and to send when the member taps it.',
+    example: 'When and where is Chapter meeting on Sunday?',
+  })
+  text: string;
+
+  @ApiProperty({
+    description:
+      'False for a question: send it with `actions` false and mark its turn `suggested` in later history. True for the one request, which holds nothing from a record but weekday names and is sent like words the member typed.',
+  })
+  request: boolean;
+}
+
+export class AskSuggestionsDto {
+  @ApiProperty({
+    type: [AskSuggestionDto],
+    description:
+      'At most three questions, then at most one request. Empty when the member’s account holds nothing to ask about.',
+  })
+  suggestions: AskSuggestionDto[];
+}
+
+export class AskDictationRequestDto {
+  @ApiProperty({
+    description:
+      'What the phone’s speech recogniser heard, as it heard it. Treated as words to tidy, never as instructions.',
+    example: 'um so when is the uh chapter meeting thursday no friday',
+    maxLength: ASK_DICTATION_MAX_LENGTH,
+  })
+  @Trim()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(ASK_DICTATION_MAX_LENGTH)
+  text: string;
+}
+
+export class AskDictationResponseDto {
+  @ApiProperty({
+    description:
+      'The words tidied: fillers and false starts out, the last version of a self-correction kept, punctuation in. The words as sent, trimmed, when they could not be cleaned up.',
+    example: 'When is the chapter meeting Friday?',
+  })
+  text: string;
+}

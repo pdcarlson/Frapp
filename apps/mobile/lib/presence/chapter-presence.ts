@@ -30,8 +30,8 @@
  *   web. Nothing is published until that status is known.
  *
  * The runtime is a hook, mounted once by `components/app-runtime.tsx` above
- * the auth gate; screens read the result through `useChapterPresence()` in
- * `./presence-store.ts`, which costs a store read, not a channel.
+ * the auth gate; screens read one member at a time through `usePresenceOf()`
+ * in `./presence-store.ts`, which costs a store read, not a channel.
  */
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
@@ -130,7 +130,7 @@ const attach: PresenceAttach = (topic, configure, options) => {
   );
 };
 
-export const phoneActivity: PresenceActivitySource = {
+const phoneActivity: PresenceActivitySource = {
   latest: () => (isForeground() ? Date.now() : null),
   subscribe(onActivity) {
     const interval = setInterval(() => {

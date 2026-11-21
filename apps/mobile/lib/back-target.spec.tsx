@@ -99,7 +99,7 @@ describe("useScreenBelow", () => {
     act(() => {
       create(element);
     });
-    expect(seen.below).toMatchObject({ name: "events", title: "Events" });
+    expect(seen.below).toMatchObject({ name: "events", title: "Calendar" });
     seen.below!.goBack();
     expect(navigation.goBack).toHaveBeenCalledTimes(1);
   });

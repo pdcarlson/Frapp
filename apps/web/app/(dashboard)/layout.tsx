@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { AskHost } from "@/components/ask/ask-host";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { ChapterPresenceProvider } from "@/lib/providers/chapter-presence-provider";
 import {
@@ -7,9 +8,11 @@ import {
 } from "@/components/layout/nav-collapse";
 import {
   CHAT_OPEN_COOKIE,
-  CHAT_SPLIT_COOKIE,
+  CHAT_VIEW_COOKIE,
+  CHAT_WIDTH_COOKIE,
   parseChatOpen,
-  parseToolShare,
+  parseChatView,
+  parseChatWidth,
 } from "@/components/layout/shell-prefs";
 import {
   CHAT_MEMBERS_HIDDEN_COOKIE,
@@ -33,9 +36,10 @@ export default async function DashboardLayout({
     cookieStore.get(NAV_COLLAPSED_COOKIE)?.value,
   );
   // The same for the chat panel the shell hosts (#3779): open or closed, the
-  // divider's position, and its member column.
+  // side panel's width beside a tool (#5575), which list it shows (#3774), and its member column.
   const chatOpen = parseChatOpen(cookieStore.get(CHAT_OPEN_COOKIE)?.value);
-  const toolShare = parseToolShare(cookieStore.get(CHAT_SPLIT_COOKIE)?.value);
+  const chatView = parseChatView(cookieStore.get(CHAT_VIEW_COOKIE)?.value);
+  const chatWidth = parseChatWidth(cookieStore.get(CHAT_WIDTH_COOKIE)?.value);
   const membersHidden = parseMembersHidden(
     cookieStore.get(CHAT_MEMBERS_HIDDEN_COOKIE)?.value,
   );
@@ -62,14 +66,22 @@ export default async function DashboardLayout({
         own name in chat) is below.
       */}
       <ChapterAccentStyle paint={accentPaint} />
-      <DashboardShell
-        defaultNavCollapsed={navCollapsed}
-        defaultChatOpen={chatOpen}
-        defaultToolShare={toolShare}
-        defaultMembersHidden={membersHidden}
-      >
-        {children}
-      </DashboardShell>
+      {/*
+        Ask Frapp's conversation is owned out here, above the shell, so it is
+        the same thread in every channel and is still there after a tool page
+        covered the chat (`components/ask/ask-host.tsx`).
+      */}
+      <AskHost>
+        <DashboardShell
+          defaultNavCollapsed={navCollapsed}
+          defaultChatOpen={chatOpen}
+          defaultChatView={chatView}
+          defaultChatWidth={chatWidth}
+          defaultMembersHidden={membersHidden}
+        >
+          {children}
+        </DashboardShell>
+      </AskHost>
     </ChapterPresenceProvider>
   );
 }

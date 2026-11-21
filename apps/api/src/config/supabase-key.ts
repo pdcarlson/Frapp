@@ -1,3 +1,5 @@
+import { readUnverifiedJwtPayload } from '#domain/utils/jwt-segment';
+
 /**
  * What kind of Supabase API key a string is, read from its shape alone.
  *
@@ -25,20 +27,7 @@ export function classifySupabaseKey(raw: string): SupabaseKeyKind {
   const value = raw.trim();
   if (value.startsWith('sb_secret_')) return 'secret';
   if (value.startsWith('sb_publishable_')) return 'publishable';
-  const segments = value.split('.');
-  if (segments.length !== 3) return 'unrecognized';
-  let role: unknown;
-  try {
-    const claims: unknown = JSON.parse(
-      Buffer.from(segments[1], 'base64url').toString('utf8'),
-    );
-    role =
-      claims && typeof claims === 'object'
-        ? (claims as { role?: unknown }).role
-        : undefined;
-  } catch {
-    return 'unrecognized';
-  }
+  const role = readUnverifiedJwtPayload(value)?.role;
   if (role === 'service_role') return 'service_role_jwt';
   return typeof role === 'string' ? 'client_jwt' : 'unrecognized';
 }

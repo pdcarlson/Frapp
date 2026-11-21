@@ -159,22 +159,37 @@ const oklch = (hex: string) => {
  * on the darker surfaces and left it; `#1F4E79` and `#800000` joined, because
  * on the darker `--background` the generator stops swapping in its own step 9
  * for them and paints the dark seed itself.
+ *
+ * The 2026-11-12 surface ladder (#3826, engine version 3) moved it again. Its
+ * `--popover` is lighter (`#313131`), so 3:1 there asks more of every fill:
+ * `#003087` is back in, and `#4B2E2E` joins for its hover alone (2.98:1). On
+ * the darker `#050505` floor the generator paints `#4B0082` and `#4B1A7E`
+ * themselves rather than its own step 9. Every lifted fill lands at
+ * 3.54–3.60:1 on `--popover`, every hover at 3.00–3.04:1, and every label is
+ * black.
+ *
+ * The 2026-11-19 violet ladder (engine version 4) moved it once more. Its
+ * `--popover` is darker (`#2A2830`), so `#4B2E2E` left and every other lift
+ * lands a little darker; on the `#0B0A0D` floor the generator swaps in its own
+ * step 9 for `#003087`, `#4B0082` and `#4B1A7E` before the lift. Every label
+ * is still black.
  */
 const LIFTED_FILLS: Record<
   string,
   { before: string; after: string; hover: string }
 > = {
   "#000000": { before: "#6E6E6E", after: "#828282", hover: "#767676" },
+  "#003087": { before: "#1C6CFE", after: "#2D7BFF", hover: "#1E6DF0" },
   "#006400": { before: "#006400", after: "#41943C", hover: "#33872E" },
   "#1F4E79": { before: "#1F4E79", after: "#5585B3", hover: "#4978A5" },
   "#472B62": { before: "#8758B4", after: "#9B6CCA", hover: "#8E5FBC" },
-  "#4B0082": { before: "#901FED", after: "#A13BFF", hover: "#9427F0" },
+  "#4B0082": { before: "#901FED", after: "#AD51FF", hover: "#A042F1" },
   "#4B1A7E": { before: "#8939DE", after: "#A358FC", hover: "#974AEE" },
   "#800000": { before: "#800000", after: "#D25B4C", hover: "#C44E40" },
   "#8B0000": { before: "#8B0000", after: "#D75748", hover: "#C84A3C" },
   "#8B4513": { before: "#8B4513", after: "#B96F41", hover: "#AB6234" },
-  "#BF0A30": { before: "#BF0A30", after: "#D83144", hover: "#B54046" },
-  "#CC0000": { before: "#CC0000", after: "#E12B1F", hover: "#D11109" },
+  "#BF0A30": { before: "#BF0A30", after: "#E94351", hover: "#DA3345" },
+  "#CC0000": { before: "#CC0000", after: "#EF3B2D", hover: "#E0291D" },
 };
 
 describe("deriveSignetPalette", () => {
@@ -299,9 +314,10 @@ describe("deriveSignetPalette", () => {
           6,
         );
       }
-      // And a hover under the floor fails on its own, beside a fill that
-      // clears: black's unlifted scale (`#6E6E6E` / `#616161`), the case #2586
-      // added. Its hover clears 3:1 on the two darkest steps only.
+      // And a scale fails partly, step by step: black's unlifted scale
+      // (`#6E6E6E` / `#616161`), the case #2586 added for its hover. On the
+      // 2026-11-19 ladder its fill clears every step but `--popover`, and its
+      // hover only the floor.
       const navy = unlifted("#000000");
       const navyChecks = signetFillChecks({
         "--signet-accent-primary": navy.fill,
@@ -312,6 +328,8 @@ describe("deriveSignetPalette", () => {
           .filter((check) => !check.passes)
           .map((check) => `${check.role} ${check.against}`),
       ).toEqual([
+        "--signet-accent-primary --popover",
+        "--signet-accent-hover --surface-1",
         "--signet-accent-hover --card",
         "--signet-accent-hover --popover",
       ]);
@@ -422,8 +440,8 @@ describe("deriveSignetPalette", () => {
     });
 
     it("lifts a crimson chapter to a light brick red, the worked example", () => {
-      // #8B0000 painted 1.50:1 on `--popover` (1.87:1 on the background), and
-      // its hover `#A4130C` 1.91:1. It is the largest shift in the corpus.
+      // #8B0000 paints 1.30:1 on `--popover` unlifted, and its hover `#A4130C`
+      // 1.66:1. It is the largest shift in the corpus.
       const { palette, resolvedSeed } = deriveSignetPalette("#8B0000");
       expect(resolvedSeed).toBe("#8B0000");
       expect(unliftedFill("#8B0000")).toBe("#8B0000");
@@ -617,6 +635,8 @@ describe("deriveSignetPalette", () => {
 const ENGINE_FINGERPRINTS: Readonly<Record<number, string>> = {
   1: "7a88bfcb9c0c79372b194d0ea6136042f25e115990ffd41b7067f17a020d7f4e",
   2: "93b7e168eb5148ea62bf538a47ef22bb90dda9986347a90ae7967a59bb519d58",
+  3: "89e1d6ea820edc21017c36d83fd2545ee22a1014426fc0f515d09766d7c05abb",
+  4: "9d0cef43e2c11ded06d022c5b6004871c1e912a5aed25f332483ce4e66ccd411",
 };
 
 /**

@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import {
   BOOT_CHECK_BUILD,
   BOOT_CHECK_SOURCE,
+  CLOUD_RUN_PLATFORM,
   OWN_INPUTS,
   checkDeployConfig,
   checkMinimumVersions,
@@ -210,7 +211,20 @@ describe("check-deploy-config: what counts as injected, and redaction", () => {
       config: { B_NAME: "value-b", A_NAME: "value-a" },
       childEnv: CHILD_ENV,
     });
-    assert.match(result.message, /KEYS A_NAME,B_NAME$/);
+    assert.match(result.message, /KEYS A_NAME,B_NAME,K_SERVICE$/);
+  });
+
+  it("checks as Cloud Run, where the API boots, so a key-less service account passes (#5542)", () => {
+    const cloudRunOnly =
+      "exports.validateEnv = (c) => { if (c.GOOGLE_DRIVE_SERVICE_ACCOUNT && !c.K_SERVICE) throw new Error('Only Cloud Run signs in without a key file.'); };";
+    const config = { ...STORE, GOOGLE_DRIVE_SERVICE_ACCOUNT: "drive@nonprod.iam.gserviceaccount.com" };
+    const onCloudRun = runBootCheck({ root: tree({ boot: cloudRunOnly }), config, childEnv: CHILD_ENV });
+    assert.equal(onCloudRun.status, "ok", onCloudRun.message);
+    // Counted and redacted as Infisical's names only: the platform's are not a secret.
+    assert.match(onCloudRun.message, /accepts the 9 names Infisical injected/);
+    const elsewhere = runBootCheck({ root: tree({ boot: cloudRunOnly }), config, childEnv: CHILD_ENV, platform: {} });
+    assert.equal(elsewhere.status, "failed");
+    assert.equal(CLOUD_RUN_PLATFORM.K_SERVICE.length > 0, true);
   });
 
   it("redacts longest first, and leaves values too short to mean anything", () => {
@@ -536,7 +550,7 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
     const build = step(BUILD);
     // Skipped where the check would skip: no source, nothing to build.
     assert.equal(build.if, `\${{ inputs.scope != 'migrations-only' && hashFiles('${BOOT_CHECK_SOURCE}') != '' }}`);
-    assert.match(build.body, /run: npx --no-install turbo run build --filter=api$/m);
+    assert.match(build.body, /run: (env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN )?npx --no-install turbo run build --filter=api$/m);
     assert.doesNotMatch(build.body, /secrets\./);
     assert.ok(at("Install dependencies") < at(BUILD), "it builds before the install");
     assert.ok(at(BUILD) < at("Move the workspace to the trusted ref"), "it builds in the trusted window");
@@ -551,7 +565,8 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
       at("Run migrations (dry-run)"),
       at("Run migrations (apply)"),
       at("Deploy the Edge Functions (staging)"),
-      at("Deploy the commit to Render (staging)"),
+      at("Build the API image"),
+      at("Deploy the API to Cloud Run"),
     );
     for (const name of CHECKS) {
       const check = step(name);
@@ -596,7 +611,7 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
     assert.equal(production.env.get("DEPLOYS_FUNCTIONS"), "${{ inputs.scope != 'migrations-only' }}");
     assert.equal(production.env.get("VERIFIES_API"), "true");
     // The steps those flags stand in for: the same scope gate, and a verify on every real run.
-    assert.match(step("Deploy the commit to Render (production)").if, /inputs\.scope != 'migrations-only'/);
+    assert.match(step("Deploy the API to Cloud Run").if, /inputs\.environment == 'production' && !inputs\.dry_run && inputs\.scope != 'migrations-only'/);
     assert.match(step("Deploy the Edge Functions (production)").if, /inputs\.scope != 'migrations-only'/);
     assert.equal(step("Verify production serves the commit").if, "${{ inputs.environment == 'production' && !inputs.dry_run }}");
   });
@@ -605,7 +620,7 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
     const staging = step(CHECKS[0]);
     assert.equal(staging.if, "inputs.environment == 'staging'");
     assert.equal(staging.env.get("CHECK_API_BOOT"), "${{ steps.plan.outputs.deploy }}");
-    assert.equal(step("Deploy the commit to Render (staging)").if, "steps.plan.outputs.deploy == 'true'");
+    assert.match(step("Deploy the API to Cloud Run").if, /inputs\.environment == 'staging' && steps\.plan\.outputs\.deploy == 'true'/);
     assert.equal(staging.env.get("DEPLOYS_FUNCTIONS"), "${{ steps.plan.outputs.plan != 'stale' }}");
     assert.match(step("Deploy the Edge Functions (staging)").if, /steps\.plan\.outputs\.plan != 'stale'/);
     assert.equal(staging.env.get("VERIFIES_API"), "${{ steps.plan.outputs.verify_sha != '' }}");

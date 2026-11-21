@@ -26,19 +26,34 @@ export function isPseudonymHex(value: unknown): value is string {
   return typeof value === "string" && PSEUDONYM_HEX_RE.test(value);
 }
 
-/** Request-correlation id (`req_<uuid>` or an inbound honor). Not a trace id. */
+/**
+ * Request-correlation id (`req_<uuid>` or an inbound honor). Not a trace id.
+ * @public spec/behavior/observability.md keeps the correlation types in this barrel.
+ */
 export type RequestId = string;
 
-/** Sentry / OpenTelemetry trace id. Not `x-request-id`. */
+/**
+ * Sentry / OpenTelemetry trace id. Not `x-request-id`.
+ * @public spec/behavior/observability.md keeps the correlation types in this barrel.
+ */
 export type SentryTraceId = string;
 
-/** Sentry error event id. Optional PostHog timeline marker, never a user id. */
+/**
+ * Sentry error event id. Optional PostHog timeline marker, never a user id.
+ * @public spec/behavior/observability.md keeps the correlation types in this barrel.
+ */
 export type SentryEventId = string;
 
-/** PostHog `distinct_id`: `hmac_sha256(salt, user_id)`. */
+/**
+ * PostHog `distinct_id`: `hmac_sha256(salt, user_id)`.
+ * @public spec/behavior/observability.md keeps the correlation types in this barrel.
+ */
 export type PostHogDistinctId = string;
 
-/** PostHog chapter group: `hmac_sha256(salt, chapter_id)`. */
+/**
+ * PostHog chapter group: `hmac_sha256(salt, chapter_id)`.
+ * @public spec/behavior/observability.md keeps the correlation types in this barrel.
+ */
 export type PostHogChapterGroupId = string;
 
 /**

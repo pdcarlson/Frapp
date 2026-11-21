@@ -18,6 +18,8 @@ import {
   ApiOkResponse,
 } from '@nestjs/swagger';
 import { MemberService } from '../../application/services/member.service';
+import { InviteService } from '../../application/services/invite.service';
+import { MemberPhoneReachService } from '../../application/services/member-phone-reach.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -29,11 +31,14 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import {
+  CorrectMemberProfileDto,
   DismissOpsNudgeDto,
   UpdateMemberRolesDto,
   UpdateOnboardingDto,
 } from '../dtos/member.dto';
 import {
+  MemberBirthdayDto,
+  MemberPhoneReachListDto,
   MemberProfileDto,
   MemberRosterEntryDto,
 } from '../dtos/member-profile.dto';
@@ -50,7 +55,11 @@ import {
 @FreeTier()
 @Controller('members')
 export class MemberController {
-  constructor(private readonly memberService: MemberService) {}
+  constructor(
+    private readonly memberService: MemberService,
+    private readonly phoneReachService: MemberPhoneReachService,
+    private readonly inviteService: InviteService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List chapter members' })
@@ -93,6 +102,33 @@ export class MemberController {
     return this.memberService.findRosterByChapter(chapterId);
   }
 
+  // MUST stay above `@Get(':id')`, like `search` and `roster` (#990).
+  @Get('birthdays')
+  @ApiOperation({
+    summary: 'Birthdays members share with the chapter',
+    description:
+      'Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.',
+  })
+  @ApiOkResponse({ type: MemberBirthdayDto, isArray: true })
+  async birthdays(@CurrentChapterId() chapterId: string) {
+    return this.memberService.findBirthdaysByChapter(chapterId);
+  }
+
+  // MUST stay above `@Get(':id')`, like `search` and `roster` (#990).
+  @Get('phone-reach')
+  @ApiOperation({
+    summary: "Whether Frapp's notifications reach each member's phone",
+    description:
+      'Per member: notifications on, off, not reported yet, or web only (no phone signed in), with the platform and last-opened date. Officers who can invite members or manage roles get every member; anyone else gets only themselves.',
+  })
+  @ApiOkResponse({ type: MemberPhoneReachListDto })
+  async phoneReach(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') viewerUserId: string,
+  ) {
+    return this.phoneReachService.findForViewer(chapterId, viewerUserId);
+  }
+
   // Two segments, so `:id` never swallows it. Chat knows a person by their
   // `users.id` (a message's `sender_id`, a mention), not by the membership row,
   // and the roster deliberately carries no membership id; this lets a chat tap
@@ -118,7 +154,7 @@ export class MemberController {
   async getOne(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') viewerUserId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.memberService.findProfileById(id, chapterId, viewerUserId);
   }
@@ -128,7 +164,8 @@ export class MemberController {
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async updateRoles(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateMemberRolesDto,
   ) {
     // A non-empty list can only come from a page that read the member before
@@ -140,7 +177,34 @@ export class MemberController {
         "This member's roles changed since the page loaded. Reload and try again.",
       );
     }
-    return this.memberService.updateRoles(id, dto.role_ids, chapterId);
+    return this.memberService.updateRoles(id, dto.role_ids, chapterId, userId);
+  }
+
+  /**
+   * An officer fixes another member's name or graduation year (#4367). The
+   * guard is `roles:manage`, the officers who already set a member's roles
+   * and pledge class; `MemberService.correctProfile` narrows it to members
+   * ranked below the caller, never the caller, and only a member of this
+   * chapter alone, since both fields live on the shared `users` row.
+   */
+  @Patch(':id/profile')
+  @ApiOperation({
+    summary: "Fix a member's name or graduation year (officers)",
+    description:
+      "Needs roles:manage. Refused (403) for your own profile (use PATCH /v1/users/me), for a member ranked at or above you, and for a member who is also in another chapter. Changes are recorded in the chapter audit log as member_profile_corrected. Answers with the member's profile.",
+  })
+  @ApiOkResponse({ type: MemberProfileDto })
+  @RequirePermissions(SystemPermissions.ROLES_MANAGE)
+  async correctProfile(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectMemberProfileDto,
+  ) {
+    return this.memberService.correctProfile(id, chapterId, userId, {
+      display_name: dto.display_name,
+      graduation_year: dto.graduation_year,
+    });
   }
 
   @Patch('me/onboarding')
@@ -154,10 +218,15 @@ export class MemberController {
     @CurrentMember() member: { id: string },
     @Body() dto: UpdateOnboardingDto,
   ) {
-    return this.memberService.updateOnboarding(
-      member.id,
-      dto.has_completed_onboarding,
-    );
+    const { member: updated, firstFinish } =
+      await this.memberService.updateOnboarding(
+        member.id,
+        dto.has_completed_onboarding,
+      );
+    // The member has just given their name (web /welcome, phone s03), so the
+    // chapter hears who joined now rather than at redeem (#5627).
+    if (firstFinish) await this.inviteService.announceJoin(updated);
+    return updated;
   }
 
   /**
@@ -196,7 +265,7 @@ export class MemberController {
   @RequirePermissions(SystemPermissions.MEMBERS_REMOVE)
   async remove(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
   ) {
     await this.memberService.remove(id, chapterId, userId);

@@ -1,10 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type {
-  FrappSupabaseClient,
-  TablesInsert,
-  TablesUpdate,
-} from '../database.types';
+import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
 import {
   ServiceEntry,
@@ -12,6 +8,7 @@ import {
   ServiceLeaderboardRow,
 } from '#domain/entities/service-entry.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
 @Injectable()
 export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
@@ -70,6 +67,15 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     return data ?? [];
   }
 
+  /**
+   * Insert, and translate a hit on `service_entries_chapter_proof_path_key`
+   * into "here is the entry that already holds this proof file". The insert
+   * names no id, and that index is the table's only other unique key, so a
+   * `23505` here means the path is taken. That happens when two creates for
+   * one receipt (a resend after a lost response) race past the service's own
+   * lookup. A null re-read means that entry was deleted between the failed
+   * insert and the read, and the original error is the honest answer.
+   */
   async create(data: TablesInsert<'service_entries'>): Promise<ServiceEntry> {
     const { data: created, error } = await this.supabase
       .from('service_entries')
@@ -77,25 +83,72 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .select()
       .single();
 
-    if (error) throw new SupabaseQueryError(error);
+    if (error) {
+      if (
+        error.code === PG_UNIQUE_VIOLATION &&
+        data.proof_path &&
+        data.chapter_id
+      ) {
+        const holder = await this.findByProofPath(
+          data.chapter_id,
+          data.proof_path,
+        );
+        if (holder) return holder;
+      }
+      throw new SupabaseQueryError(error);
+    }
     return created;
   }
 
-  async update(
+  async findByProofPath(
+    chapterId: string,
+    proofPath: string,
+  ): Promise<ServiceEntry | null> {
+    const { data, error } = await this.supabase
+      .from('service_entries')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('proof_path', proofPath)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async countByProofPath(
+    chapterId: string,
+    proofPath: string,
+  ): Promise<number> {
+    const { count, error } = await this.supabase
+      .from('service_entries')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq('proof_path', proofPath);
+    if (error) throw new SupabaseQueryError(error);
+    return count ?? 0;
+  }
+
+  async rejectIfPending(
     id: string,
     chapterId: string,
-    data: TablesUpdate<'service_entries'>,
-  ): Promise<ServiceEntry> {
-    const { data: updated, error } = await this.supabase
+    reviewerId: string,
+    reviewComment: string | null,
+  ): Promise<ServiceEntry | null> {
+    const { data, error } = await this.supabase
       .from('service_entries')
-      .update(data)
+      .update({
+        status: 'REJECTED',
+        reviewed_by: reviewerId,
+        review_comment: reviewComment,
+      })
       .eq('id', id)
       .eq('chapter_id', chapterId)
+      .eq('status', 'PENDING')
       .select()
-      .single();
-
+      .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
-    return updated;
+    return data;
   }
 
   async approveAtomic(
@@ -117,13 +170,19 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     return rows.length > 0 ? rows[0] : null;
   }
 
-  async delete(id: string, chapterId: string): Promise<void> {
-    const { error } = await this.supabase
+  async deleteIfPending(
+    id: string,
+    chapterId: string,
+  ): Promise<ServiceEntry | null> {
+    const { data, error } = await this.supabase
       .from('service_entries')
       .delete()
       .eq('id', id)
-      .eq('chapter_id', chapterId);
-
+      .eq('chapter_id', chapterId)
+      .eq('status', 'PENDING')
+      .select()
+      .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
+    return data;
   }
 }

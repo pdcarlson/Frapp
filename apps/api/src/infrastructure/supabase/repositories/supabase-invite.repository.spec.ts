@@ -111,6 +111,81 @@ describe('SupabaseInviteRepository — tenant scope', () => {
     expect(created.every((i) => i.chapter_id === CHAPTER_B)).toBe(true);
   });
 
+  describe('emailed invites under the daily ceilings', () => {
+    it('createEmailed hands the batch, the chapter and the limits to the RPC', async () => {
+      const harness = createTenantHarness({
+        tables: seed(),
+        collisionExempt: { invites: ['token'] },
+        rpc: {
+          create_emailed_invites: {
+            data: {
+              outcome: 'ok',
+              invites: [{ id: 'x', chapter_id: CHAPTER_B }],
+            },
+          },
+        },
+      });
+      const invites = [
+        {
+          token: 'tb-new',
+          role: 'MEMBER',
+          expires_at: '2099-01-01T00:00:00.000Z',
+          email: 'x@example.com',
+        },
+      ];
+      const result = await harness.expectTenantScoped(CHAPTER_B, () =>
+        new SupabaseInviteRepository(harness.client).createEmailed({
+          chapterId: CHAPTER_B,
+          createdBy: USER_SHARED,
+          invites,
+          since: new Date('2026-11-16T12:00:00.000Z'),
+          chapterLimit: 300,
+          inviterLimit: 300,
+        }),
+      );
+      expect(result.outcome).toBe('ok');
+      expect(harness.rpcCalls[0]).toEqual({
+        fn: 'create_emailed_invites',
+        args: {
+          p_chapter_id: CHAPTER_B,
+          p_created_by: USER_SHARED,
+          p_invites: invites,
+          p_since: '2026-11-16T12:00:00.000Z',
+          p_chapter_limit: 300,
+          p_inviter_limit: 300,
+        },
+      });
+    });
+
+    it('markEmailFailed marks only the listed invites of the chapter', async () => {
+      const harness = createTenantHarness({
+        tables: seed(),
+        collisionExempt: { invites: ['token'] },
+      });
+      const repo = new SupabaseInviteRepository(harness.client);
+      await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.markEmailFailed(CHAPTER_B, [INVITE_B, INVITE_A]),
+      );
+      const failedAt = (id: string) =>
+        harness.rows('invites').find((r) => r.id === id)?.email_failed_at;
+      expect(failedAt(INVITE_B)).toEqual(expect.any(String));
+      // Listed, but another chapter's: the chapter filter leaves it.
+      expect(failedAt(INVITE_A)).toBeUndefined();
+    });
+
+    it('markEmailFailed writes nothing for an empty list', async () => {
+      const harness = createTenantHarness({
+        tables: seed(),
+        collisionExempt: { invites: ['token'] },
+      });
+      await new SupabaseInviteRepository(harness.client).markEmailFailed(
+        CHAPTER_B,
+        [],
+      );
+      expect(harness.ops).toHaveLength(0);
+    });
+  });
+
   describe('deliberately unscoped surfaces', () => {
     it('findByToken resolves across chapters — the token is the boundary', async () => {
       // `POST /invites/redeem` runs without `ChapterGuard` on purpose: the

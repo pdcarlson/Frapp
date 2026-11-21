@@ -17,13 +17,11 @@ export const PG_UNIQUE_VIOLATION = '23505';
 export const PG_FOREIGN_KEY_VIOLATION = '23503';
 
 /**
- * Whether an unknown throwable is a Postgres unique violation.
- *
- * Use this where the caught value is untyped — a rejected repository promise,
- * or a `catch` binding. Where the error has already been narrowed to a shape
- * with a `code` field, compare against {@link PG_UNIQUE_VIOLATION} directly
- * rather than widening it back to `unknown` to call this.
+ * Postgres `check_violation` (SQLSTATE 23514): a check constraint, or a
+ * function that raises it on purpose (`reorder_role_tiers` for a stale order).
  */
+export const PG_CHECK_VIOLATION = '23514';
+
 /**
  * `no_data_found`. Postgres raises it for a strict `select into` that matched
  * nothing; `assign_member_pledge_classes` raises it on purpose when a listed
@@ -31,6 +29,38 @@ export const PG_FOREIGN_KEY_VIOLATION = '23503';
  */
 export const PG_NO_DATA_FOUND = 'P0002';
 
+/** `invalid_parameter_value`: a function refused an argument it was given. */
+export const PG_INVALID_PARAMETER_VALUE = '22023';
+
+/**
+ * Frapp's own SQLSTATE for the daily chapter-start ceiling: the `chapters`
+ * trigger raises it for an account past the ceiling, counted under a lock
+ * (`20261117172019_daily_limits_counted_under_lock.sql`). The API answers it
+ * 429.
+ */
+export const PG_CHAPTER_START_LIMIT = 'FR429';
+
+/**
+ * `insufficient_privilege` (SQLSTATE 42501): a function refused the caller on
+ * purpose, as `release_open_task` refuses anyone but the task's assignee.
+ */
+export const PG_INSUFFICIENT_PRIVILEGE = '42501';
+
+/**
+ * Frapp's own SQLSTATE for a task up for grabs that is no longer open, or a
+ * claimed task past giving back (`claim_open_task`, `release_open_task` in
+ * `20261118043407_task_audiences_and_open_tasks.sql`). The API answers 409.
+ */
+export const PG_OPEN_TASK_CONFLICT = 'FR409';
+
+/**
+ * Whether an unknown throwable is a Postgres unique violation.
+ *
+ * Use this where the caught value is untyped — a rejected repository promise,
+ * or a `catch` binding. Where the error has already been narrowed to a shape
+ * with a `code` field, compare against {@link PG_UNIQUE_VIOLATION} directly
+ * rather than widening it back to `unknown` to call this.
+ */
 export function isUniqueViolation(error: unknown): boolean {
   return (
     typeof error === 'object' &&

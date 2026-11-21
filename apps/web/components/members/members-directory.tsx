@@ -7,19 +7,27 @@ import {
   SearchGlyph,
 } from "@/components/members/directory-glyphs";
 import {
+  useGroups,
   useLeaderboard,
+  matchesRoleFilter,
+  NO_BASE_ROLE_FILTER,
+  NO_BASE_ROLE_LABEL,
   useMemberDisplayNames,
+  useMemberPhoneReach,
   useMemberSearch,
   useMembers,
+  useMyPermissions,
   usePledgeClasses,
   fraternalOrderComparator,
   usesFraternalOrder,
+  useRoleTiers,
   useRoles,
   useUpdateMemberRoles,
 } from "@repo/hooks";
 import type { MemberProfile } from "@repo/hooks";
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import { memberLabel } from "@repo/hooks/display-names";
-import { parseInstant } from "@repo/formatting";
+import { formatPoints, parseInstant } from "@repo/formatting";
 import { vocab } from "@repo/org-archetypes";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -46,10 +54,7 @@ import { anyReadUncached } from "@/components/shared/async-states";
   this family any more; it is the roster's own skeleton
   (`directory-skeleton.tsx`).
 */
-import {
-  NestedError,
-  NestedOffline,
-} from "@/components/shared/nested-states";
+import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import {
   dashboardCheckboxHitAreaClassName,
@@ -61,6 +66,13 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
+import {
+  anchorFor,
+  MemberPopout,
+  type MemberPopoutAnchor,
+} from "@/components/chat/member-popout";
+import { MemberGrid } from "@/components/members/member-grid";
+import { useListLayout } from "@/lib/list-layout";
 import { useNetwork } from "@/lib/providers/network-provider";
 import {
   AvatarPresenceDot,
@@ -71,6 +83,21 @@ import {
   presenceLabel,
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
+import {
+  can,
+  highestRankedRole,
+  isBaseRole,
+  tierPositionsOf,
+  directoryNoSearchMatches,
+  matchesPhoneReachFilter,
+  PHONE_REACH_FILTER_OPTIONS,
+  PHONE_REACH_LABEL,
+  phoneReachCountLineFor,
+  phoneReachStaleNote,
+  phoneReachStateLabel,
+  type PhoneReach,
+  type PhoneReachFilter,
+} from "@repo/validation";
 import { asArray, cn, initials } from "@/lib/utils";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import {
@@ -79,13 +106,6 @@ import {
 } from "@/components/members/directory-skeleton";
 
 const PAGE_SIZE = 25;
-
-type RoleOption = {
-  id: string;
-  name: string;
-  isPresident: boolean;
-  isAlumni: boolean;
-};
 
 type SortKey = "name" | "role" | "points" | "order";
 type SortDir = "asc" | "desc";
@@ -163,7 +183,7 @@ function displayNameOf(member: MemberProfile): string {
 function formatJoined(value: string): string | null {
   const parsed = parseInstant(value);
   return parsed
-    ? parsed.toLocaleDateString(undefined, { month: "short", year: "numeric" })
+    ? parsed.toLocaleDateString(undefined, { month: "long", year: "numeric" })
     : null;
 }
 
@@ -196,16 +216,33 @@ export function MembersDirectory() {
   const { isOffline } = useNetwork();
   // The roster's role-color resolution, so a row's initials match the color
   // that member's name takes in chat (#3860).
+  // The "Phone app" filter (whether Frapp's notifications reach a member's
+  // phone). Drawn only when the server serves the whole chapter's reach,
+  // which it does for officers who can invite members or manage roles.
+  const [phoneReachFilter, setPhoneReachFilter] =
+    useState<PhoneReachFilter | null>(null);
   const { avatarTintFor } = useMemberDisplayNames();
+  const { reach: phoneReach } = useMemberPhoneReach();
+  const showsPhoneReach = phoneReach?.scope === "chapter";
+  // A filter left set from before a role change that took the chapter view
+  // away reads as Any.
+  const effectivePhoneReachFilter = showsPhoneReach ? phoneReachFilter : null;
+  const phoneReachOfMember = (member: MemberProfile): PhoneReach | undefined =>
+    typeof member.user_id === "string"
+      ? phoneReach?.byUserId.get(member.user_id)
+      : undefined;
   const { toast } = useToast();
+  // List or Grid (#4175), picked in the Directory's tab row.
+  const [layout] = useListLayout("directory");
   const [query, setQuery] = useState("");
   // `null` is "any", the shape `FilterChip` speaks.
   const [roleFilter, setRoleFilter] = useState<string | null>(null);
   const [cohortFilter, setCohortFilter] = useState<string | null>(null);
   const [classFilter, setClassFilter] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<
-    "active" | "pending" | null
-  >(null);
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"active" | "pending" | null>(
+    null,
+  );
   const [sort, setSort] = useState<SortValue>(DEFAULT_SORT);
   const [page, setPage] = useState(1);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
@@ -215,6 +252,15 @@ export function MembersDirectory() {
   // member even once a role save moves them off this tab's list.
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  const [popoutOpen, setPopoutOpen] = useState(false);
+  const [popoutAnchor, setPopoutAnchor] = useState<MemberPopoutAnchor | null>(
+    null,
+  );
+  // A list row spans the Directory's width, so a card beside it has no room
+  // on either side and lands off the window's left edge (#5749); it opens
+  // below the row, as GitHub's and Linear's hover cards open under a name. A
+  // grid tile is narrow, so its card opens beside it.
+  const [popoutSide, setPopoutSide] = useState<"right" | "bottom">("bottom");
 
   const chapterWords = useChapterVocabulary();
   const trimmedQuery = query.trim();
@@ -255,35 +301,33 @@ export function MembersDirectory() {
       : rows.filter((member) => member.is_alumni !== true);
   }, [activeQuery.data, usingSearch]);
 
-  const roleOptions = useMemo<RoleOption[]>(() => {
-    return asArray<Record<string, unknown>>(rolesQuery.data).flatMap((role) => {
-      if (!role || typeof role !== "object") return [];
-      if (typeof role.id !== "string" || typeof role.name !== "string")
-        return [];
-      // The President role carries the wildcard (`*`) permission. `PATCH
-      // /members/:id/roles` rejects president changes (they go through the
-      // dedicated presidency-transfer flow), so flag it to keep it out of the
-      // bulk-assign dropdown below.
-      const permissions = Array.isArray(role.permissions)
-        ? role.permissions
-        : [];
-      const isPresident = role.is_system === true && permissions.includes("*");
-      // Read defensively, as the Discord import wizard reads it: `GET
-      // /v1/roles` returns the whole row, `system_key` included, but declares
-      // no response schema (#1049), so the SDK doesn't type it.
-      const isAlumni = role.system_key === "ALUMNI";
-      return [{ id: role.id, name: role.name, isPresident, isAlumni }];
-    });
-  }, [rolesQuery.data]);
+  const allRoles = useMemo(
+    () => parseChapterRoles(rolesQuery.data),
+    [rolesQuery.data],
+  );
+  // The Everyone role (#4191) is no filter, column or assignment.
+  const roleOptions = useMemo(
+    () => allRoles.filter((role) => !role.everyone),
+    [allRoles],
+  );
+  // The tiers rank the roles for a member's title; until they load (or for
+  // a reader they are closed to) the roles rank by their own order.
+  const tiersQuery = useRoleTiers();
+  const tierPositions = useMemo(
+    () => tierPositionsOf(tiersQuery.data ?? []),
+    [tiersQuery.data],
+  );
   const roleNameById = useMemo(
     () => new Map(roleOptions.map((role) => [role.id, role.name])),
     [roleOptions],
   );
-  // Bulk role assignment can't set the President role — the endpoint rejects it
-  // — so offering it would guarantee a failing action. It stays available in the
-  // filter dropdown (filtering by President is valid); only assignment excludes it.
+  // Bulk role assignment can't set a locked role (one holding `*`, President
+  // above all): `PATCH /members/:id/roles` refuses it, since it moves only
+  // through Transfer presidency, so offering it would guarantee a failing
+  // action. It stays in the filter dropdown (filtering by President is valid);
+  // only assignment excludes it.
   const assignableRoleOptions = useMemo(
-    () => roleOptions.filter((role) => !role.isPresident),
+    () => roleOptions.filter((role) => !role.locked),
     [roleOptions],
   );
   // The filters offer what the list on screen can hold (#2484). Outside a
@@ -293,19 +337,38 @@ export function MembersDirectory() {
   // is how a graduating class moves.
   const filterRoleOptions = useMemo(
     () =>
-      usingSearch ? roleOptions : roleOptions.filter((role) => !role.isAlumni),
+      usingSearch
+        ? roleOptions
+        : roleOptions.filter((role) => role.system_key !== "ALUMNI"),
     [roleOptions, usingSearch],
   );
   // A choice whose option has gone (Alumni picked during a search that has
   // since been cleared) reads as "any" rather than filtering on something the
   // chip no longer lists.
+  // Whoever can give roles also gets "No base role" first (#5802): the
+  // members holding none of New Member, Actives and Alumni, as the dashed
+  // chip on their profile says. Only in a chapter that has base roles.
+  const myPermissions = useMyPermissions();
+  const canGiveRoles = can("roles:manage", myPermissions.data?.permissions);
+  const offersNoBaseRole = canGiveRoles && allRoles.some(isBaseRole);
   const filterRoleChipOptions = useMemo(
-    () => filterRoleOptions.map((role) => ({ value: role.id, label: role.name })),
-    [filterRoleOptions],
+    () => [
+      ...(offersNoBaseRole
+        ? [{ value: NO_BASE_ROLE_FILTER, label: NO_BASE_ROLE_LABEL }]
+        : []),
+      ...filterRoleOptions.map((role) => ({
+        value: role.id,
+        label: role.name,
+      })),
+    ],
+    [filterRoleOptions, offersNoBaseRole],
   );
   const assignableRoleChipOptions = useMemo(
     () =>
-      assignableRoleOptions.map((role) => ({ value: role.id, label: role.name })),
+      assignableRoleOptions.map((role) => ({
+        value: role.id,
+        label: role.name,
+      })),
     [assignableRoleOptions],
   );
   // A picked role that has since been deleted reads as unpicked, so the chip
@@ -317,9 +380,30 @@ export function MembersDirectory() {
       : null;
   const effectiveRoleFilter =
     roleFilter !== null &&
-    filterRoleOptions.some((role) => role.id === roleFilter)
+    filterRoleChipOptions.some((option) => option.value === roleFilter)
       ? roleFilter
       : null;
+  // Beside Role (Paul, 2026-11-19): who is In house, on a committee, in a
+  // pledge class. Every group the chapter has with someone in it, its own
+  // first; a group deleted meanwhile reads as no filter.
+  const groupsQuery = useGroups();
+  const groupChipOptions = useMemo(
+    () =>
+      (groupsQuery.data ?? [])
+        .filter((group) => group.member_ids.length > 0)
+        .map((group) => ({ value: group.id, label: group.name })),
+    [groupsQuery.data],
+  );
+  // Only a group the chip still offers filters: one that has emptied (its
+  // last member taken out from their card) reads as unpicked, as a deleted
+  // role does for the Role chip.
+  const groupMemberIds = useMemo(() => {
+    const group = (groupsQuery.data ?? []).find((g) => g.id === groupFilter);
+    return group && group.member_ids.length > 0
+      ? new Set(group.member_ids)
+      : null;
+  }, [groupsQuery.data, groupFilter]);
+  const effectiveGroupFilter = groupMemberIds ? groupFilter : null;
 
   const pointsByUserId = useMemo(() => {
     const map = new Map<string, number>();
@@ -353,7 +437,11 @@ export function MembersDirectory() {
     return [...years].sort((a, b) => b - a);
   }, [membersQuery.data, usingSearch]);
   const cohortChipOptions = useMemo(
-    () => cohortOptions.map((year) => ({ value: String(year), label: String(year) })),
+    () =>
+      cohortOptions.map((year) => ({
+        value: String(year),
+        label: String(year),
+      })),
     [cohortOptions],
   );
   const effectiveCohortFilter =
@@ -374,7 +462,8 @@ export function MembersDirectory() {
     [pledgeClasses],
   );
   const classChipOptions = useMemo(
-    () => pledgeClasses.map((entry) => ({ value: entry.id, label: entry.name })),
+    () =>
+      pledgeClasses.map((entry) => ({ value: entry.id, label: entry.name })),
     [pledgeClasses],
   );
   const effectiveClassFilter =
@@ -417,17 +506,38 @@ export function MembersDirectory() {
   // `null`, not an em dash, for the same reason `formatJoined` returns one: an
   // absent role drops out of the `·`-joined meta line rather than rendering a
   // placeholder glyph.
+  // The member's title: their highest-ranked role (tier first, then the
+  // role's order in its tier), the same pick chat's member list makes. A
+  // member whose highest role is the Everyone role (#4191), which no list
+  // names, has none, so a floor or class role outside the tiers never stands
+  // in as a title. While the roles or tiers load, the first id stands in.
+  // Ranking waits for the tiers too, so a title never flips from a floor role
+  // to the office once they arrive; a failed tier read ranks without them.
+  const rankReady =
+    allRoles.length > 0 &&
+    (tiersQuery.data !== undefined || tiersQuery.isError);
   const primaryRoleName = (member: MemberProfile): string | null => {
-    const firstId = member.role_ids[0];
-    if (!firstId) return null;
-    return roleNameById.get(firstId) ?? firstId;
+    if (!rankReady) return member.role_ids[0] ?? null;
+    const held = new Set(member.role_ids);
+    const top = highestRankedRole(
+      allRoles.filter((role) => held.has(role.id)),
+      tierPositions,
+    );
+    if (!top || top.everyone) return null;
+    return top.name;
   };
 
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
+      if (!matchesRoleFilter(allRoles, member.role_ids, effectiveRoleFilter)) {
+        return false;
+      }
       if (
-        effectiveRoleFilter !== null &&
-        !member.role_ids.includes(effectiveRoleFilter)
+        groupMemberIds !== null &&
+        !(
+          typeof member.user_id === "string" &&
+          groupMemberIds.has(member.user_id)
+        )
       ) {
         return false;
       }
@@ -447,14 +557,27 @@ export function MembersDirectory() {
         return false;
       if (statusFilter === "pending" && member.has_completed_onboarding)
         return false;
+      if (
+        !matchesPhoneReachFilter(
+          phoneReachOfMember(member),
+          effectivePhoneReachFilter,
+        )
+      )
+        return false;
       return true;
     });
+    // `phoneReachOfMember` reads `phoneReach`, which is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     members,
+    allRoles,
     effectiveRoleFilter,
+    groupMemberIds,
     effectiveCohortFilter,
     effectiveClassFilter,
     statusFilter,
+    effectivePhoneReachFilter,
+    phoneReach,
   ]);
 
   const sortedMembers = useMemo(() => {
@@ -496,6 +619,9 @@ export function MembersDirectory() {
     sortDir,
     pointsByUserId,
     roleNameById,
+    allRoles,
+    tierPositions,
+    rankReady,
     pledgeClasses,
   ]);
 
@@ -521,9 +647,11 @@ export function MembersDirectory() {
   }, [
     trimmedQuery,
     effectiveRoleFilter,
+    effectiveGroupFilter,
     effectiveCohortFilter,
     effectiveClassFilter,
     statusFilter,
+    effectivePhoneReachFilter,
   ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -567,9 +695,65 @@ export function MembersDirectory() {
   const narrowed =
     usingSearch ||
     effectiveRoleFilter !== null ||
+    effectiveGroupFilter !== null ||
     effectiveCohortFilter !== null ||
     effectiveClassFilter !== null ||
-    statusFilter !== null;
+    statusFilter !== null ||
+    effectivePhoneReachFilter !== null;
+
+  /**
+   * What a member's row and tile both show, and the accessible name that
+   * restates all of it in a fixed order with the status last. An
+   * `aria-label` replaces the subtree's text as the name, so it must keep
+   * every fact on screen.
+   */
+  function factsOf(member: MemberProfile) {
+    const name = displayNameOf(member);
+    const roleName = primaryRoleName(member);
+    const joined = formatJoined(member.created_at);
+    const className = member.pledge_class_id
+      ? (classNameById.get(member.pledge_class_id) ?? null)
+      : null;
+    const points = pointsOf(member);
+    const status = presenceStatusOf(member);
+    const customLine = customLineOf(member);
+    // The member's reach, shown on the row only while the Phone app filter is
+    // set, so the everyday Directory stays as it was.
+    const reach =
+      effectivePhoneReachFilter !== null
+        ? phoneReachOfMember(member)
+        : undefined;
+    const reachText = reach ? phoneReachStateLabel(reach.state) : null;
+    const reachNote = reach ? phoneReachStaleNote(reach) : null;
+    const label = [
+      name,
+      roleName,
+      className,
+      `${points} points`,
+      joined ? `joined ${joined}` : null,
+      member.email || null,
+      customLine,
+      reachText,
+      reachNote,
+      status ? presenceLabel(status) : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    return {
+      name,
+      roleName,
+      joined,
+      className,
+      points,
+      status,
+      customLine,
+      reachText,
+      reachNote,
+      reachOff: reach?.state === "off",
+      reach,
+      label,
+    };
+  }
 
   function toggleMember(id: string, isSelected: boolean) {
     setSelectedMemberIds((prev) =>
@@ -577,10 +761,22 @@ export function MembersDirectory() {
     );
   }
 
-  function openMember(member: MemberProfile) {
+  /**
+   * A row opens the member's card beside it (Paul, 2026-11-19: a small card
+   * from the row, as chat's name does, instead of the profile taking over
+   * the Directory). Their roles and groups are set on the card; View profile
+   * opens the full record in the Directory's place.
+   */
+  function openMember(
+    member: MemberProfile,
+    opener: HTMLElement,
+    side: "right" | "bottom" = "bottom",
+  ) {
     setActiveMemberId(memberId(member));
     setActiveUserId(typeof member.user_id === "string" ? member.user_id : null);
-    setDetailSheetOpen(true);
+    setPopoutAnchor(anchorFor(opener));
+    setPopoutSide(side);
+    setPopoutOpen(true);
   }
 
   async function applyBulkRole() {
@@ -782,6 +978,15 @@ export function MembersDirectory() {
             value={effectiveRoleFilter}
             onChange={setRoleFilter}
           />
+          {groupChipOptions.length > 0 ? (
+            <FilterChip
+              label="Group"
+              anyLabel="Any group"
+              options={groupChipOptions}
+              value={effectiveGroupFilter}
+              onChange={setGroupFilter}
+            />
+          ) : null}
           <FilterChip
             label="Graduation year"
             anyLabel="Any year"
@@ -813,7 +1018,22 @@ export function MembersDirectory() {
               setStatusFilter(value as "active" | "pending" | null)
             }
           />
-          <SortChip options={sortOptions} value={effectiveSort} onChange={setSort} />
+          {showsPhoneReach ? (
+            <FilterChip
+              label={PHONE_REACH_LABEL}
+              anyLabel="Any"
+              options={PHONE_REACH_FILTER_OPTIONS}
+              value={effectivePhoneReachFilter}
+              onChange={(value) =>
+                setPhoneReachFilter(value as PhoneReachFilter | null)
+              }
+            />
+          ) : null}
+          <SortChip
+            options={sortOptions}
+            value={effectiveSort}
+            onChange={setSort}
+          />
           {/*
           The route's primary action, at the trailing edge of the one toolbar
           row `1f` pin 2 describes. It renders above the empty state as well
@@ -897,7 +1117,7 @@ export function MembersDirectory() {
          */
         usingSearch ? (
           <InlineNote>
-            No actives match “{deferredQuery}”.{" "}
+            {directoryNoSearchMatches(deferredQuery)}{" "}
             <InlineNoteAction onClick={() => setQuery("")}>
               Clear search
             </InlineNoteAction>
@@ -908,9 +1128,11 @@ export function MembersDirectory() {
             <InlineNoteAction
               onClick={() => {
                 setRoleFilter(null);
+                setGroupFilter(null);
                 setCohortFilter(null);
                 setClassFilter(null);
                 setStatusFilter(null);
+                setPhoneReachFilter(null);
               }}
             >
               Clear filters
@@ -930,6 +1152,20 @@ export function MembersDirectory() {
           semantics of its own, so silently landing on a bare group of buttons
           would be a real regression rather than a nit.
         */}
+          {/*
+            The Phone app filter's count, over the actives only: hidden while
+            a search spans both lists, as on the phone.
+          */}
+          {effectivePhoneReachFilter !== null && phoneReach && !usingSearch ? (
+            <p className="text-caption text-muted" aria-live="polite">
+              {phoneReachCountLineFor(
+                members.map((member) =>
+                  typeof member.user_id === "string" ? member.user_id : null,
+                ),
+                phoneReach.byUserId,
+              )}
+            </p>
+          ) : null}
           {/*
             The list header, which is all that survives of the deleted
             `<thead>`: no column labels (a flush list has no columns to label)
@@ -964,47 +1200,62 @@ export function MembersDirectory() {
             </span>
             Select all on this page
           </label>
-          <ul role="list" className={denseListClassName}>
-            {pageMembers.map((member) => {
-              const id = memberId(member);
-              const name = displayNameOf(member);
-              const roleName = primaryRoleName(member);
-              const joined = formatJoined(member.created_at);
-              const className = member.pledge_class_id
-                ? (classNameById.get(member.pledge_class_id) ?? null)
-                : null;
-              const points = pointsOf(member);
-              const status = presenceStatusOf(member);
-              const customLine = customLineOf(member);
-              const selected = selectedMemberIds.includes(id);
-              return (
-                <li
-                  key={id}
-                  className={cn(
-                    "flex min-h-9 items-center gap-1 pointer-coarse:min-h-11",
-                    // Fill means state, never striping. `--popover` is what
-                    // `TableRow` paints for `data-state="selected"`: neutral
-                    // since 2026-11-05 (`foundations.md` §6), a step under the
-                    // `--card-hover` hover so a control inside the row still
-                    // lifts, with the checked box and the "N selected" bar
-                    // carrying the selection.
-                    selected && "bg-popover",
-                  )}
-                >
-                  <label
-                    className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+          {layout === "grid" ? (
+            <MemberGrid
+              members={pageMembers}
+              idOf={memberId}
+              factsOf={factsOf}
+              selectedIds={selectedMemberIds}
+              onToggle={toggleMember}
+              onOpen={(member, opener) => openMember(member, opener, "right")}
+              avatarTintFor={avatarTintFor}
+            />
+          ) : (
+            <ul role="list" className={denseListClassName}>
+              {pageMembers.map((member) => {
+                const id = memberId(member);
+                const {
+                  name,
+                  roleName,
+                  joined,
+                  className,
+                  points,
+                  status,
+                  customLine,
+                  reach,
+                  reachText,
+                  reachNote,
+                  label,
+                } = factsOf(member);
+                const selected = selectedMemberIds.includes(id);
+                return (
+                  <li
+                    key={id}
+                    className={cn(
+                      "flex min-h-9 items-center gap-1 pointer-coarse:min-h-11",
+                      // Fill means state, never striping. `--popover` is what
+                      // `TableRow` paints for `data-state="selected"`: neutral
+                      // since 2026-11-05 (`foundations.md` §6), a step under the
+                      // `--card-hover` hover so a control inside the row still
+                      // lifts, with the checked box and the "N selected" bar
+                      // carrying the selection.
+                      selected && "bg-popover",
+                    )}
                   >
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${name}`}
-                      className={dashboardTableCheckboxClassName}
-                      checked={selected}
-                      onChange={(event) =>
-                        toggleMember(id, event.target.checked)
-                      }
-                    />
-                  </label>
-                  {/*
+                    <label
+                      className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${name}`}
+                        className={dashboardTableCheckboxClassName}
+                        checked={selected}
+                        onChange={(event) =>
+                          toggleMember(id, event.target.checked)
+                        }
+                      />
+                    </label>
+                    {/*
                   The row is the control. `4a`'s note is "Click a row →
                   profile popover with Message", and the trailing "View
                   details" Secondary button this replaces was a 44px control
@@ -1026,54 +1277,46 @@ export function MembersDirectory() {
                   `FOCUS_RING_OFFSET`, not `FOCUS_RING`: the row carries no
                   border, and `FOCUS_RING`'s indicator is the border swap.
                 */}
-                  <button
-                    type="button"
-                    onClick={() => openMember(member)}
-                    aria-label={[
-                      name,
-                      roleName,
-                      className,
-                      `${points} points`,
-                      joined ? `joined ${joined}` : null,
-                      member.email || null,
-                      customLine,
-                      status ? presenceLabel(status) : null,
-                    ]
-                      .filter(Boolean)
-                      .join(", ")}
-                    className={cn(
-                      "flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
-                      "pointer-coarse:min-h-11",
-                      /*
+                    <button
+                      type="button"
+                      onClick={(event) =>
+                        openMember(member, event.currentTarget)
+                      }
+                      aria-label={label}
+                      className={cn(
+                        "flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
+                        "pointer-coarse:min-h-11",
+                        /*
                         Hover only while NOT selected. The selected fill lives
                         on the `<li>` and this button is `flex-1`, so a hover
                         here would paint across everything right of the
                         checkbox and the selected row would stop reading as
                         one row.
                       */
-                      !selected && "hover:bg-card-hover hover:text-foreground",
-                      FOCUS_RING_OFFSET,
-                    )}
-                  >
-                    <div className="relative shrink-0">
-                      <Avatar className="h-6 w-6">
-                        {member.avatar_url ? (
-                          <AvatarImage src={member.avatar_url} alt="" />
-                        ) : null}
-                        <AvatarFallback
-                          className="text-[9px]"
-                          tint={
-                            typeof member.user_id === "string"
-                              ? avatarTintFor(member.user_id)
-                              : null
-                          }
-                        >
-                          {initials(name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <AvatarPresenceDot status={status} />
-                    </div>
-                    {/*
+                        !selected &&
+                          "hover:bg-card-hover hover:text-foreground",
+                        FOCUS_RING_OFFSET,
+                      )}
+                    >
+                      <div className="relative shrink-0">
+                        <Avatar className="h-6 w-6">
+                          {member.avatar_url ? (
+                            <AvatarImage src={member.avatar_url} alt="" />
+                          ) : null}
+                          <AvatarFallback
+                            className="text-[9px]"
+                            tint={
+                              typeof member.user_id === "string"
+                                ? avatarTintFor(member.user_id)
+                                : null
+                            }
+                          >
+                            {initials(name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <AvatarPresenceDot status={status} />
+                      </div>
+                      {/*
                       Name over meta below the page's `@xl` (576px), side by side above it — the
                       stacking shape lane 4's document row uses. An earlier
                       draft hid the meta line outright on a phone (`hidden
@@ -1083,38 +1326,63 @@ export function MembersDirectory() {
                       too, so the row's own `aria-label` was the only place they
                       survived.
                     */}
-                    <span className="flex min-w-0 flex-1 flex-col @xl:flex-row @xl:items-center @xl:gap-3">
-                      {/*
+                      <span className="flex min-w-0 flex-1 flex-col @xl:flex-row @xl:items-center @xl:gap-3">
+                        {/*
                         The custom status line (#3845) stacks under the name in
                         both layouts, one muted caption line that truncates.
                       */}
-                      <span className="flex min-w-0 flex-col @xl:flex-1">
-                        <span className="min-w-0 truncate text-sm font-semibold">
-                          {name}
+                        <span className="flex min-w-0 flex-col @xl:flex-1">
+                          <span className="min-w-0 truncate text-sm font-semibold">
+                            {name}
+                          </span>
+                          <CustomStatusLine line={customLine} />
                         </span>
-                        <CustomStatusLine line={customLine} />
-                      </span>
-                      {/*
+                        {/*
                         One meta line, `·`-joined, bounded fields first and the
                         free-text one last — lane 4's ordering rule, for the
                         same reason: this line truncates, so whatever leads it
                         is what survives a narrow row, and an email is the field
                         that can run long.
                       */}
-                      <span className="min-w-0 truncate text-caption text-muted @xl:flex-1">
-                        {[roleName, className, joined, member.email]
-                          .filter(Boolean)
-                          .join(" · ")}
+                        <span className="min-w-0 truncate text-caption text-muted @xl:flex-1">
+                          {[
+                            roleName,
+                            className,
+                            joined,
+                            reachNote,
+                            member.email,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
                       </span>
-                    </span>
-                    <span className="shrink-0 text-caption tabular-nums text-muted">
-                      {points} pts
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                      {/*
+                        The Phone app filter's answer for this member, in
+                        words, only while that filter is set. "Off" takes the
+                        warning tone so the ones to chase stand out; the rest
+                        stay muted.
+                      */}
+                      {reach && reachText ? (
+                        <span
+                          className={cn(
+                            "shrink-0 text-caption",
+                            reach.state === "off"
+                              ? "text-warning"
+                              : "text-muted",
+                          )}
+                        >
+                          {reachText}
+                        </span>
+                      ) : null}
+                      <span className="shrink-0 text-caption tabular-nums text-muted">
+                        {formatPoints(points)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
 
           {pageCount > 1 ? (
             <div className="flex items-center justify-between gap-2 text-caption">
@@ -1157,12 +1425,33 @@ export function MembersDirectory() {
         empty `sortedMembers` and renders an unknown member with its roles
         cleared and a Save that silently no-ops.
       */}
+      <MemberPopout
+        userId={activeUserId}
+        anchor={popoutAnchor}
+        side={popoutSide}
+        open={popoutOpen}
+        onOpenChange={setPopoutOpen}
+        identity={
+          activeMember
+            ? {
+                name: displayNameOf(activeMember),
+                avatarUrl:
+                  typeof activeMember.avatar_url === "string"
+                    ? activeMember.avatar_url
+                    : null,
+              }
+            : null
+        }
+        onViewProfile={() => setDetailSheetOpen(true)}
+      />
       <MemberDetailSheet
         open={detailSheetOpen}
         onOpenChange={setDetailSheetOpen}
         userId={activeUserId}
         initialMember={activeMember}
         points={activeMember ? pointsOf(activeMember) : null}
+        docked
+        backLabel="Back to directory"
       />
     </section>
   );

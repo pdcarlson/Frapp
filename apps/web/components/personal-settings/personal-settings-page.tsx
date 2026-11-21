@@ -2,10 +2,17 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { useCurrentChapter } from "@repo/hooks";
+import {
+  aiAvailableFrom,
+  isFirstAiReadInFlight,
+  useAiConsent,
+  useCurrentChapter,
+} from "@repo/hooks";
 import { AccountSection } from "@/components/personal-settings/account-section";
+import { AiSection } from "@/components/personal-settings/ai-section";
 import { ChapterAlertsSection } from "@/components/personal-settings/chapter-alerts-section";
 import { QuietHoursSection } from "@/components/personal-settings/quiet-hours-section";
+import { ReadReceiptsSection } from "@/components/personal-settings/read-receipts-section";
 import { MyInvoicesSection } from "@/components/personal-settings/my-invoices-section";
 import { PersonalSettingsBodySkeleton } from "@/components/personal-settings/personal-settings-skeleton";
 import {
@@ -17,16 +24,18 @@ import {
 } from "@/components/personal-settings/personal-settings-sections";
 import { BlockedMembersCard } from "@/components/profile/blocked-members-card";
 import { ChatDensityControl } from "@/components/profile/chat-density-control";
-import { DiscordHistoryCard } from "@/components/profile/discord-history-card";
+import { LinkedAppsSection } from "@/components/linked-apps/linked-apps-section";
+import { CalendarSection } from "@/components/personal-settings/calendar-section";
 import { ProfileSection } from "@/components/profile/profile-section";
 import {
   SettingsNavRail,
   type SettingsNavGroup,
 } from "@/components/settings/settings-nav-rail";
+import { useSettingJump } from "@/lib/settings/use-setting-jump";
 
 /**
  * The personal Settings page: the second of the two doors (#3856, epic #4068
- * decision 1). The nav's "Chapter settings" row is the chapter's; this one is
+ * decision 1). The chapter menu's "Chapter settings" is the chapter's; this one is
  * the member's own, opened from the account menu on the avatar, the way
  * Discord splits User Settings from Server Settings and Slack splits
  * Preferences from workspace settings. Every section here used to be a block
@@ -37,14 +46,20 @@ import {
  * carries its own offline, loading and error states.
  */
 function PersonalSettingsContent() {
+  // Whether the server has AI: the AI section shows only on `true` (#4308).
+  const aiConsent = useAiConsent();
+  const aiAvailable = aiAvailableFrom(aiConsent);
+  // `?setting=` from settings search: scroll to the setting and light it.
+  useSettingJump();
   const section = resolvePersonalSettingsSection(
     useSearchParams().get("section"),
+    aiAvailable,
   );
   // The chapter group is named for the chapter it changes with. Before the
   // chapter is known (or with none active) it says so in general terms; each
   // chapter section already tells a member with no chapter to pick one.
   const { data: chapter } = useCurrentChapter();
-  const chapterName = (chapter as { name?: string } | undefined)?.name?.trim();
+  const chapterName = chapter?.name.trim();
 
   const groups: SettingsNavGroup[] = [
     { label: "My account", group: "account" as const },
@@ -55,15 +70,26 @@ function PersonalSettingsContent() {
   ].map(({ label, group }) => ({
     label,
     items: PERSONAL_SETTINGS_SECTIONS.filter(
-      (s) => s.group === group && isPersonalSettingsSectionShown(s.value),
-    ).map(
-      (s) => ({
-        value: s.value,
-        label: s.label,
-        href: personalSettingsHref(s.value),
-      }),
-    ),
+      (s) =>
+        s.group === group &&
+        isPersonalSettingsSectionShown(s.value, aiAvailable),
+    ).map((s) => ({
+      value: s.value,
+      label: s.label,
+      href: personalSettingsHref(s.value),
+    })),
   }));
+
+  /*
+    The rail waits for the first AI read rather than drawing without the AI
+    row and inserting it a moment later, which pushed every row below it
+    down (and sent `?section=ai` to Notifications first). A paused read, or
+    a first attempt that failed, stops waiting without sitting out the
+    retries (#4504): the row stays out, as with AI off.
+  */
+  if (isFirstAiReadInFlight(aiConsent)) {
+    return <PersonalSettingsBodySkeleton />;
+  }
 
   return (
     // `@container`: the rail and the row direction follow this pane's width,
@@ -92,16 +118,23 @@ function SectionBody({ section }: { section: PersonalSettingsSection }) {
         There is no theme choice here: Frapp is dark-only (#3330).
       */
       return (
-        <ProfileSection
-          id="chat-density"
-          title="Chat density"
-          hint="Applies on this browser."
-        >
-          <ChatDensityControl />
-        </ProfileSection>
+        <div className="flex flex-col gap-8">
+          <ProfileSection
+            id="chat-density"
+            title="Chat density"
+            hint="Applies on this browser."
+          >
+            <ChatDensityControl />
+          </ProfileSection>
+          {/* Read receipts on direct messages (#5519): an account setting,
+              unlike density, so it follows the member everywhere. */}
+          <ReadReceiptsSection />
+        </div>
       );
     case "account":
       return <AccountSection />;
+    case "ai":
+      return <AiSection />;
     case "alerts":
       return <ChapterAlertsSection />;
     case "blocked":
@@ -112,8 +145,10 @@ function SectionBody({ section }: { section: PersonalSettingsSection }) {
       return <BlockedMembersCard />;
     case "invoices":
       return <MyInvoicesSection />;
-    case "discord":
-      return <DiscordHistoryCard />;
+    case "apps":
+      return <LinkedAppsSection />;
+    case "calendar":
+      return <CalendarSection />;
   }
 }
 

@@ -25,7 +25,7 @@ const sections = [
   {
     heading: "2. Signing in and joining a chapter",
     paragraphs: [
-      "Members join a chapter through an invite link or code issued by a chapter officer. Invites expire 24 hours after they are created; if yours has expired or was already used, ask an officer for a new one.",
+      "Members join a chapter through an invite link or code issued by a chapter officer. Personal invites expire 7 days after they are created; if yours has expired or was already used, open it anyway and tap Ask for a new link, or ask an officer directly.",
       "If an invite says the chapter is not accepting new members, the chapter's subscription is inactive. Only a chapter officer can restore it; the same invite works again once they do.",
     ],
   },
@@ -38,7 +38,7 @@ const sections = [
   {
     heading: "4. Deleting your account",
     paragraphs: [
-      "Signed-in members delete their Frapp account themselves. On the web dashboard, open My Profile and choose Delete account. In the mobile app, open More, then Settings, then Delete account — or, if you have not joined a chapter yet, open Account at the top of the join screen, then Delete account. If the app is asking you to accept updated Terms, Delete account is on that screen too. Deletion is irreversible.",
+      "Signed-in members delete their Frapp account themselves. On the web dashboard, open My Profile and choose Delete account. In the mobile app, open You, then Settings, then Delete account — or, if you have not joined a chapter yet, open Account at the top of the join screen, then Delete account. If the app is asking you to accept updated Terms, Delete account is on that screen too. Deletion is irreversible.",
       "We remove your profile and personal information; records a chapter is required to keep for its own compliance obligations (for example dues ledgers and audit history) are retained in anonymized form, as described in the Privacy Policy.",
       "If you cannot sign in, email team@frapp.live from the address on the account and we will complete the same deletion.",
     ],

@@ -15,6 +15,7 @@ import { OnboardingPressable } from "@/components/onboarding/onboarding-pressabl
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The Terms prompt (#2302): a member who hasn't accepted the Terms version the
@@ -158,6 +159,7 @@ export default function TermsPrompt() {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     safeArea: {
       flex: 1,
@@ -190,7 +192,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.md,
     },

@@ -47,7 +47,7 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 # workflow's green-CI gate governed only its own deploy hook. What shipped was
 # whatever happened to be at a branch tip.
 #
-# Here the artifact is an input. The same SHA is migrated, deployed to Render,
+# Here the artifact is an input. The same SHA is migrated, deployed to Cloud Run,
 # built for Vercel production, and tagged.
 #
 # ── An empty `sha` (#3114) ──────────────────────────────────────────────────
@@ -169,7 +169,7 @@ on:
       scope:
         description: >-
           'full' migrates and deploys the commit. 'migrations-only' applies the
-          migrations and stops — no Render deploy, no Vercel build, no tag.
+          migrations and stops — no API deploy, no Vercel build, no tag.
         required: false
         default: full
         type: choice
@@ -181,17 +181,22 @@ on:
         type: choice
         options: [auto, patch, minor, major]
       mobile_build:
-        # A choice, not a box: each platform's build spends EAS build quota, so
-        # build only what you mean to ship. Android uploads with the Play
+        # A choice, not a box: each platform's build is another store upload
+        # (and, on iOS, another App Review cycle once released), so build only
+        # what you mean to ship. Android uploads with the Play
         # service-account key EAS has held since 2026-11-05 (#2556) and builds
-        # with GOOGLE_SERVICES_JSON (#1826). `none` is the unticked box.
-        # `auto` lets `mobile-plan` choose per platform: an OTA update when
-        # the shipped commit's native inputs match that platform's recorded
-        # store build of the same `expo.version`, a store build otherwise
-        # (`scripts/ci/plan-mobile-release.mjs`).
-        description: "After a live 'full' ship and its tag: 'auto' publishes an OTA update where the native code still matches the store build, and builds for the stores where it doesn't. A platform builds this SHA on EAS and uploads it to TestFlight / Play internal (not released). 'none' does nothing for the app."
+        # with GOOGLE_SERVICES_JSON (#1826). `auto` lets `mobile-plan` choose
+        # per platform: an OTA update when the shipped commit's native inputs
+        # match that platform's recorded store build of the same
+        # `expo.version`, a store build otherwise
+        # (`scripts/ci/plan-mobile-release.mjs`). `auto` is the default (Paul,
+        # 2026-11-12; it was `none` from 2026-10-01): every ship reaches
+        # phones unless the dispatcher picks `none`, which does nothing for
+        # the app. Pick `none` after a rollback (`mobile-rollback.yml`), or
+        # the publish replaces it.
+        description: "After a live 'full' ship and its tag: 'auto' publishes an OTA update where the native code still matches the store build, and builds for the stores where it doesn't. A platform builds this SHA on EAS and uploads it to TestFlight / Play internal (not released). 'none' does nothing for the app; pick it after rolling an update back."
         required: false
-        default: none
+        default: auto
         type: choice
         options: [none, ios, android, all, auto]
 
@@ -341,12 +346,19 @@ jobs:
   # that calls a workflow can't) and no secret of its own.
   #
   # A caller's `env:` does not reach a called workflow, which is why this file
-  # has none: `_deploy.yml` reads the Render and Vercel ids from
+  # has none: `_deploy.yml` reads the Google Cloud and Vercel ids from
   # `.github/environments.json` itself (#2806).
   deploy:
     name: Migrate, then ship Render + Vercel
     needs: validate
     uses: ./.github/workflows/_deploy.yml
+    # `id-token: write` signs the job in to Google Cloud for the Cloud Run
+    # deploy (#5228), and a called job may not ask for more than its caller
+    # grants. The job keeps its Render-era name because the deploy alert and
+    # the development log find its runs by it.
+    permissions:
+      contents: read
+      id-token: write
     secrets: inherit
     with:
       environment: production
@@ -357,7 +369,7 @@ jobs:
   # Tagging is a separate job only because `workflow_call` cannot be a step. It
   # carries no `environment:`, so it costs no second approval click.
   #
-  # The tag is created AFTER Render and Vercel report healthy, on the exact SHA
+  # The tag is created AFTER the API and Vercel report healthy, on the exact SHA
   # that was deployed — so `vX.Y.Z` now means "this is live", where it used to
   # mean "this was merged and we hoped it would ship".
   release:
@@ -479,7 +491,8 @@ jobs:
           DEPLOYED_DIR: ${{ github.workspace }}
         run: node trusted/scripts/ci/plan-mobile-release.mjs
 
-  # The store builds: build the SHA that just went live on EAS, upload it to
+  # The store builds: build the SHA that just went live, on GitHub's runners
+  # with `eas build --local` (#5162), upload it to
   # TestFlight and the Play internal track without releasing it, and open the
   # `shipped-builds.json` PR, for the platforms `mobile-plan` names.
   # `_mobile-build.yml`'s header has the rules it enforces and how it fails.
@@ -493,8 +506,8 @@ jobs:
     uses: ./.github/workflows/_mobile-build.yml
     # A called job gets at most what its caller grants. `actions: write` is
     # for the called `snapshot` job alone, which dispatches the migration
-    # snapshot publish; `build`, `record` and `confirm` each grant themselves
-    # `contents: read` only.
+    # snapshot publish; `ios`, `android`, `record`, `confirm` and
+    # `merge-record` each grant themselves `contents: read` only.
     permissions:
       contents: read
       actions: write
@@ -521,6 +534,43 @@ jobs:
     with:
       sha: ${{ needs.validate.outputs.sha }}
       platform: ${{ needs.mobile-plan.outputs.update }}
+
+  # Emails the owner when the app release after a ship fails (Paul,
+  # 2026-11-18). `deploy-outcome` reads only `deploy` and `release`, so a
+  # failed store build or OTA update after a good ship raised nothing. One
+  # `incident` alert, commented only when what fails changes, closed by the
+  # next `mobile_build: auto` run whose app release jobs all succeed
+  # (scripts/ci/mobile-release-alert.mjs). Skipped when `mobile-plan` was:
+  # nothing shipped, or `mobile_build` was `none`.
+  mobile-outcome:
+    name: Email the owner if the app release failed
+    needs: [validate, mobile-plan, mobile, ota]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.mobile-plan.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The alert issue, and this attempt's jobs to name the failed steps.
+      issues: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Raise or close the alert
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ALERT_CONFIG: production-mobile
+          NEEDS: ${{ toJSON(needs) }}
+          BUILD: ${{ inputs.mobile_build }}
+          SHA: ${{ needs.validate.outputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: node scripts/ci/mobile-release-alert.mjs
 
   # Terminal reporting. A `workflow_dispatch` failure reds one row in the
   # Actions list and emails the actor, which is thin for the only path to
@@ -599,7 +649,7 @@ jobs:
         env:
           DEPLOY_RESULT: ${{ needs.deploy.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
-          RENDER_DEPLOY_ID: ${{ needs.deploy.outputs.render-deploy-id }}
+          CLOUD_RUN_REVISION: ${{ needs.deploy.outputs.cloud-run-revision }}
           REPLAY_OUTCOME: ${{ needs.deploy.outputs.replay-outcome }}
           APPLIED: ${{ needs.deploy.outputs.applied }}
           DRY_RUN: ${{ inputs.dry_run_only }}
@@ -615,8 +665,8 @@ jobs:
           {
             # The heading, not just a row: this summary gets linked and
             # screenshotted as evidence that a SHA shipped, and a dry run's table
-            # otherwise reads `Migrate + deploy: success` with `Render deploy id:
-            # none` as the only tell. Same ambiguity `run-name` was changed to
+            # otherwise reads `Migrate + deploy: success` with `Cloud Run revision:
+            # not reported` as the only tell. Same ambiguity `run-name` was changed to
             # remove, one level down — and a dry run now looks even more like a
             # ship, because it builds.
             if [ "$DRY_RUN" = "true" ]; then
@@ -649,7 +699,7 @@ jobs:
             # workflow's outputs, which a failed call may not carry back.
             echo "| Migrations applied | \`${APPLIED:-not reported}\` |"
             echo "| Migration rehearsal | \`${REPLAY_OUTCOME:-not reported}\` |"
-            echo "| Render deploy id | \`${RENDER_DEPLOY_ID:-not reported}\` |"
+            echo "| Cloud Run revision | \`${CLOUD_RUN_REVISION:-not reported}\` |"
             echo "| Release tag | \`${RELEASE_RESULT:-skipped}\` |"
             echo ""
             if [ "$REPLAY_OUTCOME" = "nothing-pending" ]; then
@@ -658,7 +708,7 @@ jobs:
               echo ""
             fi
             if [ "$SCOPE" = "migrations-only" ] && [ "$DRY_RUN" != "true" ]; then
-              echo "> **Migrations only.** The database moved; Render, Vercel and the version tag"
+              echo "> **Migrations only.** The database moved; the API, Vercel and the version tag"
               echo "> did not. Production is now running the PREVIOUS code against the NEW schema,"
               echo "> so the migrations had better be forward-compatible with it. Finish with a"
               echo "> \`full\` run against the same SHA when the code is meant to follow."

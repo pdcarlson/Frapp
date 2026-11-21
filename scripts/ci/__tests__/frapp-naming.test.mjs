@@ -219,7 +219,7 @@ export const TEXT_BANS = [
   {
     walk: "product",
     ban: /Signet System/,
-    reach: ["apps/api/src/main.ts", "apps/web/app/layout.tsx", "apps/mobile/app/(auth)/sign-in.tsx", "packages/validation/src/index.ts"],
+    reach: ["apps/api/src/main.ts", "apps/web/app/layout.tsx", "apps/mobile/app/(auth)/sign-in.tsx", "packages/validation/src/chat-message.ts"],
   },
   // Specs keep design-system test names ("no Signet map"), so they aren't
   // walked for the word, only for the payment fixtures a sweep would copy
@@ -508,7 +508,7 @@ export const PINS = [
     has: ["const DEFAULT_FROM_ADDRESS = 'Frapp <invites@mail.frapp.live>'", "RESEND_FROM_EMAIL"],
     lacks: [/const DEFAULT_FROM_ADDRESS = 'Signet /, /const DEFAULT_FROM_ADDRESS = '[^']*<invites@frapp\.live>'/, SIGNET],
   },
-  // The subject and the headline both bodies open with name the product; the
+  // The subject and the line both bodies carry name the product; the
   // chapter's own name fills "a chapter" when it is known.
   {
     file: "apps/api/src/infrastructure/email/resend-email.provider.ts",
@@ -519,9 +519,9 @@ export const PINS = [
   },
   {
     file: "apps/api/src/infrastructure/email/resend-email.provider.ts",
-    section: (source) => functionBody(source, "inviteHeadline"),
-    why: "invite email headline",
-    has: ["invited you to join ${chapter} on Frapp`", "You're invited to join ${chapter} on Frapp`"],
+    section: (source) => functionBody(source, "inviteLine"),
+    why: "invite email line",
+    has: ["`${who} on Frapp as ${role}.`", "`${who} on Frapp.`"],
     lacks: [SIGNET],
   },
   // HTML and text bodies are pinned apart, so one can't hide a leftover in the other.
@@ -529,7 +529,7 @@ export const PINS = [
     file: "apps/api/src/infrastructure/email/resend-email.provider.ts",
     section: (source) => functionBody(source, name),
     why: `${name} body`,
-    has: ["inviteHeadline(params)"],
+    has: ["inviteLine(params)"],
     lacks: [SIGNET],
   })),
 
@@ -563,7 +563,7 @@ export const PINS = [
   {
     // @repo/validation owns the literal so both clients can hide Block on a
     // system message; the API re-exports it rather than keep a second copy.
-    file: "packages/validation/src/index.ts",
+    file: "packages/validation/src/chat-message.ts",
     why: "SYSTEM_SENDER_ID is the all-zeros id",
     has: [new RegExp(`export const SYSTEM_SENDER_ID = ["']${ZERO_ID}["']`)],
   },
@@ -592,10 +592,11 @@ export const PINS = [
     lacks: [/headline:\s*"[^"]*\bSignet\b/, /description:\s*"[^"]*\bSignet\b/],
   },
   {
-    // A rename that drops the brand altogether passes the walk. The CSV name
-    // also has a unit spec (apps/web/lib/utils.spec.ts).
-    file: "apps/web/lib/utils.ts",
-    why: "the CSV download name",
+    // A rename that drops the brand altogether passes the walk. The export
+    // name is shared by the dashboard's downloads and the phone's shared CSV
+    // (#3926), and also has a unit spec (spreadsheet-cell.spec.ts).
+    file: "packages/formatting/src/spreadsheet-cell.ts",
+    why: "the export file name",
     has: ["`frapp-${filenamePrefix}-"],
   },
   {

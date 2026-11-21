@@ -10,22 +10,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // mount. A purple chapter's values, deliberately not house gold, so a control
 // that slips back to a `gold.*` token shows up in an assertion; the hook
 // itself has its own spec.
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ChatNotificationLevel } from "@repo/hooks";
 import {
+  CHANNEL_MENU_LABEL,
+  LEVEL_UNAVAILABLE_HINT,
   NotificationLevelControl,
   NotificationLevelMenu,
   NOTIFICATION_LEVEL_OPTIONS,
@@ -52,6 +47,7 @@ type ControlProps = {
   isSaving?: boolean;
   writeBlockedReason?: string | null;
   fromChapterLevel?: boolean;
+  actions?: readonly { label: string; onPress: () => void }[];
 };
 
 const ANCHOR = { top: 57, right: 16 };
@@ -79,12 +75,14 @@ function Thread({
   isSaving,
   writeBlockedReason,
   fromChapterLevel,
+  actions,
 }: ControlProps) {
   const menu = useNotificationLevelMenu({
     level,
     fromChapterLevel,
     disabled,
     writeBlockedReason,
+    hasActions: (actions?.length ?? 0) > 0,
   });
   return (
     <>
@@ -96,6 +94,7 @@ function Thread({
         onChange={onChange}
         isSaving={isSaving}
         anchor={ANCHOR}
+        actions={actions}
       />
     </>
   );
@@ -344,9 +343,9 @@ describe("NotificationLevelControl", () => {
       `${NOTIFICATION_LEVEL_OPTIONS[0]!.label}. ${NOTIFICATION_LEVEL_OPTIONS[0]!.description}`,
     );
     expect(strokes(allRow)).toEqual([]);
-    expect(JSON.stringify(menu(tree).map((node) => node.props.style))).not.toContain(
-      "#251A33",
-    );
+    expect(
+      JSON.stringify(menu(tree).map((node) => node.props.style)),
+    ).not.toContain("#251A33");
   });
 
   it("is disabled when the caller says so", () => {
@@ -683,5 +682,110 @@ describe("NotificationLevelMenu hit target (#2033)", () => {
     press(byLabel(tree, MUTE));
     expect(onChange).toHaveBeenCalledWith("off");
     expect(menu(tree)).toHaveLength(0);
+  });
+});
+
+describe("the channel's own actions in the menu (#3946)", () => {
+  const TRIGGER = "Notifications: every message. Change notification level";
+
+  it("draws none unless the screen hands some in", () => {
+    const tree = renderControl({ level: "all" });
+    press(byLabel(tree, TRIGGER));
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "menuitem",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("lists an action above the levels, runs it, and closes on the pick", () => {
+    const onPress = vi.fn();
+    const onChange = vi.fn();
+    const tree = renderControl({
+      level: "all",
+      onChange,
+      actions: [{ label: "Catch me up", onPress }],
+    });
+    press(byLabel(tree, TRIGGER));
+    const row = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "menuitem",
+    );
+    expect(row).toHaveLength(1);
+    expect(row[0]!.props.accessibilityLabel).toBe("Catch me up");
+    press(row[0]!);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    // An action is not a level: nothing is written.
+    expect(onChange).not.toHaveBeenCalled();
+    expect(menu(tree)).toHaveLength(0);
+  });
+
+  it("still opens for its actions when the level can't be read, and says what it is", () => {
+    const onPress = vi.fn();
+    const tree = renderControl({
+      level: null,
+      actions: [{ label: "Catch me up", onPress }],
+    });
+    const trigger = byLabel(tree, CHANNEL_MENU_LABEL);
+    expect(trigger.props.disabled).toBe(false);
+    press(trigger);
+    expect(menu(tree)).toHaveLength(1);
+  });
+
+  /** The three level rows, which are Pressables with the button role. */
+  function levelRows(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button" &&
+        typeof node.props.accessibilityState?.selected === "boolean",
+    );
+  }
+
+  it("locks the level rows when the level can't be read, so a pick never writes over it (#3723)", () => {
+    const onChange = vi.fn();
+    const tree = renderControl({
+      level: null,
+      onChange,
+      actions: [{ label: "Pinned messages", onPress: vi.fn() }],
+    });
+    press(byLabel(tree, CHANNEL_MENU_LABEL));
+    const rows = levelRows(tree);
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.props.disabled).toBe(true);
+      expect(row.props.accessibilityHint).toBe(LEVEL_UNAVAILABLE_HINT);
+    }
+  });
+
+  it("opens offline for its actions, with the level rows locked and saying why (#3723)", () => {
+    const onPress = vi.fn();
+    const onChange = vi.fn();
+    const tree = renderControl({
+      level: "all",
+      onChange,
+      writeBlockedReason: "Reconnect to make changes.",
+      actions: [{ label: "Saved messages", onPress }],
+    });
+    const trigger = byLabel(tree, TRIGGER);
+    expect(trigger.props.disabled).toBe(false);
+    press(trigger);
+    for (const row of levelRows(tree)) {
+      expect(row.props.disabled).toBe(true);
+      expect(row.props.accessibilityHint).toBe("Reconnect to make changes.");
+    }
+    press(byLabel(tree, "Saved messages"));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("stays shut with no level and no actions, as before", () => {
+    const tree = renderControl({ level: null });
+    expect(byLabel(tree, "Notification level unavailable").props.disabled).toBe(
+      true,
+    );
   });
 });

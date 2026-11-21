@@ -5,9 +5,9 @@ import { isProductionSupabaseUrl } from '@repo/validation';
  * per host: the browser origins CORS admits (`cors.options.ts`) and the proxy
  * hop count Express trusts (`bootstrap.ts`).
  *
- * Keyed on `NODE_ENV`, which each Render service sets: `production` on
- * `frapp-api-prod` and `staging` on `frapp-api-staging`. Those two values are
- * read back from the deployed processes, not only from `render.yaml`: the
+ * Keyed on `NODE_ENV`, which each deployed API's environment sets (Infisical,
+ * synced to the service): `production` in production and `staging` in
+ * staging. Those two values were read back from the deployed processes: the
  * `frapp-api` spans in Sentry carry exactly those two `environment` values, and
  * that field is `NODE_ENV` (`sentry-options.ts`), checked 2026-09-30 (#2507).
  *

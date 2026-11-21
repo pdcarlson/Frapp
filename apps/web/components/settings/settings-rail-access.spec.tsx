@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
+import { idleMutation, loadedEmpty } from "@/tests/settings-harness";
 
 // `@repo/validation`'s beta list, emptied so this spec pins the ordinary
 // module rule with dues as its example. A test that wants dues beta-off, as
@@ -19,14 +20,20 @@ afterEach(() => {
  * The Settings page shows each viewer what they can use (#2946).
  *
  * Settings became the one door to officer setup and tools when the nav's
- * Admin group folded into it, so the nav's Settings row now admits a treasurer
+ * Admin group folded into it, so the Chapter settings link now admits a treasurer
  * who holds only `reports:export`. Before, every setup tab rendered for
  * whoever arrived, and the config-gated ones answered a non-holder with
  * "Couldn't load chapter configuration". `settings-access.spec.ts` pins the
  * rules; this pins that the page renders by them.
  */
 
-const { permissions, search, currentChapter } = vi.hoisted(() => ({
+afterEach(() => {
+  ai.available = false;
+});
+
+const { permissions, search, currentChapter, ai } = vi.hoisted(() => ({
+  // Whether the server has AI (`aiAvailableFrom(useAiConsent())`).
+  ai: { available: false },
   permissions: {
     current: undefined as string[] | undefined,
     failed: false,
@@ -44,43 +51,37 @@ const { permissions, search, currentChapter } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@repo/hooks", () => ({
-  useCurrentChapter: () => ({
-    data: currentChapter.current,
-    isPending: false,
-    isLoading: false,
-    isError: false,
-    fetchStatus: "idle",
-    refetch: vi.fn(),
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => ({
+      data: currentChapter.current,
+      isPending: false,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "idle",
+      refetch: vi.fn(),
+    }),
+    overrides: {
+      aiAvailableFrom: () => ai.available,
+      // A read that can still be in flight, or fail.
+      useMyPermissions: () => ({
+        data: permissions.current
+          ? { permissions: permissions.current }
+          : undefined,
+        isPending: !permissions.current && !permissions.failed,
+        isError: permissions.failed,
+        error: permissions.failed ? new Error("Network down") : null,
+        fetchStatus: "idle",
+        refetch: permissions.refetch,
+      }),
+      useRoleTiers: loadedEmpty,
+      useMembers: loadedEmpty,
+      useViewerUserId: () => null,
+      useUpdateRole: idleMutation,
+      useUpdateRoleTier: idleMutation,
+    },
   }),
-  useMyPermissions: () => ({
-    data: permissions.current
-      ? { permissions: permissions.current }
-      : undefined,
-    isPending: !permissions.current && !permissions.failed,
-    isError: permissions.failed,
-    error: permissions.failed ? new Error("Network down") : null,
-    fetchStatus: "idle",
-    refetch: permissions.refetch,
-  }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useOrgConfig: () => ({
-    data: { org_archetype: "ifc" },
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-  useRoles: () => ({ data: [], isPending: false, isError: false }),
-  useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
-}));
+);
 
 vi.mock("@/lib/providers/network-provider", async (importOriginal) => {
   const actual =
@@ -95,25 +96,47 @@ vi.mock("@/lib/providers/network-provider", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(),
+);
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(search.current),
-}));
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(
+    () => new URLSearchParams(search.current),
+  ),
+);
 
-vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+vi.mock("@/components/shared/can", async () =>
+  (await import("@/tests/settings-harness")).canPassThrough(),
+);
 
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
-}));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(),
+);
 
 // The Roles tab's matrix has its own reads and its own spec; here it only has
 // to be the tab a deep link lands on.
+// The officer tools have their own specs; here they only have to be where
+// the page puts them (#3837).
+vi.mock("@/components/settings/settings-tool-views", () => ({
+  SettingsToolBody: (props: {
+    moduleKey: string;
+    holdsTool: (id: string) => boolean;
+  }) => {
+    const owns: Record<string, string> = {
+      chat: "chat-admin",
+      reports: "reports",
+      geofences: "study-zones",
+    };
+    const tool = owns[props.moduleKey];
+    return tool && props.holdsTool(tool) ? <p>{`${tool} body`}</p> : null;
+  },
+  SettingsToolSubpage: (props: {
+    subpage: { kind: string; channelId?: string };
+  }) => (
+    <p>{`subpage: ${props.subpage.kind} ${props.subpage.channelId ?? ""}`}</p>
+  ),
+}));
 vi.mock("@/components/billing/plan-and-billing", () => ({
   PlanAndBilling: () => <div data-testid="plan-and-billing" />,
 }));
@@ -162,6 +185,7 @@ const MODULE_ROWS = [
   "Study zones",
   "Tasks",
   "Polls",
+  "Meetings",
   "Documents",
   "Backwork",
   "Reports",
@@ -192,7 +216,8 @@ describe("Settings shows each viewer what they can use", () => {
       "Semester",
       "Privacy",
       "Plan and billing",
-      "Roles",
+      "Logs",
+      "Roles and groups",
       "Pledge class",
       "Member fields",
       ...MODULE_ROWS,
@@ -203,14 +228,62 @@ describe("Settings shows each viewer what they can use", () => {
     ).toBeNull();
   });
 
-  it("puts Chat admin and Discord import on the Chat page", () => {
+  it("adds the AI row under Chapter only while the server has AI (#4308)", () => {
+    permissions.current = ["*"];
+    ai.available = true;
+    render(<SettingsPage />);
+    expect(tabNames().slice(0, 5)).toEqual([
+      "Chapter",
+      "Semester",
+      "Privacy",
+      "AI",
+      "Plan and billing",
+    ]);
+  });
+
+  it("draws Chat admin on the Chat page, with Discord import a row inside Settings (#3837)", () => {
     permissions.current = ["*"];
     search.current = "tab=chat";
     render(<SettingsPage />);
+    expect(screen.getByText("chat-admin body")).toBeInTheDocument();
     expect(tools()).toEqual([
-      ["Chat admin", "/chat-admin"],
-      ["Discord import", "/discord-import"],
+      ["Discord import", "/settings?tab=chat&tool=discord-import"],
     ]);
+  });
+
+  it("opens a channel's settings and Discord import in place of the Chat page", () => {
+    permissions.current = ["*"];
+    search.current = "tab=chat&channel=c-1";
+    const { unmount } = render(<SettingsPage />);
+    expect(screen.getByText("subpage: channel c-1")).toBeInTheDocument();
+    expect(screen.queryByText("chat-admin body")).toBeNull();
+    // The rail stays, with Chat lit.
+    expect(screen.getByRole("tab", { name: "Chat" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    unmount();
+
+    search.current = "tab=chat&tool=discord-import";
+    render(<SettingsPage />);
+    expect(screen.getByText(/subpage: discord-import/)).toBeInTheDocument();
+  });
+
+  it("leaves a viewer without the tool on the Chat page itself", () => {
+    permissions.current = ["chapter-config:view", "members:view"];
+    search.current = "tab=chat&channel=c-1";
+    render(<SettingsPage />);
+    expect(screen.queryByText(/subpage:/)).toBeNull();
+    expect(screen.queryByText("chat-admin body")).toBeNull();
+  });
+
+  it("drops a page opened inside a row when the officer moves to another row", () => {
+    permissions.current = ["*"];
+    search.current = "tab=chat&channel=c-1";
+    window.history.replaceState(null, "", "/settings?tab=chat&channel=c-1");
+    render(<SettingsPage />);
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Reports" }));
+    expect(window.location.search).toBe("?tab=reports");
   });
 
   it("drops the Dues page while dues is beta-off", () => {
@@ -239,7 +312,9 @@ describe("Settings shows each viewer what they can use", () => {
     expect(
       screen.queryByText(/couldn't load chapter configuration/i),
     ).toBeNull();
-    expect(tools()).toEqual([["Reports", "/reports"]]);
+    // The export form is the page's body (#3837), not a link away.
+    expect(tools()).toEqual([]);
+    expect(screen.getByText("reports body")).toBeInTheDocument();
   });
 
   it("gives a treasurer Plan and billing beside their tool's page (#3827)", () => {
@@ -260,6 +335,15 @@ describe("Settings shows each viewer what they can use", () => {
     ).toHaveAttribute("data-state", "active");
   });
 
+  it("opens Roles and groups from an old Groups link", () => {
+    permissions.current = ["*"];
+    search.current = "tab=groups";
+    render(<SettingsPage />);
+    expect(
+      screen.getByRole("tab", { name: "Roles and groups" }),
+    ).toHaveAttribute("data-state", "active");
+  });
+
   it("tells a viewer with nothing here who can change that", () => {
     permissions.current = ["members:view"];
     render(<SettingsPage />);
@@ -272,11 +356,10 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.current = ["roles:manage"];
     search.current = "tab=events";
     render(<SettingsPage />);
-    expect(tabNames()).toEqual(["Roles", "Pledge class"]);
-    expect(screen.getByRole("tab", { name: "Roles" })).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(tabNames()).toEqual(["Roles and groups", "Pledge class"]);
+    expect(
+      screen.getByRole("tab", { name: "Roles and groups" }),
+    ).toHaveAttribute("aria-selected", "true");
   });
 
   it("names the pledge class tab in the chapter's own word", () => {
@@ -286,7 +369,7 @@ describe("Settings shows each viewer what they can use", () => {
       vocabulary: { class: "Line" },
     } as typeof currentChapter.current;
     render(<SettingsPage />);
-    expect(tabNames()).toEqual(["Roles", "Line"]);
+    expect(tabNames()).toEqual(["Roles and groups", "Line"]);
   });
 
   it("opens the pledge class tab writable for a roles:manage holder, in the chapter's words", () => {
@@ -309,6 +392,7 @@ describe("Settings shows each viewer what they can use", () => {
     };
     render(<SettingsPage />);
     expect(tools()).toEqual([]);
+    expect(screen.queryByText("reports body")).toBeNull();
     expect(screen.getByText(/reports is off/i)).toBeInTheDocument();
   });
 
@@ -329,7 +413,9 @@ describe("Settings shows each viewer what they can use", () => {
     expect(tabNames()).toEqual([]);
     expect(tools()).toEqual([]);
     expect(screen.getByText("Loading chapter settings")).toBeInTheDocument();
-    expect(screen.queryByText(/Nothing in Chapter settings/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Nothing in Chapter settings/),
+    ).not.toBeInTheDocument();
   });
 
   it("says it is offline, and retries the permission read, when only that read is missing (#3854)", () => {
@@ -337,7 +423,9 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.offline = true;
     render(<SettingsPage />);
     expect(tabNames()).toEqual([]);
-    expect(screen.getByText("Chapter settings unavailable offline")).toBeInTheDocument();
+    expect(
+      screen.getByText("Chapter settings unavailable offline"),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry now" }));
     expect(permissions.refetch).toHaveBeenCalled();
   });
@@ -346,6 +434,8 @@ describe("Settings shows each viewer what they can use", () => {
     permissions.failed = true;
     render(<SettingsPage />);
     expect(tabNames()).toEqual([]);
-    expect(screen.getByText("Couldn't load chapter settings")).toBeInTheDocument();
+    expect(
+      screen.getByText("Couldn't load chapter settings"),
+    ).toBeInTheDocument();
   });
 });

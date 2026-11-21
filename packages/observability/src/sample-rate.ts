@@ -18,12 +18,8 @@
  */
 export const DEFAULT_TRACES_SAMPLE_RATE = 0.1;
 
-export type SampleRateParseReason =
-  | "ok"
-  | "missing"
-  | "empty"
-  | "malformed"
-  | "out_of_range";
+type SampleRateParseReason =
+  "ok" | "missing" | "empty" | "malformed" | "out_of_range";
 
 export interface SampleRateParseResult {
   value: number;

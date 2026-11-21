@@ -186,16 +186,13 @@ describe("_deploy.yml", () => {
     return i;
   };
 
-  for (const [environment, render] of [
-    ["staging", "Deploy the commit to Render (staging)"],
-    ["production", "Deploy the commit to Render (production)"],
-  ]) {
+  for (const environment of ["staging", "production"]) {
     it(`deploys the functions to ${environment} after the migrations and before the API`, () => {
       const step = steps[index(`Deploy the Edge Functions (${environment})`)];
       assert.match(step.body, /run: node scripts\/ci\/deploy-edge-functions\.mjs/);
       assert.equal(step.env.get("TARGET_ENVIRONMENT"), environment);
       assert.ok(index("Run migrations (apply)") < index(step.name));
-      assert.ok(index(step.name) < index(render));
+      assert.ok(index(step.name) < index("Deploy the API to Cloud Run"));
       // A rollback to a commit from before the functions skips the step
       // rather than failing on a script that commit does not have.
       assert.match(step.body, /hashFiles\('supabase\/functions\/\*\/index\.ts'\) != ''/);

@@ -86,7 +86,7 @@ import {
  * it loses everything on a restart, and `@nestjs/schedule` re-enters it every
  * minute regardless. Slices give restart-resume and progress reporting for free.
  */
-export const SLICE_BUDGET_MS = 45_000;
+const SLICE_BUDGET_MS = 45_000;
 
 /** Lease length. Long enough that a slow slice never loses its own job. */
 export const LEASE_MS = 5 * 60_000;
@@ -108,7 +108,7 @@ export const IMPORT_BATCH_SIZE = 200;
 export const PURGE_BATCH_SIZE = 500;
 
 /** The notification target that opens `/discord-import` on web. */
-export const DISCORD_IMPORT_NOTIFICATION_SCREEN = 'discord_import';
+const DISCORD_IMPORT_NOTIFICATION_SCREEN = 'discord_import';
 
 /**
  * What the admin who set an import up (`created_by`) is told when it ends on
@@ -119,7 +119,7 @@ export const DISCORD_IMPORT_NOTIFICATION_SCREEN = 'discord_import';
  * target opens the import page on web; mobile has no such page and falls
  * through to the list.
  */
-export function importFinishedNotification(
+function importFinishedNotification(
   row: Pick<DiscordImport, 'status' | 'imported_messages' | 'guild_name'>,
 ): NotifyPayload {
   const base = {

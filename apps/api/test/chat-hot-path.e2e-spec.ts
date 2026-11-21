@@ -72,7 +72,7 @@ describe('Chat hot path (e2e)', () => {
   let app: INestApplication;
 
   const generalChannel: ChatChannel = {
-    id: 'chan-general',
+    id: '0b6f3c1e-2d4a-4f5b-8c6d-7e8f9a0b1c2d',
     chapter_id: 'chapter-1',
     name: 'general',
     description: null,
@@ -97,7 +97,7 @@ describe('Chat hot path (e2e)', () => {
 
   const announcementsChannel: ChatChannel = {
     ...generalChannel,
-    id: 'chan-announcements',
+    id: '1c7a4d2f-3e5b-4a6c-9d7e-8f9a0b1c2d3e',
     name: 'announcements',
     is_read_only: true,
     who_can_post: [OFFICERS],
@@ -130,7 +130,7 @@ describe('Chat hot path (e2e)', () => {
 
   const otherChannelMessage = makeMessage({
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    channel_id: 'chan-other',
+    channel_id: '3e9c6f4b-5a7d-4c8e-9f9a-0b1c2d3e4f5a',
     sender_id: 'user-2',
     content: 'From a different channel',
   });
@@ -182,11 +182,12 @@ describe('Chat hot path (e2e)', () => {
     findLatestPerChannel: jest.fn(),
     countPinnedByChannel: jest.fn(),
     findPollsByChapter: jest.fn(),
-    findPollCardsByChapter: jest.fn(),
+    findCardsByChapter: jest.fn(),
     findByClientMessageId: jest.fn(),
     findAuthorAvatarPaths: jest.fn(),
     insertIdempotent: jest.fn(),
     compareAndSetFlag: jest.fn(),
+    updateIfLive: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   };
@@ -195,10 +196,13 @@ describe('Chat hot path (e2e)', () => {
     findOne: jest.fn(),
     updateForVote: jest.fn(),
     findActionsOnMessages: jest.fn(),
+    findAllActionsOnMessages: jest.fn(),
+    claimSignupSlots: jest.fn(),
   };
   const attachmentRepoMock: jest.Mocked<IChatMessageAttachmentRepository> = {
     createMany: jest.fn(),
     findByMessage: jest.fn(),
+    findByMessages: jest.fn().mockResolvedValue([]),
     findSharedObjects: jest.fn(),
   };
   const reactionRepoMock: jest.Mocked<IMessageReactionRepository> = {
@@ -490,7 +494,7 @@ describe('Chat hot path (e2e)', () => {
 
   it('toggles a reaction on a message in an accessible channel', async () => {
     const targetMessage = makeMessage({
-      id: 'msg-react-target',
+      id: '4fad7a5c-6b8e-4d9f-8a0b-1c2d3e4f5a6b',
       sender_id: 'user-2',
       content: 'React to me',
     });
@@ -524,7 +528,7 @@ describe('Chat hot path (e2e)', () => {
   describe('hiding a 1:1 DM', () => {
     const dm: ChatChannel = {
       ...generalChannel,
-      id: 'chan-dm',
+      id: '2d8b5e3a-4f6c-4b7d-8e8f-9a0b1c2d3e4f',
       name: 'dm-user-1-user-2',
       type: 'DM',
       member_ids: ['user-1', 'user-2'],

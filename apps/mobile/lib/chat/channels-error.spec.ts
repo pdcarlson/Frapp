@@ -1,3 +1,4 @@
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import * as Sentry from "@sentry/react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -18,7 +19,7 @@ describe("channelsErrorCopy", () => {
     const copy = channelsErrorCopy(httpError(403), "Phi Gamma Delta");
     expect(copy.title).toBe("Chat isn't open to you yet");
     expect(copy.body).toBe(
-      "Your role in Phi Gamma Delta doesn't include chat. Ask an officer to give you the Member role.",
+      "Your role in Phi Gamma Delta doesn't include chat. Ask an officer to check your roles.",
     );
   });
 
@@ -28,7 +29,7 @@ describe("channelsErrorCopy", () => {
     );
   });
 
-  it("keeps the network copy for anything else, the chapter guard's 403s included", () => {
+  it("says what failed for anything else, by the shared load-failure line", () => {
     for (const error of [
       httpError(500),
       new Error("fetch failed"),
@@ -36,7 +37,7 @@ describe("channelsErrorCopy", () => {
     ]) {
       expect(channelsErrorCopy(error, "X")).toEqual({
         title: "Couldn't load channels",
-        body: "Chat couldn't reach the server.",
+        body: describeLoadFailure(error),
       });
     }
   });

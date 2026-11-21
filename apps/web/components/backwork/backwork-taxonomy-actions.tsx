@@ -35,7 +35,7 @@ import {
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
-export type TaxonomyEntity = "department" | "professor";
+type TaxonomyEntity = "department" | "professor";
 
 type Department = { id: string; code: string; name: string | null };
 type Professor = { id: string; name: string };

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { MemberService } from './member.service';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
@@ -13,10 +14,20 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
 import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { RbacService } from './rbac.service';
+import {
+  CHAPTER_ID,
+  MEMBER as TIERED_MEMBER,
+  ROLE,
+  USER,
+  tieredChapterMembers,
+  tieredChapterRoles,
+  tieredRankContext,
+} from '#test/helpers/tiered-chapter.fixture';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import {
   createAuditLogServiceMock,
@@ -45,6 +56,7 @@ describe('MemberService', () => {
     getEffectivePermissions: jest.Mock;
     flagIfPresidentRemoved: jest.Mock;
     getAlumniRoleId: jest.Mock;
+    getRankContext: jest.Mock;
   };
   let mockAuditLogService: AuditLogServiceMock;
   let mockStorageProvider: {
@@ -55,15 +67,24 @@ describe('MemberService', () => {
   let mockChannelRepo: { removeUserFromPrivateChannels: jest.Mock };
   let mockChannelCache: { invalidate: jest.Mock };
 
+  const mockTierRepo = {
+    findByChapter: jest.fn().mockResolvedValue([]),
+  };
+
   beforeEach(async () => {
     mockRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
+      countByChapter: jest.fn(),
       delete: jest.fn(),
-      findByUser: jest.fn(),
+      // One chapter each unless a test says otherwise (#4367).
+      findByUser: jest.fn().mockResolvedValue([]),
       findChapterMemberIdentities: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
@@ -74,6 +95,7 @@ describe('MemberService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
+      findSharedBirthdaysByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -100,6 +122,18 @@ describe('MemberService', () => {
     };
     mockRbacService = {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
+      // The caller holds `*` unless a test says otherwise (#4071).
+      getRankContext: jest.fn().mockResolvedValue({
+        reach: {
+          memberId: 'member-president',
+          rank: 0,
+          permissions: new Set(['*']),
+          wildcard: true,
+        },
+        roles: [],
+        tiers: [],
+        positions: new Map(),
+      }),
       flagIfPresidentRemoved: jest.fn().mockResolvedValue(undefined),
       // The real lookup, over the mocked role repository, so each test states
       // the chapter's Alumni role once, on `findByChapterAndSystemKey`.
@@ -133,6 +167,7 @@ describe('MemberService', () => {
         { provide: MEMBER_REPOSITORY, useValue: mockRepo },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        { provide: ROLE_TIER_REPOSITORY, useValue: mockTierRepo },
         { provide: CustomFieldService, useValue: mockCustomFieldService },
         { provide: RbacService, useValue: mockRbacService },
         { provide: ChapterAuditLogService, useValue: mockAuditLogService },
@@ -208,6 +243,81 @@ describe('MemberService', () => {
   // The roster projection exists so a display surface never has to pull
   // MemberProfile. Its whole point is what it leaves out, so these assert the
   // narrow lookup is the one used and the shape stays three fields wide.
+  describe('birthdays (#4959)', () => {
+    it('lists the shared birthdays of members, in calendar order', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberFixture({ id: 'm-1', user_id: 'user-1' }),
+        memberFixture({ id: 'm-2', user_id: 'user-2' }),
+      ]);
+      mockUserRepo.findSharedBirthdaysByIds.mockResolvedValue([
+        {
+          id: 'user-2',
+          display_name: 'Dana Lowe',
+          avatar_url: null,
+          birthday_month: 11,
+          birthday_day: 2,
+        },
+        {
+          id: 'user-1',
+          display_name: 'Marcus Reid',
+          avatar_url: null,
+          birthday_month: 3,
+          birthday_day: 4,
+        },
+      ]);
+
+      const result = await service.findBirthdaysByChapter('chapter-1');
+
+      expect(mockUserRepo.findSharedBirthdaysByIds).toHaveBeenCalledWith([
+        'user-1',
+        'user-2',
+      ]);
+      expect(result.map((b) => b.id)).toEqual(['user-1', 'user-2']);
+    });
+
+    it('reads nothing for a chapter without members', async () => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      await expect(
+        service.findBirthdaysByChapter('chapter-1'),
+      ).resolves.toEqual([]);
+      expect(mockUserRepo.findSharedBirthdaysByIds).not.toHaveBeenCalled();
+    });
+
+    it('puts a birthday on a profile only when its member shares it', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberFixture({ id: 'm-1', user_id: 'user-1' }),
+        memberFixture({ id: 'm-2', user_id: 'user-2' }),
+      ]);
+      mockUserRepo.findByIds.mockResolvedValue([
+        userFixture({
+          id: 'user-1',
+          birthday_month: 3,
+          birthday_day: 4,
+          birthday_year: 2004,
+          birthday_visibility: 'chapter',
+        }),
+        userFixture({
+          id: 'user-2',
+          birthday_month: 5,
+          birthday_day: 6,
+          birthday_visibility: 'nobody',
+        }),
+      ]);
+
+      const result = await service.findByChapter('chapter-1');
+
+      const byUser = new Map(result.map((m) => [m.user_id, m]));
+      expect(byUser.get('user-1')).toEqual(
+        expect.objectContaining({ birthday_month: 3, birthday_day: 4 }),
+      );
+      expect(byUser.get('user-1')).not.toHaveProperty('birthday_year');
+      expect(byUser.get('user-2')).toEqual(
+        expect.objectContaining({ birthday_month: null, birthday_day: null }),
+      );
+    });
+  });
+
   describe('findRosterByChapter', () => {
     const memberRow = (userId: string, id = `member-${userId}`) =>
       memberFixture({
@@ -274,6 +384,44 @@ describe('MemberService', () => {
       expect(mockStorageProvider.getSignedDownloadUrls).toHaveBeenCalledTimes(
         1,
       );
+    });
+
+    it("paints the highest-ranked role's color, tier before display_order", async () => {
+      // Staging, 2026-11-20: an untiered "First Floor" at display_order 0
+      // colored the President's name.
+      mockRepo.findByChapter.mockResolvedValue([
+        memberFixture({
+          user_id: 'user-1',
+          chapter_id: 'chapter-1',
+          role_ids: ['role-floor', 'role-pres'],
+        }),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        roleFixture({
+          id: 'role-floor',
+          name: 'First Floor',
+          color: '#5CC8F0',
+          display_order: 0,
+          tier_id: null,
+        }),
+        roleFixture({
+          id: 'role-pres',
+          name: 'President',
+          color: '#F2994A',
+          display_order: 1,
+          tier_id: 'tier-cabinet',
+        }),
+      ]);
+      mockTierRepo.findByChapter.mockResolvedValueOnce([
+        { id: 'tier-cabinet', position: 1 },
+      ]);
+
+      const [entry] = await service.findRosterByChapter('chapter-1');
+
+      expect(entry.role_color).toBe('#F2994A');
     });
 
     it('reads through the narrow projection, never the full user row', async () => {
@@ -532,25 +680,152 @@ describe('MemberService', () => {
         customRole,
       ]);
       const updated = { ...existingMember, role_ids: ['role-1', 'role-2'] };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
       const result = await service.updateRoles(
         'member-1',
         ['role-1', 'role-2'],
         'chapter-1',
+        'user-actor',
       );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-1', 'role-2'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        ['role-1', 'role-2'],
+      );
       expect(result).toEqual(updated);
+    });
+
+    // #4830: a role delete committing between the reads and the write must
+    // not have its id written back, so the write compares against what was
+    // read and refuses when the row moved.
+    it('writes against the role_ids it read, and answers 409 when the row moved', async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        presidentRole,
+        memberRole,
+        customRole,
+      ]);
+      mockRepo.setRoleIds.mockResolvedValue(null);
+
+      await expect(
+        service.updateRoles(
+          'member-1',
+          ['role-1', 'role-2'],
+          'chapter-1',
+          'user-actor',
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        'chapter-1',
+        'member-1',
+        ['role-1'],
+        ['role-1', 'role-2'],
+      );
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 when the member was removed while the save was out', async () => {
+      mockRepo.findById
+        .mockResolvedValueOnce(existingMember)
+        .mockResolvedValueOnce(null);
+      mockRoleRepo.findByChapter.mockResolvedValue([memberRole, customRole]);
+      mockRepo.setRoleIds.mockResolvedValue(null);
+
+      await expect(
+        service.updateRoles('member-1', ['role-1'], 'chapter-1', 'user-actor'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    describe('the Everyone role and the base roles (2026-11-21)', () => {
+      const everyone = roleFixture({
+        id: 'role-everyone',
+        chapter_id: 'chapter-1',
+        name: 'Everyone',
+        system_key: 'EVERYONE',
+        permissions: ['members:view'],
+        is_system: true,
+        display_order: 5,
+      });
+      const alumni = roleFixture({
+        id: 'role-alumni',
+        chapter_id: 'chapter-1',
+        name: 'Alumni',
+        system_key: 'ALUMNI',
+        permissions: ['members:view'],
+        is_system: true,
+        display_order: 7,
+      });
+      const actives = roleFixture({
+        id: 'role-actives',
+        chapter_id: 'chapter-1',
+        name: 'Actives',
+        system_key: 'MEMBER',
+        permissions: ['members:view'],
+        is_system: true,
+        display_order: 6,
+      });
+      const roles = [presidentRole, everyone, actives, alumni, customRole];
+      const save = async (held: string[], requested: string[]) => {
+        mockRepo.findById.mockResolvedValue({
+          ...existingMember,
+          role_ids: held,
+        });
+        mockRoleRepo.findByChapter.mockResolvedValue(roles);
+        mockRepo.setRoleIds.mockImplementation(
+          (_chapterId: string, _id: string, _held: string[], ids: string[]) =>
+            Promise.resolve({ ...existingMember, role_ids: ids }),
+        );
+        await service.updateRoles(
+          'member-1',
+          requested,
+          'chapter-1',
+          'user-actor',
+        );
+        const ids = mockRepo.setRoleIds.mock.calls.at(-1)?.[3];
+        return ids && { role_ids: ids };
+      };
+
+      it('keeps it when a save leaves it off, as a shipped build may', async () => {
+        await expect(save(['role-everyone'], ['role-2'])).resolves.toEqual({
+          role_ids: ['role-2', 'role-everyone'],
+        });
+      });
+
+      it('swaps the base role: an active made Alumni stops being an active', async () => {
+        await expect(
+          save(
+            ['role-actives', 'role-everyone'],
+            ['role-actives', 'role-everyone', 'role-alumni'],
+          ),
+        ).resolves.toEqual({ role_ids: ['role-alumni', 'role-everyone'] });
+      });
+
+      it('leaves a member with no base role on Everyone alone', async () => {
+        await expect(save(['role-2'], [])).resolves.toEqual({
+          role_ids: ['role-everyone'],
+        });
+      });
+
+      it('refuses two base roles neither of which the save adds', async () => {
+        await expect(
+          save(
+            ['role-actives', 'role-alumni', 'role-everyone'],
+            ['role-actives', 'role-alumni'],
+          ),
+        ).rejects.toMatchObject({
+          response: expect.objectContaining({ code: 'role.base_conflict' }),
+        });
+      });
     });
 
     it('throws when member is not found', async () => {
       mockRepo.findById.mockResolvedValue(null);
 
       await expect(
-        service.updateRoles('member-x', ['role-1'], 'chapter-1'),
+        service.updateRoles('member-x', ['role-1'], 'chapter-1', 'user-actor'),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -561,7 +836,7 @@ describe('MemberService', () => {
       });
 
       await expect(
-        service.updateRoles('member-1', ['role-1'], 'chapter-1'),
+        service.updateRoles('member-1', ['role-1'], 'chapter-1', 'user-actor'),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -574,9 +849,10 @@ describe('MemberService', () => {
           'member-1',
           ['role-1', 'role-from-other-chapter'],
           'chapter-1',
+          'user-actor',
         ),
       ).rejects.toThrow(BadRequestException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('blocks adding the President role through the generic endpoint', async () => {
@@ -588,9 +864,10 @@ describe('MemberService', () => {
           'member-1',
           ['role-1', 'role-president'],
           'chapter-1',
+          'user-actor',
         ),
       ).rejects.toThrow(ForbiddenException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('blocks removing the President role through the generic endpoint', async () => {
@@ -601,9 +878,9 @@ describe('MemberService', () => {
       mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
 
       await expect(
-        service.updateRoles('member-1', ['role-1'], 'chapter-1'),
+        service.updateRoles('member-1', ['role-1'], 'chapter-1', 'user-actor'),
       ).rejects.toThrow(ForbiddenException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('allows keeping the President role unchanged while editing other roles', async () => {
@@ -620,17 +897,21 @@ describe('MemberService', () => {
         ...existingMember,
         role_ids: ['role-president', 'role-2'],
       };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
       const result = await service.updateRoles(
         'member-1',
         ['role-president', 'role-2'],
         'chapter-1',
+        'user-actor',
       );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-president', 'role-2'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        ['role-president', 'role-2'],
+      );
       expect(result).toEqual(updated);
     });
 
@@ -646,17 +927,21 @@ describe('MemberService', () => {
         ...existingMember,
         role_ids: ['role-1', 'role-deleted'],
       };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
       await service.updateRoles(
         'member-1',
         ['role-1', 'role-deleted'],
         'chapter-1',
+        'user-actor',
       );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-1', 'role-deleted'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        ['role-1', 'role-deleted'],
+      );
     });
 
     it('compares wildcard roles as sets: duplicates neither bypass nor false-403', async () => {
@@ -687,9 +972,10 @@ describe('MemberService', () => {
           'member-1',
           ['role-legacy-star', 'role-president'],
           'chapter-1',
+          'user-actor',
         ),
       ).rejects.toThrow(ForbiddenException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
 
       // (b) held [president]; payload [president, president, member role] —
       // the wildcard SET is unchanged → allowed.
@@ -701,16 +987,21 @@ describe('MemberService', () => {
         ...existingMember,
         role_ids: ['role-president', 'role-president', 'role-1'],
       };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
       await service.updateRoles(
         'member-1',
         ['role-president', 'role-president', 'role-1'],
         'chapter-1',
+        'user-actor',
       );
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-president', 'role-president', 'role-1'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        // `rolesAfterSave` drops the duplicate.
+        ['role-president', 'role-1'],
+      );
     });
 
     it('blocks assigning a non-system role that carries the wildcard', async () => {
@@ -736,22 +1027,31 @@ describe('MemberService', () => {
           'member-1',
           ['role-1', 'role-legacy-star'],
           'chapter-1',
+          'user-actor',
         ),
       ).rejects.toThrow(ForbiddenException);
-      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
     });
 
     it('writes role_ids and never custom_role_ids (#4075)', async () => {
       mockRepo.findById.mockResolvedValue(existingMember);
       mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
       const updated = { ...existingMember };
-      mockRepo.update.mockResolvedValue(updated);
+      mockRepo.setRoleIds.mockResolvedValue(updated);
 
-      await service.updateRoles('member-1', ['role-1'], 'chapter-1');
+      await service.updateRoles(
+        'member-1',
+        ['role-1'],
+        'chapter-1',
+        'user-actor',
+      );
 
-      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-        role_ids: ['role-1'],
-      });
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        'member-1',
+        expect.any(Array),
+        ['role-1'],
+      );
     });
   });
 
@@ -762,14 +1062,233 @@ describe('MemberService', () => {
       has_completed_onboarding: true,
       updated_at: '2024-01-02',
     });
-    mockRepo.update.mockResolvedValue(updatedMember);
+    mockRepo.completeOnboarding.mockResolvedValue({
+      member: updatedMember,
+      changed: true,
+    });
 
     const result = await service.updateOnboarding('member-1', true);
 
-    expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-      has_completed_onboarding: true,
+    // Only when it was still false, so the join is announced once (#5627).
+    expect(mockRepo.completeOnboarding).toHaveBeenCalledWith('member-1');
+    expect(mockRepo.update).not.toHaveBeenCalled();
+    expect(result).toEqual({ member: updatedMember, firstFinish: true });
+  });
+
+  it('is no first finish when onboarding was already done', async () => {
+    const member = memberFixture({ has_completed_onboarding: true });
+    mockRepo.completeOnboarding.mockResolvedValue({ member, changed: false });
+
+    await expect(service.updateOnboarding('member-1', true)).resolves.toEqual({
+      member,
+      firstFinish: false,
     });
-    expect(result).toEqual(updatedMember);
+  });
+
+  it('never resets onboarding, so a join is announced only once (#5627)', async () => {
+    const member = memberFixture({ has_completed_onboarding: true });
+    mockRepo.findById.mockResolvedValue(member);
+
+    await expect(service.updateOnboarding('member-1', false)).resolves.toEqual({
+      member,
+      firstFinish: false,
+    });
+    expect(mockRepo.update).not.toHaveBeenCalled();
+    expect(mockRepo.completeOnboarding).not.toHaveBeenCalled();
+  });
+
+  // #4071: the rank rules on giving and taking roles, over a chapter with a
+  // President, exec officers, chairs and brothers.
+  describe('updateRoles rank rules', () => {
+    const roles = tieredChapterRoles();
+    // A second chair, so a chair has a peer.
+    const SOCIAL_CHAIR_MEMBER = 'member-social-chair';
+    const members = [
+      ...tieredChapterMembers(),
+      {
+        ...tieredChapterMembers()[0],
+        id: SOCIAL_CHAIR_MEMBER,
+        user_id: 'user-social-chair',
+        role_ids: [ROLE.socialChair, ROLE.brother],
+      },
+    ];
+    const memberRow = (id: string) => members.find((m) => m.id === id)!;
+    const save = (
+      memberId: string,
+      roleIds: string[],
+      actorUserId: string,
+      extraPermissions: string[] = [],
+    ) => {
+      mockRepo.findById.mockResolvedValue(memberRow(memberId));
+      mockRoleRepo.findByChapter.mockResolvedValue(roles);
+      mockRepo.setRoleIds.mockImplementation(
+        async (_chapterId, id, _held, ids) => ({
+          ...memberRow(id),
+          role_ids: ids,
+        }),
+      );
+      const context = tieredRankContext(actorUserId);
+      mockRbacService.getRankContext.mockResolvedValue({
+        ...context,
+        reach: {
+          ...context.reach,
+          permissions: new Set([
+            ...context.reach.permissions,
+            ...extraPermissions,
+          ]),
+        },
+      });
+      return service.updateRoles(memberId, roleIds, CHAPTER_ID, actorUserId);
+    };
+
+    it("stops a chair giving themselves an officer's role", async () => {
+      await expect(
+        save(
+          TIERED_MEMBER.riskChair,
+          [ROLE.riskChair, ROLE.brother, ROLE.vicePresident],
+          USER.riskChair,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
+    });
+
+    it("stops a chair giving anyone a role in the chairs' own tier", async () => {
+      await expect(
+        save(
+          TIERED_MEMBER.brother,
+          [ROLE.brother, ROLE.socialChair],
+          USER.riskChair,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('stops a chair handing themselves a lower role that carries more than they hold', async () => {
+      await expect(
+        save(
+          TIERED_MEMBER.riskChair,
+          [ROLE.riskChair, ROLE.brother, ROLE.treasuryAssistant],
+          USER.riskChair,
+        ),
+      ).rejects.toThrow(/billing:view/);
+    });
+
+    it('stops a chair taking a role away from an officer who outranks them', async () => {
+      await expect(
+        save(TIERED_MEMBER.vicePresident, [ROLE.vicePresident], USER.riskChair),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('lets a chair give a brother a role below the chairs', async () => {
+      await save(
+        TIERED_MEMBER.brother,
+        [ROLE.brother, ROLE.pledge],
+        USER.riskChair,
+      );
+      expect(mockRepo.setRoleIds).toHaveBeenCalledWith(
+        expect.any(String),
+        TIERED_MEMBER.brother,
+        expect.any(Array),
+        [ROLE.brother, ROLE.pledge],
+      );
+    });
+
+    it("refuses a role below the chair that carries a permission the chair lacks, so a second account can't collect it", async () => {
+      // The treasury assistant ranks with the brothers but holds billing:view.
+      await expect(
+        save(
+          TIERED_MEMBER.brother,
+          [ROLE.brother, ROLE.treasuryAssistant],
+          USER.riskChair,
+        ),
+      ).rejects.toThrow(/billing:view/);
+      await expect(
+        save(
+          TIERED_MEMBER.brother,
+          [ROLE.brother, ROLE.alumni],
+          USER.riskChair,
+        ),
+      ).rejects.toThrow(/alumni:post/);
+      expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
+    });
+
+    // #5725 (Paul, 2026-11-20): `roles:assign_own_level` reaches the
+    // caller's own rank too, for the roles and for the member.
+    describe('with roles:assign_own_level', () => {
+      const OWN = ['roles:assign_own_level'];
+
+      it('is off by default: a chair cannot give a fellow chair even a lower role', async () => {
+        await expect(
+          save(
+            SOCIAL_CHAIR_MEMBER,
+            [ROLE.socialChair, ROLE.brother, ROLE.pledge],
+            USER.riskChair,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
+      });
+
+      it('lets a chair give a fellow chair a lower role, and a chair-level role', async () => {
+        await save(
+          SOCIAL_CHAIR_MEMBER,
+          [ROLE.socialChair, ROLE.brother, ROLE.pledge],
+          USER.riskChair,
+          OWN,
+        );
+        await save(
+          TIERED_MEMBER.brother,
+          [ROLE.brother, ROLE.socialChair],
+          USER.riskChair,
+          OWN,
+        );
+        expect(mockRepo.setRoleIds).toHaveBeenCalledTimes(2);
+      });
+
+      it('lets a chair take a chair role away from a fellow chair', async () => {
+        await save(SOCIAL_CHAIR_MEMBER, [ROLE.brother], USER.riskChair, OWN);
+        expect(mockRepo.setRoleIds).toHaveBeenCalledTimes(1);
+      });
+
+      it('still stops a chair touching an officer ranked above them, or giving an officer role', async () => {
+        await expect(
+          save(
+            TIERED_MEMBER.vicePresident,
+            [ROLE.vicePresident],
+            USER.riskChair,
+            OWN,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(
+          save(
+            TIERED_MEMBER.brother,
+            [ROLE.brother, ROLE.vicePresident],
+            USER.riskChair,
+            OWN,
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(mockRepo.setRoleIds).not.toHaveBeenCalled();
+      });
+
+      it('still refuses a role carrying a permission the caller lacks', async () => {
+        await expect(
+          save(
+            SOCIAL_CHAIR_MEMBER,
+            [ROLE.socialChair, ROLE.brother, ROLE.treasuryAssistant],
+            USER.riskChair,
+            OWN,
+          ),
+        ).rejects.toThrow(/billing:view/);
+      });
+    });
+
+    it('lets an exec officer make a brother a chair, and the President do anything', async () => {
+      await save(
+        TIERED_MEMBER.brother,
+        [ROLE.brother, ROLE.socialChair],
+        USER.vicePresident,
+      );
+      await save(TIERED_MEMBER.vicePresident, [ROLE.treasurer], USER.president);
+      expect(mockRepo.setRoleIds).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('remove', () => {
@@ -1019,6 +1538,350 @@ describe('MemberService', () => {
 
         expect(mockUserRepo.update).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  // Removal follows the rank rules (#4071): never yourself, and only members
+  // ranked below you unless you hold `*`.
+  describe('remove rank rules', () => {
+    const members = tieredChapterMembers();
+    const memberRow = (id: string) => members.find((m) => m.id === id)!;
+    const removeAs = (memberId: string, actorUserId: string) => {
+      mockRepo.findById.mockResolvedValue(memberRow(memberId));
+      mockRepo.delete.mockResolvedValue(undefined);
+      mockRbacService.getRankContext.mockResolvedValue(
+        tieredRankContext(actorUserId),
+      );
+      return service.remove(memberId, CHAPTER_ID, actorUserId);
+    };
+
+    it('stops the President removing themselves', async () => {
+      await expect(
+        removeAs(TIERED_MEMBER.president, USER.president),
+      ).rejects.toThrow("You can't remove yourself from the chapter.");
+      expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('stops an officer removing themselves', async () => {
+      await expect(
+        removeAs(TIERED_MEMBER.vicePresident, USER.vicePresident),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('stops a chair removing an officer', async () => {
+      await expect(
+        removeAs(TIERED_MEMBER.vicePresident, USER.riskChair),
+      ).rejects.toThrow('You can only remove members ranked below you.');
+      expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('stops an officer removing the President', async () => {
+      await expect(
+        removeAs(TIERED_MEMBER.president, USER.vicePresident),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('lets an officer remove a brother', async () => {
+      await removeAs(TIERED_MEMBER.brother, USER.vicePresident);
+      expect(mockRepo.delete).toHaveBeenCalledWith(TIERED_MEMBER.brother);
+    });
+
+    it('lets the President remove an officer', async () => {
+      await removeAs(TIERED_MEMBER.vicePresident, USER.president);
+      expect(mockRepo.delete).toHaveBeenCalledWith(TIERED_MEMBER.vicePresident);
+    });
+  });
+
+  describe('viewer_can_remove', () => {
+    const members = tieredChapterMembers();
+    const memberRow = (id: string) => members.find((m) => m.id === id)!;
+    const profileAs = (
+      memberId: string,
+      viewerUserId: string,
+      permissions: string[],
+    ) => {
+      mockRepo.findById.mockResolvedValue(memberRow(memberId));
+      mockUserRepo.findById.mockResolvedValue(userFixture());
+      mockRbacService.getEffectivePermissions.mockResolvedValue(permissions);
+      mockRbacService.getRankContext.mockResolvedValue(
+        tieredRankContext(viewerUserId),
+      );
+      return service.findProfileById(memberId, CHAPTER_ID, viewerUserId);
+    };
+
+    it('is false, without a rank read, for a viewer without members:remove', async () => {
+      const profile = await profileAs(TIERED_MEMBER.brother, USER.riskChair, [
+        'members:view',
+      ]);
+      expect(profile.viewer_can_remove).toBe(false);
+      expect(mockRbacService.getRankContext).not.toHaveBeenCalled();
+    });
+
+    it("is false on the President's own profile", async () => {
+      const profile = await profileAs(TIERED_MEMBER.president, USER.president, [
+        '*',
+      ]);
+      expect(profile.viewer_can_remove).toBe(false);
+    });
+
+    it('is true for an officer viewing a brother', async () => {
+      const profile = await profileAs(
+        TIERED_MEMBER.brother,
+        USER.vicePresident,
+        ['members:view', 'members:remove'],
+      );
+      expect(profile.viewer_can_remove).toBe(true);
+    });
+
+    it('is true for a wildcard holder viewing someone else, without a rank read', async () => {
+      const profile = await profileAs(TIERED_MEMBER.brother, USER.president, [
+        '*',
+      ]);
+      expect(profile.viewer_can_remove).toBe(true);
+      expect(mockRbacService.getRankContext).not.toHaveBeenCalled();
+    });
+
+    it('answers false, and still serves the profile, when the rank read fails', async () => {
+      mockRepo.findById.mockResolvedValue(memberRow(TIERED_MEMBER.brother));
+      mockUserRepo.findById.mockResolvedValue(userFixture());
+      mockRbacService.getEffectivePermissions.mockResolvedValue([
+        'members:view',
+        'members:remove',
+      ]);
+      mockRbacService.getRankContext.mockRejectedValue(new Error('tiers down'));
+      const profile = await service.findProfileById(
+        TIERED_MEMBER.brother,
+        CHAPTER_ID,
+        USER.vicePresident,
+      );
+      expect(profile.viewer_can_remove).toBe(false);
+    });
+
+    it('is false for an officer viewing the President', async () => {
+      const profile = await profileAs(
+        TIERED_MEMBER.president,
+        USER.vicePresident,
+        ['members:view', 'members:remove'],
+      );
+      expect(profile.viewer_can_remove).toBe(false);
+    });
+  });
+
+  // #4367: officers fix a member's name and graduation year.
+  describe('correctProfile', () => {
+    const members = tieredChapterMembers();
+    const memberRow = (id: string) => members.find((m) => m.id === id)!;
+    const correctAs = (
+      memberId: string,
+      actorUserId: string,
+      changes: { display_name?: string; graduation_year?: number | null },
+    ) => {
+      const row = memberRow(memberId);
+      mockRepo.findById.mockResolvedValue(row);
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({
+          id: row.user_id,
+          display_name: 'Jonh Smith',
+          graduation_year: 2026,
+        }),
+      );
+      mockUserRepo.update.mockResolvedValue(userFixture());
+      mockRbacService.getRankContext.mockResolvedValue(
+        tieredRankContext(actorUserId),
+      );
+      return service.correctProfile(memberId, CHAPTER_ID, actorUserId, changes);
+    };
+
+    it("lets an officer fix a brother's name and year, and audits the change", async () => {
+      await correctAs(TIERED_MEMBER.brother, USER.vicePresident, {
+        display_name: 'John Smith',
+        graduation_year: 2027,
+      });
+      const row = memberRow(TIERED_MEMBER.brother);
+      expect(mockUserRepo.update).toHaveBeenCalledWith(row.user_id, {
+        display_name: 'John Smith',
+        graduation_year: 2027,
+      });
+      expect(mockAuditLogService.record).toHaveBeenCalledWith({
+        chapterId: CHAPTER_ID,
+        actorUserId: USER.vicePresident,
+        action: 'member_profile_corrected',
+        targetType: 'member',
+        targetId: TIERED_MEMBER.brother,
+        diff: {
+          display_name: { from: 'Jonh Smith', to: 'John Smith' },
+          graduation_year: { from: 2026, to: 2027 },
+        },
+      });
+    });
+
+    it('writes and audits only what changed', async () => {
+      await correctAs(TIERED_MEMBER.brother, USER.vicePresident, {
+        display_name: 'Jonh Smith',
+        graduation_year: null,
+      });
+      expect(mockUserRepo.update).toHaveBeenCalledWith(expect.any(String), {
+        graduation_year: null,
+      });
+      expect(mockAuditLogService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diff: { graduation_year: { from: 2026, to: null } },
+        }),
+      );
+    });
+
+    it('writes nothing when nothing changed', async () => {
+      await correctAs(TIERED_MEMBER.brother, USER.vicePresident, {
+        display_name: 'Jonh Smith',
+      });
+      expect(mockUserRepo.update).not.toHaveBeenCalled();
+      expect(mockAuditLogService.record).not.toHaveBeenCalled();
+    });
+
+    it('refuses your own profile', async () => {
+      await expect(
+        correctAs(TIERED_MEMBER.vicePresident, USER.vicePresident, {
+          display_name: 'VP',
+        }),
+      ).rejects.toThrow(
+        'Change your own name and graduation year from your profile.',
+      );
+      expect(mockUserRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('stops a chair renaming an officer', async () => {
+      await expect(
+        correctAs(TIERED_MEMBER.vicePresident, USER.riskChair, {
+          display_name: 'Someone',
+        }),
+      ).rejects.toThrow(
+        'You can only edit the profiles of members ranked below you.',
+      );
+      expect(mockUserRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('stops an officer renaming the President', async () => {
+      await expect(
+        correctAs(TIERED_MEMBER.president, USER.vicePresident, {
+          display_name: 'Someone',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('refuses a member who is also in another chapter', async () => {
+      mockRepo.findByUser.mockResolvedValue([
+        memberRow(TIERED_MEMBER.brother),
+        memberFixture({ id: 'elsewhere', chapter_id: 'other-chapter' }),
+      ]);
+      await expect(
+        correctAs(TIERED_MEMBER.brother, USER.president, {
+          display_name: 'Someone',
+        }),
+      ).rejects.toThrow('This member is also in another chapter');
+      expect(mockUserRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a member of another chapter', async () => {
+      mockRepo.findById.mockResolvedValue(
+        memberFixture({ chapter_id: 'other-chapter' }),
+      );
+      await expect(
+        service.correctProfile('member-1', CHAPTER_ID, USER.president, {
+          display_name: 'X',
+        }),
+      ).rejects.toThrow('Member not in current chapter');
+    });
+  });
+
+  describe('viewer_can_edit_profile', () => {
+    const members = tieredChapterMembers();
+    const memberRow = (id: string) => members.find((m) => m.id === id)!;
+    const profileAs = (
+      memberId: string,
+      viewerUserId: string,
+      permissions: string[],
+    ) => {
+      mockRepo.findById.mockResolvedValue(memberRow(memberId));
+      mockUserRepo.findById.mockResolvedValue(userFixture());
+      mockRbacService.getEffectivePermissions.mockResolvedValue(permissions);
+      mockRbacService.getRankContext.mockResolvedValue(
+        tieredRankContext(viewerUserId),
+      );
+      return service.findProfileById(memberId, CHAPTER_ID, viewerUserId);
+    };
+
+    it('is false, with no reads, for a viewer without roles:manage', async () => {
+      const profile = await profileAs(TIERED_MEMBER.brother, USER.riskChair, [
+        'members:view',
+      ]);
+      expect(profile.viewer_can_edit_profile).toBe(false);
+      expect(mockRepo.findByUser).not.toHaveBeenCalled();
+    });
+
+    it('is true for an officer with roles:manage viewing a brother', async () => {
+      const profile = await profileAs(
+        TIERED_MEMBER.brother,
+        USER.vicePresident,
+        ['members:view', 'roles:manage'],
+      );
+      expect(profile.viewer_can_edit_profile).toBe(true);
+    });
+
+    it('is false for that officer viewing the President', async () => {
+      const profile = await profileAs(
+        TIERED_MEMBER.president,
+        USER.vicePresident,
+        ['members:view', 'roles:manage'],
+      );
+      expect(profile.viewer_can_edit_profile).toBe(false);
+    });
+
+    it('is false on your own profile', async () => {
+      const profile = await profileAs(TIERED_MEMBER.president, USER.president, [
+        '*',
+      ]);
+      expect(profile.viewer_can_edit_profile).toBe(false);
+    });
+
+    it('is true for a wildcard holder, false once the member is in another chapter', async () => {
+      const first = await profileAs(TIERED_MEMBER.brother, USER.president, [
+        '*',
+      ]);
+      expect(first.viewer_can_edit_profile).toBe(true);
+      mockRepo.findByUser.mockResolvedValue([
+        memberFixture({ id: 'elsewhere', chapter_id: 'other-chapter' }),
+      ]);
+      const second = await profileAs(TIERED_MEMBER.brother, USER.president, [
+        '*',
+      ]);
+      expect(second.viewer_can_edit_profile).toBe(false);
+    });
+
+    it('reads the rank context once when both removal and correction need it', async () => {
+      mockRbacService.getRankContext.mockClear();
+      const profile = await profileAs(
+        TIERED_MEMBER.brother,
+        USER.vicePresident,
+        ['members:view', 'roles:manage', 'members:remove'],
+      );
+      expect(profile.viewer_can_edit_profile).toBe(true);
+      expect(profile.viewer_can_remove).toBe(true);
+      expect(mockRbacService.getRankContext).toHaveBeenCalledTimes(1);
+    });
+
+    it('carries the phone the member set', async () => {
+      mockRepo.findById.mockResolvedValue(memberRow(TIERED_MEMBER.brother));
+      mockUserRepo.findById.mockResolvedValue(
+        userFixture({ phone: '(518) 555-0142' }),
+      );
+      const profile = await service.findProfileById(
+        TIERED_MEMBER.brother,
+        CHAPTER_ID,
+        USER.riskChair,
+      );
+      expect(profile.phone).toBe('(518) 555-0142');
     });
   });
 

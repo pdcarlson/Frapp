@@ -1,6 +1,6 @@
 /**
- * The Directory's Actives filters (#3971): role, graduation year, pledge class
- * and status, the four web's Directory toolbar carries
+ * The Directory's Actives filters (#3971): role, group, graduation year,
+ * pledge class and status, the ones web's Directory toolbar carries
  * (`apps/web/components/members/members-directory.tsx`), applied to the same
  * `GET /v1/members` rows by the same rules, so a filter reads the same on
  * both.
@@ -9,23 +9,40 @@
  * `GET /v1/members` takes no filter params.
  */
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
-import { roleColorOrNull } from "@repo/validation";
-import { num, records, str } from "../more/narrow";
+import type { ChapterRole } from "@repo/hooks/chapter-roles";
+import { matchesRoleFilter } from "@repo/hooks/member-assignments";
+import {
+  matchesPhoneReachFilter,
+  type PhoneReach,
+  type PhoneReachFilter,
+} from "@repo/validation";
+import { num, str } from "../more/narrow";
 
 export type ActivesStatus = "active" | "pending";
 
 export interface ActivesFilter {
+  /** A role id, or `NO_BASE_ROLE_FILTER` for members holding no base role. */
   roleId: string | null;
+  /** A group the member is in (Paul, 2026-11-19), as web's Group chip. */
+  groupId: string | null;
   graduationYear: number | null;
   pledgeClassId: string | null;
   status: ActivesStatus | null;
+  /**
+   * Whether Frapp's notifications reach the member's phone (web's "Phone app"
+   * chip). Offered only to officers the server sends the whole chapter's
+   * reach to.
+   */
+  phoneReach: PhoneReachFilter | null;
 }
 
 export const NO_ACTIVES_FILTER: ActivesFilter = {
   roleId: null,
+  groupId: null,
   graduationYear: null,
   pledgeClassId: null,
   status: null,
+  phoneReach: null,
 };
 
 /** Web's Status options and words: onboarding finished, or not yet. */
@@ -37,27 +54,21 @@ export const STATUS_OPTIONS: readonly {
   { value: "pending", label: "Pending" },
 ];
 
-export interface FilterRole {
-  id: string;
-  name: string;
-  color: string | null;
-}
+export type FilterRole = Pick<ChapterRole, "id" | "name" | "color">;
 
 /**
  * The roles an active can be narrowed by, in the order `GET /v1/roles` returns
- * them (web's order). The Alumni system role is left out: nobody on the
- * Actives tab holds it, as web leaves it out of its role filter outside a
- * search. Read defensively, since the endpoint declares no response schema.
+ * them (web's order), from `parseChapterRoles` (`@repo/hooks/chapter-roles`).
+ * The Alumni system role is left out: nobody on the Actives tab holds it, as
+ * web leaves it out of its role filter outside a search. Everyone (#4191): no
+ * list offers it.
  */
-export function parseFilterRoles(rolesData: unknown): FilterRole[] {
-  return records(rolesData).flatMap((row) => {
-    const id = str(row, "id");
-    const name = str(row, "name");
-    if (!id || !name || row.system_key === "ALUMNI") return [];
-    // Palette colors only, as every other role-color path paints them
-    // (`roleColorOrNull`): a legacy or free-typed value paints no dot.
-    return [{ id, name, color: roleColorOrNull(row.color) }];
-  });
+export function activesFilterRoles(
+  roles: readonly ChapterRole[],
+): FilterRole[] {
+  return roles
+    .filter((role) => role.system_key !== "ALUMNI" && !role.everyone)
+    .map(({ id, name, color }) => ({ id, name, color }));
 }
 
 /**
@@ -102,14 +113,22 @@ export function effectiveActivesFilter(
   filter: ActivesFilter,
   known: {
     roleIds: ReadonlySet<string>;
+    /** Groups with at least one member, the ones the sheet offers. */
+    groupIds?: ReadonlySet<string>;
     years: readonly number[];
     classIds: ReadonlySet<string>;
+    /** Whether the Phone app filter is offered (officers only). */
+    phoneReach?: boolean;
   },
 ): ActivesFilter {
   return {
     roleId:
       filter.roleId !== null && known.roleIds.has(filter.roleId)
         ? filter.roleId
+        : null,
+    groupId:
+      filter.groupId !== null && known.groupIds?.has(filter.groupId)
+        ? filter.groupId
         : null,
     graduationYear:
       filter.graduationYear !== null &&
@@ -121,6 +140,7 @@ export function effectiveActivesFilter(
         ? filter.pledgeClassId
         : null,
     status: filter.status,
+    phoneReach: known.phoneReach ? filter.phoneReach : null,
   };
 }
 
@@ -133,11 +153,30 @@ export function countActivesFilters(filter: ActivesFilter): number {
 export function filterActives(
   actives: readonly Record<string, unknown>[],
   filter: ActivesFilter,
+  /** Each member's phone reach by `user_id`, for the Phone app filter. */
+  reachByUserId?: ReadonlyMap<string, PhoneReach>,
+  /** The `user_id`s in the picked group, for the Group filter. */
+  groupMemberIds?: ReadonlySet<string>,
+  /** The chapter's roles, for the No base role pick (#5802). */
+  chapterRoles: readonly Pick<ChapterRole, "id" | "system_key">[] = [],
 ): Record<string, unknown>[] {
   return actives.filter((row) => {
+    if (filter.groupId !== null) {
+      const userId = str(row, "user_id");
+      if (!userId || !groupMemberIds?.has(userId)) return false;
+    }
+    if (filter.phoneReach !== null) {
+      const userId = str(row, "user_id");
+      const reach = userId ? reachByUserId?.get(userId) : undefined;
+      if (!matchesPhoneReachFilter(reach, filter.phoneReach)) return false;
+    }
     if (filter.roleId !== null) {
-      const roleIds = Array.isArray(row.role_ids) ? row.role_ids : [];
-      if (!roleIds.includes(filter.roleId)) return false;
+      const roleIds = Array.isArray(row.role_ids)
+        ? row.role_ids.filter((id): id is string => typeof id === "string")
+        : [];
+      if (!matchesRoleFilter(chapterRoles, roleIds, filter.roleId)) {
+        return false;
+      }
     }
     if (
       filter.graduationYear !== null &&

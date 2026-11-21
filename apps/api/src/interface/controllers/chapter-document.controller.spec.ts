@@ -3,8 +3,12 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ChapterDocumentController } from './chapter-document.controller';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
+import { ChapterDocumentTypeService } from '../../application/services/chapter-document-type.service';
 import { RequestDocumentUploadUrlDto } from '../dtos/chapter-document.dto';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import {
+  PERMISSIONS_ANY_KEY,
+  PERMISSIONS_KEY,
+} from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 
 describe('ChapterDocumentController', () => {
@@ -23,6 +27,7 @@ describe('ChapterDocumentController', () => {
           provide: ChapterDocumentService,
           useValue: mockChapterDocumentService,
         },
+        { provide: ChapterDocumentTypeService, useValue: {} },
       ],
     }).compile();
 
@@ -110,5 +115,115 @@ describe('ChapterDocumentController', () => {
         Reflect.getMetadata(PERMISSIONS_KEY, ChapterDocumentController),
       ).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
+  });
+
+  describe('folder import batches (#2242)', () => {
+    it.each(['requestUploadUrls', 'confirmUploads'] as const)(
+      '%s requires chapter_docs:upload, as the single routes do',
+      (handler) => {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, controller[handler] as object),
+        ).toEqual([SystemPermissions.CHAPTER_DOCS_UPLOAD]);
+      },
+    );
+  });
+
+  describe('who can see (#3642 piece 1)', () => {
+    // A file's list is its uploader's to set, so the route adds nothing past
+    // the class floor and the service decides uploader or manager.
+    it('setAccess adds no permission beyond the class floor', () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.setAccess as object),
+      ).toBeUndefined();
+    });
+
+    // A manager without upload sets folder lists, so either permission
+    // reads the choices.
+    it('accessOptions takes chapter_docs:upload or chapter_docs:manage', () => {
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          controller.accessOptions as object,
+        ),
+      ).toBeUndefined();
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_ANY_KEY,
+          controller.accessOptions as object,
+        ),
+      ).toEqual([
+        SystemPermissions.CHAPTER_DOCS_UPLOAD,
+        SystemPermissions.CHAPTER_DOCS_MANAGE,
+      ]);
+    });
+
+    it('passes the caller through to every read, so the list is theirs', async () => {
+      const findByChapter = jest.fn().mockResolvedValue([]);
+      Object.assign(mockChapterDocumentService, { findByChapter });
+      await controller.list('chapter-123', 'user-1', 'Exec');
+      expect(findByChapter).toHaveBeenCalledWith('chapter-123', 'user-1', {
+        folder: 'Exec',
+      });
+    });
+  });
+
+  describe('rename and move (#5563)', () => {
+    // As for who sees a file, its uploader or a manager refiles it, so the
+    // routes add nothing past the class floor and the service decides.
+    it('update and move add no permission beyond the class floor', () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.update as object),
+      ).toBeUndefined();
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.move as object),
+      ).toBeUndefined();
+    });
+
+    it('passes the caller and only the fields sent through', async () => {
+      const updateDocument = jest.fn().mockResolvedValue({ id: 'doc-1' });
+      const moveDocuments = jest.fn().mockResolvedValue([]);
+      Object.assign(mockChapterDocumentService, {
+        updateDocument,
+        moveDocuments,
+      });
+      await controller.update('chapter-123', 'user-1', 'doc-1', {
+        folder: null,
+      });
+      expect(updateDocument).toHaveBeenCalledWith(
+        'doc-1',
+        'chapter-123',
+        'user-1',
+        { title: undefined, folder: null },
+      );
+      await controller.move('chapter-123', 'user-1', {
+        document_ids: ['doc-1', 'doc-2'],
+        folder: 'Rush',
+      });
+      expect(moveDocuments).toHaveBeenCalledWith(
+        ['doc-1', 'doc-2'],
+        'chapter-123',
+        'user-1',
+        'Rush',
+      );
+    });
+  });
+
+  describe('document types (#3642)', () => {
+    // Every member reads the list (the upload form and filters show it);
+    // only document managers change it.
+    it('listTypes adds no permission beyond the class floor', () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.listTypes as object),
+      ).toBeUndefined();
+    });
+
+    it.each(['createType', 'updateType', 'deleteType'] as const)(
+      '%s requires chapter_docs:manage',
+      (handler) => {
+        expect(
+          Reflect.getMetadata(PERMISSIONS_KEY, controller[handler] as object),
+        ).toEqual([SystemPermissions.CHAPTER_DOCS_MANAGE]);
+      },
+    );
   });
 });

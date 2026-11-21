@@ -5,8 +5,11 @@ import {
   NotFoundException,
   BadRequestException,
   GoneException,
+  ForbiddenException,
 } from '@nestjs/common';
+import { NAME_LOCK_COPY } from '@repo/validation';
 import { UserService } from './user.service';
+import { DisplayNameLockService } from './display-name-lock.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
@@ -24,13 +27,19 @@ describe('UserService', () => {
   let service: UserService;
   let mockRepo: jest.Mocked<IUserRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
+  let nameLock: { isLocked: jest.Mock; recordRename: jest.Mock };
 
   beforeEach(async () => {
+    nameLock = {
+      isLocked: jest.fn().mockResolvedValue(false),
+      recordRename: jest.fn().mockResolvedValue(undefined),
+    };
     mockRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
+      findSharedBirthdaysByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -58,6 +67,7 @@ describe('UserService', () => {
         ProfilePhotoUrlService,
         { provide: USER_REPOSITORY, useValue: mockRepo },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
+        { provide: DisplayNameLockService, useValue: nameLock },
       ],
     }).compile();
 
@@ -117,6 +127,183 @@ describe('UserService', () => {
       graduation_year: 2024,
     });
     expect(result).toEqual(updatedUser);
+    expect(nameLock.recordRename).toHaveBeenCalledWith(
+      existingUser,
+      'Old Name',
+      'Updated Name',
+    );
+  });
+
+  describe('name lock (#5801)', () => {
+    const existing = userFixture({ display_name: 'Ethan Smith' });
+
+    beforeEach(() => {
+      mockRepo.findById.mockResolvedValue(existing);
+      mockRepo.update.mockImplementation(async (_id, data) => ({
+        ...existing,
+        ...data,
+      }));
+    });
+
+    it('refuses a changed name while a chapter locks it, and writes nothing', async () => {
+      nameLock.isLocked.mockResolvedValue(true);
+      await expect(
+        service.update('user-1', { display_name: 'Paul' }),
+      ).rejects.toThrow(new ForbiddenException(NAME_LOCK_COPY.refusal));
+      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(nameLock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it('still saves the other fields, and the same name, while locked', async () => {
+      nameLock.isLocked.mockResolvedValue(true);
+      await service.update('user-1', {
+        display_name: 'Ethan Smith',
+        bio: 'Hi',
+      });
+      expect(mockRepo.update).toHaveBeenCalled();
+      expect(nameLock.isLocked).not.toHaveBeenCalled();
+      expect(nameLock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it('records an allowed rename before saving it', async () => {
+      await service.update('user-1', { display_name: 'Ethan S.' });
+      expect(nameLock.recordRename).toHaveBeenCalledWith(
+        existing,
+        'Ethan Smith',
+        'Ethan S.',
+      );
+      expect(nameLock.recordRename.mock.invocationCallOrder[0]).toBeLessThan(
+        mockRepo.update.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('refuses the rename when its audit write fails, saving nothing', async () => {
+      nameLock.recordRename.mockRejectedValue(new Error('insert failed'));
+      await expect(
+        service.update('user-1', { display_name: 'Ethan S.' }),
+      ).rejects.toThrow('insert failed');
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('shows the name editable when the lock read fails, not a failed request', async () => {
+      nameLock.isLocked.mockRejectedValue(new Error('read failed'));
+      const profile = await service.findProfile('user-1');
+      expect(profile.display_name_locked).toBe(false);
+    });
+
+    it('says on the own profile whether the name is locked', async () => {
+      nameLock.isLocked.mockResolvedValue(true);
+      const profile = await service.findProfile('user-1');
+      expect(profile.display_name_locked).toBe(true);
+    });
+  });
+
+  describe('birthday (#4959)', () => {
+    beforeEach(() => {
+      mockRepo.update.mockImplementation((_id, data) =>
+        Promise.resolve(userFixture(data)),
+      );
+    });
+
+    it('saves a month and day, with or without a year', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await service.update('user-1', {
+        birthday_month: 2,
+        birthday_day: 29,
+        birthday_visibility: 'chapter',
+      });
+
+      expect(mockRepo.update).toHaveBeenCalledWith('user-1', {
+        birthday_month: 2,
+        birthday_day: 29,
+        birthday_visibility: 'chapter',
+      });
+    });
+
+    it('refuses a day its month does not have', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await expect(
+        service.update('user-1', { birthday_month: 4, birthday_day: 31 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a month without a day', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await expect(
+        service.update('user-1', { birthday_month: 4 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses a month alone over a stored birthday, rather than moving it', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({ birthday_month: 3, birthday_day: 4 }),
+      );
+
+      await expect(
+        service.update('user-1', { birthday_month: 4 }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.update('user-1', { birthday_day: 5 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('checks a year alone against the stored day', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({ birthday_month: 2, birthday_day: 29 }),
+      );
+
+      await expect(
+        service.update('user-1', { birthday_year: 2003 }),
+      ).rejects.toThrow(BadRequestException);
+      await service.update('user-1', { birthday_year: 2004 });
+      expect(mockRepo.update).toHaveBeenCalledWith('user-1', {
+        birthday_year: 2004,
+      });
+    });
+
+    it('refuses a year when no birthday is set', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await expect(
+        service.update('user-1', { birthday_year: 2004 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('clears the year with the month and day', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({
+          birthday_month: 3,
+          birthday_day: 4,
+          birthday_year: 2004,
+        }),
+      );
+
+      await service.update('user-1', {
+        birthday_month: null,
+        birthday_day: null,
+      });
+
+      expect(mockRepo.update).toHaveBeenCalledWith('user-1', {
+        birthday_month: null,
+        birthday_day: null,
+        birthday_year: null,
+      });
+    });
+
+    it('takes a visibility change alone', async () => {
+      mockRepo.findById.mockResolvedValue(userFixture());
+
+      await service.update('user-1', { birthday_visibility: 'nobody' });
+
+      expect(mockRepo.update).toHaveBeenCalledWith('user-1', {
+        birthday_visibility: 'nobody',
+      });
+    });
   });
 
   it('should reject profile updates on a tombstoned (deleted) account', async () => {
@@ -301,6 +488,16 @@ describe('UserService', () => {
           'image/svg+xml',
         ),
       ).rejects.toThrow(BadRequestException);
+      // A profile photo is checked as an image: a file every document upload
+      // accepts is still refused here.
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'resume.pdf',
+          'application/pdf',
+        ),
+      ).rejects.toThrow('File extension is not allowed');
 
       expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
     });

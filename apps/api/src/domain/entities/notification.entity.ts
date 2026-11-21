@@ -5,6 +5,12 @@ export interface Notification {
   title: string;
   body: string;
   data: Record<string, unknown>;
+  /**
+   * The chat message a single-message chat row quotes (#4418). Deleting the
+   * message deletes the row (a trigger), and an edit rewrites its body. Null
+   * on every other row, a burst bundle included.
+   */
+  chat_message_id?: string | null;
   read_at: string | null;
   created_at: string;
 }
@@ -15,6 +21,19 @@ export interface PushToken {
   token: string;
   device_name: string | null;
   created_at: string;
+  /**
+   * Set on insert and stamped again each time the same member re-registers
+   * the token (a phone does on every launch). The per-member cap drops the
+   * tokens with the oldest value.
+   */
+  last_registered_at: string;
+  /**
+   * Whether the phone lets Frapp's notifications show, as its own push switch
+   * reads it, sent with every register. `null` when the phone has not said (a
+   * build from before the field). A token alone doesn't mean a push is seen:
+   * iOS and Android 13+ issue one with notifications off.
+   */
+  notifications_enabled: boolean | null;
 }
 
 export interface NotificationPreference {
@@ -73,6 +92,13 @@ export interface UserSettings {
   custom_status?: string | null;
   /** When the custom line clears. Null: until the member clears it. */
   custom_status_expires_at?: string | null;
+  /**
+   * Read receipts (#5519): whether the member's reads of a direct message are
+   * reported to the people in it, and theirs to them. Two-way, off by choice.
+   * Optional so fixtures that predate it still type-check; the column defaults
+   * to true.
+   */
+  read_receipts?: boolean;
   updated_at: string;
 }
 
@@ -92,5 +118,6 @@ export type UserSettingsValues = Pick<
       | 'status_expires_at'
       | 'custom_status'
       | 'custom_status_expires_at'
+      | 'read_receipts'
     >
   >;

@@ -1,5 +1,11 @@
+import { isBirthdayPostChannel } from '../workers/birthday-post-sweep.service';
+import {
+  CHAT_CHANNEL_REPOSITORY,
+  type IChatChannelRepository,
+} from '#domain/repositories/chat.repository.interface';
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -26,6 +32,19 @@ import {
   ROLE_REPOSITORY,
   type IRoleRepository,
 } from '#domain/repositories/role.repository.interface';
+import {
+  MEMBER_REPOSITORY,
+  type IMemberRepository,
+} from '#domain/repositories/member.repository.interface';
+import {
+  ROLE_TIER_REPOSITORY,
+  type IRoleTierRepository,
+} from '#domain/repositories/role-tier.repository.interface';
+import { rankContextFrom } from '#domain/utils/rank-context';
+import {
+  INVITE_PRESIDENT_REFUSAL,
+  inviteRefusal,
+} from '#domain/utils/invite-reach';
 import {
   CHAPTER_CONFIG_REPOSITORY,
   type ChapterWorkflowUpsert,
@@ -232,6 +251,10 @@ export interface PatchChapterConfigInput {
   analytics_opt_out?: boolean;
   /** `null` clears the default rather than meaning "not supplied" (#422). */
   default_invite_role_id?: string | null;
+  /** The birthday post channel (#4959); `null` turns the posts off. */
+  birthday_channel_id?: string | null;
+  /** Whether members may change their own name after joining (#5801). */
+  members_can_change_name?: boolean;
 }
 
 @Injectable()
@@ -244,6 +267,11 @@ export class ChapterConfigService {
     @Inject(CHAPTER_CONFIG_REPOSITORY)
     private readonly configRepo: IChapterConfigRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    @Inject(ROLE_TIER_REPOSITORY)
+    private readonly tierRepo: IRoleTierRepository,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channelRepo: IChatChannelRepository,
     private readonly activation: ActivationService,
     private readonly pointsConfig: ChapterPointsConfigService,
     private readonly auditLog: ChapterAuditLogService,
@@ -373,10 +401,14 @@ export class ChapterConfigService {
       beta_config: chapter.beta_config ?? {},
       analytics_opt_out: chapter.analytics_opt_out ?? false,
       // #422. `null` is meaningful here — "no default configured", which
-      // InviteService reads as "fall back to the seeded Member role". A
+      // InviteService reads as "fall back to the seeded Everyone role". A
       // deleted role clears this via `on delete set null`, so a client never
       // sees an id that no longer resolves.
       default_invite_role_id: chapter.default_invite_role_id ?? null,
+      // #4959: where the happy-birthday posts go; null while they're off.
+      birthday_channel_id: chapter.birthday_channel_id ?? null,
+      // #5801: locked unless the chapter turned renaming on.
+      members_can_change_name: chapter.members_can_change_name === true,
       workflows,
       dues,
       service,
@@ -410,6 +442,75 @@ export class ChapterConfigService {
         code: 'chapter.config.invalid_default_invite_role',
         message:
           'default_invite_role_id must name a role that belongs to this chapter.',
+      });
+    }
+  }
+
+  /**
+   * #1830 (Paul, 2026-11-16). The chapter's default invite role follows the
+   * invite rule (`inviteRefusal`) for whoever sets it: never the President's
+   * role or any role carrying `*`, and otherwise only a role ranked below the
+   * setter whose permissions they hold. Invites check it again when they are
+   * made and redeemed, so this keeps the setting from promising what no
+   * invite can deliver.
+   */
+  private async assertDefaultInviteRole(
+    chapterId: string,
+    actorUserId: string,
+    roleId: string,
+  ): Promise<void> {
+    await this.assertRoleBelongsToChapter(chapterId, roleId);
+    const [member, roles, tiers] = await this.callOrThrow(
+      'Failed to read roles for the default invite role',
+      () =>
+        Promise.all([
+          this.memberRepo.findByUserAndChapter(actorUserId, chapterId),
+          this.roleRepo.findByChapter(chapterId),
+          this.tierRepo.findByChapter(chapterId),
+        ]),
+    );
+    const context = rankContextFrom(chapterId, member, roles, tiers);
+    // Case-blind like the uuid lookup above, which `@IsUUID()` lets an
+    // upper-case id through to; an exact match would miss and refuse nothing.
+    const wanted = roleId.toLowerCase();
+    const role = context.roles.find(
+      (candidate) => candidate.id.toLowerCase() === wanted,
+    );
+    const refusal = inviteRefusal(context, role);
+    if (refusal === INVITE_PRESIDENT_REFUSAL) {
+      throw new BadRequestException({
+        code: 'chapter.config.default_invite_role_president',
+        message:
+          'The default invite role cannot be the President role; presidency moves only through Transfer presidency.',
+      });
+    }
+    if (refusal) {
+      throw new ForbiddenException({
+        code: 'chapter.config.default_invite_role_out_of_reach',
+        message: refusal,
+      });
+    }
+  }
+
+  /**
+   * #4959. The channel is caller-supplied, so it must be one of this
+   * chapter's own, read chapter-first: another chapter's id comes back as not
+   * found. It must be a public channel that isn't archived or the audit
+   * feed (`isBirthdayPostChannel`, which the sweep checks again).
+   */
+  private async assertBirthdayChannel(
+    chapterId: string,
+    channelId: string,
+  ): Promise<void> {
+    const channel = await this.channelRepo.findById(channelId, chapterId);
+    // Public only: a DM or a private channel is a conversation the officer
+    // may not even be in, and a birthday post is for the whole chapter. Never
+    // the audit feed, which only the system writes.
+    if (!channel || !isBirthdayPostChannel(channel)) {
+      throw new BadRequestException({
+        code: 'chapter.config.invalid_birthday_channel',
+        message:
+          "birthday_channel_id must name one of this chapter's public channels that isn't archived or the audit log.",
       });
     }
   }
@@ -456,8 +557,9 @@ export class ChapterConfigService {
       dto.default_invite_role_id !== existing.default_invite_role_id
     ) {
       if (dto.default_invite_role_id !== null) {
-        await this.assertRoleBelongsToChapter(
+        await this.assertDefaultInviteRole(
           chapterId,
+          actorUserId,
           dto.default_invite_role_id,
         );
       }
@@ -466,6 +568,32 @@ export class ChapterConfigService {
         to: dto.default_invite_role_id,
       };
       update['default_invite_role_id'] = dto.default_invite_role_id;
+    }
+    // #4959: the birthday post channel. `null` turns the posts off, so this
+    // keys on `!== undefined` like the default invite role above.
+    if (
+      dto.birthday_channel_id !== undefined &&
+      dto.birthday_channel_id !== existing.birthday_channel_id
+    ) {
+      if (dto.birthday_channel_id !== null) {
+        await this.assertBirthdayChannel(chapterId, dto.birthday_channel_id);
+      }
+      diff['birthday_channel_id'] = {
+        from: existing.birthday_channel_id,
+        to: dto.birthday_channel_id,
+      };
+      update['birthday_channel_id'] = dto.birthday_channel_id;
+    }
+    // #5801: whether members may rename themselves after joining.
+    if (
+      dto.members_can_change_name !== undefined &&
+      dto.members_can_change_name !== existing.members_can_change_name
+    ) {
+      diff['members_can_change_name'] = {
+        from: existing.members_can_change_name,
+        to: dto.members_can_change_name,
+      };
+      update['members_can_change_name'] = dto.members_can_change_name;
     }
     // JSON columns are patched, not replaced: a partial payload deep-merges
     // onto the existing value so untouched keys are preserved.
@@ -694,10 +822,8 @@ export class ChapterConfigService {
       diff,
     });
 
-    // ADR-08 (Chunk 05): `#chapter-audit` mirroring is now owned by the
-    // ChatBridgeWorker which subscribes to `chapter_audit_log` INSERTs and
-    // posts the `system_audit` message itself. Each audit-writing service no
-    // longer needs to call into chat.
+    // Officers read the row on the Logs page in Chapter settings; nothing is
+    // posted to chat (`#chapter-audit` was removed 2026-11-21).
 
     // Funnel step 5 (#267), now that the update and its audit row have landed.
     // A patch can enable several paid modules at once; the milestone is "the
@@ -857,6 +983,10 @@ export class ChapterConfigService {
         'default_invite_role_id' in update
           ? (update.default_invite_role_id ?? null)
           : existing.default_invite_role_id,
+      members_can_change_name:
+        update.members_can_change_name !== undefined
+          ? update.members_can_change_name
+          : existing.members_can_change_name,
       workflows,
       dues: duesUpsert ?? existing.dues,
       service: serviceUpsert ?? existing.service,

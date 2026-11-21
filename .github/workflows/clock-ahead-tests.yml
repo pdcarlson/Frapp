@@ -1,0 +1,103 @@
+name: Clock-ahead tests
+
+# Nightly API test run with the clock a week ahead.
+#
+# A test that reads the wall clock passes the day it merges and fails on some
+# later day with no commit to blame; PR CI tests each PR merged with main, so
+# that morning every open PR goes red. Two did on 2026-11-14 (dev-log and the
+# chat scheduled-message sweep specs). This runs the three suites `api-tests`
+# in ci.yml runs (unit, E2E, AI evals) under libfaketime 7 days ahead, so such
+# a test fails here up to a week early, and raises one `incident` alert, which emails the owner. When it
+# fires and clears: docs/ops/alert-routing.md.
+#
+# Two jobs, so the one that installs dependencies and runs test code holds no
+# token that can write issues: `tests` hands its result to `alert` as a job
+# output. An empty result (the tests job died first) is no verdict, and raises.
+#
+# Runs only on main: a dispatch from another branch would test that branch and
+# still raise or close the alert about main.
+#
+# Semantics live in scripts/ci/clock-ahead-tests.mjs.
+# Unit tests: scripts/ci/__tests__/clock-ahead-tests.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # 05:30 UTC daily, ahead of the 06:15 stagger; it reads no provider API.
+    # Full schedule: docs/ci-cd/agent-infra.md § Scheduled conformance.
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One run at a time: two would race on the alert issue.
+  group: clock-ahead-tests
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Three suites, each stopped by the script at 15 minutes if it hangs, plus
+    # install, package build and the libfaketime install.
+    timeout-minutes: 60
+    outputs:
+      result: ${{ steps.run.outputs.result }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
+
+      - name: Build shared packages
+        uses: ./.github/actions/turbo-packages-build
+
+      - name: Install libfaketime
+        timeout-minutes: 5
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends faketime
+
+      - name: Run the API suites a week ahead
+        id: run
+        run: node scripts/ci/clock-ahead-tests.mjs run
+
+  alert:
+    needs: tests
+    # Also when `tests` failed or timed out: no result is no verdict, and that
+    # raises rather than looking like a quiet night. Not when a person
+    # cancelled the run on purpose (ci.yml's `!cancelled()` for the same reason).
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The only write scope in this workflow, job-scoped: the alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      - name: Raise or close the alert
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RESULT: ${{ needs.tests.outputs.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/clock-ahead-tests.mjs alert

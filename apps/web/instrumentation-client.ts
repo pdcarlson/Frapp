@@ -15,7 +15,12 @@ import { initWebPostHog } from "@/lib/posthog/client";
  * during hydration is still captured.
  *
  * Only synchronous top-level code is guaranteed to finish before hydration, so
- * both SDKs are initialized directly rather than behind a dynamic import.
+ * Sentry is initialized directly rather than behind a dynamic import. PostHog
+ * binds its adapter here, synchronously, but loads its SDK after the page's
+ * `load` event (`lib/posthog/client.ts`). Nothing it does has to happen
+ * before hydration: calls made meanwhile are queued, then sent once it loads,
+ * stamped with the time they were made. On a slow connection it was the
+ * largest download standing between a cold open and the first screen (#3716).
  *
  * **No DSN / no PostHog key means no initialization at all** — tests and CI
  * report nowhere, matching the API's behavior and this app's own analytics

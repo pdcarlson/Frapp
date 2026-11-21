@@ -57,6 +57,30 @@ export class MemberProfileDto {
 
   @ApiProperty({
     type: String,
+    nullable: true,
+    description:
+      "The member's own phone number (#3711), as they typed it, or null. Only they set it.",
+  })
+  phone: string | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      "The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none.",
+  })
+  birthday_month: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The day of `birthday_month`, under the same rule. The year is never sent.',
+  })
+  birthday_day: number | null;
+
+  @ApiProperty({
+    type: String,
     format: 'uuid',
     nullable: true,
     description:
@@ -88,6 +112,25 @@ export class MemberProfileDto {
       'already filtered to the fields the requesting viewer may see.',
   })
   custom_fields?: MemberCustomFieldValueDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Whether the requesting viewer may remove this member from the chapter ' +
+      '(DELETE /v1/members/{id}): they hold members:remove, it is not their ' +
+      'own profile, and the member ranks below them. Present only on ' +
+      'single-member reads.',
+  })
+  viewer_can_remove?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      "Whether the requesting viewer may fix this member's name and " +
+      'graduation year (PATCH /v1/members/{id}/profile): they hold ' +
+      'roles:manage, it is not their own profile, the member ranks below ' +
+      'them, and the member is in no other chapter. Present only on ' +
+      'single-member reads.',
+  })
+  viewer_can_edit_profile?: boolean;
 }
 
 /**
@@ -128,7 +171,73 @@ export class MemberRosterEntryDto {
     type: String,
     nullable: true,
     description:
-      'Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it.',
+      'Color (palette or readable custom, `isPaintableRoleColor`) of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it.',
   })
   role_color: string | null;
+}
+
+/**
+ * A birthday a member shares with their chapter (#4959), for the calendar:
+ * who, and the month and day. Never the year.
+ */
+export class MemberBirthdayDto {
+  @ApiProperty({ description: 'users.id' })
+  id: string;
+
+  @ApiProperty()
+  display_name: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  avatar_url: string | null;
+
+  @ApiProperty({ minimum: 1, maximum: 12 })
+  birthday_month: number;
+
+  @ApiProperty({
+    minimum: 1,
+    maximum: 31,
+    description:
+      'The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`).',
+  })
+  birthday_day: number;
+}
+
+export class MemberPhoneReachDto {
+  @ApiProperty({ format: 'uuid' })
+  user_id: string;
+
+  @ApiProperty({
+    enum: ['on', 'off', 'unknown', 'web_only'],
+    description:
+      "From the member's current phones (the one opened last, and any opened within 30 days of it). `on`: a current phone shows Frapp notifications. `off`: none does, and the phone opened last says off. `unknown`: none does, and the phone opened last is on a build that has not said yet. `web_only`: no phone signed in.",
+  })
+  state: 'on' | 'off' | 'unknown' | 'web_only';
+
+  @ApiProperty({
+    enum: ['ios', 'android'],
+    nullable: true,
+    type: String,
+    description: 'Platform of the phone opened last, when its label says.',
+  })
+  platform: 'ios' | 'android' | null;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    format: 'date-time',
+    description: 'When the member last opened the app on any phone.',
+  })
+  last_opened_at: string | null;
+}
+
+export class MemberPhoneReachListDto {
+  @ApiProperty({
+    enum: ['chapter', 'self'],
+    description:
+      '`chapter` for officers who can invite members or manage roles; anyone else gets `self`, only their own entry.',
+  })
+  scope: 'chapter' | 'self';
+
+  @ApiProperty({ type: MemberPhoneReachDto, isArray: true })
+  members: MemberPhoneReachDto[];
 }

@@ -27,6 +27,20 @@ const mocks = vi.hoisted(() => {
       fetchStatus: "idle" as string,
       refetch: vi.fn(),
     },
+    stats: {
+      points: 1240 as number | null,
+      serviceHours: "18.5" as string | null,
+      hasChapter: true,
+      visible: true,
+      pointsFailed: false,
+      serviceFailed: false,
+    },
+    permissions: ["members:view"] as string[],
+    majors: ["Mechanical Engineering", "Music", "Computer Science"],
+    memberByUserId: vi.fn<(userId: string) => { data: unknown }>(() => ({
+      data: undefined,
+    })),
+    classSection: vi.fn<(props: Record<string, unknown>) => null>(() => null),
     updateUser: {
       mutateAsync: vi.fn<(body: Record<string, unknown>) => Promise<unknown>>(
         () => Promise.resolve({}),
@@ -43,10 +57,31 @@ vi.mock("@/components/profile/profile-photo-control", () => ({
     mocks.photoControl(props),
 }));
 
-vi.mock("@repo/hooks", () => ({
-  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
-  useCurrentUser: () => mocks.userQuery,
-  useUpdateUser: () => mocks.updateUser,
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  return {
+    profileIdentityLine: actual.profileIdentityLine,
+    profileStatsErrorNote: actual.profileStatsErrorNote,
+    useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+    useCurrentUser: () => mocks.userQuery,
+    useUpdateUser: () => mocks.updateUser,
+    useMyProfileStats: () => mocks.stats,
+    usePermissionList: () => mocks.permissions,
+    useChapterMajors: () => mocks.majors,
+    useMemberByUserId: (userId: string) => mocks.memberByUserId(userId),
+  };
+});
+
+// The class rows are `MemberPledgeClassSection`'s own spec's business; the
+// panel's job is what it hands them.
+vi.mock("@/components/members/member-pledge-class-section", () => ({
+  MemberPledgeClassSection: (props: Record<string, unknown>) =>
+    mocks.classSection(props),
+}));
+
+// The picker is its own spec's business (#4958).
+vi.mock("@/components/roles/pick-roles-section", () => ({
+  PickRolesSection: () => null,
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({
@@ -224,6 +259,46 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
   });
 });
 
+describe("ProfilePanel — Major suggests the chapter's majors (#5778)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetQueries();
+  });
+
+  it("offers matching majors and saves the picked spelling", async () => {
+    render(<ProfilePanel />);
+    const major = screen.getByRole("combobox", { name: /major/i });
+    await userEvent.type(major, "mu");
+    const list = await screen.findByRole("listbox", {
+      name: "Majors in your chapter",
+    });
+    expect(
+      Array.from(list.querySelectorAll('[role="option"]')).map(
+        (option) => option.textContent,
+      ),
+    ).toEqual(["Music"]);
+    await userEvent.click(screen.getByRole("option", { name: "Music" }));
+    expect(major).toHaveValue("Music");
+    expect(screen.queryByRole("listbox")).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /save profile/i }),
+    );
+    await waitFor(() =>
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled(),
+    );
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0].major).toBe("Music");
+  });
+
+  it("still takes a major nobody has yet", async () => {
+    render(<ProfilePanel />);
+    const major = screen.getByRole("combobox", { name: /major/i });
+    await userEvent.type(major, "Industrial Systems");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(major).toHaveValue("Industrial Systems");
+  });
+});
+
 describe("ProfilePanel — graduation year guard (#2206)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -259,8 +334,8 @@ describe("ProfilePanel — graduation year guard (#2206)", () => {
   });
 
   it("saves a cleared year as null, so the stored one is removed", async () => {
+    mocks.userQuery.data = { ...mocks.userQuery.data, graduation_year: 2027 };
     render(<ProfilePanel />);
-    fireEvent.change(yearInput(), { target: { value: "2027" } });
     fireEvent.change(yearInput(), { target: { value: "" } });
     await userEvent.click(
       screen.getByRole("button", { name: /save profile/i }),
@@ -295,6 +370,181 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     });
   });
 
+  // #3711: the member's own phone, checked on Save, not per keystroke.
+  it("sends the phone the member typed", async () => {
+    render(<ProfilePanel />);
+
+    await userEvent.type(screen.getByLabelText("Phone"), "(518) 555-0142");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toMatchObject({
+      phone: "(518) 555-0142",
+    });
+  });
+
+  it("draws no share switch while there is no birthday (#5282)", () => {
+    render(<ProfilePanel />);
+    expect(
+      screen.queryByRole("switch", {
+        name: "Share my birthday with my chapter",
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps a stored birthday and sends who can see it (#4959)", async () => {
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      birthday_month: 3,
+      birthday_day: 4,
+      birthday_year: 2004,
+      birthday_visibility: "nobody",
+    } as typeof mocks.userQuery.data;
+    render(<ProfilePanel />);
+
+    await userEvent.click(
+      screen.getByRole("switch", { name: "Share my birthday with my chapter" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toMatchObject({
+      birthday_month: 3,
+      birthday_day: 4,
+      birthday_year: 2004,
+      birthday_visibility: "chapter",
+    });
+  });
+
+  // A name stored before the 100-character limit (one copied from a sign-in
+  // provider) must not refuse an unrelated edit: only the change is sent.
+  it("sends only the fields the member changed", async () => {
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      display_name: "N".repeat(140),
+      bio: "Rush chair.",
+    };
+    render(<ProfilePanel />);
+
+    await userEvent.type(screen.getByLabelText("Major"), "Economics");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toEqual({
+      major: "Economics",
+    });
+  });
+
+  it("shows a locked name read-only, says who sets it, and never sends it (#5801)", async () => {
+    mocks.updateUser.mutateAsync.mockClear();
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      display_name: "Ethan Smith",
+      display_name_locked: true,
+    };
+    render(<ProfilePanel />);
+
+    const name = screen.getByLabelText("Name");
+    expect(name).toHaveAttribute("readonly");
+    expect(name).toHaveValue("Ethan Smith");
+    expect(name).toHaveAccessibleDescription(
+      "Your chapter's officers set names.",
+    );
+    await userEvent.type(name, "Paul");
+    await userEvent.type(screen.getByLabelText("Major"), "Economics");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toEqual({
+      major: "Economics",
+    });
+  });
+
+  it("drops a name typed before the lock arrived (#5801)", async () => {
+    mocks.updateUser.mutateAsync.mockClear();
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      display_name: "Ethan Smith",
+    };
+    const { rerender } = render(<ProfilePanel />);
+    const name = screen.getByLabelText("Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Paul");
+    await userEvent.type(screen.getByLabelText("Major"), "Economics");
+
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      display_name_locked: true,
+    };
+    rerender(<ProfilePanel />);
+    expect(screen.getByLabelText("Name")).toHaveValue("Ethan Smith");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toEqual({
+      major: "Economics",
+    });
+  });
+
+  it("stops the name at the length the API takes", () => {
+    render(<ProfilePanel />);
+    expect(screen.getByLabelText("Name")).toHaveAttribute("maxlength", "100");
+  });
+
+  it("refuses a birth year with no month and day (#4959)", async () => {
+    render(<ProfilePanel />);
+
+    await userEvent.type(screen.getByLabelText("Year (optional)"), "2004");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Pick a month and a day",
+    );
+    expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("puts a year without February 29 on the year, not the day (#4959)", async () => {
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      birthday_month: 2,
+      birthday_day: 29,
+      birthday_year: null,
+      birthday_visibility: "nobody",
+    } as typeof mocks.userQuery.data;
+    render(<ProfilePanel />);
+
+    const year = screen.getByLabelText("Year (optional)");
+    await userEvent.type(year, "2003");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "That year has no February 29.",
+    );
+    expect(year).toHaveAttribute("aria-invalid", "true");
+    expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("refuses something that isn't a phone number, and says so", async () => {
+    render(<ProfilePanel />);
+
+    await userEvent.type(screen.getByLabelText("Phone"), "call me");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a phone number");
+    expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
+  });
+
   // Paul, 2026-11-06: an undergrad has no after-graduation city or company.
   it("hides City and Company until the graduation year arrives", async () => {
     mocks.userQuery.data = { ...mocks.userQuery.data, graduation_year: 2099 };
@@ -319,5 +569,109 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     render(<ProfilePanel />);
 
     expect(screen.getByDisplayValue("Troy, NY")).toBeTruthy();
+  });
+});
+
+describe("ProfilePanel — what the phone's Profile shows (#4137)", () => {
+  beforeEach(() => {
+    resetQueries();
+    mocks.stats.points = 1240;
+    mocks.stats.serviceHours = "18.5";
+    mocks.stats.pointsFailed = false;
+    mocks.stats.serviceFailed = false;
+    mocks.stats.hasChapter = true;
+    mocks.stats.visible = true;
+    mocks.permissions = ["members:view"];
+    mocks.memberByUserId.mockClear();
+    mocks.classSection.mockClear();
+  });
+
+  it("shows your points and approved service hours", () => {
+    render(<ProfilePanel />);
+    expect(screen.getByText("Points").nextElementSibling).toHaveTextContent(
+      "1,240",
+    );
+    expect(
+      screen.getByText("Service hours").nextElementSibling,
+    ).toHaveTextContent("18.5");
+  });
+
+  it("draws a dash, not a zero, for a number not read yet, and says which read failed", () => {
+    mocks.stats.points = null;
+    mocks.stats.serviceHours = null;
+    mocks.stats.serviceFailed = true;
+    render(<ProfilePanel />);
+    expect(screen.getAllByText("—")).toHaveLength(2);
+    expect(
+      screen.getByText("Service hours couldn't load just now."),
+    ).toBeInTheDocument();
+  });
+
+  it("puts major · company · year under the name, from what is saved", () => {
+    mocks.userQuery.data = {
+      id: "u-1",
+      email: "member@example.com",
+      display_name: "Member",
+      major: "Economics",
+      current_company: "Acme",
+      graduation_year: 2027,
+    };
+    render(<ProfilePanel />);
+    expect(screen.getByText("Economics · Acme · '27")).toBeInTheDocument();
+  });
+
+  it("keeps that line on what is saved while you type", async () => {
+    mocks.userQuery.data = {
+      id: "u-1",
+      email: "member@example.com",
+      display_name: "Member",
+      major: "Economics",
+      graduation_year: 2027,
+    };
+    render(<ProfilePanel />);
+    const major = screen.getByLabelText("Major");
+    await userEvent.clear(major);
+    await userEvent.type(major, "History");
+    expect(screen.getByText("Economics · '27")).toBeInTheDocument();
+    expect(screen.queryByText("History · '27")).toBeNull();
+  });
+
+  it("says to choose a chapter when there is none to read points in", () => {
+    mocks.stats.hasChapter = false;
+    mocks.stats.points = null;
+    mocks.stats.serviceHours = null;
+    render(<ProfilePanel />);
+    expect(
+      screen.getByText("Choose a chapter to see your points."),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves the numbers out for a role that can't read them", () => {
+    mocks.stats.visible = false;
+    render(<ProfilePanel />);
+    expect(screen.queryByText("Points")).toBeNull();
+    expect(screen.queryByText("Service hours")).toBeNull();
+  });
+
+  it("hands your class and number to read-only rows", () => {
+    mocks.memberByUserId.mockReturnValue({
+      data: { id: "m-1", pledge_class_id: "pc-1", order_number: 41 },
+    });
+    render(<ProfilePanel />);
+    expect(mocks.memberByUserId).toHaveBeenCalledWith("u-1");
+    expect(mocks.classSection).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        memberId: "m-1",
+        pledgeClassId: "pc-1",
+        orderNumber: 41,
+        canEdit: false,
+      }),
+    );
+  });
+
+  it("doesn't read your membership without the Directory's permission", () => {
+    mocks.permissions = [];
+    render(<ProfilePanel />);
+    expect(mocks.memberByUserId).not.toHaveBeenCalledWith("u-1");
   });
 });

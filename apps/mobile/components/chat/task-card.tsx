@@ -1,7 +1,11 @@
+import { useState } from "react";
+import { useRouter } from "expo-router";
 import type { TaskPayload } from "@repo/chat-core/cards";
 import {
   canReadCardTask,
+  isSentBack,
   readLiveTask,
+  taskDueLine,
   subtaskProgress,
   taskCardControls,
   TASK_ACTION_LABELS,
@@ -14,15 +18,25 @@ import {
   useTask,
   useUpdateTaskStatus,
   viewerIsCardAssignee,
-  type LiveTask,
 } from "@repo/hooks";
 import { can, isModuleEnabled } from "@repo/validation";
-import { SignetTokens } from "@repo/theme/signet";
+import { taskStatusHue } from "@/lib/tasks/status-hue";
+import { editFactsOfLive, taskEditable } from "@/lib/tasks/task-edit";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
+import { MarkDoneSheet } from "@/components/tasks/mark-done-sheet";
+import {
+  SendBackSheet,
+  sendBackDraftKey,
+} from "@/components/tasks/send-back-sheet";
+import { TaskProof } from "@/components/tasks/task-photos";
 import { TasksGlyph } from "@/components/tab-glyphs";
 import { StatusChip } from "@/components/status-chip";
-import { formatDueDate, formatDueSubtitle } from "@/lib/tasks/format";
-import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
+import {
+  TASK_CONFIRM_FAILURE,
+  taskProofRefusal,
+  taskStatusGateRefusal,
+} from "@/lib/tasks/status-refusal";
+import { markDoneAsks, markDoneLabel } from "@/lib/tasks/task-photos";
 import { useFrappTheme } from "@/lib/theme";
 import {
   CardActions,
@@ -52,8 +66,18 @@ import { useCardWrite } from "./use-card-write";
  * (`spec/behavior/tasks.md` § Chat Integration). In short: no control until
  * the live task is read (#2065), the assignee walks Start then Mark done
  * off the stored status (#1051), and a `tasks:manage` holder confirms or
- * rejects a completion, never their own (#1056). The writes are the shared
+ * sends back a completion, never confirming their own (#1056); a
+ * `tasks:manage` holder also
+ * gets Edit on a task the task screen will edit (`taskEditable`, #4512), which
+ * pushes the task's screen in its edit mode (`edit=1`, #5514), where the task
+ * is changed in place. The writes are the shared
  * hooks, which update the cache optimistically and roll back on refusal.
+ *
+ * Photos and proof (#4635): the card shows the task's reference photos and,
+ * above Confirm and Send back, its proof (`TaskProof`), the sent-back reason
+ * while it Needs changes, and the assignee's reply. Mark done on a task that
+ * asks for a photo or a link, or was sent back, opens the Mark done sheet;
+ * Send back opens a sheet that takes the required reason.
  *
  * Mobile has no toast, so a refusal is a line on the card (`useCardWrite`,
  * which the rush card shares). A gate refusal is in the board's own words (`taskStatusGateRefusal`) and withdraws the
@@ -69,6 +93,7 @@ export function TaskCard({
   ...frame
 }: ChatCardFrameProps & { payload: TaskPayload }) {
   const { tokens } = useFrappTheme();
+  const router = useRouter();
   const now = useNowDate();
 
   // `!!viewerId`: a missing viewer must never match a missing assignee id.
@@ -100,17 +125,56 @@ export function TaskCard({
         canManage,
       });
 
+  // An officer's Edit (#4512): the task screen's own rule (`taskEditable`),
+  // read off the live task, so the card never opens an edit the screen
+  // won't draw: a tasks:manage holder until the task is confirmed, on a task
+  // with an assignee and a day (not one up for grabs). It pushes the task's
+  // screen in its edit mode (#5514), where each field saves as it is left.
+  const editable =
+    !tasksOff &&
+    live !== null &&
+    taskEditable(editFactsOfLive(live), canManage);
+
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
   // The refusal's lifecycle is the rush card's too (`useCardWrite`): a gate's
   // withdraws the controls until the member comes back to the thread or app.
-  const { refusal, act, disabled, hint } = useCardWrite({
+  const { refusal, act, latchGate, disabled, hint } = useCardWrite({
     gateRefusal: taskStatusGateRefusal,
     isConfirmed: frame.isConfirmed,
     pending:
       updateStatus.isPending || confirmTask.isPending || rejectTask.isPending,
   });
+
+  // Mark done's sheet (#4635), open while set: on a task that asks for proof
+  // or was sent back, or once a direct Mark done was refused for want of it
+  // (`problem`, the line it opens with). Send back's sheet takes the reason.
+  const [marking, setMarking] = useState<{ problem: string | null } | null>(
+    null,
+  );
+  const [sendingBack, setSendingBack] = useState(false);
+  const sentBack = live ? isSentBack(live) : false;
+  const proofKind = live?.proof_kind ?? "none";
+  const complete = () => {
+    if (markDoneAsks({ proofKind, sentBack })) {
+      setMarking({ problem: null });
+      return;
+    }
+    void act(async () => {
+      try {
+        await updateStatus.mutateAsync({
+          id: payload.task_id,
+          body: { status: "COMPLETED" },
+        });
+      } catch (error) {
+        // The task changed since it was read: ask for what it needs.
+        const problem = taskProofRefusal(error);
+        if (!problem) throw error;
+        setMarking({ problem });
+      }
+    }, "Couldn't mark the task complete.");
+  };
 
   return (
     <ChatCardShell
@@ -124,7 +188,7 @@ export function TaskCard({
               live ? (
                 <StatusChip
                   label={taskStatusLabel(live)}
-                  hue={statusHue(live, tokens)}
+                  hue={taskStatusHue(live, tokens)}
                 />
               ) : null
             }
@@ -135,7 +199,13 @@ export function TaskCard({
           />
           <CardMeta
             items={[
-              dueLine(payload.due_at ?? payload.due_date, live, now),
+              // The live due date once read (an edit can move it), on the
+              // rule every task surface shares (#4135).
+              taskDueLine(
+                live?.due ?? payload.due_at ?? payload.due_date,
+                live?.status ?? null,
+                now,
+              )?.text ?? null,
               payload.point_reward ? (
                 <PointsChip points={payload.point_reward} />
               ) : null,
@@ -148,7 +218,22 @@ export function TaskCard({
         </>
       }
     >
-      {controls.length > 0 ? (
+      {live ? (
+        // Before the actions, so an officer sees the proof before Confirm
+        // and Send back (#4635). Only a reader of the task gets `live`.
+        <TaskProof
+          task={{
+            id: live.id,
+            photos: live.photos,
+            proofLink: live.proof_link,
+            sentBackReason: live.sent_back_reason,
+            completionNote: live.completion_note,
+          }}
+          showProof
+          sentBack={sentBack}
+        />
+      ) : null}
+      {controls.length > 0 || editable ? (
         <CardActions>
           {controls.includes("start") ? (
             <CardButton
@@ -169,19 +254,10 @@ export function TaskCard({
           ) : null}
           {controls.includes("complete") ? (
             <CardButton
-              label={TASK_ACTION_LABELS.complete}
+              label={markDoneLabel(TASK_ACTION_LABELS.complete, proofKind)}
               disabled={disabled}
               accessibilityHint={hint}
-              onPress={() =>
-                void act(
-                  () =>
-                    updateStatus.mutateAsync({
-                      id: payload.task_id,
-                      body: { status: "COMPLETED" },
-                    }),
-                  "Couldn't mark the task complete.",
-                )
-              }
+              onPress={complete}
             />
           ) : null}
           {controls.includes("confirm") ? (
@@ -194,7 +270,7 @@ export function TaskCard({
               onPress={() =>
                 void act(
                   () => confirmTask.mutateAsync(payload.task_id),
-                  "Couldn't confirm the task.",
+                  TASK_CONFIRM_FAILURE,
                 )
               }
             />
@@ -213,54 +289,82 @@ export function TaskCard({
               label={TASK_ACTION_LABELS.reject}
               disabled={disabled}
               accessibilityHint={hint}
+              onPress={() => setSendingBack(true)}
+            />
+          ) : null}
+          {editable ? (
+            // Last, after the lifecycle actions, which stay the card's own.
+            <CardButton
+              label="Edit"
+              // Held like the card's other writes: offline, mid-write, or
+              // after a gate refusal, a save would be lost or refused.
+              disabled={disabled}
+              accessibilityHint={
+                hint ??
+                "Opens the task to change its title, assignee, due date or points."
+              }
               onPress={() =>
-                void act(
-                  () => rejectTask.mutateAsync({ id: payload.task_id }),
-                  "Couldn't reject the task.",
-                )
+                router.push({
+                  pathname: "/task-details",
+                  params: { id: payload.task_id, edit: "1" },
+                })
               }
             />
           ) : null}
         </CardActions>
+      ) : null}
+      {marking ? (
+        <MarkDoneSheet
+          key={payload.task_id}
+          // Shared with the Tasks screen's Mark done on this task (#5041).
+          keptDraft={`mark-done:${payload.task_id}`}
+          task={{
+            id: payload.task_id,
+            title: payload.title,
+            proofKind,
+            sentBack,
+            sentBackReason: live?.sent_back_reason ?? null,
+            done: live?.stored_status === "COMPLETED",
+            sentBackAt: live?.sent_back_at ?? null,
+          }}
+          initialProblem={marking.problem}
+          onComplete={async (proof) => {
+            try {
+              await updateStatus.mutateAsync({
+                id: payload.task_id,
+                body: { status: "COMPLETED", ...proof },
+              });
+            } catch (error) {
+              // The sheet says why; a gate's also withdraws the card's
+              // controls, as one through `act` does.
+              latchGate(error);
+              throw error;
+            }
+          }}
+          onClosed={() => setMarking(null)}
+        />
+      ) : null}
+      {sendingBack ? (
+        <SendBackSheet
+          key={payload.task_id}
+          keptDraft={sendBackDraftKey(payload.task_id)}
+          submittedAt={live?.completed_at ?? null}
+          title={payload.title}
+          proofKind={proofKind}
+          onSubmit={async (body) => {
+            try {
+              await rejectTask.mutateAsync({ id: payload.task_id, body });
+            } catch (error) {
+              latchGate(error);
+              throw error;
+            }
+          }}
+          onClosed={() => setSendingBack(false)}
+        />
       ) : null}
       {refusal ? (
         <CardNote text={refusal.text} tone={refusal.gate ? "muted" : "error"} />
       ) : null}
     </ChatCardShell>
   );
-}
-
-/**
- * The badge's hue: a status color, never the chapter accent (§5). Overdue is
- * the warning a member has to act on, so it is the one in red.
- */
-function statusHue(live: LiveTask, tokens: SignetTokens): string {
-  switch (live.status) {
-    case "OVERDUE":
-      return tokens.color.semantic.destructive;
-    case "COMPLETED":
-      return live.points_awarded
-        ? tokens.color.semantic.success
-        : tokens.color.semantic.warning;
-    case "IN_PROGRESS":
-      return tokens.color.semantic.info;
-    case "TODO":
-      return tokens.color.text.mutedForeground;
-  }
-}
-
-/**
- * The due date. Relative ("Due tomorrow", "Overdue by 2 days") only while the
- * live task says it is still open, since that is when the countdown is true.
- * A finished task, or one this viewer can't read, gets the plain date: an
- * "Overdue by 3 days" on a task that was done on time would be wrong.
- */
-function dueLine(
-  dueDate: string,
-  live: LiveTask | null,
-  now: Date,
-): string | null {
-  return live && live.status !== "COMPLETED"
-    ? formatDueSubtitle(dueDate, now)
-    : formatDueDate(dueDate);
 }

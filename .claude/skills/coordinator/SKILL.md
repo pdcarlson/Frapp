@@ -46,7 +46,7 @@ track.
 
 ## Workers
 
-Start each one with `create_session`: `source_url` `https://github.com/pdcarlson/Frapp`, a title
+Start each one with `create_session`: `source_url` `https://github.com/frapplive/Frapp`, a title
 naming the work, tags `frapp:coordinator`, and a brief that stands alone. The brief carries:
 
 - the goal and what done looks like;

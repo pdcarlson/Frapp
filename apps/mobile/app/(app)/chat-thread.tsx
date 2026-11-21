@@ -1,5 +1,13 @@
+import { firstParam } from "@/lib/route-params";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   useFocusEffect,
   useIsFocused,
@@ -28,19 +36,28 @@ import {
 import {
   isBlockableSender,
   visibleTypingUsers,
+  withForwardedMasked,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
+import { forwardTargetOf } from "@repo/chat-core/forward";
 import {
   channelAllowsReplies,
   channelAllowsThreads,
   messageCanStartThread,
 } from "@repo/chat-core/message-actions";
 import { setChannelLocked } from "@repo/chat-core/density";
+import { typingLabel } from "@repo/chat-core/typing-label";
+import {
+  CHANNEL_UNAVAILABLE_BODY,
+  CHANNEL_UNAVAILABLE_TITLE,
+} from "@repo/chat-core/join-denied";
 import type { ChatMessage } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import { canFlagMessage } from "@repo/chat-core/flags";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
+  CHANNEL_UNREAD_COUNTS_KEY,
   otherMemberId,
   resolveAuthorAvatar,
   resolveAuthorLabel,
@@ -51,27 +68,66 @@ import {
   useChapterRoster,
   useMentionRoles,
   useChannelNotificationPreferences,
+  useChannelUnreadCounts,
   useCurrentUser,
   claimViewedChannel,
   useMarkChannelRead,
+  useMarkMessageUnread,
+  holdChannelUnread,
+  releaseChannelUnread,
   useMemberDisplayNames,
   usePermissionList,
+  useRosterCatchUp,
   useRequestChatUploadUrl,
   useSetChannelNotificationLevel,
   useImportantMessages,
+  ASK_TURNS_ABOVE_ALL,
+  placeAskTurns,
 } from "@repo/hooks";
-import { can, draftWithMention, type ChatMessageFlag } from "@repo/validation";
+import { useSaveMessage } from "@/lib/chat/save-message";
+import { useRemindMessage } from "@/lib/chat/message-reminder";
+import {
+  ASK_COPY,
+  CHAT_CATCH_UP_COPY,
+  CHAT_CATCH_UP_OFFER_AT,
+  askMentionQuestion,
+  can,
+  chatCatchUpOfferLine,
+  draftWithMention,
+  mentionPickLabel,
+  readChannelAsk,
+  spacedMentionNames,
+  type AskAccess,
+  type ChatCatchUpPoint,
+  type ChatMessageFlag,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
+import {
+  AskTurnsUnder,
+  useAskTurnsPlacement,
+  useChannelAsk,
+} from "@/components/ask/ask-in-channel";
 import { ChatBackground } from "@/components/chat/chat-background";
 import { BlockListNotice } from "@/components/chat/block-list-notice";
 import { ImportantStrip } from "@/components/chat/important-strip";
+import { WelcomeCard } from "@/components/onboarding/welcome-card";
+import { CatchUpStrip, useCatchUp } from "@/components/chat/catch-up";
+import { useAiSurfaces } from "@/lib/ai/availability";
+import { arrivalUnread } from "@/lib/chat/catch-up-arrival";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { useComposerPlus } from "@/components/chat/use-composer-plus";
+import { useScheduleSend } from "@/components/chat/use-schedule-send";
+import { scheduleRefusal } from "@/lib/chat/schedule-send";
 import {
   ImageViewer,
   ImageViewerContext,
   useImageViewer,
 } from "@/components/chat/image-viewer";
+import {
+  FormFillContext,
+  FormFillPage,
+  useFormFillHost,
+} from "@/components/chat/form-fill-page";
 import { JumpToLatestButton } from "@/components/chat/jump-to-latest-button";
 import {
   MessageActionsSheet,
@@ -89,6 +145,15 @@ import {
 import { ThreadHistoryEdge } from "@/components/chat/thread-history-edge";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { MessageThreadScreen } from "@/components/chat/message-thread-screen";
+import { messageLinkUrl } from "@repo/validation";
+import { webAppOrigin } from "@/lib/onboarding/chapter-wizard/invite-link";
+import {
+  MessageListSheet,
+  PINNED_TITLE,
+  SAVED_TITLE,
+  type ListedMessage,
+  type MessageListKind,
+} from "@/components/chat/message-list-sheet";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
 import { threadLayout } from "@/lib/chat/thread-layout";
@@ -105,6 +170,7 @@ import {
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import {
+  canChangeMessagePin,
   copyableText,
   messageActionsFor,
   departedIn,
@@ -116,6 +182,7 @@ import {
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { useThreadUnread } from "@/lib/chat/use-thread-unread";
 import { writeLastChannel } from "@/lib/chat/last-channel";
 import { useThreadBlockList } from "@/lib/chat/use-thread-block-list";
 import {
@@ -131,8 +198,8 @@ import {
   ChannelMemberSheet,
   ChannelMembersButton,
 } from "@/components/chat/channel-member-sheet";
-import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
+import { confirmCloseCard } from "@/lib/chat/confirm-close-card";
 import { confirmDeleteMessage } from "@/lib/chat/confirm-delete-message";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
 import {
@@ -141,14 +208,32 @@ import {
   type LatestRow,
 } from "@/lib/chat/use-jump-to-latest";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
-import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
+import {
+  JUMP_MISS_COPY,
+  useJumpToImportant,
+  type JumpMissReason,
+} from "@/lib/chat/use-jump-to-important";
+import { useFocusOnOpen } from "@/lib/chat/use-focus-on-open";
+
+/** A jump the member asked for by name couldn't reach its message (#3723). */
+function alertJumpMiss(reason: JumpMissReason) {
+  Alert.alert("Couldn't open that message", JUMP_MISS_COPY[reason]);
+}
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
+import {
+  MessageMenuCell,
+  MessageMenuFocusProvider,
+  MessageMenuRoom,
+  useMessageMenuRoom,
+  type MessageMenuReveal,
+} from "@/lib/chat/message-menu-room";
 import { useConnection } from "@/lib/connection/use-connection";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { selectionHaptic } from "@/lib/haptics";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 
 /** One object for the list's life: the native prop is diffed by identity. */
 const MAINTAIN_POSITION = {
@@ -196,22 +281,25 @@ export default function ChatThreadRoute() {
   const params = useLocalSearchParams<{
     channelId?: string | string[];
     threadRootId?: string | string[];
+    focusMessageId?: string | string[];
   }>();
   const channelId = firstParam(params.channelId);
   const threadRootId = firstParam(params.threadRootId);
+  const focusMessageId = firstParam(params.focusMessageId);
   // A message thread (#3785) is this route pushed again with its root, so
   // the frozen stack layout needs no new route and the back gesture returns
   // to the channel under it (`MessageThreadScreen`).
   if (channelId && threadRootId) {
-    return <MessageThreadScreen channelId={channelId} rootId={threadRootId} />;
+    return (
+      <MessageThreadScreen
+        channelId={channelId}
+        rootId={threadRootId}
+        // A reply a summary's line rests on (#3946): the thread opens on it.
+        focusMessageId={focusMessageId}
+      />
+    );
   }
   return <ChannelThreadScreen />;
-}
-
-/** A route param's one value: a repeated query key arrives as an array. */
-function firstParam(raw: string | string[] | undefined): string | null {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function ChannelThreadScreen() {
@@ -226,6 +314,7 @@ function ChannelThreadScreen() {
   const params = useLocalSearchParams<{
     channelId?: string | string[];
     landing?: string | string[];
+    focusMessageId?: string | string[];
   }>();
   const channelId = useMemo(() => {
     const raw = params.channelId;
@@ -289,13 +378,16 @@ function ChannelThreadScreen() {
     send,
     sendInFlight,
     sendPoll,
+    sendGif,
     postTask,
-    postHours,
+    linkTask,
     trackEventCard,
     edit,
     remove,
     closePoll,
+    closeCard,
     flag,
+    setPinned,
     react,
     unreact,
     act,
@@ -305,6 +397,7 @@ function ChannelThreadScreen() {
     retryPhoto,
     draft,
     setDraft,
+    restoreDraftFor,
     sendError,
     reactionError,
     clearReactionError,
@@ -313,9 +406,13 @@ function ChannelThreadScreen() {
     typingUsers,
     emitTyping,
     connection,
+    unavailable,
     retry,
     discard,
   } = useChatChannel(channelId);
+
+  // What's new in the threads the viewer follows here, for each card (#4297).
+  const threadUnread = useThreadUnread(channelId, messages);
 
   // `viewerId` is `null` both while `/v1/users/me` is in flight and after it
   // failed, and a row can't be drawn in either case (#2250): a row says whose
@@ -330,6 +427,7 @@ function ChannelThreadScreen() {
   const roster = useMemberDisplayNames();
   const {
     nameFor,
+    typistLabelFor,
     roleColorFor,
     avatarFor: memberAvatarFor,
     avatarTintFor,
@@ -416,12 +514,14 @@ function ChannelThreadScreen() {
       is_audit_log: postCapability.isAuditLog,
     });
   const openThreadFor = useCallback(
-    (rootId: string) => {
+    (rootId: string, focusMessageId?: string) => {
       if (!channelId) return;
       Keyboard.dismiss();
       router.push({
         pathname: "/chat-thread",
-        params: { channelId, threadRootId: rootId },
+        params: focusMessageId
+          ? { channelId, threadRootId: rootId, focusMessageId }
+          : { channelId, threadRootId: rootId },
       });
     },
     [channelId, router],
@@ -460,8 +560,8 @@ function ChannelThreadScreen() {
   );
 
   // Opening a channel stamps the read cursor to server `now()`; there is no
-  // mark-read-to-a-message API. Its invalidation of `["channels"]` refreshes the
-  // s04 badges by prefix.
+  // mark-read-to-a-message API. It re-reads the unread counts and previews the
+  // s04 badges draw from (`useMarkChannelRead`).
   //
   // This is a **focus** effect, not a mount effect, and it stamps on the way out
   // as well as the way in. Both halves are load-bearing:
@@ -479,16 +579,28 @@ function ChannelThreadScreen() {
   //    Focus, not mount: this screen stays mounted under one pushed over it.
   const requestUploadUrl = useRequestChatUploadUrl();
 
+  //
+  // Mark unread (#3723) holds both stamps for the rest of the visit
+  // (`unreadHeldFor`): it drops the claim so the activity handler stops
+  // re-stamping, and the blur skips its stamp, or leaving would read the
+  // channel straight back. The next focus clears the hold, so opening the
+  // channel again reads it, as on Discord.
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
+  const unreadHeldFor = useRef<string | null>(null);
+  const releaseViewedRef = useRef<(() => void) | null>(null);
   useFocusEffect(
     useCallback(() => {
       if (!channelId) return;
+      unreadHeldFor.current = null;
+      releaseChannelUnread(channelId);
       markReadMutate(channelId);
       const releaseViewed = claimViewedChannel(channelId);
+      releaseViewedRef.current = releaseViewed;
       return () => {
         releaseViewed();
-        markReadMutate(channelId);
+        releaseViewedRef.current = null;
+        if (unreadHeldFor.current !== channelId) markReadMutate(channelId);
       };
     }, [channelId, markReadMutate]),
   );
@@ -514,6 +626,13 @@ function ChannelThreadScreen() {
    */
   const [isPicking, setIsPicking] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  // Why a question for Frapp was not asked (#4713), and what was so when it
+  // was said (`cause`): the line stands until the draft changes, or until
+  // what it is about does (the photos came off, the first answer finished).
+  const [askRefused, setAskRefused] = useState<{
+    reason: string;
+    cause: string;
+  } | null>(null);
   /**
    * Re-entry guard, a ref beside the state: two taps landing in one tick both
    * read the pre-commit state and both open a picker, and on Android the
@@ -574,12 +693,19 @@ function ChannelThreadScreen() {
     })();
   }, [addPhotos, channelId, photoRoom, requestUploadUrl.mutateAsync]);
 
+  // Whether a draft is a question for Frapp (#4713), set further down once
+  // the roster it is read against is known; `false` for a member without Ask.
+  const namesFrappRef = useRef<(text: string) => boolean>(() => false);
   const handleChangeText = useCallback(
     (next: string) => {
       setDraft(next);
+      // A refusal to ask said what to change; the member is changing it.
+      setAskRefused(null);
       // The manager throttles to one broadcast per 3s, so this can ride every
-      // keystroke without flooding the channel.
-      emitTyping();
+      // keystroke without flooding the channel. An emptied box (the clear
+      // after a send, the last character erased) is nobody typing, and
+      // neither is a question for Frapp, which nobody else will see arrive.
+      if (next.trim().length > 0 && !namesFrappRef.current(next)) emitTyping();
     },
     [setDraft, emitTyping],
   );
@@ -601,6 +727,11 @@ function ChannelThreadScreen() {
     blockState,
     viewerId,
   );
+  // Who, by name, as Discord says it and the thread line already does.
+  const typingLine = typingLabel(shownTypingUsers, typistLabelFor);
+  // Someone who joined after the roster loaded, typing or posting here, is
+  // named a moment later rather than left as `Member 2f4a1c` (#4493).
+  useRosterCatchUp(typingUsers, messages);
 
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...thread.rows].reverse(), [thread.rows]);
@@ -608,12 +739,60 @@ function ChannelThreadScreen() {
   // out oldest first; `threadLayout` says why.
   const layout = useMemo(() => threadLayout(thread.rows), [thread.rows]);
 
+  /*
+    `@Frapp` from this channel's composer (#4713): the question is asked, not
+    sent, and its answer is drawn here for this member alone, under the
+    message that was newest when it was asked
+    (`components/ask/ask-in-channel.tsx`). Null for a member without Ask,
+    whose `@Frapp` is ordinary text.
+  */
+  const channelAsk = useChannelAsk(channelId);
+  const askAccessRead = useAiSurfaces().askAccess;
+  const askTurns = channelAsk?.turns;
+  const askTurnsByRow = useMemo(
+    () =>
+      placeAskTurns(
+        thread.rows.map((row) => ({
+          key: row.message.client_message_id,
+          at: row.message.created_at,
+        })),
+        askTurns ?? [],
+      ),
+    [thread.rows, askTurns],
+  );
+  // Where those turns sit among the rows, for `AskTurnsUnder` to read.
+  const askPlacement = useAskTurnsPlacement(
+    askTurnsByRow,
+    channelAsk?.renderTurn,
+  );
+
   // A reply quote's tap scrolls to its parent (`lib/chat/use-jump-to-message.ts`).
   const {
     listRef,
     jumpToMessage,
     onScrollToIndexFailed: handleScrollToIndexFailed,
   } = useJumpToMessage<FlatList<ThreadRow>>(inverted, channelId);
+  // The long-press menu takes the keyboard's place (#5479): the thread leaves
+  // it room under the composer and keeps the pressed message in view above
+  // it, at the bottom of what's left.
+  const revealForMenu = useCallback(
+    (messageId: string, how: MessageMenuReveal) =>
+      jumpToMessage(
+        messageId,
+        how.edge === "top"
+          ? { viewPosition: 1 }
+          : { viewPosition: 0, viewOffset: -how.below },
+      ),
+    [jumpToMessage],
+  );
+  const {
+    sheetHeight: menuHeight,
+    room: menuRoomHeight,
+    shown: menuShown,
+    listRef: menuListRef,
+    focus: menuFocus,
+    onMenuOpenChange,
+  } = useMessageMenuRoom(revealForMenu);
   // The "1 important message" strip (#4186): the server decides what counts
   // and what was seen. Show jumps to the oldest unseen one, paging older
   // history for it when it isn't loaded; rows scrolled onto the screen count
@@ -645,6 +824,137 @@ function ChannelThreadScreen() {
     markImportantSeen([nextImportant.id]);
     jumpToImportant(nextImportant.id);
   }, [nextImportant, markImportantSeen, jumpToImportant]);
+  // A row elsewhere that names one message opens the channel on it:
+  // Activity's sign-up and form rows (#3926), whose card is answered here.
+  // Once per message, after the first rows are in, paging older history for
+  // it as the Important strip's jump does.
+  // A push about one message lands here too (#4977), often before the
+  // channel's catch-up read: `useFocusOnOpen` retries once when it lands.
+  useFocusOnOpen({
+    focusMessageId: firstParam(params.focusMessageId) ?? null,
+    rowCount: inverted.length,
+    jump: jumpToImportant,
+    onMiss: alertJumpMiss,
+  });
+  // Catch me up (#3946). Offered only where the server, the president's two
+  // switches and the member's `ai:use` all allow it (`useAiSurfaces`), and
+  // only on a channel a summary may read: never a DM, a group DM or the
+  // audit log.
+  const canCatchUpHere =
+    useAiSurfaces().catchUp &&
+    !!channelId &&
+    !!openChannel &&
+    !isDirectChannel(openChannel.channel) &&
+    !postCapability.isAuditLog;
+  // How many messages were new when this channel was opened, and when.
+  // Opening stamps it read, so the live count is gone by the time a member
+  // asks; the server finds the stretch again from this count and moment. Read
+  // once per channel from what Chat home already holds, never fetched here:
+  // a channel opened cold (from a push) offers the last 24 hours instead.
+  const [arrival, setArrival] = useState(() => ({
+    channelId,
+    unread: arrivalUnread(
+      queryClient.getQueryData(CHANNEL_UNREAD_COUNTS_KEY),
+      channelId,
+    ),
+    at: new Date().toISOString(),
+    offerDismissed: false,
+  }));
+  if (arrival.channelId !== channelId) {
+    setArrival({
+      channelId,
+      unread: arrivalUnread(
+        queryClient.getQueryData(CHANNEL_UNREAD_COUNTS_KEY),
+        channelId,
+      ),
+      at: new Date().toISOString(),
+      offerDismissed: false,
+    });
+  }
+  // The counts can land after the channel does: a cold launch opens the last
+  // channel while Chat home's read is still out. Taken once, as web does;
+  // never asked for from here. Observed through the shared hook, disabled,
+  // so the observer carries the fetch function: TanStack console.errors on
+  // every render of one without, which a development build shows as a red
+  // toast (#4885).
+  const liveUnread = arrivalUnread(
+    useChannelUnreadCounts({ enabled: false }).data,
+    channelId,
+  );
+  if (
+    arrival.channelId === channelId &&
+    arrival.unread === null &&
+    liveUnread !== null
+  ) {
+    setArrival({ ...arrival, unread: liveUnread });
+  }
+  const openCatchUpPoint = useCallback(
+    (point: ChatCatchUpPoint) => {
+      // A reply lives in its thread, not on the timeline.
+      if (point.thread_root_id) {
+        openThreadFor(point.thread_root_id, point.message_id);
+        return;
+      }
+      // May be older than the loaded window, as an Important message can be.
+      jumpToImportant(point.message_id);
+    },
+    [openThreadFor, jumpToImportant],
+  );
+  const catchUp = useCatchUp({
+    channelId,
+    nameFor,
+    onOpenPoint: openCatchUpPoint,
+  });
+  const startCatchUp = catchUp.start;
+  const startChannelCatchUp = useCallback(() => {
+    if (!channelId || !openChannel) return;
+    startCatchUp({
+      kind: "channel",
+      channelId,
+      unread:
+        arrival.channelId === channelId && arrival.unread
+          ? {
+              // Capped to what a request may name by `useChatCatchUp`.
+              count: arrival.unread,
+              as_of: arrival.at,
+            }
+          : null,
+    });
+  }, [channelId, openChannel, arrival, startCatchUp]);
+  const catchUpOffer =
+    canCatchUpHere &&
+    !catchUp.active &&
+    arrival.channelId === channelId &&
+    !arrival.offerDismissed &&
+    (arrival.unread ?? 0) >= CHAT_CATCH_UP_OFFER_AT
+      ? chatCatchUpOfferLine(arrival.unread ?? 0)
+      : null;
+  // Pinned and Saved (#3723), web's channel-menu panels: one tall sheet,
+  // retargeted per list, opened from the header's menu.
+  const listSheetRef = useRef<BottomSheetModal>(null);
+  const [listKind, setListKind] = useState<MessageListKind>("pinned");
+  const openList = useCallback((kind: MessageListKind) => {
+    Keyboard.dismiss();
+    setListKind(kind);
+    listSheetRef.current?.present();
+  }, []);
+  // Closed on a blur or a channel switch, for the member list's reason.
+  useFocusEffect(
+    useCallback(() => {
+      if (!channelId) return;
+      return () => listSheetRef.current?.dismiss();
+    }, [channelId]),
+  );
+  const headerMenuActions = useMemo(
+    () => [
+      ...(canCatchUpHere
+        ? [{ label: CHAT_CATCH_UP_COPY.name, onPress: startChannelCatchUp }]
+        : []),
+      { label: PINNED_TITLE, onPress: () => openList("pinned") },
+      { label: SAVED_TITLE, onPress: () => openList("saved") },
+    ],
+    [canCatchUpHere, startChannelCatchUp, openList],
+  );
   // FlatList refuses a new `onViewableItemsChanged` after mount, so the pair
   // is made once and reads the latest report through a ref when it fires.
   const reportVisibleRef = useRef(important.reportVisible);
@@ -700,15 +1010,26 @@ function ChannelThreadScreen() {
   }, [loadOlder]);
   const historyEdge = useMemo(
     () => (
-      <ThreadHistoryEdge
-        hasOlder={hasOlder}
-        isLoadingOlder={isLoadingOlder}
-        olderError={olderError}
-        onLoadOlder={handleLoadOlder}
-        start={channelStart}
-      />
+      <>
+        <ThreadHistoryEdge
+          hasOlder={hasOlder}
+          isLoadingOlder={isLoadingOlder}
+          olderError={olderError}
+          onLoadOlder={handleLoadOlder}
+          start={channelStart}
+        />
+        {/* Turns asked of Frapp before the oldest loaded message (#4713). */}
+        <AskTurnsUnder placement={askPlacement} rowKey={ASK_TURNS_ABOVE_ALL} />
+      </>
     ),
-    [hasOlder, isLoadingOlder, olderError, handleLoadOlder, channelStart],
+    [
+      hasOlder,
+      isLoadingOlder,
+      olderError,
+      handleLoadOlder,
+      channelStart,
+      askPlacement,
+    ],
   );
 
   // Parent lookup for reply quotes (#1727), built once per window rather
@@ -781,13 +1102,95 @@ function ChannelThreadScreen() {
     onSending: followSend,
   });
   const submitComposer = staging.submit;
+  const addMentionPick = staging.addMentionPick;
+
+  // Asking Frapp from the composer (`channelAsk`, above). Never while
+  // editing: an edit saves a message that is already posted.
+  const spacedNames = useMemo(
+    () =>
+      spacedMentionNames(
+        mentionRoster.data ?? [],
+        (mentionRoles.data ?? []).map((role) => role.name),
+      ),
+    [mentionRoster.data, mentionRoles.data],
+  );
+  const mayAskHere = channelAsk !== null && !staging.isEditing;
+  // Three answers, not two: while it is not yet known whether this member
+  // has Ask, a message naming `@Frapp` is held, not posted (`readChannelAsk`).
+  const askAccess: AskAccess = staging.isEditing
+    ? "no"
+    : channelAsk !== null
+      ? "yes"
+      : askAccessRead === "unknown"
+        ? "unknown"
+        : "no";
+  const namesFrapp = useCallback(
+    (text: string) =>
+      askAccess !== "no" && askMentionQuestion(text, spacedNames) !== null,
+    [askAccess, spacedNames],
+  );
+  useEffect(() => {
+    namesFrappRef.current = namesFrapp;
+  }, [namesFrapp]);
+  const asksFrapp = mayAskHere && namesFrapp(staging.value);
+  // What the line above the composer says: who is typing, or, while the
+  // draft is a question for Frapp, that only this member will see it.
+  const composerLine = asksFrapp ? ASK_COPY.only_you_hint : typingLine;
+  const newestRowKey = thread.rows.at(-1)?.message.client_message_id ?? null;
+  const askBusy = channelAsk?.busy ?? false;
+  const sendToFrapp = channelAsk?.send;
+  // What a refusal was about. When any of it changes the line no longer
+  // describes the composer, so it is not shown.
+  const askCause = `${askAccess}:${photos.length}:${askBusy}`;
+  const askNotice =
+    askRefused !== null && askRefused.cause === askCause
+      ? askRefused.reason
+      : null;
+  const replyContext =
+    staging.context?.kind === "reply" ? staging.context : null;
+
   const handleSend = useCallback(() => {
     // Clear first: `attachError` sits ahead of `sendError` in the hint chain
     // below, and a stale photo-permission line would hide the one report that
     // a message never reached the outbox.
     setAttachError(null);
+    const reading = readChannelAsk({
+      text: draft,
+      names: spacedNames,
+      access: askAccess,
+      attachments: photos.length,
+      busy: askBusy,
+    });
+    if (reading.kind === "refused") {
+      // Each refusal keeps the member's text, and says what to change.
+      setAskRefused({ reason: reading.reason, cause: askCause });
+      return;
+    }
+    if (reading.kind === "ask" && sendToFrapp) {
+      setDraft("");
+      setAskRefused(null);
+      // A staged reply was context for a message that is not being sent.
+      replyContext?.onCancel();
+      sendToFrapp(reading.question, newestRowKey);
+      // Its turn is drawn under the newest message: go there, as a send does.
+      followSend();
+      return;
+    }
     submitComposer();
-  }, [submitComposer]);
+  }, [
+    submitComposer,
+    sendToFrapp,
+    askAccess,
+    askCause,
+    draft,
+    spacedNames,
+    photos.length,
+    askBusy,
+    setDraft,
+    replyContext,
+    newestRowKey,
+    followSend,
+  ]);
 
   const handleDelete = useCallback(
     (messageId: string) => confirmDeleteMessage(() => remove(messageId)),
@@ -809,10 +1212,88 @@ function ChannelThreadScreen() {
     [flag],
   );
 
+  // Pin message / Unpin message (#3723). The row reads Pinned when the
+  // server's answer lands; a 51st pin is the API's 400, said in the alert.
+  const handleSetPinned = useCallback(
+    (messageId: string, pinned: boolean) => {
+      selectionHaptic();
+      setPinned(messageId, pinned).catch((error: unknown) => {
+        Alert.alert(
+          pinned ? "Couldn't pin message" : "Couldn't unpin message",
+          errorCopy(error),
+        );
+      });
+    },
+    [setPinned],
+  );
+  // Save message / Remove from Saved (#3723): the viewer's own bookmark.
+  const { savedIds, setSaved: handleSetSaved } = useSaveMessage();
+  // "Remind me about this" (#4957): the viewer's own reminder.
+  const handleRemind = useRemindMessage();
+  // A Pinned or Saved row (#3723). A reply opens its thread, since it is never
+  // on the timeline. Otherwise this channel's scrolls to it, paging older
+  // history as the Important strip's jump does, and another channel's opens
+  // on it; either way a jump that can't reach it says why.
+  const openListedMessage = useCallback(
+    ({ channelId: rowChannelId, messageId, threadRootId }: ListedMessage) => {
+      if (threadRootId && rowChannelId === channelId) {
+        openThreadFor(threadRootId, messageId);
+        return;
+      }
+      if (rowChannelId === channelId) {
+        jumpToImportant(messageId, { onMiss: alertJumpMiss });
+        return;
+      }
+      router.push({
+        pathname: "/chat-thread",
+        params: threadRootId
+          ? {
+              channelId: rowChannelId,
+              threadRootId,
+              focusMessageId: messageId,
+            }
+          : { channelId: rowChannelId, focusMessageId: messageId },
+      });
+    },
+    [channelId, jumpToImportant, openThreadFor, router],
+  );
+
+  // Mark unread (#3723): hold the channel so no read stamp follows (the blur
+  // one, and the activity handler's, queued ones included), move the cursor
+  // back, and leave at once, as Slack's phone app does, so the screen below
+  // shows the badge. The write is ordered after any stamp still pending
+  // (`useMarkMessageUnread`). A failure is an alert wherever the member is by
+  // then; nothing is re-claimed, since the screen has gone.
+  const markUnread = useMarkMessageUnread();
+  const markUnreadAsync = markUnread.mutateAsync;
+  const handleMarkUnread = useCallback(
+    (messageId: string) => {
+      if (!channelId) return;
+      selectionHaptic();
+      unreadHeldFor.current = channelId;
+      holdChannelUnread(channelId);
+      releaseViewedRef.current?.();
+      releaseViewedRef.current = null;
+      markUnreadAsync(messageId).catch((error: unknown) => {
+        Alert.alert("Couldn't mark unread", errorCopy(error));
+      });
+      if (below) below.goBack();
+      else goBackTo(router, "/");
+    },
+    [below, channelId, markUnreadAsync, router],
+  );
+
   // A poll card's Close poll (#3794), asked first like Delete.
   const handleClosePoll = useCallback(
     (messageId: string) => confirmClosePoll(() => closePoll(messageId)),
     [closePoll],
+  );
+  // A sign-up card's Close sign-ups (#3926) and a form card's Close form
+  // (step 3), asked first like Close poll.
+  const handleCloseCard = useCallback(
+    (messageId: string, kind: ClosableCardKind) =>
+      confirmCloseCard(kind, () => closeCard(messageId, kind)),
+    [closeCard],
   );
 
   // The menu's Mention: `@Name ` at the end of the draft, the body the `@`
@@ -823,9 +1304,18 @@ function ChannelThreadScreen() {
       if (!message) return;
       const name = resolveAuthorName(message, nameFor);
       const next = name ? draftWithMention(draft, name) : null;
-      if (next !== null) handleChangeText(next);
+      if (next === null || !name) return;
+      handleChangeText(next);
+      // The member it names rides the send as a pick (#3835), as the
+      // picker's would.
+      if (message.sender_id) {
+        addMentionPick({
+          user_id: message.sender_id,
+          label: mentionPickLabel(name),
+        });
+      }
     },
-    [byId, draft, handleChangeText, nameFor],
+    [addMentionPick, byId, draft, handleChangeText, nameFor],
   );
 
   // A reaction chip's tap and the actions sheet's quick row, through the same
@@ -873,8 +1363,7 @@ function ChannelThreadScreen() {
     [reloadMaskedCopies],
   );
 
-  // One sheet for the thread, retargeted per long-press — the same shape the
-  // directory uses for its member sheet.
+  // One sheet for the thread, retargeted per long-press.
   const actionsSheetRef = useRef<MessageActionsSheetHandle>(null);
   // Who can read the channel (#3536). A 1:1 DM has no list: its two members
   // are already the header.
@@ -884,32 +1373,47 @@ function ChannelThreadScreen() {
   // reason below: this screen stays mounted, and the sheet draws through the
   // app's sheet provider, so left up it would sit over the next channel (a
   // push can switch it to a 1:1 DM, which has no list) or another tab.
+  // A profile opened from a row of the list (#5568) pushes a screen, which
+  // blurs the thread and closes the list; coming back from it reopens the
+  // list, so checking a second member doesn't start from the bare thread
+  // (`spec/ui/mobile/patterns.md`: a sheet's way on returns to it). Keyed by
+  // channel, so a switch in between reopens nothing.
+  const reopenMembersFor = useRef<string | null>(null);
   useFocusEffect(
     useCallback(() => {
       if (!channelId) return;
+      if (reopenMembersFor.current === channelId) {
+        memberSheetRef.current?.present();
+      }
+      reopenMembersFor.current = null;
       return () => memberSheetRef.current?.dismiss();
     }, [channelId]),
   );
   useEffect(() => {
     if (!showMemberList) memberSheetRef.current?.dismiss();
   }, [showMemberList]);
-  // A member's profile, opened by tapping their name, photo or an `@` chip:
-  // the directory's sheet, so a profile reads the same from every door. It
-  // closes on blur for the same reason the member list does.
-  const profileSheetRef = useRef<BottomSheetModal>(null);
-  const [profileTarget, setProfileTarget] = useState<{ userId: string } | null>(
-    null,
+  // A member's profile, opened by tapping their name, photo or an `@` chip,
+  // or a row of the member list: the Directory's profile screen, pushed over
+  // the thread (#5568), so a profile reads the same from every door. The
+  // thread passes itself, so Message to this DM's own member goes back to it
+  // rather than stacking a second copy. The push blurs the thread, which
+  // closes the member list; from the list, the list comes back (above).
+  const openProfile = useCallback(
+    (userId: string) => {
+      Keyboard.dismiss();
+      router.push({
+        pathname: "/member",
+        params: channelId ? { userId, channelId } : { userId },
+      });
+    },
+    [router, channelId],
   );
-  const openProfile = useCallback((userId: string) => {
-    Keyboard.dismiss();
-    setProfileTarget({ userId });
-    profileSheetRef.current?.present();
-  }, []);
-  useFocusEffect(
-    useCallback(() => {
-      if (!channelId) return;
-      return () => profileSheetRef.current?.dismiss();
-    }, [channelId]),
+  const openProfileFromList = useCallback(
+    (userId: string) => {
+      reopenMembersFor.current = channelId ?? null;
+      openProfile(userId);
+    },
+    [channelId, openProfile],
   );
   const [actionTarget, setActionTarget] = useState<Omit<
     MessageActionsTarget,
@@ -922,6 +1426,8 @@ function ChannelThreadScreen() {
         canReply: canReplyHere,
         canPost: channelCanPost,
         canManageChannel,
+        // The audit log (#3909) keeps Frapp's entries: no Delete on one.
+        inAuditLog: postCapability.isAuditLog,
       });
       if (!actions.canOpen) return;
       // A sender the roster cannot vouch for most likely joined after it was
@@ -937,10 +1443,29 @@ function ChannelThreadScreen() {
       }
       setActionTarget({
         messageId: message.id,
-        copyText: copyableText(message),
+        // A forward's copy is copied only where the block list clears its
+        // author, as its card draws it (#4864).
+        copyText: copyableText(
+          withForwardedMasked(message, blockState, viewerId),
+        ),
+        // Mark unread (#3723): someone else's message. The unread count never
+        // counts the viewer's own, an imported row or a blocked member's, so
+        // moving the cursor before one of those would change nothing.
+        canMarkUnread: actions.canReport && message.kind !== "imported",
+        // Copy message link (#3723). A channel message only: this sheet never
+        // holds a thread reply, whose link would open on a timeline it's not in.
+        link: channelId
+          ? messageLinkUrl(webAppOrigin(), { channelId, messageId: message.id })
+          : null,
         canReply: actions.canReply,
         // The rule web's row uses (`messageCanStartThread`).
         canStartThread: canThreadHere && messageCanStartThread(message),
+        forward: forwardTargetOf(
+          message,
+          actions.canForward,
+          blockState,
+          viewerId,
+        ),
         canEdit: actions.canEdit,
         // Someone else's message from a real member, where the viewer can
         // post: the system actor and an imported author have nobody to ping.
@@ -960,19 +1485,43 @@ function ChannelThreadScreen() {
         senderInDirectory:
           message.sender_id !== null && isMember(message.sender_id) === true,
         // Read live in `sheetTarget`; here only whether to offer it (#3921).
-        flag: canFlagMessage(message, viewerId, canManageChannel)
-          ? { current: message.flag ?? null }
+        // In the audit log (#3909) a flag can only come off.
+        flag: canFlagMessage(
+          message,
+          viewerId,
+          canManageChannel,
+          postCapability.isAuditLog,
+        )
+          ? {
+              current: message.flag ?? null,
+              removeOnly: postCapability.isAuditLog,
+            }
+          : undefined,
+        // Read live in `sheetTarget`; here only whether to offer them (#3723).
+        // Pin is the server's `channels:manage` gate, chapter-wide; in the
+        // audit log (#3909) only a pinned line offers it, to unpin.
+        pin: canChangeMessagePin(
+          message,
+          canManageChannel,
+          postCapability.isAuditLog,
+        )
+          ? { pinned: !!message.is_pinned }
           : undefined,
       });
+      onMenuOpenChange(message.id);
       actionsSheetRef.current?.present();
     },
     [
+      onMenuOpenChange,
+      blockState,
       canManageChannel,
+      channelId,
       canReplyHere,
       canThreadHere,
       channelCanPost,
       isMember,
       nameFor,
+      postCapability.isAuditLog,
       refetchRoster,
       staging.isEditing,
       viewerId,
@@ -994,9 +1543,11 @@ function ChannelThreadScreen() {
         .filter((group) => group.mine)
         .map((group) => group.emoji),
       messageEmojis: groups.map((group) => group.emoji),
-      flag: actionTarget.flag ? { current: current?.flag ?? null } : undefined,
+      flag: sheetFlag(actionTarget.flag, current?.flag ?? null),
+      pin: actionTarget.pin ? { pinned: !!current?.is_pinned } : undefined,
+      save: { saved: savedIds.has(actionTarget.messageId) },
     };
-  }, [actionTarget, byId, viewerId]);
+  }, [actionTarget, byId, viewerId, savedIds]);
 
   // A message deleted while its sheet is open (by its sender, a moderator, or
   // the viewer on another device) closes the sheet. A deleted message offers
@@ -1022,7 +1573,7 @@ function ChannelThreadScreen() {
         ? (byId.get(item.message.reply_to_id) ?? null)
         : undefined;
       const placement = layout.get(item.message.client_message_id);
-      return (
+      const row = (
         <ThreadMessageRow
           row={item}
           startsRun={placement?.startsRun ?? true}
@@ -1038,6 +1589,7 @@ function ChannelThreadScreen() {
             void act(id, actionType, payload)
           }
           onClosePoll={handleClosePoll}
+          onCloseCard={handleCloseCard}
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={handleReact}
@@ -1049,7 +1601,30 @@ function ChannelThreadScreen() {
           maskedRefresh={maskedRefresh}
           onReload={handleReload}
           onOpenThread={canThreadHere ? openThread : undefined}
+          threadUnread={threadUnread[item.message.id] ?? 0}
+          memberAvatarFor={memberAvatarFor}
         />
+      );
+      return (
+        // One view, not a fragment: an inverted list's cell is laid out
+        // bottom-up (`column-reverse`, in `VirtualizedListCellRenderer`), so
+        // a second child of the cell would be drawn above the message. The
+        // long-press menu lights the message alone, not the Ask turns under
+        // it (#5479).
+        <MessageMenuCell
+          messageId={item.message.id}
+          below={
+            // A question this member asked Frapp under this message, for
+            // them alone (#4713). Not a row of its own: the list's rows and
+            // keys stay the messages'.
+            <AskTurnsUnder
+              placement={askPlacement}
+              rowKey={item.message.client_message_id}
+            />
+          }
+        >
+          {row}
+        </MessageMenuCell>
       );
     },
     // `nameFor` belongs here: it changes identity when the roster resolves, and
@@ -1066,6 +1641,7 @@ function ChannelThreadScreen() {
       handleUnreact,
       act,
       handleClosePoll,
+      handleCloseCard,
       byId,
       layout,
       blockState,
@@ -1077,6 +1653,9 @@ function ChannelThreadScreen() {
       handleReload,
       canThreadHere,
       openThread,
+      threadUnread,
+      memberAvatarFor,
+      askPlacement,
     ],
   );
 
@@ -1084,10 +1663,68 @@ function ChannelThreadScreen() {
 
   const composerPlus = useComposerPlus({
     channelId,
-    channel: { sendPoll, postTask, postHours, trackEventCard, photos },
+    channel: {
+      sendPoll,
+      postTask,
+      linkTask,
+      trackEventCard,
+      photos,
+      sendGif,
+    },
     replying: staging.context?.kind === "reply",
     offline: appOffline,
     onPhoto: handleAttach,
+  });
+
+  // The channel and reply on screen when a schedule settles, which may not
+  // be the ones it was opened on.
+  const scheduledReplyRef = useRef({
+    channelId,
+    replyToId: staging.replyToId,
+  });
+  useLayoutEffect(() => {
+    scheduledReplyRef.current = { channelId, replyToId: staging.replyToId };
+  }, [channelId, staging.replyToId]);
+  const cancelReply = replyContext?.onCancel;
+  const handleScheduled = useCallback(
+    (done: {
+      channelId: string;
+      photoKeys: string[];
+      replyToId: string | null;
+    }) => {
+      const shown = scheduledReplyRef.current;
+      if (shown.channelId !== done.channelId) return;
+      for (const key of done.photoKeys) removePhoto(key);
+      if (done.replyToId && shown.replyToId === done.replyToId) cancelReply?.();
+    },
+    [cancelReply, removePhoto],
+  );
+
+  // Scheduling the draft to post later (#4956): a long press on Send, and
+  // the line above the composer that opens the member's Scheduled list.
+  // Scheduling needs posting here; the list of what the member scheduled
+  // needs only reading, so a message that failed for lost posting can still
+  // be seen and deleted. The draft is set without a typing ping: it is not
+  // the member typing.
+  const scheduleSend = useScheduleSend({
+    channelId: channelId ?? null,
+    canSchedule: !postCapability.isAuditLog && channelCanPost,
+    showList: !postCapability.isAuditLog,
+    draft,
+    refusal: scheduleRefusal({
+      text: draft,
+      photos,
+      asksFrapp: namesFrapp(draft),
+      writeBlocked: writeBlockedReason,
+    }),
+    picksFor: staging.picksFor,
+    setDraft,
+    restoreDraftFor,
+    // The photos and the reply go with it (#4971), and leave the tray and
+    // the strip once it is scheduled, if they are still the ones on screen.
+    photos,
+    replyToId: staging.replyToId,
+    onScheduled: handleScheduled,
   });
 
   const notificationPrefsQuery = useChannelNotificationPreferences();
@@ -1117,6 +1754,7 @@ function ChannelThreadScreen() {
     ),
     disabled: !channelId,
     writeBlockedReason,
+    hasActions: true,
   });
   const [headerFrame, setHeaderFrame] = useState({ bottom: 0, width: 0 });
   const [muteTriggerRight, setMuteTriggerRight] = useState(0);
@@ -1159,6 +1797,16 @@ function ChannelThreadScreen() {
   }
   const imageViewerOpen = imageViewer.target !== null;
 
+  // The form page (#3926 step 3) covers the thread like the image viewer. It
+  // is handed the card's live row on every render, so a Close form reaches an
+  // open page, and closes on a blur, a channel switch or the card's delete
+  // (`useFormFillHost`).
+  const { state: formFill, message: filledRow } = useFormFillHost(
+    thread.rows,
+    channelId,
+  );
+  const overlayOpen = imageViewerOpen || formFill.messageId !== null;
+
   // The app-wide connection pill (`components/network-banner.tsx`) says what
   // this thread's realtime transport is doing, folded with the app's own
   // connection state, so the thread draws no connection band of its own
@@ -1187,10 +1835,8 @@ function ChannelThreadScreen() {
         // while it is open, as the mute menu's wrapper below does for the
         // menu. Either avoiding view hands these to the View it renders.
         collapsable={false}
-        accessibilityElementsHidden={imageViewerOpen}
-        importantForAccessibility={
-          imageViewerOpen ? "no-hide-descendants" : "auto"
-        }
+        accessibilityElementsHidden={overlayOpen}
+        importantForAccessibility={overlayOpen ? "no-hide-descendants" : "auto"}
       >
         {/*
           Everything the mute menu covers, out of the accessibility tree while
@@ -1287,6 +1933,14 @@ function ChannelThreadScreen() {
             />
           ) : null}
 
+          {/*
+            A new member's welcome card (#5627), in the chapter's default
+            channel only, where chat home lands them after s03.
+          */}
+          {openChannel && !isDirectChannel(openChannel.channel) ? (
+            <WelcomeCard channelId={openChannel.channel.id} />
+          ) : null}
+
           {channelId && important.total > 0 && nextImportant ? (
             <ImportantStrip
               total={important.total}
@@ -1295,12 +1949,66 @@ function ChannelThreadScreen() {
             />
           ) : null}
 
+          {/*
+            The open summary, in the channel under its header; folded, one
+            strip in the same place leads back to it. Otherwise the offer on
+            a channel opened with many new messages.
+          */}
+          {catchUp.block}
+          {catchUp.waiting ? (
+            <CatchUpStrip
+              line={CHAT_CATCH_UP_COPY.resume_line}
+              action={CHAT_CATCH_UP_COPY.resume_action}
+              onAction={catchUp.resume}
+              onDismiss={catchUp.drop}
+              dismissLabel={CHAT_CATCH_UP_COPY.close}
+            />
+          ) : catchUpOffer ? (
+            <CatchUpStrip
+              line={catchUpOffer}
+              action={CHAT_CATCH_UP_COPY.offer_action}
+              onAction={() => {
+                setArrival((previous) => ({
+                  ...previous,
+                  offerDismissed: true,
+                }));
+                startChannelCatchUp();
+              }}
+              onDismiss={() =>
+                setArrival((previous) => ({
+                  ...previous,
+                  offerDismissed: true,
+                }))
+              }
+            />
+          ) : null}
+
+          {/* Ready once the skeleton below gives way, to rows or to a state. */}
+          <ScreenReady
+            ready={
+              !channelId ||
+              unavailable ||
+              !!loadError ||
+              (!viewerId && viewerQuery.isError) ||
+              (!isLoading && !!viewerId)
+            }
+          />
           {!channelId ? (
             <View style={styles.stateBlock}>
               <Text style={styles.stateTitle}>No channel selected</Text>
               <Text style={styles.stateBody}>
                 Open a channel from Chat to see its messages.
               </Text>
+            </View>
+          ) : unavailable ? (
+            // Realtime refused the channel: deleted, or the member's access
+            // went (#5765). Ahead of the load error, because the channel's own
+            // reads are refused too once the list is read again. The header's
+            // Back is the way out, as on any thread; web's line carries a
+            // Browse channels link instead, having no Back.
+            <View style={styles.stateBlock} testID="chat-channel-unavailable">
+              <Text style={styles.stateTitle}>{CHANNEL_UNAVAILABLE_TITLE}</Text>
+              <Text style={styles.stateBody}>{CHANNEL_UNAVAILABLE_BODY}</Text>
             </View>
           ) : loadError ? (
             // Ahead of the identity gate, as on web (#2243): a failed read
@@ -1358,83 +2066,102 @@ function ChannelThreadScreen() {
                     onLoadOlder={handleLoadOlder}
                   />
                 ))}
+              {/* Asked of Frapp in a channel with no messages yet (#4713). */}
+              <AskTurnsUnder
+                placement={askPlacement}
+                rowKey={ASK_TURNS_ABOVE_ALL}
+              />
             </ScrollView>
           ) : (
             // The rows reach the image viewer through this, not through a
             // prop threaded down the row and its body.
             <ImageViewerContext.Provider value={imageViewer.open}>
-              {/* Which `@`-tokens in the rows really pinged someone. */}
-              <MentionChipTargetsContext.Provider value={mentionChipTargets}>
-                {/* The list and the jump control over its corner. */}
-                <View style={styles.flex}>
-                  {/* Behind the messages only (#3973, #3779). */}
-                  <ChatBackground channelId={channelId ?? null} />
-                  <FlatList
-                    // One list per channel. The screen stays mounted across a
-                    // switch, so a shared list kept the last channel's scroll
-                    // offset and opened a cached channel mid-history, with no
-                    // jump control to say so. A fresh list opens at offset 0,
-                    // the newest message.
-                    key={channelId ?? undefined}
-                    ref={listRef}
-                    onScrollToIndexFailed={handleScrollToIndexFailed}
-                    viewabilityConfig={viewability.viewabilityConfig}
-                    onViewableItemsChanged={viewability.onViewableItemsChanged}
-                    data={inverted}
-                    renderItem={renderItem}
-                    // `client_message_id` is always present and is stable across
-                    // the optimistic → confirmed transition, which the server id
-                    // is not.
-                    keyExtractor={(item) => item.message.client_message_id}
-                    inverted
-                    // A new message is inserted at index 0, the scroll origin of
-                    // an inverted list, so without this every arrival moved what
-                    // a member reading back through history was reading by a
-                    // row. The native scroll view keeps the first visible row
-                    // where it was (iOS, and Android's Fabric scroll view in RN
-                    // 0.86, which this app runs) and, within
-                    // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
-                    // to show the arrival instead. Older pages append at the far
-                    // end, which this never touches.
-                    maintainVisibleContentPosition={MAINTAIN_POSITION}
-                    onScroll={latest.onScroll}
-                    onLayout={latest.onLayout}
-                    // A tap on a reaction, link, photo, quote or Retry acts at
-                    // once with the keyboard up; React Native's default spent
-                    // that tap on dismissing the keyboard. Dragging the thread
-                    // puts the keyboard away, as every messenger does, and so
-                    // does a tap on a plain message (`MessageRowFrame`). A tap
-                    // on a card's body doesn't (#3461): the card's own
-                    // long-press Pressable takes it first.
-                    // `on-drag` rather than iOS's `interactive`, on both: the
-                    // avoiding view under the composer follows keyboard frame
-                    // events, which an interactive drag only sends at its end,
-                    // so the composer would hang in mid-air while the keyboard
-                    // followed the finger down.
-                    keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="on-drag"
-                    onEndReached={handleEndReached}
-                    onEndReachedThreshold={0.5}
-                    // An inverted list draws its footer at the top, above the
-                    // oldest loaded row.
-                    ListFooterComponent={historyEdge}
-                    contentContainerStyle={styles.listContent}
-                    style={styles.flex}
-                  />
-                  {latest.showsJump ? (
-                    <JumpToLatestButton
-                      hasNew={latest.hasNewBelow}
-                      onPress={() => jumpToLatest()}
-                    />
-                  ) : null}
-                </View>
-              </MentionChipTargetsContext.Provider>
+              <FormFillContext.Provider value={formFill.open}>
+                {/* Which `@`-tokens in the rows really pinged someone. */}
+                <MentionChipTargetsContext.Provider value={mentionChipTargets}>
+                  {/* The list and the jump control over its corner. Measured
+                      by the long-press menu, to tell whether the message it
+                      acts on is still in view above it (#5479). */}
+                  <MessageMenuFocusProvider value={menuFocus}>
+                    <View
+                      ref={menuListRef}
+                      collapsable={false}
+                      style={styles.flex}
+                    >
+                      {/* Behind the messages only (#3973, #3779). */}
+                      <ChatBackground channelId={channelId ?? null} />
+                      <FlatList
+                        // One list per channel. The screen stays mounted across a
+                        // switch, so a shared list kept the last channel's scroll
+                        // offset and opened a cached channel mid-history, with no
+                        // jump control to say so. A fresh list opens at offset 0,
+                        // the newest message.
+                        key={channelId ?? undefined}
+                        ref={listRef}
+                        onScrollToIndexFailed={handleScrollToIndexFailed}
+                        viewabilityConfig={viewability.viewabilityConfig}
+                        onViewableItemsChanged={
+                          viewability.onViewableItemsChanged
+                        }
+                        data={inverted}
+                        renderItem={renderItem}
+                        // `client_message_id` is always present and is stable across
+                        // the optimistic → confirmed transition, which the server id
+                        // is not.
+                        keyExtractor={(item) => item.message.client_message_id}
+                        inverted
+                        // A new message is inserted at index 0, the scroll origin of
+                        // an inverted list, so without this every arrival moved what
+                        // a member reading back through history was reading by a
+                        // row. The native scroll view keeps the first visible row
+                        // where it was (iOS, and Android's Fabric scroll view in RN
+                        // 0.86, which this app runs) and, within
+                        // `FOLLOW_ARRIVALS_WITHIN` of the newest message, scrolls on
+                        // to show the arrival instead. Older pages append at the far
+                        // end, which this never touches.
+                        maintainVisibleContentPosition={MAINTAIN_POSITION}
+                        onScroll={latest.onScroll}
+                        onLayout={latest.onLayout}
+                        // A tap on a reaction, link, photo, quote or Retry acts at
+                        // once with the keyboard up; React Native's default spent
+                        // that tap on dismissing the keyboard. Dragging the thread
+                        // puts the keyboard away, as every messenger does, and so
+                        // does a tap on a plain message (`MessageRowFrame`). A tap
+                        // on a card's body doesn't (#3461): the card's own
+                        // long-press Pressable takes it first.
+                        // `on-drag` rather than iOS's `interactive`, on both: the
+                        // avoiding view under the composer follows keyboard frame
+                        // events, which an interactive drag only sends at its end,
+                        // so the composer would hang in mid-air while the keyboard
+                        // followed the finger down.
+                        keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="on-drag"
+                        onEndReached={handleEndReached}
+                        onEndReachedThreshold={0.5}
+                        // An inverted list draws its footer at the top, above the
+                        // oldest loaded row.
+                        ListFooterComponent={historyEdge}
+                        contentContainerStyle={styles.listContent}
+                        style={styles.flex}
+                      />
+                      {latest.showsJump ? (
+                        <JumpToLatestButton
+                          hasNew={latest.hasNewBelow}
+                          onPress={() => jumpToLatest()}
+                        />
+                      ) : null}
+                    </View>
+                  </MessageMenuFocusProvider>
+                </MentionChipTargetsContext.Provider>
+              </FormFillContext.Provider>
             </ImageViewerContext.Provider>
           )}
 
           {/*
           Always mounted, so someone starting or stopping typing moves nothing
-          above it. The caption Text is always there too: when nobody types it
+          above it. While the draft names `@Frapp` it says instead what Send
+          will do (#4713), before it does it: the line is already there, so
+          saying so moves nothing either. The caption Text is always there too: when nobody types it
           holds a non-breaking space, so the line it reserves is the caption's
           own line box, scaled with the system text size like the words it
           stands in for. Empty, it is hidden from a screen reader rather than
@@ -1445,17 +2172,13 @@ function ChannelThreadScreen() {
           <View
             testID="typing-line"
             style={styles.typingSlot}
-            accessibilityElementsHidden={shownTypingUsers.length === 0}
+            accessibilityElementsHidden={composerLine === null}
             importantForAccessibility={
-              shownTypingUsers.length === 0 ? "no-hide-descendants" : "auto"
+              composerLine === null ? "no-hide-descendants" : "auto"
             }
           >
             <Text style={styles.typing} numberOfLines={1}>
-              {shownTypingUsers.length === 0
-                ? TYPING_LINE_BLANK
-                : shownTypingUsers.length === 1
-                  ? "Someone is typing…"
-                  : `${shownTypingUsers.length} people are typing…`}
+              {composerLine ?? TYPING_LINE_BLANK}
             </Text>
           </View>
 
@@ -1495,7 +2218,7 @@ function ChannelThreadScreen() {
         */}
           {/* The audit log (#3909): only Frapp posts there, so there is no
               composer at all, just the line that says so. */}
-          {postCapability.isAuditLog ? (
+          {unavailable ? null : postCapability.isAuditLog ? (
             <Text
               style={styles.auditLogNote}
               accessibilityRole="text"
@@ -1514,6 +2237,12 @@ function ChannelThreadScreen() {
               avatarFor={memberAvatarFor}
               avatarTintFor={avatarTintFor}
               mentionRoles={mentionRoles.data}
+              onPickMember={addMentionPick}
+              ask={mayAskHere ? { naming: asksFrapp } : null}
+              dictationTarget={channelId}
+              tidyDictation={
+                !!openChannel && !isDirectChannel(openChannel.channel)
+              }
               placeholder={composerPlaceholder}
               // A send that never reached the outbox has no failed row to show
               // (nothing was queued), so this line is the only report of it.
@@ -1524,7 +2253,10 @@ function ChannelThreadScreen() {
               // indicator). `lib/connection/state.ts` holds the rule for the
               // surfaces that have to block instead.
               disabledHint={
+                // A failed pick is newer than a refusal to ask: Send clears
+                // `attachError` before it refuses.
                 attachError ??
+                askNotice ??
                 staging.editError ??
                 sendError ??
                 // `canSend` first. It is false until `ctx` resolves, and
@@ -1537,14 +2269,14 @@ function ChannelThreadScreen() {
                     : null)
               }
               hintTone={
-                sendError || attachError || staging.editError
+                askNotice || sendError || attachError || staging.editError
                   ? "error"
                   : "muted"
               }
               // An edit changes text only, so the staged photos and the + stand
               // aside until it is saved or cancelled.
               photos={staging.isEditing ? undefined : photos}
-              // The + (#3865): Photo, Poll, Event, Task and Service hours, in
+              // The + (#3865): Photo, Poll, Sign-up sheet, Event, Task and Service hours, in
               // a sheet that greys what can't work this second and says why
               // (offline Photo among them: an upload has no outbox).
               onOpenPlus={staging.isEditing ? undefined : composerPlus.openPlus}
@@ -1552,9 +2284,17 @@ function ChannelThreadScreen() {
               onRemovePhoto={removePhoto}
               onRetryPhoto={retryPhoto}
               isPicking={isPicking}
+              onSchedule={
+                canSend && !staging.isSavingEdit
+                  ? scheduleSend.openSchedule
+                  : undefined
+              }
+              scheduled={scheduleSend.scheduled}
             />
           )}
         </View>
+        {/* Where the keyboard would be, while the long-press menu is (#5479). */}
+        <MessageMenuRoom room={menuRoomHeight} shown={menuShown} />
         {/*
           Last, so it is above the header, the inverted list and the composer
           in paint order and in hit-testing (#2033). The menu used to hang off
@@ -1563,6 +2303,7 @@ function ChannelThreadScreen() {
         */}
         <NotificationLevelMenu
           menu={muteMenu}
+          actions={headerMenuActions}
           isSaving={setNotificationLevel.isPending}
           anchor={{
             top: headerFrame.bottom,
@@ -1576,35 +2317,47 @@ function ChannelThreadScreen() {
       <ChannelMemberSheet
         ref={memberSheetRef}
         channelId={channelId ?? null}
-        onOpenProfile={openProfile}
-      />
-      <MemberDetailSheet
-        ref={profileSheetRef}
-        member={profileTarget}
-        // Cleared on close, which is what tells a DM request still in flight
-        // that the member backed out (the sheet's stale-DM guard).
-        onDismiss={() => setProfileTarget(null)}
-        openChannelId={channelId ?? null}
+        onOpenProfile={openProfileFromList}
       />
       {composerPlus.sheets}
+      {scheduleSend.sheets}
+      {catchUp.sheets}
+      {channelAsk?.sheets}
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
+        height={menuHeight}
+        onDismiss={() => onMenuOpenChange(null)}
+        nameFor={nameFor}
+        viewerId={viewerId}
         onSenderDeparted={markDeparted}
         onReply={staging.startReply}
         onStartThread={openThreadFor}
         onEdit={staging.startEdit}
         onDelete={handleDelete}
         onMention={handleMention}
+        onMarkUnread={handleMarkUnread}
         onReact={handleReact}
         onUnreact={handleUnreact}
         onFlag={handleFlag}
+        onSetPinned={handleSetPinned}
+        onSetSaved={handleSetSaved}
+        onRemind={handleRemind}
+      />
+      <MessageListSheet
+        ref={listSheetRef}
+        kind={listKind}
+        channelId={channelId ?? null}
+        nameFor={nameFor}
+        onOpen={openListedMessage}
+        onRemoveSaved={(messageId) => handleSetSaved(messageId, false)}
       />
       {/*
         Last, so it is above the header, the thread, the composer and the mute
         menu in paint order and in hit-testing (#2033). The actions sheet
         before it draws through the app's sheet provider, not here.
       */}
+      <FormFillPage state={formFill} message={filledRow} nameFor={nameFor} />
       <ImageViewer viewer={imageViewer} />
     </SafeAreaView>
   );
@@ -1714,4 +2467,18 @@ function createStyles(tokens: SignetTokens) {
       textAlign: "center",
     },
   });
+}
+
+/**
+ * The sheet's Flag row with the message's flag read live. A remove-only row
+ * (the audit log, #3909) whose flag has since come off has nothing left to
+ * offer, so it draws no row.
+ */
+function sheetFlag(
+  offered: MessageActionsTarget["flag"],
+  current: ChatMessageFlag | null,
+): MessageActionsTarget["flag"] {
+  if (!offered) return undefined;
+  if (offered.removeOnly && current === null) return undefined;
+  return { ...offered, current };
 }

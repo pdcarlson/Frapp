@@ -112,7 +112,7 @@ export function EmailChipsInput({
       className={cn(
         // The §4 field recipe (fill, hairline, radius, focus), grown to hold
         // chips: a minimum of the field height, wrapping as chips are added.
-        "flex min-h-10 w-full cursor-text flex-wrap items-center gap-1.5 rounded-md border border-input bg-surface-1 px-2 py-1.5 pointer-coarse:min-h-11",
+        "flex min-h-10 w-full cursor-text flex-wrap items-center gap-1.5 rounded-md border border-control-edge bg-surface-1 px-2 py-1.5 pointer-coarse:min-h-11",
         FOCUS_RING_WITHIN,
         hasProblem && "border-destructive",
         disabled && "cursor-not-allowed border-border",

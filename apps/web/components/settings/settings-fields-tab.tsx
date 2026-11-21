@@ -27,6 +27,7 @@ import {
   ErrorState,
   anyReadUncached,
   OfflineState,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage, guardIntDraft, parseGuardedInt } from "@/lib/utils";
@@ -105,7 +106,7 @@ export function SettingsFieldsTab({ canManage }: Props) {
   const { confirm, confirmDialog } = useConfirmDialog();
 
   const fields = fieldsQuery.data ?? [];
-  const paused = fieldsQuery.isPending && fieldsQuery.fetchStatus === "paused";
+  const paused = pausedRead(fieldsQuery);
 
   let body: ReactNode;
   if (isOffline && anyReadUncached(fieldsQuery)) {

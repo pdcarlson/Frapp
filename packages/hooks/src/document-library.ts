@@ -1,3 +1,12 @@
+import {
+  contentTypeByExtension,
+  fileExtension,
+  ROLE_COLOR_PALETTE,
+  roleColor,
+  type RoleColorHex,
+} from "@repo/validation";
+import { folderPlace } from "./document-folder-tree";
+import { fnv1a32 } from "./member-avatar-color";
 import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
 
 /**
@@ -9,9 +18,10 @@ import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
  * All of it runs on the client, as web `/backwork`'s does (`backwork-library.ts`):
  * `GET /v1/documents` returns the chapter's whole library in one response, so
  * a keystroke or a filter re-ranks what is already in memory instead of asking
- * the server again, and it works offline over what is loaded. A chapter files
- * far fewer documents than PostgREST's 1,000-row `max_rows`, the cap that bit
- * backwork (#3525); past it the page says it is showing only part.
+ * the server again, and it works offline over what is loaded. The API reads
+ * the library in pages, so a chapter past PostgREST's 1,000-row `max_rows`
+ * gets every file (#5585; until then the response was cut at the cap, which
+ * hid Shawn's oldest imported files).
  */
 
 /**
@@ -20,14 +30,6 @@ import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
  * (`BACKWORK_LIST_CAP` is this constant).
  */
 export const POSTGREST_MAX_ROWS = 1000;
-
-/** A documents response this long is treated as truncated. */
-export const DOCUMENT_LIST_CAP = POSTGREST_MAX_ROWS;
-
-/** The capped-list status line, both apps (`writing.md` § Chapter Documents (dashboard)). */
-export const DOCUMENT_CAP_NOTICE = `Showing the newest ${DOCUMENT_LIST_CAP.toLocaleString(
-  "en-US",
-)} documents. Search and filters look only at these for now.`;
 
 /** The delete confirm, both apps: title, body and confirm label. */
 export function deleteDocumentTitle(title: string): string {
@@ -61,10 +63,11 @@ export type LibrarySourceDocument = {
  * A file format group, for the File type filter and for search (#3938, Shawn's
  * addition; Google Drive's Type filter).
  */
-export type FileKind = "pdf" | "word" | "slides" | "spreadsheet" | "image" | "other";
+export type FileKind =
+  "pdf" | "word" | "slides" | "spreadsheet" | "image" | "other";
 
 /** The groups in the order the filter offers them. */
-export const FILE_KIND_OPTIONS: readonly { value: FileKind; label: string }[] = [
+const FILE_KIND_OPTIONS: readonly { value: FileKind; label: string }[] = [
   { value: "pdf", label: "PDF" },
   { value: "word", label: "Word" },
   { value: "slides", label: "Slides" },
@@ -87,35 +90,28 @@ const FILE_KIND_WORDS: Record<FileKind, readonly string[]> = {
   other: [],
 };
 
-const EXTENSION_KIND: Record<string, FileKind> = {
-  pdf: "pdf",
-  doc: "word",
-  docx: "word",
-  odt: "word",
-  rtf: "word",
-  ppt: "slides",
-  pptx: "slides",
-  key: "slides",
-  odp: "slides",
-  xls: "spreadsheet",
-  xlsx: "spreadsheet",
-  csv: "spreadsheet",
-  ods: "spreadsheet",
-  jpg: "image",
-  jpeg: "image",
-  png: "image",
-  gif: "image",
-  webp: "image",
-  heic: "image",
-  heif: "image",
-  bmp: "image",
-  tif: "image",
-  tiff: "image",
-  svg: "image",
-};
+/**
+ * The type a stored extension stands for, when a row recorded none: every
+ * extension the upload allowlist binds (its widest table, `archive`, so the
+ * two can't drift), plus the ones it never admitted that older rows still
+ * carry, which need a group and a label too. No prototype, so a file named
+ * `x.constructor` reads as unknown.
+ */
+const EXTENSION_TYPE: Readonly<Record<string, string>> = Object.assign(
+  Object.create(null),
+  contentTypeByExtension("archive"),
+  {
+    odt: "application/vnd.oasis.opendocument.text",
+    rtf: "application/rtf",
+    key: "application/vnd.apple.keynote",
+    odp: "application/vnd.oasis.opendocument.presentation",
+    ods: "application/vnd.oasis.opendocument.spreadsheet",
+    heif: "image/heif",
+    svg: "image/svg+xml",
+  },
+);
 
-function kindOfMime(mime: string): FileKind | null {
-  const type = mime.split(";")[0]!.trim().toLowerCase();
+function kindOfMime(type: string): FileKind {
   if (type === "application/pdf") return "pdf";
   if (type.startsWith("image/")) return "image";
   if (
@@ -144,24 +140,175 @@ function kindOfMime(mime: string): FileKind | null {
   ) {
     return "spreadsheet";
   }
-  return null;
+  return "other";
 }
 
+/** The name a type goes by in the viewer ("Excel spreadsheets can't be previewed yet"). */
+const TYPE_LABEL: Readonly<Record<string, string>> = Object.assign(
+  Object.create(null),
+  {
+    "application/msword": "Word document",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      "Word document",
+    "application/vnd.ms-excel": "Excel spreadsheet",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+      "Excel spreadsheet",
+    "application/vnd.ms-powerpoint": "PowerPoint deck",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+      "PowerPoint deck",
+    "application/vnd.apple.keynote": "Keynote deck",
+    "application/vnd.oasis.opendocument.text": "OpenDocument text file",
+    "application/vnd.oasis.opendocument.spreadsheet":
+      "OpenDocument spreadsheet",
+    "application/vnd.oasis.opendocument.presentation":
+      "OpenDocument presentation",
+    "application/rtf": "Rich text document",
+    "text/rtf": "Rich text document",
+    "text/plain": "Text file",
+    "text/csv": "CSV file",
+    // "Photo" is for what the viewer draws; these it offers as a download, and
+    // the card names them ("HEIC photos can't be previewed yet").
+    "image/heic": "HEIC photo",
+    "image/heif": "HEIF photo",
+    "image/tiff": "TIFF image",
+    "image/avif": "AVIF image",
+    "image/svg+xml": "SVG image",
+  },
+);
+
+const KIND_LABEL: Record<FileKind, string> = {
+  pdf: "PDF",
+  word: "Word document",
+  slides: "Slide deck",
+  spreadsheet: "Spreadsheet",
+  image: "Photo",
+  other: "File",
+};
+
 /**
- * A document's format group: from its declared `content_type`, or, when that
- * is missing or the generic `application/octet-stream`, from the extension of
- * the stored filename. Anything unrecognised is Other.
+ * The hues a folder can wear, in this order: the role palette minus Slate,
+ * which stays for a file in no folder. The order is part of the hash, so
+ * reordering it recolours every folder.
  */
-export function fileKind(doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">): FileKind {
-  const mime = doc.content_type?.trim();
-  if (mime && mime.toLowerCase() !== "application/octet-stream") {
-    const kind = kindOfMime(mime);
-    if (kind) return kind;
+const FOLDER_HUES: readonly RoleColorHex[] = ROLE_COLOR_PALETTE.filter(
+  (swatch) => swatch.key !== "slate",
+).map((swatch) => swatch.hex);
+
+/**
+ * The hue a file's tile wears in the library list (#5576): its folder's, so
+ * a library reads by where things are filed before the titles do, as
+ * Dropbox's and Drive's coloured folders let it. Build it from the folders
+ * the member has, in the rail's order: each folder the rail draws at the top
+ * takes the palette in turn, so the first nine never share a hue (a hash put
+ * five ordinary folders on two), and a folder drawn under another wears its
+ * top folder's hue. "The top" is the rail's own tree rule (`folderPlace`):
+ * "Rush / 2024" sits under Rush only when a folder named Rush exists. A file
+ * in no folder is Slate; one whose folder isn't in the list (the folders
+ * failed to load) falls back to a hash of its name.
+ *
+ * Because the order is the member's own list, a folder hidden from a member
+ * (`chapter-docs.md` § Who can see), or one added or moved ahead of the
+ * others, shifts the colours after it: two members who see different
+ * folders can see different colours. Distinct colours on one screen won
+ * over the same colour for everyone, which a hash can only promise by
+ * letting folders collide.
+ *
+ * Folder, not file type: a chapter library is nearly all PDFs, so a hue per
+ * type painted the seeded demo one colour top to bottom. A hue names a
+ * place, never a state (`foundations.md` § A place's hue); the role palette
+ * leaves out gold and red, so no tile reads as the accent, a mention or an
+ * error.
+ */
+export function documentFolderHues(
+  folders: readonly string[],
+): (folder: string | null | undefined) => RoleColorHex {
+  const names = new Set(folders);
+  const topOf = (name: string): string => {
+    let top = name;
+    for (;;) {
+      const { parentName } = folderPlace(top, names);
+      if (!parentName) return top;
+      top = parentName;
+    }
+  };
+  const order = new Map<string, number>();
+  for (const name of folders) {
+    const top = topOf(name);
+    if (!order.has(top)) order.set(top, order.size);
   }
+  return (folder) => {
+    if (!folder) return roleColor("slate");
+    const index = names.has(folder)
+      ? order.get(topOf(folder))!
+      : fnv1a32(folder.toLowerCase());
+    return FOLDER_HUES[index % FOLDER_HUES.length]!;
+  };
+}
+
+/** What one file is, for every surface that groups, names or previews it. */
+export type ClassifiedFile = {
+  /**
+   * The type the file is taken to be: the declared `content_type` (base type,
+   * lowercased), or, when that is missing or the generic
+   * `application/octet-stream`, the type its stored extension stands for.
+   * Null when neither says.
+   */
+  type: string | null;
+  /** Its format group, for the File type filter and search. */
+  kind: FileKind;
+  /** Its name for people: "PDF", "Excel spreadsheet", "Photo", "File". */
+  label: string;
+  /**
+   * The type it groups and names by: the declared type, or the stored
+   * extension's when the declared one is absent or unrecognised. The phone
+   * saves a document under this type's extension (`document-file.ts`), so the
+   * file it hands over is the kind its tile says it is.
+   */
+  groupType: string | null;
+};
+
+/**
+ * The one classifier for a chapter document's file (#3959): the File type
+ * filter, search, and the web viewer's preview and label all read it, so a
+ * file is never an Image in the filter and a "File" in the viewer. The
+ * declared type wins; the stored extension stands in only when no useful type
+ * was recorded (rows filed before 2026-08-31, or a client that sent
+ * `application/octet-stream`). Whether a type previews is the viewer's call
+ * (`previewKind`), made on {@link ClassifiedFile.type}.
+ */
+export function classifyFile(
+  doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">,
+): ClassifiedFile {
+  const declared =
+    doc.content_type?.split(";")[0]?.trim().toLowerCase() || null;
+  const type =
+    declared && declared !== "application/octet-stream" ? declared : null;
   const name = doc.storage_path?.split("/").pop() ?? "";
-  const dot = name.lastIndexOf(".");
-  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
-  return EXTENSION_KIND[ext] ?? "other";
+  const fromName = EXTENSION_TYPE[fileExtension(name)] ?? null;
+  if (type === null) return describe(fromName, fromName);
+  // A declared type nothing here recognises (`text/plain` on a `.csv`, an
+  // old `application/x-pdf`) groups and names by the extension, as the filter
+  // always has. `type` stays what was declared: preview never goes past it.
+  const kind = kindOfMime(type);
+  if (kind === "other" && fromName) return describe(type, fromName);
+  return describe(type, type);
+}
+
+function describe(type: string | null, groupBy: string | null): ClassifiedFile {
+  const kind = groupBy ? kindOfMime(groupBy) : "other";
+  return {
+    type,
+    kind,
+    label: (groupBy && TYPE_LABEL[groupBy]) || KIND_LABEL[kind],
+    groupType: groupBy,
+  };
+}
+
+/** A document's format group ({@link classifyFile}). Anything unrecognised is Other. */
+export function fileKind(
+  doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">,
+): FileKind {
+  return classifyFile(doc).kind;
 }
 
 /** One choice in the Uploaded by filter. */
@@ -189,7 +336,10 @@ export type DateFilter =
  */
 export type DocumentMarkFilter = { pinned: boolean; starred: boolean };
 
-export const NO_MARK_FILTER: DocumentMarkFilter = { pinned: false, starred: false };
+export const NO_MARK_FILTER: DocumentMarkFilter = {
+  pinned: false,
+  starred: false,
+};
 
 export type DocumentFilters = {
   /** `uploaded_by`, or null for anyone. */
@@ -231,7 +381,9 @@ function inMarkFilter(
 }
 
 /** A document with its uploader's name resolved and its words normalised once. */
-export type LibraryDocument<D extends LibrarySourceDocument = LibrarySourceDocument> = {
+export type LibraryDocument<
+  D extends LibrarySourceDocument = LibrarySourceDocument,
+> = {
   doc: D;
   uploader: string | null;
   words: readonly string[];
@@ -259,17 +411,45 @@ export function toLibraryDocuments<D extends LibrarySourceDocument>(
 
 /**
  * "Uploaded Sep 26 by Ryan Castellano", dropping whichever half is unknown:
- * the lead of each app's row meta line.
+ * the lead of each app's row meta line. A copy of a file in the chapter's
+ * Google Drive folder (#5157) says where it came from instead of who filed
+ * it, since the officer who connected the folder didn't pick each file:
+ * "From Google Drive, added Sep 26".
  */
-export function uploadedLine(day: string | null, uploader: string | null): string | null {
+export function uploadedLine(
+  day: string | null,
+  uploader: string | null,
+  fromDrive = false,
+): string | null {
+  if (fromDrive) {
+    return day ? `From Google Drive, added ${day}` : "From Google Drive";
+  }
   if (!day && !uploader) return null;
   return ["Uploaded", day, uploader ? `by ${uploader}` : null]
     .filter(Boolean)
     .join(" ");
 }
 
+/**
+ * "Effective September 26", left out when it is the day the file was uploaded: the
+ * upload panel starts the date on Today and the phone sends the upload day
+ * (#5207), so a matching date says nothing the Uploaded line doesn't. Both
+ * apps' rows say it after the folder and type (2026-11-19; the phone's row
+ * left it off until then). Takes the two days already formatted.
+ */
+export function effectiveLine(
+  effectiveDay: string | null,
+  uploadedDay: string | null,
+): string | null {
+  if (!effectiveDay || effectiveDay === uploadedDay) return null;
+  return `Effective ${effectiveDay}`;
+}
+
 /** Everything a member might type to find a document. */
-export function searchText(doc: LibrarySourceDocument, uploader: string | null): string {
+function searchText(
+  doc: LibrarySourceDocument,
+  uploader: string | null,
+): string {
   return [doc.title, doc.description, uploader, doc.folder, doc.document_type]
     .filter((part) => part !== null && part !== undefined && part !== "")
     .join(" ");
@@ -289,11 +469,16 @@ export function semesterSince(
   let latest: { end_date: string; created_at?: string } | null = null;
   for (const archive of archives) {
     if (!archive.end_date) continue;
-    if (latest === null || (archive.created_at ?? "") > (latest.created_at ?? "")) {
+    if (
+      latest === null ||
+      (archive.created_at ?? "") > (latest.created_at ?? "")
+    ) {
       latest = archive;
     }
   }
-  return latest ? new Date(`${latest.end_date.slice(0, 10)}T23:59:59.999Z`) : null;
+  return latest
+    ? new Date(`${latest.end_date.slice(0, 10)}T23:59:59.999Z`)
+    : null;
 }
 
 /**
@@ -356,7 +541,9 @@ export function isActiveDateFilter(
 ): filter is DateFilter {
   if (filter === null) return false;
   if (filter.preset === "semester") return semesterKnown;
-  return filter.preset !== "custom" || filter.from !== null || filter.to !== null;
+  return (
+    filter.preset !== "custom" || filter.from !== null || filter.to !== null
+  );
 }
 
 /** Whether a search or a filter is narrowing the list. */
@@ -388,10 +575,15 @@ export function dateFilterLabel(filter: DateFilter): string {
 const byTitle = (a: LibraryDocument, b: LibraryDocument) =>
   (a.doc.title || "").localeCompare(b.doc.title || "");
 
-const COMPARE: Record<DocumentSort, (a: LibraryDocument, b: LibraryDocument) => number> = {
+const COMPARE: Record<
+  DocumentSort,
+  (a: LibraryDocument, b: LibraryDocument) => number
+> = {
   name: byTitle,
-  newest: (a, b) => b.doc.created_at.localeCompare(a.doc.created_at) || byTitle(a, b),
-  oldest: (a, b) => a.doc.created_at.localeCompare(b.doc.created_at) || byTitle(a, b),
+  newest: (a, b) =>
+    b.doc.created_at.localeCompare(a.doc.created_at) || byTitle(a, b),
+  oldest: (a, b) =>
+    a.doc.created_at.localeCompare(b.doc.created_at) || byTitle(a, b),
   // Unknown uploaders last, then by name, then newest first within one person.
   uploader: (a, b) =>
     (a.uploader === null ? 1 : 0) - (b.uploader === null ? 1 : 0) ||
@@ -411,7 +603,10 @@ export function queryDocuments<D extends LibrarySourceDocument>(
   sort: DocumentSort,
   dates: QueryContext,
 ): LibraryDocument<D>[] {
-  const date = isActiveDateFilter(filters.date, dates.semesterSince !== undefined)
+  const date = isActiveDateFilter(
+    filters.date,
+    dates.semesterSince !== undefined,
+  )
     ? filters.date
     : null;
   const starred = dates.starred ?? NO_STARS;
@@ -451,7 +646,10 @@ export function queryDocuments<D extends LibrarySourceDocument>(
  * "excel"): exact, or as the start of one from three letters, scored as the
  * fuzzy matcher scores an exact word and a prefix. No near misses.
  */
-function matchKindWord(kind: FileKind, word: string): { score: number; hit: null } {
+function matchKindWord(
+  kind: FileKind,
+  word: string,
+): { score: number; hit: null } {
   let score = 0;
   for (const kindWord of FILE_KIND_WORDS[kind]) {
     if (kindWord === word) return { score: 3, hit: null };
@@ -472,10 +670,16 @@ export function kindOptions(
 }
 
 /** The Uploaded by chip's choices: only people who have uploaded something. */
-export function uploaderOptions(rows: readonly LibraryDocument[]): UploaderOption[] {
+export function uploaderOptions(
+  rows: readonly LibraryDocument[],
+): UploaderOption[] {
   const people = new Map<string, string>();
   for (const row of rows) {
-    if (row.doc.uploaded_by && row.uploader && !people.has(row.doc.uploaded_by)) {
+    if (
+      row.doc.uploaded_by &&
+      row.uploader &&
+      !people.has(row.doc.uploaded_by)
+    ) {
       people.set(row.doc.uploaded_by, row.uploader);
     }
   }
@@ -510,8 +714,7 @@ export function tierByMarks<T>(
 
 /** A pinned or starred thing above the list: a folder, or a single file. */
 export type MarkedItem<F, D> =
-  | { kind: "folder"; folder: F; count: number }
-  | { kind: "document"; doc: D };
+  { kind: "folder"; folder: F; count: number } | { kind: "document"; doc: D };
 
 /**
  * The Pinned and Starred groups both apps draw above All files (#3934): the
@@ -543,13 +746,11 @@ export function markedItems<
     if (doc.folder) counts.set(doc.folder, (counts.get(doc.folder) ?? 0) + 1);
   }
   const items: MarkedItem<F, D>[] = [
-    ...folders.map(
-      (folder): MarkedItem<F, D> => ({
-        kind: "folder",
-        folder,
-        count: counts.get(folder.name) ?? 0,
-      }),
-    ),
+    ...folders.map((folder): MarkedItem<F, D> => ({
+      kind: "folder",
+      folder,
+      count: counts.get(folder.name) ?? 0,
+    })),
     ...shown.map((doc): MarkedItem<F, D> => ({ kind: "document", doc })),
   ];
   const { pinned, starred } = tierByMarks(
@@ -565,14 +766,53 @@ export function markedItems<
 }
 
 /** A list's rows with pinned files first, then starred, then the rest. */
-export function tierRows<R extends { doc: { id: string; pinned_at?: string | null } }>(
-  rows: readonly R[],
-  starredDocuments: ReadonlySet<string>,
-): R[] {
+export function tierRows<
+  R extends { doc: { id: string; pinned_at?: string | null } },
+>(rows: readonly R[], starredDocuments: ReadonlySet<string>): R[] {
   const tiers = tierByMarks(
     rows,
     (row) => !!row.doc.pinned_at,
     (row) => starredDocuments.has(row.doc.id),
   );
   return [...tiers.pinned, ...tiers.starred, ...tiers.rest];
+}
+
+/** Whether a document is a copy of a file in the chapter's Drive folder (#5157). */
+export function isDriveCopy(doc: { drive_file_id?: string | null }): boolean {
+  return typeof doc.drive_file_id === "string" && doc.drive_file_id !== "";
+}
+
+/** Under a folder's Who can see list: who passes it anyway (#3642 piece 1). */
+export const FOLDER_ALWAYS_LINE = "The President can always see it.";
+
+/** Under a file's list: its uploader passes too (a Drive copy has none). */
+export const FILE_ALWAYS_LINE =
+  "The President and whoever uploaded it can always see it.";
+
+/** What the lock on a file not everyone can see says to a screen reader. */
+export const LIMITED_LABEL = "Not everyone can see this";
+
+type AccessListed = { who_can_see?: readonly string[] | null };
+
+/**
+ * Which files draw the lock (#5216), on web and the phone alike: a file with
+ * its own list, one in a folder with a list, and one in a folder this member
+ * can't see. The last is a file they uploaded before losing that folder
+ * (`isOwnUpload` in the API): every folder a document names is registered
+ * (an upload registers it, and the folders table was backfilled), so a
+ * folder missing from the member's own list is one a list hides from them.
+ * Until the folders load (`null`), only a file's own list counts, so nothing
+ * draws a lock it then loses.
+ */
+export function limitedDocumentCheck(
+  folders: readonly ({ name: string } & AccessListed)[] | null,
+): (doc: { folder: string | null } & AccessListed) => boolean {
+  const limited = new Map(
+    (folders ?? []).map((folder) => [folder.name, folder.who_can_see != null]),
+  );
+  return (doc) => {
+    if (doc.who_can_see != null) return true;
+    if (!doc.folder || folders === null) return false;
+    return limited.get(doc.folder) ?? true;
+  };
 }

@@ -1,5 +1,11 @@
-import { QueryClient } from "@tanstack/react-query";
-import { isRetryableFailure } from "@repo/api-sdk";
+import { QueryClient, type Query } from "@tanstack/react-query";
+import {
+  BUSY_READ_RETRIES,
+  isRetryableFailure,
+  isServerBusy,
+  readRetryDelayMs,
+  statusOf,
+} from "@repo/api-sdk";
 import {
   markChannelReadMutationKey,
   markNotificationReadOnOpenMutationKey,
@@ -8,6 +14,7 @@ import { createReportingCaches } from "@/lib/sentry/query-errors";
 import { forgetDuesMemory } from "@/lib/dues/visit-memory";
 import { forgetCachedChatPhotos } from "@/lib/chat/photo-cache";
 import { forgetUnreadMemory } from "@/lib/chat/unread-memory";
+import { forgetFirstPaint } from "@/lib/launch/first-paint-cache";
 
 /**
  * `networkMode: "offlineFirst"` is load-bearing, not a tuning knob.
@@ -60,7 +67,9 @@ export const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: true,
       networkMode: "offlineFirst",
-      retry: 1,
+      retry: retryQuery,
+      // A busy server's 429 waits longer, jittered (`readRetryDelayMs`).
+      retryDelay: (attempt, error) => readRetryDelayMs(attempt, error),
       staleTime: 60_000,
     },
     mutations: {
@@ -71,11 +80,25 @@ export const queryClient = new QueryClient({
 });
 
 /**
+ * A query's retry: one more attempt whatever failed, except a busy server's
+ * 429 (`isServerBusy`: Cloud Run's `Rate exceeded.` when every copy of the API
+ * is full), which keeps trying for 45 to 90 seconds (`BUSY_READ_RETRIES`). A
+ * short overload then shows as loading under the connection pill, not as a
+ * "Couldn't load" state with a 429's "too many requests" (staging,
+ * 2026-11-20). `spec/ui/resilience/api-retry.md` § Server busy.
+ */
+export function retryQuery(failureCount: number, error: unknown): boolean {
+  if (isServerBusy(error)) return failureCount < BUSY_READ_RETRIES;
+  return failureCount < 1;
+}
+
+
+/**
  * One more attempt for a failure that may pass next time (a dropped
  * connection, a 5xx), never for a definitive refusal
  * (`spec/ui/resilience/api-retry.md` § Writes).
  */
-export function retryOnceIfRetryable(
+function retryOnceIfRetryable(
   failureCount: number,
   error: unknown,
 ): boolean {
@@ -123,6 +146,71 @@ for (const mutationKey of [
 }
 
 /**
+ * Retrying what the API refused for a lapsed sign-in token, once a new token
+ * for the same member has arrived.
+ *
+ * A member back from the background can have their first round of requests
+ * go out with a token that lapsed while the app was suspended, before the
+ * refresh lands (FRAPP-API-E, ios/0.11.0+20, 2026-11-12). Focus has already
+ * fired by then, so a screen that read one of those 401s kept its error state
+ * until the member pulled to refresh or left the app and came back. These
+ * turn that into a moment of loading instead.
+ *
+ * Each token change is a new generation. A query whose 401 answers a request
+ * sent under an earlier generation is retried once, whether it failed before
+ * the new token arrived ({@link noteRefreshedSignInToken}'s sweep) or after
+ * it, its request still in flight when the refresh landed (the cache listener
+ * below). A query refused under the current generation is left on its error:
+ * that 401 is about the new token, and `onUnauthorized` decides what it means.
+ * A retry runs under the current generation, so none of this can loop.
+ */
+let signInGeneration = 0;
+const generationSentUnder = new WeakMap<Query, number>();
+
+function refusedForSignIn(error: unknown): boolean {
+  return statusOf(error) === 401;
+}
+
+function retryUnderCurrentToken(query: Query): void {
+  generationSentUnder.set(query, signInGeneration);
+  void queryClient.refetchQueries({ predicate: (candidate) => candidate === query });
+}
+
+queryClient.getQueryCache().subscribe((event) => {
+  if (event.type !== "updated") return;
+  const { query, action } = event;
+  if (action.type === "fetch") {
+    generationSentUnder.set(query, signInGeneration);
+    return;
+  }
+  if (
+    action.type === "error" &&
+    refusedForSignIn(action.error) &&
+    generationSentUnder.get(query) !== signInGeneration
+  ) {
+    retryUnderCurrentToken(query);
+  }
+});
+
+/**
+ * A new token for the same member, in the same chapter, has arrived: retry
+ * every query that is sitting on a 401 from an earlier one. The auth session
+ * calls this; a chapter switch doesn't, because its own cache clear refetches
+ * everything once the new chapter is committed.
+ */
+export function noteRefreshedSignInToken(): void {
+  signInGeneration += 1;
+  for (const query of queryClient.getQueryCache().getAll()) {
+    if (
+      query.state.status === "error" &&
+      refusedForSignIn(query.state.error)
+    ) {
+      retryUnderCurrentToken(query);
+    }
+  }
+}
+
+/**
  * Drop every cached query for the current product session.
  *
  * `signOut` and an in-place auth-uid change both call this. Several keys are
@@ -137,4 +225,6 @@ export function clearProductQueryCache(): void {
   forgetCachedChatPhotos();
   // And the unread counts saved for the next launch's first paint (#4006).
   forgetUnreadMemory();
+  // And what launch paints from before the network answers (#5768).
+  forgetFirstPaint();
 }

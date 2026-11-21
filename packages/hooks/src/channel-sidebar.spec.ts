@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   arrangeChannelSidebar,
+  compareLatestFirst,
+  countsLookUnread,
   foldedSectionAnnouncement,
   sidebarMutedChannelIds,
   sidebarSections,
   sidebarUnreadCounts,
   type ArrangeSidebarInput,
   type SidebarUnreadCounts,
+  channelsWithUnreadThreads,
+  withUnreadThreadChannels,
 } from "./channel-sidebar";
 import { groupChannelsByCategory } from "./channel-sections";
 
@@ -136,6 +140,93 @@ describe("arrangeChannelSidebar", () => {
         "a-id",
         "b-id",
       ]);
+    });
+  });
+
+  // The member's own sort (#2877), on top of the chapter's order.
+  describe("member sort", () => {
+    const ordered = {
+      key: "channels" as const,
+      label: "Channels",
+      channels: [
+        { ...general, display_order: 1 },
+        { ...zeta, display_order: 0 },
+        social,
+        alumni,
+      ],
+    };
+    const latest = new Map([
+      ["social", "2026-11-14T10:00:00.000Z"],
+      ["general", "2026-11-14T12:00:00.000Z"],
+      ["alumni", "2026-11-13T09:00:00.000Z"],
+      ["exec", "2026-11-14T11:00:00.000Z"],
+    ]);
+
+    it("A–Z ignores the chapter's order", () => {
+      const result = arrange({ sections: [ordered], sort: "alpha" });
+      expect(layout(result)).toEqual([
+        "channels: alumni, general, social, zeta",
+      ]);
+    });
+
+    it("Recent puts the newest latest message first, a channel with none last", () => {
+      const result = arrange({
+        sections: [ordered],
+        sort: "recent",
+        latestAtByChannelId: latest,
+      });
+      expect(layout(result)).toEqual([
+        "channels: general, social, alumni, zeta",
+      ]);
+    });
+
+    it("Recent sorts Pinned by activity too", () => {
+      const result = arrange({
+        sort: "recent",
+        latestAtByChannelId: latest,
+        pinnedIds: new Set(["alumni", "exec", "zeta"]),
+      });
+      expect(layout(result)[0]).toBe("pinned: exec, alumni, zeta");
+    });
+
+    it("Recent draws the chapter's order until the times are known", () => {
+      const result = arrange({
+        sections: [ordered],
+        sort: "recent",
+        latestAtByChannelId: undefined,
+      });
+      expect(layout(result)).toEqual([
+        "channels: zeta, general, alumni, social",
+      ]);
+    });
+
+    it("no sort reads as the chapter's order", () => {
+      expect(layout(arrange({ sections: [ordered] }))).toEqual(
+        layout(arrange({ sections: [ordered], sort: "chapter" })),
+      );
+    });
+
+    it("Unread only still applies under Recent", () => {
+      const result = arrange({
+        sections: [ordered],
+        sort: "recent",
+        latestAtByChannelId: latest,
+        filters: { unreadOnly: true, hideMuted: false },
+        unreadByChannelId: counts({ zeta: [2, 0], alumni: [1, 0] }),
+      });
+      expect(layout(result)).toEqual(["channels: alumni, zeta"]);
+    });
+
+    it("a muted channel's quiet unread is dropped by Unread only under any sort", () => {
+      const result = arrange({
+        sections: [ordered],
+        sort: "alpha",
+        filters: { unreadOnly: true, hideMuted: false },
+        unreadByChannelId: counts({ zeta: [2, 0], alumni: [1, 1] }),
+        mutedChannelIds: new Set(["zeta", "alumni"]),
+      });
+      // alumni's mention gets past the mute; zeta's plain unread does not.
+      expect(layout(result)).toEqual(["channels: alumni"]);
     });
   });
 
@@ -327,6 +418,60 @@ describe("arrangeChannelSidebar", () => {
       expect(layout(result)[0]).toBe("channels (folded): social");
     });
 
+    // Shawn, 2026-11-13 (#3999): a muted channel's plain unread stays quiet,
+    // as its row reads as read. A mention, or a DM, still gets past the mute.
+    it("drops a muted channel's plain unread, keeping one that addresses the member", () => {
+      const result = arrange({
+        filters: { unreadOnly: true, hideMuted: false },
+        mutedChannelIds: new Set(["general", "social", "dm-m"]),
+        unreadByChannelId: counts({
+          general: [5, 0],
+          social: [3, 1],
+          zeta: [2, 0],
+          "dm-m": [1, 0],
+        }),
+      });
+      expect(layout(result)).toEqual([
+        "channels: social, zeta",
+        "direct: dm-m",
+      ]);
+    });
+
+    it("adds nothing to a folded header for a muted channel's plain unread", () => {
+      const result = arrange({
+        collapsed: new Set(["channels"]),
+        mutedChannelIds: new Set(["general", "social"]),
+        unreadByChannelId: counts({ general: [7, 0], social: [3, 1] }),
+      });
+      expect(result.sections[0]).toMatchObject({
+        key: "channels",
+        unreadCount: 3,
+        mentionCount: 1,
+        addressedCount: 1,
+        addressed: true,
+      });
+      const quiet = arrange({
+        collapsed: new Set(["channels"]),
+        mutedChannelIds: new Set(["general"]),
+        unreadByChannelId: counts({ general: [7, 0] }),
+      });
+      expect(quiet.sections[0]).toMatchObject({
+        unreadCount: 0,
+        mentionCount: 0,
+        addressed: false,
+      });
+    });
+
+    it("counts a muted channel's unread while the mute levels are unknown", () => {
+      // Missing data never quiets a row, the rule the filters already follow.
+      const result = arrange({
+        collapsed: new Set(["channels"]),
+        mutedChannelIds: undefined,
+        unreadByChannelId: counts({ general: [7, 0] }),
+      });
+      expect(result.sections[0]).toMatchObject({ unreadCount: 7 });
+    });
+
     it("totals only rows that passed the filters", () => {
       const result = arrange({
         collapsed: new Set(["channels"]),
@@ -477,5 +622,86 @@ describe("foldedSectionAnnouncement", () => {
         addressed: false,
       }),
     ).toBe("1 unread message");
+  });
+});
+
+describe("compareLatestFirst (#3774)", () => {
+  it("puts the newest conversation first, one with no message last, ties A to Z", () => {
+    const at: Record<string, string> = {
+      a: "2026-11-12T01:00:00.000Z",
+      b: "2026-11-12T02:00:00.000Z",
+    };
+    const title: Record<string, string> = {
+      a: "Zed",
+      b: "Amy",
+      c: "Cal",
+      d: "Bo",
+    };
+    const rows = ["c", "a", "d", "b"].map((id) => ({ id }));
+    rows.sort(
+      compareLatestFirst(
+        (row) => at[row.id],
+        (row) => title[row.id]!,
+      ),
+    );
+    expect(rows.map((row) => row.id)).toEqual(["b", "a", "d", "c"]);
+  });
+});
+
+describe("countsLookUnread (#3999)", () => {
+  const plain = { unreadCount: 3, mentionCount: 0 };
+  it("draws plain unread as unread unless the channel is muted", () => {
+    expect(countsLookUnread(false, plain, false)).toBe(true);
+    expect(countsLookUnread(false, plain, true)).toBe(false);
+  });
+  it("lets a mention or a DM past the mute", () => {
+    expect(
+      countsLookUnread(false, { unreadCount: 3, mentionCount: 1 }, true),
+    ).toBe(true);
+    expect(countsLookUnread(true, plain, true)).toBe(true);
+  });
+  it("treats a mention as unread even when the counts disagree", () => {
+    expect(
+      countsLookUnread(false, { unreadCount: 0, mentionCount: 1 }, false),
+    ).toBe(true);
+    expect(
+      countsLookUnread(false, { unreadCount: 0, mentionCount: 0 }, false),
+    ).toBe(false);
+  });
+});
+
+describe("threads under their channel (#5277, #5300)", () => {
+  it("names each channel whose listed thread has new replies", () => {
+    const ids = channelsWithUnreadThreads(
+      new Map([
+        ["c-1", [{ unread_count: 0 }, { unread_count: 2 }]],
+        ["c-2", [{ unread_count: 0 }]],
+      ]),
+    );
+    expect([...ids]).toEqual(["c-1"]);
+  });
+
+  it("counts a read channel with an unread thread as one unread, keeping its mentions", () => {
+    const counts = new Map([
+      ["c-1", { unreadCount: 0, mentionCount: 0 }],
+      ["c-2", { unreadCount: 4, mentionCount: 1 }],
+    ]);
+    const merged = withUnreadThreadChannels(
+      counts,
+      new Set(["c-1", "c-2", "c-3"]),
+    );
+    expect(merged?.get("c-1")).toEqual({ unreadCount: 1, mentionCount: 0 });
+    expect(merged?.get("c-2")).toEqual({ unreadCount: 4, mentionCount: 1 });
+    expect(merged?.get("c-3")).toEqual({ unreadCount: 1, mentionCount: 0 });
+    // The server's map is never written.
+    expect(counts.get("c-1")?.unreadCount).toBe(0);
+  });
+
+  it("leaves unknown counts unknown, and the same map when no thread is unread", () => {
+    expect(
+      withUnreadThreadChannels(undefined, new Set(["c-1"])),
+    ).toBeUndefined();
+    const counts = new Map();
+    expect(withUnreadThreadChannels(counts, new Set())).toBe(counts);
   });
 });

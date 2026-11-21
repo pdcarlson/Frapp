@@ -1,0 +1,321 @@
+import { describe, expect, it, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { ChatMessage } from "@repo/chat-core/types";
+import { SignupCard } from "./signup-card";
+
+const myPermissions = vi.hoisted(() => ({ current: [] as string[] }));
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    useMyPermissions: () => ({ data: { permissions: myPermissions.current } }),
+  };
+});
+
+const exported = vi.hoisted(() => ({ calls: [] as unknown[][] }));
+vi.mock("@/lib/utils", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    exportRows: async (...args: unknown[]) => {
+      exported.calls.push(args);
+    },
+  };
+});
+
+const names: Record<string, string> = {
+  u1: "Devin Okafor",
+  u2: "Julian Reyes",
+};
+const nameFor = (id: string) => names[id] ?? null;
+
+function card(
+  claims: { user: string; slots: string[]; note?: string }[],
+  extra: Record<string, unknown> = {},
+): ChatMessage {
+  return {
+    id: "m1",
+    channel_id: "c1",
+    sender_id: "u9",
+    _status: "confirmed",
+    is_deleted: false,
+    content: "Sober drivers",
+    kind: "signup",
+    payload: {
+      title: "Sober drivers",
+      note: "10pm to 2am",
+      slots: [
+        { id: "fri", label: "Friday", capacity: 2 },
+        { id: "sat", label: "Saturday", capacity: 1 },
+      ],
+      ...extra,
+    },
+    actions: claims.map((claim, i) => ({
+      id: `a${i}`,
+      message_id: "m1",
+      user_id: claim.user,
+      action_type: "signup",
+      payload: {
+        slot_ids: claim.slots,
+        ...(claim.note ? { note: claim.note } : {}),
+      },
+      created_at: `2026-11-12T10:0${i}:00Z`,
+    })),
+  } as unknown as ChatMessage;
+}
+
+describe("SignupCard (#3926)", () => {
+  it("shows each slot's count and who holds it, and greys a full slot", () => {
+    render(
+      <SignupCard
+        message={card([
+          { user: "u1", slots: ["fri"] },
+          { user: "u2", slots: ["sat"] },
+        ])}
+        viewerId="me"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText("Sign-up · 2 of 3 spots taken"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("10pm to 2am")).toBeInTheDocument();
+    const friday = screen.getByText("Friday").closest("li")!;
+    expect(within(friday).getByText("1/2")).toBeInTheDocument();
+    expect(within(friday).getByText("Devin Okafor")).toBeInTheDocument();
+    const saturday = screen.getByRole("button", { name: "Full: Saturday" });
+    expect(saturday).toBeDisabled();
+    // Full and not the viewer's: the row says so where its count would be,
+    // and a reader still hears the count.
+    expect(within(saturday).getByText("Full")).toBeInTheDocument();
+    expect(saturday).toHaveAccessibleDescription("1 of 1 spot taken");
+    expect(screen.getByText("2 people signed up")).toBeInTheDocument();
+  });
+
+  it("takes a slot with the viewer's whole list, and shows a held slot as theirs", async () => {
+    const user = userEvent.setup();
+    const onClaim = vi.fn();
+    const { rerender } = render(
+      <SignupCard
+        message={card([])}
+        viewerId="me"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={onClaim}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Sign up: Friday" }));
+    expect(onClaim).toHaveBeenCalledWith("m1", "signup", { slot_ids: ["fri"] });
+
+    rerender(
+      <SignupCard
+        message={card([{ user: "me", slots: ["fri"] }])}
+        viewerId="me"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={onClaim}
+      />,
+    );
+    const held = screen.getByRole("button", { name: "Signed up: Friday" });
+    expect(held).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("You")).toBeInTheDocument();
+    expect(screen.getByText("You're signed up for Friday")).toBeInTheDocument();
+  });
+
+  it("offers nothing on a card that hasn't reached the server", () => {
+    render(
+      <SignupCard
+        message={card([])}
+        viewerId="me"
+        nameFor={nameFor}
+        isConfirmed={false}
+        onClaim={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Sign up: Friday" }),
+    ).toBeDisabled();
+  });
+
+  const headcount = {
+    format: "headcount",
+    slots: [
+      { id: "going", label: "Going", capacity: null },
+      { id: "not_going", label: "Can’t make it", capacity: null },
+    ],
+  };
+
+  it("answers a headcount, and adds a note to the answer", async () => {
+    const user = userEvent.setup();
+    const onClaim = vi.fn();
+    render(
+      <SignupCard
+        message={card(
+          [
+            { user: "u1", slots: ["going"], note: "running late" },
+            { user: "me", slots: ["going"] },
+          ],
+          headcount,
+        )}
+        viewerId="me"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={onClaim}
+      />,
+    );
+    expect(screen.getByText("Headcount · 2 going")).toBeInTheDocument();
+    expect(screen.getByText(/running late/)).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Answer: Can’t make it" }),
+    );
+    expect(onClaim).toHaveBeenCalledWith("m1", "signup", {
+      slot_ids: ["not_going"],
+    });
+    await user.click(screen.getByRole("button", { name: "Add a note" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Note on your answer" }),
+      "bringing a date",
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    // The card hasn't redrawn since the switch to Can't make it, so the note
+    // builds on that tap rather than putting the member back on Going.
+    expect(onClaim).toHaveBeenLastCalledWith("m1", "signup", {
+      slot_ids: ["not_going"],
+      note: "bringing a date",
+    });
+  });
+
+  it("draws a closed card with no taps, and offers Close to a moderator", async () => {
+    const onClose = vi.fn();
+    const { unmount } = render(
+      <SignupCard
+        // As its creator, on a confirmed card: only the closing hides Close.
+        message={
+          {
+            ...card([{ user: "u1", slots: ["fri"] }], {
+              closed_at: "2026-11-12T09:00:00Z",
+            }),
+            _status: "confirmed",
+          } as ChatMessage
+        }
+        viewerId="u9"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+        onCloseCard={onClose}
+      />,
+    );
+    expect(screen.getByText("Sign-up · Closed")).toBeInTheDocument();
+    expect(screen.getByText("Devin Okafor")).toBeInTheDocument();
+    // Its rows stay, as a closed poll's options do, and take no taps.
+    expect(
+      screen.getByRole("button", { name: "Sign up: Friday" }),
+    ).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Close sign-ups" })).toBeNull();
+    unmount();
+
+    myPermissions.current = ["channels:manage"];
+    const user = userEvent.setup();
+    render(
+      <SignupCard
+        message={{ ...card([]), _status: "confirmed" } as ChatMessage}
+        viewerId="me"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+        onCloseCard={onClose}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Close sign-ups" }));
+    expect(onClose).toHaveBeenCalledWith("m1", "signup");
+    myPermissions.current = [];
+  });
+});
+
+describe("SignupCard export (#3926 step 4)", () => {
+  const claims = [
+    { user: "u1", slots: ["fri"] },
+    { user: "u2", slots: ["fri", "sat"] },
+  ];
+
+  it("offers Export to the card's creator or a channels:manage holder only", () => {
+    myPermissions.current = [];
+    const { rerender } = render(
+      <SignupCard
+        message={card(claims)}
+        viewerId="u1"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /Export/ })).toBeNull();
+    myPermissions.current = ["channels:manage"];
+    rerender(
+      <SignupCard
+        message={card(claims)}
+        viewerId="u1"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Export/ })).toBeEnabled();
+    myPermissions.current = [];
+  });
+
+  it("exports every member per slot, by name, as a CSV", async () => {
+    exported.calls = [];
+    const user = userEvent.setup();
+    render(
+      <SignupCard
+        message={card(claims)}
+        viewerId="u9"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Export/ }));
+    await user.click(await screen.findByRole("menuitem", { name: /CSV/ }));
+    expect(exported.calls).toEqual([
+      [
+        [
+          {
+            Slot: "Friday",
+            Name: "Devin Okafor",
+            "Signed up at": "2026-11-12T10:00:00Z",
+          },
+          {
+            Slot: "Friday",
+            Name: "Julian Reyes",
+            "Signed up at": "2026-11-12T10:01:00Z",
+          },
+          {
+            Slot: "Saturday",
+            Name: "Julian Reyes",
+            "Signed up at": "2026-11-12T10:01:00Z",
+          },
+        ],
+        "signup-sober-drivers",
+        "csv",
+      ],
+    ]);
+  });
+
+  it("holds Export until someone has signed up", () => {
+    render(
+      <SignupCard
+        message={card([])}
+        viewerId="u9"
+        nameFor={nameFor}
+        isConfirmed
+        onClaim={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /Export/ })).toBeDisabled();
+  });
+});

@@ -18,9 +18,10 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ChatMessageFlag } from "@repo/validation";
+import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import {
   isDefinitiveClientError,
+  isServerBusy,
   randomClientId,
   serverMessageOf,
   statusOf,
@@ -29,11 +30,13 @@ import {
 import {
   CHAT_MESSAGE_KINDS,
   chatMessagesKey,
+  gifRequestBody,
   messageCacheKey,
   optimisticMessage,
   reactionActionType,
   type ChannelCache,
   type ChatMessageKind,
+  type OutgoingGif,
   type RawChatMessage,
   type RawChatMessageAction,
   type ReplayRequest,
@@ -52,6 +55,7 @@ import {
   upsertOptimistic,
 } from "./cache";
 import {
+  attachmentRequestBody,
   browserNetworkState,
   type KeyValueStore,
   type NetworkState,
@@ -75,6 +79,7 @@ import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import {
   OFFLINE_COPY,
   refusalCopy,
+  SERVER_BUSY_COPY,
   STATUS_ERROR_COPY,
   TRY_AGAIN,
   type AnalyticsProperties,
@@ -247,6 +252,9 @@ function chatRefusalCopy(
  * `client_message_id` once the minute is up. `sendMessage` titles that toast
  * `Message not sent` rather than `Message rejected` and reads it as
  * `RATE_LIMITED_COPY`, because the server refused the pace, not the message.
+ * A busy server's 429 (`isServerBusy`, sent before the API saw the request) is
+ * terminal the same way but reads `SERVER_BUSY_COPY` in `message`, for every
+ * caller (`spec/ui/resilience/api-retry.md` § Server busy).
  * A flush that outruns the bucket fails each row past it the same way, each
  * with its own Retry. Stopping the flush at the first 429 would leave those
  * rows pending with nothing to resend them, which is the case this avoids.
@@ -266,8 +274,10 @@ export function classifyChatError(error: unknown): {
   terminal: boolean;
   status?: number;
   message: string;
+  /** A busy server's 429 (`isServerBusy`); `message` then says so. */
+  busy: boolean;
 } {
-  if (!error) return { terminal: false, message: "Unknown error" };
+  if (!error) return { terminal: false, message: "Unknown error", busy: false };
   const e = error as FunctionsErrorWithStatus;
   let status: number | undefined = statusOf(error);
   if (
@@ -286,10 +296,14 @@ export function classifyChatError(error: unknown): {
       status = (resp as { status?: number }).status;
     }
   }
-  const message = chatRefusalCopy(serverReasonOf(error), status);
+  const reason = serverReasonOf(error);
+  // A busy server's 429 (Cloud Run's `Rate exceeded.` when every copy of the
+  // API is full) is nobody's pace: it reads as busy on every chat write.
+  const busy = status === 429 && isServerBusy({ statusCode: 429, message: reason });
+  const message = busy ? SERVER_BUSY_COPY : chatRefusalCopy(reason, status);
   const terminal =
     typeof status === "number" && isDefinitiveClientError(status);
-  return { terminal, status, message };
+  return { terminal, status, message, busy };
 }
 
 /**
@@ -308,10 +322,10 @@ export const RATE_LIMITED_COPY =
  * the web composer and mobile's photo upload both read their upload-URL mint
  * through this, so one response can't read two ways (#2199). It is
  * `classifyChatError`'s terminal split with one exception: a 429 reads as
- * `RATE_LIMITED_COPY`, whatever its body says. Its remedy is waiting a full
- * minute (the throttler blocks a key for its whole 60s window), which a
- * caller's "in a moment" retry sentence understates, and an intermediary's 429
- * carries its own text. It is also `null` for a refusal with no message, so
+ * `RATE_LIMITED_COPY`, whatever else its body says, except a busy server's
+ * (`isServerBusy`), which reads `SERVER_BUSY_COPY`. The throttler's remedy is
+ * waiting a full minute (it blocks a key for its whole 60s window), which a
+ * caller's "in a moment" retry sentence understates. It is also `null` for a refusal with no message, so
  * the caller's sentence stands in for an empty line.
  *
  * Reads API bodies only. A thrown `Error` is `null` here, because what one
@@ -321,7 +335,9 @@ export const RATE_LIMITED_COPY =
 export function definitiveRefusalMessage(error: unknown): string | null {
   if (error instanceof Error) return null;
   const { terminal, status } = classifyChatError(error);
-  if (status === 429) return RATE_LIMITED_COPY;
+  if (status === 429) {
+    return isServerBusy(error) ? SERVER_BUSY_COPY : RATE_LIMITED_COPY;
+  }
   if (!terminal) return null;
   const reason = serverReasonOf(error);
   return reason === null ? null : chatRefusalCopy(reason, status);
@@ -373,6 +389,17 @@ export interface SendMessageArgs {
   attachmentsReady?: Promise<OutboxAttachment[]> | null;
   /** How many files the optimistic row shows while `attachmentsReady` runs. */
   attachmentCount?: number;
+  /**
+   * A GIF from the picker (#4631). The message is the GIF: `content` is
+   * empty and there are no attachments. The server checks its token, so only
+   * a GIF the API's own search returned is accepted.
+   */
+  gif?: OutgoingGif | null;
+  /**
+   * The members the composer's `@` picker wrote into `content` (#3835), so a
+   * picked `@Jane Doe` reaches her or nobody, never another member by name.
+   */
+  mentionPicks?: readonly MentionPick[] | null;
   /** Reuse a previously-generated id (outbox flush, idempotent retry). */
   clientMessageId?: string;
   /**
@@ -477,6 +504,7 @@ export async function sendMessage(
     payload: args.payload,
     replyToId: args.replyToId ?? null,
     attachmentCount: args.attachmentCount ?? args.attachments?.length ?? 0,
+    gif: args.gif ?? null,
   });
 
   patchCache(ctx.queryClient, args.channelId, (cache) =>
@@ -519,6 +547,8 @@ export async function sendMessage(
     payload: args.payload ?? null,
     replyToId: args.replyToId ?? null,
     attachments,
+    gif: args.gif ?? null,
+    mentionPicks: args.mentionPicks?.length ? [...args.mentionPicks] : null,
   } as const;
 
   let enqueued: OutboxRow;
@@ -561,18 +591,10 @@ export async function sendMessage(
           payload: (args.payload ?? undefined) as unknown as undefined,
           reply_to_id: args.replyToId ?? undefined,
           attachments: attachments?.length
-            ? attachments.map((attachment) => ({
-                storage_path: attachment.storagePath,
-                filename: attachment.filename,
-                content_type: attachment.contentType,
-                byte_size: attachment.byteSize ?? undefined,
-                width: attachment.width ?? undefined,
-                height: attachment.height ?? undefined,
-                thumbhash: attachment.thumbhash ?? undefined,
-                preview_storage_path:
-                  attachment.previewStoragePath ?? undefined,
-              }))
+            ? attachments.map(attachmentRequestBody)
             : undefined,
+          gif: args.gif ? gifRequestBody(args.gif) : undefined,
+          mention_picks: intent.mentionPicks ?? undefined,
         },
       },
     );
@@ -589,10 +611,12 @@ export async function sendMessage(
   } catch (err) {
     const classified = classifyChatError(err);
     const { terminal, status } = classified;
-    // Any 429 reads as the one-minute sentence: an intermediary's carries its
-    // own text, and the row's Retry is the remedy either way.
+    // A 429 reads as the one-minute sentence, unless it is a busy server's,
+    // which `classifyChatError` words as busy. The row's Retry is the remedy
+    // either way.
     const throttled = status === 429;
-    const message = throttled ? RATE_LIMITED_COPY : classified.message;
+    const message =
+      throttled && !classified.busy ? RATE_LIMITED_COPY : classified.message;
     if (terminal) {
       patchCache(ctx.queryClient, args.channelId, (cache) =>
         markFailed(cache, clientId, message),
@@ -895,6 +919,8 @@ function sendArgsFromOutbox(row: OutboxRow): SendMessageArgs {
     payload: row.payload ?? null,
     replyToId: row.replyToId ?? null,
     attachments: row.attachments ?? null,
+    gif: row.gif ?? null,
+    mentionPicks: row.mentionPicks ?? null,
     clientMessageId: row.clientId,
     priorAttempts: row.attempts,
     keepDraft: true,
@@ -971,6 +997,10 @@ export async function hydrateOutboxIntoCache(
         kind: coerceKind(row.kind),
         payload: row.payload ?? null,
         replyToId: row.replyToId ?? null,
+        // So a queued photo or GIF redraws as itself after a reload, not as
+        // an empty bubble.
+        attachmentCount: row.attachments?.length ?? 0,
+        gif: row.gif ?? null,
       });
       next = upsertOptimistic(next, optimistic);
       if (row.status === "failed") {
@@ -1132,6 +1162,11 @@ async function writeHeldRow(
 export interface EditMessageArgs extends RowTarget {
   messageId: string;
   content: string;
+  /**
+   * Members picked while editing (#3835). The ones the message was sent with
+   * are kept by the server, so these are only the new ones.
+   */
+  mentionPicks?: readonly MentionPick[] | null;
 }
 
 /**
@@ -1153,7 +1188,12 @@ export async function editMessage(
   await writeHeldRow(ctx, args, "Couldn't edit message", () =>
     ctx.apiClient.PATCH("/v1/channels/messages/{messageId}", {
       params: { path: { messageId: args.messageId } },
-      body: { content: args.content },
+      body: {
+        content: args.content,
+        mention_picks: args.mentionPicks?.length
+          ? [...args.mentionPicks]
+          : undefined,
+      },
     }),
   );
 }
@@ -1195,6 +1235,40 @@ export async function setMessageFlag(
   );
 }
 
+export interface SetMessagePinnedArgs extends RowTarget {
+  messageId: string;
+  /** `true` pins the message for the channel, `false` unpins it. */
+  pinned: boolean;
+}
+
+/**
+ * Pin or unpin a message for everyone who can read its channel (#3723).
+ * `channels:manage` only, and at most 50 pins a channel: the API enforces
+ * both (`spec/behavior/chat/README.md` § Pinned messages), and a client
+ * offers the control only to a holder.
+ *
+ * Not optimistic, like `setMessageFlag`: the row the server returns carries
+ * `is_pinned` and `pinned_at`, and merging it is both the confirmation and the
+ * update, so the pinner's row reads Pinned even with Realtime down. Everyone
+ * else's timeline draws it from the Realtime UPDATE echo, which re-merges the
+ * same row as a no-op here.
+ */
+export async function setMessagePinned(
+  ctx: ChatActionContext,
+  args: SetMessagePinnedArgs,
+): Promise<void> {
+  const path = { params: { path: { messageId: args.messageId } } };
+  await writeHeldRow(
+    ctx,
+    args,
+    args.pinned ? "Couldn't pin message" : "Couldn't unpin message",
+    () =>
+      args.pinned
+        ? ctx.apiClient.POST("/v1/channels/messages/{messageId}/pin", path)
+        : ctx.apiClient.DELETE("/v1/channels/messages/{messageId}/pin", path),
+  );
+}
+
 export interface DeleteMessageArgs extends RowTarget {
   messageId: string;
 }
@@ -1225,8 +1299,9 @@ export interface ClosePollArgs extends RowTarget {
 }
 
 /**
- * Close a chat-card poll early (#3794). Creator only, and refused on a poll
- * that is already closed or past its deadline: the API enforces both
+ * Close a chat-card poll early (#3794). Its creator or a `channels:manage`
+ * holder only (#4046), and refused on a poll that is already closed or past
+ * its deadline: the API enforces both
  * (`PollService.close`), the card only offers the control when it should work
  * (`canClosePoll` in `./polls`).
  *
@@ -1241,6 +1316,38 @@ export async function closePoll(
 ): Promise<void> {
   await writeHeldRow(ctx, args, "Couldn't close poll", () =>
     ctx.apiClient.POST("/v1/polls/{messageId}/close", {
+      params: { path: { messageId: args.messageId } },
+    }),
+  );
+}
+
+export interface CloseCardArgs extends RowTarget {
+  messageId: string;
+  /** Which card, for the failure toast's words. A sign-up when absent. */
+  kind?: "signup" | "form";
+}
+
+/** The cards Close takes: a sign-up sheet and a form. */
+export type ClosableCardKind = NonNullable<CloseCardArgs["kind"]>;
+
+/**
+ * Close a sign-up card (#3926 step 2) or a form card (step 3) early: its
+ * creator or a `channels:manage` holder, refused on a card already closed or
+ * past its end time (`ChatService.closeCard`); the card offers it only when it
+ * should work (`canCloseCard` in `./card-closing`).
+ * Not optimistic, as {@link closePoll} isn't: the stamped row the server
+ * returns is merged as the confirmation.
+ */
+export async function closeCard(
+  ctx: ChatActionContext,
+  args: CloseCardArgs,
+): Promise<void> {
+  const title =
+    args.kind === "form"
+      ? "Couldn't close the form"
+      : "Couldn't close sign-ups";
+  await writeHeldRow(ctx, args, title, () =>
+    ctx.apiClient.POST("/v1/channels/messages/{messageId}/close", {
       params: { path: { messageId: args.messageId } },
     }),
   );

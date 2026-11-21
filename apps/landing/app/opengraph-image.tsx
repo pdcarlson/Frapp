@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { ImageResponse } from "next/og";
-import { SIGNET_CREST_GOLD, SIGNET_CREST_PATH } from "../components/signet-crest";
+import {
+  SIGNET_CREST_GOLD,
+  SIGNET_CREST_PATH,
+} from "../components/signet-crest";
 
 export const runtime = "nodejs";
 
@@ -91,7 +95,7 @@ export default async function OpenGraphImage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#0A0A0A", // --background, the page stage
+        backgroundColor: signetDarkTokens.color.surface.background, // the page stage
         fontFamily: "Figtree",
       }}
     >

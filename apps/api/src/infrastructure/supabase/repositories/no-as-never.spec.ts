@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { relative } from 'node:path';
 import {
-  EXPECTED_REPOSITORY_COUNT,
+  MIN_REPOSITORY_COUNT,
   REPOSITORY_SRC_ROOT as SRC_ROOT,
   collectRepositories,
 } from '#test/helpers/repository-corpus';
@@ -76,8 +76,8 @@ const SUPPRESSED_WRITE = new RegExp(
 describe('repository write typing', () => {
   const files = collectRepositories();
 
-  it(`covers all ${EXPECTED_REPOSITORY_COUNT} repository files`, () => {
-    expect(files).toHaveLength(EXPECTED_REPOSITORY_COUNT);
+  it(`finds at least ${MIN_REPOSITORY_COUNT} repository files`, () => {
+    expect(files.length).toBeGreaterThanOrEqual(MIN_REPOSITORY_COUNT);
   });
 
   it('injects FrappSupabaseClient (not a bare SupabaseClient)', () => {

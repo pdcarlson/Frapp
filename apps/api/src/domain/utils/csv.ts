@@ -1,6 +1,12 @@
+import { toCsvCell } from '@repo/formatting';
+
 /**
  * Converts an array of objects to a CSV string per RFC 4180.
- * Properly escapes values containing commas, quotes, or newlines.
+ * Each text cell goes through `toCsvCell` (`@repo/formatting`), the same cell
+ * writer as the dashboard's export: a cell a spreadsheet would run as a formula
+ * is made inert, then a cell holding a comma, quote, semicolon or line break is
+ * quoted (CSV injection, #3976). A number, boolean or bigint is written as is:
+ * it is a value, never a formula.
  */
 export function toCSV<T extends Record<string, any>>(
   rows: T[],
@@ -28,34 +34,32 @@ export function toCSV<T extends Record<string, any>>(
     return '';
   };
 
+  // Text goes through the shared cell writer: formula-shaped text made inert,
+  // then quoted when it holds a comma, quote, semicolon or line break. A number,
+  // boolean or bigint is a value, never a formula, and holds none of those
+  // characters, so it is written as is (`-1e-7` stays a number).
   const escape = (value: unknown): string => {
     if (value === null || value === undefined) {
       return '';
     }
-    let str: string;
     if (typeof value === 'object') {
-      str = Array.isArray(value)
-        ? value.map(stringifyArrayItem).join(', ')
-        : JSON.stringify(value);
-    } else if (
-      typeof value === 'string' ||
+      return toCsvCell(
+        Array.isArray(value)
+          ? value.map(stringifyArrayItem).join(', ')
+          : JSON.stringify(value),
+      );
+    }
+    if (typeof value === 'string') {
+      return toCsvCell(value);
+    }
+    if (
       typeof value === 'number' ||
       typeof value === 'boolean' ||
       typeof value === 'bigint'
     ) {
-      str = stringifyPrimitive(value);
-    } else {
-      str = '';
+      return stringifyPrimitive(value);
     }
-    if (
-      str.includes(',') ||
-      str.includes('"') ||
-      str.includes('\n') ||
-      str.includes('\r')
-    ) {
-      return '"' + str.replace(/"/g, '""') + '"';
-    }
-    return str;
+    return '';
   };
 
   const headerRow = columns.map((c) => escape(c.header)).join(',');

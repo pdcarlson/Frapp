@@ -35,6 +35,60 @@ describe("resolveNotificationTarget", () => {
     expect(resolveNotificationTarget(payload({ screen: "members" }))).toEqual({
       pathname: "/directory",
     });
+    // The weekly recap push (#4985).
+    expect(resolveNotificationTarget(payload({ screen: "activity" }))).toEqual({
+      pathname: "/activity",
+    });
+  });
+
+  it("opens the suggested tasks list for a new batch (#4313)", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({
+          screen: "ai_suggestions",
+          batchId: "b1",
+          sourceType: "meeting",
+          sourceId: "m1",
+        }),
+      ),
+    ).toEqual({ pathname: "/suggested-tasks" });
+  });
+
+  it("opens the minutes, not the event, for a minutes-posted push (#4312)", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "events", eventId: "e1", meetingId: "m1" }),
+      ),
+    ).toEqual({ pathname: "/minutes-details", params: { id: "m1" } });
+    // Only an events target names minutes this way.
+    expect(
+      resolveNotificationTarget(payload({ screen: "tasks", meetingId: "m1" })),
+    ).toEqual({ pathname: "/tasks" });
+  });
+
+  it("opens a submitted task's review, and the reader's own task on their board", () => {
+    // "Shawn submitted: Clean his room" goes to the officer who assigned it;
+    // their board lists only their own tasks, so the review opens on Activity.
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "tasks", taskId: "t1", view: "review" }),
+      ),
+    ).toEqual({ pathname: "/activity", params: { review: "t1" } });
+    // Assigned, confirmed, sent back: the reader's own task, opened.
+    expect(
+      resolveNotificationTarget(payload({ screen: "tasks", taskId: "t1" })),
+    ).toEqual({ pathname: "/tasks", params: { task: "t1" } });
+    expect(
+      notificationHref({ pathname: "/activity", params: { review: "t1" } }),
+    ).toBe("/activity?review=t1");
+  });
+
+  it("opens the board for a task up for grabs, where Up for grabs sits on top", () => {
+    // "New task up for grabs" (tasks.md § Up for grabs) carries the posting's
+    // id; the board lists it above Today, so the board is the place.
+    expect(
+      resolveNotificationTarget(payload({ screen: "tasks", openTaskId: "o1" })),
+    ).toEqual({ pathname: "/tasks" });
   });
 
   it("sends points to the task board, which absorbed it", () => {
@@ -148,6 +202,86 @@ describe("resolveNotificationTarget, thread replies (#4054)", () => {
   });
 });
 
+describe("resolveNotificationTarget, opening at a message (#4957, #4977)", () => {
+  it("opens chat at the message a reminder push is about", () => {
+    expect(
+      resolveNotificationTarget(
+        payload(
+          { screen: "chat", channelId: "c1" },
+          { reminder: true, messageId: "m9" },
+        ),
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
+  });
+
+  it("opens a thread reply's reminder in its thread, at the reply", () => {
+    expect(
+      resolveNotificationTarget(
+        payload(
+          { screen: "chat", channelId: "c1", threadRootId: "r1" },
+          { reminder: true, messageId: "m9" },
+        ),
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", threadRootId: "r1", focusMessageId: "m9" },
+      under: { pathname: "/chat-thread", params: { channelId: "c1" } },
+    });
+  });
+
+  it("takes the inbox row's message when the data has none", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "chat", channelId: "c1" }, { reminder: true }),
+        "m9",
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
+  });
+
+  it("opens any single-message chat push at its message, as Slack and Discord do (#4977)", () => {
+    expect(
+      resolveNotificationTarget(
+        payload(
+          { screen: "chat", channelId: "c1" },
+          { messageId: "m9", mentioned: true },
+        ),
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
+  });
+
+  it("opens an in-app chat row at its message from the row's column (#4977)", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "chat", channelId: "c1" }),
+        "m9",
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
+  });
+
+  it("leaves a bundle, which quotes no one message, on the conversation", () => {
+    expect(
+      resolveNotificationTarget(
+        payload(
+          { screen: "chat", channelId: "c1" },
+          { bundled: true, count: 3 },
+        ),
+      ),
+    ).toEqual({ pathname: "/chat-thread", params: { channelId: "c1" } });
+  });
+});
+
 describe("openNotificationTarget", () => {
   function fakeRouter() {
     const calls: string[] = [];
@@ -178,7 +312,8 @@ describe("openNotificationTarget", () => {
       "/chat-thread",
     );
     expect(calls).toEqual([
-      "dismissTo /tasks",
+      // The task board is a pushed screen since it left the tab bar (#4610).
+      "push /tasks",
       "replace /chat-thread?channelId=c2",
     ]);
   });
