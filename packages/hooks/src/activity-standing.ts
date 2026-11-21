@@ -19,8 +19,8 @@ export { localWeekStart };
 
 /**
  * How the member is doing this semester (`GET /v1/activity/standing`,
- * `spec/behavior/activity.md` § Standing), for the strip under Activity's
- * week card.
+ * `spec/behavior/activity.md` § Standing), for This semester on You and
+ * web's profile (on Activity until #5779).
  *
  * Never fresh, as `useActivity` isn't: points, attendance and hours change on
  * other screens, none of which knows about this read, so it is read again

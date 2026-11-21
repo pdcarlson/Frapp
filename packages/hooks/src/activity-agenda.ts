@@ -445,6 +445,21 @@ export interface ActivityReview {
 }
 
 /**
+ * Running's count (#5779): what waits on the member's sign-off plus what they
+ * made, with the approval card's "+" when its list reached the read's cap,
+ * so the heading never states an exact total the row beside it doesn't.
+ * `null` when there is nothing to count.
+ */
+export function activityRunningCount(
+  review: Pick<ActivityReview, "rows" | "count"> | null,
+  made: { rows: readonly unknown[] } | null,
+): string | null {
+  const total = (review?.rows.length ?? 0) + (made?.rows.length ?? 0);
+  if (total === 0) return null;
+  return review?.count.endsWith("+") ? `${total}+` : String(total);
+}
+
+/**
  * What waits for the member's OK (#4766), for a member who can confirm tasks
  * or approve hours: one row with one count, as Google Classroom gives a
  * teacher one "To review". It leads Running since #5779. `null` when nothing

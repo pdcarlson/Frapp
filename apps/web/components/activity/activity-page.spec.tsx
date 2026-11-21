@@ -95,6 +95,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityGroups: actual.activityGroups,
     activityFaceStack: actual.activityFaceStack,
     activityReview: actual.activityReview,
+    activityRunningCount: actual.activityRunningCount,
     activityReviewQueue: actual.activityReviewQueue,
     activityRowAction: actual.activityRowAction,
     activityWeekSummary: actual.activityWeekSummary,
@@ -943,6 +944,44 @@ describe("ActivityPage", () => {
       fireEvent.click(toggle);
       expect(toggle).toHaveAttribute("aria-expanded", "false");
       expect(within(card).queryByText("Sweep the porch")).toBeNull();
+    });
+
+    it("steps out with the approve row while a week line narrows To do", () => {
+      officer();
+      mockActivity.mockReturnValue(
+        loaded({
+          week: week({ tasks: count(0, 1) }),
+          needs_you: {
+            ...nothingWaiting,
+            task_confirmations: [confirmation("t2", "Sweep the porch")],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+      expect(within(running()).getByText("1 to approve")).toBeInTheDocument();
+      openRing();
+      fireEvent.click(
+        within(weekLines()).getByRole("button", { name: /^Tasks/ }),
+      );
+      expect(screen.queryByRole("region", { name: "Running" })).toBeNull();
+      expect(screen.queryByText("1 to approve")).toBeNull();
+    });
+
+    it("says the heading's count is at least that past the read's cap", () => {
+      officer();
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            ...nothingWaiting,
+            task_confirmations: Array.from({ length: 25 }, (_, index) =>
+              confirmation(`cap${index}`, `Finished ${index}`),
+            ),
+          },
+        }),
+      );
+      render(<ActivityPage />);
+      expect(within(running()).getByText("25+ to approve")).toBeInTheDocument();
+      expect(within(running()).getByText("25+")).toBeInTheDocument();
     });
 
     const queue = (length: number) =>
@@ -2346,6 +2385,9 @@ describe("Tasks you assigned: one row per task for everyone (#5538)", () => {
     ...task,
     id: "solo",
     title: "Book the band",
+    // Given to someone else: one the member gave themselves is To do's.
+    assignee_id: "sam",
+    assignee_name: "Sam",
     created_by: "me",
   };
   const assigned = (items: unknown[]) =>

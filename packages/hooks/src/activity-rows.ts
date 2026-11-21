@@ -834,8 +834,10 @@ export function activityGroups(
 /**
  * The sign-up links posted in one channel (#5779), for the channel's own
  * Links list, where Discord keeps them beside Pins. Activity listed every
- * channel's until then (spec § Links). Done and left-out links stay, so a
- * member can find one again; the row says which.
+ * channel's until then (spec § Links). It draws on Activity's read, which
+ * serves only the links still open to the member (none they posted, marked
+ * done or hid) and at most 25 across the chapter, so a busy chapter's list
+ * can miss an older one (#5809).
  */
 export function activityChannelLinks(
   activity: Activity,
@@ -856,14 +858,16 @@ export function activityChannelLinks(
  * confirmed ones, which are finished and in the Archive (#5127).
  */
 function madeTaskRows(activity: Activity, now: Date): ActivityRow[] {
-  // A task the member gave themselves is already a row in To do, which says
-  // the same thing; Running is for what others are doing (#5779). Only one
-  // To do actually lists, so a To do that couldn't load leaves it here.
-  const inToDo = new Set(activity.needs_you.tasks.map((task) => task.id));
+  // A task the member gave themselves is theirs to do: a row in To do, or in
+  // Snoozed while they put it off, which say the same thing. Running is for
+  // what others are doing (#5779). Judged by the task, not by To do's list,
+  // which a snooze empties of it.
+  const own = (task: { assignee_id: string | null; created_by: string }) =>
+    task.assignee_id === task.created_by;
   const items = activity.made_by_you.task_items ?? null;
   if (items) {
     return items
-      .filter((item) => item.kind === "group" || !inToDo.has(item.task.id))
+      .filter((item) => item.kind === "group" || !own(item.task))
       .map((item) =>
         item.kind === "group"
           ? taskGroupRow(item.group, now)
@@ -871,7 +875,7 @@ function madeTaskRows(activity: Activity, now: Date): ActivityRow[] {
       );
   }
   return activity.made_by_you.tasks
-    .filter((task) => !task.confirmed_at && !inToDo.has(task.id))
+    .filter((task) => !task.confirmed_at && !own(task))
     .map((task) => taskRow(task, "made", "assigned", now));
 }
 
@@ -965,12 +969,32 @@ export function activityToDos(
         ),
       ),
     // The member's reminders on chat messages (#4957), on the day they come
-    // back (#5779); one already due is today's. Its row names the day
-    // either way. `?? []`: a read from an API before #4957 has no field.
-    ...(activity.reminders ?? []).map((reminder) =>
-      both(() => reminderRow(reminder, now), parseInstant(reminder.remind_at)),
-    ),
+    // back (#5779). One already due is today's, after today's own things, so
+    // a few left from earlier in the week never push tonight's task behind
+    // "Show more". Its row names its day either way. `?? []`: a read from an
+    // API before #4957 has no field.
+    ...(activity.reminders ?? []).map((reminder) => {
+      const at = parseInstant(reminder.remind_at);
+      const due = at !== null && at.getTime() <= now.getTime();
+      return both(
+        () => reminderRow(reminder, now),
+        due ? endOfLocalDay(now) : at,
+      );
+    }),
   ];
+}
+
+/** The last moment of `now`'s day on this device. */
+function endOfLocalDay(now: Date): Date {
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
 }
 
 /**

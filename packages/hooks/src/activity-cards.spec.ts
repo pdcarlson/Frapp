@@ -101,6 +101,27 @@ describe("arrangeActivityCards", () => {
     });
   });
 
+  it("reads To review and Waiting on others as Running in a save from before #5779", () => {
+    // Shown: Running takes the first one's place.
+    expect(
+      arrangeActivityCards(
+        saved(["todo", "waiting", "nudge", "review"], ["week"]),
+        "officer",
+      ),
+    ).toEqual({ shown: ["todo", "running", "nudge"], hidden: [] });
+    // One hidden, the other shown: still shown.
+    expect(
+      arrangeActivityCards(saved(["todo", "waiting"], ["review"]), "officer"),
+    ).toEqual({ shown: ["nudge", "todo", "running"], hidden: [] });
+    // Both hidden: Running stays hidden rather than coming back unasked.
+    expect(
+      arrangeActivityCards(
+        saved(["nudge", "todo"], ["review", "waiting"]),
+        "officer",
+      ),
+    ).toEqual({ shown: ["nudge", "todo"], hidden: ["running"] });
+  });
+
   it("puts a never-placed card first when nothing before it is shown", () => {
     const layout = saved(["todo"], ["running", "review", "links"]);
     expect(arrangeActivityCards(layout, "officer").shown).toEqual([
@@ -182,11 +203,12 @@ describe("editing", () => {
       arrangeActivityCards(stored, "member"),
       stored,
     );
+    // Running takes To review's place; the stored keys stay for older builds.
     expect(body.card_order).toEqual([
       "review",
+      "running",
       "todo",
       "links",
-      "running",
       "nudge",
     ]);
     expect(body.hidden_cards).toEqual(["calendar"]);

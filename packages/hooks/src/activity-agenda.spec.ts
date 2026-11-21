@@ -4,6 +4,7 @@ import {
   activityCouldNotLoad,
   activityNarrowedNote,
   activityReview,
+  activityRunningCount,
   activityWeekSummary,
 } from "./activity-agenda";
 import type { Activity } from "./activity-rows";
@@ -651,6 +652,30 @@ describe("activityAgenda (#4766)", () => {
     ).toEqual(["poll", "card"]);
   });
 
+  it("never lets reminders due earlier in the week push today's task past Show more (#5779)", () => {
+    const stale = [-3, -2, -1].map((days) =>
+      reminder({
+        id: `old${days}`,
+        preview: `from ${days}`,
+        remind_at: at(days, 9),
+        fired_at: at(days, 9),
+        due: true,
+      }),
+    );
+    const data = activity({
+      reminders: stale,
+      needs_you: needs({
+        tasks: [task({ id: "tonight", title: "Pay dues", due_at: at(0, 21) })],
+      }),
+    });
+    const today = activityAgenda(data, "all", NOW).days[0]!;
+    expect(today.label).toBe("Today");
+    expect(today.rows[0]!.title).toBe("Pay dues");
+    expect(today.rows.slice(0, today.limit ?? 3).map((r) => r.title)).toContain(
+      "Pay dues",
+    );
+  });
+
   it("lists the member's reminders by the day they come back, under all only (#5779)", () => {
     const data = activity({
       reminders: [
@@ -676,9 +701,10 @@ describe("activityAgenda (#4766)", () => {
     ).toEqual([
       [
         "Today",
+        // A due reminder is today's, after today's own things.
         [
-          ["reminder", "dues are due Friday", "Due"],
           ["task", "Agenda", null],
+          ["reminder", "dues are due Friday", "Due"],
         ],
       ],
       ["Tomorrow", [["reminder", "bring the banner", null]]],
@@ -719,6 +745,21 @@ describe("activityAgenda (#4766)", () => {
       rows: [],
       unavailable: [],
     });
+  });
+});
+
+describe("activityRunningCount (#5779)", () => {
+  it("adds what waits on sign-off to what the member made, keeping the cap's plus", () => {
+    const made = { rows: [1, 2, 3] };
+    expect(activityRunningCount(null, null)).toBeNull();
+    expect(activityRunningCount(null, { rows: [] })).toBeNull();
+    expect(activityRunningCount(null, made)).toBe("3");
+    expect(
+      activityRunningCount({ rows: [1, 2], count: "2" } as never, made),
+    ).toBe("5");
+    expect(
+      activityRunningCount({ rows: Array(25), count: "25+" } as never, made),
+    ).toBe("28+");
   });
 });
 

@@ -288,7 +288,7 @@ export function ChannelMenu({
     target?.focus();
   }, [view, open]);
 
-  const linkCount = useChannelLinkCount(activeChannelId);
+  const linkCount = useChannelLinkCount(activeChannelId, open);
   const rows: MenuRow[] = [
     { view: "search", label: "Search messages", Glyph: SearchGlyph },
     {

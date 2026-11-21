@@ -382,14 +382,11 @@ export function ProfilePanel() {
 
         {/*
           Last week and This semester, beside your numbers (#5779): how you
-          are standing, which Activity no longer shows. The strip leaves out
-          the Points and Service hours just above it.
+          are standing, which Activity no longer shows. Its Points and Service
+          hours are this semester's, beside a goal; the figures above are all
+          time, so both stay.
         */}
-        {stats.hasChapter ? (
-          <StandingCards
-            omit={stats.visible ? ["points", "service"] : undefined}
-          />
-        ) : null}
+        {stats.hasChapter ? <StandingCards /> : null}
 
         {/* Non-chapter business roles you pick yourself (#4958). */}
         {canViewMembers ? <PickRolesSection /> : null}

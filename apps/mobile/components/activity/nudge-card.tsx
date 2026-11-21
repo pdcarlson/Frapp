@@ -65,8 +65,8 @@ function kindLook(
  *   it on Frapp's gold rule.
  * - **The tray.** Up to three chips, each in its kind's colour. Pressing one
  *   brings that item into the card in place; nothing opens over the page.
- * - **No filled button.** The week card's Next holds the screen's one filled
- *   action, so the card's buttons are outlined.
+ * - **No filled button.** The card's buttons are outlined, as every action on
+ *   Activity is since the week card's filled Next went (#5779).
  * - **Waving off.** The close mark waves off what the card shows, and it is
  *   not raised again. "More" holds turning the card off.
  */

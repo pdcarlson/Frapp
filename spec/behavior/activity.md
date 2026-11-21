@@ -198,26 +198,26 @@ the sidebar. It is a separate, small read, so Chat home doesn't load the whole o
 
 The page is a stack of cards each member orders and hides (#5520; Paul's pick, 2026-11-18, after
 Bevel's Edit Home and Apple Fitness's Edit Summary). Before it, the page's sections sat in one fixed
-order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
+order (#4766). _Changed in #5520 by `pdcarlson`, 2026-11-18._
 
 **One home per question** (#5779; Paul's pick "A", 2026-11-20). Activity answers "what do I do
 next?" and "what have I got running?", and nothing else; each other question moved to the one
 place that owns it:
 
-| Was on Activity | Now |
-| --- | --- |
-| Week card (big ring, lines, Next) and the phone's week strip | A small ring beside the title; pressed, it opens the lines ([§ Week](#week)) |
-| To review and Waiting on others | One card, Running |
-| Reminders | Rows in To do, on their day ([§ Reminders](#reminders)) |
-| Calendar card | A "Calendar" link in To do's header |
-| This semester and Last week | You (web: the profile), beside Points ([§ Standing](#standing), [§ Recap](#recap)) |
-| Links | The channel's own menu, beside Pinned and Saved ([§ Links](#links)) |
+| Was on Activity                                              | Now                                                                                |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Week card (big ring, lines, Next) and the phone's week strip | A small ring beside the title; pressed, it opens the lines ([§ Week](#week))       |
+| To review and Waiting on others                              | One card, Running                                                                  |
+| Reminders                                                    | Rows in To do, on their day ([§ Reminders](#reminders))                            |
+| Calendar card                                                | A "Calendar" link in To do's header                                                |
+| This semester and Last week                                  | You (web: the profile), beside Points ([§ Standing](#standing), [§ Recap](#recap)) |
+| Links                                                        | The channel's own menu, beside Pinned and Saved ([§ Links](#links))                |
 
 - **The cards** are named by key (`ACTIVITY_CARD_KEYS` in `@repo/validation`): the Frapp card
   (`nudge`), To do (`todo`) and Running (`running`). Now ([§ Now](#now)) is not one: it is always
   first and can't be hidden. To do can move but can't be hidden, because the ring's lines narrow
-  it. *Changed in #5779 by `pdcarlson`, 2026-11-20 (was nine cards: `recap`, `review`,
-  `calendar`, `reminders`, `waiting`, `links` and `semester` besides these).*
+  it. _Changed in #5779 by `pdcarlson`, 2026-11-20 (was nine cards: `recap`, `review`,
+  `calendar`, `reminders`, `waiting`, `links` and `semester` besides these)._
 - **Running** leads with "3 to approve" (finished tasks to confirm and service hours to approve,
   for who reviews them), then the tasks the member assigned with their progress, the events they
   made with their headcount, and the polls they posted. It shows for anyone with something in it,
@@ -225,6 +225,8 @@ place that owns it:
   the page is To do alone.
 - **A saved arrangement with removed keys** keeps them stored, as any key a client doesn't know
   (below), and the clients skip them. The member's other cards keep their order.
+  The two Running took in are read as Running by a save that never placed it: To review or
+  Waiting on others shown puts Running where the first of them was, and both hidden hides it.
 - **A card with nothing in it draws nothing**, wherever it sits, as each section always has. So
   every card is in every default, and a member never sees an empty Running.
 - **Each member's arrangement is theirs, per chapter**, on their account (`activity_layouts`), so
@@ -369,7 +371,8 @@ made). The clients draw it as a thin bar with "41 of 60" under the row
   row has none. Who has checked in is the attendance roster's, which needs `events:update`
   ([`events.md`](events.md)), and making an event grants nothing, so a maker without it (every
   member may make one) gets no count either: the count is never a way around the roster.
-- **The caller is on neither side.** The section is "Waiting on others": their own vote or
+- **The caller is on neither side.** The section is what they have running (Running; "Waiting on
+  others" until #5779): their own vote or
   check-in is not what they are waiting on.
 - **Never "0 of 0".** A poll nobody else can read, or an event that holds nobody else to it, has
   `progress: null`, and the row draws no bar. `done` counts only members still on `total`'s side

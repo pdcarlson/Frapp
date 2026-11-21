@@ -955,7 +955,7 @@ describe("Activity screen (#3897)", () => {
       // An ask that isn't the card's stays the tinted ask, which opens it.
       expect(
         row(tree, "Formal theme").findByType(ActivityAsk).props,
-      ).toMatchObject({ label: "Vote", filled: false });
+      ).toMatchObject({ label: "Vote" });
     });
 
     it("draws a day's first three, then the rest on Show more", () => {
@@ -1122,7 +1122,7 @@ describe("Activity screen (#3897)", () => {
         .map((node) => node.props.children as string);
       expect(headers.indexOf("To do")).toBeLessThan(headers.indexOf("Running"));
       // One to approve and three running.
-      expect(sectionCount(tree, "Running")).toBe(4);
+      expect(sectionCount(tree, "Running")).toBe("4");
       const text = screenText(tree);
       const at = (phrase: string) => text.indexOf(phrase);
       expect(at("1 to approve")).toBeGreaterThan(at("Running"));
@@ -1151,7 +1151,7 @@ describe("Activity screen (#3897)", () => {
       expect(tree.root.findAllByType(ReviewCard)).toHaveLength(0);
       expect(screenText(tree)).not.toMatch(/to approve/i);
       // The member's posted poll still runs.
-      expect(sectionCount(tree, "Running")).toBe(1);
+      expect(sectionCount(tree, "Running")).toBe("1");
 
       activity.value = {
         ...activity.value,
@@ -1460,7 +1460,7 @@ describe("Activity screen (#3897)", () => {
       const tree = render();
       // Open polls only: the closed one is in the Archive, outside the
       // count, which holds the one to approve and the open poll.
-      expect(sectionCount(tree, "Running")).toBe(2);
+      expect(sectionCount(tree, "Running")).toBe("2");
       expect(screenText(tree)).toContain("Polls you posted");
       expect(hasSection(tree, "Made by you")).toBe(false);
     });

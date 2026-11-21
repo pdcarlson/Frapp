@@ -15,8 +15,8 @@ import { cn } from "@/lib/utils";
  * The Events agenda's navigator (#5560): a way to jump the agenda to a day,
  * never a second view of the same things (`design-system/README.md` § 2).
  * A wide pane gets a small month beside the agenda; a narrow one (beside
- * chat) a week strip over it, ported from the phone's Activity strip
- * (`apps/mobile/components/activity/week-strip.tsx`). Both draw a dot per
+ * chat) a week strip over it, ported from the strip the phone's Activity
+ * drew until #5779. Both draw a dot per
  * kind a day holds, in the kind's own hue, the same hue its rows wear, so a
  * dot is a promise of what the day's rows look like.
  *

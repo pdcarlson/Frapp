@@ -80,6 +80,7 @@ import {
   activityBadgeIsAsk,
   activityGroups,
   activityReview,
+  activityRunningCount,
   activityReviewQueue,
   activitySnoozedRows,
   activityWeekSummary,
@@ -593,20 +594,20 @@ function DaySection({ day, kit }: { day: ActivityAgendaDay; kit: RowKit }) {
  */
 function RunningSection({
   review,
-  reviewCount,
+  count,
   group,
   kit,
 }: {
   /** The approve row, or `null` when nothing waits for the member's OK. */
   review: ReactNode | null;
-  reviewCount: number;
+  /** `activityRunningCount`: "28", or "28+" past the read's cap. */
+  count: string | null;
   group: ActivityGroup | null;
   kit: RowKit;
 }) {
-  const count = reviewCount + (group?.rows.length ?? 0);
   return (
     <section aria-labelledby="activity-running" className="space-y-3">
-      <SectionLabel id="activity-running" count={count || null}>
+      <SectionLabel id="activity-running" count={count}>
         Running
       </SectionLabel>
       {review}
@@ -808,28 +809,7 @@ function SnoozedSection({ rows, kit }: { rows: ActivityRow[]; kit: RowKit }) {
       {open ? (
         <ul id="activity-snoozed" className={denseListClassName}>
           {rows.map((row) =>
-            row.kind === "link" ? (
-              // A snoozed link opens the link, and its menu wakes it.
-              <RowMenu
-                key={row.key}
-                entries={[kit.snooze.wakeEntry(row)]}
-                label={`More for ${row.title}`}
-              >
-                {(menuButton) => (
-                  <li className="group flex items-center gap-1">
-                    <a
-                      href={row.link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={cn(ROW_CLASS, "min-w-0 flex-1")}
-                    >
-                      <RowContent row={row} />
-                    </a>
-                    {menuButton}
-                  </li>
-                )}
-              </RowMenu>
-            ) : row.kind === "card" ? (
+            row.kind === "card" ? (
               <CardRow
                 key={row.key}
                 row={row}
@@ -1221,7 +1201,7 @@ export function ActivityPage() {
           review={
             review ? <ReviewCard review={review} renderRow={rowOnCard} /> : null
           }
-          reviewCount={review?.rows.length ?? 0}
+          count={activityRunningCount(review, running)}
           group={running}
           kit={kit}
         />

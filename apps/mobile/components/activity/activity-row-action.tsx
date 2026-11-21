@@ -266,16 +266,13 @@ export function ActivityRowItem({
   isFirst,
   actions,
   onCard = false,
-  solo = false,
   onPress,
 }: {
   row: ActivityRow;
   isFirst: boolean;
   actions: ActivityRowActions | null;
-  /** The row sits in a card (the To review card): `ActivityListRow`'s. */
+  /** The row sits in a card (the "N to approve" card): `ActivityListRow`'s. */
   onCard?: boolean;
-  /** The week card's Next row: `ActivityListRow`'s. */
-  solo?: boolean;
   onPress: () => void;
 }) {
   // The phone can supply a location, so a zoned event checks in here too.
@@ -291,7 +288,6 @@ export function ActivityRowItem({
       isFirst={isFirst}
       action={control}
       onCard={onCard}
-      solo={solo}
       onPress={onPress}
       menu={menuFor(row)}
     />

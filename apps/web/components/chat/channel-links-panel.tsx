@@ -96,11 +96,17 @@ function isLink(
   return row.kind === "link";
 }
 
-/** How many links the channel menu's row counts, once the read is in. */
+/**
+ * How many links the channel menu's row counts, once the read is in. Only
+ * while the menu is open (`enabled`): the menu sits in every channel's header,
+ * and Activity's read is the heaviest the app makes, so a closed menu never
+ * asks for it.
+ */
 export function useChannelLinkCount(
   channelId: string | null,
+  enabled = true,
 ): number | undefined {
-  const activity = useActivity();
+  const activity = useActivity({ enabled });
   if (!channelId || !activity.data) return undefined;
   return activity.data.links.filter((link) => link.channel_id === channelId)
     .length;

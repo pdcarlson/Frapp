@@ -358,18 +358,13 @@ export default function YouScreen() {
         />
       </ListSection>
 
-      {/* Last week and This semester (#5779), beside the points in the
-          title row: only with a chapter, whose reads they are. The strip
-          leaves out what this screen already says: the points in the title
-          row, and Study and Service hours on their rows below. */}
+      {/* Last week and This semester (#5779): only with a chapter, whose
+          reads they are. The strip leaves out Study, whose row below says
+          the same week's hours; its Points and Service hours are this
+          semester's, beside a goal, where the title row and the Service row
+          are all time, so they stay. */}
       {stats.hasChapter ? (
-        <StandingCards
-          omit={[
-            "points",
-            ...(hiddenFeatures.has("study") ? [] : ["study" as const]),
-            ...(serviceOn ? ["service" as const] : []),
-          ]}
-        />
+        <StandingCards omit={hiddenFeatures.has("study") ? [] : ["study"]} />
       ) : null}
 
       <ListSection>

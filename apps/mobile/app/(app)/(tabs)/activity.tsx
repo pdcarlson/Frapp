@@ -38,6 +38,7 @@ import {
   activityGroups,
   activityNarrowedNote,
   activityReview,
+  activityRunningCount,
   activityWeekSummary,
   activityRowTaskId,
   findActivityTaskRow,
@@ -660,12 +661,11 @@ export default function ActivityScreen() {
   // The week ring and the task board's door share the title row. Neither
   // shows over the Archive or the editor, which the ring doesn't narrow.
   const onPage = !editing && !showArchive;
-  const ring =
-    !onPage ? null : summary ? (
-      <WeekRing summary={summary} filter={filter} onFilter={setPicked} />
-    ) : activity.isPending ? (
-      <WeekRingSkeleton />
-    ) : null;
+  const ring = !onPage ? null : summary ? (
+    <WeekRing summary={summary} filter={filter} onFilter={setPicked} />
+  ) : activity.isPending ? (
+    <WeekRingSkeleton />
+  ) : null;
   const board = moduleOn("tasks") ? <TaskBoardLink /> : null;
 
   return (
@@ -982,10 +982,11 @@ function RunningSection({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const count = (review?.rows.length ?? 0) + (group?.rows.length ?? 0);
   return (
     <View style={styles.group}>
-      <SectionHeader count={count || null}>Running</SectionHeader>
+      <SectionHeader count={activityRunningCount(review, group)}>
+        Running
+      </SectionHeader>
       {review ? (
         <ReviewCard review={review} rowActions={rowActions} onOpen={onOpen} />
       ) : null}

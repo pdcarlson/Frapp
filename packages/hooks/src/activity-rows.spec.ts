@@ -706,36 +706,59 @@ describe("Running by kind (#4173, #5779)", () => {
     ]);
   });
 
-  it("leaves a task the member gave themselves to To do, where it is already a row (#5779)", () => {
-    const self = task({ id: "self", title: "Book the hall" });
+  it("leaves a task the member gave themselves to To do, even while it is snoozed out of To do (#5779)", () => {
+    const self = task({ id: "self", title: "Book the hall", created_by: "me" });
+    const other = task({
+      id: "t2",
+      title: "Sweep",
+      created_by: "me",
+      assignee_id: "sam",
+    });
+    // Snoozed: the awake read To do lists from has dropped it.
     const data = activity({
-      needs_you: {
-        tasks: [self],
-        task_confirmations: [],
-        hours_approvals: [],
-        polls: [],
-      },
-      made_by_you: {
-        polls: [],
-        events: [],
-        tasks: [self, task({ id: "t2", title: "Sweep" })],
-      },
+      made_by_you: { polls: [], events: [], tasks: [self, other] },
     });
     const [running] = activityGroups(data, NOW);
     expect(running!.rows.map((row) => row.title)).toEqual(["Sweep"]);
     const items = activity({
-      needs_you: data.needs_you,
       made_by_you: {
-        ...data.made_by_you,
+        polls: [],
+        events: [],
+        tasks: [],
         task_items: [
           { kind: "task", task: self },
-          { kind: "task", task: task({ id: "t2", title: "Sweep" }) },
+          { kind: "task", task: other },
         ],
       },
     });
     expect(activityGroups(items, NOW)[0]!.rows.map((row) => row.title)).toEqual(
       ["Sweep"],
     );
+  });
+
+  it("judges a date-only task's Overdue by the member's own day, not the server's (#5774)", () => {
+    // The server's UTC day has rolled over; the member's evening hasn't.
+    const evening = new Date(2026, 10, 20, 21, 0, 0);
+    const dueToday = task({
+      id: "today",
+      title: "Pay dues",
+      due_date: "2026-11-20",
+      status: "OVERDUE",
+      stored_status: "TODO",
+    });
+    const data = activity({
+      needs_you: {
+        tasks: [dueToday],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    const [todo] = activityToDos(data, evening);
+    expect(todo!.overdue).toBe(false);
+    expect(todo!.dated.badge?.label).not.toBe("Overdue");
+    const late = activityToDos(data, new Date(2026, 10, 21, 9, 0, 0));
+    expect(late[0]!.overdue).toBe(true);
   });
 
   it("puts the tasks the member assigned first, then the events they made, then their polls", () => {

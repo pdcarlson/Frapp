@@ -69,6 +69,9 @@ export function activityCardRole(
     : "member";
 }
 
+/** The cards Running replaced (#5779), as a save from before it names them. */
+const RUNNING_TOOK: readonly string[] = ["review", "waiting"];
+
 /**
  * The page's cards, from what the member saved and their role's default.
  *
@@ -78,6 +81,9 @@ export function activityCardRole(
  *   never placed, because it is newer than their save, goes where the
  *   default puts it: after the nearest card before it in the default that
  *   they show.
+ * - Running took To review and Waiting on others in (#5779), so a save from
+ *   before it that never placed Running places it where the first of those
+ *   was shown, or hides it when they hid both.
  */
 export function arrangeActivityCards(
   layout: ActivityLayoutRead | null | undefined,
@@ -86,14 +92,25 @@ export function arrangeActivityCards(
   const defaults = ACTIVITY_DEFAULT_CARD_ORDER[role];
   if (!layout?.saved) return { shown: [...defaults], hidden: [] };
 
+  const placesRunning =
+    layout.card_order.includes("running") ||
+    layout.hidden_cards.includes("running");
+  const asRunning = (key: string) =>
+    !placesRunning && RUNNING_TOOK.includes(key) ? "running" : key;
+  const order = layout.card_order.map(asRunning);
+  const hiddenKeys = layout.hidden_cards.map(asRunning);
   const hidden = unique(
-    layout.hidden_cards.filter(isActivityCardKey).filter(canHideActivityCard),
+    hiddenKeys
+      .filter(isActivityCardKey)
+      .filter(canHideActivityCard)
+      // Shown in place of one of them, so not hidden for the other.
+      .filter(
+        (k) => placesRunning || k !== "running" || !order.includes("running"),
+      ),
   );
   const hiddenSet = new Set<ActivityCardKey>(hidden);
   const shown = unique(
-    layout.card_order
-      .filter(isActivityCardKey)
-      .filter((k) => !hiddenSet.has(k)),
+    order.filter(isActivityCardKey).filter((k) => !hiddenSet.has(k)),
   );
   for (const key of defaults) {
     if (shown.includes(key) || hiddenSet.has(key)) continue;
