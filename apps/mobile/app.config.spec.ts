@@ -613,11 +613,23 @@ describe("the staging variant (#2511)", () => {
 
   it("signs in with Google through its own clients, never the store app's (#4148)", () => {
     const { applyMobileConfig, STAGING_GOOGLE_SIGN_IN } = loadConfig();
-    const result = applyMobileConfig(appJson, {
+    // Store clients that differ from staging's, so a variant that inherits
+    // app.json's would show here.
+    const storeClients = {
+      webClientId: "store-web.apps.googleusercontent.com",
+      iosClientId: "store-ios.apps.googleusercontent.com",
+      androidClientId: "store-android.apps.googleusercontent.com",
+    };
+    const withStoreClients = {
+      ...appJson,
+      extra: { ...(appJson.extra as object), googleSignIn: storeClients },
+    } as typeof appJson;
+    const result = applyMobileConfig(withStoreClients, {
       env: stagingBuildEnv,
       existsSync: missing,
     }) as { extra: { googleSignIn: Record<string, string> }; plugins: unknown[] };
     expect(result.extra.googleSignIn).toEqual(STAGING_GOOGLE_SIGN_IN);
+    expect(result.extra.googleSignIn).not.toEqual(storeClients);
     expect(STAGING_GOOGLE_SIGN_IN.webClientId).toMatch(
       /\.apps\.googleusercontent\.com$/,
     );

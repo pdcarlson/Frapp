@@ -75,19 +75,11 @@ vi.mock("@/components/profile/profile-photo", () => ({
     React.createElement("ProfilePhoto", props),
 }));
 
-/**
- * Whether the membership already reads onboarding done: the name was answered
- * on another device (the web, or a second phone) before or while s03 is open.
- */
-let nameDoneElsewhere = false;
-
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useListChapters: () => ({
     data: [
       {
-        chapter_id: "ch-1",
-        has_completed_onboarding: nameDoneElsewhere,
         chapter: {
           id: "ch-1",
           name: "FIJI Tau Nu",
@@ -194,10 +186,6 @@ async function press(target: Node | undefined) {
   });
 }
 
-beforeEach(() => {
-  nameDoneElsewhere = false;
-});
-
 describe("s03 welcome, notifications step", () => {
   beforeEach(() => {
     pushAvailable = false;
@@ -244,12 +232,7 @@ describe("s03 welcome, notifications step", () => {
     ).toHaveLength(0);
     expect(button(root, "Turn on notifications")).toBeDefined();
     expect(button(root, "Not now")).toBeDefined();
-    // The name is the account's part, so it counts as done the moment it is
-    // answered, before this phone's own notifications ask (2026-11-21).
-    expect(completeOnboarding).toHaveBeenCalledTimes(1);
-    expect(completeOnboarding).toHaveBeenCalledWith({
-      has_completed_onboarding: true,
-    });
+    expect(completeOnboarding).not.toHaveBeenCalled();
   });
 
   it("shows the OS prompt on Turn on, then goes to chat", async () => {
@@ -324,55 +307,24 @@ describe("s03 welcome, notifications step", () => {
   it("keeps the step, with its buttons off, while an answer finishes", async () => {
     pushAvailable = true;
     permission = OFF;
-    const setItem = vi.mocked(AsyncStorage.setItem);
-    const stored = setItem.getMockImplementation();
-    let finishLeaving!: () => void;
-    // Leaving holds on its last write, the welcome card's mark.
-    setItem.mockImplementation((key: string, value: string) =>
-      key === WELCOME_DUE_STORAGE_KEY
-        ? new Promise<void>((resolve) => (finishLeaving = resolve))
-        : (stored?.(key, value) ?? Promise.resolve()),
+    let finishPatch!: () => void;
+    completeOnboarding.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishPatch = resolve)),
     );
-    try {
-      const { root } = await render();
-      // Written once, when the name was answered.
-      expect(completeOnboarding).toHaveBeenCalledTimes(1);
+    const { root } = await render();
 
-      await press(button(root, "Not now"));
+    await press(button(root, "Not now"));
 
-      expect(button(root, "Continue")).toBeUndefined();
-      expect(button(root, "Not now")?.props.disabled).toBe(true);
-      await press(button(root, "Not now"));
-      // Not written again on the way out.
-      expect(completeOnboarding).toHaveBeenCalledTimes(1);
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+    expect(button(root, "Continue")).toBeUndefined();
+    expect(button(root, "Not now")?.props.disabled).toBe(true);
+    await press(button(root, "Not now"));
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
 
-      await act(async () => {
-        finishLeaving();
-      });
-      expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
-    } finally {
-      setItem.mockImplementation(stored ?? (() => Promise.resolve()));
-    }
-  });
-
-  it("skips the name answered on another device, and asks only for notifications", async () => {
-    pushAvailable = true;
-    permission = OFF;
-    nameDoneElsewhere = true;
-    const { root } = await render({ passYou: false });
-
-    expect(onYouScreen(root)).toBe(false);
-    expect(button(root, "Turn on notifications")).toBeDefined();
-    expect(completeOnboarding).not.toHaveBeenCalled();
-  });
-
-  it("goes straight to chat when the name was answered elsewhere and there is nothing to ask", async () => {
-    pushAvailable = false;
-    nameDoneElsewhere = true;
-    await render({ passYou: false });
-
+    await act(async () => {
+      finishPatch();
+    });
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
-    expect(completeOnboarding).not.toHaveBeenCalled();
   });
 
   it("leaves Android back alone on the name, and walks back to it from notifications", async () => {

@@ -414,7 +414,8 @@ function assertProductionAppUrl({ easBuildProfile, appUrl } = {}) {
 // Native Google Sign-In (#2126, `lib/google-auth.ts`). The iOS SDK returns
 // to the app through a URL scheme that is the iOS OAuth client's ID reversed
 // (`com.googleusercontent.apps.<id>`); the package's config plugin writes it
-// into Info.plist. The client IDs live in app.json → `extra.googleSignIn`
+// into Info.plist. The store app's client IDs live in app.json →
+// `extra.googleSignIn`, Frapp Staging's in `STAGING_GOOGLE_SIGN_IN` below
 // (they are not secrets). With no iOS client ID the plugin is left out, and
 // `lib/google-auth.ts` keeps iOS on the browser flow. Setting the ID takes a
 // native build: an update that sets it still reaches same-version binaries
@@ -431,7 +432,7 @@ function googleIosUrlScheme(iosClientId) {
   if (!id) return undefined;
   if (!id.endsWith(GOOGLE_CLIENT_ID_SUFFIX)) {
     throw new Error(
-      `apps/mobile/app.json extra.googleSignIn.iosClientId must be a Google OAuth iOS client ID ending in ${GOOGLE_CLIENT_ID_SUFFIX}.`,
+      `extra.googleSignIn.iosClientId (apps/mobile/app.json, or STAGING_GOOGLE_SIGN_IN in app.config.js for Frapp Staging) must be a Google OAuth iOS client ID ending in ${GOOGLE_CLIENT_ID_SUFFIX}.`,
     );
   }
   return `com.googleusercontent.apps.${id.slice(0, -GOOGLE_CLIENT_ID_SUFFIX.length)}`;
@@ -478,8 +479,9 @@ const STAGING_IDENTITY = Object.freeze({
  * signing key, so the staging app (`live.frapp.mobile.staging`) can't use the
  * store app's clients in app.json's `extra.googleSignIn`: until these are set,
  * every Google sign-in in Frapp Staging opens Supabase's web sheet ("wants to
- * use …supabase.co to Sign In"), which is what sent a new member to the
- * browser on 2026-11-20 (#4148). The Web client is the one staging Supabase's
+ * use …supabase.co to Sign In"), as a new member's did on 2026-11-20 (#4148).
+ * The values match app.json's today; they part once the staging iOS and
+ * Android clients exist. The Web client is the one staging Supabase's
  * Google provider lists ("Frapp Web (staging)", in Google Cloud project
  * "Frapp sign-in"). An empty ID keeps that platform on the browser flow, as in
  * app.json; recording one is a native change (see `withGoogleSignIn`).

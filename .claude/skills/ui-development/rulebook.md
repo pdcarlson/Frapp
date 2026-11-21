@@ -252,9 +252,9 @@ These cause most of the iterations, so they come first.
   `apps/mobile/lib/every-screen-has-a-way-back.spec.ts`: a new page fails there until it has both.
 - **Opening a notification doesn't stack the screen on itself.** (11-07)
 - **On a phone, the app is the only way in.** An invite link opened in a phone's browser leads to the app
-  (open it, or get it), never to signing in on the web, and onboarding progress is the account's, so no
-  device asks again what another already answered. "Way too many clicks", after a new member signed in
-  on both the app and the browser and was asked his name twice ([`onboarding.md`](../../../spec/behavior/onboarding.md)).
+  (open it, or get it), never to signing in on the web, so a new member signs in once and is asked each
+  onboarding question once. "Way too many clicks", after a new member signed in on both the app and the
+  browser and was asked his name twice ([`onboarding.md`](../../../spec/behavior/onboarding.md)).
   (11-21)
 - **Several sections to fill in is a pushed screen on the phone, not a sheet.** A sheet is for one short
   pick or action over what's under it; a profile or settings page with sections opens as its own screen with

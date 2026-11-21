@@ -246,7 +246,7 @@ First, for every member: `How the chapter sees you`, the profile photo control a
 Second, only when the build can push and push is off ([#2299](https://github.com/pdcarlson/Frapp/issues/2299); [`patterns.md`](patterns.md#push-notifications) § Push notifications): `Turn on notifications`, with its three rows and the gold `Turn on notifications` (or `Open Settings` when no OS prompt can appear) over a quiet `Not now`, both pinned above the inset;
 Android's back on it returns to the name.
 Until #5627 s03 was up to five beats: the name and photo only when missing, `Pick your chat display` for everyone, `Pick your roles` when there was a role to join, and `Meet Frapp AI` for a member who never answered it, before notifications. The display now waits in Settings, roles in the Directory's Add roles, and Meet Frapp AI at the first use of an AI feature.
-Answering the name PATCHes `has_completed_onboarding` (2026-11-21, was on leaving the last screen since #3352): the name is the account's, so web `/welcome` never asks it again, and a member who answered it on another device lands here on the notifications screen alone, or goes straight to chat when there is nothing to ask (`lib/onboarding/welcome-progress.ts`). Either answer on notifications leaves for chat.
+Either answer leaves for chat, PATCHing `has_completed_onboarding` (#3352).
 The notifications beat was a card under the channels until 2026-11-07, which the board drew with `Go to chat` outlined beside it; it is its own step now so every member decides.
 The auth gate sends a member here when that flag is false.
 
