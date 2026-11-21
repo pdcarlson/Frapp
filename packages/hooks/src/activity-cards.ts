@@ -22,9 +22,8 @@ export type ActivityLayoutRead = {
 };
 
 /**
- * Cards a member may move but not hide. To do is the list the week card's
- * lines narrow and the week strip's days jump to; hidden, both would act on
- * nothing.
+ * Cards a member may move but not hide. To do is the list the week ring's
+ * lines narrow; hidden, they would act on nothing.
  */
 export const ACTIVITY_UNHIDEABLE_CARDS: readonly ActivityCardKey[] = ["todo"];
 
@@ -43,37 +42,18 @@ export type ActivityCardArrangement = {
 };
 
 /**
- * The default order for each role. A member's own work leads; an officer's
- * queue for their OK comes before it, and what is out with others follows,
- * as the concept Paul picked drew them. Every card is listed, since a card
- * with nothing in it draws nothing: a member never sees an empty To review.
+ * The default order for each role. Since #5779 (Paul's direction A,
+ * 2026-11-20) both start the same: the Frapp card, the member's own To do,
+ * then Running, which an officer's approvals lead. Every card is listed,
+ * since a card with nothing in it draws nothing: a member with nothing
+ * running never sees an empty Running.
  */
 export const ACTIVITY_DEFAULT_CARD_ORDER: Record<
   ActivityCardRole,
   readonly ActivityCardKey[]
 > = {
-  officer: [
-    "nudge",
-    "recap",
-    "review",
-    "todo",
-    "calendar",
-    "waiting",
-    "semester",
-    "reminders",
-    "links",
-  ],
-  member: [
-    "nudge",
-    "recap",
-    "todo",
-    "calendar",
-    "semester",
-    "reminders",
-    "waiting",
-    "links",
-    "review",
-  ],
+  officer: ["nudge", "todo", "running"],
+  member: ["nudge", "todo", "running"],
 };
 
 /**
@@ -240,30 +220,18 @@ export const ACTIVITY_CARD_COPY: Record<
   { name: string; detail: string }
 > = {
   nudge: { name: "Frapp card", detail: "The one thing worth doing next" },
-  recap: { name: "Last week", detail: "What you did, Sunday to Tuesday" },
-  review: {
-    name: "To review",
-    detail: "Finished tasks and hours waiting for your OK",
+  todo: {
+    name: "To do",
+    detail: "Your events, tasks, polls and reminders, by day",
   },
-  todo: { name: "To do", detail: "Your events, tasks and polls, by day" },
-  calendar: { name: "Calendar", detail: "The chapter's month" },
-  reminders: {
-    name: "Reminders",
-    detail: "Messages you asked to be reminded of",
-  },
-  waiting: {
-    name: "Waiting on others",
-    detail: "What you assigned, posted or made",
-  },
-  links: { name: "Links", detail: "Sign-ups posted for you" },
-  semester: {
-    name: "This semester",
-    detail: "Points, events, service and study",
+  running: {
+    name: "Running",
+    detail: "What waits for your OK, and what you assigned, made or posted",
   },
 };
 
-/** The week card's line in Edit Activity: always first, never hidden. */
-export const ACTIVITY_WEEK_CARD_COPY = {
-  name: "This week",
-  detail: "The week, its ring and what's next. Always first.",
+/** The Now card's line in Edit Activity: always first, never hidden. */
+export const ACTIVITY_NOW_CARD_COPY = {
+  name: "Now",
+  detail: "The event on right now. Always first.",
 };

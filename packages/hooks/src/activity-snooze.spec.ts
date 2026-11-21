@@ -48,6 +48,24 @@ const link = (id: string, snoozed_until: string | null = null) => ({
   snoozed_until,
 });
 
+const poll = (id: string, snoozed_until: string | null = null) => ({
+  message_id: id,
+  channel_id: "channel-1",
+  channel_name: "general",
+  channel_type: "PUBLIC",
+  sender_id: "officer",
+  question: `Poll ${id}`,
+  option_count: 2,
+  closes_at: null,
+  closed_at: null,
+  is_closed: false,
+  has_voted: false,
+  created_at: "2026-11-10T15:00:00.000Z",
+  message: {},
+  unread: false,
+  snoozed_until,
+});
+
 const activity = (overrides: Record<string, unknown> = {}) =>
   ({
     needs_you: {
@@ -136,19 +154,38 @@ describe("activitySnoozedRows", () => {
         tasks: [task("a", later(30)), task("b")],
         task_confirmations: [],
         hours_approvals: [],
+        polls: [poll("p", later(2)), poll("q")],
+        cards: [],
+      },
+    });
+
+    const rows = activitySnoozedRows(data, NOW);
+    expect(rows.map((row) => row.key)).toEqual([
+      "needs:poll:p",
+      "needs:task:a",
+    ]);
+    expect(rows.map((row) => row.detail)).toEqual([
+      "Back Today · 12:00 PM",
+      "Back Tomorrow · 4:00 PM",
+    ]);
+    expect(rows.every((row) => !row.unread && row.badge === null)).toBe(true);
+  });
+
+  it("leaves out a snoozed link, which is its channel's now (#5779)", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [task("a", later(30))],
+        task_confirmations: [],
+        hours_approvals: [],
         polls: [],
         cards: [],
       },
       links: [link("l", later(2))],
     });
 
-    const rows = activitySnoozedRows(data, NOW);
-    expect(rows.map((row) => row.kind)).toEqual(["link", "task"]);
-    expect(rows.map((row) => row.detail)).toEqual([
-      "Back Today · 12:00 PM",
-      "Back Tomorrow · 4:00 PM",
+    expect(activitySnoozedRows(data, NOW).map((row) => row.kind)).toEqual([
+      "task",
     ]);
-    expect(rows.every((row) => !row.unread && row.badge === null)).toBe(true);
   });
 });
 

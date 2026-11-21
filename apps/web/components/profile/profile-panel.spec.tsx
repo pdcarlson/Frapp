@@ -79,6 +79,12 @@ vi.mock("@/components/members/member-pledge-class-section", () => ({
     mocks.classSection(props),
 }));
 
+// Last week and This semester are `StandingCards`' own (#5779); the panel's
+// job is whether it draws them.
+vi.mock("@/components/activity/standing-cards", () => ({
+  StandingCards: () => <div data-testid="standing-cards" />,
+}));
+
 // The picker is its own spec's business (#4958).
 vi.mock("@/components/roles/pick-roles-section", () => ({
   PickRolesSection: () => null,
@@ -589,6 +595,17 @@ describe("ProfilePanel — what the phone's Profile shows (#4137)", () => {
     expect(
       screen.getByText("Choose a chapter to see your points."),
     ).toBeInTheDocument();
+  });
+
+  it("shows Last week and This semester beside your numbers (#5779)", () => {
+    render(<ProfilePanel />);
+    expect(screen.getByTestId("standing-cards")).toBeInTheDocument();
+  });
+
+  it("draws no standing without a chapter to read it in (#5779)", () => {
+    mocks.stats.hasChapter = false;
+    render(<ProfilePanel />);
+    expect(screen.queryByTestId("standing-cards")).toBeNull();
   });
 
   it("leaves the numbers out for a role that can't read them", () => {

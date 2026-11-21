@@ -61,6 +61,12 @@ let profileStats = {
   serviceFailed: false,
 };
 const invoiceReadOptions: ({ enabled?: boolean } | undefined)[] = [];
+/** The standing read behind This semester (#5779), and Last week's. */
+let standingRead: { data: unknown; isPending: boolean } = {
+  data: undefined,
+  isPending: false,
+};
+let recapRead: { data: unknown } = { data: undefined };
 
 // `@repo/validation`'s beta list, emptied so these specs draw You as a
 // chapter with dues on sees it. The beta's own case, dues off, sets
@@ -140,6 +146,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
   useCurrentUser: () => currentUser,
   useMyProfileStats: () => profileStats,
+  // Their cards have their own spec (`standing-cards.spec.tsx`).
+  useActivityStanding: () => ({
+    ...standingRead,
+    refetch: () => Promise.resolve(),
+  }),
+  useActivityRecap: () => recapRead,
   useCurrentChapter: () => ({
     data: !chapterLoaded
       ? undefined
@@ -156,6 +168,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 
 import YouScreen from "@/app/(app)/(tabs)/you";
+import { StandingCards } from "@/components/activity/standing-cards";
+import { SemesterStripSkeleton } from "@/components/activity/semester-strip";
 import { ForwardGlyph } from "@/components/control-glyphs";
 import { LeadTile } from "@/components/lead-tile";
 import { ListRow, ListSection } from "@/components/list-section";
@@ -862,5 +876,62 @@ describe("You tab points and service hours (#5281)", () => {
   it("drops the Service hours row for a chapter with the module off", () => {
     chapterModules = { hours: false };
     expect(serviceRow(render())).toBeUndefined();
+  });
+});
+
+describe("You tab standing (#5779)", () => {
+  const baseStats = { ...profileStats };
+  const STANDING = {
+    points: { total: 42, rank: 5, ranked: 58, goal: null },
+    required_events: { required: 8, attended: 6, excused: 0 },
+    service: { approved_minutes: 0, pending_minutes: 0, goal_minutes: null },
+    study: {
+      minutes: 0,
+      week_start: "2026-11-01T04:00:00.000Z",
+      goal_minutes: null,
+    },
+    unavailable: [],
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 4, 12, 0, 0));
+    currentUser = LOADED_USER;
+    permissions = [];
+    profileStats = { ...baseStats };
+    standingRead = { data: STANDING, isPending: false };
+  });
+
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    vi.useRealTimers();
+    profileStats = { ...baseStats };
+    standingRead = { data: undefined, isPending: false };
+    recapRead = { data: undefined };
+  });
+
+  it("draws This semester under Status and over the rows, which Activity no longer shows", () => {
+    const tree = render();
+    expect(tree.root.findAllByType(StandingCards)).toHaveLength(1);
+    const text = screenText(tree);
+    expect(text).toContain("This semester");
+    expect(text.indexOf("Status")).toBeLessThan(text.indexOf("This semester"));
+    expect(text.indexOf("This semester")).toBeLessThan(
+      text.indexOf("Directory"),
+    );
+  });
+
+  it("holds the gauges' place while their read is out", () => {
+    standingRead = { data: undefined, isPending: true };
+    expect(render().root.findAllByType(SemesterStripSkeleton)).toHaveLength(1);
+  });
+
+  it("draws neither card for a member with no chapter, whose reads they are", () => {
+    profileStats = { ...baseStats, hasChapter: false };
+    const tree = render();
+    expect(tree.root.findAllByType(StandingCards)).toHaveLength(0);
+    expect(screenText(tree)).not.toContain("This semester");
   });
 });

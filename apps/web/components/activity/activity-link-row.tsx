@@ -114,7 +114,7 @@ export function useActivityLinkActions(): ActivityLinkActions {
       act(
         remove,
         row,
-        "Removed from everyone's Activity",
+        "Removed for everyone",
         restore,
         "Couldn't remove the link",
       ),
@@ -129,7 +129,7 @@ export function useActivityLinkActions(): ActivityLinkActions {
  * Later put their check, because it is what a member does after filling one
  * in. The rest is in the row's menu (⋯, or a right-click off the link): Hide
  * ("Not chapter business"), Open in chat, and for an officer
- * (`channels:manage`) Remove, which takes it off everyone's Activity. Each
+ * (`channels:manage`) Remove, which takes it off everyone's list. Each
  * takes the row away at once and offers Undo, since none of them can be seen
  * again from this page.
  */

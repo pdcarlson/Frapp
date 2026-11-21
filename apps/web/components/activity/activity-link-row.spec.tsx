@@ -198,7 +198,7 @@ describe("ActivityLinkRow", () => {
     expect(writes.remove).toHaveBeenCalledWith("l1");
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Removed from everyone's Activity" }),
+        expect.objectContaining({ title: "Removed for everyone" }),
       ),
     );
     render(<>{undoFromToast()}</>);

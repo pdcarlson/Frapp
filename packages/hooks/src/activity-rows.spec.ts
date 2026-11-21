@@ -11,6 +11,7 @@ import {
   ACTIVITY_GLYPH_NAV,
   activityArchiveGroups,
   activityBadgeIsAsk,
+  activityChannelLinks,
   activityGroups,
   activityLinkKind,
   activityCardIsOpen,
@@ -171,7 +172,8 @@ const todoRows = (data: Activity, now?: Date): ActivityRow[] =>
 
 /**
  * Every row the page draws from a read: the To review card's queue, the
- * member's own to-dos, then the groups under them.
+ * member's own to-dos (reminders included), then Running. Links are a
+ * channel's own (`activityChannelLinks`), not Activity's.
  */
 const allRows = (data: Activity, now?: Date): ActivityRow[] => [
   ...activityReviewRows(data, now),
@@ -289,17 +291,18 @@ describe("activityGroups", () => {
         events: [event({ id: "mine", progress: { done: 60, total: 60 } })],
       },
     });
-    const made = activityGroups(data).find((g) => g.id === "made-by-you")!.rows;
+    const made = activityGroups(data).find((g) => g.id === "running")!.rows;
+    // Events you made, then polls you posted.
     expect(made.map((row) => row.progress)).toEqual([
-      { done: 41, total: 60, label: "41 of 60", spoken: "41 of 60 voted" },
-      null,
-      null,
       {
         done: 60,
         total: 60,
         label: "60 of 60",
         spoken: "60 of 60 checked in",
       },
+      { done: 41, total: 60, label: "41 of 60", spoken: "41 of 60 voted" },
+      null,
+      null,
     ]);
     expect(todoRows(data).every((row) => row.progress === null)).toBe(true);
   });
@@ -317,20 +320,18 @@ describe("activityGroups", () => {
         events: [],
       },
     });
-    // It leaves Waiting on others, bar and all: it is in the Archive (#5127).
+    // It leaves Running, bar and all: it is in the Archive (#5127).
     const made = activityGroups(
       data,
       new Date("2026-11-10T18:00:01.000Z"),
-    ).find((g) => g.id === "made-by-you")!;
+    ).find((g) => g.id === "running")!;
     expect(made.rows).toEqual([]);
   });
 
-  it("draws Reminders, Waiting on others, then Links", () => {
-    expect(activityGroups(activity()).map((group) => group.label)).toEqual([
-      "Reminders",
-      "Waiting on others",
-      "Links",
-    ]);
+  it("draws one group, Running: Reminders are To do's and Links a channel's (#5779)", () => {
+    expect(
+      activityGroups(activity()).map((group) => [group.id, group.label]),
+    ).toEqual([["running", "Running"]]);
   });
 
   it("lists an event open for check-in with its ask, and leaves out one the member checked in to", () => {
@@ -366,6 +367,7 @@ describe("activityGroups", () => {
             title: "Late",
             status: "OVERDUE",
             stored_status: "IN_PROGRESS",
+            due_date: "2026-11-01",
           }),
         ],
         task_confirmations: [
@@ -407,7 +409,7 @@ describe("activityGroups", () => {
       stored_status: "COMPLETED",
       assignee_name: "Ada",
     };
-    const [, made] = activityGroups(
+    const [made] = activityGroups(
       activity({
         made_by_you: {
           polls: [],
@@ -429,10 +431,11 @@ describe("activityGroups", () => {
     ]);
   });
 
-  it("names each section that could not be read, under every group that draws it", () => {
+  it("names each section behind Running that could not be read, and only those", () => {
     const groups = activityGroups(
       activity({
         unavailable: [
+          "polls",
           "tasks",
           "hours_approvals",
           "made_events",
@@ -442,15 +445,14 @@ describe("activityGroups", () => {
       }),
     );
 
-    // Hours waiting on approval are the To review card's to name.
+    // Hours waiting on approval are the To review card's to name, reminders
+    // the To do list's, and links no longer Activity's.
     expect(groups.map((group) => group.unavailable)).toEqual([
-      ["reminders"],
-      ["made_events", "tasks"],
-      ["links"],
+      ["tasks", "made_events", "polls"],
     ]);
   });
 
-  it("lists an event the member made under Waiting on others, apart from the same event on their To do list", () => {
+  it("lists an event the member made under Running, apart from the same event on their To do list", () => {
     const mine = event({ id: "mine", name: "Formal" });
     const data = activity({
       coming_up: [mine],
@@ -458,8 +460,8 @@ describe("activityGroups", () => {
     });
 
     expect(todoRows(data).map(say)).toEqual(["event:Formal:Required"]);
-    expect(rowsOf(data)).toMatchObject({
-      "made-by-you": ["event:Formal:Required"],
+    expect(rowsOf(data)).toEqual({
+      running: ["event:Formal:Required"],
     });
     const keys = allRows(data).map((row) => row.key);
     expect(keys).toHaveLength(2);
@@ -560,7 +562,7 @@ describe("activityGroups", () => {
 
     it("lists open polls only: a closed one is in the Archive (#5127)", () => {
       const groups = activityGroups(data, NOW);
-      const made = groups.find((group) => group.id === "made-by-you");
+      const made = groups.find((group) => group.id === "running");
 
       expect(todoRows(data, NOW).map((row) => row.title)).toEqual(["Open"]);
       expect(made?.rows.map((row) => row.title)).toEqual(["Still open"]);
@@ -581,7 +583,7 @@ describe("activityGroups", () => {
     });
   });
 
-  it("lists sign-up links in their own group, said by what they are, who posted them and where", () => {
+  it("lists a channel's sign-up links, said by what they are, who posted them and where", () => {
     const data = activity({
       links: [
         link(),
@@ -596,16 +598,13 @@ describe("activityGroups", () => {
         }),
       ],
     });
-    const group = activityGroups(data).find((g) => g.id === "links")!;
+    const rows = activityChannelLinks(data, "channel-1");
 
-    expect(group.rows.map((row) => row.title)).toEqual([
-      "Google Form",
-      "Calendly",
-    ]);
-    expect(group.rows[0]!.detail).toMatch(/^Olive · #rush · /);
+    expect(rows.map((row) => row.title)).toEqual(["Google Form", "Calendly"]);
+    expect(rows[0]!.detail).toMatch(/^Olive · #rush · /);
     // No poster name for an imported author, and no server-made DM name.
-    expect(group.rows[1]!.detail).toMatch(/^Direct message · /);
-    expect(group.rows.every((row) => row.badge === null)).toBe(true);
+    expect(rows[1]!.detail).toMatch(/^Direct message · /);
+    expect(rows.every((row) => row.badge === null)).toBe(true);
   });
 
   it("titles a link by its page's name, with its kind leading the detail (#4187)", () => {
@@ -619,16 +618,38 @@ describe("activityGroups", () => {
         }),
       ],
     });
-    const group = activityGroups(data).find((g) => g.id === "links")!;
+    const rows = activityChannelLinks(data, "channel-1");
 
-    expect(group.rows[0]!.title).toBe("5K volunteer shifts");
-    expect(group.rows[0]!.detail).toMatch(/^Google Form · Olive · #rush · /);
+    expect(rows[0]!.title).toBe("5K volunteer shifts");
+    expect(rows[0]!.detail).toMatch(/^Google Form · Olive · #rush · /);
     // A blank name is no name: the row keeps its kind, and the detail doesn't repeat it.
-    expect(group.rows[1]!.title).toBe("Google Sheet");
-    expect(group.rows[1]!.detail).toMatch(/^Olive · #rush · /);
+    expect(rows[1]!.title).toBe("Google Sheet");
+    expect(rows[1]!.detail).toMatch(/^Olive · #rush · /);
   });
 
-  it("keeps the links it has when the links read failed, and names the failure", () => {
+  it("lists only the links posted in the channel asked for (#5779)", () => {
+    const data = activity({
+      links: [
+        link({ id: "rush-1" }),
+        link({
+          id: "general-1",
+          channel_id: "channel-2",
+          channel_name: "general",
+        }),
+        link({ id: "rush-2", url: "https://calendly.com/olive/rush" }),
+      ],
+    });
+
+    expect(
+      activityChannelLinks(data, "channel-1").map((row) => row.key),
+    ).toEqual(["link:rush-1", "link:rush-2"]);
+    expect(
+      activityChannelLinks(data, "channel-2").map((row) => row.key),
+    ).toEqual(["link:general-1"]);
+    expect(activityChannelLinks(data, "channel-3")).toEqual([]);
+  });
+
+  it("keeps links off Activity's own lists, and a failed links read off Running (#5779)", () => {
     const data = activity({
       links: [link()],
       needs_you: {
@@ -640,18 +661,17 @@ describe("activityGroups", () => {
       unavailable: ["links"],
     });
 
-    expect(rowsOf(data)).toEqual({
-      reminders: [],
-      "made-by-you": [],
-      links: ["link:Google Form:-"],
-    });
-    expect(
-      activityGroups(data).find((g) => g.id === "links")!.unavailable,
-    ).toEqual(["links"]);
+    expect(rowsOf(data)).toEqual({ running: [] });
+    expect(allRows(data).map((row) => row.kind)).not.toContain("link");
+    expect(activityGroups(data)[0]!.unavailable).toEqual([]);
+    // The channel still has the links the read served.
+    expect(activityChannelLinks(data, "channel-1").map(say)).toEqual([
+      "link:Google Form:-",
+    ]);
   });
 });
 
-describe("Waiting on others by kind (#4173)", () => {
+describe("Running by kind (#4173, #5779)", () => {
   // Wednesday 11 November 2026, midday local time.
   const NOW = new Date(2026, 10, 11, 12, 0, 0);
   const partsOf = (data: Activity) =>
@@ -666,7 +686,7 @@ describe("Waiting on others by kind (#4173)", () => {
       ]),
     );
 
-  it("splits Waiting on others by kind, a few rows each, and leaves out an empty kind", () => {
+  it("splits Running by kind, a few rows each, and leaves out an empty kind", () => {
     const data = activity({
       made_by_you: {
         polls: [poll({ question: "Shirt color" })],
@@ -676,13 +696,66 @@ describe("Waiting on others by kind (#4173)", () => {
         ),
       },
     });
-    expect(partsOf(data)["made-by-you"]).toEqual([
-      { label: "Polls you posted", titles: ["Shirt color"], limit: 3 },
+    expect(partsOf(data)["running"]).toEqual([
       {
         label: "Tasks you assigned",
         titles: ["Task 1", "Task 2", "Task 3", "Task 4"],
         limit: 3,
       },
+      { label: "Polls you posted", titles: ["Shirt color"], limit: 3 },
+    ]);
+  });
+
+  it("leaves a task the member gave themselves to To do, where it is already a row (#5779)", () => {
+    const self = task({ id: "self", title: "Book the hall" });
+    const data = activity({
+      needs_you: {
+        tasks: [self],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      },
+      made_by_you: {
+        polls: [],
+        events: [],
+        tasks: [self, task({ id: "t2", title: "Sweep" })],
+      },
+    });
+    const [running] = activityGroups(data, NOW);
+    expect(running!.rows.map((row) => row.title)).toEqual(["Sweep"]);
+    const items = activity({
+      needs_you: data.needs_you,
+      made_by_you: {
+        ...data.made_by_you,
+        task_items: [
+          { kind: "task", task: self },
+          { kind: "task", task: task({ id: "t2", title: "Sweep" }) },
+        ],
+      },
+    });
+    expect(activityGroups(items, NOW)[0]!.rows.map((row) => row.title)).toEqual(
+      ["Sweep"],
+    );
+  });
+
+  it("puts the tasks the member assigned first, then the events they made, then their polls", () => {
+    const data = activity({
+      made_by_you: {
+        polls: [poll({ question: "Shirt color" })],
+        events: [event({ id: "formal", name: "Formal" })],
+        tasks: [task({ id: "t1", title: "Sweep" })],
+      },
+    });
+    const [running] = activityGroups(data, NOW);
+    expect(running!.parts.map((part) => [part.id, part.label])).toEqual([
+      ["tasks", "Tasks you assigned"],
+      ["events", "Events you made"],
+      ["polls", "Polls you posted"],
+    ]);
+    expect(running!.rows.map((row) => row.title)).toEqual([
+      "Sweep",
+      "Formal",
+      "Shirt color",
     ]);
   });
 
@@ -970,7 +1043,11 @@ describe("faces and closing soon (#4402, item 4)", () => {
       },
     );
     expect(
-      Object.fromEntries(rows(data).map((row) => [row.key, row.faceId])),
+      Object.fromEntries(
+        [...rows(data), ...activityChannelLinks(data, "channel-1", NOW)].map(
+          (row) => [row.key, row.faceId],
+        ),
+      ),
     ).toEqual({
       "needs:task:from-olive": "officer",
       "needs:task:own": null,
@@ -978,9 +1055,9 @@ describe("faces and closing soon (#4402, item 4)", () => {
       "needs:hours:hours-1": "sam",
       "needs:poll:poll-1": "officer",
       "coming:event:event-1": null,
-      "link:link-1": "olive",
-      "made:poll:mine": null,
       "made:task:assigned": null,
+      "made:poll:mine": null,
+      "link:link-1": "olive",
     });
   });
 
@@ -1166,17 +1243,17 @@ describe("reminders (#4957)", () => {
         reminder({ id: "waiting", preview: "bring the banner" }),
       ],
     });
-    const group = activityGroups(data, NOW).find(
-      (candidate) => candidate.id === "reminders",
-    )!;
-    expect(group.rows.map(say)).toEqual([
+    // On the To do list since #5779, no longer a group of their own.
+    const rows = todoRows(data, NOW);
+    expect(rows.map(say)).toEqual([
       "reminder:dues are due Friday:Due",
       "reminder:bring the banner:-",
     ]);
-    expect(group.rows[0]!.detail).toMatch(/^Alex · #general · Reminded /);
-    expect(group.rows[1]!.detail).toMatch(/^Alex · #general · Remind me /);
-    expect(group.rows[0]!.readRef).toBeNull();
-    expect(group.rows[0]!.unread).toBe(false);
+    expect(rows[0]!.detail).toMatch(/^Alex · #general · Reminded /);
+    expect(rows[1]!.detail).toMatch(/^Alex · #general · Remind me /);
+    expect(rows[0]!.readRef).toBeNull();
+    expect(rows[0]!.unread).toBe(false);
+    expect(activityGroups(data, NOW)[0]!.rows).toEqual([]);
   });
 
   it("names no channel for a reminder the member can no longer open", () => {
@@ -1190,13 +1267,12 @@ describe("reminders (#4957)", () => {
         }),
       ],
     });
-    const [group] = activityGroups(data, NOW);
-    expect(group!.rows[0]!.detail).toMatch(/^Remind me /);
+    const [row] = todoRows(data, NOW);
+    expect(row!.detail).toMatch(/^Remind me /);
   });
 
   it("reads an API from before reminders as none", () => {
-    const [group] = activityGroups(activity(), NOW);
-    expect(group!.rows).toEqual([]);
+    expect(todoRows(activity(), NOW)).toEqual([]);
   });
 });
 
@@ -1356,7 +1432,7 @@ describe("Tasks you assigned from task_items (#5492 step 5b)", () => {
   };
   const madeTasks = (data: Activity) =>
     activityGroups(data, now)
-      .find((g) => g.id === "made-by-you")!
+      .find((g) => g.id === "running")!
       .parts.find((part) => part.id === "tasks")!.rows;
 
   it("draws a task sent to 30 members as one row: Everyone and its due, faces, a done bar that says the 30", () => {
@@ -1467,7 +1543,7 @@ describe("taskAwaitsReview (#5492, #5513)", () => {
       proof_kind: "none",
       ...overrides,
     });
-  /** The row Waiting on others draws for it. */
+  /** The row Running draws for it. */
   const madeRow = (overrides: Record<string, unknown> = {}) =>
     activityGroups(
       activity({
@@ -1480,7 +1556,7 @@ describe("taskAwaitsReview (#5492, #5513)", () => {
       }),
       new Date(),
     )
-      .find((group) => group.id === "made-by-you")!
+      .find((group) => group.id === "running")!
       .rows.find((row) => row.kind === "task")!;
   const awaits = (overrides: Record<string, unknown> = {}, who = officer) =>
     taskAwaitsReview(done(overrides), who);

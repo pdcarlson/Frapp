@@ -449,76 +449,62 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
 
 - **Now sits first** ([#5777](https://github.com/pdcarlson/Frapp/issues/5777)): the event on right now, also at the top of the chat rail, and as a pill at the top of the event's sheet. The rule and the read are [`activity.md` § Now](../../behavior/activity.md#now); the phone draws the same card at the top of Chat home and Activity.
 
-- **The page is the member's week, then what is left to do** ([#4766](https://github.com/pdcarlson/Frapp/issues/4766);
-  Paul, 2026-11-13, on the summary's count tiles at a real chapter's scale: "too many little cards that tell me no information", "a completely paradigm-shifted way of displaying this", "maybe a percentage or like a dial").
-  It is the phone's Activity tab on web, from the same model in `@repo/hooks` (`activityWeekSummary`, `activityAgenda`, `activityReview`, `activityGroups`, `activityStandingGauges`), so the two say the same things in the same order ([`../mobile/screens.md`](../mobile/screens.md), Activity;
+- **The page is what is left to do, then what the member has running** ([#5779](https://github.com/frapplive/Frapp/issues/5779);
+  Paul's direction A, 2026-11-20: one home per question; [`activity.md` § Cards](../../behavior/activity.md#cards) has the table of what moved where).
+  It is the phone's Activity tab on web, from the same model in `@repo/hooks` (`activityWeekSummary`, `activityAgenda`, `activityReview`, `activityGroups`), so the two say the same things in the same order ([`../mobile/screens.md`](../mobile/screens.md), Activity;
   [`principles.md`](../design-system/principles.md) P6).
-  Top to bottom: the week card, then the member's cards in their order ([`activity.md` § Cards](../../behavior/activity.md#cards)), then Edit Activity, Snoozed and Archive.
-  Each role starts from its own default order ([`activity.md` § Cards](../../behavior/activity.md#cards) names the rule; `ACTIVITY_DEFAULT_CARD_ORDER` holds it).
-  The Frapp card and the Calendar row hold their places in the order and draw nothing on web yet (#5520 step 5); Edit Activity marks them "On your phone".
-  Until 2026-11-18 the order was fixed: the week card, Last week, This semester, To review, To do, Reminders, Waiting on others, Links. *Changed in #5520 by `pdcarlson`, 2026-11-18.*
+  Top to bottom: Now, then the member's cards in their order (To do and Running; the Frapp card is the phone's and holds its place on web, where Edit Activity marks it "On your phone"), then Snoozed and Archive.
+  The page header holds the week ring and **Edit Activity**, a small secondary button, as the app's other pages put their actions beside the title (#5686).
+  Until #5779 the page was the week card, Last week, This semester, To review, To do, the Calendar row, Reminders, Waiting on others and Links (#4766, #5520). *Changed in #5779 by `pdcarlson`, 2026-11-20.*
   It is drawn and checked for four people ([`principles.md` § Three people](../design-system/principles.md#three-people)): a member with nothing due, an average member, a committee chair and the president.
-- **Edit Activity** (`components/activity/activity-editor.tsx`), a full-width secondary button under the cards, swaps the page for the editor as Archive does: Shown (This week first, fixed, then each card with Hide, Move up and Move down as icon buttons, To do without Hide) and Hidden (each with Show), Reset to the default once the member has saved one, and Done, which saves and goes back. `‹ Activity` is Done too. A failed save is a toast, and the page goes back to the saved arrangement.
+- **Edit Activity** (`components/activity/activity-editor.tsx`) swaps the page for the editor as Archive does: Shown (Now first, fixed, then each card with Hide, Move up and Move down as icon buttons, To do without Hide) and Hidden (each with Show), Reset to the default once the member has saved one, and Done, which saves and goes back. `‹ Activity` is Done too. A failed save is a toast, and the page goes back to the saved arrangement.
 - **It lays out by its own width, never the window's.**
-  The page is usually a pane beside chat (about 825px in a 1440px window since #5575, and as narrow as 375px when the member widens chat), and the whole window only when chat is closed, so its breakpoints are container queries on the page (`@container`): under 768px of page it is the phone's column, and from 768px the week card puts Next beside the ring and the gauges share one row.
+  The page is usually a pane beside chat (about 825px in a 1440px window since #5575, and as narrow as 375px when the member widens chat), and the whole window only when chat is closed, so its breakpoints are container queries on the page (`@container`): under 768px of page it is the phone's column, and from 768px a To do row has room for its detail on one line.
   A window breakpoint would draw the wide layout in the narrow pane.
-- **The week card** (`components/activity/week-card.tsx`).
-  One ring (`components/shared/progress-ring.tsx`, 96px with a 10px stroke;
-  [`components.md` § 12](../design-system/components.md#12-proportion-meter)), done of total this week from the read's `week` ([`activity.md` § Week](../../behavior/activity.md#week)), with the count inside it ("5" over "of 8") and a headline beside it ("3 left this week").
-  Apple Fitness's rings and Bevel's daily dial are the comparables: one figure that closes as the work is done.
-  Under the headline, a line per kind that has anything this week (Events, Tasks, "Polls and sign-ups"), each a dense meter and its count; under 384px of page the meter steps out so the label keeps its words.
-  A kind the chapter has off, or with nothing this week, has no line: "Polls 0 of 0" would be the zero tile again.
-  Then **Next**: the one thing to do next (an event open for check-in, else the first overdue task, else whatever is soonest) as a row that opens its panel, under the lines on a narrow page and beside them on a wide one; over an event open for check-in the label reads **Happening now** in the accent.
-  **Nothing due:** the ring is its groove with a quiet check, and the headline says "Nothing due this week", never "0 of 0".
-  **Everything done:** the ring and the headline take the success hue.
-  **A part couldn't load:** its line draws a dash, the headline says "At least N left this week", and a warning line names the part; a failed read is never a zero and never a finished week.
-  **An API from before `week`:** no ring; the card is only Next.
-- **A line of the week card narrows the To do list** to that kind: it is a toggle button (`aria-pressed`), drawn in the accent's text while lit.
-  Pressing it again, or the list's "Show everything", clears it; while narrowed the list says so ("Showing only tasks.", or "No events left to do."), holds nothing back, and Reminders, Waiting on others and Links step out.
-  The narrowing is never stored: the page always opens on everything, and it ends for good when its line leaves the card (its module turned off, or nothing of its kind left in the week's count, as on a new week).
+- **The week ring** (`components/activity/week-ring.tsx`, #5779; Paul's pick "Small ring beside the title", 2026-11-20), in the page header: a 22px ring (`components/shared/progress-ring.tsx`) and "4/15", done of total this week from the read's `week` ([`activity.md` § Week](../../behavior/activity.md#week)), in a bordered pill.
+  Apple Fitness keeps its rings this small in a summary, one press from the detail.
+  Pressed, it opens a popover with the headline ("3 left this week") and a line per kind that has anything this week (Events, Tasks, "Polls and sign-ups"), each a dense meter and its count. A kind the chapter has off, or with nothing this week, has no line.
+  **Nothing due:** the ring is its groove and reads "0", and the popover says "Nothing due this week", never "0 of 0".
+  **Everything done:** the ring takes the success hue.
+  **A part couldn't load:** the pill reads "–" when nothing else counted, its line draws a dash, the headline says "At least N left this week", and a warning line names the part; a failed read is never a zero and never a finished week.
+  **An API from before `week`:** no ring.
+  Until #5779 this was the week card: a 96px ring, the lines beside it, and **Next**, the one thing to do next.
+- **A line of the ring narrows the To do list** to that kind: it is a toggle button (`aria-pressed`) that closes the popover, and the pill's count takes the accent's text while the list is narrowed.
+  Pressing it again, or the list's "Show everything", clears it; while narrowed the list says so ("Showing only tasks.", or "No events left to do."), holds nothing back, and Running steps out.
+  The narrowing is never stored: the page always opens on everything, and it ends for good when its line leaves (its module turned off, or nothing of its kind left in the week's count, as on a new week).
   Finishing the last item does not end it: the line stays, at "3 of 3", and the list says "No tasks left to do."
   A list that is empty because its read failed never says that; it says "Showing only tasks." over the line that names what couldn't load.
   This replaces the filter chips and the chip remembered per browser (#4402): Changed in #4766 by `pdcarlson`, 2026-11-13.
-- **"Last week" sits under the week card on Sunday to Tuesday** (`components/activity/recap-card.tsx`, [#4983](https://github.com/pdcarlson/Frapp/issues/4983); Shawn, 2026-11-14).
-  What the member did in their last full week, from [`activity.md` § Recap](../../behavior/activity.md#recap): the eyebrow "Last week" with the week's days beside it ("November 8 – November 14", in the reader's locale), then one ruled card of figures in a wrapping row, each a number in the label role and its word in a muted caption ("2 events", "+30 points", "2h 30m service").
-  Slack's and Linear's weekly digests are the comparables: the week summed up once, then out of the way.
-  Only what the member did is drawn: a module that is off, a part that couldn't be read, or a zero is left out, and a week with nothing to show draws no card.
-  A close button (36px, 44px to a finger) hides it until next week's recap, remembered per browser, per chapter and week, and followed by other open tabs.
-  After Tuesday the card is not drawn, whatever the cache holds.
-- **"This semester" sits under the week card** (`components/activity/semester-strip.tsx`; Evan, 2026-11-12, in the team's Development channel: a dashboard of "outstanding tasks, deadlines, commitments, and upcoming things with progress bars and stuff").
-  Up to four gauges in one ruled card, one per number the member is held to: Points, Required events, Service hours and Study hours (this week), two across on a narrow page (an odd one out takes the full row) and one row on a wide one.
-  The read and what each number counts are [`activity.md` § Standing](../../behavior/activity.md#standing).
-  A gauge links to the page that owns its number (Points, Events, Service hours, Study hours), and a screen reader hears it as one sentence.
-  A gauge draws a 36px ring only when its number has a target: Required events always, and Points, Service hours and Study hours when the chapter sets the member a goal ("42 of 60", [`activity.md` § Goals](../../behavior/activity.md#goals), #1062), closed and in the success hue once met;
-  without one the number stands alone, since a ring with an invented end would read as a rule.
-  A number that is zero with nothing to aim at is left out, and with none left the strip isn't drawn ([#4679](https://github.com/pdcarlson/Frapp/issues/4679)).
-  A module the chapter has off draws no gauge; a part that couldn't be read draws a dash and "Couldn't load", never 0; a failed read of the whole thing draws nothing and leaves the page as it was.
-  Until #4766 this was four tiles with meters above the summary; modeled on GreekTrack's and OmegaFi's member requirement bars and Canvas's dashboard, which sits a grades summary beside its To Do list.
-- **To review** (`components/activity/review-card.tsx`): what waits on an officer's sign-off, finished tasks to confirm (longest waiting first) then service hours to approve, as one card with one count, as Google Classroom gives a teacher one "To review" apart from their own work.
+- **Last week and This semester are on the profile** (`components/activity/standing-cards.tsx` in `components/profile/profile-panel.tsx`, beside Points, since #5779), drawn as they were on Activity:
+  **"Last week"** (`components/activity/recap-card.tsx`, [#4983](https://github.com/pdcarlson/Frapp/issues/4983); Shawn, 2026-11-14) on Sunday to Tuesday, what the member did in their last full week, from [`activity.md` § Recap](../../behavior/activity.md#recap): the eyebrow "Last week" with the week's days beside it, then one ruled card of figures ("2 events", "+30 points", "2h 30m service"), only what the member did, with a close button that hides it until next week's recap, remembered per browser, per chapter and week.
+  **"This semester"** (`components/activity/semester-strip.tsx`; Evan, 2026-11-12): up to four gauges in one ruled card, Points, Required events, Service hours and Study hours (this week), each linking to the page that owns its number, with a 36px ring only toward a target ([`activity.md` § Standing](../../behavior/activity.md#standing), [§ Goals](../../behavior/activity.md#goals)); a zero with nothing to aim at is left out, a module that is off draws no gauge, and a part that couldn't be read draws a dash.
+  On the profile it leaves out Points, and Service hours while the profile's stats are shown, because the cards above it already say them (`omit` on `activityStandingGauges`, #5779), so the screen never says a number twice.
+- **Running** (#5779): what the member has going, where To review and Waiting on others were, under one heading with one count. Linear's My issues splits Assigned from Created the same way.
+  It leads with **"N to approve"** (`components/activity/review-card.tsx`): what waits on an officer's sign-off, finished tasks to confirm (longest waiting first) then service hours to approve, as one card whose title is the count ("3 to approve", "5+ to approve" past the read's cap), as Google Classroom gives a teacher one "To review" apart from their own work.
   It is drawn only when something waits or a part behind it failed to load, so a member, and an officer with an empty queue, sees no card and no zero.
   The week ring never counts it: reviewing is the officer's queue, not their week.
-  A queue of three or fewer is drawn open, so a chair's two confirmations are still one press each; a longer one waits behind its count ("14", "10 tasks · 4 hours entries") and opens in place on a press, five rows then "Show all N".
-  Open or closed is decided once, when the card first has rows, and after that only a press changes it: a queue that grows past three while the officer works through it does not close under them, and a long one does not open itself as it shrinks.
-  The count is the one accent badge on the page: a count, never a status.
+  A queue of three or fewer is drawn open, so a chair's two confirmations are still one press each; a longer one waits behind its title ("14 to approve", "10 tasks · 4 hours entries") and opens in place on a press, five rows then "Show all N".
+  Open or closed is decided once, when the card first has rows, and after that only a press changes it.
+  Then what the member made, by kind (described under **What the member made** below). Running shows for anyone with something in it, not only officers, and steps out while To do is narrowed.
 - **To do** is the member's own events, open tasks, and unanswered polls, sign-ups and forms, **by day**, as Things' Today and Todoist's Upcoming list them and as the Events page does: Overdue (in the warning hue, never cut), then what is open for check-in now, Today, Tomorrow, each weekday of the coming week, Later, and No deadline.
   A day draws three rows, then "Show N more", so the president's Saturday doesn't bury Sunday.
   Under a day a row says only its time; under Later it keeps its date.
   A task says its state only when that is news (overdue, or sent back for changes): "To do" on every row of a list named To do is noise (P3), and a row under Overdue doesn't repeat the heading as a chip.
   An event the member has checked in to leaves the list.
-  The row on the week card is not repeated here, and when it was the only one the section is not drawn.
+  Due and waiting reminders are rows on their days (#5779), below.
+  Its header holds **Calendar ›**, a link to `/events`, the chapter's whole month, where the Calendar row was (#5310).
   With nothing at all it says "Nothing to do right now."
 - **Reminders** ([#4957](https://github.com/pdcarlson/Frapp/issues/4957), Shawn, 2026-11-13;
-  what is listed is [`activity.md` § Reminders](../../behavior/activity.md#reminders)): the reminders the member set on chat messages, as Slack's Later tab holds them, a due one first with a `Due` badge in the warning tone.
+  what is listed is [`activity.md` § Reminders](../../behavior/activity.md#reminders)): the reminders the member set on chat messages, as Slack's Later tab holds them, rows in To do on the day each is for (#5779; they were their own card), a due one with a `Due` badge in the warning tone.
   A row leads with the reminder glyph (the nav set's `schedule` clock), titles itself with the message's words, and its detail names the author, the channel and "Remind me Tomorrow · 2:00 PM" (or "Reminded …" once due).
   It opens chat at the message.
   A check button on the row is Done, which takes the row off at once and says `Marked done`; its `⋯` (or right-click) menu holds Snooze, the message menu's five presets (`Snoozed`, "I'll remind you tomorrow at 9:00 AM."), and Open in chat.
   A row whose channel the member lost doesn't open and offers only Done.
-- **Waiting on others, then Links.**
-  Waiting on others is what the member made, by kind (Polls you posted, Events you made, Tasks you assigned), three of each then **Show all N**, so 17 assigned tasks don't bury the rest; it was "Made by you" until #4766, renamed for what the member wants from it.
+- **What the member made**, under Running (#5779; it was "Waiting on others" from #4766 and "Made by you" before), by kind (Tasks you assigned, Events you made, Polls you posted), three of each then **Show all N**, so 17 assigned tasks don't bury the rest.
   Files you uploaded was a fourth kind until [#4291](https://github.com/pdcarlson/Frapp/issues/4291) (Shawn, 2026-11-11), since a member's uploads are already in Documents and Backwork.
   **Polls you posted lists open polls only** ([#4258](https://github.com/pdcarlson/Frapp/issues/4258), Shawn, 2026-11-11): a poll closed by hand or past its closing time leaves the list, the moment its time runs out if the page is open, for an **Archived polls (N)** text button at the foot of the group, which opens the closed ones newest closed first, each opening its card with the final result.
   (Changed in [#5127](https://github.com/frapplive/Frapp/issues/5127) by shawnatomklein-eng, 2026-11-15: Archived polls is gone; a closed poll is in the Archive below with everything else that is over.)
-  Tasks you assigned likewise leaves out a confirmed task.
+  Tasks you assigned likewise leaves out a confirmed task, and one the member gave themselves while To do lists it, since that row already says it (#5779; the phone does the same).
   **A task for everyone is one row** ([#5538](https://github.com/frapplive/Frapp/issues/5538), 2026-11-18, as the phone has drawn it since #5492): its title, who it went to and when it is due ("Everyone · Due Fri", `taskGroupLabel`), a stack of up to three faces of whom it went to with "+N" for the rest, then the progress bar and "12 of 30" (read "12 of 30 done"), and **Overdue** when any copy is.
   It is a link to the Tasks board with the group open in its task panel (`/tasks?group=<id>`, [`tasks.md` § Tasks for everyone](../../behavior/tasks.md#tasks-for-everyone)), never Activity's panel, which draws one task as chat's card and would show one member's copy as if it were the group; a one-person task still opens Activity's panel.
   A review link (`/activity?review=<id>`) opens what waits on the officer's review in Activity's panel; one for a copy of a task for everyone that no longer waits there, or any task the read no longer holds, opens on the board (`/tasks?task=<id>`), the copy's group in the task panel.
@@ -535,18 +521,18 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
 - **Gone from the page** (Changed in #4766 by `pdcarlson`, 2026-11-13): the "N things need you" headline and its count tiles ([#4173](https://github.com/pdcarlson/Frapp/issues/4173), Shawn, 2026-11-11, after Apple Reminders' count tiles), the filter chips, the Needs you chip and the chip remembered per browser ([#4402](https://github.com/pdcarlson/Frapp/issues/4402), Shawn, 2026-11-12), the Now and Later split (#4173), and the Coming up group, whose events are now on their days in To do.
   "Needs you" as a name went with them (Paul: not a fan of it).
 - **A row is one hit target:** a lead, a title, one line of detail (who and when), and a badge naming what it asks or where it stands.
-  The lead is the kind's glyph from the shared nav set in a neutral 40px tile (a task the Tasks shape, hours the Service shape), as Teams' Activity marks each row, or for an event a calendar-style block with its month and day (#4173), wherever the row stands apart from a day: on the week card, under Now and Later, and under Events you made.
+  The lead is the kind's glyph from the shared nav set in a neutral 40px tile (a task the Tasks shape, hours the Service shape), as Teams' Activity marks each row, or for an event a calendar-style block with its month and day (#4173), wherever the row stands apart from a day: under Events you made, in Running.
   An event under a day's heading in To do leads with the events glyph and says only its time, the heading having said the day (#4766, as on the phone).
   The block is decoration: where it is drawn the detail line still says the day in words ("Tomorrow · 7:00 PM"), which is what a screen reader reads, and the year outside the current one.
   The glyphs stay neutral: on this page colour is for asks and status, never for a kind.
   **A row from someone leads with their face** ([#4463](https://github.com/pdcarlson/Frapp/issues/4463), Shawn, 2026-11-12): the poster of a poll or sign-up link, whoever assigned the member a task, and the member whose completion or hours wait on their confirm or approval, drawn as chat draws an author (their photo, else initials on their tint, from the roster chat reads, so the Activity read is unchanged), with the kind's glyph small on the face's lower corner, as Microsoft Teams' and Slack's Activity draw the actor with the kind's badge on it.
-  A row with no one else to show (an event, a task the member set themselves, every Waiting on others row) and a row from someone the roster no longer holds keep the glyph tile; a member still on the roster who never set a name shows their photo, or "?" on their tint, as chat draws them.
+  A row with no one else to show (an event, a task the member set themselves, every row under Running that the member made) and a row from someone the roster no longer holds keep the glyph tile; a member still on the roster who never set a name shows their photo, or "?" on their tint, as chat draws them.
   The face is decoration too: the detail names the person, except on a poll, whose detail is its channel, so a poll row says its poster to a screen reader ("From Olive Officer").
   **What closes within a day says so relatively and in the warning tone** (#4463): a poll closing, or a task with a due time, less than a day away reads "closes in 2 hours" or "Due in 40 minutes" (counted down, never "0 minutes"), and that phrase, the detail's last, is drawn in `--warning`, so what runs out tonight reads apart from what runs out next week.
   Further out it reads as before ("closes Tue 3:00 PM"); a task due on a bare date keeps "Due today", and an overdue task stays the red badge.
   An ask (`Vote`, `Confirm`, `Approve`, `Check in`) draws as the action it opens, in the tinted button's recipe, so it reads apart from a status (#4173; until then it was the `warning` badge, which looked like `To do` beside it).
   **`Confirm`, `Approve` and `Check in` are buttons on the row** ([#4426](https://github.com/pdcarlson/Frapp/issues/4426), Shawn, 2026-11-12;
-  Check in [#4427](https://github.com/pdcarlson/Frapp/issues/4427), 2026-11-13), drawn where the ask was, as GitHub's notifications and Slack's Activity put quick actions on the row: one press does what the panel's own control does (`useConfirmTask` with the task card's words, the Service hours review's Approve, the event card's `useSelfCheckIn` with its toasts), records the item as read, and re-reads the page, and the row leaves the To review card.
+  Check in [#4427](https://github.com/pdcarlson/Frapp/issues/4427), 2026-11-13), drawn where the ask was, as GitHub's notifications and Slack's Activity put quick actions on the row: one press does what the panel's own control does (`useConfirmTask` with the task card's words, the Service hours review's Approve, the event card's `useSelfCheckIn` with its toasts), records the item as read, and re-reads the page, and the row leaves the to-approve card.
   The button stays disabled once its write lands, so a second press can't repeat it, and focus then moves to the next row.
   The rest of the row still opens the panel, where Reject, a send-back and the record's detail stay.
   `Vote` stays the row's ask and opens the panel, since a poll asks which option.
@@ -559,7 +545,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   what counts as unread is [`activity.md` § Unread](../../behavior/activity.md#unread)): the neutral `--foreground` dot every unread mark uses, in a slot of its own before the lead, as the notification drawer's rows and Linear's and GitHub's inboxes draw theirs.
   The slot stays when the row is read, so rows don't shift as dots clear, and a screen reader hears "Unread:" before the title.
   Opening the row (its panel, or a link's own page) clears it at once; scrolling past does not.
-  Waiting on others never has one.
+  What the member made never has one.
 - **A row opens the record in a panel, drawn with chat's own card** (`components/chat/renderers/`), docked in place of the page beside chat with a Back to activity arrow ([`components.md` § Surface size](../design-system/components.md#surface-size), 2026-11-12), so the member votes, starts or finishes a task, confirms it, or checks in with the controls chat already taught them.
   The cards are not forked: the page hands each one a message built from the row (`@repo/chat-core/activity-cards`), and the card reads the record's live state as it does in chat.
   Things sit around a card where the card doesn't carry them: a poll has **Open in chat**, a link to its message;
@@ -574,24 +560,23 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   The row leads with the poster's face, is titled by the card's title, and its detail says what it is and where ("Sign-up · 4 slots · #rush · closes Fri 5:00 PM", "Headcount", "Form · 6 questions"); its ask is `Sign up`, `Answer` or `Fill out`.
   It opens no panel: the row is a link to the card's message in chat, where the slots are claimed or the form opened, as a sign-up link row goes to its link.
   Answering it there takes it off the list at the next read.
-  It shares the week card's "Polls and sign-ups" line with polls.
+  It shares the week ring's "Polls and sign-ups" line with polls.
 - **The list is re-read every time the page opens or the window regains focus**, and after each action.
   The records it gathers are changed from other surfaces (a vote in chat, a task finished on the board), so it never trusts a cached copy.
   A re-read that fails keeps the list already on screen.
 - **Snooze** ([#4982](https://github.com/pdcarlson/Frapp/issues/4982), Shawn, 2026-11-14;
-  the rule is [`activity.md` § Snooze](../../behavior/activity.md#snooze)): every row on To do, To review and Links has a `⋯` menu (shown on hover or focus, and a right-click), led by **Snooze until** with Gmail's fixed times: Later today (6 PM, while that is more than an hour off), Tomorrow and This weekend (8 AM;
+  the rule is [`activity.md` § Snooze](../../behavior/activity.md#snooze)): every row on To do and Running's "to approve" card has a `⋯` menu (shown on hover or focus, and a right-click), led by **Snooze until** with Gmail's fixed times: Later today (6 PM, while that is more than an hour off), Tomorrow and This weekend (8 AM;
   the weekend Monday to Thursday) and Next week (Monday 8 AM).
-  A link's menu carries them above Hide.
   The row leaves at once and toasts "Snoozed until Tomorrow · 8:00 AM" with **Undo**.
   Snoozed rows wait behind a **Snoozed (N)** text button at the foot of the page, soonest back first, each reading "Back Tomorrow · 8:00 AM" in place of its detail and still opening its record; its menu holds **Unsnooze**.
   A snoozed row comes back on the page's own clock, and the page reads Activity again then, so its dot and the badge return with it.
   Gmail's Snoozed folder and Slack's Later are the models.
-- **Links: sign-up links posted in chat** (forms, sheets, booking pages; which ones and who sees them: [`activity.md` § Links](../../behavior/activity.md#links)).
+- **Links: sign-up links posted in chat** (forms, sheets, booking pages; which ones and who sees them: [`activity.md` § Links](../../behavior/activity.md#links)), in the channel's own menu since #5779 (`components/chat/channel-links-panel.tsx`): a **Links** view beside Pinned and Saved, with its count, listing that channel's links still open to the member (not their own, and not ones they marked Done or hid, as Activity listed them), or "Nothing to sign up for in this channel.", as Discord keeps a channel's links. Opening one clears its dot.
   A row is the link itself: the page's name when the API read one, else its kind ("Google Form", "Calendly"), then, under it, the kind when the name is the title (#4187), who posted it, where and when; it opens the link in a new tab and draws no badge.
   **Done** (a check) sits on the row, as GitHub's notifications and Slack's Later put theirs, since marking one done is what a member does after filling it in.
   The row's `⋯` menu (or a right-click off the link) holds **Hide: not chapter business**, **Open in chat** (the message it was posted in; a thread reply goes to its thread's first message, since the web has no link that opens a thread), and, for a `channels:manage` holder, **Remove for everyone**.
   Each of Done, Hide and Remove takes the row away at once and toasts with **Undo**.
-  Links are their own group, not To do, and not in the nav count.
+  Links are not on Activity and not in the nav count.
 - **Leave out of Activity** is a switch in the channel editor (Settings → Chat, `/settings?tab=chat&channel=<id>`, `channels:manage`), for a channel like #advertising whose links aren't chapter business.
   Direct messages are not listed there, so they never show it.
   The phone has no channel editor, so the switch is web-only.

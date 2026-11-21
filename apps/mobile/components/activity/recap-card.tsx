@@ -17,9 +17,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * The recaps this phone dismissed, by chapter and week
  * (`recapDismissalKey`), space-separated; "" for none. A few keys, so next
- * week's recap, and another chapter's, still show. The Activity screen
- * hydrates it when it mounts, so a dismissed card isn't drawn for a frame
- * while the stored read is still on its way.
+ * week's recap, and another chapter's, still show. `StandingCards` (the You
+ * tab's) hydrates it when it mounts, so a dismissed card isn't drawn for a
+ * frame while the stored read is still on its way.
  */
 export const recapDismissal = createStoredPreference<string>({
   key: "frapp.activity-recap-dismissed",
@@ -28,13 +28,14 @@ export const recapDismissal = createStoredPreference<string>({
 });
 
 /**
- * Last week, under the week card on Activity on Sunday to Tuesday (#4983): what the
- * member did in their last finished week, as Slack's and Linear's weekly
- * digests sum one up, from `GET /v1/activity/recap`. The web page's card
- * (`apps/web/components/activity/recap-card.tsx`) on the phone, from the
- * same model (`activityRecapCard`). The week card says this week in
- * progress; this says the week that just closed, once: dismissed, it stays
- * gone until next week's.
+ * Last week, on the You tab on Sunday to Tuesday (#4983; Activity drew it
+ * until #5779 moved it beside the member's points, `StandingCards`): what
+ * the member did in their last finished week, as Slack's and Linear's weekly
+ * digests sum one up, from `GET /v1/activity/recap`. Web's card
+ * (`apps/web/components/activity/recap-card.tsx`, on the profile) on the
+ * phone, from the same model (`activityRecapCard`). Activity's week ring
+ * says this week in progress; this says the week that just closed, once:
+ * dismissed, it stays gone until next week's.
  *
  * Only what the member did is drawn: a module that is off, a part that
  * couldn't be read and a zero are left out, a week with nothing to show

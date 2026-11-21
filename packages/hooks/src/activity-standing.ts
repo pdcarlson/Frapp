@@ -8,7 +8,8 @@ import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export type ActivityStanding = components["schemas"]["ActivityStandingDto"];
-type ActivityStandingSection = ActivityStanding["unavailable"][number];
+/** One part of the standing: `points`, `required_events`, `service` or `study`. */
+export type ActivityStandingSection = ActivityStanding["unavailable"][number];
 
 /** Chapter-scoped keys; the read is `activityStandingKeys.chapter(chapterId)`. */
 export const activityStandingKeys = createChapterQueryKeys("activity-standing");
@@ -199,15 +200,21 @@ export function activityStandingRows(
 }
 
 /**
- * The standing as gauges, for the strip under the week card (#4766): the
- * rows, less the ones with nothing yet and nothing to aim at. A part that
- * couldn't be read stays, so a failed read never looks like nothing. Empty
- * when no gauge is left, and the strip is not drawn at all.
+ * The standing as gauges, for the This semester strip (#4766; on You and
+ * web's profile since #5779): the rows, less the ones with nothing yet and
+ * nothing to aim at, and less any in `omit`, a number the screen already
+ * shows elsewhere (You's points in its title row and its Study and Service
+ * rows), so no screen says it twice. A part that couldn't be read stays, so
+ * a failed read never looks like nothing. Empty when no gauge is left, and
+ * the strip is not drawn at all.
  */
 export function activityStandingGauges(
   standing: ActivityStanding,
+  omit: readonly StandingRow["id"][] = [],
 ): StandingRow[] {
-  return activityStandingRows(standing).filter((row) => !row.empty);
+  return activityStandingRows(standing).filter(
+    (row) => !row.empty && !omit.includes(row.id),
+  );
 }
 
 /** How far `done` is toward `goal`, 0 to 1, or `null` when there is no goal. */

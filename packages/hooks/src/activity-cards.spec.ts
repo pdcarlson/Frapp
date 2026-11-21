@@ -35,11 +35,15 @@ describe("the role defaults", () => {
       expect([...order].sort()).toEqual([...ACTIVITY_CARD_KEYS].sort());
     }
   });
-  it("put an officer's queue before their own work, and a member's work first", () => {
-    const officer = ACTIVITY_DEFAULT_CARD_ORDER.officer;
-    expect(officer.indexOf("review")).toBeLessThan(officer.indexOf("todo"));
-    const member = ACTIVITY_DEFAULT_CARD_ORDER.member;
-    expect(member.indexOf("todo")).toBeLessThan(member.indexOf("review"));
+  it("start both roles the same: the Frapp card, To do, then Running (#5779)", () => {
+    expect(ACTIVITY_DEFAULT_CARD_ORDER.officer).toEqual([
+      "nudge",
+      "todo",
+      "running",
+    ]);
+    expect(ACTIVITY_DEFAULT_CARD_ORDER.member).toEqual(
+      ACTIVITY_DEFAULT_CARD_ORDER.officer,
+    );
   });
 });
 
@@ -60,12 +64,12 @@ describe("arrangeActivityCards", () => {
   it("keeps the member's order and hidden cards", () => {
     const all = [...ACTIVITY_DEFAULT_CARD_ORDER.member].reverse();
     const layout = saved(
-      all.filter((k) => k !== "links"),
-      ["links"],
+      all.filter((k) => k !== "running"),
+      ["running"],
     );
     expect(arrangeActivityCards(layout, "member")).toEqual({
-      shown: all.filter((k) => k !== "links"),
-      hidden: ["links"],
+      shown: all.filter((k) => k !== "running"),
+      hidden: ["running"],
     });
   });
 
@@ -79,35 +83,26 @@ describe("arrangeActivityCards", () => {
   });
 
   it("puts a card never placed after the card before it in the default", () => {
-    // Saved before `waiting` existed, with `semester` moved first.
-    const layout = saved([
-      "semester",
-      "nudge",
-      "recap",
-      "review",
-      "todo",
-      "calendar",
-      "reminders",
-      "links",
-    ]);
+    // Saved before `running` existed, with To do moved first.
+    const layout = saved(["todo", "nudge"]);
     const { shown } = arrangeActivityCards(layout, "officer");
-    expect(shown.indexOf("waiting")).toBe(shown.indexOf("calendar") + 1);
-    expect(shown[0]).toBe("semester");
+    expect(shown.indexOf("running")).toBe(shown.indexOf("todo") + 1);
+    expect(shown).toEqual(["todo", "running", "nudge"]);
+  });
+
+  it("drops the cards #5779 took off the page from a saved arrangement", () => {
+    const layout = saved(
+      ["review", "todo", "links", "nudge", "running"],
+      ["calendar", "semester"],
+    );
+    expect(arrangeActivityCards(layout, "officer")).toEqual({
+      shown: ["todo", "nudge", "running"],
+      hidden: [],
+    });
   });
 
   it("puts a never-placed card first when nothing before it is shown", () => {
-    const layout = saved(
-      ["todo"],
-      [
-        "recap",
-        "review",
-        "calendar",
-        "waiting",
-        "semester",
-        "reminders",
-        "links",
-      ],
-    );
+    const layout = saved(["todo"], ["running", "review", "links"]);
     expect(arrangeActivityCards(layout, "officer").shown).toEqual([
       "nudge",
       "todo",
@@ -115,10 +110,10 @@ describe("arrangeActivityCards", () => {
   });
 
   it("never shows a card the member hid, even if a client also listed it", () => {
-    const layout = saved(["todo", "links"], ["links"]);
+    const layout = saved(["todo", "running"], ["running"]);
     const arranged = arrangeActivityCards(layout, "member");
-    expect(arranged.shown).not.toContain("links");
-    expect(arranged.hidden).toEqual(["links"]);
+    expect(arranged.shown).not.toContain("running");
+    expect(arranged.hidden).toEqual(["running"]);
   });
 });
 
@@ -140,16 +135,16 @@ describe("editing", () => {
 
   it("moves a card one place, and not off either end", () => {
     const down = moveActivityCard(start, "nudge", 1);
-    expect(down.shown.slice(0, 2)).toEqual(["recap", "nudge"]);
+    expect(down.shown.slice(0, 2)).toEqual(["todo", "nudge"]);
     expect(moveActivityCard(start, "nudge", -1)).toBe(start);
-    expect(moveActivityCard(start, "links", 1)).toBe(start);
+    expect(moveActivityCard(start, "running", 1)).toBe(start);
   });
 
   it("hides and brings back a card where the default puts it", () => {
-    const hidden = hideActivityCard(start, "review");
-    expect(hidden.shown).not.toContain("review");
-    expect(hidden.hidden).toEqual(["review"]);
-    const back = showActivityCard(hidden, "review", "officer");
+    const hidden = hideActivityCard(start, "running");
+    expect(hidden.shown).not.toContain("running");
+    expect(hidden.hidden).toEqual(["running"]);
+    const back = showActivityCard(hidden, "running", "officer");
     expect(back).toEqual(start);
   });
 
@@ -163,11 +158,11 @@ describe("editing", () => {
 
   it("carries a newer client's cards through a save", () => {
     const stored = saved(
-      ["future-a", "todo", "future-b", "future-c", "links"],
+      ["future-a", "todo", "future-b", "future-c", "running"],
       ["future-hidden", "recap"],
     );
     const arranged = arrangeActivityCards(stored, "member");
-    const moved = moveActivityCard(arranged, "links", -1);
+    const moved = moveActivityCard(arranged, "running", -1);
     const body = activityLayoutBody(moved, stored);
     expect(body.card_order.indexOf("future-a")).toBe(0);
     // Still right after To do, and in the order they were stored.
@@ -176,7 +171,25 @@ describe("editing", () => {
       "future-b",
       "future-c",
     ]);
-    expect(body.hidden_cards).toEqual(["recap", "future-hidden"]);
+    // `recap` is a card #5779 took off the page: an older client still knows
+    // it, so it stays hidden there.
+    expect(body.hidden_cards).toEqual(["future-hidden", "recap"]);
+  });
+
+  it("carries the cards #5779 took off the page through a save", () => {
+    const stored = saved(["review", "todo", "links", "nudge"], ["calendar"]);
+    const body = activityLayoutBody(
+      arrangeActivityCards(stored, "member"),
+      stored,
+    );
+    expect(body.card_order).toEqual([
+      "review",
+      "todo",
+      "links",
+      "running",
+      "nudge",
+    ]);
+    expect(body.hidden_cards).toEqual(["calendar"]);
   });
 
   it("keeps nothing extra when nothing was saved", () => {
@@ -188,9 +201,11 @@ describe("editing", () => {
   });
 
   it("writes the body the API takes", () => {
-    expect(activityLayoutBody({ shown: ["todo"], hidden: ["links"] })).toEqual({
+    expect(
+      activityLayoutBody({ shown: ["todo"], hidden: ["running"] }),
+    ).toEqual({
       card_order: ["todo"],
-      hidden_cards: ["links"],
+      hidden_cards: ["running"],
     });
   });
 });

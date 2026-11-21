@@ -4,20 +4,16 @@ import {
   SkeletonSectionLabel,
 } from "@/components/shared/page-skeletons";
 import { denseListClassName } from "@/components/shared/table-controls";
-import { SemesterStripSkeleton } from "./semester-strip";
-import { WeekCardSkeleton } from "./week-card";
 
 /**
- * `/activity` while it loads, in the loaded page's own frames (#4766): the
- * week card, This semester's gauges, then To do as a label over two-line
- * rows with a badge at the end.
+ * `/activity` while it loads, in the loaded page's own frames (#4766, #5779):
+ * To do as a label over two-line rows with a badge at the end. The week ring
+ * in the header fills in with the read.
  */
 export function ActivityPageSkeleton() {
   return (
     <PageSkeleton label="Loading your activity" className="@container">
       <div className="space-y-8">
-        <WeekCardSkeleton />
-        <SemesterStripSkeleton />
         <section className="space-y-3">
           <SkeletonSectionLabel width="w-16" count />
           <ul className={denseListClassName}>

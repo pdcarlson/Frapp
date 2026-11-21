@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
-import { activityGroups } from "@repo/hooks/activity-rows";
+import { activityToDos } from "@repo/hooks/activity-rows";
 import {
   MESSAGE_REMINDER_PRESETS,
   messageReminderPresetTime,
@@ -47,7 +47,8 @@ function rowFor(overrides: Record<string, unknown> = {}): ReminderRow {
     due: false,
     ...overrides,
   };
-  const groups = activityGroups(
+  // Reminders are rows in To do by day since #5779.
+  const toDos = activityToDos(
     {
       needs_you: {
         tasks: [],
@@ -61,11 +62,11 @@ function rowFor(overrides: Record<string, unknown> = {}): ReminderRow {
       needs_you_count: 0,
       unavailable: [],
       reminders: [reminder],
-    } as unknown as Parameters<typeof activityGroups>[0],
+    } as unknown as Parameters<typeof activityToDos>[0],
     new Date("2026-11-14T15:00:00.000Z"),
   );
-  return groups.find((group) => group.id === "reminders")!
-    .rows[0] as ReminderRow;
+  return toDos.find((toDo) => toDo.dated.kind === "reminder")!
+    .dated as ReminderRow;
 }
 
 /** The row as the page draws it: the page owns the writes. */

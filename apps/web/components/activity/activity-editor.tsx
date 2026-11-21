@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronUp, Minus, Plus } from "lucide-react";
 import {
   ACTIVITY_CARD_COPY,
-  ACTIVITY_WEEK_CARD_COPY,
+  ACTIVITY_NOW_CARD_COPY,
   canHideActivityCard,
   hideActivityCard,
   moveActivityCard,
@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /** Cards only the phone draws today; web keeps their place in the order. */
-const PHONE_ONLY: readonly ActivityCardKey[] = ["nudge", "calendar"];
+const PHONE_ONLY: readonly ActivityCardKey[] = ["nudge"];
 
 /**
  * Edit Activity on web (#5520): the phone's editor, in place of the page until
@@ -75,10 +75,10 @@ export function ActivityEditor({
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
           <li className="px-4 py-3">
             <p className="text-sm font-semibold">
-              {ACTIVITY_WEEK_CARD_COPY.name}
+              {ACTIVITY_NOW_CARD_COPY.name}
             </p>
             <p className="text-caption text-muted-foreground">
-              {ACTIVITY_WEEK_CARD_COPY.detail}
+              {ACTIVITY_NOW_CARD_COPY.detail}
             </p>
           </li>
           {draft.shown.map((key, index) => {

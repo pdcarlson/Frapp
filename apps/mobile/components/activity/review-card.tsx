@@ -14,7 +14,6 @@ import { DisclosureGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
 import { PressableRow } from "@/components/list-section";
 import { NavGlyph } from "@/components/nav-glyph";
-import { AccentChip } from "@/components/status-chip";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -24,10 +23,11 @@ import {
 } from "./activity-row-action";
 
 /**
- * "To review" on the phone's Activity (#4766): what waits on an officer's
- * sign-off (finished tasks to confirm, service hours to approve) as one card
- * with one count, where two count tiles and a run of rows mixed into the
- * member's own list were. Google Classroom gives a teacher one "To review"
+ * "3 to approve", the card that leads Running on the phone's Activity (#5779;
+ * the To review card from #4766): what waits on an officer's sign-off
+ * (finished tasks to confirm, service hours to approve) as one card with one
+ * count, where two count tiles and a run of rows mixed into the member's own
+ * list were. Google Classroom gives a teacher one "To review"
  * apart from their own to-dos; so does this. The week ring never counts
  * these: reviewing is the officer's queue, not their week.
  *
@@ -79,7 +79,7 @@ export function ReviewCard({
     <View style={styles.card} testID="activity-review-card">
       <PressableRow
         accessibilityRole="button"
-        accessibilityLabel={`To review, ${review.count}`}
+        accessibilityLabel={review.label}
         accessibilityHint={review.detail || undefined}
         accessibilityState={{ expanded: open }}
         disabled={review.rows.length === 0}
@@ -96,7 +96,7 @@ export function ReviewCard({
           />
         </LeadTile>
         <View style={styles.text}>
-          <Text style={styles.title}>To review</Text>
+          <Text style={styles.title}>{review.label}</Text>
           {review.detail ? (
             <Text numberOfLines={2} style={styles.detail}>
               {review.detail}
@@ -104,13 +104,10 @@ export function ReviewCard({
           ) : null}
         </View>
         {review.rows.length > 0 ? (
-          <>
-            <AccentChip label={review.count} />
-            <DisclosureGlyph
-              color={tokens.color.text.mutedForeground}
-              direction={open ? "down" : "right"}
-            />
-          </>
+          <DisclosureGlyph
+            color={tokens.color.text.mutedForeground}
+            direction={open ? "down" : "right"}
+          />
         ) : null}
       </PressableRow>
       {failed ? <Text style={styles.warning}>{failed}</Text> : null}

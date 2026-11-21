@@ -19,6 +19,8 @@ import {
   MuteGlyph,
   PinGlyph,
 } from "./chat-glyphs";
+import { LinkGlyph } from "@/components/profile/profile-glyphs";
+import { ChannelLinksPanel, useChannelLinkCount } from "./channel-links-panel";
 import { ChatGlyph, SearchGlyph } from "@/components/layout/nav-glyphs";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
@@ -62,8 +64,8 @@ import {
 } from "@repo/hooks";
 
 /**
- * The channel header's one overflow control: Search, Pinned, Saved and
- * Notifications behind a single `⋯`.
+ * The channel header's one overflow control: Search, Pinned, Saved, Links
+ * (the channel's sign-up links, #5779) and Notifications behind a single `⋯`.
  *
  * The board merges them (`1t`: "Channel header: Search, Pins, Bookmarks,
  * Notification level buttons → one ⋯ menu merged") and the geometry forces it
@@ -110,6 +112,7 @@ type View =
   | "search"
   | "pins"
   | "saved"
+  | "links"
   | "notifications"
   | "display"
   | "hide"
@@ -216,6 +219,7 @@ const VIEW_TITLES: Record<Exclude<View, "menu">, string> = {
   search: "Search messages",
   pins: "Pinned",
   saved: "Saved",
+  links: "Links",
   notifications: "Notifications",
   display: "Display",
   hide: HIDE_CONVERSATION_LABEL,
@@ -284,6 +288,7 @@ export function ChannelMenu({
     target?.focus();
   }, [view, open]);
 
+  const linkCount = useChannelLinkCount(activeChannelId);
   const rows: MenuRow[] = [
     { view: "search", label: "Search messages", Glyph: SearchGlyph },
     {
@@ -302,6 +307,18 @@ export function ChannelMenu({
       // loading state exists to avoid making.
       count: bookmarksLoading || bookmarksError ? undefined : bookmarks.length,
     },
+    // The sign-up links posted here (#5779), which Activity listed until
+    // then. Needs a channel.
+    ...(activeChannelId
+      ? [
+          {
+            view: "links" as const,
+            label: "Links",
+            Glyph: LinkGlyph,
+            count: linkCount,
+          },
+        ]
+      : []),
     {
       view: "notifications",
       label: "Notifications",
@@ -536,6 +553,9 @@ export function ChannelMenu({
                 // several bookmarks four clicks apiece.
                 onRemove={onRemoveBookmark}
               />
+            ) : null}
+            {view === "links" && activeChannelId ? (
+              <ChannelLinksPanel channelId={activeChannelId} />
             ) : null}
             {view === "hide" && hideConversation ? (
               <div className="space-y-3 px-3 py-3">

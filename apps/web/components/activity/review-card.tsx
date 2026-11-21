@@ -12,17 +12,17 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 
 /**
- * "To review" on `/activity` (#4766): what waits on an officer's sign-off
- * (finished tasks to confirm, service hours to approve) as one card with one
- * count, where two count tiles and a run of rows mixed into the member's own
- * list were. The phone's card
+ * "3 to approve", the row that leads Running on `/activity` (#5779; the To
+ * review card from #4766): what waits on an officer's sign-off (finished
+ * tasks to confirm, service hours to approve) as one row with one count,
+ * where two count tiles and a run of rows mixed into the member's own list
+ * were. The phone's card
  * (`apps/mobile/components/activity/review-card.tsx`) on web, from the same
  * model (`activityReview`). Google Classroom gives a teacher one "To review"
  * apart from their own to-dos; so does this. The week ring never counts
@@ -82,7 +82,7 @@ export function ReviewCard({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-semibold text-foreground">
-          To review
+          {review.label}
         </span>
         {review.detail ? (
           <span className="block truncate text-caption text-muted-foreground">
@@ -94,16 +94,13 @@ export function ReviewCard({
   );
   return (
     <Card data-testid="activity-review-card">
-      <section aria-labelledby="activity-review">
-        <h2 id="activity-review" className="sr-only">
-          To review
-        </h2>
+      <div>
         {hasRows ? (
           <button
             type="button"
             aria-expanded={open}
             aria-controls={open ? "activity-review-rows" : undefined}
-            aria-label={`To review, ${review.count}${
+            aria-label={`${review.label}${
               review.detail ? `: ${review.detail}` : ""
             }`}
             onClick={() => setDecided(!open)}
@@ -114,9 +111,6 @@ export function ReviewCard({
             )}
           >
             {head}
-            <Badge variant="default" className="shrink-0 tabular-nums">
-              {review.count}
-            </Badge>
             {open ? (
               <ChevronDown
                 className="h-4 w-4 shrink-0 text-muted-foreground"
@@ -157,7 +151,7 @@ export function ReviewCard({
             ) : null}
           </div>
         ) : null}
-      </section>
+      </div>
     </Card>
   );
 }

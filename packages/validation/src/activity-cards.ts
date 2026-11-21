@@ -7,21 +7,17 @@
  *
  * The API stores any well-formed key, not only the ones listed here, so a
  * client that knows a card this API was built before can still save it; each
- * client ignores a stored key it doesn't know. The week card isn't a key: it
- * is always first and can't be hidden, as Apple Fitness keeps its rings.
+ * client ignores a stored key it doesn't know, which is how the cards #5779
+ * moved off the page (`recap`, `review`, `calendar`, `reminders`, `waiting`,
+ * `links`, `semester`) drop out of a saved arrangement. The Now card isn't a
+ * key: it is always first and draws only while an event is on.
  */
 
 /** Every card a member may move or hide, in no particular order. */
 export const ACTIVITY_CARD_KEYS = [
   "nudge",
-  "recap",
-  "review",
   "todo",
-  "calendar",
-  "reminders",
-  "waiting",
-  "links",
-  "semester",
+  "running",
 ] as const;
 
 export type ActivityCardKey = (typeof ACTIVITY_CARD_KEYS)[number];

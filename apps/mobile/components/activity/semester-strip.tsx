@@ -2,6 +2,7 @@ import { StyleSheet, Text, View } from "react-native";
 import {
   activityStandingGauges,
   type ActivityStanding,
+  type ActivityStandingSection,
   type StandingRow,
 } from "@repo/hooks";
 import type { SignetTokens } from "@repo/theme/signet";
@@ -38,10 +39,11 @@ const GAUGE_SIZE = 36;
 const GAUGE_STROKE = 5;
 
 /**
- * "This semester" under the week card (#4766): the member's points, required
- * events, service hours and study time as up to four gauges in one card, two
- * across, from `GET /v1/activity/standing`, where a four-row card of bars
- * was. The ring says the week; this says the long run.
+ * "This semester" on the You tab (#4766; under Activity's week card until
+ * #5779 moved it beside the member's points, `StandingCards`): the member's
+ * points, required events, service hours and study time as up to four gauges
+ * in one card, two across, from `GET /v1/activity/standing`, where a four-row
+ * card of bars was. Activity's ring says the week; this says the long run.
  *
  * Two across, not four: at a phone's width four across cut "3h 57m of 4h"
  * short, and the app writes hours that way everywhere else. An odd gauge out
@@ -58,14 +60,17 @@ const GAUGE_STROKE = 5;
 export function SemesterStrip({
   standing,
   onOpen,
+  omit,
 }: {
   standing: ActivityStanding;
   onOpen: (destination: StandingDestination) => void;
+  /** Numbers the screen already shows elsewhere (#5779). */
+  omit?: readonly ActivityStandingSection[];
 }) {
   const { tokens } = useFrappTheme();
   const { accentPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
-  const gauges = activityStandingGauges(standing);
+  const gauges = activityStandingGauges(standing, omit);
   if (gauges.length === 0) return null;
   return (
     <View style={styles.block}>

@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import {
   ACTIVITY_CARD_COPY,
-  ACTIVITY_WEEK_CARD_COPY,
+  ACTIVITY_NOW_CARD_COPY,
   canHideActivityCard,
   hideActivityCard,
   moveActivityCard,
@@ -91,8 +91,8 @@ export function ActivityEditor({
       <View style={styles.list}>
         <View style={[styles.row, styles.noTop, styles.weekRow]}>
           <View style={styles.text}>
-            <Text style={styles.name}>{ACTIVITY_WEEK_CARD_COPY.name}</Text>
-            <Text style={styles.detail}>{ACTIVITY_WEEK_CARD_COPY.detail}</Text>
+            <Text style={styles.name}>{ACTIVITY_NOW_CARD_COPY.name}</Text>
+            <Text style={styles.detail}>{ACTIVITY_NOW_CARD_COPY.detail}</Text>
           </View>
         </View>
         {draft.shown.map((key, index) => (

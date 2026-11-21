@@ -2,30 +2,21 @@ import type { ActivityNudge, ActivityNudgeCard } from "@repo/hooks";
 import { memberNudgeAskPrompt } from "@repo/validation";
 
 /**
- * The card and tray without the week card's Next (#5464): Paul's rule is no
- * screen telling the same thing twice, and Next already holds that item with
- * its one filled button. A row's key ends in the id the card names
- * (`needs:task:<id>`, `coming:event:<id>`, `needs:card:<messageId>`), so a
- * match moves the tray's first item up into the card. Nor an event the Now
- * card above already holds (#5777), by its id in `onNowIds`.
+ * The card and tray without an event the Now card above already holds
+ * (#5777), by its id in `onNowIds`: Paul's rule is no screen telling the same
+ * thing twice, so a match moves the tray's first item up into the card. (The
+ * week card's Next it once also stepped around left with that card, #5779.)
  */
-export function withoutWeekNext(
+export function withoutNowEvents(
   data: ActivityNudgeCard | undefined,
-  nextKey: string | null,
   onNowIds: readonly string[] = [],
 ): ActivityNudgeCard | null {
   if (!data?.card) return null;
-  const isNext = (item: ActivityNudge) =>
-    nextKey !== null &&
-    item.target_id !== null &&
-    nextKey.endsWith(`:${item.target_id}`);
   const isOnNow = (item: ActivityNudge) =>
     item.target_type === "event" &&
     item.target_id !== null &&
     onNowIds.includes(item.target_id);
-  const items = [data.card, ...data.tray].filter(
-    (item) => !isNext(item) && !isOnNow(item),
-  );
+  const items = [data.card, ...data.tray].filter((item) => !isOnNow(item));
   const [card, ...tray] = items;
   return card ? { card, tray } : null;
 }

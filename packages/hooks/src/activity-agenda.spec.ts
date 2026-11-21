@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTIVITY_STRIP_DAYS,
   activityAgenda,
   activityCouldNotLoad,
   activityNarrowedNote,
   activityReview,
-  activityWeekStrip,
   activityWeekSummary,
 } from "./activity-agenda";
 import type { Activity } from "./activity-rows";
@@ -85,6 +83,22 @@ const hours = (overrides: Record<string, unknown> = {}) => ({
   service_date: "2026-11-10",
   created_at: at(-3),
   unread: false,
+  ...overrides,
+});
+const reminder = (overrides: Record<string, unknown> = {}) => ({
+  id: "rem-1",
+  message_id: "msg-1",
+  thread_root_id: null,
+  channel_id: "channel-1",
+  channel_name: "general",
+  channel_type: "PUBLIC",
+  author_name: "Alex",
+  preview: "dues are due Friday",
+  message_created_at: at(-1),
+  message_available: true,
+  remind_at: at(1, 9),
+  fired_at: null,
+  due: false,
   ...overrides,
 });
 const count = (done: number, total: number) => ({ done, total });
@@ -372,9 +386,6 @@ describe("activityAgenda (#4766)", () => {
 
   it("lists by day: Overdue, today, each day, Later, then no deadline", () => {
     const agenda = activityAgenda(busy(), "all", NOW);
-    // The first thing is on the week card, not repeated in the list.
-    expect(agenda.next).toMatchObject({ title: "Receipts" });
-    expect(agenda.nextLabel).toBe("Next");
     expect(
       agenda.days.map((day) => [
         day.label,
@@ -382,14 +393,25 @@ describe("activityAgenda (#4766)", () => {
         day.rows.map((row) => row.title),
       ]),
     ).toEqual([
+      ["Overdue", "warning", ["Receipts"]],
       ["Today", "plain", ["Agenda"]],
       ["Tomorrow", "plain", ["Cleanup", "Formal venue?"]],
       ["Sunday", "plain", ["Chapter"]],
       ["Later", "plain", ["Banquet"]],
       ["No deadline", "plain", ["Retreat plan", "Sober drivers"]],
     ]);
-    // Every row, the card's one included, for a sheet to find its key in.
+    // Every row, for a sheet to find its key in.
     expect(agenda.rows).toHaveLength(8);
+  });
+
+  it("holds nothing out of the list for a week card (#5779)", () => {
+    // Until #5779 the first thing was the week card's Next and left the list.
+    const agenda = activityAgenda(busy(), "all", NOW);
+    expect(agenda).not.toHaveProperty("next");
+    expect(agenda).not.toHaveProperty("nextLabel");
+    expect(
+      agenda.days.flatMap((day) => day.rows).map((row) => row.key),
+    ).toEqual(agenda.rows.map((row) => row.key));
   });
 
   it("says only the time under a day, and keeps the date under Later", () => {
@@ -402,17 +424,17 @@ describe("activityAgenda (#4766)", () => {
       dateBlock: null,
     });
     expect(byTitle.Banquet!.detail).toContain("December 20");
-    // The card's row stands alone, so it names its day.
-    const next = activityAgenda(
+    // `rows` stand alone, for a sheet, so each names its day.
+    const dated = activityAgenda(
       activity({ coming_up: [event({ start_time: at(1, 10) })] }),
       "all",
       NOW,
-    ).next!;
-    expect(next.detail).toBe("Tomorrow · 10:00 AM · Great Room");
-    expect(next.dateBlock).toEqual({ month: "NOV", day: "14" });
+    ).rows[0]!;
+    expect(dated.detail).toBe("Tomorrow · 10:00 AM · Great Room");
+    expect(dated.dateBlock).toEqual({ month: "NOV", day: "14" });
   });
 
-  it("leads with an event open for check-in, ahead of anything overdue", () => {
+  it("files an event open for check-in under Now, right after Overdue", () => {
     const data = busy();
     data.coming_up.unshift(
       event({
@@ -423,12 +445,7 @@ describe("activityAgenda (#4766)", () => {
       }) as never,
     );
     const agenda = activityAgenda(data, "all", NOW);
-    expect(agenda.next).toMatchObject({
-      title: "Walkthrough",
-      badge: { label: "Check in", variant: "warning" },
-    });
-    expect(agenda.nextLabel).toBe("Happening now");
-    // Overdue is then the list's first run, in the warning tone, and its row
+    // Overdue is the list's first run, in the warning tone, and its row
     // doesn't repeat the heading as a chip.
     expect(agenda.days[0]).toMatchObject({
       id: "overdue",
@@ -439,6 +456,19 @@ describe("activityAgenda (#4766)", () => {
     expect(agenda.days[0]!.rows[0]).toMatchObject({
       title: "Receipts",
       badge: null,
+    });
+    expect(agenda.days[1]).toMatchObject({
+      id: "now",
+      label: "Now",
+      tone: "accent",
+      limit: null,
+    });
+    expect(agenda.days[1]!.rows.map((row) => row.title)).toEqual([
+      "Walkthrough",
+    ]);
+    expect(agenda.days[1]!.rows[0]!.badge).toEqual({
+      label: "Check in",
+      variant: "warning",
     });
   });
 
@@ -572,8 +602,8 @@ describe("activityAgenda (#4766)", () => {
       "all",
       NOW,
     );
-    expect(agenda.next).toBeNull();
     expect(agenda.days).toEqual([]);
+    expect(agenda.rows).toEqual([]);
   });
 
   it("caps a day at three rows, and never Overdue", () => {
@@ -600,23 +630,19 @@ describe("activityAgenda (#4766)", () => {
     expect(
       agenda.days.map((day) => [day.id, day.rows.length, day.limit]),
     ).toEqual([
-      // One overdue task is on the week card.
-      ["overdue", 4, null],
+      ["overdue", 5, null],
       ["day:1", 6, 3],
     ]);
   });
 
-  it("narrows to one kind, lifts the cap, and keeps the card's next thing", () => {
+  it("narrows to one kind and lifts the cap", () => {
     const data = busy();
-    const all = activityAgenda(data, "all", NOW);
     const events = activityAgenda(data, "events", NOW);
-    expect(events.next).toEqual(all.next);
     expect(events.days.map((day) => day.rows.map((row) => row.title))).toEqual([
       ["Cleanup"],
       ["Chapter"],
     ]);
     expect(events.days.every((day) => day.limit === null)).toBe(true);
-    // Under its own kind the card's row is in the list too.
     const tasks = activityAgenda(data, "tasks", NOW);
     expect(tasks.days[0]!.rows[0]!.title).toBe("Receipts");
     const answers = activityAgenda(data, "answers", NOW);
@@ -625,21 +651,73 @@ describe("activityAgenda (#4766)", () => {
     ).toEqual(["poll", "card"]);
   });
 
+  it("lists the member's reminders by the day they come back, under all only (#5779)", () => {
+    const data = activity({
+      reminders: [
+        reminder({
+          id: "due",
+          preview: "dues are due Friday",
+          remind_at: at(0, 11),
+          fired_at: at(0, 11),
+          due: true,
+        }),
+        reminder({ id: "later", preview: "bring the banner" }),
+      ],
+      needs_you: needs({
+        tasks: [task({ id: "today", title: "Agenda", due_at: at(0, 17) })],
+      }),
+    });
+    const agenda = activityAgenda(data, "all", NOW);
+    expect(
+      agenda.days.map((day) => [
+        day.label,
+        day.rows.map((row) => [row.kind, row.title, row.badge?.label ?? null]),
+      ]),
+    ).toEqual([
+      [
+        "Today",
+        [
+          ["reminder", "dues are due Friday", "Due"],
+          ["task", "Agenda", null],
+        ],
+      ],
+      ["Tomorrow", [["reminder", "bring the banner", null]]],
+    ]);
+    expect(agenda.rows.map((row) => row.key)).toContain("reminder:due");
+    // A narrowing lists only its own kind: a reminder is no task.
+    for (const filter of ["events", "tasks", "answers"] as const) {
+      expect(
+        activityAgenda(data, filter, NOW)
+          .days.flatMap((day) => day.rows)
+          .map((row) => row.kind),
+      ).not.toContain("reminder");
+    }
+    expect(
+      activityAgenda(data, "tasks", NOW).days.map((day) =>
+        day.rows.map((row) => row.title),
+      ),
+    ).toEqual([["Agenda"]]);
+  });
+
   it("names only the failed sections behind what is shown", () => {
-    const data = activity({ unavailable: ["tasks", "links", "polls"] });
+    const data = activity({
+      unavailable: ["tasks", "links", "polls", "reminders"],
+    });
     expect(activityAgenda(data, "all", NOW).unavailable).toEqual([
       "tasks",
       "polls",
+      "reminders",
     ]);
     expect(activityAgenda(data, "events", NOW).unavailable).toEqual([]);
+    expect(activityAgenda(data, "tasks", NOW).unavailable).toEqual(["tasks"]);
     expect(activityAgenda(data, "answers", NOW).unavailable).toEqual(["polls"]);
   });
 
   it("is empty with nothing to do", () => {
-    expect(activityAgenda(activity(), "all", NOW)).toMatchObject({
-      next: null,
+    expect(activityAgenda(activity(), "all", NOW)).toEqual({
       days: [],
       rows: [],
+      unavailable: [],
     });
   });
 });
@@ -754,104 +832,5 @@ describe("activityReview (#4766)", () => {
     expect(
       activityReview(activity({ unavailable: ["tasks"] }), officer, NOW),
     ).toMatchObject({ unavailable: ["tasks"] });
-  });
-});
-
-describe("activityWeekStrip (#5310)", () => {
-  // As the screen calls it: with the week card's Next, which To do leaves out.
-  const weekStrip = (data: Activity) =>
-    activityWeekStrip(
-      data,
-      NOW,
-      activityAgenda(data, "all", NOW).next?.key ?? null,
-    );
-
-  it("draws today and the six days after it, empty, for a quiet week", () => {
-    const strip = weekStrip(activity());
-    expect(strip).toHaveLength(ACTIVITY_STRIP_DAYS);
-    expect(strip.map((day) => day.date.getDate())).toEqual([
-      13, 14, 15, 16, 17, 18, 19,
-    ]);
-    expect(strip.every((day) => day.kinds.length === 0)).toBe(true);
-    expect(strip[0]!.spokenLabel).toMatch(/nothing due$/);
-  });
-
-  it("puts a dot per kind on each day, and none for what is overdue or undated", () => {
-    const data = activity({
-      needs_you: needs({
-        tasks: [
-          task({
-            id: "late",
-            title: "Receipts",
-            status: "OVERDUE",
-            due_date: "2026-11-10",
-          }),
-          task({ id: "t-sun", title: "Agenda", due_at: at(2, 17) }),
-          task({ id: "t-sun-2", title: "Slides", due_at: at(2, 18) }),
-          task({ id: "someday", title: "Retreat plan" }),
-          task({ id: "far", title: "Banquet", due_date: "2026-12-20" }),
-        ],
-        polls: [poll({ message_id: "p1", closes_at: at(1, 12) })],
-        cards: [card({ closes_at: at(2, 9) })],
-      }),
-      coming_up: [
-        event({ id: "tomorrow", name: "Cleanup", start_time: at(1, 10) }),
-        event({ id: "sunday", name: "Chapter", start_time: at(2, 19) }),
-      ],
-    });
-    const strip = weekStrip(data);
-    expect(strip.map((day) => day.kinds)).toEqual([
-      [],
-      ["events", "answers"],
-      ["events", "tasks", "answers"],
-      [],
-      [],
-      [],
-      [],
-    ]);
-    expect(strip[2]!.count).toBe(4);
-    expect(strip[2]!.spokenLabel).toMatch(
-      /, 1 event, 2 tasks, 1 poll or sign-up$/,
-    );
-    // Overdue leads the agenda, so it is the week card's Next; every dated
-    // day still has a To do section to jump to.
-    expect(strip[1]!.sections).toEqual(["day:1"]);
-    expect(strip[2]!.sections).toEqual(["day:2"]);
-  });
-
-  it("files an open check-in under Now, on today", () => {
-    const data = activity({
-      needs_you: needs({
-        tasks: [task({ id: "today", title: "Agenda", due_at: at(0, 17) })],
-      }),
-      coming_up: [
-        event({
-          id: "live",
-          name: "Walkthrough",
-          start_time: at(0, 11, 50),
-          check_in_open: true,
-        }),
-        event({
-          id: "live-2",
-          name: "Setup",
-          start_time: at(0, 11, 55),
-          check_in_open: true,
-        }),
-      ],
-    });
-    const [today] = weekStrip(data);
-    expect(today!.kinds).toEqual(["events", "tasks"]);
-    expect(today!.count).toBe(3);
-    // The first open event is the week card's; the other is under Now.
-    expect(today!.sections).toEqual(["now", "day:0"]);
-  });
-
-  it("has no section for a day whose one thing is the week card's", () => {
-    const data = activity({
-      coming_up: [event({ start_time: at(3, 19) })],
-    });
-    const strip = weekStrip(data);
-    expect(strip[3]!.kinds).toEqual(["events"]);
-    expect(strip[3]!.sections).toEqual([]);
   });
 });

@@ -46,7 +46,7 @@ describe("useSaveActivityLayout", () => {
     const { result } = renderHook(() => useSaveActivityLayout(), { wrapper });
 
     act(() => {
-      result.current.mutate({ shown: ["links", "todo"], hidden: ["recap"] });
+      result.current.mutate({ shown: ["running", "todo"], hidden: ["nudge"] });
     });
     await waitFor(() => expect(PUT).toHaveBeenCalled());
 
@@ -55,8 +55,13 @@ describe("useSaveActivityLayout", () => {
       { body: { card_order: string[]; hidden_cards: string[] } },
     ];
     const body = call[1].body;
-    expect(body.card_order).toEqual(["future-card", "links", "todo"]);
-    expect(body.hidden_cards).toEqual(["recap", "future-hidden"]);
+    expect(body.card_order).toEqual([
+      "future-card",
+      "running",
+      "todo",
+      "links",
+    ]);
+    expect(body.hidden_cards).toEqual(["nudge", "recap", "future-hidden"]);
     expect(queryClient.getQueryData(KEY("chapter-a"))).toEqual({
       ...body,
       saved: true,

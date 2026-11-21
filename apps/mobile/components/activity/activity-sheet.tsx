@@ -54,7 +54,9 @@ type RowOf<K extends ActivityRow["kind"]> = Extract<ActivityRow, { kind: K }>;
 /**
  * What a sign-up link's sheet can do. The screen owns these, not the sheet:
  * Done, Hide and Remove take the row off the list at once, which closes the
- * sheet, and the "Undo" bar that follows has to outlive it.
+ * sheet, and the "Undo" bar that follows has to outlive it
+ * (`lib/activity/use-link-actions.ts`). A channel's Links list opens these
+ * sheets since #5779 (`components/chat/message-list-sheet.tsx`).
  */
 export interface LinkSheetActions {
   canRemove: boolean;
@@ -96,7 +98,8 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
 }
 
 /**
- * The sheet an Activity row opens: the record, drawn with the card chat draws
+ * The sheet an Activity row opens, and a channel's sign-up link (#5779): the
+ * record, drawn with the card chat draws
  * for it, so a member votes or checks in here with the controls they already
  * know from chat (#3897). Web's twin is
  * `apps/web/components/activity/activity-panel.tsx`. Every task row pushes
@@ -112,7 +115,9 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
  *   read-only record, and the phone has no other screen that reviews hours.
  *
  * A sign-up link has no chat card: its sheet is `LinkSheet` below, the link
- * and the screen's own actions for it (`LinkSheetActions`).
+ * and the screen's own actions for it (`LinkSheetActions`). A screen that
+ * opens no link rows (or no reminders) passes no actions for them, and the
+ * sheet draws nothing for such a row.
  *
  * A tall sheet, as `spec/ui/mobile/patterns.md` § Bottom sheets gives a sheet
  * that holds a whole record.
@@ -141,8 +146,10 @@ export function ActivitySheet({
   rowActionState?: ActivityRowActionState;
   onClosed: () => void;
   onActed: () => void;
-  linkActions: LinkSheetActions;
-  reminderActions: ReminderSheetActions;
+  /** For a sign-up link row; a screen that opens none leaves it out. */
+  linkActions?: LinkSheetActions;
+  /** For a message reminder row; a screen that opens none leaves it out. */
+  reminderActions?: ReminderSheetActions;
 }) {
   const sheet = useRef<BottomSheetModal>(null);
   const closeSheet = useSheetClose(sheet);
@@ -215,8 +222,8 @@ function SheetCard({
   onActed: () => void;
   /** Closes the sheet before leaving this screen for another. */
   onNavigate: () => void;
-  linkActions: LinkSheetActions;
-  reminderActions: ReminderSheetActions;
+  linkActions?: LinkSheetActions;
+  reminderActions?: ReminderSheetActions;
 }) {
   switch (row.kind) {
     case "task":
@@ -242,17 +249,17 @@ function SheetCard({
         />
       );
     case "link":
-      return (
+      return linkActions ? (
         <LinkSheet row={row} actions={linkActions} onNavigate={onNavigate} />
-      );
+      ) : null;
     case "reminder":
-      return (
+      return reminderActions ? (
         <ReminderSheet
           row={row}
           actions={reminderActions}
           onNavigate={onNavigate}
         />
-      );
+      ) : null;
     case "card":
       // A sign-up or form row opens its message in chat, never this sheet.
       return null;
@@ -385,14 +392,14 @@ function LinkSheet({
         />
         <CardButton
           label="Done"
-          accessibilityHint="You filled it in. Takes it off your Activity."
+          accessibilityHint="You filled it in. Takes it off your list."
           onPress={then(actions.done)}
         />
       </CardActions>
       <CardActions>
         <CardButton
           label="Hide"
-          accessibilityHint="Not chapter business. Takes it off your Activity."
+          accessibilityHint="Not chapter business. Takes it off your list."
           onPress={then(actions.hide)}
         />
         <CardButton
@@ -409,7 +416,7 @@ function LinkSheet({
         <CardActions>
           <CardButton
             label="Remove for everyone"
-            accessibilityHint="Takes it off every member's Activity. The message stays in chat."
+            accessibilityHint="Takes it off every member's list. The message stays in chat."
             onPress={then(actions.remove)}
           />
         </CardActions>

@@ -1,6 +1,5 @@
 import { formatRelativeDayTime } from "@repo/formatting";
 import {
-  activityGroups,
   activityReviewRows,
   activityToDos,
   type Activity,
@@ -118,8 +117,6 @@ export function activitySnoozedRows(
   const rows = [
     ...activityReviewRows(snoozed, now),
     ...activityToDos(snoozed, now).map((todo) => todo.dated),
-    ...(activityGroups(snoozed, now).find((group) => group.id === "links")
-      ?.rows ?? []),
   ];
   const untilOf = (row: ActivityRow) => {
     // A reminder (#4957) is put off with its own Snooze, never this one, and
