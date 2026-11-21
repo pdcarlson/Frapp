@@ -205,6 +205,8 @@ export const PatchChapterConfigSchema = z.object({
   default_invite_role_id: z.string().uuid().nullable().optional(),
   // #4959: where the happy-birthday posts go; null turns them off.
   birthday_channel_id: z.string().uuid().nullable().optional(),
+  // #5801: whether members may change their own name after joining.
+  members_can_change_name: z.boolean().optional(),
 });
 
 export type ChapterDuesConfig = z.infer<typeof ChapterDuesConfigSchema>;

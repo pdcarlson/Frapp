@@ -259,10 +259,39 @@ describe("the invite card, signed out (#5625)", () => {
       await screen.findByRole("heading", { level: 1, name: "Phi Gamma Delta" }),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Get Frapp" })).toBeTruthy();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Join on the web instead" }),
-    );
-    expect(h.replace).toHaveBeenCalledWith("/join?token=tok-1&web=1");
+    // The app is the only way in on a phone (Paul, 2026-11-21): no web
+    // sign-in to start a second session beside the app's.
+    expect(screen.queryByRole("button", { name: /on the web/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Continue with Google" }),
+    ).toBeNull();
+  });
+
+  it("keeps a signed-in member on a phone in the app too, in the chapter or not", async () => {
+    h.phone = "ios";
+    signedIn();
+    h.chapters.data = [{ chapter_id: CHAPTER_ID, has_completed_onboarding: true }];
+    render(<JoinWithInvite token="tok-1" />);
+
+    expect(
+      await screen.findByRole("link", { name: "Open in Frapp" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Join chapter" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open chapter/i })).toBeNull();
+    expect(h.redeem).not.toHaveBeenCalled();
+  });
+
+  // Phone builds before #4341 hand a member's second-chapter invite here,
+  // marked web=1; offering the app again would send it straight back.
+  it("goes on in the browser for an old phone build's hand-off, so it can't loop", async () => {
+    h.phone = "android";
+    h.search = new URLSearchParams("token=tok-1&web=1");
+    render(<JoinWithInvite token="tok-1" />);
+
+    expect(
+      await screen.findByRole("button", { name: "Continue with Google" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Open in Frapp" })).toBeNull();
   });
 });
 

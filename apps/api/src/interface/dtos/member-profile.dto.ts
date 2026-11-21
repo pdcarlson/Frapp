@@ -171,7 +171,7 @@ export class MemberRosterEntryDto {
     type: String,
     nullable: true,
     description:
-      'Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it.',
+      'Color (palette or readable custom, `isPaintableRoleColor`) of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it.',
   })
   role_color: string | null;
 }

@@ -18,8 +18,8 @@ import {
   GROUP_MEMBERS_MAX,
   GROUP_NAME_MAX_LENGTH,
   GROUPS_MAX,
+  groupDisplayName,
   roleColorOrNull,
-  type RoleColorHex,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { RoleColorSwatches } from "@/components/roles/role-color-swatches";
+import { RoleColorPicker } from "@/components/roles/role-color-picker";
 import {
   ErrorState,
   OfflineState,
@@ -150,8 +150,8 @@ export function GroupsSection({ canManage }: { canManage: boolean }) {
           <div className="space-y-1">
             {automatic.length === 0 ? (
               <InlineNote>
-                None yet. One appears for each pledge class, graduation year
-                and major someone has.
+                None yet. One appears for each pledge class, graduation year and
+                major someone has.
               </InlineNote>
             ) : (
               automatic.map((group) => (
@@ -263,7 +263,9 @@ function GroupRow({
     <div className="flex flex-wrap items-center gap-x-2 rounded-md px-1 py-1.5">
       <ColorDot color={group.color} />
       <div className="min-w-[8rem] flex-1">
-        <p className="break-words text-sm font-semibold">{group.name}</p>
+        <p className="break-words text-sm font-semibold">
+          {groupDisplayName(group)}
+        </p>
         <p className="text-caption text-muted-foreground">
           {details.join(" · ")}
         </p>
@@ -394,7 +396,7 @@ function GroupEditor({
   // under the officer when a background read lands.
   const [members] = useState(liveMembers);
   const [name, setName] = useState(group.name);
-  const [color, setColor] = useState<RoleColorHex | null>(
+  const [color, setColor] = useState<string | null>(
     roleColorOrNull(group.color),
   );
   const [mentionable, setMentionable] = useState(group.mentionable);
@@ -493,7 +495,7 @@ function GroupEditor({
 
         <div className="grid gap-1">
           <Label id="group-edit-color-label">Color</Label>
-          <RoleColorSwatches
+          <RoleColorPicker
             labelId="group-edit-color-label"
             value={color}
             onChange={setColor}

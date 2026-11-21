@@ -18,7 +18,7 @@ const INSTALL_HINT = {
     "Opens Google Play's tester page. Join the test, then tap Install. If Play says you aren't a tester, ask the officer who sent your invite to add you.",
   // During the beta the store listings open for testers only.
   store:
-    "The app is in beta, so if the store says it isn't available yet, continue in the browser.",
+    "The app is in beta, so if the store says it isn't available yet, ask the officer who sent your invite.",
 } as const;
 
 /**
@@ -27,10 +27,11 @@ const INSTALL_HINT = {
  * With the app installed and app links set up, the link opens the app and
  * never reaches this page. It shows when the app isn't installed, when the
  * link was opened inside another app's browser, or on a build without app
- * links. Joining here and then signing in to the app again is the double
- * sign-in #4002 removes, so the app comes first and the browser is the
- * fallback: the way Discord's and Slack's invite pages on a phone lead with
- * their app and keep "continue in browser" below.
+ * links. On a phone the app is the only way in (Paul, 2026-11-21): a member
+ * who joined here and then opened the app signed in twice and met onboarding
+ * twice (#4002, and Ethan's join on staging 2026-11-20, where the page's
+ * "Join on the web instead" started a second sign-in while the app was
+ * already joining him). The web stays the way in on a computer.
  *
  * With an install link for this environment's app (`lib/app-install.ts`), the
  * page is two numbered steps, the way TestFlight's own public-link page reads
@@ -51,7 +52,6 @@ export function AppHandoff({
   platform,
   token,
   hero,
-  onContinueInBrowser,
 }: {
   platform: NativePlatform;
   token: string;
@@ -60,7 +60,6 @@ export function AppHandoff({
    * first thing on the page; the steps then sit under a plain heading.
    */
   hero?: React.ReactNode;
-  onContinueInBrowser: () => void;
 }) {
   const { app, installUrl } = useAppInstall(platform);
   const openLink = (
@@ -68,20 +67,6 @@ export function AppHandoff({
       <a href={openInAppUrl(platform, token, app)}>Open in {app.name}</a>
     </Button>
   );
-  const footer = (
-    <p>
-      Not on your phone?{" "}
-      <Button
-        type="button"
-        variant="link"
-        className="h-auto px-0"
-        onClick={onContinueInBrowser}
-      >
-        Join on the web instead
-      </Button>
-    </p>
-  );
-
   if (installUrl === null) {
     return (
       <AuthScreen
@@ -92,14 +77,13 @@ export function AppHandoff({
             ? undefined
             : "Your invite opens in the app, so you sign in once and land in your chapter."
         }
-        footer={footer}
       >
         {hero ? <HandoffHeading appName={app.name} /> : null}
         {openLink}
         <div className="mt-6">
           <AuthNote glyph={<LinkGlyph className="h-5 w-5" />}>
             Don&apos;t have {app.name} yet? Ask the officer who sent your invite
-            how to get it, or continue in the browser.
+            how to get it.
           </AuthNote>
         </div>
       </AuthScreen>
@@ -117,7 +101,6 @@ export function AppHandoff({
           ? undefined
           : "Two steps, then you sign in once and land in your chapter."
       }
-      footer={footer}
     >
       {hero ? <HandoffHeading appName={app.name} /> : null}
       <ol className="flex flex-col gap-6">

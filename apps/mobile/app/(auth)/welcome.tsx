@@ -12,6 +12,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   DISPLAY_NAME_MAX_LENGTH,
   ONBOARDING_PROFILE_ANSWERED_EVENT,
+  NAME_LOCK_COPY,
   ONBOARDING_YOU_COPY,
   initialNameField,
   needsName,
@@ -100,9 +101,13 @@ export default function Welcome() {
   const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
-  const nameValue =
-    nameDraft ??
-    initialNameField(profile?.displayName ?? null, profile?.email ?? null);
+  // A member already settled in a chapter that locks names (#5801) keeps the
+  // name they have: it shows read-only, and isn't sent.
+  const nameLocked = profile?.nameLocked === true;
+  const nameValue = nameLocked
+    ? (profile?.displayName ?? "")
+    : (nameDraft ??
+      initialNameField(profile?.displayName ?? null, profile?.email ?? null));
 
   async function finish() {
     if (leavingRef.current) return;
@@ -154,11 +159,12 @@ export default function Welcome() {
   async function leaveYou() {
     if (savingName || leaving) return;
     const name = nameValue.trim();
-    if (typedNameMissing(name)) {
+    if (!nameLocked && typedNameMissing(name)) {
       setNameError(ONBOARDING_YOU_COPY.nameRequired);
       return;
     }
-    const nameChanged = name !== (profile?.displayName ?? "").trim();
+    const nameChanged =
+      !nameLocked && name !== (profile?.displayName ?? "").trim();
     if (nameChanged) {
       setSavingName(true);
       try {
@@ -261,11 +267,13 @@ export default function Welcome() {
                   autoComplete="name"
                   textContentType="name"
                   accessibilityLabel={ONBOARDING_YOU_COPY.nameLabel}
-                  editable={!savingName && !leaving}
+                  editable={!savingName && !leaving && !nameLocked}
                   returnKeyType="done"
                   onSubmitEditing={() => void leaveYou()}
                 />
-                {nameError ? (
+                {nameLocked ? (
+                  <Text style={styles.hint}>{NAME_LOCK_COPY.lockedLine}</Text>
+                ) : nameError ? (
                   <Text style={styles.error} accessibilityLiveRegion="polite">
                     {nameError}
                   </Text>
@@ -356,6 +364,10 @@ function createStyles(tokens: SignetTokens) {
     error: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
+    },
+    hint: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     footer: {
       paddingHorizontal: tokens.spacing.xl,

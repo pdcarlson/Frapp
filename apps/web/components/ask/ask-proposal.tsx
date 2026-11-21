@@ -9,7 +9,6 @@ import {
   CircleX,
   Clock,
   ListChecks,
-  MoreHorizontal,
   Repeat,
   Star,
   User,
@@ -71,12 +70,7 @@ import { isoToLocalInput } from "@/components/events/local-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ActionMenuButton } from "@/components/shared/row-menu";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
   Select,
@@ -713,33 +707,33 @@ function CardMenu({
   const canReport = !!permissions && can("ai:use", permissions);
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="-mr-1.5 h-8 w-8"
-            aria-label={`${ACT_COPY.more}: ${title}`}
-            disabled={disabled}
-          >
-            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={onDismiss}>
-            {ACT_COPY.dismiss}
-          </DropdownMenuItem>
-          {canReport ? (
-            <DropdownMenuItem
-              disabled={reported}
-              onSelect={() => setReporting(true)}
-            >
-              {reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="-mr-1.5">
+        <ActionMenuButton
+          label={`${ACT_COPY.more} for ${title}`}
+          disabled={disabled}
+          entries={[
+            {
+              type: "item",
+              key: "dismiss",
+              label: ACT_COPY.dismiss,
+              onSelect: onDismiss,
+            },
+            ...(canReport
+              ? [
+                  {
+                    type: "item" as const,
+                    key: "report",
+                    label: reported
+                      ? AI_REPORT_COPY.reported
+                      : AI_REPORT_COPY.action,
+                    disabled: reported,
+                    onSelect: () => setReporting(true),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      </div>
       {reporting ? (
         <ReportAiDialog
           target={{ subject: "ai_suggestion", subjectId: suggestionId }}

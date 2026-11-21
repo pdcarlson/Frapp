@@ -25,7 +25,7 @@ const INVITE_ID = "6f1c2a9e-3b4d-4c8e-9a7b-1d2e3f4a5b6c";
 
 function renderHandoff() {
   return render(
-    <AppHandoff platform="ios" token={INVITE_ID} onContinueInBrowser={vi.fn()} />,
+    <AppHandoff platform="ios" token={INVITE_ID} />,
   );
 }
 

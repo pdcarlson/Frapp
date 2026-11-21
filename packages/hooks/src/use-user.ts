@@ -85,6 +85,14 @@ export function useUpdateUser() {
       if (error) throw error;
       return data;
     },
+    // A refused save may mean the name was locked since the row was read
+    // (#5801): read it again so Profile shows the lock.
+    onError: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["user", "me"],
+        exact: true,
+      });
+    },
     onSuccess: (saved, body) => {
       // The PATCH answers with the whole updated row, in the shape
       // `GET /v1/users/me` serves (both sign the photo), so it goes straight

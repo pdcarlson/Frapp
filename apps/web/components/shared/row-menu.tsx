@@ -1,7 +1,13 @@
 "use client";
 
-import { useState, type ReactElement, type ReactNode } from "react";
-import { MoreHorizontal, type LucideIcon } from "lucide-react";
+import {
+  useState,
+  type ComponentType,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+import Link from "next/link";
+import { Loader2, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -38,18 +44,41 @@ import { cn } from "@/lib/utils";
  *    browser menu, so copy, paste and "open in new tab" still work.
  */
 
+/**
+ * An item's glyph: a Lucide icon, or one of Frapp's own glyphs (a pin that is
+ * solid while pinned) wrapped to the same shape.
+ */
+export type RowMenuIcon = ComponentType<{
+  "aria-hidden"?: boolean | "true" | "false";
+  className?: string;
+}>;
+
 export type RowMenuEntry =
-  | {
+  | ({
       type: "item";
       key: string;
       label: string;
-      icon?: LucideIcon;
-      onSelect: () => void;
+      icon?: RowMenuIcon;
       destructive?: boolean;
       disabled?: boolean;
       /** Id of the text explaining why the item is disabled. */
       describedBy?: string;
-    }
+      /** Why the item is disabled, when no text on the page says it (offline). */
+      title?: string;
+    } & (
+      | { onSelect: () => void; href?: never; external?: never }
+      | {
+          /**
+           * The item is a link: middle-click, "open in new tab" and the
+           * status bar work as they do on any link. `undefined` only while
+           * the address is still loading, alongside `disabled`.
+           */
+          href: string | undefined;
+          /** Opens in a new tab, for a page outside Frapp. */
+          external?: boolean;
+          onSelect?: never;
+        }
+    ))
   | { type: "separator"; key: string }
   | { type: "label"; key: string; label: string };
 
@@ -101,16 +130,37 @@ function Entries({
           return <Label key={entry.key}>{entry.label}</Label>;
         }
         const Icon = entry.icon;
-        return (
-          <Item
-            key={entry.key}
-            disabled={entry.disabled}
-            aria-describedby={entry.describedBy}
-            onSelect={entry.onSelect}
-            className={entry.destructive ? DESTRUCTIVE_ITEM_CLASS : undefined}
-          >
+        const body = (
+          <>
             {Icon ? <Icon aria-hidden="true" /> : null}
             {entry.label}
+          </>
+        );
+        const itemProps = {
+          disabled: entry.disabled,
+          "aria-describedby": entry.describedBy,
+          title: entry.title,
+          className: entry.destructive ? DESTRUCTIVE_ITEM_CLASS : undefined,
+        };
+        if (entry.onSelect) {
+          return (
+            <Item key={entry.key} {...itemProps} onSelect={entry.onSelect}>
+              {body}
+            </Item>
+          );
+        }
+        return (
+          <Item key={entry.key} {...itemProps} asChild>
+            {entry.external ? (
+              <a href={entry.href} target="_blank" rel="noopener noreferrer">
+                {body}
+              </a>
+            ) : entry.href?.startsWith("/") ? (
+              <Link href={entry.href}>{body}</Link>
+            ) : (
+              // Another scheme the browser hands to an app (`webcal:`).
+              <a href={entry.href}>{body}</a>
+            )}
           </Item>
         );
       })}
@@ -190,19 +240,33 @@ function MoreButton({
   entries,
   label,
   onRow = false,
+  disabled = false,
+  busy = false,
+  onOpenChange,
 }: {
   entries: readonly RowMenuEntry[];
   label: string;
   onRow?: boolean;
+  disabled?: boolean;
+  busy?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        onOpenChange?.(next);
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
           variant="ghost"
           size="icon"
+          disabled={disabled || busy}
+          aria-busy={busy || undefined}
           aria-label={label}
           title="More"
           className={cn(
@@ -214,7 +278,11 @@ function MoreButton({
               "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100",
           )}
         >
-          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -245,10 +313,27 @@ function MoreButton({
 export function ActionMenuButton({
   entries,
   label,
+  disabled,
+  busy,
+  onOpenChange,
 }: {
   entries: readonly RowMenuEntry[];
   /** Accessible name, e.g. "More for Chapter Meeting". */
   label: string;
+  /** Nothing in the menu can run now (the card is mid-save). */
+  disabled?: boolean;
+  /** An action from the menu is running: a spinner in place of the ⋯. */
+  busy?: boolean;
+  /** Told when the menu opens, e.g. to fetch what its items need. */
+  onOpenChange?: (open: boolean) => void;
 }) {
-  return <MoreButton entries={entries} label={label} />;
+  return (
+    <MoreButton
+      entries={entries}
+      label={label}
+      disabled={disabled}
+      busy={busy}
+      onOpenChange={onOpenChange}
+    />
+  );
 }

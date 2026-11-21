@@ -26,6 +26,7 @@ import {
   DISPLAY_NAME_MAX_LENGTH,
   MAJOR_MAX_LENGTH,
   majorSuggestions,
+  NAME_LOCK_COPY,
   parseBirthdayVisibility,
   PHONE_MAX_LENGTH,
   PROFILE_ALUMNI_SECTION,
@@ -182,7 +183,9 @@ export const EditProfileSheet = forwardRef<
 
   const original = useMemo(() => draftFromProfile(profile), [profile]);
   const [edits, setEdits] = useState<ProfileEdits | null>(null);
-  const [submitFailed, setSubmitFailed] = useState(false);
+  // `true` for a failed save, or the API's own words when it refused a
+  // locked name (#5801), which a retry can't fix.
+  const [submitFailed, setSubmitFailed] = useState<boolean | string>(false);
   const [focused, setFocused] = useState<ProfileDraftField | null>(null);
   // The chapter's majors, offered under Major while it has focus (#5778), so
   // a member picks the spelling the chapter already pings. Read only then:
@@ -207,7 +210,14 @@ export const EditProfileSheet = forwardRef<
     setTypedAgainst(original);
     setEdits(typed);
   }
-  const shown: ProfileDraft = { ...original, ...typed };
+  // A locked name (#5801) shows as stored and is never sent, even when it was
+  // typed before the lock reached this device.
+  const nameLocked = profile?.nameLocked === true;
+  const shown: ProfileDraft = {
+    ...original,
+    ...typed,
+    ...(nameLocked ? { displayName: original.displayName } : {}),
+  };
 
   const result = profilePatch(original, shown);
   // A refusal exists only once the member has typed (the sheet must not open
@@ -372,7 +382,12 @@ export const EditProfileSheet = forwardRef<
         if (isSameVisit(sentFrom)) dismiss();
       },
       // The draft stays, so nothing typed is lost to a dropped connection.
-      onError: () => setSubmitFailed(true),
+      onError: (error) => {
+        const message = (error as { message?: unknown } | null)?.message;
+        setSubmitFailed(
+          message === NAME_LOCK_COPY.refusal ? NAME_LOCK_COPY.refusal : true,
+        );
+      },
       onSettled: () => {
         sending.current = false;
       },
@@ -396,6 +411,8 @@ export const EditProfileSheet = forwardRef<
       accessibleLabel?: string;
       /** A field sharing a row: its share of the width. */
       grow?: boolean;
+      /** Shown but not typed into: a name the chapter locks (#5801). */
+      readOnly?: boolean;
     },
   ) => (
     <View
@@ -420,7 +437,7 @@ export const EditProfileSheet = forwardRef<
         onChangeText={edit(name)}
         // Read-only while a save runs: the save sent what was typed when Save
         // was pressed, and anything typed after it would be dropped unsent.
-        editable={!updateUser.isPending}
+        editable={!updateUser.isPending && !options.readOnly}
         onFocus={() => setFocused(name)}
         onBlur={() => {
           setFocused((current) => (current === name ? null : current));
@@ -438,6 +455,7 @@ export const EditProfileSheet = forwardRef<
         textAlignVertical={options.multiline ? "top" : undefined}
         style={[
           styles.field,
+          options.readOnly ? styles.fieldReadOnly : null,
           options.multiline ? styles.fieldMultiline : null,
           focused === name ? styles.fieldFocused : null,
           shownRefusal?.field === name ? styles.fieldInvalid : null,
@@ -501,6 +519,8 @@ export const EditProfileSheet = forwardRef<
           placeholder: copy.displayName.placeholder,
           autoCapitalize: "words",
           maxLength: DISPLAY_NAME_MAX_LENGTH,
+          readOnly: nameLocked,
+          hint: nameLocked ? NAME_LOCK_COPY.lockedLine : undefined,
         })}
         {field("phone", copy.phone.label, {
           placeholder: copy.phone.placeholder,
@@ -633,7 +653,11 @@ export const EditProfileSheet = forwardRef<
           </>
         ) : null}
 
-        {submitFailed ? (
+        {typeof submitFailed === "string" ? (
+          <Text accessibilityRole="alert" style={styles.error}>
+            {submitFailed}
+          </Text>
+        ) : submitFailed ? (
           <Text accessibilityRole="alert" style={styles.error}>
             That didn&apos;t save. Your changes are still here, so try again.
           </Text>
@@ -702,6 +726,10 @@ function createStyles(tokens: SignetTokens, accent: string) {
         tokens.spacing.sm * 2,
     },
     fieldFocused: fieldStyles.fieldFocused,
+    // A locked name (#5801): its text muted, as web's read-only field.
+    fieldReadOnly: {
+      color: tokens.color.text.mutedForeground,
+    },
     fieldInvalid: {
       borderColor: tokens.color.semantic.destructive,
     },

@@ -195,10 +195,10 @@ export interface MemberDisplayNames {
    */
   avatarFor: (userId: string) => string | null;
   /**
-   * The palette color of the member's highest-ranked colored role, or `null`
-   * for the plain foreground (#3485). Chat paints a sender's name in it. Same
-   * roster read again, and re-checked against the palette here so a client
-   * never paints a value the contrast guard did not cover.
+   * The color of the member's highest-ranked colored role, or `null` for the
+   * plain foreground (#3485, #5784). Chat paints a sender's name in it. Same
+   * roster read again, and re-checked with `roleColorOrNull` here so a client
+   * never paints a value the contrast rule did not pass.
    */
   roleColorFor: (userId: string) => string | null;
   /**
@@ -519,10 +519,17 @@ export function useUpdateOnboarding() {
     // s03 gate and web's welcome gate (#5627) read this flag off
     // `GET /v1/chapters`, and a standing cache would send a member who just
     // finished straight back.
+    // The member's own row too: finishing can lock their name (#5801,
+    // `display_name_locked`), so Profile must not keep offering an edit the
+    // API now refuses.
     onSuccess: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: ["members", chapterId] }),
         queryClient.invalidateQueries({ queryKey: ["chapters"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["user", "me"],
+          exact: true,
+        }),
       ]),
   });
 }

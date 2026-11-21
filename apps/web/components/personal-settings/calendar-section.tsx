@@ -1,16 +1,10 @@
 "use client";
 
-import { Link2, MoreHorizontal, RotateCcw } from "lucide-react";
+import { Link2, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ActionMenuButton } from "@/components/shared/row-menu";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { GoogleCalendarRow } from "@/components/linked-apps/google-calendar-row";
 import { LinkedAppRow } from "@/components/linked-apps/linked-app-row";
@@ -75,44 +69,44 @@ function SubscriptionLinkRow() {
         >
           Copy link
         </Button>
-        <DropdownMenu onOpenChange={(open) => open && setWanted(true)}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Subscription link options"
-            >
-              <MoreHorizontal aria-hidden="true" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild disabled={!apps}>
-              <a href={apps?.apple}>Add to Apple Calendar</a>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild disabled={!apps}>
-              <a href={apps?.outlook} target="_blank" rel="noopener noreferrer">
-                Add to Outlook.com
-              </a>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild disabled={!apps}>
-              <a
-                href={apps?.outlookWork}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Add to Outlook for school or work
-              </a>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={!link.data || resetting}
-              onSelect={() => void resetLink()}
-            >
-              <RotateCcw aria-hidden="true" />
-              Reset link
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ActionMenuButton
+          label="More for Subscription link"
+          onOpenChange={(open) => open && setWanted(true)}
+          entries={[
+            {
+              type: "item",
+              key: "apple",
+              label: "Add to Apple Calendar",
+              href: apps?.apple,
+              disabled: !apps,
+            },
+            {
+              type: "item",
+              key: "outlook",
+              label: "Add to Outlook.com",
+              href: apps?.outlook,
+              external: true,
+              disabled: !apps,
+            },
+            {
+              type: "item",
+              key: "outlook-work",
+              label: "Add to Outlook for school or work",
+              href: apps?.outlookWork,
+              external: true,
+              disabled: !apps,
+            },
+            { type: "separator", key: "reset-sep" },
+            {
+              type: "item",
+              key: "reset",
+              label: "Reset link",
+              icon: RotateCcw,
+              disabled: !link.data || resetting,
+              onSelect: () => void resetLink(),
+            },
+          ]}
+        />
       </LinkedAppRow>
       {confirmDialog}
     </>

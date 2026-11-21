@@ -18,7 +18,7 @@ import {
 export type ChapterRole = {
   id: string;
   name: string;
-  /** A palette color, or `null` for a legacy or free-typed value. */
+  /** A paintable color (`roleColorOrNull`), or `null` for none or one that may not paint. */
   color: ReturnType<typeof roleColorOrNull>;
   permissions: string[];
   is_system: boolean;

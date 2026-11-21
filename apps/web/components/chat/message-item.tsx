@@ -125,7 +125,7 @@ export interface MessageItemProps {
    */
   avatarUrl?: string;
   /**
-   * The palette color of the author's highest-ranked colored role (#3485),
+   * The paintable color of the author's highest-ranked colored role (#3485),
    * from `useMemberDisplayNames().roleColorFor`. Paints the author's name on every
    * row, the viewer's own included: a name is never drawn in the chapter
    * accent (`foundations.md` §6). `undefined` or `null` keeps the plain
@@ -1822,7 +1822,7 @@ export function MessageItem({
                   <AuthorName
                     openProfile={openAuthor}
                     className="min-w-0 truncate text-label leading-5 text-foreground"
-                    // A literal from the role palette, which is contrast-checked
+                    // A role color `roleColorOrNull` passed, contrast-checked
                     // against these surfaces (`@repo/validation` role-colors).
                     style={authorColor ? { color: authorColor } : undefined}
                   >
