@@ -9,7 +9,10 @@ import {
   CHECK_IN_GRACE_MINUTES,
   can,
   checkInWindowBounds,
+  EVENTS_NOW_LIMIT,
+  eventOnAt,
   isModuleEnabled,
+  MAX_CHECK_IN_OPENS_MINUTES,
 } from '@repo/validation';
 import { ACTIVITY_ITEM_READ_REPOSITORY } from '#domain/repositories/activity-item-read.repository.interface';
 import type {
@@ -49,6 +52,7 @@ import type {
   ChatMessage,
 } from '#domain/entities/chat.entity';
 import type { Event } from '#domain/entities/event.entity';
+import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import type { Member } from '#domain/entities/member.entity';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
@@ -353,6 +357,11 @@ export interface ActivityEvent {
    */
   checked_in: boolean | null;
   /**
+   * When the member checked in, read with `checked_in`; `null` otherwise and
+   * when the row has no time (#5777: the Now card's "Checked in 9:24 PM").
+   */
+  checked_in_at: string | null;
+  /**
    * Who made it; `null` for an event made before makers were recorded
    * (`spec/behavior/events.md` § Event Creation).
    */
@@ -502,6 +511,17 @@ export interface ActivityView {
 export const ARCHIVE_SECTIONS = ['events', 'tasks', 'polls'] as const;
 export type ArchiveSection = (typeof ARCHIVE_SECTIONS)[number];
 
+/** `GET /v1/activity/now` (`spec/behavior/activity.md` § Now, #5777). */
+export interface ActivityNow {
+  /**
+   * The events on right now that are the caller's to see as on: required of
+   * them, checked in to, or made by them, and every one for a holder of
+   * `events:update`; never one they are excused from. The one they checked
+   * in to first, then the latest start.
+   */
+  events: ActivityEvent[];
+}
+
 /**
  * What the member has finished, apart from the Activity page that lists what
  * is still live (`spec/behavior/activity.md` § Archive, #5127).
@@ -540,6 +560,7 @@ const COMING_UP_LIMIT = 10;
  */
 const MADE_EVENTS_SCAN_LIMIT = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
 /** How far back the Archive's events and tasks reach (#5127). */
 const ARCHIVE_WINDOW_MS = 30 * DAY_MS;
 /**
@@ -739,6 +760,8 @@ function activityEventRow(
     needsCode: boolean;
     /** Whether the member checked in; `null` when it wasn't (or couldn't be) read. */
     checkedIn: boolean | null;
+    /** When they checked in, when that was read. */
+    checkedInAt?: string | null;
   },
 ): ActivityEvent {
   return {
@@ -754,6 +777,7 @@ function activityEventRow(
     check_in_needs_location: event.check_in_zone != null,
     check_in_needs_code: member.needsCode,
     checked_in: member.checkedIn,
+    checked_in_at: member.checkedInAt ?? null,
     created_by: event.created_by,
     progress: null,
     created_at: event.created_at,
@@ -1483,6 +1507,128 @@ export class ActivityService {
   }
 
   /**
+   * What is on right now for the caller (`spec/behavior/activity.md` § Now,
+   * #5777): the Now card on Chat, Activity and the event, on both apps. Its
+   * own small read, so Chat home and web's chat pane, which show it, don't
+   * pay for the whole page's.
+   *
+   * An event is on from when its check-in opens until its end
+   * (`eventOnAt`), whether or not the caller checked in: checking in used to
+   * drop the event from Activity, which is how Paul sat in a meeting no
+   * screen showed (2026-11-19). It is read as the caller, so an event that
+   * leaves them out is never on for them, and it is theirs to see as on
+   * when it requires them, they checked in to it, or they made it. An
+   * optional event they skipped stays on the Calendar, not at the top of
+   * every screen.
+   */
+  async getNow(
+    chapterId: string,
+    userId: string,
+    enabledModules: EnabledModules,
+    options: { now?: Date } = {},
+  ): Promise<ActivityNow> {
+    if (!isModuleEnabled(enabledModules, 'events')) return { events: [] };
+    const now = (options.now ?? new Date()).getTime();
+    // On now means check-in has opened, so the start is at most the longest
+    // lead ahead, and the end is still to come.
+    const startsBefore = now + MAX_CHECK_IN_OPENS_MINUTES * MINUTE_MS;
+    const events = (
+      await this.eventService.findByChapter(chapterId, userId, {
+        endsAfter: new Date(now).toISOString(),
+        startsBefore: new Date(startsBefore).toISOString(),
+      })
+    ).filter((event) =>
+      eventOnAt(
+        event.start_time,
+        event.end_time,
+        event.check_in_opens_minutes,
+        now,
+      ),
+    );
+    if (events.length === 0) return { events: [] };
+    let viewerRead: Promise<EventViewer> | null = null;
+    const viewer = () =>
+      (viewerRead ??= this.readViewer(chapterId, userId, () =>
+        this.rbacService.getAlumniRoleId(chapterId),
+      ));
+    const permissions = await this.rbacService.getEffectivePermissions(
+      chapterId,
+      userId,
+    );
+    // An officer who runs events sees every one on (#5777), invited or not:
+    // they are the ones asked where the meeting is. The event read already
+    // lets them see any event, for editing.
+    const runsEvents = can(SystemPermissions.EVENTS_UPDATE, permissions);
+    // No per-event reads: the card shows neither the code nor a per-row
+    // check-in, and this is read every minute by every open Chat. The
+    // member's own rows are read once, below.
+    const rows = await this.toEventRows(userId, now, events, viewer, {
+      startsBefore,
+      limit: events.length,
+      keepUninvited: runsEvents,
+      memberReads: false,
+    });
+    const mine = await this.ownAttendance(
+      userId,
+      rows.map((row) => row.id),
+    );
+    const shown = rows
+      .flatMap((row) => {
+        const own = mine?.get(row.id);
+        // Excused is not attending: Now never says "Checked in" for it.
+        if (own?.status === 'EXCUSED') return [];
+        const present = own?.status === 'PRESENT' || own?.status === 'LATE';
+        return [
+          {
+            ...row,
+            checked_in: mine === null ? null : present,
+            checked_in_at: present ? (own?.check_in_time ?? null) : null,
+          },
+        ];
+      })
+      .filter(
+        (row) =>
+          runsEvents ||
+          row.attendance === 'required' ||
+          row.checked_in === true ||
+          (row.created_by !== null && row.created_by === userId),
+      )
+      .sort(
+        (a, b) =>
+          Number(b.checked_in === true) - Number(a.checked_in === true) ||
+          Date.parse(b.start_time) - Date.parse(a.start_time),
+      );
+    return { events: shown.slice(0, EVENTS_NOW_LIMIT) };
+  }
+
+  /**
+   * The member's own attendance rows for these events, by event id, in one
+   * read. `null` when the read fails: Now still lists the events, with
+   * whether they checked in unknown.
+   */
+  private async ownAttendance(
+    userId: string,
+    eventIds: string[],
+  ): Promise<Map<string, EventAttendance> | null> {
+    if (eventIds.length === 0) return new Map();
+    try {
+      const rows = await this.attendanceRepo.findByUserForEvents(
+        userId,
+        eventIds,
+      );
+      return new Map(rows.map((row) => [row.event_id, row]));
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-now-attendance-read',
+        message: `Now could not read attendance for user ${userId}`,
+        error,
+      });
+      return null;
+    }
+  }
+
+  /**
    * The Archive (`spec/behavior/activity.md` § Archive, #5127): what the
    * member has finished, by the same rules the page uses to drop it. Its own
    * read, made only when the member opens the Archive, so the page's read
@@ -1602,11 +1748,10 @@ export class ActivityService {
       userId,
       kept.map(({ event }) => event.id),
     );
-    const statusOf = new Map(
-      attendance.map((row) => [row.event_id, row.status]),
-    );
+    const attendanceOf = new Map(attendance.map((row) => [row.event_id, row]));
     return kept.map(({ event, answer }) => {
-      const status = statusOf.get(event.id);
+      const mine = attendanceOf.get(event.id);
+      const status = mine?.status;
       return activityEventRow(event, {
         attendance:
           answer.status === 'required' && !(isAlumni && !answer.byRole)
@@ -1615,6 +1760,10 @@ export class ActivityService {
         checkInOpen: false,
         needsCode: false,
         checkedIn: status === 'PRESENT' || status === 'LATE',
+        checkedInAt:
+          status === 'PRESENT' || status === 'LATE'
+            ? (mine?.check_in_time ?? null)
+            : null,
       });
     });
   }
@@ -2500,10 +2649,22 @@ export class ActivityService {
     now: number,
     events: Event[],
     viewer: () => Promise<EventViewer>,
-    options: { startsBefore: number; limit: number },
+    options: {
+      startsBefore: number;
+      limit: number;
+      /**
+       * Keep events that don't invite the member too, as optional and with
+       * no check-in (Now, for an `events:update` holder). Their row opens the
+       * event, not chat's card, so it offers no check-in the server refuses.
+       */
+      keepUninvited?: boolean;
+      /** Read whether they checked in and whether the code is needed; default true. */
+      memberReads?: boolean;
+    },
   ): Promise<ActivityEvent[]> {
     if (events.length === 0) return [];
     const { roleIds, isAlumni } = await viewer();
+    const memberReads = options.memberReads ?? true;
 
     const kept = events
       .map((event) => ({
@@ -2513,7 +2674,7 @@ export class ActivityService {
       }))
       .filter(
         ({ event, window, answer }) =>
-          answer.status !== 'not_invited' &&
+          (options.keepUninvited || answer.status !== 'not_invited') &&
           window !== null &&
           window.closesAt > now &&
           new Date(event.start_time).getTime() <= options.startsBefore,
@@ -2533,18 +2694,26 @@ export class ActivityService {
         // event is optional and is not something to check in to.
         const alumniByDefault = isAlumni && !answer.byRole;
         const checkInOpen =
-          window !== null && window.opensAt <= now && !alumniByDefault;
+          answer.status !== 'not_invited' &&
+          window !== null &&
+          window.opensAt <= now &&
+          !alumniByDefault;
         // Both only for an event the member can check in to right now, which
         // is rarely more than one, and read together. `checked_in`: the
         // answer is what decides whether it still needs them.
         // `check_in_needs_code`: whether an officer's screen now needs the
         // code (#4808); never fails the row.
-        const [checkedIn, needsCode] = checkInOpen
-          ? await Promise.all([
-              this.hasCheckedIn(event.id, userId),
-              this.eventService.checkInNeedsCode(event, userId, new Date(now)),
-            ])
-          : [null, false];
+        const [checkIn, needsCode] =
+          checkInOpen && memberReads
+            ? await Promise.all([
+                this.checkInOf(event.id, userId),
+                this.eventService.checkInNeedsCode(
+                  event,
+                  userId,
+                  new Date(now),
+                ),
+              ])
+            : [null, false];
         return activityEventRow(event, {
           attendance:
             answer.status === 'required' && !alumniByDefault
@@ -2552,7 +2721,8 @@ export class ActivityService {
               : 'optional',
           checkInOpen,
           needsCode,
-          checkedIn,
+          checkedIn: checkIn === null ? null : checkIn.checkedIn,
+          checkedInAt: checkIn?.at ?? null,
         });
       }),
     );
@@ -2576,13 +2746,14 @@ export class ActivityService {
   }
 
   /**
-   * `null` when the read fails: the event still lists, and it counts as
-   * needing the member, which a failed read cannot rule out.
+   * Whether the member checked in, and when. `null` when the read fails: the
+   * event still lists, and it counts as needing the member, which a failed
+   * read cannot rule out.
    */
-  private async hasCheckedIn(
+  private async checkInOf(
     eventId: string,
     userId: string,
-  ): Promise<boolean | null> {
+  ): Promise<{ checkedIn: boolean; at: string | null } | null> {
     try {
       // The row itself, not `AttendanceService.getMyAttendance`: that one
       // re-reads the event and its visibility, which the list read above has
@@ -2591,7 +2762,10 @@ export class ActivityService {
         eventId,
         userId,
       );
-      return attendance !== null;
+      return {
+        checkedIn: attendance !== null,
+        at: attendance?.check_in_time ?? null,
+      };
     } catch (error) {
       // Per event, and the event still lists: a best-effort step the page
       // absorbs, so `warning`.

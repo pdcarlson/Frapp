@@ -419,6 +419,27 @@ describe('EventService', () => {
     });
   });
 
+  it('tells its created-listeners, and a failing one never fails the create (#5790)', async () => {
+    mockEventRepo.create.mockResolvedValue(baseEvent);
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
+    const heard: string[] = [];
+    service.onCreated(async () => {
+      throw new Error('listener down');
+    });
+    service.onCreated(async (chapterId, event) => {
+      heard.push(`${chapterId}:${event.id}`);
+    });
+    const result = await service.create({
+      chapter_id: 'ch-1',
+      name: 'Chapter Meeting',
+      start_time: baseEvent.start_time,
+      end_time: baseEvent.end_time,
+      created_by: 'user-officer',
+    });
+    expect(result).toEqual(baseEvent);
+    expect(heard).toEqual([`ch-1:${baseEvent.id}`]);
+  });
+
   it('should create an event with valid times', async () => {
     mockEventRepo.create.mockResolvedValue(baseEvent);
     // An officer (`events:update`): the spec's default of 10 points applies.

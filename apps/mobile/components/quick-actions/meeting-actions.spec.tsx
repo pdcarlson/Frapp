@@ -314,23 +314,19 @@ describe("Record, on New minutes", () => {
     expect(data.sheetClose).not.toHaveBeenCalled();
   });
 
-  it("starts the minutes, opens them and starts the recorder on Start", async () => {
+  it("starts the minutes with no meeting, opens them and starts the recorder on Start", async () => {
     render();
     await record();
     expect(data.noticeProps?.maxSeconds).toBe(3600);
     await act(async () => data.noticeProps?.onStart());
-    expect(data.start).toHaveBeenCalledWith(
-      expect.objectContaining({
-        meeting_type: "chapter",
-        new_event: expect.objectContaining({ name: "Chapter meeting" }),
-      }),
-    );
+    // Nothing on now: No meeting, linked later (Paul, 2026-11-20).
+    expect(data.start).toHaveBeenCalledWith({ meeting_type: "other" });
     expect(router().push).toHaveBeenCalledWith({
       pathname: "/minutes-details",
       params: { id: "m-new" },
     });
     expect(data.recorderStart).toHaveBeenCalledWith(
-      { meetingId: "m-new", eventName: "Chapter meeting", maxSeconds: 3600 },
+      { meetingId: "m-new", eventName: "Minutes", maxSeconds: 3600 },
       true,
     );
   });
@@ -468,9 +464,7 @@ describe("New minutes", () => {
     expect(data.minutesPresent).toHaveBeenCalledTimes(1);
     expect(data.noticePresent).not.toHaveBeenCalled();
     await act(async () => data.startButton?.onPress());
-    expect(data.start).toHaveBeenCalledWith(
-      expect.objectContaining({ new_event: expect.anything() }),
-    );
+    expect(data.start).toHaveBeenCalledWith({ meeting_type: "other" });
     expect(router().push).toHaveBeenCalledWith({
       pathname: "/minutes-details",
       params: { id: "m-new" },
@@ -492,7 +486,7 @@ describe("New minutes", () => {
     );
   });
 
-  it("can't start until the officer picks, when the meeting on now is taken", () => {
+  it("starts with No meeting, never on minutes someone else holds, when the meeting on now is taken", async () => {
     data.events = [
       {
         id: "e1",
@@ -511,6 +505,8 @@ describe("New minutes", () => {
     ];
     render();
     act(() => latest.newMinutes());
-    expect(data.startButton?.disabled).toBe(true);
+    expect(data.startButton?.disabled).toBeFalsy();
+    await act(async () => data.startButton?.onPress());
+    expect(data.start).toHaveBeenCalledWith({ meeting_type: "other" });
   });
 });

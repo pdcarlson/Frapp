@@ -244,6 +244,28 @@ export class SupabaseAiSuggestionRepository implements IAiSuggestionRepository {
     if (error) throw new SupabaseQueryError(error);
   }
 
+  async reopen(
+    chapterId: string,
+    id: string,
+    words: { payload: Record<string, unknown>; quote: string | null },
+    now: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('ai_suggestions')
+      .update({
+        ...BACK_TO_WAITING,
+        payload: words.payload,
+        quote: words.quote,
+      })
+      .eq('chapter_id', chapterId)
+      .eq('id', id)
+      .eq('status', 'dismissed')
+      .gt('expires_at', now)
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return data.length > 0;
+  }
+
   async releaseStale(before: string): Promise<number> {
     // Cross-chapter by design: the hourly sweep serves the whole database.
     const { data, error } = await this.supabase

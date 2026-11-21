@@ -10,37 +10,36 @@ import {
 } from "@/lib/minutes/start-minutes";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-/** Two choices are the same meeting: the same event, or both new. */
+/** Two choices are the same meeting: the same event, or both No meeting. */
 function sameChoice(a: MeetingChoice, b: MeetingChoice): boolean {
-  if (a.kind === "new" || b.kind === "new") return a.kind === b.kind;
+  if (a.kind === "none" || b.kind === "none") return a.kind === b.kind;
   return a.event.id === b.event.id;
 }
 
 /**
  * The meeting minutes start on, as one row with Change (#5287). Record
  * meeting's notice and New minutes both carry it, so the meeting is never a
- * step of its own: the + has already picked the one on now, or a new one.
- * Change lists the recent meetings and "Chapter meeting, not on the
- * calendar" in place, the way web's New minutes does (#5219), and a pick
- * folds the list away again. With nothing picked (the meeting on now has
- * someone else's minutes) the list is open from the start, under a line
- * saying why.
+ * step of its own: the + has already picked the one on now, or No meeting.
+ * Change lists the recent meetings and No meeting in place, the way web's
+ * New minutes does, and a pick folds the list away again. A meeting someone
+ * else already has minutes for shows as Has minutes and can't be picked
+ * (Paul, 2026-11-20: indicate, don't narrate).
  */
 export function MeetingPickField({
   value,
   label,
   options,
-  note = null,
   onChange,
+  onOpen,
 }: {
   /** The meeting picked, or null when the officer has to pick one. */
   value: MeetingChoice | null;
   /** The chosen meeting's own two lines. */
   label: { title: string; detail: string } | null;
   options: readonly MeetingOption[];
-  /** A line above the list: why nothing is picked yet. */
-  note?: string | null;
   onChange: (choice: MeetingChoice) => void;
+  /** A row whose minutes this member can open: opens them, as on the web. */
+  onOpen: (meetingId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -64,14 +63,13 @@ export function MeetingPickField({
       <Text accessibilityRole="header" style={styles.heading}>
         {MEETING_START_COPY.pickHeading}
       </Text>
-      {note ? <Text style={styles.note}>{note}</Text> : null}
       <ListSection>
         {options.map((option) => {
           const picked = value !== null && sameChoice(option.choice, value);
           return (
             <ListRow
               key={
-                option.choice.kind === "event" ? option.choice.event.id : "new"
+                option.choice.kind === "event" ? option.choice.event.id : "none"
               }
               label={option.title}
               description={option.detail}
@@ -81,7 +79,12 @@ export function MeetingPickField({
                 ) : undefined
               }
               accessibilityValue={picked ? "Picked" : undefined}
+              disabled={option.disabled}
               onPress={() => {
+                if (option.opens) {
+                  onOpen(option.opens);
+                  return;
+                }
                 onChange(option.choice);
                 setOpen(false);
               }}
@@ -98,10 +101,6 @@ function createStyles(tokens: SignetTokens) {
     list: { gap: tokens.spacing.sm },
     heading: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-    },
-    note: {
-      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
   });

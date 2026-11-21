@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ASSIGN_CAPTIONS,
+  groupFollowsLabel,
   memberAssignmentSections,
   memberGroupChips,
   memberRoleChips,
@@ -252,5 +253,20 @@ describe("memberGroupChips", () => {
     expect(
       memberGroupChips(GROUPS, "u1", false).every((c) => !c.removable),
     ).toBe(true);
+  });
+});
+
+describe("groupFollowsLabel", () => {
+  it("says what each automatic group follows, and nothing for a manual one", () => {
+    expect(
+      (["manual", "pledge_class", "class_year", "major"] as const).map((kind) =>
+        groupFollowsLabel({ kind }),
+      ),
+    ).toEqual([
+      null,
+      "Follows pledge class",
+      "Follows graduation year",
+      "Follows major",
+    ]);
   });
 });

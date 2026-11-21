@@ -15,6 +15,7 @@ import {
 import { useAuthSession } from "@/lib/auth-session";
 import type { RecorderApi } from "./controller";
 import { meetingRecorderDevice } from "./device";
+import { useLiveRecordingBeat } from "./live-beat";
 import { bindMeetingRecorder } from "./session";
 import { recorderStore } from "./store";
 
@@ -77,6 +78,7 @@ export function useMeetingRecorderRuntime(): void {
   );
 
   const off = isBetaOffModule("meetings");
+  useLiveRecordingBeat(!off);
   useEffect(() => {
     if (off) return;
     const recorder = bindMeetingRecorder(

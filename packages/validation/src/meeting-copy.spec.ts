@@ -41,16 +41,29 @@ describe("eventMinutesLines", () => {
     );
   });
 
-  it("calls a draft a draft, and leaves out counts of nothing", () => {
+  it("says where a draft stands, naming whom it is about, and leaves out counts of nothing", () => {
+    const draft = {
+      ...posted,
+      status: "draft" as const,
+      posted_at: null,
+      decision_count: 0,
+      action_item_count: 0,
+    };
+    expect(eventMinutesLines({ ...draft, started: false }).status).toBe(
+      "Not started",
+    );
+    expect(eventMinutesLines({ ...draft, started: true }).status).toBe(
+      "Drafting",
+    );
     expect(
-      eventMinutesLines({
-        ...posted,
-        status: "draft",
-        posted_at: null,
-        decision_count: 0,
-        action_item_count: 0,
-      }).status,
-    ).toBe("A draft, not posted yet");
+      eventMinutesLines({ ...draft, started: true }, "Shawn Klein").status,
+    ).toBe("Shawn Klein is drafting");
+    expect(
+      eventMinutesLines(
+        { ...draft, started: false, recording_by: "user-w" },
+        "Winston Hewitt",
+      ).status,
+    ).toBe("Winston Hewitt is recording");
   });
 
   it("carries the row's gist", () => {
@@ -62,24 +75,59 @@ describe("eventMinutesLines", () => {
 });
 
 describe("minutesRowTags", () => {
-  it("says Draft, Recorded, the counts and whose draft, in that order", () => {
+  it("says where a draft stands once, then Recorded and the counts, in that order", () => {
     expect(
       minutesRowTags(
         {
           status: "draft",
+          started: true,
           recorded: true,
           decision_count: 1,
           action_item_count: 2,
         },
-        "Eli's draft",
+        "Eli Park",
       ).map((tag) => tag.label),
     ).toEqual([
-      "Draft",
+      "Eli Park is drafting",
       "Recorded",
       "1 decision",
       "2 action items",
-      "Eli's draft",
     ]);
+  });
+
+  it("never says draft twice: an empty draft is Not started, one being recorded says who", () => {
+    const empty = {
+      status: "draft",
+      started: false,
+      recorded: false,
+      decision_count: 0,
+      action_item_count: 0,
+    };
+    expect(minutesRowTags(empty).map((tag) => tag.label)).toEqual([
+      "Not started",
+    ]);
+    expect(
+      minutesRowTags(
+        { ...empty, recording_by: "user-w" },
+        "Winston Hewitt",
+      ).map((tag) => tag.label),
+    ).toEqual(["Winston Hewitt is recording"]);
+    expect(
+      minutesRowTags({ ...empty, recording_by: "me" }).map((tag) => tag.label),
+    ).toEqual(["Recording"]);
+  });
+
+  it("tags minutes with no meeting yet", () => {
+    expect(
+      minutesRowTags({
+        status: "draft",
+        event_id: null,
+        started: true,
+        recorded: false,
+        decision_count: 0,
+        action_item_count: 0,
+      }).map((tag) => tag.label),
+    ).toEqual(["Drafting", "No meeting"]);
   });
 
   it("leaves out what the minutes don't hold", () => {

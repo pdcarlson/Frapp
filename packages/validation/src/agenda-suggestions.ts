@@ -1,5 +1,5 @@
 import type { EventAgendaTabledFrom } from "./event-agenda";
-import { meetingTabledFromLabel } from "./meeting-copy";
+import { meetingDayLabel, meetingTabledFromLabel } from "./meeting-copy";
 
 /**
  * Suggested agenda items (#5534, `spec/behavior/events.md` § Suggested
@@ -8,10 +8,13 @@ import { meetingTabledFromLabel } from "./meeting-copy";
  *
  * - `tabled`: a matter earlier posted minutes of a meeting with the same
  *   audience tabled, and no later agenda has taken up. Always first.
+ * - `minutes`: a suggested task from earlier posted minutes of a meeting
+ *   with the same audience that an officer sent to the next meeting's agenda
+ *   instead of making it a task (#5790). Listed with the tabled matters.
  * - `ai`: an item a small model wrote from recent same-audience minutes and
  *   the event's context.
  */
-export const AGENDA_SUGGESTION_KINDS = ["tabled", "ai"] as const;
+export const AGENDA_SUGGESTION_KINDS = ["tabled", "minutes", "ai"] as const;
 export type AgendaSuggestionKind = (typeof AGENDA_SUGGESTION_KINDS)[number];
 
 /** The most items the model may suggest for one event. */
@@ -24,8 +27,13 @@ export interface AgendaSuggestion {
   id: string;
   kind: AgendaSuggestionKind;
   text: string;
-  /** Where a tabled matter came from; null for an `ai` suggestion. */
+  /** Where a tabled matter came from; null for any other kind. */
   tabled_from: EventAgendaTabledFrom | null;
+  /**
+   * The minutes a `minutes` item was sent from, for "From the minutes of
+   * {day}"; null for any other kind.
+   */
+  from_minutes: AgendaSuggestionFromMinutes | null;
   /**
    * The posted minutes it was drawn from, for the link under it: for a
    * tabled matter the minutes that tabled it most recently.
@@ -33,6 +41,13 @@ export interface AgendaSuggestion {
   source_meeting_id: string | null;
   /** Why the model suggested it, in a few words; null for a tabled one. */
   reason: string | null;
+}
+
+/** The posted minutes a `minutes` suggestion was sent from. */
+export interface AgendaSuggestionFromMinutes {
+  meeting_id: string;
+  /** When that meeting started. */
+  start_time: string;
 }
 
 /** The Suggested list for one event. */
@@ -63,6 +78,18 @@ export function agendaTabledFromLabel(
     { first_start_time: from.start_time, times: from.times },
     now,
   );
+}
+
+/**
+ * "From the minutes of Tuesday, November 11" under a suggestion an officer
+ * sent from those minutes' suggested tasks (#5790).
+ */
+export function agendaFromMinutesLabel(
+  from: AgendaSuggestionFromMinutes,
+  now: Date = new Date(),
+): string {
+  const day = meetingDayLabel(from.start_time, now);
+  return day ? `From the minutes of ${day}` : "From earlier minutes";
 }
 
 /** The words both apps use for the Suggested section. */

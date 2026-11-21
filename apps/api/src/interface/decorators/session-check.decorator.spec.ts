@@ -39,6 +39,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
  */
 const ROSTER = [
   'GET activity',
+  'GET activity/now',
   'GET ai/suggestions',
   'GET channels',
   'GET channels/:id',
@@ -61,6 +62,7 @@ const ROSTER = [
   'GET meetings',
   'GET meetings/:id',
   'GET meetings/:id/action-item-tasks',
+  'GET meetings/live-recordings',
   'GET notifications',
   'GET points/leaderboard',
   'GET points/me',

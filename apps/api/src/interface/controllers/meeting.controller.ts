@@ -44,6 +44,7 @@ import {
   ListMeetingsQueryDto,
   MeetingDto,
   MeetingListItemDto,
+  MeetingLiveRecordingDto,
   MeetingSummaryDto,
   MeetingTemplateDto,
   PostMeetingDto,
@@ -75,6 +76,8 @@ const NO_FACTS = {
   action_item_count: 0,
   recorded: false,
   gist: null,
+  started: false,
+  recording_by: null,
 };
 
 function dtoOf(view: MeetingView): MeetingDto {
@@ -130,6 +133,20 @@ export class MeetingController {
     }));
   }
 
+  @Get('live-recordings')
+  @VerifySessionLocally()
+  @ApiOperation({
+    summary:
+      'Meetings a phone is recording right now, whose events the caller can see: who is recording, since when, and the event',
+  })
+  @ApiOkResponse({ type: MeetingLiveRecordingDto, isArray: true })
+  async liveRecordings(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<MeetingLiveRecordingDto[]> {
+    return this.meetings.liveRecordingsVisibleTo(chapterId, userId);
+  }
+
   @Get('template')
   @ApiOperation({ summary: 'The sections the chapter’s minutes show' })
   @ApiOkResponse({ type: MeetingTemplateDto })
@@ -173,7 +190,7 @@ export class MeetingController {
   @RequirePermissions(SystemPermissions.MEETINGS_RECORD)
   @ApiOperation({
     summary:
-      'Start minutes for a meeting’s event, or for a meeting with none (new_event). 409 `meeting.already_started` names the minutes that exist',
+      'Start minutes for a meeting’s event, for a meeting not on the calendar (new_event), or with no meeting yet (neither). 409 `meeting.already_started` names the minutes that exist',
   })
   @ApiCreatedResponse({ type: MeetingDto })
   @FeatureEvent(
@@ -232,12 +249,15 @@ export class MeetingController {
     );
   }
 
+  // No permission of its own: whoever may edit the minutes links them (the
+  // author of minutes started with no meeting, or a `meetings:edit` holder),
+  // and the service decides (`editable`). A new_event also needs
+  // `meetings:record` or `events:create`, checked where it is made.
   @Post(':id/event')
   @HttpCode(HttpStatus.OK)
-  @RequirePermissions(SystemPermissions.MEETINGS_EDIT)
   @ApiOperation({
     summary:
-      'Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes',
+      'Link minutes that have no event (started with no meeting, or whose event was deleted) to one, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes',
   })
   @ApiOkResponse({ type: MeetingDto })
   async linkEvent(
@@ -247,6 +267,37 @@ export class MeetingController {
     @Body() dto: LinkMeetingEventDto,
   ): Promise<MeetingDto> {
     return dtoOf(await this.meetings.linkEvent(chapterId, id, userId, dto));
+  }
+
+  @Put(':id/live-recording')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  // Whoever may record the minutes, as the recording routes ask.
+  @RequirePermissions(SystemPermissions.MEETINGS_RECORD)
+  @ApiOperation({
+    summary:
+      'The caller’s phone is recording these minutes: sent when it starts and every minute while it records, so lists can say who is recording',
+  })
+  @ApiNoContentResponse()
+  async markLiveRecording(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.meetings.markLiveRecording(chapterId, id, userId);
+  }
+
+  @Delete(':id/live-recording')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'The caller’s phone stopped recording these minutes',
+  })
+  @ApiNoContentResponse()
+  async clearLiveRecording(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.meetings.clearLiveRecording(chapterId, id, userId);
   }
 
   @Delete(':id')

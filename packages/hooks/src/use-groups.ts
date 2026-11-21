@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
@@ -23,8 +24,8 @@ function groupsKey(chapterId: string | null | undefined) {
 
 /**
  * The chapter's groups with who is in each: manual ones first, then pledge
- * classes and class years, which the server keeps and leaves out while
- * nobody is in them. Needs `members:view`, like the Directory.
+ * classes, class years and majors, which the server keeps and leaves out
+ * while nobody is in them. Needs `members:view`, like the Directory.
  */
 export function useGroups(options?: { enabled?: boolean }) {
   const client = useFrappClient();
@@ -39,6 +40,24 @@ export function useGroups(options?: { enabled?: boolean }) {
     staleTime: 60_000,
     enabled: (options?.enabled ?? true) && !!chapterId,
   });
+}
+
+/**
+ * The majors the chapter's members have now, as each major's group is named
+ * (the spelling most of its members use, #5778): what the profile's Major
+ * field suggests, so a member joins an existing major's group rather than
+ * starting a near twin. Empty while the groups load, or for a member who
+ * can't read them.
+ */
+export function useChapterMajors(options?: { enabled?: boolean }): string[] {
+  const groups = useGroups(options);
+  return useMemo(
+    () =>
+      (groups.data ?? [])
+        .filter((group) => group.kind === "major" && group.member_ids.length > 0)
+        .map((group) => group.name),
+    [groups.data],
+  );
 }
 
 function useInvalidateAfterGroupWrite() {
@@ -67,7 +86,8 @@ export function useCreateGroup() {
 
 /**
  * Rename, recolor or switch pinging. Only a manual group may be renamed; an
- * automatic one's name follows its class or year. Needs `groups:manage`.
+ * automatic one's name follows its class, year or major. Needs
+ * `groups:manage`.
  */
 export function useUpdateGroup() {
   const client = useFrappClient();

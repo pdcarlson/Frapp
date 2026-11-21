@@ -85,7 +85,7 @@ export function useUpdateUser() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (saved) => {
+    onSuccess: (saved, body) => {
       // The PATCH answers with the whole updated row, in the shape
       // `GET /v1/users/me` serves (both sign the photo), so it goes straight
       // into the cache: a form that closes on success closes onto it, without
@@ -101,6 +101,16 @@ export function useUpdateUser() {
       // cancels a GET that left before the PATCH landed, which would
       // otherwise answer last and put the pre-save row back.
       void invalidateProfileReads(queryClient);
+      // A major or graduation year puts the member in that major's or year's
+      // automatic group at once (#5778), so the groups and the mention list
+      // that offer it are read again rather than left a minute stale.
+      if ("major" in body || "graduation_year" in body) {
+        void queryClient.invalidateQueries({
+          predicate: ({ queryKey }) =>
+            queryKey[0] === "roles" &&
+            (queryKey[2] === "groups" || queryKey[2] === "mention-roles"),
+        });
+      }
     },
   });
 }

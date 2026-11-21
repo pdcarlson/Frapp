@@ -44,6 +44,9 @@ import {
   activityRowTaskId,
   findActivityTaskRow,
   useActivity,
+  useEventsOnNow,
+  nowCardEventIds,
+  withoutEvents,
   useActivityArchive,
   useActivitySnoozeWake,
   useActivityRecap,
@@ -108,6 +111,7 @@ import {
 } from "@/components/activity/semester-strip";
 import { WeekCard, WeekCardSkeleton } from "@/components/activity/week-card";
 import { WeekStrip, WeekStripSkeleton } from "@/components/activity/week-strip";
+import { NowCard } from "@/components/now-card";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
 import { NavGlyph } from "@/components/nav-glyph";
@@ -298,9 +302,19 @@ export default function ActivityScreen() {
   // screen's own clock, so a snoozed row comes back within a tick of its
   // time (#4982). The week card counts from the whole read: snoozing
   // something doesn't finish it.
+  // The event the Now card shows is at the top (#5777), so To do, the week
+  // card's Next and the Frapp card leave it out rather than say it twice. One
+  // under "+N more on now" keeps its row, since the card doesn't open it.
+  const { events: onNow } = useEventsOnNow();
   const visible = useMemo(
-    () => (activity.data ? activityAwake(activity.data, now) : undefined),
-    [activity.data, now],
+    () =>
+      activity.data
+        ? withoutEvents(
+            activityAwake(activity.data, now),
+            nowCardEventIds(onNow),
+          )
+        : undefined,
+    [activity.data, now, onNow],
   );
   const snoozedRows = useMemo(
     () => (activity.data ? activitySnoozedRows(activity.data, now) : []),
@@ -442,11 +456,16 @@ export default function ActivityScreen() {
   const nudgeRead = useActivityNudge({
     enabled: !layout.isPending && shows("nudge"),
   });
-  // Never the week card's Next a second time: when the card's pick is the
-  // Next row, the tray's first takes its place.
+  // Never the week card's Next or the Now card's event a second time: when
+  // the card's pick is one of them, the tray's first takes its place.
   const nudge = useMemo(
-    () => withoutWeekNext(nudgeRead.data, agenda?.next?.key ?? null),
-    [nudgeRead.data, agenda?.next?.key],
+    () =>
+      withoutWeekNext(
+        nudgeRead.data,
+        agenda?.next?.key ?? null,
+        nowCardEventIds(onNow),
+      ),
+    [nudgeRead.data, agenda?.next?.key, onNow],
   );
   const nudgeActions = useActivityNudgeActions();
   const recheckNudge = nudgeActions.recheck;
@@ -681,9 +700,12 @@ export default function ActivityScreen() {
         />
       );
     }
+    // Now has its own read (#5777): a meeting on stays at the top while the
+    // page's read loads or fails.
     if (activity.isPending) {
       return (
         <>
+          <NowCard />
           <SkeletonRegion label="Loading activity" flush>
             <View style={styles.body}>
               <WeekStripSkeleton />
@@ -714,6 +736,7 @@ export default function ActivityScreen() {
     if (activity.isError && !activity.data) {
       return (
         <>
+          <NowCard />
           <ErrorState
             title="Couldn't load your activity"
             body={describeLoadFailure(activity.error)}
@@ -786,6 +809,7 @@ export default function ActivityScreen() {
         }}
         style={styles.body}
       >
+        <NowCard />
         {strip ? (
           <WeekStrip
             days={strip}

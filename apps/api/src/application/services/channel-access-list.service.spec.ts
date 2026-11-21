@@ -60,7 +60,7 @@ describe('ChannelAccessListService.listOptions', () => {
 });
 
 describe('ChannelAccessListService.listOptions — groups (#4076)', () => {
-  it('offers groups after tiers and roles with who is in them, hiding an automatic one nobody is in and every class year', async () => {
+  it('offers groups after tiers and roles with who is in them, hiding an automatic one nobody is in and every class year and major', async () => {
     const groups = createChapterGroupRepoMock();
     const group = (id: string, name: string, kind: string) => ({
       id,
@@ -71,11 +71,13 @@ describe('ChannelAccessListService.listOptions — groups (#4076)', () => {
       mentionable: true,
       pledge_class_id: kind === 'pledge_class' ? `pc-${id}` : null,
       class_year: null,
+      major_key: null,
       created_at: '2026-11-12T00:00:00Z',
       updated_at: '2026-11-12T00:00:00Z',
     });
     groups.findByChapter.mockImplementation(async () => [
       group('g-year', 'Class of 2027', 'class_year'),
+      group('g-major', 'Music', 'major'),
       group('g-class', 'Alpha', 'pledge_class'),
       group('g-empty', 'Beta', 'pledge_class'),
       group('g-floor', 'Third floor', 'manual'),
@@ -99,6 +101,12 @@ describe('ChannelAccessListService.listOptions — groups (#4076)', () => {
         group_id: 'g-year',
         user_id: 'u1',
         kind: 'class_year',
+      },
+      {
+        chapter_id: 'ch-1',
+        group_id: 'g-major',
+        user_id: 'u1',
+        kind: 'major',
       },
     ]);
     const service = new ChannelAccessListService(
@@ -142,6 +150,7 @@ describe('ChannelAccessListService.normalize — groups (#4076)', () => {
   const FLOOR = '00000000-0000-4000-8000-0000000000f1';
   const YEAR = '00000000-0000-4000-8000-0000000000f2';
   const FOREIGN = '00000000-0000-4000-8000-0000000000f3';
+  const MAJOR = '00000000-0000-4000-8000-0000000000f4';
   const service = () => {
     const groups = createChapterGroupRepoMock();
     groups.findByChapter.mockResolvedValue([
@@ -153,6 +162,7 @@ describe('ChannelAccessListService.normalize — groups (#4076)', () => {
         name: 'Class of 2027',
       },
       { id: FOREIGN, chapter_id: 'ch-2', kind: 'manual', name: 'Elsewhere' },
+      { id: MAJOR, chapter_id: 'ch-1', kind: 'major', name: 'Music' },
     ]);
     return new ChannelAccessListService(
       {} as IRoleRepository,
@@ -179,5 +189,11 @@ describe('ChannelAccessListService.normalize — groups (#4076)', () => {
     await expect(
       service().normalize('ch-1', { who_can_see: [`group:${YEAR}`] }),
     ).rejects.toThrow(/class year/);
+  });
+
+  it('refuses a major, whose members set their own major (#5778)', async () => {
+    await expect(
+      service().normalize('ch-1', { who_can_post: [`group:${MAJOR}`] }),
+    ).rejects.toThrow(/A major can't/);
   });
 });

@@ -27,6 +27,10 @@ import {
   type IEventTypeRepository,
 } from '#domain/repositories/event-type.repository.interface';
 import {
+  MEETING_NEXT_AGENDA_ITEM_REPOSITORY,
+  type IMeetingNextAgendaItemRepository,
+} from '#domain/repositories/meeting-next-agenda-item.repository.interface';
+import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
@@ -43,9 +47,11 @@ import {
   agendaSuggestMessages,
   agendaSuggestSystem,
   capList,
+  agendaKeyText,
   checkAgendaSuggestions,
   minutesGist,
   rolePhrases,
+  sentCandidates,
   tabledCandidates,
   type AgendaRoleFact,
   type AgendaSourceMinutes,
@@ -57,6 +63,7 @@ import {
   stillOpenItems,
   topicLines,
 } from '#domain/utils/minutes-context';
+import { isSameMeetingKind } from '#domain/utils/next-meeting';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { AiConsentService } from './ai/ai-consent.service';
 import { AiGatewayService, type AiObjectResult } from './ai/ai-gateway.service';
@@ -82,6 +89,8 @@ interface Context {
   audience: string;
   /** Same-audience posted minutes this member may read, newest first. */
   earlier: Meeting[];
+  /** Each of those minutes' own meeting, by the minutes' id. */
+  earlierEvents: Map<string, Event>;
   /** The member's time zone, for the days the model is told. */
   timeZone: string;
 }
@@ -109,6 +118,8 @@ export interface AgendaSuggestionOptions {
  *   over, and decided rows teach only meetings with their audience.
  * - **Tabled first,** re-read on every list, with no model: the newest
  *   Tabled entry of each matter, unless an agenda already took it up.
+ *   Then what those minutes sent to the next meeting's agenda from their
+ *   suggested tasks (#5790), the same way: until an agenda takes it up.
  * - **Then the model's,** written once per event and audience when an
  *   editor first opens it, and again on Suggest again. Behind AI on the
  *   server, the chapter's meeting-notes switch and the member's yes (the
@@ -129,6 +140,8 @@ export class AgendaSuggestionService {
     @Inject(ROLE_TIER_REPOSITORY) private readonly tiers: IRoleTierRepository,
     @Inject(EVENT_TYPE_REPOSITORY)
     private readonly eventTypes: IEventTypeRepository,
+    @Inject(MEETING_NEXT_AGENDA_ITEM_REPOSITORY)
+    private readonly nextAgenda: IMeetingNextAgendaItemRepository,
     @Inject(CHAPTER_REPOSITORY)
     private readonly chapters: Pick<IChapterRepository, 'findById'>,
     private readonly events: EventService,
@@ -254,6 +267,9 @@ export class AgendaSuggestionService {
       event,
       audience: audienceKey(event),
       earlier: earlier.map((entry) => entry.row),
+      earlierEvents: new Map(
+        earlier.map((entry) => [entry.row.id, entry.event]),
+      ),
       timeZone: validTimeZone(options.timeZone),
     };
   }
@@ -291,16 +307,30 @@ export class AgendaSuggestionService {
   }
 
   /**
-   * Brings the event's open tabled suggestions up to date: a matter now
-   * found is written (once per key, whatever became of it before), and an
-   * open one no longer found (taken up by another agenda, its minutes
-   * changed, or the event's audience changed) is taken back.
+   * Brings the event's open suggestions from earlier minutes up to date:
+   * what they tabled, and what they sent to the next meeting's agenda
+   * (#5790). One now found is written (once per key, whatever became of it
+   * before), and an open one no longer found (taken up by another agenda,
+   * its minutes changed, or the event's audience changed) is taken back.
    */
   private async syncTabled(context: Context): Promise<void> {
     const { chapterId, event } = context;
     const minutes = context.earlier.map(sourceOf);
     const agenda = event.agenda ?? [];
-    const all = tabledCandidates(minutes, agenda, new Set(), Infinity);
+    const sentItems = await this.nextAgenda.listOffered(
+      chapterId,
+      context.earlier.map((row) => row.id),
+    );
+    // Only on the same kind of meeting as the minutes': type, else series or
+    // name (`isSameMeetingKind`), as a send picks one.
+    const sentHere = sentItems.filter((item) => {
+      const source = context.earlierEvents.get(item.meeting_id);
+      return source ? isSameMeetingKind(source, event, audienceKey) : false;
+    });
+    const all = [
+      ...tabledCandidates(minutes, agenda, new Set(), Infinity),
+      ...sentCandidates(sentHere, agenda, new Set(), Infinity),
+    ];
     const existing = await this.repo.listForEvent(chapterId, event.id);
     const added = await this.repo.addedKeys(
       chapterId,
@@ -314,16 +344,29 @@ export class AgendaSuggestionService {
         .filter((row) => row.status !== 'open')
         .map((row) => row.dedupe_key),
     ]);
-    const candidates = tabledCandidates(
+    const tabled = tabledCandidates(
       minutes,
       agenda,
       excluded,
       AGENDA_SUGGESTIONS_TABLED_MAX,
     );
-    const wanted = new Set(candidates.map((candidate) => candidate.key));
+    // An item sent on that reads the same as a tabled matter shows once, as
+    // the matter.
+    const tabledWords = new Set(
+      tabled.map((candidate) => agendaKeyText(candidate.text)),
+    );
+    const sent = sentCandidates(
+      sentHere,
+      agenda,
+      excluded,
+      AGENDA_SUGGESTIONS_TABLED_MAX,
+    ).filter((candidate) => !tabledWords.has(agendaKeyText(candidate.text)));
+    const wanted = new Set(
+      [...tabled, ...sent].map((candidate) => candidate.key),
+    );
     const stale = existing.filter(
       (row) =>
-        row.kind === 'tabled' &&
+        (row.kind === 'tabled' || row.kind === 'minutes') &&
         row.status === 'open' &&
         (!wanted.has(row.dedupe_key) || row.audience_key !== context.audience),
     );
@@ -338,21 +381,38 @@ export class AgendaSuggestionService {
         .filter((row) => !staleIds.has(row.id))
         .map((row) => row.dedupe_key),
     );
-    const drafts: EventAgendaSuggestionDraft[] = candidates
-      .filter((candidate) => !have.has(candidate.key))
-      .map((candidate) => ({
-        chapter_id: chapterId,
-        event_id: event.id,
-        kind: 'tabled',
-        text: candidate.text,
-        reason: null,
-        source_meeting_id: candidate.sourceMeetingId,
-        tabled_meeting_id: candidate.tabledFrom.meeting_id,
-        tabled_start_time: candidate.tabledFrom.start_time,
-        tabled_times: candidate.tabledFrom.times,
-        dedupe_key: candidate.key,
-        audience_key: context.audience,
-      }));
+    const drafts: EventAgendaSuggestionDraft[] = [
+      ...tabled
+        .filter((candidate) => !have.has(candidate.key))
+        .map((candidate) => ({
+          chapter_id: chapterId,
+          event_id: event.id,
+          kind: 'tabled' as const,
+          text: candidate.text,
+          reason: null,
+          source_meeting_id: candidate.sourceMeetingId,
+          tabled_meeting_id: candidate.tabledFrom.meeting_id,
+          tabled_start_time: candidate.tabledFrom.start_time,
+          tabled_times: candidate.tabledFrom.times,
+          dedupe_key: candidate.key,
+          audience_key: context.audience,
+        })),
+      ...sent
+        .filter((candidate) => !have.has(candidate.key))
+        .map((candidate) => ({
+          chapter_id: chapterId,
+          event_id: event.id,
+          kind: 'minutes' as const,
+          text: candidate.text,
+          reason: null,
+          source_meeting_id: candidate.sourceMeetingId,
+          tabled_meeting_id: null,
+          tabled_start_time: null,
+          tabled_times: null,
+          dedupe_key: candidate.key,
+          audience_key: context.audience,
+        })),
+    ];
     await this.repo.insertMany(drafts);
   }
 
@@ -494,8 +554,13 @@ export class AgendaSuggestionService {
         everyoneElse: eventOthersInvited(event),
       },
       agenda: (event.agenda ?? []).map((item) => item.text),
+      // Already offered from earlier minutes, so the model doesn't repeat it.
       tabled: existing
-        .filter((row) => row.kind === 'tabled' && row.status === 'open')
+        .filter(
+          (row) =>
+            (row.kind === 'tabled' || row.kind === 'minutes') &&
+            row.status === 'open',
+        )
         .map((row) => row.text),
       minutes: recent.map((row, index) => {
         const content = readMeetingContent(row.content);
@@ -538,9 +603,23 @@ export class AgendaSuggestionService {
       .sort((a, b) =>
         (a.tabled_start_time ?? '').localeCompare(b.tabled_start_time ?? ''),
       );
+    // Sent on from minutes (#5790): after the tabled matters, oldest minutes
+    // first, as they were sent.
+    const startOf = new Map(
+      context.earlier.map((row) => [row.id, row.event_start_time]),
+    );
+    const sent = shown
+      .filter((row) => row.kind === 'minutes')
+      .sort((a, b) =>
+        (startOf.get(a.source_meeting_id ?? '') ?? '').localeCompare(
+          startOf.get(b.source_meeting_id ?? '') ?? '',
+        ),
+      );
     const ai = shown.filter((row) => row.kind === 'ai');
     return {
-      suggestions: [...tabled, ...ai].map(toView),
+      suggestions: [...tabled, ...sent, ...ai].map((row) =>
+        toView(row, startOf),
+      ),
       // A run for the audience the event had before counts as none.
       generated_at:
         run && run.audience_key === context.audience ? run.generated_at : null,
@@ -622,12 +701,23 @@ export function agendaItemIdOf(suggestionId: string): string {
   return `s-${suggestionId}`;
 }
 
-function toView(row: EventAgendaSuggestion): AgendaSuggestion {
+function toView(
+  row: EventAgendaSuggestion,
+  startOf: ReadonlyMap<string, string>,
+): AgendaSuggestion {
+  const sentFrom =
+    row.kind === 'minutes' && row.source_meeting_id
+      ? startOf.get(row.source_meeting_id)
+      : undefined;
   return {
     id: row.id,
     kind: row.kind,
     text: row.text,
     tabled_from: tabledFromOf(row),
+    from_minutes:
+      sentFrom && row.source_meeting_id
+        ? { meeting_id: row.source_meeting_id, start_time: sentFrom }
+        : null,
     source_meeting_id: row.source_meeting_id,
     reason: row.reason,
   };

@@ -56,6 +56,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useStudySessions: () => ({ data: undefined }),
   useInvoices: () => ({ data: [] }),
   useMyGoals: () => ({ data: undefined }),
+  // The Edit sheet's Major suggestions (#5778) are its own spec's business.
+  useChapterMajors: () => [],
   useOwnAvatarTint: () => null,
   useCurrentUser: () => currentUser,
   useViewerUserId: () => viewerUserId,

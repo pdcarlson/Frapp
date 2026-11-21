@@ -96,25 +96,3 @@ export function meetingInTheRoom<T extends MeetingEventLike>(
       .sort((a, b) => distance(a) - distance(b))[0] ?? null
   );
 }
-
-/**
- * The quiet event a meeting that isn't on the calendar gets when its minutes
- * start today with no times typed (§ Writing minutes by hand): starting now
- * rounded down to five minutes, so members can check in while it runs, for
- * {@link NEW_MEETING_MINUTES}. The phone's + uses it, and so does web's New
- * minutes (`offCalendarSpan`).
- */
-export function meetingStartingNow(now: Date): {
-  start_time: string;
-  end_time: string;
-} {
-  const start = new Date(now);
-  start.setSeconds(0, 0);
-  start.setMinutes(start.getMinutes() - (start.getMinutes() % 5));
-  return {
-    start_time: start.toISOString(),
-    end_time: new Date(
-      start.getTime() + NEW_MEETING_MINUTES * 60_000,
-    ).toISOString(),
-  };
-}

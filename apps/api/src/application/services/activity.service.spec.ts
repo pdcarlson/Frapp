@@ -3203,6 +3203,164 @@ describe('ActivityService', () => {
     });
   });
 
+  describe('now (#5777)', () => {
+    const on = (overrides: Partial<Event> = {}) =>
+      event({
+        id: 'on',
+        start_time: iso(-HOUR / 2),
+        end_time: iso(HOUR / 2),
+        ...overrides,
+      });
+
+    it('reads only events whose check-in could have opened and that have not ended', async () => {
+      const { service, eventService } = build();
+
+      await service.getNow(CHAPTER, ME, null);
+
+      expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
+        endsAfter: iso(0),
+        startsBefore: iso(2 * HOUR),
+      });
+    });
+
+    it('keeps an event on after the caller checked in, which Activity counted as done', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findByChapter.mockResolvedValue([on()]);
+      attendanceRepo.findByUserForEvents.mockResolvedValue([
+        {
+          event_id: 'on',
+          user_id: ME,
+          status: 'PRESENT',
+          check_in_time: iso(-HOUR / 2),
+        },
+      ]);
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events).toEqual([
+        expect.objectContaining({
+          id: 'on',
+          checked_in: true,
+          checked_in_at: iso(-HOUR / 2),
+        }),
+      ]);
+      // One read of the member's rows, none per event.
+      expect(attendanceRepo.findByEventAndUser).not.toHaveBeenCalled();
+    });
+
+    it('is on from when check-in opens, and off at the end', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue([
+        // Check-in opened 5 minutes ago (10 before a start 5 minutes ahead).
+        on({ id: 'opening', start_time: iso(HOUR / 12), end_time: iso(HOUR) }),
+        // Starts in 20 minutes: check-in hasn't opened.
+        on({ id: 'later', start_time: iso(HOUR / 3), end_time: iso(HOUR) }),
+        // Ended a minute ago, inside the check-in grace.
+        on({ id: 'ended', start_time: iso(-HOUR), end_time: iso(-HOUR / 60) }),
+      ]);
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events.map((row) => row.id)).toEqual(['opening']);
+    });
+
+    it('shows an optional event only to who checked in or made it', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findByChapter.mockResolvedValue([
+        on({ id: 'skipped', is_mandatory: false }),
+        on({ id: 'attended', is_mandatory: false }),
+        on({ id: 'mine', is_mandatory: false, created_by: ME }),
+      ]);
+      attendanceRepo.findByUserForEvents.mockResolvedValue([
+        { event_id: 'attended', user_id: ME, status: 'LATE' },
+      ]);
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events.map((row) => row.id).sort()).toEqual([
+        'attended',
+        'mine',
+      ]);
+    });
+
+    it('shows every event on to an officer who runs events', async () => {
+      const { service, eventService } = build([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.EVENTS_UPDATE,
+      ]);
+      eventService.findByChapter.mockResolvedValue([
+        on({ id: 'optional', is_mandatory: false }),
+        // Invites only another role: the officer is asked where it is anyway.
+        on({
+          id: 'committee',
+          is_mandatory: false,
+          optional_role_ids: ['role-other'],
+          others_invited: false,
+        }),
+      ]);
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events.map((row) => row.id).sort()).toEqual([
+        'committee',
+        'optional',
+      ]);
+      expect(
+        now.events.find((row) => row.id === 'committee')?.check_in_open,
+      ).toBe(false);
+    });
+
+    it('leaves out an event the caller is excused from, and one that leaves them out', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findByChapter.mockResolvedValue([
+        on({ id: 'excused' }),
+        on({
+          id: 'not-mine',
+          is_mandatory: false,
+          optional_role_ids: ['role-other'],
+          others_invited: false,
+        }),
+      ]);
+      attendanceRepo.findByUserForEvents.mockResolvedValue([
+        { event_id: 'excused', user_id: ME, status: 'EXCUSED' },
+      ]);
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events).toEqual([]);
+    });
+
+    it('puts the one the caller checked in to first, then the latest start', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findByChapter.mockResolvedValue([
+        on({ id: 'early', start_time: iso(-HOUR) }),
+        on({ id: 'late', start_time: iso(-HOUR / 4) }),
+        on({ id: 'here', start_time: iso(-2 * HOUR) }),
+      ]);
+      attendanceRepo.findByUserForEvents.mockResolvedValue([
+        { event_id: 'here', user_id: ME, status: 'PRESENT' },
+      ]);
+
+      const now = await service.getNow(CHAPTER, ME, null);
+
+      expect(now.events.map((row) => row.id)).toEqual([
+        'here',
+        'late',
+        'early',
+      ]);
+    });
+
+    it('reads nothing while the Events module is off', async () => {
+      const { service, eventService } = build();
+      eventService.findByChapter.mockResolvedValue([on()]);
+
+      const now = await service.getNow(CHAPTER, ME, { events: false });
+
+      expect(eventService.findByChapter).not.toHaveBeenCalled();
+      expect(now.events).toEqual([]);
+    });
+  });
+
   describe('archive (#5127)', () => {
     it('serves events that invited the caller once their check-in has closed, newest first, with whether they checked in', async () => {
       const { service, eventService, attendanceRepo } = build();

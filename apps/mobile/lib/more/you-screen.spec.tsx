@@ -113,6 +113,8 @@ vi.mock("@/components/profile/edit-profile-sheet", async () => {
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The Edit sheet's Major suggestions (#5778) are its own spec's business.
+  useChapterMajors: () => [],
   useOwnAvatarTint: () => null,
   useMyGoals: (options?: { enabled?: boolean }) => {
     goalReadOptions.push(options);
