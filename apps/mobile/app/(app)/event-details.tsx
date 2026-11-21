@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  eventNowPill,
   eventSeriesKey,
   seriesCadenceOf,
   useEvent,
@@ -40,6 +41,7 @@ import {
 } from "@/components/events/event-excuses";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { EventNowPill } from "@/components/now-card";
 import { PencilGlyph } from "@/components/control-glyphs";
 import { HeaderButton } from "@/components/header-button";
 import {
@@ -285,8 +287,10 @@ export default function EventDetailsScreen() {
           .filter(Boolean)
           .join(" · ")}
       >
-        {requiredOfViewer || event.point_value ? (
+        {requiredOfViewer || event.point_value || eventNowPill(event, now) ? (
           <View style={styles.badgeRow}>
+            {/* Where it stands, first (#5777): on now, or ended today. */}
+            <EventNowPill event={event} now={now} />
             {requiredOfViewer ? (
               // The hairline kind, as the list and the chat card draw it
               // (#4132): one look for Mandatory on every screen.

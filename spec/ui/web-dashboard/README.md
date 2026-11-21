@@ -447,6 +447,8 @@ It is an inbox beside chat, the way Slack's Activity and Later, Discord's Inbox 
 It is not a home: `/` and `/dashboard` still land on `/chat`.
 What the read returns, and who sees which row, is [`../../behavior/activity.md`](../../behavior/activity.md).
 
+- **Now sits first** ([#5777](https://github.com/pdcarlson/Frapp/issues/5777)): the event on right now, also at the top of the chat rail, and as a pill at the top of the event's sheet. The rule and the read are [`activity.md` § Now](../../behavior/activity.md#now); the phone draws the same card at the top of Chat home and Activity.
+
 - **The page is the member's week, then what is left to do** ([#4766](https://github.com/pdcarlson/Frapp/issues/4766);
   Paul, 2026-11-13, on the summary's count tiles at a real chapter's scale: "too many little cards that tell me no information", "a completely paradigm-shifted way of displaying this", "maybe a percentage or like a dial").
   It is the phone's Activity tab on web, from the same model in `@repo/hooks` (`activityWeekSummary`, `activityAgenda`, `activityReview`, `activityGroups`, `activityStandingGauges`), so the two say the same things in the same order ([`../mobile/screens.md`](../mobile/screens.md), Activity;

@@ -63,6 +63,12 @@ import type {
   SeriesUpdateInput,
 } from './event-input';
 
+/** Told when an event is created: its chapter and the event (a series' head). */
+export type EventCreatedListener = (
+  chapterId: string,
+  event: Event,
+) => Promise<void>;
+
 /**
  * Event reads and single-row writes. Recurring-series writes
  * live in `EventSeriesService` and the pushes and chat card that follow a write
@@ -71,6 +77,7 @@ import type {
 @Injectable()
 export class EventService {
   private readonly logger = new Logger(EventService.name);
+  private readonly createdListeners: EventCreatedListener[] = [];
 
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
@@ -344,6 +351,16 @@ export class EventService {
   }
 
   /**
+   * Runs after an event (and, for a repeating one, its occurrences) is
+   * created. A listener's failure is reported and never fails the create.
+   * Used by Add to next meeting's agenda (#5790), whose waiting items go onto
+   * the next matching meeting when it is created.
+   */
+  onCreated(listener: EventCreatedListener): void {
+    this.createdListeners.push(listener);
+  }
+
+  /**
    * `requestZone` is the creating request's `x-time-zone`: a legacy repeat
    * token keeps that zone's wall clock (`EventSeriesService.legacyZoneFor`).
    */
@@ -518,6 +535,19 @@ export class EventService {
     // field rather than a `false` that would claim a card failed when none
     // was ever due.
     const cardPosted = await this.announcements.tryPostEventCard(input, parent);
+
+    for (const listener of this.createdListeners) {
+      try {
+        await listener(input.chapter_id, parent);
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'event-created-listener',
+          message: `A listener failed after event ${parent.id} was created`,
+          error,
+        });
+      }
+    }
 
     return cardPosted === undefined
       ? parent
@@ -724,6 +754,24 @@ export class EventService {
       );
     }
     const next = [...agenda, item];
+    await this.eventRepo.update(id, chapterId, { agenda: next });
+    return next;
+  }
+
+  /**
+   * Takes one item off an event's agenda by its id (Undo of Add to next
+   * meeting's agenda, #5790). Returns the agenda as saved; an item already
+   * gone changes nothing.
+   */
+  async removeAgendaItem(
+    id: string,
+    chapterId: string,
+    itemId: string,
+  ): Promise<EventAgendaItem[]> {
+    const event = await this.findById(id, chapterId);
+    const agenda = event.agenda ?? [];
+    if (!agenda.some((entry) => entry.id === itemId)) return agenda;
+    const next = agenda.filter((entry) => entry.id !== itemId);
     await this.eventRepo.update(id, chapterId, { agenda: next });
     return next;
   }

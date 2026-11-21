@@ -16,6 +16,7 @@ import {
 import {
   AGENDA_CHECK_OFF_LOCKED_COPY,
   AGENDA_SUGGESTION_COPY,
+  agendaFromMinutesLabel,
   agendaTabledFromLabel,
   agendaProblem,
   attachmentLinkProblem,
@@ -418,9 +419,23 @@ export function AgendaDraftList({
 function TabledFromLink({ from }: { from: EventAgendaTabledFrom }) {
   const label = agendaTabledFromLabel(from);
   if (!label) return null;
+  return <MinutesLink meetingId={from.meeting_id} label={label} />;
+}
+
+/**
+ * A line under an item that opens the minutes it came from: "Tabled from
+ * {day}", or "From the minutes of {day}" for an action item sent on (#5790).
+ */
+function MinutesLink({
+  meetingId,
+  label,
+}: {
+  meetingId: string;
+  label: string;
+}) {
   return (
     <Link
-      href={`/meetings/${from.meeting_id}`}
+      href={`/meetings/${meetingId}`}
       className={cn(
         "block w-fit rounded-sm text-caption text-muted-foreground no-underline hover:underline",
         FOCUS_RING_OFFSET,
@@ -503,6 +518,11 @@ function AgendaSuggestions({
                 {row.text}
                 {row.tabled_from ? (
                   <TabledFromLink from={row.tabled_from} />
+                ) : row.from_minutes ? (
+                  <MinutesLink
+                    meetingId={row.from_minutes.meeting_id}
+                    label={agendaFromMinutesLabel(row.from_minutes)}
+                  />
                 ) : row.reason ? (
                   <span className="block text-caption text-muted-foreground">
                     {row.reason}

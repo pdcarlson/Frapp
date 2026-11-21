@@ -139,6 +139,18 @@ export interface IAiSuggestionRepository {
   release(chapterId: string, id: string): Promise<void>;
 
   /**
+   * Puts a dismissed suggestion back to waiting with its words, for Undo of
+   * a suggestion handled another way (#5790). False when it isn't dismissed
+   * any more, or has expired since.
+   */
+  reopen(
+    chapterId: string,
+    id: string,
+    words: { payload: Record<string, unknown>; quote: string | null },
+    now: string,
+  ): Promise<boolean>;
+
+  /**
    * Puts back every accept, in every chapter, left `accepting` since before
    * `before`: the API died between Accept and the change. Returns how many.
    */

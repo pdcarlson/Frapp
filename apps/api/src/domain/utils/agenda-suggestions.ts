@@ -139,6 +139,49 @@ export function tabledCandidates(
   return out.slice(0, max);
 }
 
+/** An action item sent from minutes to the next meeting's agenda (#5790). */
+export interface SentCandidate {
+  text: string;
+  /** The minutes it was sent from. */
+  sourceMeetingId: string;
+  key: string;
+}
+
+/** The key of an item sent from minutes: that item, whatever its words. */
+export function sentSuggestionKey(itemId: string): string {
+  return `minutes:${itemId}`;
+}
+
+/**
+ * The items earlier minutes sent to the next meeting's agenda (#5790), in
+ * the order they were sent, for one event: each at most once. One whose
+ * words are already on tonight's agenda is left out, and so are keys in
+ * `excluded` (taken up by an agenda, or decided for this event), before the
+ * cap, so they take no place.
+ */
+export function sentCandidates(
+  items: readonly { id: string; meeting_id: string; text: string }[],
+  agenda: readonly EventAgendaItem[],
+  excluded: ReadonlySet<string> = new Set(),
+  max: number = AGENDA_SUGGESTIONS_TABLED_MAX,
+): SentCandidate[] {
+  const onAgendaText = new Set(agenda.map((item) => agendaKeyText(item.text)));
+  const seenText = new Set<string>();
+  const out: SentCandidate[] = [];
+  for (const item of items) {
+    const text = normalizeAgendaText(item.text).slice(0, EVENT_AGENDA_ITEM_MAX);
+    if (!text) continue;
+    const words = agendaKeyText(text);
+    const key = sentSuggestionKey(item.id);
+    if (excluded.has(key) || onAgendaText.has(words) || seenText.has(words)) {
+      continue;
+    }
+    seenText.add(words);
+    out.push({ text, sourceMeetingId: item.meeting_id, key });
+  }
+  return out.slice(0, max);
+}
+
 /** One role the event names, as the model reads it. */
 export interface AgendaRoleFact {
   name: string;

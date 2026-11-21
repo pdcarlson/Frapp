@@ -61,6 +61,9 @@ const mockLayout = vi.fn<
 const mockSaveLayout = vi.fn();
 const mockResetLayout = vi.fn();
 
+const eventsNow = vi.hoisted(() => ({
+  value: { events: [] as unknown[], now: Date.now() },
+}));
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
@@ -68,6 +71,11 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     // the groups and the gauges (`activity-agenda.ts`, `activity-rows.ts`,
     // `activity-standing.ts`). Only the reads are stood in for.
     ACTIVITY_GLYPH_NAV: actual.ACTIVITY_GLYPH_NAV,
+    // The Now card's read (#5777): nothing on unless a test says so.
+    useEventsOnNow: () => eventsNow.value,
+    withoutEvents: actual.withoutEvents,
+    nowCardEventIds: actual.nowCardEventIds,
+    eventNowState: actual.eventNowState,
     ACTIVITY_ARCHIVE_EMPTY: actual.ACTIVITY_ARCHIVE_EMPTY,
     ACTIVITY_ARCHIVE_SECTION_NAMES: actual.ACTIVITY_ARCHIVE_SECTION_NAMES,
     activityArchiveGroups: actual.activityArchiveGroups,
@@ -809,6 +817,43 @@ describe("ActivityPage", () => {
       ).toBeInTheDocument();
     });
 
+    it("leaves the Now card's event out of the week card, and shows the card while the page loads (#5777)", () => {
+      const live = {
+        ...event,
+        start_time: "2026-11-12T19:00:00.000Z",
+        attendance: "required",
+        check_in_open: true,
+        checked_in: false,
+      };
+      eventsNow.value = { events: [live], now: Date.now() };
+      try {
+        mockActivity.mockReturnValue(
+          loaded({
+            coming_up: [live],
+            week: week({ events: count(0, 1), tasks: count(0, 1) }),
+          }),
+        );
+        const { unmount } = render(<ActivityPage />);
+        const now = screen.getByRole("region", { name: "On now" });
+        expect(within(now).getByText("Chapter meeting")).toBeInTheDocument();
+        expect(within(weekCard()).queryByText("Happening now")).toBeNull();
+        expect(screen.getAllByText("Chapter meeting")).toHaveLength(1);
+        unmount();
+
+        mockActivity.mockReturnValue({
+          ...loaded({}),
+          data: undefined,
+          isPending: true,
+        });
+        render(<ActivityPage />);
+        expect(
+          screen.getByRole("region", { name: "On now" }),
+        ).toBeInTheDocument();
+      } finally {
+        eventsNow.value = { events: [], now: Date.now() };
+      }
+    });
+
     it("waits for the viewer before drawing, since a row's panel draws for them", () => {
       mockActivity.mockReturnValue(loaded({ week: week() }));
       mockUser.mockReturnValue({ userId: null, isLoading: true });
@@ -848,7 +893,9 @@ describe("ActivityPage", () => {
       const { unmount } = render(<ActivityPage />);
 
       const card = screen.getByRole("region", { name: "Last week" });
-      expect(within(card).getByText("November 8 – November 14")).toBeInTheDocument();
+      expect(
+        within(card).getByText("November 8 – November 14"),
+      ).toBeInTheDocument();
       expect(
         within(card)
           .getAllByRole("listitem")

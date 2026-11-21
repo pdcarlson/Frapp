@@ -241,6 +241,16 @@ describe("formatEventWindow (#4135)", () => {
     ).toBe("Tonight · 6:00 – 7:00 PM");
   });
 
+  it("says Today, not Tonight, once the evening event has ended (#5777)", () => {
+    expect(
+      formatEventWindow(
+        pt("2026-11-04T18:00:00-08:00"),
+        pt("2026-11-04T19:00:00-08:00"),
+        new Date("2026-11-04T19:30:00-08:00"),
+      ),
+    ).toBe("Today · 6:00 – 7:00 PM");
+  });
+
   it("says Today, not Tonight, for a morning event", () => {
     expect(
       formatEventWindow(

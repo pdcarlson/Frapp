@@ -599,6 +599,38 @@ describe("Suggested agenda items (#5534)", () => {
     expect(section).toHaveTextContent("Still open from last week");
   });
 
+  it("labels an action item sent from minutes with those minutes, linking to them (#5790)", () => {
+    state.suggestions = [
+      {
+        id: "s3",
+        kind: "minutes",
+        text: "Plan backup activities for rush",
+        tabled_from: null,
+        from_minutes: {
+          meeting_id: "m-last",
+          start_time: "2026-11-18T23:00:00.000Z",
+        },
+        source_meeting_id: "m-last",
+        reason: null,
+      },
+    ];
+    render(
+      <EventMeetingLists
+        eventId="e1"
+        lists={{ agenda: [], attachments: [] }}
+        canEdit
+        upcoming
+        checkOffOpen
+        documentsOn
+      />,
+    );
+    const section = screen.getByRole("region", { name: "Suggested" });
+    expect(section).toHaveTextContent("Plan backup activities for rush");
+    expect(
+      screen.getByRole("link", { name: /^From the minutes of / }),
+    ).toHaveAttribute("href", "/meetings/m-last");
+  });
+
   it("adds and dismisses", async () => {
     const user = userEvent.setup();
     render(

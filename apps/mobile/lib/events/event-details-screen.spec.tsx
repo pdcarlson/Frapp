@@ -387,6 +387,17 @@ describe("Event details layout", () => {
     expect(checkIn).toBeGreaterThan(details);
   });
 
+  it("carries the Now pill while the event is on, then Ended for the rest of the day (#5777)", () => {
+    const tree = render();
+    expect(screenText(tree)).toMatch(/Now · until/);
+    act(() => {
+      // Ten minutes past the end.
+      vi.advanceTimersByTime(60 * 60_000);
+    });
+    expect(screenText(tree)).toMatch(/Ended /);
+    expect(screenText(tree)).not.toContain("Tonight");
+  });
+
   it("offers no calendar export until calendar sync ships (#3708)", () => {
     expect(screenText(render())).not.toMatch(/add to calendar/i);
   });

@@ -43,6 +43,7 @@ import {
   AGENDA_CHECK_OFF_LOCKED_COPY,
   AGENDA_LOCKED_COPY,
   AGENDA_SUGGESTION_COPY,
+  agendaFromMinutesLabel,
   agendaTabledFromLabel,
   agendaProblem,
   attachmentLinkProblem,
@@ -698,11 +699,25 @@ export function AgendaDraftList({
  * `TabledFromLink`; the minutes open only for their audience.
  */
 function TabledFromLink({ from }: { from: EventAgendaTabledFrom }) {
+  const label = agendaTabledFromLabel(from);
+  if (!label) return null;
+  return <MinutesLink meetingId={from.meeting_id} label={label} />;
+}
+
+/**
+ * A line under an item that opens the minutes it came from: "Tabled from
+ * {day}", or "From the minutes of {day}" for an action item sent on (#5790).
+ */
+function MinutesLink({
+  meetingId,
+  label,
+}: {
+  meetingId: string;
+  label: string;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const label = agendaTabledFromLabel(from);
-  if (!label) return null;
   return (
     <Pressable
       accessibilityRole="link"
@@ -711,7 +726,7 @@ function TabledFromLink({ from }: { from: EventAgendaTabledFrom }) {
       onPress={() =>
         router.push({
           pathname: "/minutes-details",
-          params: { id: from.meeting_id },
+          params: { id: meetingId },
         })
       }
       style={({ pressed }) => (pressed ? styles.pressed : null)}
@@ -792,6 +807,11 @@ function AgendaSuggestions({
             <Text style={styles.text}>{row.text}</Text>
             {row.tabled_from ? (
               <TabledFromLink from={row.tabled_from} />
+            ) : row.from_minutes ? (
+              <MinutesLink
+                meetingId={row.from_minutes.meeting_id}
+                label={agendaFromMinutesLabel(row.from_minutes)}
+              />
             ) : row.reason ? (
               <Text style={styles.caption}>{row.reason}</Text>
             ) : null}

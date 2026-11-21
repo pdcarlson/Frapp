@@ -231,7 +231,8 @@ export function MemberProfile({
     [rolesData.roles, rolesData.tiers, rolesData.reach, detail?.roleIds],
   );
   const groupsQuery = useGroups({ enabled: true });
-  // The chapter's own groups first, then the pledge class's and class year's.
+  // The chapter's own groups first, then the pledge class's, class year's and
+  // major's.
   const memberGroups = useMemo(
     () => memberGroupChips(groupsQuery.data ?? [], userId, false),
     [groupsQuery.data, userId],

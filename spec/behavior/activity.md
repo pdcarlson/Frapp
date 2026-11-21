@@ -6,7 +6,8 @@ chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../pro
 
 This file owns the reads behind the page, `GET /v1/activity`, its
 [standing](#standing), `GET /v1/activity/standing`, its [recap](#recap),
-`GET /v1/activity/recap`, its [archive](#archive), `GET /v1/activity/archive`, and how each member
+`GET /v1/activity/recap`, its [archive](#archive), `GET /v1/activity/archive`, what is [on now](#now),
+`GET /v1/activity/now`, and how each member
 arranged its [cards](#cards), `/v1/activity/layout`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
@@ -150,6 +151,47 @@ page on both clients. See [Week](#week).
   rather than show it as empty.
 - **Names are never invented.** A task's or entry's member who can no longer be resolved has an
   empty name, the same convention as the roster.
+
+## Now
+
+`GET /v1/activity/now` is the events on right now for the member, the Now card at the top of Chat
+home and Activity on the phone, and of the chat rail and Activity on the web
+([#5777](https://github.com/pdcarlson/Frapp/issues/5777)). Paul sat in Recruitment Meetings on
+2026-11-19, checked in, and no screen said it was on: Chat's Up next had moved on to the next start,
+and Activity counted his check-in as the event done. Now is the one answer to "what's on right now",
+the way Teams puts a bar over a meeting's chat and Discord keeps a live voice channel at the top of
+the sidebar. It is a separate, small read, so Chat home doesn't load the whole of `GET /v1/activity`.
+
+- **An event is on** from when its check-in opens (its start less `check_in_opens_minutes`, or the
+  default lead) until its end, not at the end and not in check-in's grace after it (`eventOnAt` in
+  `@repo/validation`). Checking in doesn't end it.
+- **Which events**: those the member is invited to that are required for them, that they checked
+  in to, or that they made, and for a holder of `events:update` every event on, invited or not,
+  since they are the ones asked where the meeting is (one that doesn't invite them offers no
+  check-in). Never one the member is excused from. An optional event a member hasn't touched stays
+  in To do with its Check in.
+- **Checked in** is an attendance row marked present or late, read once for the events on, with its
+  time (`checked_in_at`). The read makes no per-event reads, since every open Chat makes it.
+- **Order and size**: checked in first, then the latest start, at most 5
+  (`EVENTS_NOW_LIMIT`). The card shows the first and says "+N more on now" under it.
+- **Each row is an Activity event row** (`ActivityEventDto`), read through the events module under
+  its own rule for who may see an event. The read requires `members:view`, and returns nothing
+  while the chapter has the events module off.
+- **The clients re-read it every minute**, drop a row at its end between reads, and re-read it
+  after the member checks in (`useCheckIn`), so the card says "Checked in" at once.
+- **No row twice**: while an event leads the Now card, Activity's To do, week strip, the week card's
+  Next and the phone's Frapp card leave it out (`nowCardEventIds`). The week ring still counts it.
+  One under "+N more on now" keeps its row and its Check in, since the card doesn't open it.
+- **Happening now** on Activity means the same window: an event in check-in's grace after its end
+  still offers Check in, under its day, but no longer says it is happening.
+- **Activity shows Now while its own read loads or fails**, since Now has its own read.
+- **The card indicates rather than narrates**: "Now · until 10:25 PM", the name, then the member's
+  own state ("Checked in 9:24 PM" from the row's `checked_in_at`, or "Check-in is open") and where. It opens the event. With nothing on, it
+  draws nothing.
+- **The event's own page** carries the same words as a pill under its title: "Now · until 10:25 PM"
+  while on, "Ended 10:25 PM" for the rest of that day (`eventNowPill` in `@repo/hooks`).
+  Its when line stops saying "Tonight" once the event has ended, and says "Today" instead
+  (`formatEventWindow` in `@repo/formatting`).
 
 ## Cards
 

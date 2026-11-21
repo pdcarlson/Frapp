@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { StyleSheet, Text } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -23,13 +23,19 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * polls. Pull down to try again."), in the warning hue as web's note draws
  * it, so a part that failed never reads as a part that's empty.
  */
+interface NoteAction {
+  label: string;
+  onPress: () => void;
+}
+
 export function InlineNote({
   children,
   action,
   tone = "default",
 }: {
   children: ReactNode;
-  action?: { label: string; onPress: () => void };
+  /** A link after the line, or several (Open and Undo). */
+  action?: NoteAction | readonly NoteAction[];
   /**
    * `warning` for a line that says part of the list couldn't load (Activity's
    * "Couldn't load polls"), in the warning hue as web's `text-warning` note,
@@ -43,20 +49,22 @@ export function InlineNote({
   return (
     <Text style={[styles.note, tone === "warning" ? styles.noteWarning : null]}>
       {children}
-      {action ? (
-        <>
-          {" "}
-          <Text
-            accessibilityRole="link"
-            accessibilityLabel={action.label}
-            onPress={action.onPress}
-            suppressHighlighting={false}
-            style={[styles.action, { color: accent }]}
-          >
-            {action.label}
-          </Text>
-        </>
-      ) : null}
+      {(action ? (Array.isArray(action) ? action : [action]) : []).map(
+        (entry: NoteAction) => (
+          <Fragment key={entry.label}>
+            {" "}
+            <Text
+              accessibilityRole="link"
+              accessibilityLabel={entry.label}
+              onPress={entry.onPress}
+              suppressHighlighting={false}
+              style={[styles.action, { color: accent }]}
+            >
+              {entry.label}
+            </Text>
+          </Fragment>
+        ),
+      )}
     </Text>
   );
 }
