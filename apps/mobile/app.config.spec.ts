@@ -80,6 +80,11 @@ function loadConfig() {
     PRODUCTION_UPDATE_SENTRY_DSN_ERROR: string;
     STAGING_PROFILE: string;
     STAGING_IDENTITY: { name: string; scheme: string; applicationId: string };
+    STAGING_GOOGLE_SIGN_IN: {
+      webClientId: string;
+      iosClientId: string;
+      androidClientId: string;
+    };
     APP_VARIANT_VALUE_ERROR: string;
     STAGING_RUNTIME_ERROR: string;
     APP_VARIANT_PROFILE_ERROR: string;
@@ -604,6 +609,28 @@ describe("the staging variant (#2511)", () => {
     expect(result.android.adaptiveIcon).toEqual(
       (appJson.android as { adaptiveIcon: unknown }).adaptiveIcon,
     );
+  });
+
+  it("signs in with Google through its own clients, never the store app's (#4148)", () => {
+    const { applyMobileConfig, STAGING_GOOGLE_SIGN_IN } = loadConfig();
+    const result = applyMobileConfig(appJson, {
+      env: stagingBuildEnv,
+      existsSync: missing,
+    }) as { extra: { googleSignIn: Record<string, string> }; plugins: unknown[] };
+    expect(result.extra.googleSignIn).toEqual(STAGING_GOOGLE_SIGN_IN);
+    expect(STAGING_GOOGLE_SIGN_IN.webClientId).toMatch(
+      /\.apps\.googleusercontent\.com$/,
+    );
+    // An empty iOS client keeps the plugin, and so the native scheme, out.
+    if (!STAGING_GOOGLE_SIGN_IN.iosClientId) {
+      expect(JSON.stringify(result.plugins)).not.toContain(
+        "@react-native-google-signin/google-signin",
+      );
+    }
+    // The rest of extra (the EAS project) is kept.
+    expect(
+      (result.extra as unknown as { eas: unknown }).eas,
+    ).toEqual((appJson.extra as { eas: unknown }).eas);
   });
 
   it("claims no links when its dashboard is not an https origin of its own", () => {

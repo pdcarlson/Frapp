@@ -472,6 +472,25 @@ const STAGING_IDENTITY = Object.freeze({
   applicationId: "live.frapp.mobile.staging",
 });
 
+/**
+ * Frapp Staging's own Google sign-in clients (Paul, 2026-11-21). Google ties
+ * an iOS client to one bundle ID and an Android client to one package and
+ * signing key, so the staging app (`live.frapp.mobile.staging`) can't use the
+ * store app's clients in app.json's `extra.googleSignIn`: until these are set,
+ * every Google sign-in in Frapp Staging opens Supabase's web sheet ("wants to
+ * use …supabase.co to Sign In"), which is what sent a new member to the
+ * browser on 2026-11-20 (#4148). The Web client is the one staging Supabase's
+ * Google provider lists ("Frapp Web (staging)", in Google Cloud project
+ * "Frapp sign-in"). An empty ID keeps that platform on the browser flow, as in
+ * app.json; recording one is a native change (see `withGoogleSignIn`).
+ */
+const STAGING_GOOGLE_SIGN_IN = Object.freeze({
+  webClientId:
+    "661618060468-nefnjm72f4at1hfrl48bf4fjb2l18uel.apps.googleusercontent.com",
+  iosClientId: "",
+  androidClientId: "",
+});
+
 const APP_VARIANT_VALUE_ERROR = [
   `${APP_VARIANT_ENV} must be unset (the production app) or "${STAGING_VARIANT}"`,
   "(the side-by-side staging app). Any other value would build an app with",
@@ -584,10 +603,13 @@ function withStagingVariant(config, runtimeVersion, appUrl) {
     delete ios.associatedDomains;
     delete android.intentFilters;
   }
+  const extra =
+    config.extra && typeof config.extra === "object" ? config.extra : {};
   return {
     ...config,
     name: STAGING_IDENTITY.name,
     scheme: STAGING_IDENTITY.scheme,
+    extra: { ...extra, googleSignIn: { ...STAGING_GOOGLE_SIGN_IN } },
     ...(runtimeVersion ? { runtimeVersion } : {}),
     ios: { ...ios, bundleIdentifier: STAGING_IDENTITY.applicationId },
     android: { ...android, package: STAGING_IDENTITY.applicationId },
@@ -724,6 +746,7 @@ applyExpoConfig.STAGING_RUNTIME_ENV = STAGING_RUNTIME_ENV;
 applyExpoConfig.STAGING_RUNTIME_ERROR = STAGING_RUNTIME_ERROR;
 applyExpoConfig.STAGING_PROFILE = STAGING_PROFILE;
 applyExpoConfig.STAGING_IDENTITY = STAGING_IDENTITY;
+applyExpoConfig.STAGING_GOOGLE_SIGN_IN = STAGING_GOOGLE_SIGN_IN;
 applyExpoConfig.APP_VARIANT_VALUE_ERROR = APP_VARIANT_VALUE_ERROR;
 applyExpoConfig.APP_VARIANT_PROFILE_ERROR = APP_VARIANT_PROFILE_ERROR;
 applyExpoConfig.STAGING_VARIANT_PRODUCTION_ORIGIN_ERROR =

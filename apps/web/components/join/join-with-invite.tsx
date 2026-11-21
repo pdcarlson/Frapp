@@ -22,7 +22,11 @@ import {
 import type { ChapterMembershipSummary } from "@repo/hooks";
 import { extractInviteToken, inviteJoinFailureReason } from "@repo/validation";
 import { AppHandoff } from "@/components/auth/app-handoff";
-import { WELCOME_PATH } from "@/lib/auth/join-visit";
+import {
+  JOIN_IN_BROWSER_KEY,
+  JOIN_IN_BROWSER_VALUE,
+  WELCOME_PATH,
+} from "@/lib/auth/join-visit";
 import { AuthScreen } from "@/components/auth/auth-screen";
 import { SignedInAs } from "@/components/auth/signed-in-as";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
@@ -31,8 +35,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  JOIN_IN_BROWSER_KEY,
-  JOIN_IN_BROWSER_VALUE,
   joinPathWithoutThen,
   clearJoinMark,
   inviteVisitId,
@@ -79,8 +81,14 @@ type SessionState = "checking" | "signed-out" | "ready" | "failed";
  *   name. Asking needs an account, so the sender knows who; signed out, the
  *   button opens the ways in, marked `then=ask`.
  * - **Not an invite** (404). Says so, and takes another link.
- * - **A phone.** The app comes first (`AppHandoff`, #4002), under the same
- *   card, for anyone it would serve: signed out, or signed in with no chapter.
+ * - **A phone.** The app is the only way in (`AppHandoff`, #4002; Paul,
+ *   2026-11-21), under the same card, signed in or not and member or not:
+ *   the app signs in natively, joins, or opens the chapter for someone
+ *   already in it. Joining here on a phone and then opening the app was two
+ *   sign-ins and onboarding twice. Only a sign-in already on its way back
+ *   (`then`) finishes here, so nobody is stranded mid-way, and an old phone
+ *   build's hand-off (`web=1`, `join-visit.ts`) goes on here, so it can't
+ *   loop.
  *
  * The page reads the invite with `POST /v1/invites/details`, which needs no
  * sign-in and answers for a dead link too, so nothing here waits on Auth to
@@ -142,15 +150,15 @@ export function JoinWithInvite({ token }: { token: string }) {
   );
 
   const phone = usePhonePlatform();
-  const inBrowser =
+  // An old phone build's hand-off of a member's second-chapter invite
+  // (`JOIN_IN_BROWSER_KEY`) is the one phone visit that goes on here.
+  const handedBackByApp =
     searchParams.get(JOIN_IN_BROWSER_KEY) === JOIN_IN_BROWSER_VALUE;
   const offerApp =
     phone !== null &&
-    !inBrowser &&
+    !handedBackByApp &&
     then === null &&
-    invite?.state === "live" &&
-    (sessionState === "signed-out" ||
-      (ready && !chapters.isLoading && memberships.length === 0));
+    invite?.state === "live";
 
   useEffect(() => {
     let live = true;
@@ -384,6 +392,17 @@ export function JoinWithInvite({ token }: { token: string }) {
 
   if (!invite) return null;
 
+  // ── A live link on a phone: the app, signed in or not, member or not ─────
+  if (offerApp && phone !== null) {
+    return (
+      <AppHandoff
+        platform={phone}
+        token={token}
+        hero={<InviteHero details={invite} />}
+      />
+    );
+  }
+
   // ── Already in this chapter ──────────────────────────────────────────────
   if (alreadyIn && !busy) {
     return (
@@ -482,22 +501,6 @@ export function JoinWithInvite({ token }: { token: string }) {
           )}
         </div>
       </AuthScreen>
-    );
-  }
-
-  // ── A live link on a phone: the app first ────────────────────────────────
-  if (offerApp && phone !== null) {
-    return (
-      <AppHandoff
-        platform={phone}
-        token={token}
-        hero={<InviteHero details={invite} />}
-        onContinueInBrowser={() => {
-          const next = new URLSearchParams(searchParams.toString());
-          next.set(JOIN_IN_BROWSER_KEY, JOIN_IN_BROWSER_VALUE);
-          router.replace(`/join?${next.toString()}`);
-        }}
-      />
     );
   }
 

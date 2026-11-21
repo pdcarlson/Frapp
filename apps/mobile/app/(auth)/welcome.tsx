@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCurrentUser,
+  useListChapters,
   useUpdateOnboarding,
   useUpdateUser,
 } from "@repo/hooks";
@@ -36,6 +37,8 @@ import {
 import { useAuthSession } from "@/lib/auth-session";
 import { initialsFor } from "@/lib/more/narrow";
 import { selectViewerProfile } from "@/lib/more/profile";
+import { selectOnboardingMembership } from "@/lib/onboarding/membership";
+import { welcomeStepAfterName } from "@/lib/onboarding/welcome-progress";
 import { markWelcomeDue } from "@/lib/onboarding/welcome-due";
 import { usePushPrimer } from "@/lib/notifications/use-push-primer";
 import { useLatestTrack } from "@/lib/use-latest-track";
@@ -64,9 +67,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * where it goes; nothing is drawn until the profile and push reads are back,
  * and a slow read is given up on after {@link DECIDE_TIMEOUT_MS}.
  *
- * Leaving PATCHes `has_completed_onboarding`, so the gate will not send the
- * member here again. One surface and one gold button pinned above the inset
- * on each screen (the #3348 screen rules).
+ * Saving the name PATCHes `has_completed_onboarding` (Paul, 2026-11-21),
+ * not leaving the last screen: the name is the account's, so web's welcome
+ * (which is the name alone) and this phone never ask it twice. Ethan joined
+ * in the app on 2026-11-20, went to the browser before the notifications
+ * screen, and was asked his name again there, then again back here.
+ * Notifications are this phone's own, so a member who finished on another
+ * device and lands here (or is sitting here when it happens) goes straight
+ * to them, or to chat when there is nothing to ask (`welcomeStepAfterName`).
+ * One surface and one gold button pinned above the inset on each screen (the
+ * #3348 screen rules).
  */
 const DECIDE_TIMEOUT_MS = 4_000;
 
@@ -79,6 +89,17 @@ export default function Welcome() {
   const { status, chapterId } = useAuthSession();
   const queryClient = useQueryClient();
   const updateOnboarding = useUpdateOnboarding();
+  const chapters = useListChapters({ enabled: status === "authenticated" });
+  // Whether the name is already answered, here or on another device: the
+  // membership's flag, as the gate reads it.
+  const nameDoneElsewhere =
+    selectOnboardingMembership(
+      Array.isArray(chapters.data) ? chapters.data : [],
+      chapterId,
+    )?.has_completed_onboarding === true;
+  // Set once this visit has written the flag, so leaving doesn't write it
+  // again.
+  const markedDoneRef = useRef(false);
   const primer = usePushPrimer();
   const [leaving, setLeaving] = useState(false);
   // The guard itself, since two taps in one frame both read `leaving` false.
@@ -104,15 +125,22 @@ export default function Welcome() {
     nameDraft ??
     initialNameField(profile?.displayName ?? null, profile?.email ?? null);
 
+  async function markDone() {
+    // Already written, by this visit or by another device.
+    if (markedDoneRef.current || nameDoneElsewhere) return;
+    try {
+      await updateOnboarding.mutateAsync({ has_completed_onboarding: true });
+      markedDoneRef.current = true;
+    } catch {
+      // Non-fatal — the next session re-offers s03 if the write never landed.
+    }
+  }
+
   async function finish() {
     if (leavingRef.current) return;
     leavingRef.current = true;
     setLeaving(true);
-    try {
-      await updateOnboarding.mutateAsync({ has_completed_onboarding: true });
-    } catch {
-      // Non-fatal — the next session re-offers s03 if the write never landed.
-    }
+    await markDone();
     // The welcome card in the default channel shows once, for the member who
     // just came through here (#5627).
     // A profile read that never landed is asked once more here, so a slow
@@ -148,6 +176,20 @@ export default function Welcome() {
     setStep("you");
   }
 
+  // The name answered on another device, before this screen opened or while
+  // it sat on the name: this phone asks only what is its own.
+  const afterNameElsewhere =
+    step === "you" && nameDoneElsewhere && !savingName && !leaving
+      ? welcomeStepAfterName(primer.showPrimer)
+      : null;
+  if (afterNameElsewhere === "notifications") setStep("notifications");
+  const leaveForChat = afterNameElsewhere === "chat";
+  useEffect(() => {
+    if (leaveForChat) void finish();
+    // `finish` is a plain function of this render; the answer is what changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaveForChat]);
+
   // Validated on Continue, not per keystroke. A name that didn't change isn't
   // sent again; one that did is saved before the member moves on, so a
   // failure keeps them here with the reason rather than losing the name.
@@ -179,8 +221,12 @@ export default function Welcome() {
         nameChanged,
       }),
     );
-    if (primer.showPrimer) setStep("notifications");
-    else void finish();
+    // The name is the account's part of onboarding, so it counts as done
+    // now, on every device, before this phone's own notifications ask.
+    if (welcomeStepAfterName(primer.showPrimer) === "notifications") {
+      await markDone();
+      setStep("notifications");
+    } else void finish();
   }
 
   // Android's back on the notifications screen returns to the name, as a

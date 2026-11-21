@@ -51,8 +51,9 @@ type Me = {
  * message the member sends carries it. The photo is optional and saves on its
  * own, as it does on Profile.
  *
- * Leaving marks onboarding done (`has_completed_onboarding`), as the phone's
- * s03 does, so the Directory stops listing the member as pending. The phone
+ * Leaving marks onboarding done (`has_completed_onboarding`), as answering
+ * the name on the phone's s03 does, so the Directory stops listing the member
+ * as pending. The phone
  * then skips s03 for them, and its chat home asks about notifications once
  * instead (`usePushReminder`, which offers to a member never asked).
  */
