@@ -21,7 +21,7 @@ export type { ChapterGroupKind };
  * An automatic group's name follows its class's or year's, and its members
  * follow the members' own data; only its color and ping switch are the
  * chapter's to change. Migrations `20261113040007_chapter_groups.sql` and
- * `20261120215726_major_groups.sql`.
+ * `20261121173330_major_groups.sql`.
  */
 
 export interface ChapterGroup {

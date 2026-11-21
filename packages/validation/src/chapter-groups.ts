@@ -18,7 +18,7 @@ export type ChapterGroupKind = (typeof CHAPTER_GROUP_KINDS)[number];
  * a task is "From". A class year or a major can't: members set their own,
  * so a list naming one would let anyone in by changing theirs. Both are for
  * `@`-mentions and task audiences only (`can_read_chat_channel` in
- * `20261120215726_major_groups.sql` holds the same rule). A kind this build
+ * `20261121173330_major_groups.sql` holds the same rule). A kind this build
  * doesn't know opens nothing.
  */
 export function groupKindOpensChannels(kind: string): boolean {

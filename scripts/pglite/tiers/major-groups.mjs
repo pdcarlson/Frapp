@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { db, miss } from "../harness.mjs";
 import { setAuth } from "../probe.mjs";
 
-// ─── Functional: a group per major (20261120215726, #5778) ─────────────────
+// ─── Functional: a group per major (20261121173330, #5778) ─────────────────
 //
 // Replay runs the migration against empty tables, so replay alone proves
 // nothing about its triggers or its view. This tier seeds two chapters and
@@ -24,7 +24,7 @@ import { setAuth } from "../probe.mjs";
 //   - the backfill rebuilds the rows for majors members already have.
 //
 // Everything runs inside one transaction and is rolled back.
-console.log("\n=== Functional: a group per major (20261120215726) ===");
+console.log("\n=== Functional: a group per major (20261121173330) ===");
 {
   const CH = "a5778000-0000-4000-8000-00000000000a";
   const CH2 = "a5778000-0000-4000-8000-00000000000b";
@@ -36,7 +36,7 @@ console.log("\n=== Functional: a group per major (20261120215726) ===");
   const A = (n) => `a5778000-0000-4000-8000-0000000000b${n}`;
   const CHAN = "a5778000-0000-4000-8000-0000000c0001";
   const sql = readFileSync(
-    join(process.cwd(), "supabase/migrations/20261120215726_major_groups.sql"),
+    join(process.cwd(), "supabase/migrations/20261121173330_major_groups.sql"),
     "utf8",
   );
   const results = [];

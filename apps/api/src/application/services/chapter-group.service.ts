@@ -77,7 +77,7 @@ export type ChapterGroupView = ChapterGroup & { member_ids: string[] };
  * Only a manual group's name and members are written here. An automatic
  * group (a pledge class's, a graduation year's, a major's) follows the
  * members' data, which the database keeps (`20261113040007_chapter_groups.sql`,
- * `20261120215726_major_groups.sql`); its color
+ * `20261121173330_major_groups.sql`); its color
  * and ping switch are the chapter's.
  *
  * Every change writes a `chapter_audit_log` row mirrored to `#chapter-audit`,

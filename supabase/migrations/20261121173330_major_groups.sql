@@ -119,7 +119,7 @@ create unique index if not exists idx_chapter_groups_major
   where kind = 'major';
 
 comment on table public.chapter_groups is
-  'Named sets of members with no permissions (#4076): manual ones an officer keeps, and one per pledge class, per graduation year and per major (#5778), whose members follow the members'' own data. Members: chapter_group_memberships. See 20261113040007_chapter_groups.sql and 20261120215726_major_groups.sql.';
+  'Named sets of members with no permissions (#4076): manual ones an officer keeps, and one per pledge class, per graduation year and per major (#5778), whose members follow the members'' own data. Members: chapter_group_memberships. See 20261113040007_chapter_groups.sql and 20261121173330_major_groups.sql.';
 
 -- ---------------------------------------------------------------------------
 -- 2. Who is in each group: majors join the view.
@@ -156,7 +156,7 @@ with (security_invoker = true) as
    where g.kind = 'major';
 
 comment on view public.chapter_group_memberships is
-  'One row per (group, member) for every group (#4076): a manual group''s picked members, a pledge class''s members, a graduation year''s members, a major''s members (#5778), with the group''s kind. The one definition the API and can_read_chat_channel both read. A class_year or major row never opens a channel: members set their own year and major. See 20261113040007_chapter_groups.sql and 20261120215726_major_groups.sql.';
+  'One row per (group, member) for every group (#4076): a manual group''s picked members, a pledge class''s members, a graduation year''s members, a major''s members (#5778), with the group''s kind. The one definition the API and can_read_chat_channel both read. A class_year or major row never opens a channel: members set their own year and major. See 20261113040007_chapter_groups.sql and 20261121173330_major_groups.sql.';
 
 -- `create or replace view` keeps the grants 20261113040007 set (service_role
 -- only); restated so this file alone says who reads it.
