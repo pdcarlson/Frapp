@@ -60,6 +60,7 @@ import {
   chapterTextMark,
   dedupeEmails,
   EVERYONE_ROLE_NAME,
+  isBaseRole,
   MEMBER_JOINED_AUDIENCE,
 } from '@repo/validation';
 import { orgHidingGreekLettersIn } from '@repo/org-archetypes';
@@ -134,6 +135,12 @@ export function inviteStatus(invite: Invite, now = new Date()): InviteStatus {
   if (new Date(invite.expires_at) <= now) return 'expired';
   return 'pending';
 }
+
+/**
+ * The officers' join notice body for a member who holds no base role (#5802):
+ * the state, not a direction, as the profile's dashed chip says it.
+ */
+export const NO_BASE_ROLE_JOIN_BODY = 'No base role yet';
 
 /**
  * What the invite's sender is told when someone joins with it (#5625): their
@@ -1271,6 +1278,8 @@ export class InviteService {
     user_id: string;
     chapter_id: string;
     joined_via_invite_id: string | null;
+    /** Their roles at the finish, to say when they hold no base role. */
+    role_ids?: readonly string[];
   }): Promise<void> {
     if (!member.joined_via_invite_id) return;
     const userId = member.user_id;
@@ -1341,9 +1350,19 @@ export class InviteService {
           (id) => id !== userId && id !== inviterId,
         );
         if (recipients.length === 0) return;
+        // A joiner with no base role sees only what the whole chapter may
+        // until an officer gives them New Member, Actives or Alumni (#5802),
+        // so the officers' notice says so. A failed roles read keeps the
+        // plain line rather than costing the push.
+        const needsBase = await this.holdsNoBaseRole(
+          chapterId,
+          member.role_ids ?? [],
+        ).catch(() => false);
         await this.notificationService.notifyMembers(chapterId, recipients, {
           title: name ? `${name} joined` : 'A new member joined',
-          body: 'New member of the chapter',
+          body: needsBase
+            ? NO_BASE_ROLE_JOIN_BODY
+            : 'New member of the chapter',
           priority: 'NORMAL',
           category: 'members',
           data,
@@ -1362,6 +1381,23 @@ export class InviteService {
         });
       }
     }
+  }
+
+  /**
+   * Whether a member holds none of the chapter's base roles (New Member,
+   * Actives, Alumni), as `needsBaseRole` in `@repo/hooks` judges it for the
+   * profile's "No base role" chip. A chapter with no base roles never asks.
+   */
+  private async holdsNoBaseRole(
+    chapterId: string,
+    roleIds: readonly string[],
+  ): Promise<boolean> {
+    const base = (await this.roleRepo.findByChapter(chapterId)).filter(
+      isBaseRole,
+    );
+    if (base.length === 0) return false;
+    const held = new Set(roleIds.map((id) => id.toLowerCase()));
+    return !base.some((role) => held.has(role.id.toLowerCase()));
   }
 
   /**

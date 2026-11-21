@@ -9,10 +9,14 @@ import {
 import {
   useGroups,
   useLeaderboard,
+  matchesRoleFilter,
+  NO_BASE_ROLE_FILTER,
+  NO_BASE_ROLE_LABEL,
   useMemberDisplayNames,
   useMemberPhoneReach,
   useMemberSearch,
   useMembers,
+  useMyPermissions,
   usePledgeClasses,
   fraternalOrderComparator,
   usesFraternalOrder,
@@ -80,7 +84,9 @@ import {
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
 import {
+  can,
   highestRankedRole,
+  isBaseRole,
   tierPositionsOf,
   directoryNoSearchMatches,
   matchesPhoneReachFilter,
@@ -339,10 +345,23 @@ export function MembersDirectory() {
   // A choice whose option has gone (Alumni picked during a search that has
   // since been cleared) reads as "any" rather than filtering on something the
   // chip no longer lists.
+  // Whoever can give roles also gets "No base role" first (#5802): the
+  // members who joined with Everyone alone and wait for New Member, Actives
+  // or Alumni, as the dashed chip on their profile says.
+  const myPermissions = useMyPermissions();
+  const canGiveRoles = can("roles:manage", myPermissions.data?.permissions);
+  const offersNoBaseRole = canGiveRoles && allRoles.some(isBaseRole);
   const filterRoleChipOptions = useMemo(
-    () =>
-      filterRoleOptions.map((role) => ({ value: role.id, label: role.name })),
-    [filterRoleOptions],
+    () => [
+      ...(offersNoBaseRole
+        ? [{ value: NO_BASE_ROLE_FILTER, label: NO_BASE_ROLE_LABEL }]
+        : []),
+      ...filterRoleOptions.map((role) => ({
+        value: role.id,
+        label: role.name,
+      })),
+    ],
+    [filterRoleOptions, offersNoBaseRole],
   );
   const assignableRoleChipOptions = useMemo(
     () =>
@@ -361,7 +380,7 @@ export function MembersDirectory() {
       : null;
   const effectiveRoleFilter =
     roleFilter !== null &&
-    filterRoleOptions.some((role) => role.id === roleFilter)
+    filterRoleChipOptions.some((option) => option.value === roleFilter)
       ? roleFilter
       : null;
   // Beside Role (Paul, 2026-11-19): who is In house, on a committee, in a
@@ -510,10 +529,7 @@ export function MembersDirectory() {
 
   const filteredMembers = useMemo(() => {
     return members.filter((member) => {
-      if (
-        effectiveRoleFilter !== null &&
-        !member.role_ids.includes(effectiveRoleFilter)
-      ) {
+      if (!matchesRoleFilter(allRoles, member.role_ids, effectiveRoleFilter)) {
         return false;
       }
       if (
@@ -554,6 +570,7 @@ export function MembersDirectory() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     members,
+    allRoles,
     effectiveRoleFilter,
     groupMemberIds,
     effectiveCohortFilter,

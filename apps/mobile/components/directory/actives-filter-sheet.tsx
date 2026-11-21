@@ -31,6 +31,10 @@ import {
 } from "@/lib/directory/actives-filter";
 import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 import {
+  NO_BASE_ROLE_FILTER,
+  NO_BASE_ROLE_LABEL,
+} from "@repo/hooks/member-assignments";
+import {
   PHONE_REACH_FILTER_OPTIONS,
   PHONE_REACH_LABEL,
   type PhoneReachFilter,
@@ -76,9 +80,17 @@ export interface ActivesFilterSheetProps {
    * sends the whole chapter's reach to (invite or role rights), as web's chip.
    */
   showPhoneReach?: boolean;
+  /**
+   * Whether to offer "No base role" under "Any role" (#5802): the members
+   * who joined with Everyone alone, for whoever can give roles, as web's
+   * Role chip offers it.
+   */
+  offerNoBaseRole?: boolean;
 }
 
 const ANY = "__any";
+const NO_BASE = NO_BASE_ROLE_FILTER;
+type RoleRow = FilterRole | typeof ANY | typeof NO_BASE;
 
 export const ActivesFilterSheet = forwardRef<
   BottomSheetModal,
@@ -95,6 +107,7 @@ export const ActivesFilterSheet = forwardRef<
     rolesStatus,
     onRetryRoles,
     showPhoneReach = false,
+    offerNoBaseRole = false,
   },
   ref,
 ) {
@@ -116,11 +129,11 @@ export const ActivesFilterSheet = forwardRef<
   // web's searchable chip does.
   // No rows at all until the list has answered: the status line under the
   // search stands in for them.
-  const rows: readonly (FilterRole | typeof ANY)[] = !rolesReady
+  const rows: readonly RoleRow[] = !rolesReady
     ? []
     : searching
       ? visibleRoles
-      : [ANY, ...visibleRoles];
+      : [ANY, ...(offerNoBaseRole ? [NO_BASE] : []), ...visibleRoles];
   const setCount = countActivesFilters(filter);
 
   const set = (patch: Partial<ActivesFilter>) =>
@@ -141,8 +154,8 @@ export const ActivesFilterSheet = forwardRef<
       <BottomSheetFlatList
         onAccessibilityEscape={closeSheet}
         data={rows}
-        keyExtractor={(row: FilterRole | typeof ANY) =>
-          row === ANY ? ANY : row.id
+        keyExtractor={(row: RoleRow) =>
+          typeof row === "string" ? row : row.id
         }
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -310,12 +323,18 @@ export const ActivesFilterSheet = forwardRef<
             </Text>
           )
         }
-        renderItem={({ item }: { item: FilterRole | typeof ANY }) => {
+        renderItem={({ item }: { item: RoleRow }) => {
           const isAny = item === ANY;
+          const plain = typeof item === "string";
+          const value = plain ? item : item.id;
           const selected = isAny
             ? filter.roleId === null
-            : filter.roleId === item.id;
-          const label = isAny ? "Any role" : item.name;
+            : filter.roleId === value;
+          const label = isAny
+            ? "Any role"
+            : plain
+              ? NO_BASE_ROLE_LABEL
+              : item.name;
           return (
             <Pressable
               accessibilityRole="radio"
@@ -323,7 +342,7 @@ export const ActivesFilterSheet = forwardRef<
               accessibilityState={{ checked: selected }}
               onPress={() =>
                 set({
-                  roleId: isAny || selected ? null : item.id,
+                  roleId: isAny || selected ? null : value,
                 })
               }
               style={({ pressed }) => [
@@ -331,7 +350,7 @@ export const ActivesFilterSheet = forwardRef<
                 pressed ? styles.rowPressed : null,
               ]}
             >
-              {isAny ? (
+              {plain ? (
                 <View style={styles.dotSlot} />
               ) : (
                 <View

@@ -52,6 +52,29 @@ describe("filterActives (#3971)", () => {
     expect(by({ status: "pending" })).toEqual(["u-2", "u-3"]);
     expect(by({ roleId: "r-1", status: "pending" })).toEqual(["u-2"]);
   });
+
+  it("narrows to members holding no base role (#5802)", () => {
+    const roles = [
+      { id: "r-1", system_key: "MEMBER" },
+      { id: "r-2", system_key: null },
+    ];
+    const rows = [
+      { user_id: "a", role_ids: ["r-1", "r-e"] },
+      { user_id: "b", role_ids: ["r-2", "r-e"] },
+      { user_id: "c", role_ids: ["r-e"] },
+    ];
+    expect(
+      ids(
+        filterActives(
+          rows,
+          { ...NO_ACTIVES_FILTER, roleId: "no-base-role" },
+          undefined,
+          undefined,
+          roles,
+        ),
+      ),
+    ).toEqual(["b", "c"]);
+  });
 });
 
 describe("the Phone app filter", () => {

@@ -244,6 +244,30 @@ export function needsBaseRole(
   return !base.some((role) => held.has(role.id));
 }
 
+/**
+ * The Members Role filter's pick for members holding no base role (#5802):
+ * they joined with Everyone alone and see only what the whole chapter may
+ * until an officer gives them New Member, Actives or Alumni. Offered on web
+ * and the phone, beside "Any role", to whoever can give roles.
+ */
+export const NO_BASE_ROLE_FILTER = "no-base-role" as const;
+
+/**
+ * Whether a member passes the Role filter: any role (`null`), a role they
+ * hold, or {@link NO_BASE_ROLE_FILTER} when they hold no base role.
+ */
+export function matchesRoleFilter(
+  roles: readonly { id: string; system_key?: string | null }[],
+  heldRoleIds: readonly string[],
+  roleFilter: string | null,
+): boolean {
+  if (roleFilter === null) return true;
+  if (roleFilter === NO_BASE_ROLE_FILTER) {
+    return needsBaseRole(roles, heldRoleIds);
+  }
+  return heldRoleIds.includes(roleFilter);
+}
+
 /** A chip on the profile: a role or group the member has. */
 export type AssignmentChip = {
   kind: "role" | "group";

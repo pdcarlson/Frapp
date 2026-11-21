@@ -10,6 +10,7 @@
  */
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import type { ChapterRole } from "@repo/hooks/chapter-roles";
+import { matchesRoleFilter } from "@repo/hooks/member-assignments";
 import {
   matchesPhoneReachFilter,
   type PhoneReach,
@@ -20,6 +21,7 @@ import { num, str } from "../more/narrow";
 export type ActivesStatus = "active" | "pending";
 
 export interface ActivesFilter {
+  /** A role id, or `NO_BASE_ROLE_FILTER` for members holding no base role. */
   roleId: string | null;
   /** A group the member is in (Paul, 2026-11-19), as web's Group chip. */
   groupId: string | null;
@@ -155,6 +157,8 @@ export function filterActives(
   reachByUserId?: ReadonlyMap<string, PhoneReach>,
   /** The `user_id`s in the picked group, for the Group filter. */
   groupMemberIds?: ReadonlySet<string>,
+  /** The chapter's roles, for the No base role pick (#5802). */
+  chapterRoles: readonly Pick<ChapterRole, "id" | "system_key">[] = [],
 ): Record<string, unknown>[] {
   return actives.filter((row) => {
     if (filter.groupId !== null) {
@@ -167,8 +171,12 @@ export function filterActives(
       if (!matchesPhoneReachFilter(reach, filter.phoneReach)) return false;
     }
     if (filter.roleId !== null) {
-      const roleIds = Array.isArray(row.role_ids) ? row.role_ids : [];
-      if (!roleIds.includes(filter.roleId)) return false;
+      const roleIds = Array.isArray(row.role_ids)
+        ? row.role_ids.filter((id): id is string => typeof id === "string")
+        : [];
+      if (!matchesRoleFilter(chapterRoles, roleIds, filter.roleId)) {
+        return false;
+      }
     }
     if (
       filter.graduationYear !== null &&

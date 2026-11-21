@@ -6,7 +6,9 @@ import {
   groupFollowsLabel,
   memberAssignmentSections,
   memberGroupChips,
+  matchesRoleFilter,
   memberRoleChips,
+  NO_BASE_ROLE_FILTER,
   needsBaseRole,
 } from "./member-assignments";
 import type { ChapterGroup } from "./use-groups";
@@ -144,6 +146,18 @@ describe("base roles (2026-11-21)", () => {
     expect(needsBaseRole(withBase, ["r-actives", "r-everyone"])).toBe(false);
     // A chapter with no base roles never asks for one.
     expect(needsBaseRole(ROLES, [])).toBe(false);
+  });
+
+  it("filters by a role, by no base role, or by none", () => {
+    const rush = ["r-rush", "r-everyone"];
+    const active = ["r-actives", "r-everyone"];
+    expect(matchesRoleFilter(withBase, rush, null)).toBe(true);
+    expect(matchesRoleFilter(withBase, rush, "r-rush")).toBe(true);
+    expect(matchesRoleFilter(withBase, active, "r-rush")).toBe(false);
+    expect(matchesRoleFilter(withBase, rush, NO_BASE_ROLE_FILTER)).toBe(true);
+    expect(matchesRoleFilter(withBase, active, NO_BASE_ROLE_FILTER)).toBe(
+      false,
+    );
   });
 });
 

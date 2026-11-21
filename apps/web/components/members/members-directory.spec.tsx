@@ -107,6 +107,11 @@ const tiersRead = vi.hoisted(() => ({
   isError: false,
 }));
 
+/** The viewer's permissions: none until a test gives them `roles:manage`. */
+const permissionsRead = vi.hoisted(() => ({
+  data: { permissions: [] as string[] },
+}));
+
 const groupsRead = vi.hoisted(() => ({
   data: [
     { id: "g-house", name: "In house", kind: "manual", member_ids: ["u-1"] },
@@ -120,6 +125,10 @@ vi.mock("@repo/hooks", async (importOriginal) => {
   return {
     fraternalOrderComparator: actual.fraternalOrderComparator,
     usesFraternalOrder: actual.usesFraternalOrder,
+    matchesRoleFilter: actual.matchesRoleFilter,
+    NO_BASE_ROLE_FILTER: actual.NO_BASE_ROLE_FILTER,
+    NO_BASE_ROLE_LABEL: actual.NO_BASE_ROLE_LABEL,
+    useMyPermissions: () => permissionsRead,
     usePledgeClasses: () => classesRead,
     useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
     // The List/Grid pick is kept per viewer (#4175).
@@ -241,6 +250,7 @@ beforeEach(() => {
   );
   Object.assign(leaderboardRead, read([{ user_id: "u-1", total: 42 }]));
   phoneReachRead.value = null;
+  permissionsRead.data = { permissions: [] };
   Object.assign(tiersRead, { data: [], isError: false });
 });
 
@@ -567,6 +577,41 @@ describe("Directory on the greenfield shell", () => {
       screen.getByRole("button", { name: "Role: Treasurer" }),
     ).toBeInTheDocument();
     expect(screen.getByText("1 member")).toBeInTheDocument();
+  });
+
+  it("offers No base role to whoever can give roles, and narrows to them (#5802)", async () => {
+    const user = userEvent.setup();
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+        {
+          id: "r-act",
+          name: "Actives",
+          is_system: true,
+          system_key: "MEMBER",
+          permissions: [],
+        },
+      ]),
+    );
+    const { unmount } = render(<MembersDirectory />);
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    expect(
+      screen.queryByRole("menuitem", { name: "No base role" }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    permissionsRead.data = { permissions: ["roles:manage"] };
+    Object.assign(
+      membersRead,
+      read([{ ...MEMBERS[0], role_ids: ["r-act"] }, MEMBERS[1]]),
+    );
+    render(<MembersDirectory />);
+    await pick(user, "Role", "No base role");
+    // Ada is an active; Grace holds nothing yet.
+    expect(screen.getByText("1 member")).toBeInTheDocument();
+    expect(screen.getByText("Grace Hopper")).toBeInTheDocument();
+    expect(screen.queryByText("Ada Lovelace")).not.toBeInTheDocument();
   });
 
   it("names the query when a search matches nothing", async () => {
