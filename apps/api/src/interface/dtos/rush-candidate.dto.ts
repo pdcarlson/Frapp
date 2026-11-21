@@ -11,6 +11,7 @@ import type {
   RushCandidate,
   RushCandidateView,
 } from '#domain/entities/rush-candidate.entity';
+import type { AssertNever } from './drift-guard';
 
 export class CreateRushCandidateDto {
   @ApiProperty({ maxLength: 200 })
@@ -131,23 +132,25 @@ export class RushCandidateViewDto implements RushCandidateView {
   viewer_has_voted: boolean;
 }
 
-type Assert<T extends never> = T;
-
-export type CreateRushCandidateResponseDtoMissingFields = Assert<
+/** @driftguard */
+export type CreateRushCandidateResponseDtoMissingFields = AssertNever<
   Exclude<keyof RushCandidate, keyof CreateRushCandidateResponseDto>
 >;
 
-export type CreateRushCandidateResponseDtoExtraFields = Assert<
+/** @driftguard */
+export type CreateRushCandidateResponseDtoExtraFields = AssertNever<
   Exclude<
     keyof CreateRushCandidateResponseDto,
     keyof RushCandidate | 'card_posted'
   >
 >;
 
-export type RushCandidateViewDtoMissingFields = Assert<
+/** @driftguard */
+export type RushCandidateViewDtoMissingFields = AssertNever<
   Exclude<keyof RushCandidateView, keyof RushCandidateViewDto>
 >;
 
-export type RushCandidateViewDtoExtraFields = Assert<
+/** @driftguard */
+export type RushCandidateViewDtoExtraFields = AssertNever<
   Exclude<keyof RushCandidateViewDto, keyof RushCandidateView>
 >;

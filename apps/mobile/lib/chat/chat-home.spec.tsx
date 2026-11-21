@@ -5,8 +5,9 @@ import {
   create,
   type ReactTestInstance,
   type ReactTestRenderer,
+  type TestRendererOptions,
 } from "react-test-renderer";
-import { Alert } from "react-native";
+import { AccessibilityInfo, Alert, StyleSheet } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -59,6 +60,8 @@ const {
   setLevelMutate,
   setDisplayLock,
   deleteMutateAsync,
+  createMutateAsync,
+  updateMutateAsync,
   connection,
   latestCalls,
   setChannelBackground,
@@ -72,6 +75,8 @@ const {
   markReadMutate: vi.fn(),
   setLevelMutate: vi.fn(),
   deleteMutateAsync: vi.fn(),
+  createMutateAsync: vi.fn(),
+  updateMutateAsync: vi.fn(),
   connection: { writeBlockedReason: null as string | null },
   // The officer setup checklist's state (#3535's hook), null for a member.
   setupChecklist: { value: null as unknown },
@@ -112,6 +117,7 @@ const {
       pinnedIds: new Set<string>(),
       collapsed: new Set<string>(),
       filters: { unreadOnly: false, hideMuted: false },
+      sort: "chapter" as "chapter" | "recent" | "alpha",
     },
   },
   leaveMutateAsync: vi.fn(),
@@ -146,6 +152,7 @@ const {
       isError: boolean;
       isFetching: boolean;
       isSuccess?: boolean;
+      data?: unknown;
       error?: unknown;
       refetch: ReturnType<typeof vi.fn>;
     },
@@ -175,6 +182,13 @@ vi.mock("@/lib/account/own-status", () => ({
   useSaveOwnStatus: () => ({ save: vi.fn(), isSaving: false }),
 }));
 
+// Threads under their channel (#5277): the member's followed threads, as
+// `GET /v1/threads` serves them; the rule picking which show runs for real.
+const allThreads = vi.hoisted(() => ({ data: [] as unknown[] }));
+
+const homeEventsNow = vi.hoisted(() => ({
+  value: { events: [] as unknown[], now: Date.now() },
+}));
 vi.mock("@repo/hooks", async () => {
   // The pure helpers run for real: the point is to catch the screen using
   // them wrongly, and a stub would decide the answer itself.
@@ -188,6 +202,9 @@ vi.mock("@repo/hooks", async () => {
     refetch,
   });
   return {
+    // The Now card's read (#5777): nothing on unless a test says so.
+    useEventsOnNow: () => homeEventsNow.value,
+    eventNowState: actual.eventNowState,
     canHideConversation: actual.canHideConversation,
     canSetChannelDisplayLock: actual.canSetChannelDisplayLock,
     useSetChannelDisplayLock: () => ({ mutateAsync: setDisplayLock }),
@@ -200,7 +217,13 @@ vi.mock("@repo/hooks", async () => {
     }),
     useChatBackground: () => query(undefined),
     useChapterChatBackground: () => query(undefined),
+    // Threads under their channel (#5277).
+    useMemberThreads: () => ({
+      ...query(allThreads.data),
+      dataUpdatedAt: Date.now(),
+    }),
     lastChannelLandingId: actual.lastChannelLandingId,
+    landingChannelId: actual.landingChannelId,
     lastChannelStorageKey: actual.lastChannelStorageKey,
     useActiveChapterId: () => "chapter-1",
     groupChannelsByCategory: actual.groupChannelsByCategory,
@@ -217,9 +240,13 @@ vi.mock("@repo/hooks", async () => {
     arrangeChannelSidebar: actual.arrangeChannelSidebar,
     sidebarSections: actual.sidebarSections,
     countsAddressMember: actual.countsAddressMember,
+    countsLookUnread: actual.countsLookUnread,
     foldedSectionAnnouncement: actual.foldedSectionAnnouncement,
     sidebarMutedChannelIds: actual.sidebarMutedChannelIds,
     sidebarUnreadCounts: actual.sidebarUnreadCounts,
+    // #5277, #5300: threads with new replies count for arranging, for real.
+    channelsWithUnreadThreads: actual.channelsWithUnreadThreads,
+    withUnreadThreadChannels: actual.withUnreadThreadChannels,
     HIDE_MUTED_LABEL: actual.HIDE_MUTED_LABEL,
     NO_MATCHING_CHANNELS: actual.NO_MATCHING_CHANNELS,
     PIN_TO_TOP_LABEL: actual.PIN_TO_TOP_LABEL,
@@ -228,6 +255,8 @@ vi.mock("@repo/hooks", async () => {
     SIDEBAR_SAVE_FAILED_TITLE: actual.SIDEBAR_SAVE_FAILED_TITLE,
     UNPIN_FROM_TOP_LABEL: actual.UNPIN_FROM_TOP_LABEL,
     UNREAD_ONLY_LABEL: actual.UNREAD_ONLY_LABEL,
+    SORT_CHANNELS_LABEL: actual.SORT_CHANNELS_LABEL,
+    SIDEBAR_SORT_OPTIONS: actual.SIDEBAR_SORT_OPTIONS,
     useChapterRoster: () => query([], refetches.roster),
     useSidebarPreferencesRefetch: () => ({ refetch: refetches.sidebar }),
     useSidebarPreferences: () => sidebarPrefs.value,
@@ -287,10 +316,12 @@ vi.mock("@repo/hooks", async () => {
     resolveAuthorName: actual.resolveAuthorName,
     FILTER_CHANNELS_LABEL: actual.FILTER_CHANNELS_LABEL,
     FILTER_CHANNELS_ON_LABEL: actual.FILTER_CHANNELS_ON_LABEL,
-    useChannelLatestMessages: () => {
-      latestCalls();
+    useChannelLatestMessages: (options?: { enabled?: boolean }) => {
+      latestCalls(options);
+      // A disabled read never answers, as TanStack's doesn't.
+      const enabled = options?.enabled ?? true;
       return {
-        ...query(latestData.value, refetches.latest),
+        ...query(enabled ? latestData.value : undefined, refetches.latest),
         isSuccess: latestData.answered,
       };
     },
@@ -299,6 +330,16 @@ vi.mock("@repo/hooks", async () => {
     // The row menu (owner, 2026-11-06): its rule runs for real.
     channelRowActions: actual.channelRowActions,
     deleteChannelConfirmTitle: actual.deleteChannelConfirmTitle,
+    deleteChannelTypeLabel: actual.deleteChannelTypeLabel,
+    deleteChannelNameMatches: actual.deleteChannelNameMatches,
+    ARRANGE_CHANNELS_LABEL: actual.ARRANGE_CHANNELS_LABEL,
+    MANAGE_CHANNELS_PERMISSION: actual.MANAGE_CHANNELS_PERMISSION,
+    errorCopy: actual.errorCopy,
+    // New channel and Edit channel (#3838).
+    useCreateChannel: () => ({ mutateAsync: createMutateAsync }),
+    useUpdateChannel: () => ({ mutateAsync: updateMutateAsync }),
+    // Who can see and post (#3702): read while the form is open.
+    useChannelAccessOptions: () => query([]),
     DELETE_CHANNEL_CONFIRM_BODY: actual.DELETE_CHANNEL_CONFIRM_BODY,
     DELETE_CHANNEL_LABEL: actual.DELETE_CHANNEL_LABEL,
     MARK_AS_READ_LABEL: actual.MARK_AS_READ_LABEL,
@@ -329,6 +370,12 @@ vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason: connection.writeBlockedReason }),
 }));
 
+// The read-ahead reaches the real Supabase client (secure store); these
+// specs are about the list, not the thread it opens.
+vi.mock("@/lib/chat/prefetch-channel", () => ({
+  usePrefetchUnreadChannels: () => undefined,
+}));
+
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => branding.current,
 }));
@@ -341,15 +388,34 @@ import {
   resetChatLaunchForTests,
   settleChatLaunch,
 } from "@/lib/chat/last-channel";
-import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
-import { ChannelFilterMenu } from "@/components/chat/channel-filter-menu";
+import {
+  WELCOME_DUE_STORAGE_KEY,
+  resetWelcomeLandingForTests,
+} from "@/lib/onboarding/welcome-due";
+import {
+  ChannelListSkeleton,
+  ChannelRow,
+  UnreadBadge,
+} from "@/components/chat/channel-row";
+import {
+  ChannelFilterButton,
+  ChannelFilterMenu,
+  channelFilterMenuAnchor,
+} from "@/components/chat/channel-filter-menu";
 import { Toggle } from "@/components/toggle";
+import { Segmented } from "@/components/segmented";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
+import { NowCard } from "@/components/now-card";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { ErrorState, NoChapterState } from "@/components/state-block";
 import { InlineNote } from "@/components/inline-note";
+import { DeleteChannelSheet } from "@/components/chat/delete-channel-sheet";
+import { ChannelFormSheet } from "@/components/chat/channel-form-sheet";
+import { ChannelAccessSheet } from "@/components/chat/channel-access-sheet";
+import { SheetPrimaryButton } from "@/components/sheet-scaffold";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 
 const general = { id: "c-general", name: "general", type: "PUBLIC" };
 const dmAlice = {
@@ -372,13 +438,14 @@ const group = {
   member_ids: [VIEWER, ALICE, BOB],
 };
 
-function render(): ReactTestRenderer {
+function render(options?: TestRendererOptions): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
         <ChatHomeScreen />
       </FrappThemeProvider>,
+      options,
     );
   });
   return tree;
@@ -396,6 +463,14 @@ function rowNamed(tree: ReactTestRenderer, name: string) {
 
 function pressableLabelled(tree: ReactTestRenderer, label: string) {
   return tree.root.find(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      node.props.accessibilityLabel === label,
+  );
+}
+
+function pressablesLabelled(tree: ReactTestRenderer, label: string) {
+  return tree.root.findAll(
     (node) =>
       (node.type as unknown) === "Pressable" &&
       node.props.accessibilityLabel === label,
@@ -430,6 +505,7 @@ beforeEach(() => {
     pinnedIds: new Set(),
     collapsed: new Set(),
     filters: { unreadOnly: false, hideMuted: false },
+    sort: "chapter",
   };
 });
 
@@ -474,10 +550,13 @@ describe("Chat home lists channels only (2026-11-07)", () => {
     expect(hiddenToggleTexts(tree)).toHaveLength(0);
   });
 
-  it("never reads the latest messages: a channel row carries no preview", () => {
+  it("reads no latest messages unless the member sorts by Recent: a channel row carries no preview", () => {
     render();
 
-    expect(latestCalls).not.toHaveBeenCalled();
+    expect(latestCalls).toHaveBeenCalled();
+    expect(
+      latestCalls.mock.calls.every(([options]) => options?.enabled === false),
+    ).toBe(true);
   });
 });
 
@@ -516,7 +595,7 @@ function layout(tree: ReactTestRenderer): [string, string[]][] {
     return [
       [
         // Since #2877 the header is a fold control: the label, then a drawn
-        // disclosure glyph at the right edge (no typed chevron text).
+        // disclosure glyph (no typed chevron text).
         String(
           header.findAll((node) => (node.type as unknown) === "Text")[0]!.props
             .children,
@@ -550,6 +629,20 @@ describe("Chat home channel categories (#1684)", () => {
     type: "PUBLIC",
     category_id: "cat-deleted",
   };
+
+  it("hands each row its mark, so a private channel draws the lock (#4134)", () => {
+    categoriesData.value = [EXEC, COMM];
+    channelsData.value = [philanthropy, general, execBoard];
+    const tree = render();
+
+    expect(rowNamed(tree, "exec-board").props.mark).toBe("private");
+    expect(rowNamed(tree, "general").props.mark).toBe("hash");
+    expect(
+      rowNamed(tree, "exec-board").findAll(
+        (node) => node.props.testID === "channel-row-lock",
+      ),
+    ).not.toHaveLength(0);
+  });
 
   it("nests channels under their categories, after Channels, in the API's order", () => {
     categoriesData.value = [EXEC, COMM];
@@ -704,7 +797,9 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       ),
     ).toHaveLength(0);
 
-    act(() => pressableLabelled(tree, "Filter channels").props.onPress());
+    act(() =>
+      pressableLabelled(tree, "Sort and filter channels").props.onPress(),
+    );
     const toggle = (label: string) =>
       tree.root
         .findByType(ChannelFilterMenu)
@@ -717,6 +812,52 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(setFilter).toHaveBeenNthCalledWith(2, { hide_muted: true });
   });
 
+  it("offers the sort on top of the menu and sends the one picked (#2877)", () => {
+    const tree = render();
+    act(() =>
+      pressableLabelled(tree, "Sort and filter channels").props.onPress(),
+    );
+    const sort = tree.root.findByType(ChannelFilterMenu).findByType(Segmented);
+    expect(sort.props.value).toBe("chapter");
+    expect(
+      sort.props.options.map((option: { label: string }) => option.label),
+    ).toEqual(["Chapter order", "Recent", "A–Z"]);
+
+    act(() => sort.props.onChange("alpha"));
+    expect(setFilter).toHaveBeenCalledWith({ sort: "alpha" });
+  });
+
+  it("orders channels by their latest message under Recent (#2877)", () => {
+    const alumni = { id: "c-alumni", name: "alumni", type: "PUBLIC" };
+    channelsData.value = [general, alumni];
+    sidebarPrefs.value = { ...sidebarPrefs.value, sort: "recent" };
+    const latestAt = (channelId: string, createdAt: string) => ({
+      channel_id: channelId,
+      message_id: `m-${channelId}`,
+      sender_id: ALICE,
+      author_name: null,
+      content: "see you at 6",
+      kind: "text",
+      payload: null,
+      attachment_count: 0,
+      created_at: createdAt,
+    });
+    const rowNames = () =>
+      render()
+        .root.findAllByType(ChannelRow)
+        .map((row) => row.props.name);
+
+    // The chapter's order (A to Z here) until the times are known.
+    latestData.value = undefined as never;
+    expect(rowNames()).toEqual(["alumni", "general"]);
+
+    latestData.value = [
+      latestAt(general.id, "2026-11-14T12:00:00.000Z"),
+      latestAt(alumni.id, "2026-11-13T09:00:00.000Z"),
+    ];
+    expect(rowNames()).toEqual(["general", "alumni"]);
+  });
+
   it("says a filter is on, on the button and under the heading, and Show all clears both", () => {
     sidebarPrefs.value = {
       ...sidebarPrefs.value,
@@ -727,7 +868,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     ];
     const tree = render();
 
-    pressableLabelled(tree, "Filter channels, filters on");
+    pressableLabelled(tree, "Sort and filter channels, filters on");
     expect(screenText(tree)).toContain("Showing unread only.");
     act(() =>
       tree.root
@@ -815,6 +956,53 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     act(() =>
       rowNamed(tree, name).props.onLongPress({ nativeEvent: { pageY: 300 } }),
     );
+
+  it.each([
+    ["a long press", "press"],
+    ["the Channel actions accessibility action", "action"],
+  ])(
+    "moves a screen reader's focus onto the menu on open, and back to the row on close (%s)",
+    (_label, via) => {
+      vi.useFakeTimers();
+      const focusEvents = vi.mocked(AccessibilityInfo.sendAccessibilityEvent);
+      focusEvents.mockClear();
+      try {
+        channelsData.value = [general];
+        // Host refs resolve to a stand-in naming their element.
+        const tree = render({ createNodeMock: (node) => ({ element: node }) });
+        const row = { row: "general" };
+        act(() => {
+          if (via === "press") {
+            rowNamed(tree, "general").props.onLongPress({
+              nativeEvent: { pageY: 300 },
+              currentTarget: row,
+            });
+          } else {
+            rowNamed(tree, "general").props.onLongPress(undefined, row);
+          }
+        });
+        act(() => vi.advanceTimersByTime(1));
+        const [target, kind] = focusEvents.mock.calls.at(-1) as unknown as [
+          { element: { props: { children?: unknown } } },
+          string,
+        ];
+        expect(kind).toBe("focus");
+        expect(target.element.props.children).toBe("general");
+
+        focusEvents.mockClear();
+        act(() =>
+          menu(tree)
+            .find((node) => node.props.testID === "channel-actions-backdrop")
+            .props.onPress(),
+        );
+        act(() => vi.advanceTimersByTime(1));
+        expect(focusEvents).toHaveBeenCalledWith(row, "focus");
+        act(() => tree.unmount());
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("opens our own menu on a long press, not the system alert, with a tap", async () => {
     const haptics = await import("expo-haptics");
@@ -1038,7 +1226,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(menu(tree).props.target?.channelId).toBe(general.id);
   });
 
-  it("gives a channel manager Background beside Display, and sets it once the menu has closed (#4031)", async () => {
+  it("gives a channel manager Background beside Display, and sets it as the menu closes (#4031)", async () => {
     permissionList.value = ["channels:manage"];
     setChannelBackground.mockResolvedValue(undefined);
     channelsData.value = [general];
@@ -1056,16 +1244,12 @@ describe("Chat home sidebar arrangement (#2877)", () => {
         node.props.testID === "chat-background-swatch-midnight",
     );
     expect(midnight.props.accessibilityRole).toBe("radio");
-    act(() => midnight.props.onPress());
-    expect(menu(tree).props.target).toBeNull();
-    // iOS: nothing is written until the modal reports it has gone.
-    expect(setChannelBackground).not.toHaveBeenCalled();
-    const modal = menu(tree).find(
-      (node) => (node.type as unknown) === "Modal",
-    );
+    // The menu is in the app's own tree, not a `Modal` (#5517), so there is
+    // no presented window to wait out on either platform.
     await act(async () => {
-      modal.props.onDismiss();
+      midnight.props.onPress();
     });
+    expect(menu(tree).props.target).toBeNull();
     expect(setChannelBackground).toHaveBeenCalledWith({
       channelId: general.id,
       background: "midnight",
@@ -1090,17 +1274,16 @@ describe("Chat home sidebar arrangement (#2877)", () => {
         (node.type as unknown) === "Pressable" &&
         node.props.testID === "chat-background-swatch-photo",
     );
-    act(() => photoSwatch.props.onPress());
-    const modal = menu(tree).find(
-      (node) => (node.type as unknown) === "Modal",
-    );
     await act(async () => {
-      modal.props.onDismiss();
+      photoSwatch.props.onPress();
     });
 
     const [pick, deps] = save.mock.calls[0]!;
     expect(pick).toBe("photo");
-    await deps.requestPhotoUrl({ filename: "a.jpg", contentType: "image/jpeg" });
+    await deps.requestPhotoUrl({
+      filename: "a.jpg",
+      contentType: "image/jpeg",
+    });
     expect(requestBackgroundPhotoUrl).toHaveBeenCalledWith({
       scope: "channel",
       filename: "a.jpg",
@@ -1117,35 +1300,6 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       "Not allowed here.",
     );
     save.mockRestore();
-  });
-
-  it("runs a background pick on the close itself where the modal reports no dismiss (Android) (#4031)", async () => {
-    const { Platform } = await import("react-native");
-    const os = Platform.OS;
-    (Platform as { OS: string }).OS = "android";
-    try {
-      permissionList.value = ["channels:manage"];
-      setChannelBackground.mockResolvedValue(undefined);
-      channelsData.value = [general];
-      const tree = render();
-      longPress(tree, "general");
-      pressItem(tree, "Background");
-      const letters = menu(tree).find(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.testID === "chat-background-swatch-letters",
-      );
-      await act(async () => {
-        letters.props.onPress();
-      });
-      expect(setChannelBackground).toHaveBeenCalledWith({
-        channelId: general.id,
-        background: "letters",
-        storagePath: undefined,
-      });
-    } finally {
-      (Platform as { OS: string }).OS = os;
-    }
   });
 
   it("offers Background to no one without channels:manage, and never on the audit log (#4031)", () => {
@@ -1169,7 +1323,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(menuLabels(officer)).not.toContain("Background");
   });
 
-  it("offers Delete channel only with channels:manage, and asks first", () => {
+  it("offers Delete channel only with channels:manage, and asks for the typed name (#3838)", async () => {
     channelsData.value = [general];
     const tree = render();
     longPress(tree, "general");
@@ -1179,14 +1333,273 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     const officer = render();
     longPress(officer, "general");
     expect(menuLabels(officer).at(-1)).toBe("Delete channel");
+    expect(menuLabels(officer)).toEqual(
+      expect.arrayContaining(["Edit channel", "Arrange channels"]),
+    );
     longPress(officer, "general");
     pressItem(officer, "Delete channel");
-    const [title, , buttons] = vi.mocked(Alert.alert).mock.calls.at(-1)!;
-    expect(title).toBe("Delete #general?");
+    const sheet = officer.root.findByType(DeleteChannelSheet);
+    const field = sheet.findByProps({
+      accessibilityLabel: "Type general to confirm",
+    });
+    const button = () => sheet.findAllByType(SheetPrimaryButton).at(-1)!;
+    act(() => field.props.onChangeText("General"));
+    expect(button().props.disabled).toBe(true);
+    act(() => field.props.onChangeText("general"));
+    expect(button().props.disabled).toBe(false);
     expect(deleteMutateAsync).not.toHaveBeenCalled();
     deleteMutateAsync.mockResolvedValue(undefined);
-    act(() => buttons!.at(-1)!.onPress?.());
+    await act(async () => button().props.onPress());
     expect(deleteMutateAsync).toHaveBeenCalledWith(general.id);
+  });
+
+  it("ends every heading with its +, the filter before it on the first, and the chevron beside the name (#4679)", () => {
+    const COMM = { id: "cat-comm", name: "Committees", display_order: 0 };
+    categoriesData.value = [COMM];
+    channelsData.value = [
+      general,
+      {
+        id: "c-phil",
+        name: "philanthropy",
+        type: "PUBLIC",
+        category_id: "cat-comm",
+      },
+    ];
+    // What a heading draws, in order: its name, the fold chevron, then each
+    // control by its label.
+    const drawn = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAllByType(StickyHeader)
+        .map((sticky) =>
+          sticky
+            .findAll(
+              (node) =>
+                node.type === DisclosureGlyph ||
+                ((node.type as unknown) === "Pressable" &&
+                  node.props.accessibilityRole === "button"),
+            )
+            .map((node) =>
+              node.type === DisclosureGlyph
+                ? "chevron"
+                : String(node.props.accessibilityLabel),
+            ),
+        );
+
+    // A member: the chevron, and the filter at the edge of the first heading.
+    const member = render();
+    expect(drawn(member)).toEqual([
+      ["chevron", "Sort and filter channels"],
+      ["chevron"],
+    ]);
+    expect(member.root.findByType(ChannelFilterButton).props.atEdge).toBe(true);
+
+    // An officer: the + is last on both, so it runs in one column.
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    expect(drawn(officer)).toEqual([
+      ["chevron", "Sort and filter channels", "New channel"],
+      ["chevron", "New channel in Committees"],
+    ]);
+    expect(officer.root.findByType(ChannelFilterButton).props.atEdge).toBe(
+      false,
+    );
+    const plusBoxes = pressablesLabelled(officer, "New channel")
+      .concat(pressablesLabelled(officer, "New channel in Committees"))
+      .map((plus) => {
+        let box = plus.parent!;
+        while ((box.type as unknown) !== "View") box = box.parent!;
+        return StyleSheet.flatten(box.props.style);
+      });
+    // The 18pt glyph's right edge on the gutter, out of its 44pt target.
+    expect(plusBoxes.map((style) => style.marginRight)).toEqual([-13, -13]);
+
+    // The name is only as wide as its text, so the chevron sits beside it.
+    const header = officer.root
+      .findAllByType(PressableRow)
+      .find((node) => node.props.accessibilityRole === "header")!;
+    const name = header.findAll(
+      (node) => (node.type as unknown) === "Text",
+    )[0]!;
+    expect(StyleSheet.flatten(name.props.style).flex).toBeUndefined();
+  });
+
+  it("keeps the filter at the edge of a first heading that has no + (#4679)", () => {
+    // Pinned comes first and never carries a +, even for an officer.
+    const social = { id: "c-social", name: "social", type: "PUBLIC" };
+    channelsData.value = [general, social];
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      pinnedIds: new Set([social.id]),
+    };
+    permissionList.value = ["channels:manage"];
+    const tree = render();
+
+    expect(layout(tree).map(([name]) => name)).toEqual(["Pinned", "Channels"]);
+    const first = tree.root.findAllByType(StickyHeader)[0]!;
+    expect(first.findByType(ChannelFilterButton).props.atEdge).toBe(true);
+    expect(pressablesLabelled(tree, "New channel")).toHaveLength(1);
+  });
+
+  it("holds the filter's target inside the row only when a + follows it (#4679)", () => {
+    channelsData.value = [general];
+    const triggerStyle = (tree: ReactTestRenderer) =>
+      StyleSheet.flatten(
+        pressableLabelled(tree, "Sort and filter channels").props.style({
+          pressed: false,
+        }),
+      );
+    // At the edge the 20pt glyph's right side sits on the gutter.
+    expect(triggerStyle(render()).marginRight).toBe(
+      -(signetDarkTokens.touch.minimum - 20) / 2,
+    );
+    permissionList.value = ["channels:manage"];
+    expect(triggerStyle(render()).marginRight).toBeUndefined();
+  });
+
+  it("opens the filter menu with its right edge under the glyph's (#4679)", () => {
+    // A 44pt trigger whose target ends 12pt past a 16pt gutter on a 402pt
+    // screen: the glyph's right edge is at 386, and so is the menu's (264
+    // wide).
+    expect(
+      channelFilterMenuAnchor(signetDarkTokens, {
+        x: 354,
+        y: 100,
+        width: 44,
+        height: 44,
+      }),
+    ).toEqual({ top: 144 + signetDarkTokens.spacing.xs, left: 386 - 264 });
+    // Never off the screen's left.
+    expect(
+      channelFilterMenuAnchor(signetDarkTokens, {
+        x: 100,
+        y: 0,
+        width: 44,
+        height: 44,
+      }).left,
+    ).toBe(signetDarkTokens.spacing.sm);
+  });
+
+  it("draws a folded heading as name, chevron, then its count at the right (#4679)", () => {
+    channelsData.value = [general];
+    unreadData.value = [
+      { channel_id: general.id, unread_count: 2, mention_count: 1 },
+    ];
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      collapsed: new Set(["channels"]),
+    };
+    const header = render()
+      .root.findAllByType(PressableRow)
+      .find((node) => node.props.accessibilityRole === "header")!;
+    const order = header
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Text" ||
+          node.type === DisclosureGlyph ||
+          node.type === UnreadBadge,
+        { deep: false },
+      )
+      .map((node) =>
+        node.type === DisclosureGlyph
+          ? "chevron"
+          : node.type === UnreadBadge
+            ? "count"
+            : "name",
+      );
+    expect(order).toEqual(["name", "chevron", "count"]);
+    // Pushed to the heading's right, away from the chevron.
+    const badge = header.findByType(UnreadBadge);
+    let box = badge.parent!;
+    while ((box.type as unknown) !== "View") box = box.parent!;
+    expect(StyleSheet.flatten(box.props.style).marginLeft).toBe("auto");
+  });
+
+  it("puts a New channel + on section headings for officers only (#3838)", async () => {
+    channelsData.value = [general];
+    expect(pressablesLabelled(render(), "New channel")).toHaveLength(0);
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    const plus = pressablesLabelled(officer, "New channel");
+    expect(plus.length).toBeGreaterThan(0);
+    act(() => plus[0]!.props.onPress());
+    const form = officer.root.findByType(ChannelFormSheet);
+    expect(form.props.mode).toEqual({ kind: "create", categoryId: null });
+    createMutateAsync.mockResolvedValue({ id: "c-new" });
+    await act(async () =>
+      form.props.onSubmit({
+        name: "rush",
+        description: "",
+        categoryId: null,
+        isPrivate: false,
+        access: { who_can_see: ["tier:exec"], who_can_post: null },
+      }),
+    );
+    expect(createMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "rush",
+        who_can_see: ["tier:exec"],
+        who_can_post: null,
+      }),
+    );
+  });
+
+  it("sends only the access the officer changed when editing a channel (#3702)", async () => {
+    channelsData.value = [
+      { ...general, who_can_see: null, who_can_post: ["role:r1"] },
+    ];
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    longPress(officer, "general");
+    pressItem(officer, "Edit channel");
+    const form = officer.root.findByType(ChannelFormSheet);
+    expect(form.props.mode.channel).toMatchObject({
+      who_can_see: null,
+      who_can_post: ["role:r1"],
+    });
+    updateMutateAsync.mockResolvedValue(undefined);
+    await act(async () =>
+      form.props.onSubmit({
+        name: general.name,
+        description: "",
+        categoryId: null,
+        isPrivate: false,
+        access: { who_can_post: null },
+      }),
+    );
+    expect(updateMutateAsync).toHaveBeenCalledWith({
+      id: general.id,
+      body: { who_can_post: null },
+    });
+  });
+
+  it("saves only the list the officer ticked, and refuses an empty choice (#3702)", async () => {
+    channelsData.value = [
+      { ...general, who_can_see: null, who_can_post: ["role:r1"] },
+    ];
+    permissionList.value = ["channels:manage"];
+    const officer = render();
+    longPress(officer, "general");
+    pressItem(officer, "Edit channel");
+    const form = officer.root.findByType(ChannelFormSheet);
+    const access = () => officer.root.findByType(ChannelAccessSheet);
+    const save = () => form.findAllByType(SheetPrimaryButton).at(-1)!;
+    expect(access().props.value).toBeNull();
+
+    // Chosen with nothing on it: Save says so and sends nothing.
+    act(() => access().props.onChange([]));
+    await act(async () => save().props.onPress());
+    expect(updateMutateAsync).not.toHaveBeenCalled();
+    expect(
+      form.findByProps({ accessibilityLiveRegion: "polite" }).props.children,
+    ).toBe("Add a tier, role or group to each chosen list, or pick Everyone.");
+
+    act(() => access().props.onChange(["tier:exec"]));
+    updateMutateAsync.mockResolvedValue(undefined);
+    await act(async () => save().props.onPress());
+    expect(updateMutateAsync).toHaveBeenCalledWith({
+      id: general.id,
+      body: { who_can_see: ["tier:exec"] },
+    });
   });
 
   it.each(["pin", "fold", "filter"] as const)(
@@ -1377,107 +1790,149 @@ describe("Chat home's title (#2485)", () => {
   it("falls back to Frapp while the chapter's name is unknown", () => {
     const tree = render();
     expect(heading(tree).props.children).toBe("Frapp");
+    // Still a menu: with no chapter known, Switch chapter is the way out.
+    expect(
+      tree.root.findByType(ScreenShell).props.titleMenu.accessibilityLabel,
+    ).toBe("Chapter menu");
   });
 });
 
 /**
- * The header's right-hand pair (owner, 2026-11-07, option B): a door to
- * Messages and the member's avatar, which opens Profile / Notifications /
- * Settings. The notification bell (#3362) folded into the avatar: its unread
- * dot moved there and the menu's Notifications row carries the count.
+ * The chapter menu (Paul, 2026-11-19: "can we move chapter settings into one
+ * place? the chapter thing on the top left?"): the chapter's name opens
+ * Chapter settings and Switch chapter, as web's chapter row does, and You
+ * draws neither any more.
  */
-describe("Chat home header: Messages and the account menu", () => {
-  const push = () => vi.mocked(useRouter)().push;
+describe("Chat home's chapter menu", () => {
+  beforeEach(() => {
+    branding.current = { ...branding.unnamed, chapterName: "Tau Nu" };
+  });
+
+  function chapterButton(tree: ReactTestRenderer) {
+    return tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Chapter menu (currently Tau Nu)",
+    );
+  }
+
+  /** The words a menu item draws. */
+  function drawnText(node: ReactTestInstance): string {
+    return node
+      .findAll((n) => (n.type as unknown) === "Text")
+      .map((n) => n.props.children)
+      .join("");
+  }
+
+  function menuItems(tree: ReactTestRenderer) {
+    return tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "menuitem",
+    );
+  }
+
+  function openMenu(tree: ReactTestRenderer) {
+    act(() => {
+      chapterButton(tree).props.onPress();
+    });
+  }
+
+  it("opens from the chapter name with Chapter settings first for an officer", () => {
+    permissionList.value = ["chapter-config:view"];
+    const tree = render();
+    expect(menuItems(tree)).toHaveLength(0);
+    openMenu(tree);
+    expect(chapterButton(tree).props.accessibilityState).toEqual({
+      expanded: true,
+    });
+    expect(menuItems(tree).map((item) => drawnText(item))).toEqual([
+      "Chapter settings",
+      "Switch chapter",
+    ]);
+    const push = vi.mocked(vi.mocked(useRouter)().push);
+    push.mockClear();
+    act(() => {
+      menuItems(tree)[0]!.props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith("/chapter-settings");
+    // A pick closes the menu.
+    expect(menuItems(tree)).toHaveLength(0);
+  });
+
+  it("offers only Switch chapter to a member Chapter settings holds nothing for", () => {
+    // Plan and billing doesn't come to the phone, so a billing-only
+    // treasurer gets no door to an empty screen (`chapterSettingsAccess`).
+    permissionList.value = ["members:view", "billing:view"];
+    const tree = render();
+    openMenu(tree);
+    expect(menuItems(tree).map((item) => drawnText(item))).toEqual([
+      "Switch chapter",
+    ]);
+    const push = vi.mocked(vi.mocked(useRouter)().push);
+    push.mockClear();
+    act(() => {
+      menuItems(tree)[0]!.props.onPress();
+    });
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/(auth)/chapter-picker",
+      params: { from: "chat" },
+    });
+  });
+
+  it("closes on a tap outside", () => {
+    const tree = render();
+    openMenu(tree);
+    act(() => {
+      tree.root
+        .findByProps({ testID: "chapter-menu-backdrop" })
+        .props.onPress();
+    });
+    expect(menuItems(tree)).toHaveLength(0);
+  });
+});
+
+/**
+ * The header's rounds: Search (#5139) and the inbox's bell (#3362), back
+ * since #3839 in place of the member's avatar and its menu, which became the
+ * You tab. The Messages door between them became the Messages tab (#5310).
+ */
+describe("Chat home header: Search and the bell (#3839, #5310)", () => {
   const byTestId = (tree: ReactTestRenderer, testID: string) =>
     tree.root.findAllByProps({ testID });
   const unreadNotification = (id: string, data?: unknown) =>
     ({ id, read_at: null, data }) as (typeof notificationsData.value)[number];
 
-  it("draws no bell any more", () => {
+  it("draws Search, then the bell, and no Messages door or avatar", () => {
     const tree = render();
-
-    expect(
-      tree.root.findAll(
+    const header = tree.root.findByType(ScreenShell).props.headerAction;
+    const labels = tree.root
+      .findAll(
         (node) =>
           (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityLabel === "Notifications",
-      ),
-    ).toHaveLength(0);
+          (node.props.accessibilityLabel === "Search" ||
+            node.props.accessibilityLabel === "Messages" ||
+            node.props.accessibilityLabel === "Notifications" ||
+            node.props.accessibilityLabel === "Your account"),
+      )
+      .map((node) => node.props.accessibilityLabel);
+    expect(header).toBeTruthy();
+    expect(labels).toEqual(["Search", "Notifications"]);
   });
 
-  describe("Messages door", () => {
-    it("opens Messages", () => {
-      const tree = render();
-      act(() => pressableLabelled(tree, "Messages").props.onPress());
-
-      expect(push()).toHaveBeenCalledWith("/messages");
-    });
-
-    it("draws no badge while no conversation is unread", () => {
+  describe("bell", () => {
+    it("draws no badge while nothing is unread", () => {
       const tree = render();
 
-      expect(byTestId(tree, "messages-badge")).toHaveLength(0);
+      expect(byTestId(tree, "notifications-badge")).toHaveLength(0);
       expect(
-        pressableLabelled(tree, "Messages").props.accessibilityValue,
+        pressableLabelled(tree, "Notifications").props.accessibilityValue,
       ).toBeUndefined();
     });
 
-    it("counts conversations with anything unread, in mention red, and reads it out", () => {
-      channelsData.value = [general, dmAlice, dmBobHidden, group];
-      unreadData.value = [
-        { channel_id: dmAlice.id, unread_count: 4, mention_count: 0 },
-        { channel_id: group.id, unread_count: 1, mention_count: 0 },
-        // A channel's unread belongs to its own row, not to Messages.
-        { channel_id: general.id, unread_count: 9, mention_count: 2 },
-      ];
-      const tree = render();
-      const [pill] = byTestId(tree, "messages-badge").filter(
-        (node) => (node.type as unknown) === "View",
-      );
-
-      // Two conversations, not five messages.
-      expect(screenTextOf(pill!)).toBe("2");
-      expect(JSON.stringify(pill!.props.style)).toContain(
-        signetDarkTokens.color.semantic.mention,
-      );
-      expect(
-        pressableLabelled(tree, "Messages").props.accessibilityValue,
-      ).toEqual({ text: "2 unread conversations" });
-    });
-
-    it("says one conversation in the singular", () => {
-      unreadData.value = [
-        { channel_id: dmAlice.id, unread_count: 1, mention_count: 0 },
-      ];
-      const tree = render();
-
-      expect(
-        pressableLabelled(tree, "Messages").props.accessibilityValue,
-      ).toEqual({ text: "1 unread conversation" });
-    });
-
-    it("counts nothing for a hidden conversation", () => {
-      unreadData.value = [
-        { channel_id: dmBobHidden.id, unread_count: 3, mention_count: 0 },
-      ];
-      const tree = render();
-
-      expect(byTestId(tree, "messages-badge")).toHaveLength(0);
-    });
-  });
-
-  describe("account dot", () => {
-    it("draws no dot while nothing is unread", () => {
-      const tree = render();
-      const account = pressableLabelled(tree, "Your account");
-
-      expect(byTestId(tree, "account-inbox-dot")).toHaveLength(0);
-      expect(account.props.accessibilityValue).toBeUndefined();
-    });
-
-    it("draws the dot in house gold, never the chapter accent, and reads the count out", () => {
-      // A red accent, the case the fixed gold exists for: beside the channel
-      // rows' mention-red badges, an accent-filled dot would read as a mention.
+    it("draws the count in house gold, never the chapter accent, and reads it out", () => {
+      // A red accent, the case the fixed gold exists for: an accent-filled
+      // count would read as a mention.
       branding.current = { ...branding.unnamed, accentPrimary: "#D75748" };
       notificationsData.value = [
         unreadNotification("n-1"),
@@ -1485,17 +1940,17 @@ describe("Chat home header: Messages and the account menu", () => {
         { id: "n-3", read_at: "2026-09-25T10:00:00Z" },
       ];
       const tree = render();
-      const [dot] = byTestId(tree, "account-inbox-dot").filter(
+      const [badge] = byTestId(tree, "notifications-badge").filter(
         (node) => (node.type as unknown) === "View",
       );
 
-      expect(dot).toBeDefined();
-      const style = JSON.stringify(dot!.props.style);
+      expect(screenTextOf(badge!)).toBe("2");
+      const style = JSON.stringify(badge!.props.style);
       expect(style).toContain(signetDarkTokens.color.gold.house);
       expect(style).not.toContain("#D75748");
       expect(
-        pressableLabelled(tree, "Your account").props.accessibilityValue,
-      ).toEqual({ text: "2 unread notifications" });
+        pressableLabelled(tree, "Notifications").props.accessibilityValue,
+      ).toEqual({ text: "2 unread" });
     });
 
     it("leaves chat-sourced rows to the channel badges", () => {
@@ -1506,99 +1961,26 @@ describe("Chat home header: Messages and the account menu", () => {
       const tree = render();
 
       expect(
-        pressableLabelled(tree, "Your account").props.accessibilityValue,
-      ).toEqual({ text: "1 unread notifications" });
+        pressableLabelled(tree, "Notifications").props.accessibilityValue,
+      ).toEqual({ text: "1 unread" });
     });
 
-    it("draws no dot when only chat notifications are unread", () => {
+    it("draws no badge when only chat notifications are unread", () => {
       notificationsData.value = [
         unreadNotification("n-1", { target: { screen: "chat" } }),
       ];
       const tree = render();
 
-      expect(byTestId(tree, "account-inbox-dot")).toHaveLength(0);
-    });
-  });
-
-  describe("account menu", () => {
-    const openMenu = (tree: ReactTestRenderer) =>
-      act(() => pressableLabelled(tree, "Your account").props.onPress());
-    const menuRow = (tree: ReactTestRenderer, label: string) =>
-      tree.root.findByType(ScreenShell).props.overlay.content.props.menu.visible
-        ? tree.root.find(
-            (node) =>
-              (node.type as unknown) === "Pressable" &&
-              node.props.accessibilityRole === "button" &&
-              node.findAll(
-                (inner) =>
-                  (inner.type as unknown) === "Text" &&
-                  inner.props.children === label,
-              ).length > 0,
-          )
-        : (() => {
-            throw new Error("menu closed");
-          })();
-
-    it("is closed until the avatar is pressed", () => {
-      const tree = render();
-
-      expect(tree.root.findByType(ScreenShell).props.overlay.open).toBe(false);
-      expect(
-        pressableLabelled(tree, "Your account").props.accessibilityState,
-      ).toEqual({ expanded: false });
+      expect(byTestId(tree, "notifications-badge")).toHaveLength(0);
     });
 
-    it("opens through the shell's overlay with Profile, Notifications and Settings", () => {
+    it("opens the inbox", () => {
       const tree = render();
-      openMenu(tree);
+      act(() => pressableLabelled(tree, "Notifications").props.onPress());
 
-      const shell = tree.root.findByType(ScreenShell);
-      expect(shell.props.overlay.open).toBe(true);
-      expect(
-        pressableLabelled(tree, "Your account").props.accessibilityState,
-      ).toEqual({ expanded: true });
-      for (const label of ["Profile", "Notifications", "Settings"]) {
-        expect(menuRow(tree, label)).toBeDefined();
-      }
-    });
-
-    it.each([
-      ["Profile", "/profile"],
-      ["Notifications", "/notifications"],
-      ["Settings", "/preferences"],
-    ])("opens %s at %s and closes", (label, href) => {
-      const tree = render();
-      openMenu(tree);
-      act(() => menuRow(tree, label).props.onPress());
-
-      expect(push()).toHaveBeenCalledWith(href);
-      expect(tree.root.findByType(ScreenShell).props.overlay.open).toBe(false);
-    });
-
-    it("carries the inbox's unread count on the Notifications row", () => {
-      notificationsData.value = [
-        unreadNotification("n-1"),
-        unreadNotification("n-2"),
-      ];
-      const tree = render();
-      openMenu(tree);
-      const row = menuRow(tree, "Notifications");
-
-      expect(row.props.accessibilityValue).toEqual({ text: "2 unread" });
-      expect(screenTextOf(row)).toContain("2");
-      expect(screenTextOf(menuRow(tree, "Profile"))).not.toMatch(/\d/);
-    });
-
-    it("closes from the backdrop", () => {
-      const tree = render();
-      openMenu(tree);
-      act(() =>
-        tree.root
-          .findByProps({ testID: "account-menu-backdrop" })
-          .props.onPress(),
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
+        "/notifications",
       );
-
-      expect(tree.root.findByType(ScreenShell).props.overlay.open).toBe(false);
     });
   });
 });
@@ -1617,6 +1999,25 @@ describe("Chat home loading and error states", () => {
 
     expect(tree.root.findAllByType(ChannelListSkeleton)).toHaveLength(0);
     expect(tree.root.findAllByType(NoChapterState)).toHaveLength(1);
+    // Nothing more is coming, so the screen counts as shown (#4342).
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(true);
+  });
+
+  it("marks the screen fully shown for Sentry only once the skeleton gives way (#4342)", () => {
+    channelsState.value = { ...channelsState.value, isPending: true };
+    const tree = render();
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(false);
+
+    channelsState.value = { ...channelsState.value, isPending: false };
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <ChatHomeScreen />
+        </FrappThemeProvider>,
+      ),
+    );
+    expect(tree.root.findAllByType(ChannelListSkeleton)).toHaveLength(0);
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(true);
   });
 
   it("loads on channel-shaped skeletons, with no spinner or loading copy", () => {
@@ -1635,7 +2036,12 @@ describe("Chat home loading and error states", () => {
 
   it("fails on the shared error state, whose retry refetches the channels", () => {
     const refetch = vi.fn();
-    channelsState.value = { ...channelsState.value, isError: true, refetch };
+    channelsState.value = {
+      ...channelsState.value,
+      data: undefined,
+      isError: true,
+      refetch,
+    };
     const tree = render();
 
     const error = tree.root.findByType(ErrorState);
@@ -1650,9 +2056,21 @@ describe("Chat home loading and error states", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the channels it has when a refresh fails", () => {
+    // Back from the background, the focus refetch can fail (a lapsed token,
+    // FRAPP-API-E). The rows it already had stay; the error card is for a
+    // list that never loaded (components.md §10).
+    channelsState.value = { ...channelsState.value, isError: true };
+    const tree = render();
+
+    expect(tree.root.findAllByType(ErrorState)).toHaveLength(0);
+    expect(rows(tree).length).toBeGreaterThan(0);
+  });
+
   it("says a refused list is about the member's role, not the network", () => {
     channelsState.value = {
       ...channelsState.value,
+      data: undefined,
       isError: true,
       error: Object.assign(new Error("Forbidden"), { status: 403 }),
     };
@@ -1660,9 +2078,7 @@ describe("Chat home loading and error states", () => {
 
     const error = tree.root.findByType(ErrorState);
     expect(error.props.title).toBe("Chat isn't open to you yet");
-    expect(error.props.body).toContain(
-      "Ask an officer to give you the Member role",
-    );
+    expect(error.props.body).toContain("Ask an officer to check your roles");
     expect(error.props.body).not.toContain("reach the server");
   });
 
@@ -1671,6 +2087,7 @@ describe("Chat home loading and error states", () => {
     vi.mocked(Sentry.captureMessage).mockClear();
     channelsState.value = {
       ...channelsState.value,
+      data: undefined,
       isError: true,
       error: Object.assign(new Error("Forbidden"), { status: 403 }),
     };
@@ -1685,6 +2102,7 @@ describe("Chat home loading and error states", () => {
   it("says Retrying… and holds the control while a retry is in flight", () => {
     channelsState.value = {
       ...channelsState.value,
+      data: undefined,
       isError: true,
       isFetching: true,
     };
@@ -1750,7 +2168,7 @@ describe("Chat home press feedback", () => {
       // The suite's react-native stub runs as iOS.
       const held = control.props.style({ pressed: true });
       expect(held).toContainEqual({
-        backgroundColor: signetDarkTokens.color.surface.card,
+        backgroundColor: signetDarkTokens.color.surface.surface1,
       });
       expect(JSON.stringify(held)).not.toContain("opacity");
     }
@@ -1789,7 +2207,10 @@ describe("Chat home opens the last channel on launch", () => {
   const answered = () => {
     channelsState.value = { ...channelsState.value, isSuccess: true };
   };
-  beforeEach(() => resetChatLaunchForTests());
+  beforeEach(() => {
+    resetChatLaunchForTests();
+    resetWelcomeLandingForTests();
+  });
 
   async function settle() {
     await act(async () => {
@@ -1825,10 +2246,13 @@ describe("Chat home opens the last channel on launch", () => {
     // Held behind the skeleton while the jump may still happen, so the list
     // never flashes before a channel opens over it (2026-11-07)…
     expect(rows(tree)).toHaveLength(0);
+    // …which is still loading as far as the member can tell (#4342)…
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(false);
     await settle();
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
     // …and shown once the launch settles with nowhere to go.
     expect(rows(tree).map((row) => row.props.name)).toEqual(["general"]);
+    expect(tree.root.findByType(ScreenReady).props.ready).toBe(true);
   });
 
   it("stands aside for a notification tap", async () => {
@@ -1867,6 +2291,28 @@ describe("Chat home opens the last channel on launch", () => {
     render();
     await settle();
     act(() => __refocus());
+    await settle();
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  it("lands a new member fresh from s03 in the chapter's channel, once (#5627)", async () => {
+    // s03 ends long after the launch window, with nothing remembered yet.
+    resetChatLaunchForTests(Date.now() - 60_000);
+    answered();
+    vi.mocked(AsyncStorage.getItem).mockImplementation(async (key) =>
+      key === WELCOME_DUE_STORAGE_KEY
+        ? `${VIEWER}:chapter-1:${Date.now()}`
+        : null,
+    );
+    render();
+    await settle();
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "c-general", landing: "1" },
+    });
+
+    vi.mocked(vi.mocked(useRouter)().push).mockClear();
+    render();
     await settle();
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
   });
@@ -1933,7 +2379,11 @@ describe("Chat home setup checklist (spec/product/modules.md § Setup checklist)
 
   it("draws nothing over the channels' error", () => {
     setupChecklist.value = ONE_LINE;
-    channelsState.value = { ...channelsState.value, isError: true };
+    channelsState.value = {
+      ...channelsState.value,
+      data: undefined,
+      isError: true,
+    };
     expect(render().root.findAllByType(SetupChecklistView)).toHaveLength(0);
   });
 });
@@ -2022,19 +2472,26 @@ describe("Chat home section headings draw a disclosure glyph", () => {
       collapsed: new Set(["channels"]),
     };
     const folded = render();
+    const [foldedHeader] = folded.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "header",
+    );
     expect(
-      folded.root.findAllByType(DisclosureGlyph).map((n) => n.props.direction),
+      foldedHeader!
+        .findAllByType(DisclosureGlyph)
+        .map((n) => n.props.direction),
     ).toEqual(["right"]);
   });
 
-  it("keeps the filter button outside the fold control, at the end of the first heading's row", () => {
+  it("keeps the filter button outside the fold control, on the first heading's row", () => {
     const tree = render();
     const header = tree.root.find(
       (node) =>
         (node.type as unknown) === "Pressable" &&
         node.props.accessibilityRole === "header",
     );
-    const filter = pressableLabelled(tree, "Filter channels");
+    const filter = pressableLabelled(tree, "Sort and filter channels");
 
     expect(header.findAll((n) => n === filter)).toHaveLength(0);
     // They share one heading row, the filter button last.
@@ -2077,5 +2534,168 @@ describe("Chat home pinned section headings (owner 2026-11-07)", () => {
     expect(pinned).toHaveLength(tree.root.findAllByType(StickyHeader).length);
     expect(pinned.length).toBeGreaterThanOrEqual(layout(tree).length);
     expect(pinned.every((type) => type === StickyHeader)).toBe(true);
+  });
+});
+
+describe("threads under their channel (#5277)", () => {
+  const thread = (over: Record<string, unknown> = {}) => ({
+    thread_root_id: "root-1",
+    channel_id: "c-general",
+    state: "following",
+    unread_count: 0,
+    reply_count: 2,
+    last_reply_at: new Date().toISOString(),
+    root: {
+      id: "root-1",
+      channel_id: "c-general",
+      sender_id: "u-2",
+      content: "who has the tent",
+      kind: "text",
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+    },
+    ...over,
+  });
+  const threadRows = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Thread: "),
+    );
+
+  it("draws no Threads row, and nothing under a channel with no threads", () => {
+    allThreads.data = [];
+    const tree = render();
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Threads",
+      ),
+    ).toHaveLength(0);
+    expect(threadRows(tree)).toHaveLength(0);
+  });
+
+  it("lists an active thread right under its channel and opens it there", () => {
+    allThreads.data = [thread({ unread_count: 2 })];
+    try {
+      const tree = render();
+      const labels = tree.root
+        .findAll(
+          (node) =>
+            (node.type as unknown) === "Pressable" &&
+            typeof node.props.accessibilityLabel === "string",
+        )
+        .map((node) => node.props.accessibilityLabel as string);
+      const label = "Thread: who has the tent, in #general, 2 new";
+      const at = labels.indexOf(label);
+      expect(at).toBeGreaterThan(0);
+      expect(labels[at - 1]).toMatch(/^#general/);
+      const row = pressableLabelled(tree, label);
+      // Unread reads as an unread channel row does: the pip and bold.
+      expect(
+        row.findAll(
+          (node) => node.props.testID === "channel-thread-unread-pip",
+        ),
+      ).not.toHaveLength(0);
+      const push = vi.mocked(vi.mocked(useRouter)().push);
+      push.mockClear();
+      act(() => row.props.onPress());
+      // The channel under the thread, then the thread (#4054's stack), so the
+      // thread's live replies ride the channel's topic and back lands there.
+      expect(push.mock.calls).toEqual([
+        ["/chat-thread?channelId=c-general"],
+        ["/chat-thread?channelId=c-general&threadRootId=root-1"],
+      ]);
+    } finally {
+      allThreads.data = [];
+    }
+  });
+
+  it("draws a read thread without the pip, and a muted one as muted", () => {
+    allThreads.data = [
+      thread(),
+      thread({ thread_root_id: "root-2", state: "muted" }),
+    ];
+    try {
+      const tree = render();
+      const read = pressableLabelled(
+        tree,
+        "Thread: who has the tent, in #general",
+      );
+      expect(
+        read.findAll(
+          (node) => node.props.testID === "channel-thread-unread-pip",
+        ),
+      ).toHaveLength(0);
+      expect(
+        pressableLabelled(tree, "Thread: who has the tent, in #general, muted"),
+      ).toBeTruthy();
+    } finally {
+      allThreads.data = [];
+    }
+  });
+
+  it("keeps a channel whose thread has new replies under Unread only", () => {
+    const social = { id: "c-social", name: "social", type: "PUBLIC" };
+    channelsData.value = [general, social];
+    sidebarPrefs.value = {
+      ...sidebarPrefs.value,
+      filters: { unreadOnly: true, hideMuted: false },
+    };
+    allThreads.data = [thread({ channel_id: social.id, unread_count: 1 })];
+    try {
+      const tree = render();
+      expect(layout(tree)).toEqual([["Channels", ["social"]]]);
+      expect(threadRows(tree)).toHaveLength(1);
+    } finally {
+      allThreads.data = [];
+    }
+  });
+
+  it("leaves out a read thread gone quiet", () => {
+    const old = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    allThreads.data = [thread({ last_reply_at: old })];
+    try {
+      expect(threadRows(render())).toHaveLength(0);
+    } finally {
+      allThreads.data = [];
+    }
+  });
+});
+
+it("puts Search in the title row", () => {
+  const tree = render();
+  act(() => pressableLabelled(tree, "Search").props.onPress());
+  expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/search");
+});
+
+describe("Chat home Now card (#5777)", () => {
+  it("puts the event on now on Chat home", () => {
+    homeEventsNow.value = {
+      events: [
+        {
+          id: "recruitment",
+          name: "Recruitment Meetings",
+          location: "Chapter room",
+          start_time: new Date(Date.now() - 40 * 60_000).toISOString(),
+          end_time: new Date(Date.now() + 20 * 60_000).toISOString(),
+          check_in_opens_minutes: 10,
+          check_in_open: true,
+          checked_in: true,
+          checked_in_at: null,
+        },
+      ],
+      now: Date.now(),
+    };
+    try {
+      const tree = render();
+      const now = tree.root.findByType(NowCard);
+      expect(screenTextOf(now)).toContain("Recruitment Meetings");
+      expect(screenTextOf(now)).toContain("Checked in");
+    } finally {
+      homeEventsNow.value = { events: [], now: Date.now() };
+    }
   });
 });

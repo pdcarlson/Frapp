@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatGraduationYear,
-  formatHours,
-  selectPointsBalance,
-  selectViewerProfile,
-  sumApprovedServiceMinutes,
-} from "./profile";
+import { selectViewerProfile } from "./profile";
 
 describe("selectViewerProfile", () => {
   it("narrows the fields s15 actually draws", () => {
@@ -19,11 +13,16 @@ describe("selectViewerProfile", () => {
         current_company: null,
         bio: "",
         avatar_url: "https://storage.example/signed/photo",
+        birthday_month: 3,
+        birthday_day: 4,
+        birthday_year: null,
+        birthday_visibility: "chapter",
       }),
     ).toEqual({
       displayName: "Paul Carlson",
       initials: "PC",
       email: "pdcarlson@rpi.edu",
+      phone: null,
       graduationYear: 2027,
       major: null,
       currentCity: "Troy",
@@ -31,7 +30,19 @@ describe("selectViewerProfile", () => {
       // `''` is absent, not a value — `bio` is nullable and both mean "unset".
       bio: null,
       photoUrl: "https://storage.example/signed/photo",
+      birthdayMonth: 3,
+      birthdayDay: 4,
+      birthdayYear: null,
+      birthdayVisibility: "chapter",
+      nameLocked: false,
     });
+  });
+
+  it("says when the chapter locks the member's name (#5801)", () => {
+    expect(
+      selectViewerProfile({ display_name: "Ethan", display_name_locked: true })
+        ?.nameLocked,
+    ).toBe(true);
   });
 
   it("returns null before the first payload", () => {
@@ -51,75 +62,11 @@ describe("selectViewerProfile", () => {
   // Delegates to `lib/chat/display-name.ts` so one person's avatar cannot read
   // differently in the directory than it does in chat.
   it("uses the same initials rule as the chat avatar", () => {
-    expect(selectViewerProfile({ display_name: "Ada B. Lovelace" })?.initials).toBe(
-      "AB",
+    expect(
+      selectViewerProfile({ display_name: "Ada B. Lovelace" })?.initials,
+    ).toBe("AB");
+    expect(selectViewerProfile({ display_name: "Prince" })?.initials).toBe(
+      "PR",
     );
-    expect(selectViewerProfile({ display_name: "Prince" })?.initials).toBe("PR");
-  });
-});
-
-describe("selectPointsBalance", () => {
-  it("reads the balance out of the points summary", () => {
-    expect(selectPointsBalance({ balance: 1240, transactions: [] })).toBe(1240);
-  });
-
-  // A real zero and "not loaded" must not render the same, or the screen states
-  // a fact it does not have.
-  it("distinguishes a real zero from an absent payload", () => {
-    expect(selectPointsBalance({ balance: 0, transactions: [] })).toBe(0);
-    expect(selectPointsBalance(undefined)).toBeNull();
-    expect(selectPointsBalance({ transactions: [] })).toBeNull();
-  });
-
-  it("rejects a non-finite balance rather than propagating NaN", () => {
-    expect(selectPointsBalance({ balance: Number.NaN })).toBeNull();
-  });
-});
-
-describe("sumApprovedServiceMinutes", () => {
-  // Approved only, matching `get_service_leaderboard`: pending time is not yet
-  // credited, and banking it here would overstate the member's total.
-  it("counts approved entries and ignores pending and rejected ones", () => {
-    expect(
-      sumApprovedServiceMinutes([
-        { status: "APPROVED", duration_minutes: 150 },
-        { status: "PENDING", duration_minutes: 999 },
-        { status: "REJECTED", duration_minutes: 999 },
-        { status: "APPROVED", duration_minutes: 960 },
-      ]),
-    ).toBe(1110);
-  });
-
-  // Same distinction `selectPointsBalance` makes: a member with no entries has
-  // zero minutes, but "not loaded" is not zero and must not render as it.
-  it("distinguishes an empty history from an absent payload", () => {
-    expect(sumApprovedServiceMinutes([])).toBe(0);
-    expect(sumApprovedServiceMinutes(undefined)).toBeNull();
-    expect(sumApprovedServiceMinutes(null)).toBeNull();
-  });
-
-  it("skips a row whose duration is missing rather than adding NaN", () => {
-    expect(
-      sumApprovedServiceMinutes([
-        { status: "APPROVED" },
-        { status: "APPROVED", duration_minutes: 60 },
-      ]),
-    ).toBe(60);
-  });
-});
-
-describe("formatHours", () => {
-  it("keeps one decimal, and drops it for whole hours", () => {
-    expect(formatHours(1110)).toBe("18.5");
-    expect(formatHours(120)).toBe("2");
-    expect(formatHours(0)).toBe("0");
-    expect(formatHours(45)).toBe("0.8");
-  });
-});
-
-describe("formatGraduationYear", () => {
-  it("renders the two-digit form the reference draws", () => {
-    expect(formatGraduationYear(2027)).toBe("'27");
-    expect(formatGraduationYear(null)).toBeNull();
   });
 });

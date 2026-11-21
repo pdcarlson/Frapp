@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ChatReport, ChatReportStatus } from "@repo/hooks";
 import { formatTimestampFull } from "@repo/formatting";
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { networkMock } from "@/tests/network";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -33,6 +34,7 @@ const {
   removeTimeline,
   attachmentsQuery,
   attachmentRequests,
+  channelList,
 } = vi.hoisted(() => ({
   mockOffline: { value: false },
   mockToast: vi.fn(),
@@ -48,6 +50,7 @@ const {
   removeTimeline: { value: undefined as unknown },
   attachmentsQuery: { value: {} as Record<string, unknown> },
   attachmentRequests: [] as { reportId: string; enabled: boolean }[],
+  channelList: { value: undefined as unknown },
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => {
@@ -90,6 +93,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
         ...(enabled ? attachmentsQuery.value : {}),
       };
     },
+    useChannels: () => ({ data: channelList.value }),
     useResolveChatReport: () => ({ mutateAsync: mockResolve }),
     useRemoveReportedMessage: (timeline: unknown) => {
       removeTimeline.value = timeline;
@@ -158,6 +162,7 @@ beforeEach(() => {
   requestedChannels.length = 0;
   attachmentRequests.length = 0;
   attachmentsQuery.value = {};
+  channelList.value = undefined;
   reportsByStatus.value = { open: settled([report()]) };
   mockResolve.mockResolvedValue({});
   mockRemove.mockResolvedValue({});
@@ -863,6 +868,67 @@ describe("ChatReportsCard — resolving", () => {
       expect(button).toBeDisabled();
       expect(button).toHaveAttribute("title", "Reconnect to make changes.");
     }
+  });
+});
+
+// #3909: the audit log keeps Frapp's entries, so a report on one offers no
+// Remove; a member's post there from before it was read-only still does.
+describe("ChatReportsCard — a report in the audit log", () => {
+  beforeEach(() => {
+    channelList.value = [
+      { id: "ch-1", name: "general" },
+      { id: "ch-audit", name: "chapter-audit", is_audit_log: true },
+    ];
+  });
+
+  it("offers no Remove on one of Frapp's entries, and says why", () => {
+    reportsByStatus.value = {
+      open: settled([
+        report({
+          channel_id: "ch-audit",
+          reported_sender_id: SYSTEM_SENDER_ID,
+          reported_content: "Role updated",
+        }),
+      ]),
+    };
+    render(<ChatReportsCard />);
+
+    expect(
+      screen.queryByRole("button", { name: /^Remove message/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Mark reviewed/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Dismiss/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This is an entry in the audit log, which can't be removed. Mark reviewed or dismiss the report.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("still offers Remove on a member's post there", () => {
+    reportsByStatus.value = {
+      open: settled([report({ channel_id: "ch-audit" })]),
+    };
+    render(<ChatReportsCard />);
+
+    expect(
+      screen.getByRole("button", { name: /^Remove message/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("still offers Remove on Frapp's notices in other channels", () => {
+    reportsByStatus.value = {
+      open: settled([report({ reported_sender_id: SYSTEM_SENDER_ID })]),
+    };
+    render(<ChatReportsCard />);
+
+    expect(
+      screen.getByRole("button", { name: /^Remove message/ }),
+    ).toBeInTheDocument();
   });
 });
 

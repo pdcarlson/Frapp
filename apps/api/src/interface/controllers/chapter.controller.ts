@@ -5,6 +5,7 @@ import {
   Get,
   InternalServerErrorException,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -137,7 +138,7 @@ export class ChapterController {
   })
   async activate(
     @CurrentUser('id') userId: string,
-    @Param('id') chapterId: string,
+    @Param('id', ParseUUIDPipe) chapterId: string,
   ) {
     await this.chapterService.setActiveChapter(userId, chapterId);
     // The claim is only refreshed when a token is issued, so the client must

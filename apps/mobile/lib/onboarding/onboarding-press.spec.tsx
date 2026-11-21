@@ -5,9 +5,10 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { signetDarkTokens } from "@repo/theme/signet";
+import { ACCENT_SUBTLE_HOVER_MIX, signetDarkTokens } from "@repo/theme/signet";
 import { FrappClientProvider, type ChapterDirectoryResult } from "@repo/hooks";
 import { FrappThemeProvider, tint } from "@/lib/theme";
+import { mixHex } from "@/components/tinted-control";
 import { flatStyle } from "@/test/flat-style";
 
 /**
@@ -73,6 +74,11 @@ const state = vi.hoisted(() => ({
   chapters: { data: [] as unknown[], isError: false },
 }));
 
+// The invite card's visit id (#5663): a fixed one, since the native module
+// isn't in a test run.
+vi.mock("expo-crypto", () => ({
+  randomUUID: () => "6f1c2a34-9b8d-4e5f-a1b2-c3d4e5f60718",
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useListChapters: () => ({
@@ -260,10 +266,17 @@ const PRIMARY: Kind = {
   held: { opacity: 0.85 },
   androidHeld: { opacity: undefined },
 };
+// The tinted control's pressed step (`components/tinted-control.ts`) in
+// house gold, the picker's (#4811).
+const TINTED_HELD = mixHex(
+  color.gold.askBorder,
+  ACCENT_SUBTLE_HOVER_MIX,
+  color.gold.askFill,
+);
 const TINTED: Kind = {
-  ripple: tint(color.gold.house, 0.2),
-  held: { backgroundColor: tint(color.gold.house, 0.2) },
-  androidHeld: { backgroundColor: tint(color.gold.house) },
+  ripple: TINTED_HELD,
+  held: { backgroundColor: TINTED_HELD },
+  androidHeld: { backgroundColor: color.gold.askFill },
 };
 
 const ROWS: [string, Kind, () => Promise<Node>][] = [

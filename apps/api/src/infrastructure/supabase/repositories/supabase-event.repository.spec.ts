@@ -92,6 +92,15 @@ describe('SupabaseEventRepository — tenant scope', () => {
     expect(before).toEqual([]);
   });
 
+  it('findByIds returns only the ids that are in the caller chapter', async () => {
+    const events = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByIds([EVENT_A, EVENT_B], CHAPTER_B),
+    );
+
+    expect(events.map((e) => e.id)).toEqual([EVENT_B]);
+    expect(await repo.findByIds([], CHAPTER_B)).toEqual([]);
+  });
+
   it('findCreatedBy returns only the maker’s events in the caller chapter, not ended by the cutoff', async () => {
     // The maker has an event in each chapter; only the chapter separates them,
     // and only the maker separates theirs from someone else's in chapter B.
@@ -195,5 +204,29 @@ describe('SupabaseEventRepository — tenant scope', () => {
     await expect(repo.createMany([])).resolves.toEqual([]);
 
     expect(harness.ops).toEqual([]);
+  });
+
+  // The carry and the delete are one RPC, so they commit together (#4620).
+  it('deleteReplacedOccurrences passes the chapter and the pairs to the RPC', async () => {
+    const dropped = await repo.deleteReplacedOccurrences([EVENT_B], CHAPTER_B, [
+      { from: EVENT_B, to: EVENT_A },
+    ]);
+
+    expect(harness.rpcCalls).toHaveLength(1);
+    expect(harness.rpcCalls[0].args).toEqual({
+      p_chapter_id: CHAPTER_B,
+      p_old_ids: [EVENT_B],
+      p_from_ids: [EVENT_B],
+      p_to_ids: [EVENT_A],
+    });
+    expect(dropped).toEqual([]);
+  });
+
+  it('deleteReplacedOccurrences calls nothing for an empty list', async () => {
+    await expect(
+      repo.deleteReplacedOccurrences([], CHAPTER_B, []),
+    ).resolves.toEqual([]);
+
+    expect(harness.rpcCalls).toEqual([]);
   });
 });

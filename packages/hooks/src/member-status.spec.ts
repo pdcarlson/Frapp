@@ -7,6 +7,7 @@ import {
   nextStatusChangeAt,
   ownStatusAt,
   tomorrowMorning,
+  untilLabel,
 } from "./member-status";
 
 const NOW = Date.parse("2026-11-09T15:30:00Z");
@@ -95,7 +96,9 @@ describe("end times", () => {
   test("Today ends at the next local midnight", () => {
     const now = new Date(2026, 10, 9, 15, 30);
     const end = endOfToday(now);
-    expect([end.getDate(), end.getHours(), end.getMinutes()]).toEqual([10, 0, 0]);
+    expect([end.getDate(), end.getHours(), end.getMinutes()]).toEqual([
+      10, 0, 0,
+    ]);
     expect(lineEndsAt("today", now)).toBe(end.toISOString());
   });
 
@@ -131,5 +134,13 @@ describe("lineProblem", () => {
 
   test("surrounding spaces don't count against the cap", () => {
     expect(lineProblem(`  ${"x".repeat(80)}  `, 80)).toBeNull();
+  });
+});
+
+describe("untilLabel", () => {
+  test("writes a later day's weekday out, never abbreviated", () => {
+    const now = new Date(2026, 10, 9, 10, 0);
+    const end = new Date(2026, 10, 10, 8, 0).getTime();
+    expect(untilLabel(end, now)).toMatch(/^Until Tuesday,? 8:00\sAM$/);
   });
 });

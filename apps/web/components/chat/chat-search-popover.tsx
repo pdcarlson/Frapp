@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
@@ -34,6 +35,7 @@ import {
   type SearchPickerOption,
   type SearchTokenKind,
 } from "./chat-search-filters";
+import { MessageRowBody, messageRowButtonClass } from "./message-list-row";
 import { replyPreviewText } from "./reply-quote";
 
 export type { SearchPickerOption } from "./chat-search-filters";
@@ -406,30 +408,28 @@ export function ChatSearchPanel({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <label className="flex items-center gap-1.5 text-caption text-muted-foreground">
                   From
-                  <Input
-                    type="date"
-                    className="w-auto"
+                  <DateField
+                    lean="back"
+                    className="w-40"
                     value={date.from ?? ""}
-                    max={date.to || undefined}
-                    onChange={(event) =>
+                    onChange={(from) =>
                       setDate((current) => ({
                         ...current,
-                        from: event.target.value || undefined,
+                        from: from || undefined,
                       }))
                     }
                   />
                 </label>
                 <label className="flex items-center gap-1.5 text-caption text-muted-foreground">
                   To
-                  <Input
-                    type="date"
-                    className="w-auto"
+                  <DateField
+                    lean="back"
+                    className="w-40"
                     value={date.to ?? ""}
-                    min={date.from || undefined}
-                    onChange={(event) =>
+                    onChange={(to) =>
                       setDate((current) => ({
                         ...current,
-                        to: event.target.value || undefined,
+                        to: to || undefined,
                       }))
                     }
                   />
@@ -701,11 +701,7 @@ function ChatSearchResults({
               <button
                 type="button"
                 onClick={() => onPick(hit)}
-                className={cn(
-                  "block w-full px-3 py-3 text-left text-caption transition-colors",
-                  "hover:bg-card-hover hover:text-foreground",
-                  FOCUS_RING,
-                )}
+                className={messageRowButtonClass()}
               >
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="truncate font-semibold text-foreground">
@@ -727,10 +723,7 @@ function ChatSearchResults({
                     in {channelName ?? "another channel"}
                   </span>
                 ) : null}
-                {/* foundations §7: message prose is body text, never below 16. */}
-                <span className="mt-1 line-clamp-3 block whitespace-pre-wrap text-base text-muted-foreground">
-                  {replyPreviewText(hit.message)}
-                </span>
+                <MessageRowBody>{replyPreviewText(hit.message)}</MessageRowBody>
               </button>
             </li>
           );

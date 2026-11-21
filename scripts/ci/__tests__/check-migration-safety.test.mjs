@@ -29,6 +29,11 @@ import {
   executableEdits,
   executableSql,
   executableSqlHash,
+  isLedgerPage,
+  LEDGER_PAGE_PLACEHOLDER,
+  ledgerPageEntries,
+  readLedgerPages,
+  withLedgerPages,
   MIGRATION_DOCS,
   RATCHET_VERSION_CEILING,
   UNLEDGERED,
@@ -39,6 +44,7 @@ import {
   staleDocs,
   unexcusedRemovals,
 } from "../../check-migration-safety.mjs";
+import { MIGRATION_LEDGER_DIR } from "../lib/ops-docs.mjs";
 
 const PROMOTION = MIGRATION_DOCS[0];
 const ROLLBACK = MIGRATION_DOCS[1];
@@ -86,6 +92,94 @@ test("touching either declared runbook satisfies the gate", () => {
       true,
       `${doc} should satisfy the gate`,
     );
+  }
+});
+
+test("a migration's own ledger page satisfies the gate", () => {
+  assert.equal(
+    satisfiesPromotionDocs([
+      "supabase/migrations/20260101000000_x.sql",
+      "docs/ops/database/migrations/20260101000000_x.md",
+    ]),
+    true,
+  );
+});
+
+test("only a page named like a migration, in the ledger directory, is a ledger page", () => {
+  assert.equal(isLedgerPage("docs/ops/database/migrations/20260101000000_x.md"), true);
+  assert.equal(isLedgerPage("docs/ops/database/migrations/README.md"), false);
+  assert.equal(isLedgerPage("docs/ops/database/20260101000000_x.md"), false);
+  assert.equal(isLedgerPage("docs/ops/database/migrations/nested/20260101000000_x.md"), false);
+});
+
+test("a ledger page with both sections covers its migration", () => {
+  const { covered, malformed } = ledgerPageEntries([
+    { name: "20260101000000_x.md", text: "# x\n\n## Promotion\n\n- a\n\n## Rollback\n\nb\n" },
+    { name: "README.md", text: "## Promotion\n## Rollback\n" },
+  ]);
+  assert.deepEqual([...covered], ["20260101000000_x.sql"]);
+  assert.deepEqual(malformed, []);
+});
+
+test("a ledger page missing a section is reported, not counted", () => {
+  const { covered, malformed } = ledgerPageEntries([
+    { name: "20260101000000_x.md", text: "# x\n\n## Promotion\n\nwe will write the rollback later\n" },
+  ]);
+  assert.equal(covered.size, 0);
+  assert.deepEqual(malformed, [
+    { page: "20260101000000_x.md", missing: ["the line `## Rollback`"] },
+  ]);
+});
+
+test("an untouched migration:new scaffold is not an entry", () => {
+  const { covered, malformed } = ledgerPageEntries([
+    {
+      name: "20260101000000_x.md",
+      text: `# x\n\n## Promotion\n\n- **Purpose**: ${LEDGER_PAGE_PLACEHOLDER} say what\n\n## Rollback\n\nreal recipe\n`,
+    },
+  ]);
+  assert.equal(covered.size, 0);
+  assert.equal(malformed.length, 1);
+  assert.match(malformed[0].missing[0], /TODO\(migration:new\)/);
+});
+
+test("the scaffold's placeholder is the one the gate refuses", async () => {
+  const { PLACEHOLDER } = await import("../../migration.mjs");
+  assert.equal(PLACEHOLDER, LEDGER_PAGE_PLACEHOLDER);
+});
+
+test("a ledger page whose migration is gone is history, not an orphan", () => {
+  const stem = "29990101000002_gone_probe";
+  const page = join(REPO_ROOT, "docs", "ops", "database", "migrations", `${stem}.md`);
+  const cleanup = () => rmSync(page, { force: true });
+  exitCleanups.add(cleanup);
+  writeFileSync(page, `# ${stem}.sql\n\n## Promotion\n\nfixture\n\n## Rollback\n\nfixture\n`);
+  try {
+    const { status, out } = runGate();
+    assert.equal(status, 0, out);
+  } finally {
+    cleanup();
+    exitCleanups.delete(cleanup);
+  }
+});
+
+test("the shipped gate passes a migration whose only entry is its ledger page", () => {
+  const stem = "29990101000001_ledger_page_probe";
+  const probe = join(REPO_ROOT, "supabase", "migrations", `${stem}.sql`);
+  const page = join(REPO_ROOT, "docs", "ops", "database", "migrations", `${stem}.md`);
+  const cleanup = () => {
+    rmSync(probe, { force: true });
+    rmSync(page, { force: true });
+  };
+  exitCleanups.add(cleanup);
+  writeFileSync(probe, "-- fixture\n");
+  writeFileSync(page, `# ${stem}.sql\n\n## Promotion\n\nfixture\n\n## Rollback\n\nfixture\n`);
+  try {
+    const { status, out } = runGate();
+    assert.equal(status, 0, out);
+  } finally {
+    cleanup();
+    exitCleanups.delete(cleanup);
   }
 });
 
@@ -406,12 +500,35 @@ test("the ratchet holds against the real corpus", () => {
   const migrations = readdirSync(join(REPO_ROOT, "supabase", "migrations"))
     .filter((file) => file.endsWith(".sql"))
     .sort();
-  const entriesByDoc = new Map(
-    MIGRATION_DOCS.map((doc) => [
-      doc,
-      ledgerEntries(doc, readFileSync(join(REPO_ROOT, doc), "utf8")),
-    ]),
+  // Ledger pages count, as they do in the gate itself: a migration made since
+  // #4556 is recorded on its own page and in neither shared doc.
+  const entriesByDoc = withLedgerPages(
+    new Map(
+      MIGRATION_DOCS.map((doc) => [
+        doc,
+        ledgerEntries(doc, readFileSync(join(REPO_ROOT, doc), "utf8")),
+      ]),
+    ),
+    migrations,
+    ledgerPageEntries(readLedgerPages()).covered,
   );
+  // A ledger page stands in for an entry in both shared docs, as the gate's
+  // own run counts it; without this, the first migration ledgered on a page
+  // reads as missing from both.
+  const pageDir = join(REPO_ROOT, MIGRATION_LEDGER_DIR);
+  const pages = ledgerPageEntries(
+    readdirSync(pageDir).map((name) => ({
+      name,
+      text: readFileSync(join(pageDir, name), "utf8"),
+    })),
+  );
+  assert.deepEqual(pages.malformed, []);
+  const onDisk = new Set(migrations);
+  for (const entries of entriesByDoc.values()) {
+    for (const migration of pages.covered) {
+      if (onDisk.has(migration)) entries.add(migration);
+    }
+  }
 
   const problems = ledgerCoverageProblems(migrations, entriesByDoc);
   assert.deepEqual(
@@ -519,6 +636,12 @@ test("the shipped gate exits 1 when a migration has no ledger entry", () => {
         out,
       );
     }
+    assert.ok(
+      out.includes(
+        "- 29990101000000_ledger_probe.sql has no ledger page: write docs/ops/database/migrations/29990101000000_ledger_probe.md",
+      ),
+      out,
+    );
   } finally {
     removeProbe();
     exitCleanups.delete(removeProbe);

@@ -14,11 +14,10 @@ import { canHideConversation } from "./hide-conversation";
  * `DELETE /v1/channels/{id}` check. That part only hides what the server
  * would refuse anyway; it grants nothing.
  *
- * Leaving Delete off `#chapter-audit` matches the server, which refuses
- * deleting or renaming the audit log (#3909). Leaving it off DMs is this
- * menu's own caution, not a server rule: `DELETE /v1/channels/{id}` checks
- * only `channels:manage` and the chapter there, so a client that skips this
- * rule has no backstop (#3633).
+ * Leaving Edit and Delete off `#chapter-audit`, DMs and group DMs matches the
+ * server: it refuses deleting or renaming the audit log (#3909), and refuses
+ * every `PATCH` and the `DELETE` of a DM or group DM, which belong to their
+ * members (#3633).
  */
 
 /** The actions, in menu order. */
@@ -29,12 +28,15 @@ export type ChannelRowActionKey =
   | "copy-link"
   | "hide"
   | "edit"
+  | "arrange"
   | "delete";
 
 export const MARK_AS_READ_LABEL = "Mark as read";
 export const CHANNEL_NOTIFICATIONS_LABEL = "Notifications";
 export const COPY_CHANNEL_LINK_LABEL = "Copy link";
 export const DELETE_CHANNEL_LABEL = "Delete channel";
+/** Mobile's way into the chapter order (#3838); web drags in the rail itself. */
+export const ARRANGE_CHANNELS_LABEL = "Arrange channels";
 
 /** The permission behind Edit channel and Delete channel. */
 export const MANAGE_CHANNELS_PERMISSION = "channels:manage";
@@ -61,17 +63,17 @@ export interface ChannelRowActionInput {
   /** The member's flattened permissions; `undefined` while unknown (closed). */
   permissions: readonly string[] | null | undefined;
   /**
-   * What this surface can do beyond the shared core. Mobile has no Chat
-   * settings screen to edit a channel in, and a phone has no address bar a
-   * link would come from, so it leaves both out.
+   * What this surface can do beyond the shared core. A phone has no address
+   * bar a link would come from, so mobile leaves Copy link out; it edits a
+   * channel in its own sheet (#3838) and arranges the list on its own screen.
    */
-  surface: { copyLink: boolean; edit: boolean };
+  surface: { copyLink: boolean; edit: boolean; arrange?: boolean };
 }
 
 export interface ChannelRowActionGroups {
   /** The member's own actions: read, pin, notifications, link, hide. */
   member: ChannelRowActionKey[];
-  /** After a divider, the officer's: edit, then delete, last. */
+  /** After a divider, the officer's: edit, arrange (mobile), then delete, last. */
   officer: ChannelRowActionKey[];
 }
 
@@ -98,6 +100,9 @@ export function channelRowActions({
   const chapterChannel = !isDirectChannel(channel) && !isSystemChannel(channel);
   if (chapterChannel && can(MANAGE_CHANNELS_PERMISSION, permissions)) {
     if (surface.edit) officer.push("edit");
+    // Mobile has no drag in the list itself, so it offers the Arrange
+    // channels screen (#3838). Web drags rows in the rail.
+    if (surface.arrange) officer.push("arrange");
     officer.push("delete");
   }
   return { member, officer };
@@ -109,3 +114,17 @@ export function deleteChannelConfirmTitle(name: string): string {
 }
 export const DELETE_CHANNEL_CONFIRM_BODY =
   "Every message, attachment, and pin in this channel is removed. This cannot be undone.";
+
+/**
+ * Deleting a channel asks for its name, typed exactly (Paul, #3838:
+ * "deleting a channel should be harder"), the way GitHub asks before deleting
+ * a repository. Both clients keep Delete disabled until it matches.
+ */
+export function deleteChannelTypeLabel(name: string): string {
+  return `Type ${name} to confirm`;
+}
+
+/** Whether the typed text names the channel: exact, case and all. */
+export function deleteChannelNameMatches(typed: string, name: string): boolean {
+  return typed === name;
+}

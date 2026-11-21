@@ -18,4 +18,16 @@ export interface Invite {
    * what tells a revoked invite from a redeemed one.
    */
   revoked_at: string | null;
+  /**
+   * When the email provider refused this invite's email. Such an invite
+   * doesn't count toward the daily emailed-invite ceilings; its token still
+   * works when shared by hand.
+   */
+  email_failed_at: string | null;
+  /**
+   * The chapter link (#3353): many people join with it until it expires or
+   * an officer turns it off, so a redeem leaves `used_at` null. False for
+   * every other invite, which works once.
+   */
+  reusable: boolean;
 }

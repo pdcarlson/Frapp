@@ -16,7 +16,11 @@ import {
   type ActivityRow,
 } from "@repo/hooks";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
-import { ActivityRowLead } from "./activity-row-lead";
+import {
+  ActivityRowDetail,
+  ActivityRowLead,
+  ActivityUnreadDot,
+} from "./activity-row-lead";
 import { IconButton } from "@/components/ui/icon-button";
 import { ToastAction } from "@/components/ui/toast";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -30,7 +34,7 @@ type LinkRow = Extract<ActivityRow, { kind: "link" }>;
  * reply isn't on the channel's timeline, so it goes to the thread's first
  * message, where the thread opens from.
  */
-export function linkChatHref(row: LinkRow): string {
+function linkChatHref(row: LinkRow): string {
   return chatDeepLink({
     channelId: row.link.channel_id,
     messageId: row.link.thread_root_id ?? row.link.message_id,
@@ -134,16 +138,26 @@ export function ActivityLinkRow({
   rowClassName,
   canRemove,
   actions,
+  onOpen,
+  leadEntries = [],
 }: {
   row: LinkRow;
   rowClassName: string;
   canRemove: boolean;
   actions: ActivityLinkActions;
+  /** Entries before the link's own: the page's snooze times (#4982). */
+  leadEntries?: RowMenuEntry[];
+  /** The link was opened (a click, or a middle-click to a new tab). */
+  onOpen?: (row: LinkRow) => void;
 }) {
   const router = useRouter();
   const { link } = row;
 
   const entries: RowMenuEntry[] = [
+    ...leadEntries,
+    ...(leadEntries.length > 0
+      ? ([{ type: "separator", key: "lead" }] satisfies RowMenuEntry[])
+      : []),
     {
       type: "item",
       key: "hide",
@@ -183,18 +197,19 @@ export function ActivityLinkRow({
             rel="noopener noreferrer"
             title={link.url}
             className={cn(rowClassName, "min-w-0 flex-1")}
+            onClick={() => onOpen?.(row)}
+            onAuxClick={(event) => {
+              if (event.button === 1) onOpen?.(row);
+            }}
           >
+            <ActivityUnreadDot unread={row.unread} />
             <ActivityRowLead row={row} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold text-foreground">
                 {row.title}
                 <span className="sr-only"> (opens in a new tab)</span>
               </span>
-              {row.detail ? (
-                <span className="block truncate text-caption text-muted-foreground">
-                  {row.detail}
-                </span>
-              ) : null}
+              <ActivityRowDetail row={row} />
             </span>
             <ExternalLink
               className="h-4 w-4 shrink-0 text-muted-foreground"

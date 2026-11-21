@@ -42,6 +42,12 @@ export function useCardWrite(input: {
   refusal: CardRefusal | null;
   /** Runs one write; a refusal lands on the card. */
   act: (write: () => Promise<unknown>, fallback: string) => Promise<void>;
+  /**
+   * For a write made outside `act`, such as from a sheet that says its own
+   * failures: a gate refusal still lands on the card and withdraws its
+   * controls. Any other failure is left to the caller.
+   */
+  latchGate: (error: unknown) => void;
   disabled: boolean;
   hint: string | undefined;
 } {
@@ -84,11 +90,17 @@ export function useCardWrite(input: {
     }
   };
 
+  const latchGate = (error: unknown) => {
+    const gate = gateRefusal(error);
+    if (gate) setRefusal({ text: gate, gate: true });
+  };
+
   const blockedReason =
     writeBlockedReason ?? (refusal?.gate ? refusal.text : null);
   return {
     refusal,
     act,
+    latchGate,
     disabled: !isConfirmed || pending || blockedReason !== null,
     hint: blockedReason ?? undefined,
   };

@@ -14,7 +14,7 @@ describe("NOTIFICATION_CATEGORIES", () => {
   // category added to the API without a row here would otherwise be
   // unswitchable in silence, and one renamed here would start writing rows the
   // server never reads.
-  it("exposes exactly the six member-facing categories", () => {
+  it("exposes exactly the seven member-facing categories", () => {
     expect(NOTIFICATION_CATEGORIES.map((category) => category.key)).toEqual([
       "events",
       "points",
@@ -22,6 +22,7 @@ describe("NOTIFICATION_CATEGORIES", () => {
       "tasks",
       "service",
       "members",
+      "recap",
     ]);
   });
 
@@ -100,6 +101,7 @@ describe("defaultNotificationCategoryState", () => {
       tasks: true,
       service: true,
       members: true,
+      recap: true,
     });
   });
 
@@ -130,6 +132,7 @@ describe("rowsToNotificationCategoryState", () => {
       tasks: true,
       service: true,
       members: true,
+      recap: true,
     });
   });
 
@@ -208,6 +211,14 @@ describe("shownNotificationCategories", () => {
     );
     expect(shownKeys([])).not.toContain("members");
     expect(shownKeys()).not.toContain("members");
+  });
+
+  // #4985: the recap push goes to whoever can read the recap.
+  it("draws the weekly recap switch only for members who can read the recap", () => {
+    expect(shownKeys(["members:view"])).toContain("recap");
+    expect(shownKeys(["*"])).toContain("recap");
+    expect(shownKeys(["events:view"])).not.toContain("recap");
+    expect(shownKeys()).not.toContain("recap");
   });
 
   it("draws every unrestricted category whatever the permissions", () => {

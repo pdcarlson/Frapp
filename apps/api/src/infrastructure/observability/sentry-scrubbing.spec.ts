@@ -710,6 +710,83 @@ describe('scrubSentryTransaction', () => {
     expect(JSON.stringify(scrubbed)).not.toContain('super-secret');
   });
 
+  it('drops what an AI SDK span says was sent to and returned by a model (#3280)', () => {
+    // The shape `Anthropic_AI` and `Google_GenAI` emit when recording is on.
+    // `sentry-options.ts` leaves both integrations out and sets `genAI` off;
+    // this is the layer that holds if both of those are ever lost.
+    const prompt = 'Minutes notes: Jordan owes the house $40 for the formal.';
+    const answer = 'Drafted minutes: Jordan to repay $40.';
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        spans: [
+          {
+            span_id: 'aaaa1111',
+            trace_id: 'trace123',
+            start_timestamp: 1,
+            op: 'gen_ai.chat',
+            description: 'chat claude-sonnet-5-5',
+            data: {
+              'gen_ai.operation.name': 'chat',
+              'gen_ai.request.model': 'claude-sonnet-5-5',
+              'gen_ai.usage.input_tokens': 812,
+              'gen_ai.system_instructions': `You draft minutes. ${prompt}`,
+              'gen_ai.input.messages': JSON.stringify([
+                { role: 'user', content: prompt },
+              ]),
+              'gen_ai.request.messages': prompt,
+              'gen_ai.output.messages': JSON.stringify([
+                { role: 'assistant', content: answer },
+              ]),
+              'gen_ai.response.text': answer,
+              'gen_ai.request.available_tools': '[{"name":"create_task"}]',
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(scrubbed?.spans).toHaveLength(1);
+    expect(scrubbed?.spans?.[0]?.data).toEqual({});
+    const out = JSON.stringify(scrubbed);
+    expect(out).not.toContain('Jordan');
+    expect(out).not.toContain('You draft minutes');
+    expect(out).not.toContain('create_task');
+  });
+
+  it("keeps the AI gateway span's task, model, outcome and token counts", () => {
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        spans: [
+          {
+            span_id: 'aaaa1111',
+            trace_id: 'trace123',
+            start_timestamp: 1,
+            op: 'ai.gateway',
+            description: 'ai.gateway.call',
+            data: {
+              'ai.task': 'minutes.draft',
+              'ai.provider': 'anthropic',
+              'ai.model': 'claude-sonnet-5-5',
+              'ai.outcome': 'completed',
+              'ai.input_tokens': 812,
+              'ai.output_tokens': 240,
+              'ai.prompt': 'never set, and dropped if it ever is',
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(scrubbed?.spans?.[0]?.data).toEqual({
+      'ai.task': 'minutes.draft',
+      'ai.provider': 'anthropic',
+      'ai.model': 'claude-sonnet-5-5',
+      'ai.outcome': 'completed',
+      'ai.input_tokens': 812,
+      'ai.output_tokens': 240,
+    });
+  });
+
   it('strips the query string from the transaction name', () => {
     const scrubbed = scrubSentryTransaction(
       transaction({ transaction: '/v1/reports?access_token=super-secret' }),

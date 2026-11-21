@@ -13,10 +13,14 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { toast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 import type { BulkFields } from "@/lib/backwork-bulk/fields";
-import { finishUpload, sha256Hex } from "@/lib/backwork-bulk/finish";
+import { finishUpload, putStallMs } from "@/lib/backwork-bulk/finish";
+import { within } from "@/lib/bulk-upload/stall";
+import { readSession, SESSION_READ_TIMEOUT_MS } from "@/lib/auth/request-token";
+import { MAX_BACKWORK_UPLOAD_BYTES } from "@repo/validation";
+import { sha256Hex } from "@/lib/bulk-upload/hash";
 import type { BoxesByPage } from "@/lib/backwork-bulk/geometry";
 import type { PagePreview } from "@/lib/backwork-bulk/pdf";
-import { BulkUploadQueue } from "@/lib/backwork-bulk/queue";
+import { BulkUploadQueue } from "@/lib/bulk-upload/queue";
 import { clearStagedBulkUpload } from "./handoff";
 
 /**
@@ -53,6 +57,8 @@ export type Submission = {
   fields: BulkFields;
   boxes: BoxesByPage;
   flatten: boolean;
+  /** Saved by "Save the rest", unseen: waits for its page check (#5252). */
+  unchecked?: boolean;
 };
 
 type Mutations = {
@@ -82,6 +88,24 @@ function loadPdfModule() {
   return pdfModule;
 }
 
+/**
+ * Bytes a waiting backwork item may hold before the queue stops loading the
+ * next ones ahead (#3540): four documents at the 50 MB a typical scan stays
+ * under, well short of what gets a phone tab killed.
+ */
+export const BACKWORK_MAX_HELD_BYTES = 200 * 1024 * 1024;
+
+/**
+ * What a submitted item keeps: the bytes, and the PDF for flattening. Its
+ * page previews were for review and go now (#3540).
+ */
+export function trimPrepared(prepared: Prepared): Prepared {
+  for (const preview of prepared.previews.values()) {
+    preview.then((p) => URL.revokeObjectURL(p.url)).catch(() => undefined);
+  }
+  return { ...prepared, previews: new Map() };
+}
+
 function releasePrepared(prepared: Prepared) {
   for (const preview of prepared.previews.values()) {
     preview.then((p) => URL.revokeObjectURL(p.url)).catch(() => undefined);
@@ -90,10 +114,43 @@ function releasePrepared(prepared: Prepared) {
   void loadPdfModule().then(({ destroyPdf }) => destroyPdf(prepared.doc));
 }
 
-/** The signed-in account right now: the one the API client's token is for. */
+/**
+ * The signed-in account right now: the one the API client's token is for.
+ * Read through `readSession`, which bounds a session read stuck behind a
+ * sign-in refresh the network never answers.
+ */
 async function liveUserId(): Promise<string | null> {
-  const { data } = await createSupabaseBrowserClient().auth.getSession();
+  const { data } = await readSession(createSupabaseBrowserClient());
   return data.session?.user?.id ?? null;
+}
+
+/**
+ * How long flattening one document may take before it counts as stuck (a
+ * pdf.js render that never returns): a minute, plus twenty seconds a page.
+ */
+function flattenStallMs(pageCount: number): number {
+  return 60_000 + pageCount * 20_000;
+}
+
+/**
+ * The queue's backstop for one document's whole finish, for anything with no
+ * limit of its own. Every step has one, so it is their worst cases added up:
+ * two flatten passes (`flattenWithinCap`), the upload-link request with its
+ * rate-limit waits, the PUT at the size cap (a flattened file can be far
+ * larger than its original), the draft save, and the session reads before
+ * each. The API client bounds each request at 20 seconds and the query
+ * client tries a write three times; two minutes covers one such write.
+ */
+function finishStallMs({ prepared }: { prepared: Prepared }): number {
+  const write = 2 * 60_000;
+  return (
+    2 * flattenStallMs(prepared.pageCount) +
+    4 * write +
+    90_000 +
+    putStallMs(MAX_BACKWORK_UPLOAD_BYTES) +
+    write +
+    6 * SESSION_READ_TIMEOUT_MS
+  );
 }
 
 function createSession(userId: string, chapterId: string): BulkSession {
@@ -107,6 +164,10 @@ function createSession(userId: string, chapterId: string): BulkSession {
   let claimLine: Promise<unknown> = Promise.resolve();
 
   const queue = new BulkUploadQueue<Prepared, Submission>({
+    trim: trimPrepared,
+    sizeOf: (prepared) => prepared.bytes.byteLength,
+    maxHeldBytes: BACKWORK_MAX_HELD_BYTES,
+    stallAfterMs: finishStallMs,
     prepare: async (file, id) => {
       // Files read and hash side by side, but claim their hash one at a time
       // in the order the queue started them. The queue starts the files it
@@ -159,52 +220,50 @@ function createSession(userId: string, chapterId: string): BulkSession {
       return { bytes, hash, doc, pageCount: doc.numPages, previews } satisfies Prepared;
     },
     finish: async (job) => {
-      try {
-        const bound = mutations;
-        if (!bound) throw new MemberFacingError("Bulk upload isn't ready yet. Retry this one.");
-        // Policy, not plumbing: the bound mutations would still send this
-        // batch's chapter, but a batch never files anything once its chapter
-        // is no longer the active one, nor under any account but its own.
-        // The account is read live, so a sign-in elsewhere stops the next
-        // request even before the batch is ended.
-        const assertChapter = async () => {
-          const stale = () =>
-            ended || useChapterStore.getState().activeChapterId !== chapterId;
-          if (stale() || (await liveUserId()) !== userId || stale()) {
-            throw new MemberFacingError("You switched chapters or accounts, so this one wasn't uploaded.");
-          }
-        };
-        const { flattenPdf } = await loadPdfModule();
-        await finishUpload(job, {
-          assertChapter,
-          flatten: flattenPdf,
-          requestUpload: (body) => bound.requestUpload.mutateAsync(body),
-          put: ({ signedUrl, body }) =>
-            putSignedUpload({
-              signedUrl,
-              body,
-              contentType: "application/pdf",
-              upsert: true,
-              describeRejection: () => "The file didn't upload.",
-            }),
-          confirm: (body) => bound.confirmUpload.mutateAsync(body),
-        });
-      } catch (error) {
-        if (!onScreen && !ended) {
-          toast({
-            variant: "destructive",
-            title: "A backwork upload failed",
-            description: "Open Bulk upload to see which one and retry it.",
-          });
+      const bound = mutations;
+      if (!bound) throw new MemberFacingError("Bulk upload isn't ready yet. Retry this one.");
+      // Policy, not plumbing: the bound mutations would still send this
+      // batch's chapter, but a batch never files anything once its chapter
+      // is no longer the active one, nor under any account but its own.
+      // The account is read live, so a sign-in elsewhere stops the next
+      // request even before the batch is ended.
+      const assertChapter = async () => {
+        const stale = () =>
+          ended || useChapterStore.getState().activeChapterId !== chapterId;
+        if (stale() || (await liveUserId()) !== userId || stale()) {
+          throw new MemberFacingError("You switched chapters or accounts, so this one wasn't uploaded.");
         }
-        throw error;
-      }
+      };
+      const { flattenPdf } = await loadPdfModule();
+      await finishUpload(job, {
+        assertChapter,
+        // Bounded by page count: a render that never returns fails the
+        // document with Retry instead of holding it on "Uploading".
+        flatten: (doc, boxes, options) =>
+          within(
+            flattenPdf(doc, boxes, options),
+            flattenStallMs(doc.numPages),
+            "This PDF stopped partway through redacting. Try again, or skip it.",
+          ),
+        requestUpload: (body) => bound.requestUpload.mutateAsync(body),
+        put: ({ signedUrl, body, signal }) =>
+          putSignedUpload({
+            signedUrl,
+            body,
+            signal,
+            contentType: "application/pdf",
+            upsert: true,
+            describeRejection: () => "The file didn't upload.",
+          }),
+        confirm: (body) => bound.confirmUpload.mutateAsync(body),
+      });
     },
     release: releasePrepared,
-    // A 409 means the file is already in the library: nothing to save.
+    // A 409 means the chapter already has the file, filed or as someone's
+    // draft (the API says which): nothing to save.
     isFinal: (error) => statusOf(error) === 409,
     describeError: (error, stage) => {
-      if (statusOf(error) === 409) return "Already in the library.";
+      if (statusOf(error) === 409) return getErrorMessage(error, "Already in the library.");
       return getErrorMessage(
         error,
         stage === "prepare" ? "This PDF couldn't be loaded." : "The upload failed. Retry it.",
@@ -223,6 +282,28 @@ function createSession(userId: string, chapterId: string): BulkSession {
     else window.removeEventListener("beforeunload", warn);
   };
   queue.subscribe(() => guard(!ended && queue.unsaved() > 0));
+
+  // Said off the page, where the list that shows it isn't open: each upload
+  // that newly fails, however it failed (a request's error, or the queue
+  // calling it stalled while its work never answered).
+  let failedUploads = new Set<string>();
+  queue.subscribe(() => {
+    const now = new Set<string>();
+    let fresh = false;
+    for (const item of queue.getSnapshot().items) {
+      if (item.status !== "failed" || item.failedStage !== "finish") continue;
+      now.add(item.id);
+      if (!failedUploads.has(item.id)) fresh = true;
+    }
+    failedUploads = now;
+    if (fresh && !onScreen && !ended) {
+      toast({
+        variant: "destructive",
+        title: "A backwork upload failed",
+        description: "Open Bulk upload to see which one and retry it.",
+      });
+    }
+  });
 
   return {
     queue,
@@ -301,7 +382,7 @@ export function endBulkSessions({ except }: { except?: string | null } = {}): vo
 }
 
 /** Documents in this tab's batches that aren't uploaded yet. */
-export function unsavedBulkUploads(): number {
+function unsavedBulkUploads(): number {
   let count = 0;
   for (const session of sessions.values()) count += session.queue.unsaved();
   return count;

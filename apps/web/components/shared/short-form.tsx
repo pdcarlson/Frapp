@@ -57,7 +57,10 @@ export function FormFooter({
   if (layout === "card") {
     return (
       <div className="flex items-center gap-1 pt-1">
+        {/* `type="button"`: inside the form, a bare button submits it, so
+            Discard on a postable draft posted it. */}
         <IconButton
+          type="button"
           label="Discard draft"
           onClick={onCancel}
           disabled={cancelDisabled}

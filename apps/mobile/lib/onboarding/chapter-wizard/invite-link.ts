@@ -12,7 +12,7 @@ import { mintJoinUrl, PRODUCTION_APP_ORIGIN } from "@repo/validation";
 
 export function webAppOrigin(
   // A static `process.env.EXPO_PUBLIC_*` read, the only form babel-preset-expo
-  // inlines into a build (`lib/ask/flag.ts`). Read through an alias of
+  // inlines into a build (`lib/secure-store.web.ts` § The read must stay static). Read through an alias of
   // `process.env` it was always undefined on device, so a staging build
   // shared production join links for its staging tokens.
   fromEnv: string | undefined = process.env.EXPO_PUBLIC_APP_URL,

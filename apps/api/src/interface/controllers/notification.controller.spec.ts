@@ -19,6 +19,7 @@ describe('NotificationController', () => {
       | 'listNotifications'
       | 'markNotificationRead'
       | 'markNotificationsRead'
+      | 'clearNotifications'
       | 'getPreferences'
       | 'updatePreference'
       | 'getSettings'
@@ -33,6 +34,7 @@ describe('NotificationController', () => {
       listNotifications: jest.fn(),
       markNotificationRead: jest.fn(),
       markNotificationsRead: jest.fn(),
+      clearNotifications: jest.fn(),
       getPreferences: jest.fn(),
       updatePreference: jest.fn(),
       getSettings: jest.fn(),
@@ -78,6 +80,7 @@ describe('NotificationController', () => {
         userId,
         dto.token,
         dto.device_name,
+        undefined,
       );
       expect(result).toEqual(expectedResult);
     });
@@ -97,6 +100,28 @@ describe('NotificationController', () => {
         userId,
       );
       expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('clearNotifications (#3948)', () => {
+    it('clears the named rows for the caller in the active chapter', async () => {
+      notificationService.clearNotifications.mockResolvedValue({ cleared: 1 });
+
+      const result = await controller.clearNotifications(
+        'user-1',
+        'chapter-1',
+        {
+          ids: ['n-1'],
+        },
+      );
+
+      expect(notificationService.clearNotifications).toHaveBeenCalledWith(
+        'user-1',
+        'chapter-1',
+        ['n-1'],
+        undefined,
+      );
+      expect(result).toEqual({ cleared: 1 });
     });
   });
 
@@ -240,6 +265,7 @@ describe('NotificationController', () => {
         status_expires_at: null,
         custom_status: null,
         custom_status_expires_at: null,
+        read_receipts: true,
       };
 
       notificationService.getSettings.mockResolvedValue(expectedResult);
@@ -266,6 +292,7 @@ describe('NotificationController', () => {
         status_expires_at: null,
         custom_status: null,
         custom_status_expires_at: null,
+        read_receipts: true,
       };
 
       notificationService.updateSettings.mockResolvedValue(expectedResult);

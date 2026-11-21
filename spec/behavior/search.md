@@ -2,8 +2,11 @@
 
 A single search bar accessible from the top of the mobile and web app:
 
+> **Where it is today** (#5139, 2026-11-16). On web it is the top bar's find field and the Find dialog it opens. On the phone it is the Search screen, opened from the Search round in Chat home's title row, so every member has it ([`../ui/mobile/navigation.md` § Search](../ui/mobile/navigation.md#search)). From #4904 (2026-11-13) until #5139 the phone's only search was the field of the Ask Frapp sheet, so only a member with Ask had it.
+
 - Searches across: Backwork resources (title, department, course, professor, tags), chat messages (content), events (name, description), and members (name).
 - Results are grouped by domain (Backwork, Chat, Events, Members).
+- **Settings** (2026-11-19) is a group too, after Channels: the settings the member can change that match, from the settings search's index, matched on the client with no server source ([`settings/README.md` § Search settings](settings/README.md#search-settings)). A pick opens the setting, scrolled to and lit.
 - All results respect chapter scoping and permission checks. Chat-message results are filtered through the same `canAccessChannel` predicate the chat surface uses ([`chat/README.md`](chat/README.md)); vault content is never indexed ([`vault.md`](vault.md#search-indexing)); the member directory requires `members:view`; backwork hits come back only to a caller holding `backwork:upload` or `backwork:admin`, the same any-of gate as the library itself ([`backwork.md` § Taxonomy Admin](backwork.md#taxonomy-admin)), and are an empty array for anyone else (2026-11-05: before this the source checked nothing, which no client exposed until the web Find dialog listed backwork); event hits pass the same role-targeting filter as `GET /v1/events`.
 - Implementation: Postgres full-text search (`tsvector` / `to_tsquery`) on relevant columns. **All four sources are now on it.** Chat, events and members each match a `GENERATED ALWAYS ... STORED` tsvector behind a GIN index, queried with `websearch_to_tsquery('english', …)`; Backwork goes through a function (below):
 
@@ -85,12 +88,40 @@ that apart from a channel with no matches. Narrowing has to reach SQL.
   an instant (a bare date, a day that does not exist, a time with no offset), a `has` outside the
   four, or any filter given twice is rejected, because dropping it would answer a narrower
   question with a wider result.
-- **A filter with no text is not index-backed** (#3965). The text match is what the GIN index
-  serves, so without it `has=poll`, `has=link`, an attachment filter or a wide date range reads
-  every message in the caller's channels, one query per 100 channels, then sorts. Measured locally
-  at 600,000 messages across 300 channels: 50 ms for `poll`, 68 ms for a wide `after`, 253 ms for
-  `link`, per 100-channel query. A narrow date range (3 ms) and a sender use existing indexes.
-  This is the case the 500 ms budget degrades on a large archive.
+- **A filter with no text is answered per channel** (#3965). Without text there is no GIN match
+  to narrow by, and `channel_id IN (…) ORDER BY created_at DESC LIMIT 10` cannot walk an index in
+  order across a list of channels, so the old query read every message of the caller's channels
+  that passed the filter, then sorted. That case now goes to `search_chat_messages_filtered`
+  (migration `20261112131300`), one call for every readable channel. It takes each channel's
+  newest 10 matches through a `(channel_id, created_at desc)` index, a walk that stops at 10,
+  and keeps the newest 10 overall. A rare trait has its own index so that walk does not read a
+  whole channel to find nothing: `poll` and `link` each have a partial index holding only their
+  rows (`idx_chat_messages_search_poll`, `idx_chat_messages_search_link`), and `file` / `image`
+  start from the channel's attachment rows (`idx_chat_message_attachments_channel`). Measured on
+  the local stack at 1,200,000 messages across 300 channels (1,200 polls, 36,363 links, 24,023
+  attachments). The old query ran three 100-channel chunks at once, so its wait was about one
+  chunk and its database work all three; the new one is one call:
+
+  | Filter | Before, one 100-channel chunk | Before, all 300 | After, all 300 |
+  | --- | --- | --- | --- |
+  | `has=link` | 487 ms | 1,417 ms | 9 ms |
+  | wide `after` | 212 ms | 569 ms | 11 ms |
+  | old `before` (all but the last 17 months) | 48 ms | 112 ms | 12 ms |
+  | `has=image` | 294 ms | 677 ms | 96 ms |
+  | `has=file` | 308 ms | 655 ms | 190–270 ms |
+  | a sender with 5% of messages | 28 ms | 41 ms | 40 ms |
+  | a sender with 0.02% of messages | under 1 ms | under 1 ms | 3 ms |
+  | `has=poll` | 0.6 ms | 0.8 ms | 4 ms |
+
+  A sender keeps the old flat shape, which `idx_chat_messages_sender` already bounded by that
+  member's own messages; a per-channel walk would probe every channel for a member who may have
+  posted in few. A poll got slower and stays small: it was already fast through the chapter-wide
+  poll index from #3897, and now costs one probe per channel.
+
+  `file` and `image` cost what the attachment rows in the caller's channels cost, not what their
+  messages cost, so they are the slowest shape left: the attachment rows decide (a message's
+  `metadata.attachment_count` is a cache an import can under-count), and each costs one lookup of
+  its message. The text search is unchanged.
 
 ## MVP defaults
 
@@ -101,14 +132,14 @@ v1 ships with the following defaults. Chapter admins cannot override them; tunin
 - **Paging:** none. `GET /v1/search` accepts `q`, `channelId` and the [message filters](#message-filters) — there is no page or offset parameter and no `.range()` in the query path, so the cap above is the whole result set. (The spec previously claimed 20 per domain / 80 per page and a 50-result cap; none of that was ever built.)
 - **Ranking:** specified as Postgres `ts_rank_cd` over the `tsvector` columns, with per-domain field weighting (e.g. Backwork title outweighs tags) set via `setweight` at index time rather than at query time. **Implemented for Backwork only** (2026-11-06, #585): `search_backwork_resources` ranks by `ts_rank_cd` over weights it applies at query time, since it builds its document per row. For chat, events and members `supabase-search.repository.ts` applies no `ts_rank`, ordering chat by `created_at`, leaving the other two unordered, and cutting each source at `SEARCH_LIMIT`. Migration `20260829002000` records that gap. Anything that needs relevance scores on those three (hybrid retrieval, rerank) has to add this first.
 - **Snippet highlighting:** specified as `ts_headline` on the primary content field, capped at 160 characters per snippet. Not implemented either, per the same migration note.
-- **Typo tolerance:** Backwork only (2026-11-06, #585), through `pg_trgm`'s `word_similarity`, which also lets a Backwork query match within a word. Chat, events and members have none, so **those three** never match **within** a word — `websearch_to_tsquery` matches lexemes, so `attach` finds `attached` (stemming) but `tach` finds nothing. `pg_trgm` is installed in the `extensions` schema by `20261106190000`, and both PGlite harnesses the `pglite-migrations` CI job runs, `scripts/pglite/harness.mjs` and `apps/web/lib/realtime/change-topics.spec.ts`, register it; a new migration that needs another extension must register it in both, or that job fails.
+- **Typo tolerance:** Backwork only (2026-11-06, #585), through `pg_trgm`'s `word_similarity`, which also lets a Backwork query match within a word. Chat, events and members have none, so **those three** never match **within** a word — `websearch_to_tsquery` matches lexemes, so `attach` finds `attached` (stemming) but `tach` finds nothing. `pg_trgm` is installed in the `extensions` schema by `20261106190000`, and both PGlite harnesses the `pglite-migrations` CI job runs, `scripts/pglite/harness.mjs` and `apps/web/lib/realtime/change-topics.spec.ts`, register it; a new migration that needs another extension must register it in both, or that job fails. The same job also applies every migration to a `pgvector/pgvector:pg17` service container (`scripts/db-race/`, #4862), which has contrib and `vector` only, so an extension outside those needs that image changed in `ci.yml` too.
 
   This trade is most noticeable on **member names**, because people do type partial names: `Budget` finds `Budgetson`, `udgets` does not. That is the cost of the index and it applies to the three indexed sources alike — a source left on `ILIKE` would match differently from the rest, which is worse than the trade itself. Backwork differs because it is one chapter's library, small enough to score every row.
 - **Query syntax:** `websearch` parse mode, so quoted phrases, `or`, and a leading `-` for negation all work as a user would expect from a search box — and, unlike `to_tsquery`, stray punctuation never raises a syntax error. A query that reduces to no lexemes at all (a lone stop word) matches nothing.
 - **Stopwords:** Postgres default English stopword list.
 - **Server-side timeout:** 500 ms budget, applied **per source, not to the search as a whole**. A source that exceeds it contributes an empty array and nothing else changes, so a slow chat-message scan no longer discards member, event and backwork hits that had already come back. `x-search-timeout: 1` is still set when *any* source is short, and `x-search-timeout-sources` names which ones (comma-separated, from `backwork | events | members | messages`) — the difference between "we found nothing" and "we stopped looking here", which the client must render differently.
 
-  This remains an application-level budget (`SearchService.searchWithinBudget`) rather than a Postgres `statement_timeout`, since supabase-js does not cleanly expose per-query `statement_timeout`; it discards a slow result rather than cancelling the query. It should now be rare rather than routine for a chat search with text, which is index-backed; a [filter with no text](#message-filters) is not. A source that *errors* still fails the whole request as a 500 — only slowness degrades.
+  This remains an application-level budget (`SearchService.searchWithinBudget`) rather than a Postgres `statement_timeout`, since supabase-js does not cleanly expose per-query `statement_timeout`; it discards a slow result rather than cancelling the query. It should now be rare rather than routine for a chat search with text, which is index-backed, and for a [filter with no text](#message-filters), which is answered per channel through indexes; an attachment filter over a large archive is the slowest case left. A source that *errors* still fails the whole request as a 500 — only slowness degrades.
 
 ## Acceptance criteria
 

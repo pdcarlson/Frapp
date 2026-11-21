@@ -1,16 +1,21 @@
+import { randomClientId } from "@repo/api-sdk";
+import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
-  MAX_CHECK_IN_OPENS_MINUTES,
-  RECURRENCE_REPEAT_LABELS,
   attendanceInvitesNobody,
+  CHECK_IN_OPENS_ERROR,
+  parseCheckInOpens,
   attendanceToWire,
   othersInvitedForCreate,
-  describeAttendance,
   emptyAttendanceDraft,
-  describeSeriesLength,
+  eventRequiresAnyone,
+  noRepeatDraft,
+  repeatRuleOf,
   withEveryone,
+  agendaWithPending,
+  type EventAgendaItem,
   type EventAttendanceDraft,
-  type RecurrenceRule,
+  type RepeatDraft,
 } from "@repo/validation";
 import { parsePointReward } from "@/lib/tasks/create-task";
 
@@ -18,11 +23,11 @@ import { parsePointReward } from "@/lib/tasks/create-task";
  * Draft state and validation for the "New event" sheet
  * (`components/events/new-event-sheet.tsx`).
  *
- * The sheet opens simple: a name, when it starts and ends, and a place. The
- * rest sits behind "More options" (Paul, 2026-11-06: "nobody wants a billion
- * options showing up when they open create event"): who's coming by role,
- * points, how early check-in opens, repeat and a description. The check-in zone stays on the web
- * editor, where a map belongs.
+ * The sheet is a name and one row per setting (#5561, Paul 2026-11-19), in
+ * the order web's form draws them: type, when, repeat, location, who's
+ * coming, points, description, notes and when check-in opens. Each row says
+ * what it is set to, so nothing waits behind a More options toggle. The
+ * check-in zone stays on the web editor, where a map belongs.
  *
  * `CreateEventDto` is the authority. These copies exist so the sheet can say
  * what is wrong before it posts a request it knows will 400, the relationship
@@ -33,14 +38,12 @@ import { parsePointReward } from "@/lib/tasks/create-task";
  * past midnight simply ends on the next day.
  */
 
-/** `@MaxLength(255)` on `CreateEventDto.name`. */
-export const EVENT_NAME_MAX_LENGTH = 255;
 /** The hour most chapter events start: 7:00 PM. */
-export const DEFAULT_START_HOUR = 19;
+const DEFAULT_START_HOUR = 19;
 /** A new event lasts an hour until the officer says otherwise. */
-export const DEFAULT_LENGTH_MS = 60 * 60_000;
+const DEFAULT_LENGTH_MS = 60 * 60_000;
 /** `spec/behavior/events.md`: "point value (configurable, default 10)". */
-export const DEFAULT_POINTS = "10";
+const DEFAULT_POINTS = "10";
 /**
  * The iOS time wheel's minute step: every minute, as Calendar allows. A
  * 5-minute step couldn't set a 6:48 start (Paul, 2026-11-06).
@@ -77,12 +80,39 @@ export interface NewEventDraft {
   checkInOpensInput: string;
   /** Who's coming, by role (`spec/behavior/events.md` § Attendance by role). */
   attendance: EventAttendanceDraft;
-  /** `null` for a one-time event. */
-  recurrenceRule: RecurrenceRule | null;
+  /**
+   * The Repeat control (`@repo/validation` `repeat-draft.ts`): a preset, its
+   * options and how the series ends.
+   */
+  repeat: RepeatDraft;
   description: string;
-  /** Whether "More options" is open: kept with the draft, so a reopen keeps it. */
-  showMore: boolean;
+  /**
+   * The event's notes (#4934), read by every member it invites. Optional
+   * because an edit kept by an older build has none, and then takes the
+   * event's own.
+   */
+  notes?: string;
+  /**
+   * A new event's agenda (Paul 2026-11-19, "where is the ability to add
+   * agenda items"): the first meeting's own, sent with the create. Optional
+   * because a draft kept by an older build has none; an edit's agenda is
+   * edited on the event's page, not here.
+   */
+  agenda?: EventAgendaItem[];
+  /**
+   * The Agenda row's add field: a line typed but never entered still goes
+   * with Create (`agendaWithPending`).
+   */
+  agendaPending?: string;
+  /**
+   * The row open in place (#5561): Repeat its options, Check-in its field.
+   * Kept with the draft, so a reopen comes back as it was left.
+   */
+  openRow: EventFormOpenRow;
 }
+
+/** The New event rows that open in place on the phone; one at a time. */
+export type EventFormOpenRow = "repeat" | "checkIn" | null;
 
 /** A fresh draft. */
 export function emptyEventDraft(): NewEventDraft {
@@ -98,9 +128,12 @@ export function emptyEventDraft(): NewEventDraft {
     // Optional for everyone, as `/event` creates it: a required event marks
     // everyone who misses it absent, so it is a choice, not a default.
     attendance: emptyAttendanceDraft(),
-    recurrenceRule: null,
+    repeat: noRepeatDraft(),
     description: "",
-    showMore: false,
+    notes: "",
+    agenda: [],
+    agendaPending: "",
+    openRow: null,
   };
 }
 
@@ -118,23 +151,30 @@ export interface EventTypeChoice {
  * one sets its points, whether everyone must attend (roles already set apart
  * stay set apart, and a draft that invites only some roles keeps doing so),
  * and its name when the name is blank or still the last pick's.
+ *
+ * For a member who can't make anyone required or attach points
+ * (`setsRequirements` false, #3709), the type only names the event: its
+ * points and its required default are left out.
  */
 export function applyEventType(
   draft: NewEventDraft,
   type: EventTypeChoice,
+  setsRequirements = true,
 ): Partial<NewEventDraft> {
   if (draft.eventTypeId === type.id) return { eventTypeId: null };
-  const patch: Partial<NewEventDraft> = {
-    eventTypeId: type.id,
-    pointsInput: String(type.point_value),
-    attendance:
-      draft.attendance.everyone === "not_invited"
-        ? draft.attendance
-        : withEveryone(
-            draft.attendance,
-            type.is_mandatory ? "required" : "optional",
-          ),
-  };
+  const patch: Partial<NewEventDraft> = setsRequirements
+    ? {
+        eventTypeId: type.id,
+        pointsInput: String(type.point_value),
+        attendance:
+          draft.attendance.everyone === "not_invited"
+            ? draft.attendance
+            : withEveryone(
+                draft.attendance,
+                type.is_mandatory ? "required" : "optional",
+              ),
+      }
+    : { eventTypeId: type.id };
   if (draft.name.trim() === "" || draft.name === draft.typeFilledName) {
     patch.name = type.name;
     patch.typeFilledName = type.name;
@@ -157,6 +197,62 @@ export function defaultEventStart(now: Date): Date {
     now.getDate() + 1,
     DEFAULT_START_HOUR,
   );
+}
+
+/**
+ * Where an event made from the Calendar's + starts (#5113; the floating + since #5570): on the
+ * day the member picked, at the usual hour. Today, once that hour has
+ * passed, starts at the next quarter hour rather than rolling to tomorrow as
+ * the sheet's own default does, since the form refuses a start that has
+ * passed. `null` (the sheet's own default) for a day already gone.
+ */
+export function pickedDayStart(day: Date, now: Date): Date | null {
+  // The grid's own rule for which day is today, so the two never disagree.
+  const picked = startOfDay(day).getTime();
+  const today = startOfDay(now).getTime();
+  if (picked < today) return null;
+  const start = new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    DEFAULT_START_HOUR,
+  );
+  if (picked > today || start > now) return start;
+  return nextQuarterHour(now);
+}
+
+/** The first quarter hour after `now`. */
+function nextQuarterHour(now: Date): Date {
+  const quarter = 15 * 60_000;
+  return new Date(Math.ceil((now.getTime() + 1) / quarter) * quarter);
+}
+
+/**
+ * Where an event made from an hour of the Calendar's Day grid
+ * starts (#4818): that hour, or for the hour under way the next quarter
+ * hour, since the form refuses a start that has passed. `null` for an hour
+ * already over, which the grid doesn't offer.
+ */
+export function calendarHourStart(
+  day: Date,
+  hour: number,
+  now: Date,
+): Date | null {
+  const start = new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    hour,
+  );
+  const end = new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    hour + 1,
+  );
+  if (end <= now) return null;
+  if (start >= now) return start;
+  return nextQuarterHour(now);
 }
 
 /** The draft's start and end, defaults filled in against `now`. */
@@ -200,15 +296,18 @@ export interface ValidatedNewEvent {
   end_time: string;
   location?: string;
   description?: string;
+  notes?: string;
   point_value: number;
   is_mandatory: boolean;
   others_invited?: boolean;
   required_role_ids?: string[];
   optional_role_ids?: string[];
   excluded_role_ids?: string[];
-  recurrence_rule?: RecurrenceRule;
+  recurrence_rule?: string;
   check_in_opens_minutes?: number;
   event_type_id?: string;
+  /** The first meeting's agenda (#4934); omitted when empty. */
+  agenda?: EventAgendaItem[];
 }
 
 export interface NewEventErrors {
@@ -218,23 +317,10 @@ export interface NewEventErrors {
   points?: string;
   checkInOpens?: string;
   attendance?: string;
+  /** Under the Repeat options: why the series can't be saved as set. */
+  repeat?: string;
 }
 
-/**
- * The "Check-in opens" field as minutes, or `null` when it isn't a whole
- * number in `0 … MAX_CHECK_IN_OPENS_MINUTES` (the `CreateEventDto` bound).
- * Blank is the default, as a blank points field is 0.
- */
-export function parseCheckInOpens(input: string): number | null {
-  const text = input.trim();
-  if (text.length === 0) return DEFAULT_CHECK_IN_OPENS_MINUTES;
-  if (!/^\d+$/.test(text)) return null;
-  const minutes = Number(text);
-  return minutes <= MAX_CHECK_IN_OPENS_MINUTES ? minutes : null;
-}
-
-/** The error under the field when {@link parseCheckInOpens} refuses it. */
-export const CHECK_IN_OPENS_ERROR = `Check-in can open up to ${MAX_CHECK_IN_OPENS_MINUTES} minutes before the start.`;
 
 /**
  * The draft as a request body, or the reasons it isn't one.
@@ -245,10 +331,16 @@ export const CHECK_IN_OPENS_ERROR = `Check-in can open up to ${MAX_CHECK_IN_OPEN
  * after it ended would vanish from the Events list on save, and a mandatory
  * one would have the auto-absent sweep mark the whole chapter absent. A blank
  * points field sends 0, as the web editor does.
+ *
+ * `setsRequirements` is whether the maker holds `events:update` (#3709). A
+ * member without it makes an event worth no points (its points field is
+ * hidden and ignored) and can't make anyone required, which the API holds them
+ * to as well (`EventService.create` stores such an event as optional).
  */
 export function validateNewEvent(
   draft: NewEventDraft,
   now: Date,
+  setsRequirements = true,
 ):
   | { ok: true; body: ValidatedNewEvent }
   | { ok: false; errors: NewEventErrors } {
@@ -260,7 +352,9 @@ export function validateNewEvent(
   if (start < now) errors.start = "That start time has already passed.";
   if (end <= start) errors.end = "The event has to end after it starts.";
 
-  const points = parsePointReward(draft.pointsInput);
+  const points = setsRequirements
+    ? parsePointReward(draft.pointsInput)
+    : ({ kind: "omit" } as const);
   if (points.kind === "invalid") {
     errors.points = "Points must be a whole number, up to 100,000.";
   }
@@ -270,7 +364,13 @@ export function validateNewEvent(
   const wire = attendanceToWire(draft.attendance);
   if (attendanceInvitesNobody(wire)) {
     errors.attendance = "Nobody is invited. Add a role, or invite everyone.";
+  } else if (!setsRequirements && eventRequiresAnyone(wire)) {
+    errors.attendance =
+      "Only officers who manage events can make one required. Set it to optional.";
   }
+
+  const repeat = repeatRuleOf(draft.repeat, start);
+  if (!repeat.ok) errors.repeat = repeat.error;
 
   if (Object.keys(errors).length > 0 || opens === null) {
     return { ok: false, errors };
@@ -278,6 +378,7 @@ export function validateNewEvent(
 
   const location = draft.location.trim();
   const description = draft.description.trim();
+  const notes = (draft.notes ?? "").trim();
   const body: ValidatedNewEvent = {
     name,
     start_time: start.toISOString(),
@@ -291,6 +392,13 @@ export function validateNewEvent(
   if (othersInvited !== undefined) body.others_invited = othersInvited;
   if (location.length > 0) body.location = location;
   if (description.length > 0) body.description = description;
+  if (notes.length > 0) body.notes = notes;
+  const agenda = agendaWithPending(
+    draft.agenda ?? [],
+    draft.agendaPending ?? "",
+    randomClientId,
+  );
+  if (agenda.length > 0) body.agenda = agenda;
   if (wire.required_role_ids.length > 0) {
     body.required_role_ids = wire.required_role_ids;
   }
@@ -300,7 +408,7 @@ export function validateNewEvent(
   if (wire.excluded_role_ids.length > 0) {
     body.excluded_role_ids = wire.excluded_role_ids;
   }
-  if (draft.recurrenceRule) body.recurrence_rule = draft.recurrenceRule;
+  if (repeat.ok && repeat.rule) body.recurrence_rule = repeat.rule;
   // Sent only when one is picked, so a plain event still creates against an
   // API that predates types.
   if (draft.eventTypeId) body.event_type_id = draft.eventTypeId;
@@ -312,56 +420,3 @@ export function validateNewEvent(
   return { ok: true, body };
 }
 
-/**
- * The line under the Repeat choices: how long the series runs, since it isn't
- * open-ended. `null` for a one-time event.
- */
-export function repeatCaption(
-  start: Date,
-  rule: RecurrenceRule | null,
-): string | null {
-  return rule ? describeSeriesLength(start, rule) : null;
-}
-
-/**
- * What "More options" holds, said in one line while it is closed, so the
- * officer can see what the event will do without opening it:
- * "10 pts · Optional for everyone · Doesn't repeat". A check-in lead other
- * than the default joins it ("Check-in opens 30 min early"); the default goes
- * unsaid, as it does on every event.
- */
-export function moreOptionsSummary(
-  draft: Pick<
-    NewEventDraft,
-    "pointsInput" | "attendance" | "recurrenceRule" | "checkInOpensInput"
-  >,
-  roleName: (roleId: string) => string | undefined,
-): string {
-  const points = parsePointReward(draft.pointsInput);
-  const pointsText =
-    points.kind === "value"
-      ? `${points.points} pts`
-      : points.kind === "omit"
-        ? "0 pts"
-        : "Points need a fix";
-  const repeat = draft.recurrenceRule
-    ? RECURRENCE_REPEAT_LABELS[draft.recurrenceRule]
-    : "Doesn't repeat";
-  const opens = parseCheckInOpens(draft.checkInOpensInput);
-  const opensText =
-    opens === null
-      ? "Check-in time needs a fix"
-      : opens === DEFAULT_CHECK_IN_OPENS_MINUTES
-        ? null
-        : opens === 0
-          ? "Check-in opens at the start"
-          : `Check-in opens ${opens} min early`;
-  return [
-    pointsText,
-    describeAttendance(draft.attendance, roleName),
-    opensText,
-    repeat,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(" · ");
-}

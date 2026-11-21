@@ -14,9 +14,12 @@
  * roster projection carries no role or graduation year, so it cannot draw the
  * meta line the reference specifies.
  */
-import { fraternalOrderComparator, memberLabel } from "@repo/hooks";
+import {
+  formatGraduationYear,
+  fraternalOrderComparator,
+  memberLabel,
+} from "@repo/hooks";
 import { initialsFor, metaLine, num, records, str } from "./narrow";
-import { formatGraduationYear } from "./profile";
 
 export interface DirectoryRow {
   /**

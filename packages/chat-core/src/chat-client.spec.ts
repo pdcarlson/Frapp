@@ -6,6 +6,7 @@ import {
   classifyChatError,
   definitiveRefusalMessage,
   closePoll,
+  closeCard,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -36,6 +37,7 @@ import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import {
   assertContentFreeProperties,
   moduleDisabledMessage,
+  SERVER_BUSY_COPY,
 } from "@repo/validation";
 import { memberFacingRefusal, POLLS_OFF_COPY } from "./polls";
 import {
@@ -558,7 +560,10 @@ describe("closePoll (#3794)", () => {
     const apiClient = {
       POST: vi.fn().mockResolvedValue({
         data: null,
-        error: { message: "Only the poll creator can close it" },
+        error: {
+          message:
+            "Only the poll creator or a member who manages channels can close it",
+        },
         response: { status: 403 },
       }),
     };
@@ -589,6 +594,91 @@ describe("closePoll (#3794)", () => {
     await closePoll(ctx, { channelId: "chan-1", messageId: "msg-1" });
 
     expect(apiClient.POST).not.toHaveBeenCalled();
+  });
+});
+
+describe("closeCard (#3926)", () => {
+  it("posts the close and merges the closed card before any Realtime echo", async () => {
+    const card = {
+      title: "Formal",
+      format: "headcount",
+      slots: [
+        { id: "going", label: "Going", capacity: null },
+        { id: "not_going", label: "Can’t make it", capacity: null },
+      ],
+    };
+    const row = {
+      id: "msg-1",
+      channel_id: "chan-1",
+      sender_id: "user-1",
+      content: "Formal",
+      kind: "signup",
+      payload: card,
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [row]),
+    );
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: {
+          ...row,
+          payload: {
+            ...card,
+            closed_at: "2026-06-01T00:00:00.000Z",
+            closed_by: "user-1",
+          },
+        },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const toast = vi.fn() as ToastFn;
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      queryClient,
+      toast,
+    });
+
+    await closeCard(ctx, { channelId: "chan-1", messageId: "msg-1" });
+
+    expect(apiClient.POST).toHaveBeenCalledWith(
+      "/v1/channels/messages/{messageId}/close",
+      { params: { path: { messageId: "msg-1" } } },
+    );
+    expect(toast).not.toHaveBeenCalled();
+    const cache = queryClient.getQueryData(chatMessagesKey("chan-1")) as
+      ReturnType<typeof emptyCache> | undefined;
+    expect(
+      (cache?.byId["msg-1"]?.payload as { closed_at?: string })?.closed_at,
+    ).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  it("says a card that already closed has closed, rather than to try again", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "Sign-ups are already closed" },
+        response: { status: 400 },
+      }),
+    };
+    const onError = vi.fn() as ChatErrorFn;
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      onError,
+    });
+
+    await expect(
+      closeCard(ctx, { channelId: "chan-1", messageId: "msg-1" }),
+    ).rejects.toThrow();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Couldn't close sign-ups",
+        description: "Sign-ups for this have closed.",
+      }),
+    );
   });
 });
 
@@ -863,6 +953,152 @@ describe("actOnCard", () => {
 
     expect(apiClient.POST).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+const GIF_TO_SEND = {
+  provider: "klipy",
+  id: "dance",
+  title: "Happy dance",
+  url: "https://static.klipy.com/ii/a/dance.webp",
+  width: 498,
+  height: 280,
+  token: "signed-token",
+};
+
+describe("sendMessage with a GIF (#4631)", () => {
+  it("posts the GIF with its token, and no text", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: { message: { id: "msg-1", client_message_id: "c-1" } },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const outbox = stubOutbox();
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+    });
+
+    await sendMessage(ctx, {
+      channelId: "chan-1",
+      content: "",
+      gif: GIF_TO_SEND,
+    });
+
+    const init = apiClient.POST.mock.calls[0]?.[1] as {
+      body: { content: string; gif?: unknown };
+    };
+    expect(init.body.content).toBe("");
+    expect(init.body.gif).toEqual({
+      id: "dance",
+      title: "Happy dance",
+      url: GIF_TO_SEND.url,
+      width: 498,
+      height: 280,
+      token: "signed-token",
+    });
+    // Queued with the GIF, so a flush or a retry resends it, not an empty text.
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ gif: GIF_TO_SEND }),
+    );
+  });
+});
+
+describe("picked mentions (#3835)", () => {
+  const PICKS = [{ user_id: "u-jane", label: "Jane Doe" }];
+  const posted = () => ({
+    POST: vi.fn().mockResolvedValue({
+      data: { message: { id: "msg-1", client_message_id: "c-1" } },
+      error: null,
+      response: { status: 201 },
+    }),
+  });
+
+  it("posts the picks beside the body, and queues them for a flush", async () => {
+    const apiClient = posted();
+    const outbox = stubOutbox();
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+    });
+
+    await sendMessage(ctx, {
+      channelId: "chan-1",
+      content: "@Jane Doe hi",
+      mentionPicks: PICKS,
+    });
+
+    const init = apiClient.POST.mock.calls[0]?.[1] as {
+      body: { content: string; mention_picks?: unknown };
+    };
+    // The body is the name, as every reader draws it; the id rides beside.
+    expect(init.body.content).toBe("@Jane Doe hi");
+    expect(init.body.mention_picks).toEqual(PICKS);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ mentionPicks: PICKS }),
+    );
+  });
+
+  it("sends none when nothing was picked", async () => {
+    const apiClient = posted();
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox: stubOutbox(),
+    });
+    await sendMessage(ctx, { channelId: "chan-1", content: "@Jane hi" });
+    const init = apiClient.POST.mock.calls[0]?.[1] as {
+      body: Record<string, unknown>;
+    };
+    expect(init.body.mention_picks).toBeUndefined();
+  });
+
+  it("replays a queued row's picks on retry", async () => {
+    const apiClient = posted();
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox: stubOutbox(),
+    });
+    const row: OutboxRow = {
+      clientId: "c-1",
+      channelId: "chan-1",
+      body: "@Jane Doe hi",
+      mentionPicks: PICKS,
+      attempts: 1,
+      status: "failed",
+      queuedAt: Date.now(),
+    };
+    await retryOutboxRow(ctx, row);
+    const init = apiClient.POST.mock.calls[0]?.[1] as {
+      body: { mention_picks?: unknown };
+    };
+    expect(init.body.mention_picks).toEqual(PICKS);
+  });
+
+  it("sends an edit's picks", async () => {
+    const apiClient = {
+      PATCH: vi.fn().mockResolvedValue({
+        data: { id: "msg-1", channel_id: "chan-1", content: "@Jane Doe" },
+        error: null,
+        response: { status: 200 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+    });
+    await editMessage(ctx, {
+      channelId: "chan-1",
+      messageId: "msg-1",
+      content: "@Jane Doe",
+      mentionPicks: PICKS,
+    });
+    expect(apiClient.PATCH).toHaveBeenCalledWith(
+      "/v1/channels/messages/{messageId}",
+      expect.objectContaining({
+        body: { content: "@Jane Doe", mention_picks: PICKS },
+      }),
+    );
   });
 });
 
@@ -1264,6 +1500,28 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
       chatMessagesKey("chan-1"),
     );
     expect(cache?.byId["c-poll"]?._error).toBe(POLLS_OFF_COPY);
+  });
+
+  it("redraws a queued GIF as its GIF after a reload, not an empty bubble (#4631)", async () => {
+    const queryClient = new QueryClient();
+    const outbox = stubOutbox({
+      listForChannel: vi.fn().mockResolvedValue([
+        {
+          clientId: "c-gif",
+          channelId: "chan-1",
+          body: "",
+          attempts: 0,
+          status: "queued",
+          queuedAt: Date.now(),
+          gif: GIF_TO_SEND,
+        } satisfies OutboxRow,
+      ]),
+    });
+    await hydrateOutboxIntoCache(buildCtx({ queryClient, outbox }), "chan-1");
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    expect(cache?.byId["c-gif"]?.gif?.url).toBe(GIF_TO_SEND.url);
   });
 
   it("does not upsert a pending twin next to an already-confirmed server row (#1718)", async () => {
@@ -1935,6 +2193,7 @@ describe("classifyChatError", () => {
       terminal: true,
       status: 403,
       message: "You don't have access to this channel.",
+      busy: false,
     });
   });
 
@@ -1949,6 +2208,7 @@ describe("classifyChatError", () => {
       terminal: true,
       status: 400,
       message: "Try again in a moment.",
+      busy: false,
     });
   });
 
@@ -1971,6 +2231,20 @@ describe("classifyChatError", () => {
       terminal: true,
       status: 404,
       message: "It may have been deleted. Refresh and try again.",
+      busy: false,
+    });
+  });
+
+  it("words Cloud Run's busy 429 as busy, still terminal", () => {
+    const wrapped = Object.assign(new Error("Rate exceeded."), {
+      response: { status: 429 },
+      context: { status: 429 },
+    });
+    expect(classifyChatError(wrapped)).toEqual({
+      terminal: true,
+      status: 429,
+      message: "Frapp is busy right now. Try again in a moment.",
+      busy: true,
     });
   });
 
@@ -1979,6 +2253,7 @@ describe("classifyChatError", () => {
       terminal: false,
       status: undefined,
       message: "Couldn't reach Frapp. Check your connection and try again.",
+      busy: false,
     });
   });
 });
@@ -2007,6 +2282,12 @@ describe("definitiveRefusalMessage", () => {
       );
     },
   );
+
+  it("reads Cloud Run's full-service 429 as busy, not as the member's pace", () => {
+    expect(
+      definitiveRefusalMessage({ statusCode: 429, message: "Rate exceeded." }),
+    ).toBe(SERVER_BUSY_COPY);
+  });
 
   it.each([
     ["a 5xx", { statusCode: 500, message: "Internal server error" }],

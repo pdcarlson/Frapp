@@ -15,7 +15,8 @@ import { db, miss } from "../harness.mjs";
 //     nothing;
 //   - since 20261109230000, a course's name and nicknames (`backwork_courses`)
 //     find its files, the course number matched trimmed and case-insensitively,
-//     and another chapter's course name never does.
+//     and another chapter's course name never does;
+//   - since 20261116182814, a draft is never found (#5208).
 //
 // Everything runs inside one transaction and is rolled back.
 console.log("\n=== Functional: backwork search over every field (#585) ===");
@@ -238,6 +239,31 @@ console.log("\n=== Functional: backwork search over every field (#585) ===");
       (await search(A, "  ")).length === 0,
       await search(A, "  "),
     );
+    // 20261116182814 (#5208): a draft is visible only to its uploader, so
+    // search never finds one, even one whose title matches exactly.
+    const DRAFT = "f5850000-0000-4000-8000-0000000000f4";
+    await db.exec(`
+      insert into backwork_resources
+        (id, chapter_id, department_id, course_number, uploader_id, title, storage_path, file_hash, draft_fields)
+      values
+        ('${DRAFT}', '${A}', '${DEPT}', '2120', '${USER}', 'Homework 2', 'a/draft.pdf', 'h4', '{"title": "Homework 2"}');
+    `);
+    check(
+      "never finds a draft",
+      !(await search(A, "homework")).includes(DRAFT) &&
+        (await search(A, "homework")).includes(HW),
+      await search(A, "homework"),
+    );
+    let refused = false;
+    try {
+      await db.exec(`savepoint draft_shape;`);
+      await db.exec(`update backwork_resources set draft_fields = '[]' where id = '${DRAFT}';`);
+    } catch {
+      refused = true;
+    } finally {
+      await db.exec(`rollback to savepoint draft_shape;`).catch(() => {});
+    }
+    check("a draft's fields must be an object", refused, { refused });
   } catch (e) {
     check(
       "backwork search scenario ran",

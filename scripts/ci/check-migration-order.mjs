@@ -97,6 +97,7 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/check-migration-order.test.mjs`.
 
+import { nextVersion } from "../migration.mjs";
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -176,6 +177,14 @@ export function removedMigrations({ head, base }) {
  * "every new migration sorts after everything on main" is an invariant a person
  * can hold in their head, where "after everything on main that some environment
  * has already applied, as of when your check happened to run" is not.
+ *
+ * (2026-11-13) The 10:02 step above assumed branch protection forced B to
+ * rebase. It no longer does: `REQUIRE_UP_TO_DATE` in lib/required-checks.mjs
+ * has been false since 2026-11-11, so B can merge on a check that ran against
+ * a base without A, and this rule does not see A. That is how #4757's
+ * `20261113130014` landed after #4771's `20261113132007` and halted staging.
+ * `pr-base-sync` renumbers B once `main` moves, but only if B has not already
+ * merged. The open window and its options are #4795.
  */
 export function classifyLocalOrder({ introduced, surviving }) {
   const floor = newestVersion(surviving);
@@ -228,21 +237,9 @@ export function classifyOrder({ introduced, removed = [], applied }) {
  */
 export function suggestVersion(floor) {
   if (!VERSION_PATTERN.test(floor ?? "")) return null;
-  const asDate = Date.UTC(
-    Number(floor.slice(0, 4)),
-    Number(floor.slice(4, 6)) - 1,
-    Number(floor.slice(6, 8)),
-    Number(floor.slice(8, 10)),
-    Number(floor.slice(10, 12)),
-    Number(floor.slice(12, 14)),
-  );
-  if (!Number.isFinite(asDate)) return null;
-  const next = new Date(asDate + 1000);
-  const p = (n, w = 2) => String(n).padStart(w, "0");
-  return (
-    `${p(next.getUTCFullYear(), 4)}${p(next.getUTCMonth() + 1)}${p(next.getUTCDate())}` +
-    `${p(next.getUTCHours())}${p(next.getUTCMinutes())}${p(next.getUTCSeconds())}`
-  );
+  // One implementation with `migration:renumber`, which also handles a
+  // hand-picked version whose fields roll over (hour 25, day 00).
+  return nextVersion(floor);
 }
 
 const CLI_REFUSAL =
@@ -251,9 +248,9 @@ const CLI_REFUSAL =
 function renameRemedy(floor) {
   const suggestion = suggestVersion(floor);
   return (
-    `Remedy: rename each to a version after \`${floor}\`` +
+    `Remedy: run \`npm run migration:renumber\`, which does this and moves each one's ledger page, or rename each to a version after \`${floor}\`` +
     (suggestion ? ` — e.g. \`${suggestion}_<same_name>.sql\`` : "") +
-    `, keeping the name. Safe while the migration is unapplied everywhere, which is the ` +
+    `, keeping the name, and rename its page in docs/ops/database/migrations/ to match. Safe while the migration is unapplied everywhere, which is the ` +
     `ordinary case for one still in review.`
   );
 }

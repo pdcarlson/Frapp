@@ -4,10 +4,14 @@ The Activity page gathers, for one member, what is waiting on them and what they
 don't have to look through channels and module pages to find it (#3897). It is an inbox beside
 chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../product/surfaces.md)).
 
-This file owns the read behind the page, `GET /v1/activity`. The page itself (where it sits, how
+This file owns the reads behind the page, `GET /v1/activity`, its
+[standing](#standing), `GET /v1/activity/standing`, its [recap](#recap),
+`GET /v1/activity/recap`, its [archive](#archive), `GET /v1/activity/archive`, what is [on now](#now),
+`GET /v1/activity/now`, and how each member
+arranged its [cards](#cards), `/v1/activity/layout`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
-the phone's screen, reached from the More hub, is in
+the phone's screen, the Activity tab (#4610), is in
 [`../ui/mobile/screens.md`](../ui/mobile/screens.md) (supporting routes).
 
 Not to be confused with two other things that use the word:
@@ -36,6 +40,9 @@ officer queues need their own permission, as below.
   every pending entry.
 - **Polls:** open poll cards from other members that the caller hasn't voted on, soonest closing
   first. See [Polls and channel access](#polls-and-channel-access).
+- **Sign-ups and forms** (`cards`): open sign-up sheets, headcounts and forms from other members
+  that the caller hasn't answered, soonest closing first, then newest; one with no end time last.
+  See [Sign-ups and forms](#sign-ups-and-forms).
 
 **Coming up:** events that invite the caller and start within 14 days, or whose check-in is
 still open, soonest first, at most 10. Events are read as the caller, so an event that leaves the
@@ -51,18 +58,54 @@ member's own answer, not the event's default:
   ([`events.md`](events.md)) and check-in would not refuse them. It is false for an alumnus
   unless the event lists a role of theirs, the rule check-in itself applies.
 - `checked_in` is read only while `check_in_open` is true.
+- `check_in_needs_location` is whether checking in needs the member's location: the event has a
+  check-in zone ([`events.md`](events.md) § Check-In). The zone itself is not served here. A
+  client that can't supply a location (web) leaves Check in off the row and opens the event,
+  which says to use the phone; the phone checks in from the row and asks for the location then
+  ([#4427](https://github.com/pdcarlson/Frapp/issues/4427)).
+- `check_in_needs_code` is whether checking in needs the code on an officer's screen: one is live
+  for the event ([`events.md`](events.md) § Check-In). Read only while `check_in_open` is true;
+  false otherwise. No screen location is served. A client that can't scan (web) leaves Check in
+  off the row and opens the event, which says to point the phone's camera at the code; the phone
+  checks in from the row and asks for the code if the press is refused
+  ([#4808](https://github.com/pdcarlson/Frapp/issues/4808)).
 
 **Made by you**
 
 - **Polls:** poll cards the caller posted, newest first: up to 25 open and the 25 most recently
   posted closed ones, each cut separately so a run of closed polls never pushes an open one out
-  ([#4258](https://github.com/pdcarlson/Frapp/issues/4258), Shawn, 2026-11-11: the page lists the
-  open ones and archives the closed, per
-  [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)). The
-  caller's 100 newest poll cards are read to find them.
-- **Tasks:** tasks the caller assigned, newest first. Only while the caller still holds
-  `tasks:manage`: without it `GET /v1/tasks/:id` refuses them a task they don't hold, and a row
-  that opens to a refusal is worse than no row.
+  of the read ([#4258](https://github.com/pdcarlson/Frapp/issues/4258), Shawn, 2026-11-11). The
+  caller's 100 newest poll cards are read to find them. A client lists the open ones; a closed
+  one is in the [Archive](#archive) (Changed in
+  [#5127](https://github.com/frapplive/Frapp/issues/5127) by shawnatomklein-eng, 2026-11-15; until
+  then the page kept them behind "Archived polls", which phone builds from before the Archive
+  still draw from this list, so it is still served).
+- **Tasks** (`task_items`): what the caller assigned that isn't finished, newest first, at most 25,
+  a task for everyone counted once however many copies it has
+  ([#5492](https://github.com/frapplive/Frapp/issues/5492), Paul, 2026-11-18: one task sent to
+  everyone filled all 25 rows and hid every other task he'd assigned). Each item is
+  `kind: "task"`, a one-person task not yet confirmed, in the same shape as the other task rows,
+  or `kind: "group"`, a task for everyone with a copy not yet confirmed: its `group` progress
+  ([`tasks.md` § Tasks for everyone](tasks.md#tasks-for-everyone)), what its copies share (title,
+  description, due, points and proof, read from a copy not yet confirmed, since a group edit
+  leaves a confirmed copy as it was), `task_id`, the copy a row opens (the caller's own when they
+  hold one, else an overdue copy, else an open one, else any), `overdue` when any copy is, and
+  `preview_assignee_ids`, up to 5 members for faces, overdue first, then open, then done. The two
+  are read apart, newest first and filtered in SQL (one-person tasks not confirmed; the caller's
+  groups with a copy not confirmed), merged and cut to 25, so a finished group or a confirmed task
+  never takes a slot from a live one. A confirmed one is in the [Archive](#archive).
+  The phone lists these, a task for everyone as one row that opens `task_id` (the row:
+  [`screens.md` § Inventory](../ui/mobile/screens.md#inventory), Activity; its long press:
+  [`tasks.md` § Long press on the phone](tasks.md#long-press-on-the-phone)). Web lists them too
+  ([#5538](https://github.com/frapplive/Frapp/issues/5538), 2026-11-18): a task for everyone is one
+  row that opens the group on the Tasks board, not Activity's panel, which draws one task (the row
+  and where it goes: [`web-dashboard/README.md`](../ui/web-dashboard/README.md), Activity). Until
+  then web listed `tasks`, a row per copy.
+  `tasks` is still served unchanged: each copy its own row, the newest 25 the caller assigned,
+  confirmed ones included, for phone builds from before `task_items`, which list those not yet
+  confirmed and drop the confirmed (#5127). Both only while the caller still holds `tasks:manage`:
+  without it `GET /v1/tasks/:id` refuses them a task they don't hold, and a row that opens to a
+  refusal is worse than no row.
 - **Files:** none. The read listed the chapter documents and backwork the caller uploaded
   (#3897's ask, "documents and backwork you uploaded"). `made_by_you.files` is still served,
   always empty and marked deprecated, so a client built before the change (an open web tab, a
@@ -84,35 +127,336 @@ member's own answer, not the event's default:
 **Links:** sign-up links posted in channels the caller can read, newest first. See
 [Links](#links).
 
+**Reminders:** the reminders the caller set on chat messages, due ones first. See
+[Reminders](#reminders).
+
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
-now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
+now and hasn't, plus each due reminder, less what the member snoozed ([Snooze](#snooze)). It is counted before the list cap, so a badge built from it does not stop at 25; due reminders are counted from the up to 50 the read serves.
+It is what the member can act on now, and so is not the week ring's "left", which also counts
+events still ahead ([Week](#week), settled 2026-11-13).
+
+**`week`** is how much of the caller's week is done, by kind, for the ring at the top of the
+page on both clients. See [Week](#week).
 
 ## Rules
 
 - **A module that is off contributes nothing.** Each section checks its own module
   (`tasks`, `hours`, `polls`, `events`) and does not read it while the
-  chapter has it off ([`../product/modules.md`](../product/modules.md)). Links come from chat, which has no
-  switch, so they are always read.
-- **Each list carries at most 25 rows**, except Made by you's polls: 25 open and 25 closed.
+  chapter has it off ([`../product/modules.md`](../product/modules.md)). Links, sign-ups and forms
+  come from chat, which has no switch, so they are always read.
+- **Each list carries at most 25 rows**, except Made by you's polls (25 open and 25 closed) and
+  Reminders (50 due and 50 waiting).
 - **One section failing does not fail the page.** The sections are read independently. One that
   fails is served empty and named in `unavailable`, so a client can say that part couldn't load
   rather than show it as empty.
 - **Names are never invented.** A task's or entry's member who can no longer be resolved has an
   empty name, the same convention as the roster.
 
+## Now
+
+`GET /v1/activity/now` is the events on right now for the member, the Now card at the top of Chat
+home and Activity on the phone, and of the chat rail and Activity on the web
+([#5777](https://github.com/pdcarlson/Frapp/issues/5777)). Paul sat in Recruitment Meetings on
+2026-11-19, checked in, and no screen said it was on: Chat's Up next had moved on to the next start,
+and Activity counted his check-in as the event done. Now is the one answer to "what's on right now",
+the way Teams puts a bar over a meeting's chat and Discord keeps a live voice channel at the top of
+the sidebar. It is a separate, small read, so Chat home doesn't load the whole of `GET /v1/activity`.
+
+- **An event is on** from when its check-in opens (its start less `check_in_opens_minutes`, or the
+  default lead) until its end, not at the end and not in check-in's grace after it (`eventOnAt` in
+  `@repo/validation`). Checking in doesn't end it.
+- **Which events**: those the member is invited to that are required for them, that they checked
+  in to, or that they made, and for a holder of `events:update` every event on, invited or not,
+  since they are the ones asked where the meeting is (one that doesn't invite them offers no
+  check-in). Never one the member is excused from. An optional event a member hasn't touched stays
+  in To do with its Check in.
+- **Checked in** is an attendance row marked present or late, read once for the events on, with its
+  time (`checked_in_at`). The read makes no per-event reads, since every open Chat makes it.
+- **Order and size**: checked in first, then the latest start, at most 5
+  (`EVENTS_NOW_LIMIT`). The card shows the first and says "+N more on now" under it.
+- **Each row is an Activity event row** (`ActivityEventDto`), read through the events module under
+  its own rule for who may see an event. The read requires `members:view`, and returns nothing
+  while the chapter has the events module off.
+- **The clients re-read it every minute**, drop a row at its end between reads, and re-read it
+  after the member checks in (`useCheckIn`), so the card says "Checked in" at once.
+- **No row twice**: while an event leads the Now card, Activity's To do, week strip, the week card's
+  Next and the phone's Frapp card leave it out (`nowCardEventIds`). The week ring still counts it.
+  One under "+N more on now" keeps its row and its Check in, since the card doesn't open it.
+- **Happening now** on Activity means the same window: an event in check-in's grace after its end
+  still offers Check in, under its day, but no longer says it is happening.
+- **Activity shows Now while its own read loads or fails**, since Now has its own read.
+- **The card indicates rather than narrates**: "Now · until 10:25 PM", the name, then the member's
+  own state ("Checked in 9:24 PM" from the row's `checked_in_at`, or "Check-in is open") and where. It opens the event. With nothing on, it
+  draws nothing.
+- **The event's own page** carries the same words as a pill under its title: "Now · until 10:25 PM"
+  while on, "Ended 10:25 PM" for the rest of that day (`eventNowPill` in `@repo/hooks`).
+  Its when line stops saying "Tonight" once the event has ended, and says "Today" instead
+  (`formatEventWindow` in `@repo/formatting`).
+
+## Cards
+
+The page is a stack of cards each member orders and hides (#5520; Paul's pick, 2026-11-18, after
+Bevel's Edit Home and Apple Fitness's Edit Summary). Before it, the page's sections sat in one fixed
+order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
+
+- **The cards** are named by key (`ACTIVITY_CARD_KEYS` in `@repo/validation`): the Frapp card
+  (`nudge`), Last week (`recap`), To review (`review`), To do (`todo`), Calendar (`calendar`),
+  Reminders (`reminders`), Waiting on others (`waiting`), Links (`links`) and This semester
+  (`semester`). The week card is not one: it is always first and can't be hidden, as Fitness keeps
+  its rings. To do can move but can't be hidden, because the week card's lines narrow it and the
+  week strip's days jump to it.
+- **A card with nothing in it draws nothing**, wherever it sits, as each section always has. So
+  every card is in every default, and a member never sees an empty To review.
+- **Each member's arrangement is theirs, per chapter**, on their account (`activity_layouts`), so
+  the phone and web draw the same page. `GET /v1/activity/layout` returns the cards shown, in
+  order, the cards hidden, and whether the member has saved one (`saved`). `PUT` replaces both
+  lists; `DELETE` forgets them, so the role's default applies again. Any member may read and
+  write their own; no one reads another's.
+- **The API stores any well-formed key**, lower-case words joined by hyphens (at most 32
+  characters, 32 keys a list, none twice), not only the keys it knows, so a newer client's card
+  survives an older API. A client skips a key it doesn't know.
+- **Until a member saves, their role's default applies** (`ACTIVITY_DEFAULT_CARD_ORDER` in
+  `@repo/hooks`). An officer is anyone holding `tasks:manage` or `service:approve`, the people To
+  review is for, and their default puts To review before their own To do, then Waiting on others.
+  Everyone else's puts To do first. The default also applies while the read is out or has failed,
+  so the page never waits on it.
+- **A card newer than a member's save** goes where the default puts it: after the nearest card
+  before it in the default that they show.
+- **Edit Activity**, at the foot of the page, lists the cards in place of the page until Done:
+  minus hides one, plus brings it back where the default puts it, and arrows move it one place.
+  Done saves only when something changed; Reset to the default is offered once they have saved.
+  A failed save puts the saved arrangement back and says so. Edit Activity is offered only once the member's
+  saved arrangement and role have loaded, since an editor opened on the default would save it over
+  theirs. Leaving the editor by Android's back button or web's `‹ Activity` is Done.
+- **A save keeps the keys a client doesn't know.** The PUT replaces the row, so a client carries
+  over the stored keys it skips: a hidden one stays hidden, and a shown one keeps its place after the
+  card it followed. An older phone saving can't bring back a card hidden on web.
+- **A hidden Frapp card isn't asked for**, so its read waits for the arrangement to load: it can cost a model call
+  ([`ai.md` § The card and its tray](ai.md#the-card-and-its-tray)). Hiding it hides only the card;
+  Preferences' "Nudges on Activity" still owns whether the server makes one at all.
+
+## Week
+
+`week` on `GET /v1/activity` is the member's week as done of total, by kind
+([#4766](https://github.com/pdcarlson/Frapp/issues/4766); Paul, 2026-11-13: the count tiles "tell
+me no information", "maybe there's like a percentage or like a dial"). The count tiles said how
+much was waiting; this says how far along the member is, which needs what they already finished,
+and nothing else in the read carries that. Both clients draw it as one ring
+([`../ui/mobile/screens.md`](../ui/mobile/screens.md),
+[`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)).
+
+- **The week is the Study screen's:** Sunday at the member's local midnight to the next. The
+  client names it (`week_start`) as it does for [Standing](#standing): a start from eight days
+  back to a day ahead is accepted, and Sunday at midnight UTC is used when none is given. A start
+  outside that range is not refused here as Standing refuses it: the default week is counted
+  instead, because this read is the whole page and the tab's badge, and a phone with a wrong
+  clock must not lose its list over the number at the top. Only a value that is not a date-time
+  is a 400. `week.start` and `week.end` say what was counted.
+- **The member's own things only.** What waits on their review (confirmations, hours approvals)
+  is never counted: reviewing is an officer's queue, not their week.
+- **Each kind is `{ done, total }`,** where `total` is `done` plus what is still open, so a ring
+  drawn from it never passes full. Counted before any list cap.
+- **Events** that start in the week and invite the member. Done: marked present or late. Still
+  open: a required event not attended, ahead or missed (a missed one stays open, so the ring
+  does not close on a week with an absence in it). An optional event counts while its check-in
+  has not closed and is dropped once the member has skipped it: skipping something optional is
+  not a miss. An excused event is left out of both, as [Standing](#standing) leaves it out of
+  `required`. Required is the absence sweep's rule, and two members are held to less, as Standing
+  holds them: an alumnus the event invites only by its default is counted only when marked
+  present, since check-in refuses them and the event is never theirs to do; and a required event
+  from before the member joined does not hold them.
+- **Tasks** the member holds. Done: marked done since the week began (`completed_at`), confirmed
+  or not, since the member's part is finished. Still open: not done and due before the week ends,
+  overdue ones included, however old. Every task has a due date.
+- **Polls** from other members that the caller can read. Done: voted on since the week began,
+  by when the vote was last changed, which is the only time a vote keeps (a change rewrites it,
+  ADR-07). So a pick changed this week on a poll first answered earlier counts as one done this
+  week. Still open: every open one they haven't voted on (`needs_you.polls`, before its cap).
+- **Cards** (sign-up sheets, headcounts and forms from others). Done: first answered since the
+  week began; a sign-up given up and taken again keeps its first time. Still open: every
+  `needs_you.cards` row, before its cap.
+- **A module that is off is `null`**, and so is a part whose read fails, which is also named in
+  `week.unavailable` (`events`, `tasks`, `polls`, `cards`). A client draws a failed part as
+  unknown and says "at least", never as zero and never as a finished week. Polls and cards share
+  a line on both clients, and when one of the two failed and the other has nothing this week the
+  line is unknown too: a dash, never "0 of 0".
+- **A client keeps the count current between reads.** A poll or a card the read listed as open
+  whose closing time has passed since leaves the client's To do list within a tick of its clock
+  ([#4258](https://github.com/pdcarlson/Frapp/issues/4258)), and leaves the week's `total` on the
+  same tick (`activityWeekSummary` takes the clock), as the next read would leave it out. The ring
+  never says "1 left this week" over a list that says nothing is.
+- **It adds little to the read.** The week's events come from the one events read Coming up
+  already makes, widened to reach back to the week's start. The rest is a count of finished
+  tasks, the member's attendance on those events, one more read of the member's claims on
+  sign-up sheets that have closed, and the vote and form-answer reads the poll and card sections
+  already make, widened to closed polls and forms so an answer given this week on one that has
+  since ended still counts. That matters because the page is read on every app open, when the
+  phone sends its largest burst of requests.
+
+Five of these rules were open points until 2026-11-13, when Paul left them to the build ("make an
+educated choice", [#4793](https://github.com/pdcarlson/Frapp/issues/4793)). Each was kept as built,
+judged for an average member, a committee chair and the president
+([`principles.md` § Three people](../ui/design-system/principles.md#three-people)):
+
+- **The week starts Sunday, not Monday.** The Study hours gauge under the ring is "this week" too,
+  and a weekly study goal already resets on Sunday; two different weeks on one screen would be
+  worse than either. It is also the week a US calendar draws. To do lists by day whatever the week
+  is, so a weekend that straddles two weeks is still read in order.
+- **A skipped optional event is not a miss.** Optional means not owed. If skipping one kept the
+  ring open, a member who goes to everything required could never finish a week with a social in
+  it, and officers already have the word for what counts: required.
+- **The tab's badge is not the ring's "left", and the two are not meant to match.** The badge
+  (`needs_you_count`) is what the member can act on right now: their open tasks, unanswered polls
+  and sign-ups, an event open for check-in, a due reminder, and, for who reviews, what waits on
+  their sign-off. It
+  falls with each thing they do and reaches zero. The ring is the week, which also counts events
+  that have not happened yet, and nobody can clear those today: a badge built from it would sit at
+  3 until Saturday and stop being read. Review items stay in the badge because a member's points
+  wait on that confirmation, though they are never in the ring.
+- **Polls and sign-ups share one line on the card.** Both are an answer the member owes, and the
+  server still counts them apart (`week.polls`, `week.cards`). A fourth line would be a zero for
+  most members most weeks, on a card already tight at a phone's width.
+- **A poll counts as done in the week its vote was last changed.** A vote keeps only that time
+  (ADR-07). A pick changed this week on an older poll adds one done and one to the total, which
+  moves the ring by a sliver; a first-voted time would cost a schema change to remove it.
+
+## Progress
+
+`progress` on a row of Made by you is how far along it is: `{ done, total }`, how many have
+answered of how many can ([#4792](https://github.com/pdcarlson/Frapp/issues/4792); Paul,
+2026-11-13, part of the week ring's concept: "Waiting on others" with a bar per thing the member
+made). The clients draw it as a thin bar with "41 of 60" under the row
+([`../ui/mobile/screens.md`](../ui/mobile/screens.md),
+[`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)). It is
+`null` on every other row.
+
+- **Polls:** on an open poll the caller posted, `done` is the members who have voted (a cleared
+  vote is not one, #3793) and `total` the members who can read its channel, by chat's own reader
+  rule, the one its member list uses and a vote is checked against
+  ([Polls and channel access](#polls-and-channel-access)). A member who has blocked the caller
+  is on neither side: the poll is masked for them and they can't vote on it
+  ([`chat/README.md` § What a block does and does not hide](chat/README.md#what-a-block-does-and-does-not-hide)),
+  so counting them would hold the bar short of full for good. A closed poll waits on nobody and
+  has none.
+- **Events:** on an event the caller made, once its check-in has opened, and only for a caller
+  holding `events:update`, `done` is the members
+  marked present or late and `total` the members check-in admits: the event invites them
+  (attendance by role), and an alumnus only through a role the event names
+  ([`alumni.md`](alumni.md)). An excused member is on neither side, as the [Week](#week) leaves
+  them out. Before check-in opens nobody can check in, and a bar at nothing says nothing, so the
+  row has none. Who has checked in is the attendance roster's, which needs `events:update`
+  ([`events.md`](events.md)), and making an event grants nothing, so a maker without it (every
+  member may make one) gets no count either: the count is never a way around the roster.
+- **The caller is on neither side.** The section is "Waiting on others": their own vote or
+  check-in is not what they are waiting on.
+- **Never "0 of 0".** A poll nobody else can read, or an event that holds nobody else to it, has
+  `progress: null`, and the row draws no bar. `done` counts only members still on `total`'s side
+  (a voter who has since lost the channel is not counted), so it never passes `total`.
+- **Bounded.** The same reads whatever the number of rows, never one per row. For polls: the
+  chapter-wide resolve chat's member list uses (the roster, the roles, and group memberships when
+  a channel is opened by a group), every vote on the caller's open polls, and who among the
+  readers has blocked the caller. For events: the roster, the Alumni role and every attendance
+  row on the open ones. The vote and attendance reads are paged, so a busy chapter's rows past
+  the server's row cap are still counted. None of these reads runs for a member with no open poll
+  and no event open for check-in, which is most members on most opens. The roster and the Alumni
+  role are read at most once per Activity read, shared by both counts (#4908); the caller's own
+  alumni check, which runs whenever an event section has a row, reuses that same Alumni role
+  read.
+- **A hint, not a section.** When a count can't be read the rows are served with
+  `progress: null` and the failure is reported; nothing lands in `unavailable`.
+
+## Archive
+
+`GET /v1/activity/archive` is what the member has finished
+([#5127](https://github.com/frapplive/Frapp/issues/5127), Shawn, 2026-11-15: "stuff that have
+already happened, there's no reason why it should be on my activity page, but I would like to be
+able to still access that stuff"). The page lists only what is still live; a thing leaves it by
+the rules above, and this read lists it again from the same rules, so nothing new is stored and
+nothing is deleted. It is its own read, made only when the member opens the Archive, so the page's
+read, made on every app open, carries none of it.
+
+- **Events:** events that invite the caller (read as the caller, as Coming up reads them) whose
+  check-in has closed, 15 minutes after the end, the moment Coming up and Events you made let them
+  go. Each meeting of a series is its own row, since each happened. Never one that started before
+  the caller joined: it was never theirs, and with no Checked in it would read as one they
+  missed. `checked_in` is whether the caller was marked present or late; `check_in_open` is
+  always false. Those ending in the last 30 days, newest first, at most 25.
+- **Tasks:** the caller's own tasks marked done in the last 30 days, confirmed or still waiting
+  on an officer (the member's part is finished, and To do already let them go), and, while the
+  caller holds `tasks:manage`, the tasks they assigned that are confirmed (or signed off
+  automatically), however long ago they were done, since a late confirm is when one leaves Tasks
+  you assigned. A completion waiting on the caller's own confirm is not finished for them: it
+  stays on the page, in To review and Tasks you assigned. Most recently finished first (confirmed
+  or marked done), at most 25, from the 100 most recently made of each kind.
+- **Polls:** closed polls the caller posted, and closed polls from other members they voted in,
+  from the same cards the page scans (the chapter's 100 newest poll cards and the caller's own 100)
+  under chat's channel list and block list. Most recently closed first, at most 25.
+- **Rules as the page's:** a module that is off contributes nothing; each section is read
+  independently, and one that fails is served empty and named in `unavailable`.
+
+Both clients open it from one **Archive** control at the foot of Activity and draw it in place of
+the page, laid out as the page lays out its groups (Events, Tasks, Polls), each row opening what it
+opens on the page ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity),
+[`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
+
+## Standing
+
+`GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block of the page (under the week card on both clients since #4766; Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
+
+- **This semester** is the points window's: everything after the latest archived semester's last day, or everything so far when the chapter has never rolled over ([`semester-rollover.md`](semester-rollover.md)).
+- **Points:** the caller's semester total and their place on the semester board, equal totals sharing a place, as [`points.md` § Leaderboard](points.md#leaderboard) ranks them, out of how many the board ranks. No place when they are not on the board (an alumnus with no points this semester).
+- **Required events:** events that hold the caller to them by the absence sweep's rule (`memberAttendance`: required for them by their roles, and never an alumnus by the event's default alone), read with the caller as viewer so an event that leaves them out never counts. Only events since the semester began and since the caller joined. An event counts once its check-in has closed, or as soon as they checked in, even before it starts. `attended` is marked present or late; an event they were excused from is counted as `excused` and left out of `required`, so "6 of 8" is out of the events that held them.
+- **Service:** approved and pending minutes on the caller's entries dated from the day after the archived semester's last day (that day is the archive's).
+- **Study:** minutes from the caller's sessions that started this week and have ended, the way the Study screen counts its week. The read settles nothing: a paused session whose grace ran out counts once Study settles it. The client names where its week begins (`week_start`, Sunday at local midnight); the server accepts a start from eight days back to a day ahead, and uses Sunday at midnight UTC when none is given.
+- **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`. If the semester itself can't be read, the parts that depend on it fail rather than count all-time.
+- **Goals.** Each of points, service and study carries the caller's goal (`points.goal`, `service.goal_minutes`, `study.goal_minutes`), or `null` when the chapter sets none ([§ Goals](#goals)). A part with a goal reads "42 of 60" and draws a ring toward it, closed once the goal is met; a part without one draws no ring. Required events always have a target, the events themselves. If the goals can't be read, every goal is `null` and the numbers still show.
+
+## Recap
+
+`GET /v1/activity/recap` is the member's last finished week, the "Last week" card under the week card on both clients ([#4983](https://github.com/pdcarlson/Frapp/issues/4983); Shawn, 2026-11-14, after Slack's and Linear's weekly digests). The week card counts this week in progress; the recap sums up the one that just closed. It is a separate read from `GET /v1/activity` and from the standing, so the page's own read (on the app's resume path, #3728) carries none of it. It requires `members:view`, and every number is the caller's own, read through the module that owns it.
+
+- **The week** is the caller's last full week, Sunday to Sunday in their own time zone, ending at `week_start` (the start of their current week, as the standing reads it, under the same eight-days-back-to-a-day-ahead bound, refused with 400 outside it). The client also sends `last_week_start`, its own last Sunday at midnight, because a week that crosses a clock change is an hour longer or shorter than seven days; the server takes it when it is within three hours of seven days back, and counts seven days back otherwise. `start` and `end` say which week was read.
+- **Events attended:** events that started in the week, among those the caller can see, where they were marked present or late.
+- **Tasks done:** the caller's own tasks marked done in the week, confirmed or not, as the week card counts them. One sent back since is open again and not counted.
+- **Points:** the week's ledger rows for the caller, net: an award adds, a deduction takes away.
+- **Service:** minutes on the caller's entries dated on the week's seven days, approved or waiting, never rejected. Entries are dated by day, so the client sends `first_day`, the date of its last Sunday; the server takes it when it is within a day of the day it works out from `last_week_start` (the UTC day nearest that local midnight, right from UTC−12 to UTC+12), and uses its own otherwise.
+- **Study:** minutes from the caller's sessions that started in the week and have ended, as Study counts (one rule with the standing's, `endedStudyMinutes`).
+- **Not counted yet:** polls voted on and sign-ups answered, which #4983 also named. The week card already counts this week's; last week's would need the poll and card reads to take a window, which they don't. Left for a later change.
+- **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`.
+- **The weekly push** ([#4985](https://github.com/pdcarlson/Frapp/issues/4985); Shawn, 2026-11-15). On Sunday, the first hourly tick from 9 AM to noon in the member's own zone (the zone their pushes use, falling back to New York, as the daily reminders do, [`notifications.md` § Daily Task and Invoice Reminders](notifications.md#daily-task-and-invoice-reminders)), each member who can read the recap gets last week's: title "Last week in Alpha Beta", body the card's figures in its words ("3 events attended · 1 task done · 15 points earned · 4h of service · 1h 30m studied", from `recapFigures` in `@repo/formatting`, which the card draws from too), leaving out what is off or zero. The week is the one the card shows: Sunday to Sunday at the member's local midnights, so one that crossed a clock change is an hour longer or shorter, and a Sunday whose midnight is skipped (Santiago in September) begins at its first instant. Nothing is sent for a week with nothing to recap. Tapping it opens Activity. It is sent under its own category, `recap`, the **Weekly recap** switch in notification settings, on by default ([`notifications.md` § Preference sync](notifications.md#preference-sync)). A member in two chapters gets one for each. `ActivityRecapPushService` runs hourly on every replica and claims each member's week before reading it (`activity_recap_pushes`, keyed by chapter, member and the week's first day), so it is sent once; a recap that couldn't be read whole, or a send that failed before its in-app row was written, gives the claim back for the next tick. A push the provider drops after the row is written is reported and not sent again, since a retry would write the row twice. An installed app from before this change gets the push too: a tap opens the notification list rather than Activity, and its settings have no Weekly recap switch until the member updates, so meanwhile it is switched off on the web. A canceled chapter sends none.
+- **The card** and how it draws are the UI specs' ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity), [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). The clients read the recap only on Sunday, Monday and Tuesday of the member's week.
+
+## Goals
+
+What a chapter holds its members to, so a bar has an end ([#1062](https://github.com/pdcarlson/Frapp/issues/1062); Paul picked officer-set goals per role, 2026-11-12). Officers set them on the module pages in Chapter settings: a points goal on Points, and a service hours goal and a study hours goal on Service hours. `GET /v1/goals` reads them (`chapter-config:view`) and `PUT /v1/goals/:metric` replaces one measure's (`chapter-config:view` and `chapter-config:manage`); `chapter_goals` stores them, one row per chapter and measure. A member reads only their own: on the standing, or through `GET /v1/goals/mine` (`members:view`), which the phone's Study screen and More row use so they needn't read the whole standing.
+
+- **The window.** Points and service are per semester, the standing's window; study is per week, Sunday at local midnight, the Study screen's week.
+- **One goal for everyone, and roles set apart.** Each measure has an optional goal for every member and any number of roles with their own (pledges owing more study hours, say), up to 50. A role set apart with no number is held to no goal, which is how alumni or an officer role is exempted while everyone else owes hours. A member who holds several roles set apart is held to the goal on their highest-ranked one (lowest display order, then name, as the Roles page ranks them); a member holding none is held to everyone's, or to nothing.
+- **Units.** Points are points. Hours are stored as minutes and typed in whole hours: up to 500 a semester for service and 80 a week for study, and up to 100,000 points (`GOAL_TARGET_MAX` in `@repo/validation`). A save naming a role the chapter doesn't have, or one role twice, is refused.
+- **A deleted role** drops out of the goals when they are next read, and the next save leaves it out.
+- **Where a member sees it.** Activity's "This semester" block draws the ring ([§ Standing](#standing)); on the phone the Study screen's THIS WEEK line reads "4.5 of 6.0 hrs" over a meter and More's Study hours row reads "4.0 / 6.0 hrs" ([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
+- **Audit.** Each save writes a `chapter_goals_updated` row to `chapter_audit_log`, with the measure's goals before and after as its diff.
+
 ## Unread
 
 Each row that waits on the member carries `unread`, so a client can mark what is new with a dot,
 the way Slack and Linear mark their inboxes (#4173; Shawn picked "unread until opened" over "new
-since your last visit", 2026-11-11). **Status 2026-11-11: the API serves it; the web and phone
-dots are follow-up steps of #4173.**
+since your last visit", 2026-11-11). Web and the phone draw the dots (#4405, 2026-11-12; how each
+draws one is [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)
+and [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). Opening a row from Activity (its panel
+or sheet, or on web the link itself) records the open, and the dot clears at once; so does acting
+on it from its row (Confirm, Approve or Check in, [#4426](https://github.com/pdcarlson/Frapp/issues/4426) on
+web, [#4437](https://github.com/pdcarlson/Frapp/issues/4437) on the phone). A client that
+gets `unread_since: null` begins the member's dots (below).
 
 - **Which rows.** Everything in Needs you, Coming up and Links. Nothing in Made by you: the member
   made it, so it never waited on them. For the same reason a task they assigned to themselves and
   an event they made (`created_by`, served on each event row) are never unread.
-- **Until opened.** A row stays unread until the member opens that item from Activity: the client
+- **Until opened.** A row stays unread until the member opens that item from Activity, or acts on
+  it from its row (Confirm, Approve, Check in): the client
   records it with `POST /v1/activity/reads`, naming the item's kind and id (`task`, `hours_entry`,
-  `poll` by its message id, `event`, `link`), up to 100 at a time. Scrolling past a row doesn't
+  `poll` by its message id, `event`, `link`, `signup` for a sign-up sheet or headcount and `form`
+  for a form, each by its message id), up to 100 at a time. Scrolling past a row doesn't
   clear it, and neither does opening the same item elsewhere in Frapp (voting on the poll in its
   channel); acting on an item usually takes it off the list anyway.
 - **Since it appeared.** A row is unread when it appeared after the member last opened it. It
@@ -134,6 +478,42 @@ dots are follow-up steps of #4173.**
 - **A hint, not a section.** When the opens can't be read, every row is served as read and the
   failure is reported; the page doesn't fail and nothing lands in `unavailable`.
 
+## Snooze
+
+A member can snooze a row that waits on them until a time they pick, and it comes back then
+([#4982](https://github.com/pdcarlson/Frapp/issues/4982), item 7 of
+[#4402](https://github.com/pdcarlson/Frapp/issues/4402); Shawn, 2026-11-14), the way Gmail's
+Snooze and Slack's Later ("Remind me") work: the thing isn't done, it just isn't for now.
+
+- **Which rows.** The rows that can be unread ([§ Unread](#unread)): everything in Needs you,
+  Coming up and Links. Nothing in Made by you, which waits on others.
+- **Gone until then.** `PUT /v1/activity/snoozes` (the item's kind and id, as a read names it, and
+  `until`) takes it off the member's list. The read still serves the row, with `snoozed_until`,
+  so a client lists it under Snoozed and brings it back on its own clock; it is not counted in
+  `needs_you_count`, so the tab's badge drops with it. The week ring still counts it: snoozing
+  something doesn't finish it. A snoozed row is served after every row still waiting, so it never
+  pushes one out of a list's 25. Three lists are capped before the snoozes are known (task
+  confirmations at 25, Coming up at 10, Links at 25), so there a snoozed row can still hold a slot,
+  and a snoozed confirmation past the 25 read is still counted.
+- **When.** In the future and at most 90 days away; anything else is a 400. A client offers a few
+  fixed times (later today, tomorrow morning, the weekend or next week) rather than a picker.
+  Snoozing again replaces the time; `DELETE /v1/activity/snoozes` with the kind and id brings it
+  back now.
+- **It comes back unread.** A snoozed row that comes back is unread unless the member opened it
+  after it came back, as Gmail brings a snoozed thread back to the top unread, except what is never
+  unread ([§ Unread](#unread): a task the member set themselves, an event they made). An ended
+  snooze counts for this for 30 days, as long as a link shows. A client with the page open reads
+  Activity again when the soonest snooze ends, so the dot and the badge come back with the row.
+- **Nothing else changes.** A snoozed poll is still open in its channel and a snoozed task still
+  falls due; snooze is a view, not a deferral. It sends no push when it ends: the row and the
+  badge are the reminder.
+- **Per member, never shared.** Snoozes live in `activity_item_snoozes`, which only the API reads,
+  filtered on the member. As with a read, nothing checks that the member can see the item: a
+  snooze changes only their own view. They go with the membership: leaving the chapter or
+  deleting the account drops them ([`data-retention.md`](data-retention.md)).
+- **A hint, not a section.** When the snoozes can't be read, nothing is served as snoozed and the
+  failure is reported; the page doesn't fail.
+
 ## Polls and channel access
 
 A poll card is a chat message, so the page must not become a way around a channel's access rule,
@@ -148,18 +528,75 @@ the same rule search and the poll list follow
   the block list cannot be read, the polls section fails (empty, named in `unavailable`) instead
   of listing unmasked. The other sections are chapter records, which a block leaves alone.
 - A row is the poll's chat message (`message`, as chat serves it) plus what a list shows: the
-  question, the channel, when it closes, whether the caller voted. It carries **no tallies**. A
-  client reads its votes the way chat does and draws chat's own poll card from it, so the same
-  access rule and the same live updates apply, and the card counts the votes.
+  question, the channel, when it closes, whether the caller voted. It carries **no tallies by
+  option**. A client reads its votes the way chat does and draws chat's own poll card from it, so
+  the same access rule and the same live updates apply, and the card counts the votes. The one
+  count a row carries is how many have voted on an open poll the caller posted, of how many can
+  ([Progress](#progress)).
 - A card counts as a poll, and as open, by the rules chat's card and the vote route use: it needs
   a question and two options with an id and a label (a card without them draws as "Malformed
-  poll" and is not listed), and it is open until its creator closes it or its closing time
+  poll" and is not listed), and it is open until it is closed early (by its creator or a `channels:manage` holder) or its closing time
   passes. A card with no closing time, or one that doesn't parse, stays open, since a vote on it
   is still accepted; it sorts last.
 - "Hasn't voted" is checked over the chapter's 100 newest poll cards. An open poll older than
   that is rare; if one exists it is not listed here and is still in its channel.
 - Only poll cards (`kind = 'poll'`) are read. The older poll format ([`polls.md`](polls.md)) is
   one no client creates or can draw as a card, so it is not listed.
+
+## Sign-ups and forms
+
+A sign-up sheet, a headcount and a form are chat cards ([`polls.md`](polls.md) has the poll card
+they're built on; #3926), so they wait on a member the way an unvoted poll does, under the same
+channel rules (#3926 step 4):
+
+- A card is listed only from a channel in the caller's own chat channel list, never the caller's
+  own, and never one whose author the caller has blocked. They share the block list with polls
+  and links, so when it can't be read this section fails too (`cards` in `unavailable`).
+- Only open cards: not closed early and not past their end time, by the rule the claim and
+  answer routes apply.
+- **Answered** means a sign-up claim that holds at least one slot (a claim that gave every slot
+  back is not an answer, as a cleared vote is not a vote), either answer to a headcount
+  (Going or Can't make it), or any saved form response. Answers to a form are private
+  ([`chat/README.md`](chat/README.md)), so the read asks only which forms have a response of
+  the caller's, never what it says.
+- **A full sheet no longer waits.** When every slot of a sheet has a limit and has reached it,
+  nobody else can sign up, so it leaves Needs you for everyone who holds no slot (a headcount has
+  no limits, so it is never full). Telling needs every member's claims on the open sheets, which
+  the channel already reads on the card, so this reads nothing private.
+- A row carries the card's kind (`signup`, `headcount`, `form`), title, channel, end time, and
+  how many slots or questions it has; never anyone's claims or answers. It is answered on the
+  card, so a client opens the message in chat rather than drawing the card on Activity.
+- "Hasn't answered" is checked over the chapter's 100 newest cards of each kind, as polls are.
+- They count toward `needs_you_count`. On both clients they are on the To do list by their end
+  time, as polls are, and share the week card's "Polls and sign-ups" line with them
+  (Changed in #4766 by `pdcarlson`, 2026-11-13: until then they were Now within a day of their
+  end time, and showed under the All and Needs you chips with no chip or tile of their own).
+
+## Reminders
+
+The member's own reminders on chat messages ("Remind me about this", #4957; the rule is
+[`chat/README.md` § Reminders (personal)](chat/README.md)), served as `reminders` on
+`GET /v1/activity` (`ChatReminderService.listFor`), the way Slack's Later tab holds a member's
+reminders beside what they saved. Where each client draws them is
+[`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) and
+[`../ui/mobile/screens.md`](../ui/mobile/screens.md).
+
+- **What is listed.** The reminders the member set in this chapter, until they mark one Done: up
+  to 50 whose time came (`due`), newest first, then up to 50 still waiting, soonest first. The two
+  are read apart, so old due reminders the member never cleared can't push a newer one off the
+  list. A due one carries a Due badge and counts in `needs_you_count`.
+- **What a row says.** The message as a push quotes it, who wrote it and where, and when the
+  reminder is for. Channel access and the member's block list are applied on every read, as for
+  Saved: a reminder in a channel the member can no longer read stays listed with its words
+  withheld (`message_available: false`) so they can clear it, and a blocked author's message reads
+  as the timeline's tombstone. A channel an officer left out of Activity still lists reminders: the
+  member asked for each one.
+- **What a row does.** Opening it opens chat at the message. For a thread reply the phone opens
+  the thread; web, whose chat links can't open a thread yet, lands on the thread's first message in
+  the channel, as a Links row does. Snooze moves it to a preset time
+  (`PUT /v1/reminders/messages/:messageId`) and Done clears it (`DELETE`); a row whose channel the
+  member lost offers only Done. A row carries no unread dot: the member set it themselves, and a due one is marked by
+  its badge.
 
 ## Links
 
@@ -173,10 +610,14 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   Sheets and Docs (`docs.google.com/forms/…`, `/spreadsheets/…`, `/document/…`, with or without a
   Workspace account's `/a/<domain>` prefix, and `forms.gle`), Microsoft Forms
   (`forms.office.com`, `forms.microsoft.com`, `forms.cloud.microsoft`), Typeform, SignUpGenius and
-  Calendly. The list lives once, in `activity_action_links` in the database, and is flagged for
-  Paul to change or widen. The page names each row's kind ("Google Form", "Calendly") from
-  `activityLinkKind` in `@repo/hooks`, which knows the same hosts: a host added to the database
-  alone is gathered and titled by its bare host until it gets a name there. Any other link is not gathered, and neither is a URL with a user name
+  Calendly (`calendly.com` itself, not a subdomain). What is gathered is decided by
+  `activity_action_links` in the database, which is flagged for Paul to change or widen. The list
+  has two copies: that SQL, and `signUpLinkKind` in `@repo/validation`, and a widening changes
+  both and adds a row to `packages/validation/sign-up-link-fixtures.json`, which both are tested
+  against (#4215). The TypeScript copy names each row's kind ("Google Form", "Calendly") on the
+  page and decides what the name read below may open. A host added to the database alone is
+  gathered and titled by its bare host, and its read is refused, which is a definite answer, so a
+  link posted before the TypeScript copy catches up never gets a name. Any other link is not gathered, and neither is a URL with a user name
   in it (`https://calendly.com:1@evil.example/`): a browser opens the host after the `@`, so the
   one before it would be a trusted label on somewhere else.
 - **How they are found.** A trigger on chat messages indexes every write path the same way (a
@@ -184,6 +625,46 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   the rest, a deleted message takes its links with it, and when a Discord author link or detach
   changes a message's sender the links' poster follows. The index went in with the last 30 days
   of history.
+- **Names** (#4187: Shawn, 2026-11-11; fetching approved by Paul the same day, with the guards
+  below). A row is titled by the page's own name, the form's or sheet's title, with its kind
+  leading the detail ("5K volunteer shifts", then "Google Form · Olive · #rush · Tue 3:00 PM").
+  A link with no name keeps today's row, titled by its kind. The API reads each name **in the
+  background** and stores it on the link (`title`); `GET /v1/activity` only serves what is
+  stored and never opens a link. A sweep on the API reads up to 10 links a minute, newest first,
+  a budget the whole API shares across every chapter (links in a channel left out of Activity
+  spend it too, since an officer can bring the channel back). Each link is claimed just before
+  its read with a compare-and-set on its try count (`title_attempts`), so one replica reads it
+  at a time. A **definite answer** ends it for good: a name, or a page with none (refused, off
+  the list, a 4xx, not HTML, a sign-in page). A read that **broke on the way** (a timeout, a
+  network or TLS error, a 5xx or rate limit, the API restarting mid-read) is tried again an hour
+  later, three tries at most, and a sweep tick whose reads broke reports it
+  (`link-title-sweep-read`), so a fault that breaks every read is seen. An edit that keeps a URL
+  keeps its row and its name; a new URL is a new row. The same URL posted in several messages
+  in one tick is read once. The read is the API's only request to a URL a member posted, and
+  every hop of it is guarded:
+  - **Allowlist.** Only the sign-up hosts and paths above. An `http` link is read over `https` on
+    the same host; a user name or password, a non-default port, or an IP literal is refused.
+  - **Network safety.** The host is resolved in the connection's own lookup, and the connection is
+    refused if any address it resolves to is not public: private, shared (CGNAT), loopback,
+    link-local (cloud metadata), multicast, reserved and documentation ranges, and any IPv6
+    outside global unicast or carrying an IPv4 address (mapped, NAT64, 6to4, Teredo). Checking
+    in the connection itself leaves no gap for a DNS answer to change between check and connect.
+  - **Redirects** are followed by hand, at most three, each held to the same allowlist and
+    address checks. One that leaves the list ends the read with no name.
+  - **Limits.** Five seconds over the whole read, redirects included; at most 512 KB of page,
+    counted after decompression; only a `200` HTML page is read, and reading stops where the
+    page's head ends, in the charset the page names (UTF-8 otherwise). A response that is not
+    the page itself (a redirect, an error) is closed, not read. A `GET` with no cookies or
+    credentials, on a fresh connection each hop.
+  - **What counts as a name.** The page's `og:title`, else its `<title>`, without the product's
+    name around it (" - Google Sheets"). No name: a sign-in page (a private Sheet or Doc
+    redirects to Google's sign-in, which is off the list, or serves "Sign in" in place), an
+    access request, an error or closed form, or a title that is only the product ("Microsoft
+    Forms") or Google's "Untitled form". Only the first 2,000 characters of a title are looked
+    at; control and bidirectional-override characters and broken surrogate pairs are dropped,
+    and a name is cut at 200 characters, never through a character.
+  - **Access.** A name is served only on a link the caller already sees: it is a field of the
+    link, under the same rule as the rest of the row.
 - **How long one shows.** 30 days from when it was posted.
 - **Who sees one.** Only a member who can read the channel it was posted in, through the same
   predicate every chat read uses, with their block list applied, enforced on the server. Never a
@@ -193,7 +674,8 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   Activity by default.
 - **Never the caller's own.** A member's own links are not listed to them: they posted it, so it
   is not waiting on them.
-- **The list.** Newest first, at most 25, each row carrying the link, its host, the message it
+- **The list.** Newest first, at most 25, each row carrying the link, its host, its name when
+  one was read, the message it
   was posted in (for "Open in chat"; a thread reply also carries its thread root, since the
   channel's timeline doesn't show replies), the channel and the poster. An imported author with no
   Frapp account has no poster id and an empty name. The rows are chosen from the 200 newest

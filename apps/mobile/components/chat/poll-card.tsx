@@ -5,7 +5,6 @@ import {
   POLL_VOTE_ACTION_TYPE,
   canClosePoll,
   castPollVote,
-  isPollCardClosed,
   pollCardEyebrow,
   pollCardFooter,
   pollChoiceHint,
@@ -16,7 +15,9 @@ import {
   type PendingPollPicks,
   type PollOption,
 } from "@repo/chat-core/polls";
+import { isCardClosed } from "@repo/chat-core/card-closing";
 import { SignetTokens } from "@repo/theme/signet";
+import { meterStyles } from "@/components/meter";
 import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useMyPermissions, useNow } from "@repo/hooks";
@@ -76,7 +77,8 @@ export interface PollCardProps extends ChatCardFrameProps {
     payload: Record<string, unknown>,
   ) => void;
   /**
-   * Close poll on the viewer's own open poll (#3794). The caller confirms
+   * Close poll on an open poll the viewer started, or on anyone's for a
+   * `channels:manage` holder (#3794, #4046). The caller confirms
    * first (`confirmClosePoll`); the card only offers it (`canClosePoll`).
    */
   onClosePoll?: (messageId: string) => void;
@@ -101,10 +103,11 @@ export function PollCard(props: PollCardProps) {
   // reads the same chapter through `plusMenuModel`, which greys its Poll row
   // instead (`components/chat/use-composer-plus.tsx`).
   const { gate: pollsGate, recheck: recheckPolls } = usePollsGate();
-  // The close route requires `polls:create`, which posting a card doesn't
-  // (#3007). Unknown until the read lands, which withholds Close poll.
-  const canCreatePolls = can(
-    "polls:create",
+  // A `channels:manage` holder may close anyone's poll, as its creator may
+  // their own (#4046). Unknown until the read lands, which offers it to the
+  // creator only.
+  const canManageChannels = can(
+    "channels:manage",
     useMyPermissions().data?.permissions,
   );
 
@@ -127,15 +130,15 @@ export function PollCard(props: PollCardProps) {
     );
   }
 
-  // Closed by its deadline or, early, by its creator (#3794). The server row's
+  // Closed by its deadline or, early, by its creator or a moderator (#3794). The server row's
   // `payload.closed_at` arrives as a Realtime UPDATE, so every open card
   // redraws closed the moment the creator closes it.
-  const isClosed = isPollCardClosed(payload, now);
+  const isClosed = isCardClosed(payload, now);
   const showClose =
     !!onClosePoll &&
     canClosePoll(message, payload, viewerId, now, {
       pollsGate,
-      canCreatePolls,
+      canManageChannels,
     });
   const canVote = isConfirmed && !isClosed && pollsGate === "on";
   const gateReason = pollsGateReason(pollsGate, { isClosed, isConfirmed });
@@ -290,16 +293,10 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       fontVariant: ["tabular-nums"],
     },
     meterTrack: {
+      ...meterStyles(tokens, tokens.color.surface.popover).track,
       marginTop: tokens.spacing.xs - 2,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: tokens.color.surface.background,
-      overflow: "hidden",
     },
-    meterFill: {
-      height: "100%",
-      borderRadius: 2,
-    },
+    meterFill: meterStyles(tokens, tokens.color.surface.popover).fill,
     footer: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,

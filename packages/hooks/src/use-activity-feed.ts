@@ -12,14 +12,18 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * one non-trivial part (chapter-scoped, permission-aware aggregation) has a
  * single, shared, cache-consistent home once a screen is designed to use it,
  * rather than each client re-fetching and re-normalizing the same rows.
+ *
+ * @public Kept unconsumed on purpose: it waits on the screen #1473 designs
+ * (#2427), so knip does not report it.
  */
 export function useActivityFeed(limit?: number) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["activity-feed", chapterId, limit],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/activity-feed", {
+        signal,
         params: { query: limit !== undefined ? { limit } : {} },
       });
       if (error) throw error;

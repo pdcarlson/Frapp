@@ -14,11 +14,9 @@ import {
   collectLiveShas,
   compareHostShas,
   evaluatePin,
-  findLiveRenderDeployPage,
   isFullSha,
   peelVTags,
   readHealthCommitField,
-  readLiveRenderCommit,
   readProductionVercelCommit,
   runWatchdog,
   tagNameFromRef,
@@ -53,21 +51,6 @@ const HEALTHY_HOSTS = {
   landing: { ok: true, sha: LIVE_SHA },
 };
 
-function liveRenderPage({ sha = LIVE_SHA, extra = {} } = {}) {
-  return [
-    {
-      deploy: {
-        status: "live",
-        commit: { id: sha },
-      },
-      serviceDetails: { commit: { id: DECOY_SHA } },
-      commitId: DECOY_SHA,
-      commit: { id: DECOY_SHA },
-      ...extra,
-    },
-  ];
-}
-
 function vercelProductionBody({ sha = LIVE_SHA, extra = [] } = {}) {
   return {
     deployments: [
@@ -87,8 +70,8 @@ function vercelProductionBody({ sha = LIVE_SHA, extra = [] } = {}) {
 }
 
 /**
- * Provider `fetchJson` reads `.json()`. `ghRequest` reads `.text()`. Health
- * corroboration also uses `.text()`. One helper so a mock cannot satisfy one
+ * Provider `fetchJson` reads `.json()`. `ghRequest` reads `.text()`. The
+ * /health read also uses `.text()`. One helper so a mock cannot satisfy one
  * caller and silently 500 the other.
  */
 function dualFetch(routes) {
@@ -133,32 +116,6 @@ describe("isFullSha / V_TAG_REF", () => {
     assert.equal(V_TAG_REF.test("refs/tags/very-old"), false);
     assert.equal(V_TAG_REF.test("refs/tags/v1.0.0-rc.1"), false);
     assert.equal(tagNameFromRef("refs/tags/v1.0.0"), "v1.0.0");
-  });
-});
-
-describe("readLiveRenderCommit", () => {
-  it("reads deploy.commit.id and ignores nested decoys", () => {
-    assert.deepEqual(readLiveRenderCommit(liveRenderPage()), { ok: true, sha: LIVE_SHA });
-  });
-
-  it("fails an abbreviated SHA even when decoys are full-length", () => {
-    const verdict = readLiveRenderCommit(liveRenderPage({ sha: "0ca478e9" }));
-    assert.equal(verdict.ok, false);
-    assert.match(verdict.reason, /not a 40-hex SHA/);
-  });
-
-  it("fails when the page is not a list", () => {
-    const verdict = readLiveRenderCommit({ deploys: liveRenderPage() });
-    assert.equal(verdict.ok, false);
-    assert.match(verdict.reason, /unreadable/);
-  });
-
-  it("fails when no row has status live", () => {
-    const verdict = readLiveRenderCommit([
-      { deploy: { status: "update_in_progress", commit: { id: LIVE_SHA } } },
-    ]);
-    assert.equal(verdict.ok, false);
-    assert.match(verdict.reason, /status 'live'/);
   });
 });
 
@@ -210,7 +167,7 @@ describe("readProductionVercelCommit", () => {
 });
 
 describe("readHealthCommitField", () => {
-  it("treats a missing commit as absent, not a failure", () => {
+  it("reads a missing commit as absent", () => {
     assert.deepEqual(
       readHealthCommitField(JSON.stringify({ status: "ok", database: "connected" })),
       { present: false },
@@ -258,7 +215,6 @@ describe("compareHostShas / evaluatePin", () => {
     const verdict = evaluatePin({
       hosts: HEALTHY_HOSTS,
       tagsResult: { ok: true, tags: [{ name: "v0.1.0", sha: OTHER_SHA }] },
-      health: { present: false },
     });
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /no vX\.Y\.Z tag/);
@@ -268,40 +224,15 @@ describe("compareHostShas / evaluatePin", () => {
     const verdict = evaluatePin({
       hosts: HEALTHY_HOSTS,
       tagsResult: { ok: false, reason: "GitHub tags unreadable (HTTP 500)" },
-      health: { present: false },
     });
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /unreadable/);
   });
 
-  it("ignores absent /health commit and passes with a matching tag", () => {
+  it("passes when the hosts agree and the SHA carries a tag", () => {
     const verdict = evaluatePin({
       hosts: HEALTHY_HOSTS,
       tagsResult: { ok: true, tags: [{ name: "v1.0.0", sha: LIVE_SHA }] },
-      health: { present: false },
-    });
-    assert.equal(verdict.ok, true);
-    assert.equal(
-      verdict.reason,
-      `api=web=landing=${LIVE_SHA} tagged v1.0.0`,
-    );
-  });
-
-  it("fails when /health commit is present and disagrees with Render", () => {
-    const verdict = evaluatePin({
-      hosts: HEALTHY_HOSTS,
-      tagsResult: { ok: true, tags: [{ name: "v1.0.0", sha: LIVE_SHA }] },
-      health: { present: true, ok: true, sha: OTHER_SHA },
-    });
-    assert.equal(verdict.ok, false);
-    assert.match(verdict.reason, /disagrees with Render/);
-  });
-
-  it("passes when a present /health commit agrees with the hosts", () => {
-    const verdict = evaluatePin({
-      hosts: HEALTHY_HOSTS,
-      tagsResult: { ok: true, tags: [{ name: "v1.0.0", sha: LIVE_SHA }] },
-      health: { present: true, ok: true, sha: LIVE_SHA },
     });
     assert.equal(verdict.ok, true);
     assert.equal(verdict.reason, `api=web=landing=${LIVE_SHA} tagged v1.0.0`);
@@ -312,32 +243,6 @@ describe("compareHostShas / evaluatePin", () => {
       "v1.0.0",
       "v1.0.1",
     ]);
-  });
-});
-
-describe("findLiveRenderDeployPage", () => {
-  it("pages until a live deploy appears", async () => {
-    const { fetchImpl, calls } = dualFetch([
-      {
-        method: "GET",
-        // More specific first: the unpaged path is a prefix of the cursor URL.
-        path: "cursor=page-1",
-        body: liveRenderPage(),
-      },
-      {
-        method: "GET",
-        path: "/deploys?limit=10",
-        body: [{ cursor: "page-1", deploy: { status: "build_in_progress", commit: { id: OTHER_SHA } } }],
-      },
-    ]);
-    const found = await findLiveRenderDeployPage({
-      apiKey: "r",
-      serviceId: "srv-test",
-      fetchImpl,
-    });
-    assert.equal(found.live.ok, true);
-    assert.equal(found.live.sha, LIVE_SHA);
-    assert.equal(calls.length, 2);
   });
 });
 
@@ -434,39 +339,23 @@ describe("peelVTags", () => {
 });
 
 describe("collectLiveShas", () => {
-  it("collects three hosts and ignores a missing /health commit", async () => {
+  it("takes the API's commit from /health and the others from Vercel production", async () => {
     const { fetchImpl, calls } = dualFetch([
-      { method: "GET", path: "/deploys?limit=10", body: liveRenderPage() },
-      {
-        method: "GET",
-        path: "projectId=prj_web",
-        body: vercelProductionBody(),
-      },
-      {
-        method: "GET",
-        path: "projectId=prj_landing",
-        body: vercelProductionBody(),
-      },
-      {
-        method: "GET",
-        path: "/health",
-        body: { status: "ok", database: "connected" },
-      },
+      { method: "GET", path: "projectId=prj_web", body: vercelProductionBody() },
+      { method: "GET", path: "projectId=prj_landing", body: vercelProductionBody() },
+      { method: "GET", path: "/health", body: { status: "ok", commit: LIVE_SHA } },
     ]);
     const hosts = await collectLiveShas({
-      renderApiKey: "r",
       vercelApiKey: "v",
       teamId: "team_test",
-      renderServiceId: "srv-test",
       webProjectId: "prj_web",
       landingProjectId: "prj_landing",
       healthUrl: DEFAULT_HEALTH_URL,
       fetchImpl,
     });
-    assert.equal(hosts.api.ok, true);
-    assert.equal(hosts.web.ok, true);
-    assert.equal(hosts.landing.ok, true);
-    assert.equal(hosts.health.present, false);
+    assert.deepEqual(hosts.api, { ok: true, sha: LIVE_SHA });
+    assert.deepEqual(hosts.web, { ok: true, sha: LIVE_SHA });
+    assert.deepEqual(hosts.landing, { ok: true, sha: LIVE_SHA });
     assert.ok(calls.some((c) => c.url.includes("target=production")));
     assert.ok(calls.some((c) => c.url.includes("teamId=team_test")));
     const healthCall = calls.find((c) => String(c.url).includes("/health"));
@@ -474,34 +363,42 @@ describe("collectLiveShas", () => {
     assert.equal(HEALTH_FETCH_TIMEOUT_MS, 10_000);
   });
 
-  it("treats an unreadable Render API as a failed api SHA, not a throw", async () => {
+  it("a /health with no commit is a failed api SHA, not a pass", async () => {
     const { fetchImpl } = dualFetch([
-      { method: "GET", path: "/deploys?limit=10", status: 502, body: {} },
       { method: "GET", path: "projectId=prj_web", body: vercelProductionBody() },
       { method: "GET", path: "projectId=prj_landing", body: vercelProductionBody() },
+      { method: "GET", path: "/health", body: { status: "ok" } },
     ]);
     const hosts = await collectLiveShas({
-      renderApiKey: "r",
       vercelApiKey: "v",
-      renderServiceId: "srv-test",
       webProjectId: "prj_web",
       landingProjectId: "prj_landing",
+      healthUrl: DEFAULT_HEALTH_URL,
       fetchImpl,
     });
     assert.equal(hosts.api.ok, false);
-    assert.match(hosts.api.reason, /HTTP 502/);
+    assert.match(hosts.api.reason, /no commit/);
   });
 
-  it("ignores a thrown /health fetch", async () => {
+  it("a non-200 /health is a failed api SHA", async () => {
+    const { fetchImpl } = dualFetch([
+      { method: "GET", path: "projectId=prj_web", body: vercelProductionBody() },
+      { method: "GET", path: "projectId=prj_landing", body: vercelProductionBody() },
+      { method: "GET", path: "/health", status: 503, body: { status: "error", commit: LIVE_SHA } },
+    ]);
+    const hosts = await collectLiveShas({
+      vercelApiKey: "v",
+      webProjectId: "prj_web",
+      landingProjectId: "prj_landing",
+      healthUrl: DEFAULT_HEALTH_URL,
+      fetchImpl,
+    });
+    assert.equal(hosts.api.ok, false);
+    assert.match(hosts.api.reason, /HTTP 503/);
+  });
+
+  it("a thrown /health fetch is a failed api SHA, not a throw", async () => {
     const fetchImpl = async (url) => {
-      if (String(url).includes("api.render.com")) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => liveRenderPage(),
-          text: async () => JSON.stringify(liveRenderPage()),
-        };
-      }
       if (String(url).includes("api.vercel.com")) {
         return {
           ok: true,
@@ -513,15 +410,15 @@ describe("collectLiveShas", () => {
       throw new Error("ECONNRESET");
     };
     const hosts = await collectLiveShas({
-      renderApiKey: "r",
       vercelApiKey: "v",
-      renderServiceId: "srv-test",
       webProjectId: "prj_web",
       landingProjectId: "prj_landing",
       healthUrl: DEFAULT_HEALTH_URL,
       fetchImpl,
     });
-    assert.equal(hosts.health.present, false);
+    assert.equal(hosts.api.ok, false);
+    assert.match(hosts.api.reason, /ECONNRESET/);
+    assert.equal(hosts.web.ok, true);
   });
 });
 
@@ -679,12 +576,11 @@ describe("workflow wiring", () => {
   // consumer's read, this one's included.
 
   it("does not bake those ids into the script as defaults", () => {
-    assert.doesNotMatch(script, /srv-d6lqu41aae7s73f62df0/);
     assert.doesNotMatch(script, /prj_xkn32taKrJCgYRZoN6pZRfGfPT9T/);
     assert.doesNotMatch(script, /prj_aAkER9EZJcxR51vUY0mwNDnCf8vy/);
   });
 
-  it("corroborates /health, never /health/ready", () => {
+  it("reads /health, never /health/ready", () => {
     assert.match(workflow, /API_HEALTH_URL: https:\/\/api\.frapp\.live\/health$/m);
     assert.doesNotMatch(liveYaml, /health\/ready/);
     assert.equal(DEFAULT_HEALTH_URL, "https://api.frapp.live/health");

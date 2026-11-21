@@ -43,6 +43,9 @@ export class SupabaseChapterAuditLogRepository implements IChapterAuditLogReposi
     if (options.action) {
       q = q.eq('action', options.action);
     }
+    if (options.actions) {
+      q = q.in('action', [...options.actions]);
+    }
     // Visibility is a hard predicate, not a display concern: the table has no
     // SELECT policy (the API holds the service-role key), so this line is the
     // only thing standing between a non-president caller and an exec-only row.

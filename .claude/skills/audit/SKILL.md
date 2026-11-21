@@ -86,9 +86,9 @@ warnings don't fail CI, so count them as debt rather than as passing.
 Every table in `supabase/migrations/` must `ENABLE ROW LEVEL SECURITY`. Almost every table then
 has no permissive policies (default deny), because the API reaches data through the
 `service_role` client. The deliberate exceptions are the chat hot path's client-read policies
-(`chat_message_actions`, membership-scoped `chat_messages` reads). The per-table inventory is
-[`authorization-model.md`](../../../docs/security/authorization-model.md); audit a new
-permissive policy against it.
+(`chat_message_actions`, membership-scoped `chat_messages` reads). [`authorization-model.md`](../../../docs/security/authorization-model.md) § 4 names every table
+that carries a policy and gives the query that lists the API-only rest (it keeps no table list of
+its own); audit a new permissive policy against it.
 
 `npm run check:pglite-migrations` (the CI `pglite-migrations` job) applies every migration to an
 in-process Postgres and fails if any public table lacks RLS, if the policy inventory drifts from
@@ -149,8 +149,9 @@ match their DTOs.
 `npm run check:migration-safety` (`scripts/check-migration-safety.mjs`) checks only:
 
 - filenames match `{14-digit-timestamp}_{snake_case}.sql`, with no duplicate timestamps;
-- a migration change also updates one of the runbooks in `MIGRATION_DOCS`, and every migration has
-  an entry in both runbooks, with a shrink-only `UNLEDGERED` allowlist for older migrations;
+- a migration change also updates a ledger, and every migration has a ledger page in
+  `docs/ops/database/migrations/` (with no `TODO(migration:new)` left) or, for older ones, an entry
+  in both runbooks in `MIGRATION_DOCS`, with a shrink-only `UNLEDGERED` allowlist;
 - with a commit range, no migration already on the base has its executable SQL edited, or is
   removed, unless `EDITED_MIGRATION_EXCEPTIONS` records it (#2751).
 
@@ -180,7 +181,7 @@ Workflows with specific audit concerns (the full set is `.github/workflows/`):
 | CI | `ci.yml` | Required jobs passing, correct triggers |
 | Deploy (staging) | `deploy-staging.yml`, calling `_deploy.yml` | Secret handling (the called job names its environment and the call passes `secrets: inherit`, without which they read empty; its first step checks the secrets arrived), migration gating, health checks, order (web and landing build before the migration, upload only after the API verify and the client checks) |
 | Deploy (production) | `deploy-production.yml`, calling `_deploy.yml` (#2805) | SHA must be an ancestor of `main` and CI-green, one approval, the call passes `secrets: inherit`, installs before any secret and local actions from the trusted ref, the migration replay and working-tree fence, the provider guardrail preflight, deploy-by-commit, the served-commit check, the client checks after it (`smoke-deployed-api.mjs`, before any upload), `CANCELED` treated as failure, the alert on a failed ship |
-| Production guardrails | `production-guardrails.yml` | Render `frapp-api-prod` auto-deploy off, tracking `main`, health check path `/health`; Vercel `frapp-web` and `frapp-landing` not linked to Git |
+| Production guardrails | `production-guardrails.yml` | Vercel `frapp-web` and `frapp-landing` not linked to Git (the Render half went with Render, #5228) |
 | Release | `release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
 | Docs | `docs.yml` | Not a documentation gate — what its job checks: [`docs-ci.md` § What runs](../../../docs/ci-cd/docs-ci.md#what-runs) |
 | Links | `links.yml` | Markdown links and heading anchors, offline — [`docs-ci.md` § What runs](../../../docs/ci-cd/docs-ci.md#what-runs) |
@@ -203,7 +204,10 @@ docs angle in [`diff-review`](../diff-review/angles.md), and
 
 ### Branch protection
 
-From an agent session, run only the read-only diff:
+A session doesn't read or apply branch protection: judge it by behaviour, or record it as
+unverified for Paul
+([`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy)).
+On a laptop, the read-only diff is:
 
 ```bash
 npm run configure:branch-protection:verify
@@ -212,10 +216,10 @@ npm run configure:branch-protection:verify
 Bare `npm run configure:branch-protection` is a live `PUT` of the whole protection payload (it
 prints `Mode: LIVE`). `npm run configure:branch-protection --dry-run` without the `--` separator
 also applies, because npm swallows the flag and the script sees no arguments. Applying branch
-protection is a human step with an admin PAT; an audit never applies.
+protection is a human step with a person's own admin token; an audit never applies.
 
-The script reads `GITHUB_PAT` (aliases `GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`); see
-[`github-branch-protection-runbook.md`](../../../docs/ops/github-branch-protection-runbook.md).
+It reads `GITHUB_PAT` or an alias
+([`github-branch-protection-runbook.md`](../../../docs/ops/github-branch-protection-runbook.md)).
 `:verify` exits non-zero and names each divergence from `CI_CHECKS` / `DOCS_CHECKS` /
 `DRIFT_CHECKS` in `scripts/ci/lib/required-checks.mjs`, which is the comparand. The human-readable
 roster is the runbook's § Required Status Checks.

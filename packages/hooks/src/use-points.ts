@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   isRetryableFailure,
   randomClientId,
@@ -12,13 +17,36 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 type PointWindow = "all" | "semester" | "month";
 
-export function useMyPoints(window?: PointWindow, semesterArchiveId?: string) {
+/**
+ * Refresh every points read (my total, the leaderboard, the ledger) after a
+ * write that moves points: a manual adjustment, a check-in, a confirmed task,
+ * a service approval, a study session ending, an accepted AI suggestion, a
+ * semester rollover, a removed member. Points keys are
+ * `["points", chapterId, …]`, so the bare prefix covers every chapter and
+ * window; a chapter switch clears the cache anyway.
+ *
+ * Every hook here whose write moves points calls this. Chat's `/points`, which
+ * writes through chat-core rather than a hook, refreshes the same prefix
+ * through `chat-record-writes.ts`. Without a refresh the member sees their old
+ * total until the 30s `staleTime` lapses on web, or until the app comes back
+ * to the foreground on mobile, where a mounted tab never refetches on its own.
+ */
+export function invalidatePointReads(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: ["points"] });
+}
+
+export function useMyPoints(
+  window?: PointWindow,
+  semesterArchiveId?: string,
+  options?: { enabled?: boolean },
+) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["points", chapterId, "me", window, semesterArchiveId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/points/me", {
+        signal,
         params: {
           query: { window, semester_archive_id: semesterArchiveId },
         },
@@ -30,7 +58,7 @@ export function useMyPoints(window?: PointWindow, semesterArchiveId?: string) {
     // Matches every other read in this file: without an active chapter the
     // request cannot resolve a scope, and an ungated fetch would surface as a
     // page-level error rather than the "no chapter selected" empty state.
-    enabled: !!chapterId,
+    enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }
 
@@ -42,8 +70,9 @@ export function useLeaderboard(
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["points", chapterId, "leaderboard", window, semesterArchiveId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/points/leaderboard", {
+        signal,
         params: {
           query: { window, semester_archive_id: semesterArchiveId },
         },
@@ -64,7 +93,8 @@ export function usePointsTransactions(options?: {
     | "SERVICE"
     | "FINE"
     | "MANUAL"
-    | "STUDY";
+    | "STUDY"
+    | "PREDICTION";
   flagged?: boolean;
   before?: string;
   limit?: number;
@@ -73,8 +103,9 @@ export function usePointsTransactions(options?: {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["points", chapterId, "transactions", options],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/points/transactions", {
+        signal,
         params: {
           query: {
             user_id: options?.userId,
@@ -194,7 +225,11 @@ export function useAdjustPoints() {
       body.reason,
     ]);
     if (pending.current?.fingerprint !== fingerprint) {
-      pending.current = { fingerprint, key: randomClientId(), uncertain: false };
+      pending.current = {
+        fingerprint,
+        key: randomClientId(),
+        uncertain: false,
+      };
     }
     return pending.current.key;
   }
@@ -239,7 +274,7 @@ export function useAdjustPoints() {
     },
     onSuccess: (_data, variables) => {
       release(variables.client_message_id);
-      queryClient.invalidateQueries({ queryKey: ["points", chapterId] });
+      void invalidatePointReads(queryClient);
     },
     onError: (error, variables) => {
       const key = variables.client_message_id;

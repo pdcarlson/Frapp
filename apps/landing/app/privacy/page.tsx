@@ -20,8 +20,9 @@ const sections = [
     heading: "1. Information We Collect",
     paragraphs: [
       "Frapp collects account and profile information such as name, email, role metadata, and chapter membership details.",
-      "Depending on feature usage, Frapp may process chat content, uploaded files, event participation data, and study session location signals.",
-      "The mobile app asks for device permissions only for the feature that needs them, and only when you use it: the camera to scan an event check-in code; your photo library to set your profile photo, add your chapter's logo, pick a photo you send in chapter chat, pick a photo to add to your chapter's documents, or attach a photo as proof of your service hours; your precise location, only while the app is open, to confirm you are inside a chapter study zone or at an event you are checking in to. Frapp never tracks location in the background. Notifications, if you turn them on, store a push token for your device so the chapter can reach you.",
+      "Depending on feature usage, Frapp may process chat content, uploaded files, event participation data, and location signals for study sessions and event check-in.",
+      "In direct messages, the other people in a conversation can see whether you've read their latest message. Turn off Read receipts in Settings to stop sharing this; you then won't see whether others have read yours. Frapp shows only whether a message was read, not when.",
+      "The mobile app asks for device permissions only for the feature that needs them, and only when you use it: the camera, when you tap Scan code, to read an event check-in code; your photo library to set your profile photo, add your chapter's logo, pick a photo you send in chapter chat, pick a photo to add to your chapter's documents, add a photo to a task or as proof you finished one, or attach a photo as proof of your service hours; the microphone and your phone's speech recognition, when you tap the mic to dictate to Ask Frapp or into a chat message: on most phones your words are turned into text on the phone itself, and otherwise by Apple or Google, whose recogniser your phone uses, and then, for Ask Frapp and chapter channels, never direct messages, Frapp AI tidies the text before you choose whether to send it; the microphone, when an officer records a chapter meeting to write its minutes, and only after they tap Record; your precise location, only while the app is open, to confirm you are inside a chapter study zone or at an event you are checking in to, and, when an officer shows an event's check-in code, to let members within about 100 yards of that officer's phone check in. The location of a phone showing a check-in code is kept only until check-in closes. Frapp never tracks location in the background. Notifications, if you turn them on, store a push token for your device so the chapter can reach you, with your phone's platform, operating system version and model, never the name you gave it.",
       "Frapp collects crash and error diagnostics so we can fix problems. On signed-in product surfaces, identifiers in those reports are pseudonymized before they leave our systems. On the public marketing site (frapp.live), crash reports and page or call-to-action analytics are anonymous: they are not tied to a Frapp account and are not linked to you after you sign in. Diagnostic reports contain no chat or document content. Frapp does not use advertising identifiers and does not track you across other companies' apps or websites.",
     ],
   },
@@ -37,24 +38,33 @@ const sections = [
     paragraphs: [
       "Frapp uses trusted infrastructure providers such as Supabase (data/auth/storage), Render and Vercel (hosting), Stripe (billing), Expo (push delivery), Resend (sign-in and invite email delivery), Sentry (crash and error diagnostics), and PostHog (product and marketing analytics) to deliver core functionality.",
       "On the marketing site, Sentry receives anonymous crash reports and PostHog receives anonymous page views and call-to-action clicks. Session replay is not recorded in production. These providers process data only as needed to operate the service under contractual protections.",
+      "When an officer draws a chapter study zone on the web dashboard, their browser loads the map from OpenFreeMap and sends place searches to Photon by komoot, free public map services Frapp has no agreement with. OpenFreeMap receives the officer's IP address and the area of the map shown. Photon receives the officer's IP address, what the officer types to search, the chapter's school name when no zone exists yet, and a nearby point from the zone being drawn or the chapter's zones, to rank results. Neither receives any other member's data.",
     ],
   },
   {
-    heading: "4. Data Retention",
+    heading: "4. Frapp AI",
+    paragraphs: [
+      "Frapp AI features, such as asking about your chapter, channel summaries and drafting meeting minutes, work with Anthropic, Google and AssemblyAI. You turn Frapp AI on for your account when you sign up or later in Settings, and each feature is on for your chapter unless its president turns it off. The short notes on your Activity page about your own tasks use only what Frapp AI may send for you, and words someone else wrote on your task, such as its description or an officer's note, only while your president has Ask on. When a feature runs, Frapp sends it what it needs: your question; your chapter's documents, announcements, events, tasks and posted minutes; roster details (name, role, groups, class year, points, service hours and what they were for, study time, dues status and attendance, never your phone number, email or address); messages in chapter channels from members who have Frapp AI on, never direct messages; and, for meeting features, an officer's notes and a meeting's recording and transcript. AssemblyAI receives only meeting recordings, to transcribe them.",
+      "These companies process it only to return a result to Frapp, and Frapp's agreements with them do not allow them to use it to train their models. A provider may hold a request for a short time to check for abuse, on its own terms. Frapp does not keep the text of your questions or of AI answers, except an answer you report to us, kept encrypted for 30 days, and, during the beta, the questions and answers of one chapter whose president turns on diagnostics, kept encrypted for 14 days. A meeting recording is kept for the secretary to play back until the minutes are posted, then deleted, and never longer than 30 days. Its transcript is kept with the posted minutes, for members who can read them and for Frapp AI's answers, until the minutes are deleted. A short note Frapp AI writes on your Activity page about one of your own tasks is deleted when the note closes. Frapp keeps a search index of your chapter's records, and of channel messages from members who have Frapp AI on, so answers can point to their sources. For each question you ask, Frapp keeps a record of how it was handled, without your question or the answer: which features were used, how long it took, what it cost, and whether you rated the answer. That record is kept for 90 days, or until you leave the chapter, delete your account or turn Frapp AI off, and the same numbers go to our product analytics under a pseudonym.",
+      "You can turn Frapp AI off any time in Settings. Your channel messages then stop being read and leave the index within a day, and anything an AI feature kept that quotes you is deleted. Your chapter's own records, such as documents, announcements, roster details and minutes that name you, can still be used while your president has a feature on.",
+    ],
+  },
+  {
+    heading: "5. Data Retention",
     paragraphs: [
       "If a chapter subscription is canceled, chapter data is retained and remains available in a limited access mode according to product policy.",
       "Users can delete their account in the app or dashboard (see the Support page), or by emailing team@frapp.live. Certain records may be retained in anonymized form for audit and legal compliance obligations.",
     ],
   },
   {
-    heading: "5. Security and Controls",
+    heading: "6. Security and Controls",
     paragraphs: [
       "Frapp uses role-based access controls, tenant isolation patterns, and secure transport to protect chapter data.",
       "No internet service is perfectly secure, but we continuously monitor and improve controls against evolving threats.",
     ],
   },
   {
-    heading: "6. Contact",
+    heading: "7. Contact",
     paragraphs: [
       "For privacy requests or questions, contact team@frapp.live.",
       "If policy terms materially change, Frapp will provide notice before those changes take effect.",
@@ -66,7 +76,7 @@ export default function PrivacyPage() {
   return (
     <LegalDocument
       title="Privacy Policy"
-      lastUpdated="September 2026"
+      lastUpdated="November 2026"
       sections={sections}
     />
   );

@@ -49,7 +49,10 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@repo/hooks", () => ({ useFrappClient: () => ({}) }));
+vi.mock("@repo/hooks", () => ({
+  useFrappClient: () => ({}),
+  memberThreadKeys: { all: ["member-threads"] },
+}));
 
 // The client reactions are read with; the reads themselves are stubbed.
 const SUPABASE = vi.hoisted(() => ({ from: () => undefined }));
@@ -192,9 +195,16 @@ describe("useMessageThread", () => {
       ).toBeGreaterThanOrEqual(2),
     );
 
+    const beforeLive = mocks.backfillThreadReplies.mock.calls.length;
     act(() => mocks.emit("live"));
-    // Going live reads the gap once more, then the beat stops.
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    // Going live reads the gap once more, then the beat stops. Wait for that
+    // read itself, not a fixed time a loaded runner can outlast, so the count
+    // is taken after it.
+    await waitFor(() =>
+      expect(mocks.backfillThreadReplies.mock.calls.length).toBeGreaterThan(
+        beforeLive,
+      ),
+    );
     const settled = mocks.backfillThreadReplies.mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect(mocks.backfillThreadReplies.mock.calls.length).toBe(settled);
@@ -364,5 +374,74 @@ describe("useMessageThread clears the thread card's new count (#4297)", () => {
         queryKey: ["chat-followed-threads", "c1"],
       }),
     );
+  });
+
+  it("re-reads All threads too, so its unread mark clears (#4960)", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    open();
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["member-threads"],
+      }),
+    );
+  });
+
+  describe("GIFs (#4657)", () => {
+    const GIF = {
+      provider: "klipy",
+      id: "g1",
+      title: "wave",
+      url: "https://static.klipy.com/g1.webp",
+      width: 200,
+      height: 150,
+      token: "signed",
+    };
+
+    it("sends a GIF as its own reply, with no text", async () => {
+      const { result } = open();
+      await waitFor(() => expect(result.current.root).not.toBeNull());
+      await act(async () => {
+        await result.current.sendGif(GIF);
+      });
+      expect(mocks.sendThreadReply).toHaveBeenCalledWith(
+        queryClient,
+        expect.anything(),
+        expect.objectContaining({ content: "", gif: GIF }),
+      );
+    });
+
+    it("retries a failed GIF reply with its GIF and token", async () => {
+      const { result } = open();
+      await waitFor(() => expect(result.current.root).not.toBeNull());
+      act(() => {
+        queryClient.setQueryData(["chat", "c1", "thread", "root", "replies"], {
+          byId: {
+            "client-g": {
+              ...ROOT,
+              id: "client-g",
+              client_message_id: "client-g",
+              content: "",
+              gif: GIF,
+              _status: "failed",
+            },
+          },
+          order: ["client-g"],
+          actionIndex: {},
+        });
+      });
+      await waitFor(() => expect(result.current.messages).toHaveLength(1));
+      await act(async () => {
+        await result.current.retry("client-g");
+      });
+      expect(mocks.sendThreadReply).toHaveBeenCalledWith(
+        queryClient,
+        expect.anything(),
+        expect.objectContaining({
+          content: "",
+          clientMessageId: "client-g",
+          gif: GIF,
+        }),
+      );
+    });
   });
 });

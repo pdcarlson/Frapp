@@ -27,13 +27,19 @@ const MODES: { mode: AuthMode; label: string }[] = [
  * numbers: 44px items (§6's touch floor), `gap-6`, a 2px `border-primary`
  * underline over the hairline, and the offset focus ring, since the bottom
  * border is the selected cue and `FOCUS_RING`'s border swap would fake it.
+ *
+ * `redirectTo` is `null` while the page can't read its search params yet (the
+ * Suspense fallback, which is the prerendered HTML). The toggle then draws the
+ * same words as plain text, not links: before hydration a link could only
+ * point at a `redirectTo` this visit doesn't carry, and from an invite that
+ * drops the token (#3797, the toggle's half of #3776).
  */
 export function AuthModeToggle({
   current,
   redirectTo,
 }: {
   current: AuthMode;
-  redirectTo: string;
+  redirectTo: string | null;
 }) {
   return (
     <nav
@@ -42,17 +48,28 @@ export function AuthModeToggle({
     >
       {MODES.map(({ mode, label }) => {
         const active = mode === current;
+        const className = cn(
+          "-mb-px inline-flex min-h-11 items-center rounded-t-xs border-b-2 px-1 py-3 text-sm transition-colors",
+          active
+            ? "border-primary font-semibold text-foreground"
+            : "border-transparent font-normal text-muted-foreground",
+        );
+        if (redirectTo === null) {
+          return (
+            <span key={mode} aria-current={active ? "page" : undefined} className={className}>
+              {label}
+            </span>
+          );
+        }
         return (
           <Link
             key={mode}
             href={`/${mode}?redirectTo=${encodeURIComponent(redirectTo)}`}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "-mb-px inline-flex min-h-11 items-center rounded-t-xs border-b-2 px-1 py-3 text-sm transition-colors",
+              className,
               FOCUS_RING_OFFSET,
-              active
-                ? "border-primary font-semibold text-foreground"
-                : "border-transparent font-normal text-muted-foreground hover:text-foreground",
+              !active && "hover:text-foreground",
             )}
           >
             {label}

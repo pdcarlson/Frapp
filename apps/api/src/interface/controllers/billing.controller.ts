@@ -10,6 +10,7 @@ import { CurrentChapterId } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { CreateCheckoutDto, CreatePortalDto } from '../dtos/billing.dto';
 import { FeatureEvent } from '../decorators/feature-event.decorator';
+import { assertDashboardReturnUrl } from '../http/dashboard-return-url';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
@@ -37,8 +38,8 @@ export class BillingController {
     const url = await this.billingService.createCheckoutSession({
       chapterId,
       customerEmail: dto.customer_email,
-      successUrl: dto.success_url,
-      cancelUrl: dto.cancel_url,
+      successUrl: assertDashboardReturnUrl(dto.success_url, 'success_url'),
+      cancelUrl: assertDashboardReturnUrl(dto.cancel_url, 'cancel_url'),
     });
     return { url };
   }
@@ -52,7 +53,7 @@ export class BillingController {
   ) {
     const url = await this.billingService.createPortalSession({
       chapterId,
-      returnUrl: dto.return_url,
+      returnUrl: assertDashboardReturnUrl(dto.return_url, 'return_url'),
     });
     return { url };
   }

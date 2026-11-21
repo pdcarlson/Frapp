@@ -1,9 +1,18 @@
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import {
+  type ArgumentMetadata,
+  BadRequestException,
+  ValidationPipe,
+} from '@nestjs/common';
 
 import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import {
+  ListMessagesAttachmentsQueryDto,
+  ChatMessageActionDto,
+  CreateDmDto,
+  CreateGroupDmDto,
   GetChannelMessagesQueryDto,
+  SendMessageDto,
   SetChapterChatLevelDto,
   UpdateChannelDto,
 } from './chat.dto';
@@ -167,5 +176,158 @@ describe('SetChapterChatLevelDto (#3840)', () => {
     await expect(transform({ level: 'off' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+});
+
+/** Run a body through the global pipe as the route would. */
+function bodyTransform<T>(metatype: new () => T) {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  return (body: Record<string, unknown>): Promise<T> =>
+    pipe.transform(body, { type: 'body', metatype });
+}
+
+describe('SendMessageDto metadata', () => {
+  const transform = bodyTransform(SendMessageDto);
+  const message = {
+    client_message_id: VALID_UUID,
+    content: 'Hello',
+  };
+
+  it('takes small client metadata', async () => {
+    await expect(
+      transform({ ...message, metadata: { draft_id: 'abc' } }),
+    ).resolves.toBeDefined();
+  });
+
+  // Every reader of the channel downloads the row, so the field is bounded.
+  it('refuses metadata over 16,384 characters as JSON', async () => {
+    await expect(
+      transform({ ...message, metadata: { blob: 'x'.repeat(16_400) } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('ChatMessageActionDto', () => {
+  const transform = bodyTransform(ChatMessageActionDto);
+
+  it.each([
+    ['a reaction', { action_type: 'reaction:👍' }],
+    ['a skin-toned reaction', { action_type: 'reaction:👍🏽' }],
+    ['a vote', { action_type: 'vote', payload: { option_id: ['a', 'b'] } }],
+    [
+      'a sign-up claim with every slot of a full card',
+      {
+        action_type: 'signup',
+        payload: {
+          slot_ids: Array.from({ length: 20 }, (_, i) => `slot-${i}`),
+          note: 'x'.repeat(140),
+        },
+      },
+    ],
+  ])('takes %s', async (_label, body) => {
+    await expect(transform(body)).resolves.toBeDefined();
+  });
+
+  it.each([
+    ['an action type no app sends', { action_type: 'rsvp' }],
+    ['a reaction with no emoji', { action_type: 'reaction:' }],
+    ['a reaction with a space', { action_type: 'reaction:a b' }],
+    [
+      'a payload over 4,096 characters as JSON',
+      { action_type: 'vote', payload: { option_id: 'x'.repeat(4_100) } },
+    ],
+  ])('refuses %s', async (_label, body) => {
+    await expect(transform(body)).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('CreateGroupDmDto', () => {
+  const transform = bodyTransform(CreateGroupDmDto);
+  const ids = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, i) => `aaaaaaaa-aaaa-4aaa-8aaa-${String(i).padStart(12, '0')}`,
+    );
+
+  // A group DM holds up to 10 people, the creator included.
+  it('takes nine others', async () => {
+    await expect(transform({ member_ids: ids(9) })).resolves.toBeDefined();
+  });
+
+  it('refuses ten others, in words a member can read', async () => {
+    const refusal = await transform({ member_ids: ids(10) }).catch(
+      (error: unknown) => error,
+    );
+    expect(refusal).toBeInstanceOf(BadRequestException);
+    expect(
+      JSON.stringify((refusal as BadRequestException).getResponse()),
+    ).toContain('A group DM holds up to 10 people, you included');
+  });
+
+  // A UUID is the same id in either case; the service compares strings.
+  it('lowercases every id', async () => {
+    const upper = 'AAAAAAAA-AAAA-4AAA-8AAA-00000000000B';
+    await expect(transform({ member_ids: [upper] })).resolves.toMatchObject({
+      member_ids: [upper.toLowerCase()],
+    });
+  });
+});
+
+describe('CreateDmDto', () => {
+  const transform = bodyTransform(CreateDmDto);
+
+  it('lowercases the id', async () => {
+    const upper = 'AAAAAAAA-AAAA-4AAA-8AAA-00000000000B';
+    await expect(transform({ member_id: upper })).resolves.toMatchObject({
+      member_id: upper.toLowerCase(),
+    });
+  });
+
+  it('still refuses something that is not an id', async () => {
+    await expect(transform({ member_id: 'NOT-AN-ID' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});
+
+/**
+ * The batched attachments read (#5667) takes its ids in the query string, so
+ * it stays a GET: the `read` rate limit, and readable while a chapter's
+ * subscription has lapsed. The 50-id cap keeps one answer under PostgREST's
+ * 1000-row read cap; clients chunk at the same size.
+ */
+describe('ListMessagesAttachmentsQueryDto', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const metadata: ArgumentMetadata = {
+    type: 'query',
+    metatype: ListMessagesAttachmentsQueryDto,
+    data: '',
+  };
+  const transform = (query: unknown) => pipe.transform(query, metadata);
+  const id = (n: number) =>
+    `3f0c1d9e-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+  it('splits a comma-separated list and drops repeats', async () => {
+    await expect(
+      transform({ message_ids: `${id(1)},${id(2)},${id(1).toUpperCase()}` }),
+    ).resolves.toMatchObject({ message_ids: [id(1), id(2)] });
+  });
+
+  it('accepts 50 ids and refuses 51', async () => {
+    const ids = (n: number) =>
+      Array.from({ length: n }, (_, i) => id(i + 1)).join(',');
+    await expect(transform({ message_ids: ids(50) })).resolves.toBeDefined();
+    await expect(transform({ message_ids: ids(51) })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('refuses an empty list and a non-uuid', async () => {
+    await expect(transform({ message_ids: '' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(
+      transform({ message_ids: `${id(1)},not-an-id` }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

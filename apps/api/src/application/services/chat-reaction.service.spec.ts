@@ -1,12 +1,20 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { moduleDisabledMessage } from '@repo/validation';
 import { ChatReactionService } from './chat-reaction.service';
 import {
+  baseChannel,
   baseMessage,
   createChatServiceFixture,
   type ChatServiceFixture,
 } from '#test/helpers/chat-service.fixture';
-import { ChatMessageActionDuplicateError } from '#domain/repositories/chat.repository.interface';
+import {
+  ChatMessageActionDuplicateError,
+  SignupClaimRefusedError,
+} from '#domain/repositories/chat.repository.interface';
 import type {
   ChatMessage,
   ChatMessageAction,
@@ -16,6 +24,7 @@ import type {
 // Moved out of `chat.service.spec.ts` with the methods (#1380).
 describe('ChatReactionService', () => {
   let reactions: ChatReactionService;
+  let mockChannelRepo: ChatServiceFixture['mockChannelRepo'];
   let mockMessageRepo: ChatServiceFixture['mockMessageRepo'];
   let mockActionRepo: ChatServiceFixture['mockActionRepo'];
   let mockReactionRepo: ChatServiceFixture['mockReactionRepo'];
@@ -26,6 +35,7 @@ describe('ChatReactionService', () => {
   beforeEach(async () => {
     ({
       reactions,
+      mockChannelRepo,
       mockMessageRepo,
       mockActionRepo,
       mockReactionRepo,
@@ -197,6 +207,343 @@ describe('ChatReactionService', () => {
       created_at: '2026-01-01T12:00:00.000Z',
     };
 
+    // A reaction is its emoji and nothing else; every reader loads the row.
+    it('stores no payload on a reaction, whatever the request carried', async () => {
+      mockActionRepo.create.mockResolvedValue(baseAction);
+
+      await reactions.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        { action_type: 'reaction:👍', payload: { note: 'x'.repeat(1_000) } },
+        null,
+      );
+
+      expect(mockActionRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action_type: 'reaction:👍', payload: {} }),
+      );
+    });
+
+    // #4695: a claim and a vote are writes, so a channel nobody can write in
+    // (an archived group DM, the audit log) refuses them, as it refuses Close.
+    describe('in a channel nobody writes in (#4695)', () => {
+      const signupCard: ChatMessage = {
+        ...baseMessage,
+        kind: 'signup',
+        payload: {
+          title: 'Sober drivers',
+          slots: [{ id: 'fri', label: 'Friday', capacity: 2 }],
+        },
+      };
+      const pollCard: ChatMessage = {
+        ...baseMessage,
+        kind: 'poll',
+        payload: {
+          question: 'Formal venue?',
+          options: [
+            { id: 'opt-a', label: 'The Lodge' },
+            { id: 'opt-b', label: 'Riverside' },
+          ],
+          closes_at: null,
+        },
+      };
+      const frozen = {
+        'an archived group DM': {
+          ...baseChannel,
+          type: 'GROUP_DM' as const,
+          member_ids: ['user-1'],
+          archived_at: '2026-11-01T00:00:00.000Z',
+        },
+        'the audit log': { ...baseChannel, is_audit_log: true },
+      };
+
+      it('still takes a sign-up claim from a reader who may not post in the channel', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          who_can_post: ['role-officer'],
+        });
+        mockMessageRepo.findById.mockResolvedValue(signupCard);
+        mockActionRepo.claimSignupSlots.mockResolvedValue({
+          action: { ...baseAction, action_type: 'signup' },
+          updated: false,
+        });
+
+        await expect(
+          reactions.recordMessageAction(
+            'msg-1',
+            'ch-1',
+            'user-1',
+            { action_type: 'signup', payload: { slot_ids: ['fri'] } },
+            null,
+          ),
+        ).resolves.toMatchObject({ deduplicated: false });
+      });
+
+      // Who can post doesn't decide a card vote: a poll in #announcements is
+      // for everyone who reads it, as the card offers it.
+      it('still takes a vote from a reader who may not post in the channel', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          who_can_post: ['role-officer'],
+        });
+        mockMessageRepo.findById.mockResolvedValue(pollCard);
+        mockActionRepo.create.mockResolvedValue(baseAction);
+
+        await expect(
+          reactions.recordMessageAction(
+            'msg-1',
+            'ch-1',
+            'user-1',
+            { action_type: 'vote', payload: { option_id: 'opt-a' } },
+            null,
+          ),
+        ).resolves.toMatchObject({ deduplicated: false });
+      });
+
+      describe.each(Object.entries(frozen))('%s', (_, channel) => {
+        beforeEach(() => {
+          mockChannelRepo.findById.mockResolvedValue(channel);
+        });
+
+        it('refuses a sign-up claim', async () => {
+          mockMessageRepo.findById.mockResolvedValue(signupCard);
+
+          await expect(
+            reactions.recordMessageAction(
+              'msg-1',
+              'ch-1',
+              'user-1',
+              { action_type: 'signup', payload: { slot_ids: ['fri'] } },
+              null,
+            ),
+          ).rejects.toThrow(ForbiddenException);
+          expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        });
+
+        it('refuses an in-chat poll vote', async () => {
+          mockMessageRepo.findById.mockResolvedValue(pollCard);
+
+          await expect(
+            reactions.recordMessageAction(
+              'msg-1',
+              'ch-1',
+              'user-1',
+              { action_type: 'vote', payload: { option_id: 'opt-a' } },
+              null,
+            ),
+          ).rejects.toThrow(ForbiddenException);
+          expect(mockActionRepo.create).not.toHaveBeenCalled();
+        });
+
+        it('still takes an emoji reaction, which is not a card write', async () => {
+          mockActionRepo.create.mockResolvedValue(baseAction);
+
+          await expect(
+            reactions.recordMessageAction(
+              'msg-1',
+              'ch-1',
+              'user-1',
+              { action_type: 'reaction:👍' },
+              null,
+            ),
+          ).resolves.toMatchObject({ deduplicated: false });
+        });
+      });
+    });
+
+    describe('sign-up card claims (#3926)', () => {
+      const signupMessage: ChatMessage = {
+        ...baseMessage,
+        kind: 'signup',
+        payload: {
+          title: 'Sober drivers',
+          slots: [
+            { id: 'fri', label: 'Friday', capacity: 2 },
+            { id: 'sat', label: 'Saturday', capacity: null },
+          ],
+        },
+      };
+      const claimRow: ChatMessageAction = {
+        ...baseAction,
+        action_type: 'signup',
+        payload: { slot_ids: ['fri'] },
+      };
+
+      const claim = (payload: Record<string, unknown>) =>
+        reactions.recordMessageAction(
+          'msg-1',
+          'ch-1',
+          'user-1',
+          { action_type: 'signup', payload },
+          null,
+        );
+
+      it('writes the claim through the locked RPC, never the plain insert', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+        mockActionRepo.claimSignupSlots.mockResolvedValue({
+          action: claimRow,
+          updated: false,
+        });
+
+        const result = await claim({ slot_ids: ['fri', 'fri'] });
+
+        expect(mockActionRepo.claimSignupSlots).toHaveBeenCalledWith(
+          signupMessage.id,
+          'user-1',
+          ['fri'],
+          null,
+        );
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+        expect(result).toEqual({ action: claimRow, deduplicated: false });
+      });
+
+      it('answers a change of slots as an update, as a vote change is', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+        mockActionRepo.claimSignupSlots.mockResolvedValue({
+          action: claimRow,
+          updated: true,
+        });
+
+        await expect(claim({ slot_ids: [] })).resolves.toEqual({
+          action: claimRow,
+          deduplicated: false,
+          updated: true,
+        });
+      });
+
+      it('is a 409 when the slot filled up first', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+        mockActionRepo.claimSignupSlots.mockRejectedValue(
+          new SignupClaimRefusedError('full', 'fri'),
+        );
+
+        await expect(claim({ slot_ids: ['fri'] })).rejects.toBeInstanceOf(
+          ConflictException,
+        );
+      });
+
+      it('is a 400 for a slot the card does not list', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+        mockActionRepo.claimSignupSlots.mockRejectedValue(
+          new SignupClaimRefusedError('unknown_slot', 'zzz'),
+        );
+
+        await expect(claim({ slot_ids: ['zzz'] })).rejects.toThrow(
+          'Invalid slot: zzz',
+        );
+      });
+
+      it('refuses a malformed claim before writing anything', async () => {
+        mockMessageRepo.findById.mockResolvedValue(signupMessage);
+
+        await expect(claim({ slot_ids: 'fri' })).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+      });
+
+      it('refuses a sign-up claim on a message that is not a sign-up card', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          kind: 'text',
+        });
+
+        await expect(claim({ slot_ids: ['fri'] })).rejects.toThrow(
+          'Message is not a sign-up card',
+        );
+        expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      describe('headcount and closing (step 2)', () => {
+        const headcount: ChatMessage = {
+          ...baseMessage,
+          kind: 'signup',
+          payload: {
+            title: 'Formal',
+            format: 'headcount',
+            slots: [
+              { id: 'going', label: 'Going', capacity: null },
+              { id: 'not_going', label: 'Can’t make it', capacity: null },
+            ],
+          },
+        };
+
+        it('passes a headcount answer’s note, trimmed', async () => {
+          mockMessageRepo.findById.mockResolvedValue(headcount);
+          mockActionRepo.claimSignupSlots.mockResolvedValue({
+            action: claimRow,
+            updated: false,
+          });
+
+          await claim({ slot_ids: ['going'], note: '  late  ' });
+
+          expect(mockActionRepo.claimSignupSlots).toHaveBeenCalledWith(
+            headcount.id,
+            'user-1',
+            ['going'],
+            'late',
+          );
+        });
+
+        it('refuses both answers at once on a headcount', async () => {
+          mockMessageRepo.findById.mockResolvedValue(headcount);
+
+          await expect(
+            claim({ slot_ids: ['going', 'not_going'] }),
+          ).rejects.toThrow('A headcount takes one answer');
+          expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        });
+
+        it('refuses a note on a sheet of slots', async () => {
+          mockMessageRepo.findById.mockResolvedValue(signupMessage);
+
+          await expect(
+            claim({ slot_ids: ['fri'], note: 'hi' }),
+          ).rejects.toThrow('Only a headcount answer takes a note');
+          expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        });
+
+        it.each([
+          ['closed early', { closed_at: '2026-01-01T00:00:00.000Z' }],
+          ['past its end time', { closes_at: '2000-01-01T00:00:00.000Z' }],
+        ])('refuses a claim on a card %s', async (_, extra) => {
+          mockMessageRepo.findById.mockResolvedValue({
+            ...signupMessage,
+            payload: { ...signupMessage.payload, ...extra },
+          });
+
+          await expect(claim({ slot_ids: ['fri'] })).rejects.toThrow(
+            'Sign-ups are closed',
+          );
+          expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+        });
+
+        it('is a 400 when the card closed between the read and the lock', async () => {
+          mockMessageRepo.findById.mockResolvedValue(signupMessage);
+          mockActionRepo.claimSignupSlots.mockRejectedValue(
+            new SignupClaimRefusedError('closed', null),
+          );
+
+          await expect(claim({ slot_ids: ['fri'] })).rejects.toThrow(
+            'Sign-ups are closed',
+          );
+        });
+      });
+
+      it('refuses a claim on a deleted card', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...signupMessage,
+          is_deleted: true,
+        });
+
+        await expect(claim({ slot_ids: ['fri'] })).rejects.toThrow(
+          'Cannot act on a deleted message',
+        );
+        expect(mockActionRepo.claimSignupSlots).not.toHaveBeenCalled();
+      });
+    });
+
     describe('poll-card vote validation (#871)', () => {
       // The card payload the composer writes (@repo/chat-core/dispatch):
       // options carry ids, and the deadline is `closes_at`.
@@ -252,6 +599,20 @@ describe('ChatReactionService', () => {
           message: moduleDisabledMessage('polls'),
         });
         expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses any action on a deleted card, whose cleared payload leaves no rule to check (#1575)', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...pollMessage,
+          is_deleted: true,
+          payload: null,
+        });
+
+        await expect(
+          vote({ option_ids: ['made-up-1', 'made-up-2'] }),
+        ).rejects.toThrow('Cannot act on a deleted message');
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+        expect(mockActionRepo.updateForVote).not.toHaveBeenCalled();
       });
 
       it('records a vote while Polls is on or has no key', async () => {

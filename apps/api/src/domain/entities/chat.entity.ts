@@ -23,6 +23,12 @@ export const CHAT_MESSAGE_KINDS = [
   'imported',
   'loading',
   'announcement',
+  'signup',
+  'form',
+  'ask_answer',
+  // An officer's role picker (#4958): members tap to join or leave the
+  // Non-chapter business roles it lists.
+  'role_picker',
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
@@ -43,10 +49,15 @@ export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
  *   chapter for a card reconciled away seconds later, leaving a notification
  *   pointing at a message that no longer exists. It is internal machinery, not
  *   a category of message a member receives.
+ * - **`ask_answer`**: an Ask Frapp answer its asker posted to the channel
+ *   (#4713). It notifies nobody (`spec/behavior/ai.md` § Posting an answer to the channel):
+ *   the worker returns on it and `decidePush` refuses it, as for `imported`,
+ *   so a preference for it could never be consulted.
  */
 export const NON_SETTABLE_NOTIFICATION_KINDS = [
   'loading',
   'imported',
+  'ask_answer',
 ] as const satisfies readonly ChatMessageKind[];
 
 type NonSettableNotificationKind =
@@ -368,7 +379,99 @@ export interface ChatMessage {
   thread_reply_count?: number;
   thread_last_reply_at?: string | null;
   thread_recent_sender_ids?: string[];
+  /**
+   * On a thread's parent: its newest reply that isn't deleted, for the thread
+   * card's preview line (#4297). Kept by the same trigger, and by
+   * `chat_messages_thread_last_reply` when that reply is edited, deleted or
+   * re-attributed. `null` on every other row, and on a parent whose replies
+   * are all deleted. The REPLIER's content: a read that masks nulls it for a
+   * viewer who blocked them (`chat-block-mask.ts`).
+   */
+  thread_last_reply?: ChatThreadLastReply | null;
+  /**
+   * Set when this message is a forward (#4864): a copy of the original the
+   * server built when the forwarder sent it, never a live reference, since
+   * the people here may not be able to read the source channel. The row's own
+   * `content` is the forwarder's comment, and may be empty. Blanked to
+   * `deleted: true` by a trigger when the original is deleted
+   * (`20261113185033_chat_message_forwarded_from.sql`), and nulled on a
+   * deleted forward. The ORIGINAL author's content: a read that masks
+   * withholds it from a viewer who blocked them (`chat-block-mask.ts`).
+   *
+   * Optional for rows written before the column existed.
+   */
+  forwarded_from?: ChatForwardedMessage | null;
   created_at: string;
+}
+
+/**
+ * The GIF a forwarded copy carries, the same shape as a GIF message's
+ * `metadata.gif` (`MessageGif` in `gif.service.ts`), so readers draw it with
+ * the same renderer.
+ */
+export interface ChatForwardedGif {
+  provider: string;
+  id: string;
+  title: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * What a forward holds of the message it copies (#4864). Built by
+ * `ChatService.forwardMessage`, never taken from a client.
+ */
+export interface ChatForwardedMessage {
+  /** The original message. */
+  message_id: string;
+  /** Where the original lives. Readers name it only if they can see it. */
+  channel_id: string;
+  /** The original's author, or null for an imported row or a deleted original. */
+  sender_id: string | null;
+  /** The author's name when it was forwarded; rewritten on account deletion. */
+  author_name: string | null;
+  /** The original's text; `''` for a GIF or files only, or once deleted. */
+  content: string;
+  gif: ChatForwardedGif | null;
+  /** How many files the original had. They are not copied. */
+  attachment_count: number;
+  /** The original's `created_at`. */
+  created_at: string;
+  /** True once the original was deleted: everything but where and when is gone. */
+  deleted?: boolean;
+  /**
+   * Set by a read that masks, as `ChatThreadLastReply.sender_blocked` is:
+   * `true` when the viewer blocked the original's author, so the copy is
+   * withheld; `false` when it was cleared. Absent on the Realtime echo.
+   */
+  sender_blocked?: boolean;
+}
+
+/**
+ * What a thread's parent holds of its newest reply (#4297). `content` is cut
+ * to 500 characters; `attachment_count` is the reply's
+ * `metadata.attachment_count`, or 0 when it is absent or not a number.
+ */
+export interface ChatThreadLastReply {
+  id: string;
+  sender_id: string | null;
+  content: string;
+  kind: string | null;
+  attachment_count: number;
+  /**
+   * The reply is a GIF (#4657). Absent on a preview written before
+   * `20261114153147`, which reads as no GIF.
+   */
+  has_gif?: boolean;
+  created_at: string;
+  /**
+   * Set by a read that masks: `true` when the viewer blocked this replier, so
+   * the preview is withheld (`content` empty) and the client keeps that
+   * verdict through the parent's Realtime echo; `false` when it was cleared.
+   * Absent on the Realtime echo and on a read that doesn't mask.
+   */
+  sender_blocked?: boolean;
 }
 
 /**
@@ -407,6 +510,17 @@ export interface FollowedThreadUnread {
   last_read_at: string | null;
   /** New replies since `last_read_at`; always 0 for a muted thread. */
   unread_count: number;
+}
+
+/**
+ * One thread in the member's All threads list (#4960): a followed or muted
+ * thread in a channel they may read, as `get_member_threads` answers it.
+ */
+export interface MemberThreadRow extends FollowedThreadUnread {
+  channel_id: string;
+  /** The root's `thread_last_reply_at`; `null` before any reply. */
+  last_reply_at: string | null;
+  reply_count: number;
 }
 
 /**
@@ -516,7 +630,29 @@ export interface ChannelLatestMessage {
   payload: Record<string, unknown> | null;
   attachment_count: number;
   created_at: string;
+  /**
+   * The latest message's forwarded copy (#4864), its `content` cut to 500;
+   * withheld (`sender_blocked: true`) when the caller blocked the original's
+   * author. Null when the latest message is not a forward.
+   */
+  forwarded_from: ChatForwardedMessage | null;
+  /**
+   * The latest message is a GIF (#4657), which has no text, so the preview
+   * reads "GIF" rather than "Message".
+   */
+  has_gif: boolean;
+  /**
+   * Read receipts (#5519): on a DM or group DM whose latest message is the
+   * caller's, `read` once every other member has read past it and `sent`
+   * until then; null on every other row. `get_channel_latest_messages` decides
+   * it, honouring each member's switch and blocks, so no read time leaves the
+   * database.
+   */
+  read_status: ChannelReadStatus | null;
 }
+
+/** What a Messages row says about the caller's own last message (#5519). */
+export type ChannelReadStatus = 'sent' | 'read';
 
 /**
  * Per-user reaction / vote / RSVP / card-action row (Chunk 02).
@@ -530,6 +666,19 @@ export interface ChatMessageAction {
   action_type: string;
   payload: Record<string, any>;
   created_at: string;
+}
+
+/**
+ * A member's answers to a form card (`chat_form_responses`, #3926 step 3),
+ * keyed by question id. Private to the member and the form's creator, so it
+ * is never a `chat_message_actions` row, which the whole channel reads.
+ */
+export interface ChatFormResponse {
+  message_id: string;
+  user_id: string;
+  answers: Record<string, string | string[]>;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface MessageReaction {
@@ -590,14 +739,31 @@ export interface ChatMessageBookmark {
 export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
 
 /**
- * The message as the bookmarks endpoint serves it — a nine-field projection,
- * not a whole {@link ChatMessage}.
+ * A member's private reminder on a chat message (#4957), as stored in
+ * `chat_message_reminders`.
+ */
+export interface ChatMessageReminder {
+  id: string;
+  user_id: string;
+  message_id: string;
+  chapter_id: string;
+  remind_at: string;
+  /** When the sweep sent its push; null until then. */
+  fired_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * The message as the bookmarks endpoint serves it — a narrow projection, not a
+ * whole {@link ChatMessage}.
  *
  * Narrow deliberately, and the narrowing is a disclosure control rather than a
- * size optimization: `ChatService.deleteMessage` blanks `content` and
- * `metadata` but not `payload`, so serving the full row meant a bookmarked poll
- * or event card that had since been deleted shipped its payload on an endpoint
- * whose declared type says the message reads `[message deleted]`. The
+ * size optimization: `ChatService.deleteMessage` blanked `content` and
+ * `metadata` but, until #1575, not `payload`, so serving the full row meant a
+ * bookmarked poll or event card that had since been deleted shipped its
+ * payload on an endpoint whose declared type says the message reads
+ * `[message deleted]`. The
  * repository's `BOOKMARK_MESSAGE_COLUMNS` and `BookmarkedMessageDto` are the
  * other two copies of this list; all three must stay in step.
  */
@@ -611,6 +777,25 @@ export interface BookmarkedMessage {
   content: string;
   is_deleted: boolean;
   created_at: string;
+  /**
+   * The thread a reply belongs to (#3785), or `null` for a channel message,
+   * so a client opening a saved reply opens its thread (#3723): a reply is
+   * never in the channel's timeline.
+   */
+  thread_root_id: string | null;
+  /**
+   * A forward's copy of its original (#4864), so a saved forward with no
+   * comment previews as "Forwarded: ..." (#4875). Null on every other row.
+   * Masked like the timeline's copy when the caller blocked the original's
+   * author, and dropped from a row whose channel access was lost.
+   */
+  forwarded_from: ChatForwardedMessage | null;
+  /**
+   * The message is a GIF (#4657), which has no text, so the Bookmarks panel
+   * reads "GIF" rather than "Message". False once withheld (a block, lost
+   * channel access, a delete).
+   */
+  has_gif: boolean;
   /**
    * Whether the caller has blocked this message's sender (#2257).
    *
@@ -681,8 +866,9 @@ export type StoredChatMessageBookmark = Omit<
 /**
  * A sign-up link posted in chat (#3897), as the `chat_messages` trigger
  * indexes it: one row per link per message. `spec/behavior/activity.md`
- * § Links. Which hosts count lives once, in the database's
- * `activity_action_links`.
+ * § Links. Which hosts are gathered is decided by the database's
+ * `activity_action_links`; the API's title read opens only what the
+ * TypeScript copy of the list (`signUpLinkKind` in `@repo/validation`) allows.
  */
 export interface ChatMessageLink {
   id: string;
@@ -701,6 +887,18 @@ export interface ChatMessageLink {
   /** Set when an officer removed it from everyone's Activity. */
   removed_at: string | null;
   removed_by: string | null;
+  /**
+   * The linked page's own name, read in the background (#4187); null when
+   * the page had none worth showing or has not been read yet.
+   */
+  title: string | null;
+  /**
+   * How many times the title sweep has tried the page. A definite answer
+   * sets it to `MAX_LINK_TITLE_ATTEMPTS`; a failed read leaves it below.
+   */
+  title_attempts: number;
+  /** When the last title read began; null: never tried. */
+  title_checked_at: string | null;
 }
 
 /** A member's own Done or Hide on a link. No row means it still shows. */

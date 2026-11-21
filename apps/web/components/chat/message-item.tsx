@@ -6,18 +6,24 @@ import {
   Check,
   CircleAlert,
   Flag,
+  Forward,
   MoreHorizontal,
   Pencil,
   Tag,
   Trash2,
 } from "lucide-react";
-import { SYSTEM_SENDER_ID, type ChatMessageFlag } from "@repo/validation";
+import {
+  SYSTEM_SENDER_ID,
+  type ChatMessageFlag,
+  type MentionPick,
+} from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Textarea } from "@/components/ui/textarea";
+import { useMentionChips } from "@repo/hooks/mention-chips";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -42,15 +48,20 @@ import {
   MESSAGE_FLAG_OPTIONS,
   canFlagMessage,
   messageFlagCaption,
+  messageFlagOptions,
   messageFlagView,
   type MessageFlagView,
 } from "@repo/chat-core/flags";
 import { MessageAttachments } from "./message-attachments";
+import { MessageReminderMenu } from "./message-reminder-menu";
+import { MessageGifImage } from "./message-gif";
+import { ForwardedCard } from "./forwarded-card";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
   canActOnMessage,
   canBlockSender,
   canDeleteMessage,
+  canForwardMessage,
   canReportMessage,
   canEditMessage,
   isOwnMessage,
@@ -61,19 +72,28 @@ import {
   type MemberLookup,
 } from "@repo/chat-core/message-actions";
 import { MessageRenderer } from "./renderers";
-import { MentionOpenerContext } from "./renderers/message-markdown";
+import type { InlineMessageEditorHandle } from "./inline-message-editor";
+import { InlineMessageEditor } from "./deferred-inline-editor";
+import {
+  MentionOpenerContext,
+  type MentionOpener,
+} from "./renderers/message-markdown";
 import {
   authorProfileUserId,
   mentionedUserId,
 } from "@repo/chat-core/profile-targets";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
+  hiddenForwardedText,
   hiddenQuoteText,
+  threadPreviewVisible,
+  withForwardedMasked,
   visibleReactions,
   type BlockState,
 } from "@repo/chat-core/blocks";
 import { blockActionLabel } from "@repo/chat-core/block-copy";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import {
   authorInitialsFallback,
   memberAvatarHue,
@@ -105,7 +125,7 @@ export interface MessageItemProps {
    */
   avatarUrl?: string;
   /**
-   * The palette color of the author's highest-ranked colored role (#3485),
+   * The paintable color of the author's highest-ranked colored role (#3485),
    * from `useMemberDisplayNames().roleColorFor`. Paints the author's name on every
    * row, the viewer's own included: a name is never drawn in the chapter
    * accent (`foundations.md` §6). `undefined` or `null` keeps the plain
@@ -236,11 +256,21 @@ export interface MessageItemProps {
    * edit mode so the draft isn't lost (the rejection itself already raised
    * a toast, from inside the action this callback wraps).
    */
-  onEdit?: (messageId: string, content: string) => Promise<void>;
+  /** `mentionPicks`: the members the `@` list put in the edit (#3835). */
+  onEdit?: (
+    messageId: string,
+    content: string,
+    mentionPicks?: readonly MentionPick[],
+  ) => Promise<void>;
   /** Own message, or any message when the viewer holds `channels:manage`. */
   onDelete?: (messageId: string) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll?: (messageId: string) => void;
+  /**
+   * A sign-up card's Close sign-ups or a form card's Close form (#3926), its
+   * creator's or a moderator's.
+   */
+  onCloseCard?: (messageId: string, kind: ClosableCardKind) => void;
   /**
    * Flag, re-flag or (`null`) unflag this message (#3921). Optional so a
    * surface that doesn't wire it offers no Flag control; whether the viewer
@@ -264,13 +294,31 @@ export interface MessageItemProps {
    * the viewer can see.
    */
   onToggleBookmark?: (messageId: string, next: boolean) => void;
+  /**
+   * "Remind me about this" (#4957): the viewer's own reminder on this
+   * message, set or moved. Optional, as Save's toggle is: a surface that
+   * doesn't wire it offers no control.
+   */
+  onRemind?: (messageId: string, remindAt: Date) => void;
   /** Gates the Delete affordance on messages that aren't the viewer's own. */
   canManageChannel?: boolean;
+  /**
+   * The row is in the chapter's audit log (#3909): Frapp's entries offer no
+   * Delete, and the Flag control only takes a flag off
+   * (`auditLogAllowsChange`, which the API enforces).
+   */
+  inAuditLog?: boolean;
   /**
    * Opens the report form for this message (#2687). Offered on anyone else's
    * confirmed message (`canReportMessage`), never the viewer's own.
    */
   onReport?: (message: ChatMessage) => void;
+  /**
+   * Opens the Forward dialog for this message (#4907): anyone's confirmed
+   * plain-text message (`canForwardMessage`), first in the More menu, as on
+   * Discord's and Slack's desktop message menus.
+   */
+  onForward?: (message: ChatMessage) => void;
   /**
    * Asks to block this message's sender (#2687). Offered where
    * `canBlockSender` allows, which needs `isMember` too.
@@ -301,9 +349,11 @@ export interface MessageItemProps {
   /**
    * Opens a member's profile by `users.id` (#3726): the author's from their
    * name or photo, or a mentioned member's from an `@` chip, as on mobile.
-   * Optional, so a surface with no profile sheet draws plain names.
+   * Optional, so a surface with no profile sheet draws plain names. The
+   * clicked name, photo or chip comes along as `anchor`, so chat can open its
+   * popout beside it (#4593).
    */
-  onOpenProfile?: (userId: string) => void;
+  onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
 }
 
 /**
@@ -319,7 +369,7 @@ function AuthorName({
   style,
   children,
 }: {
-  openProfile: (() => void) | null;
+  openProfile: ((event: React.MouseEvent<HTMLElement>) => void) | null;
   /** `author-line` where the name is the line itself (compact density). */
   slot?: string;
   className: string;
@@ -403,11 +453,15 @@ export function MessageItem({
   onEdit,
   onDelete,
   onClosePoll,
+  onCloseCard,
   onFlag,
   isBookmarked,
   onToggleBookmark,
+  onRemind,
   canManageChannel,
+  inAuditLog = false,
   onReport,
+  onForward,
   onBlock,
   isMember,
   isTapRevealed,
@@ -431,24 +485,30 @@ export function MessageItem({
     ? authorProfileUserId(message, nameFor)
     : null;
   const openAuthor =
-    onOpenProfile && authorUserId ? () => onOpenProfile(authorUserId) : null;
+    onOpenProfile && authorUserId
+      ? (event: React.MouseEvent<HTMLElement>) =>
+          onOpenProfile(authorUserId, event.currentTarget)
+      : null;
   // An `@` chip in the body opens the member it names, resolved only against
   // the members the server resolved for this message, so a role mention
   // (`@Brothers`) opens nothing (`mentionedUserId`).
   const openMention = useCallback(
-    (token: string): (() => void) | null => {
+    (token: string): MentionOpener | null => {
       if (!onOpenProfile) return null;
       const userId = mentionedUserId(message, token, nameFor);
-      return userId ? () => onOpenProfile(userId) : null;
+      return userId
+        ? (event) => onOpenProfile(userId, event.currentTarget)
+        : null;
     },
     [onOpenProfile, message, nameFor],
   );
   // The server resolved who this message pings (`chat_messages.mentions`),
   // so the row trusts that list rather than re-reading the body: it is the
-  // same set the notifier used. A viewer's own message never lights up.
+  // same set the notifier used. A viewer's own message lights up too when it
+  // reaches them (their own `@here`, a role they hold), as on Discord; only
+  // the push and the badge skip a sender's own message (Paul, 2026-11-13).
   const mentionsViewer =
     !!viewerId &&
-    message.sender_id !== viewerId &&
     // A deleted message no longer counts as a mention anywhere else (the
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
@@ -457,9 +517,17 @@ export function MessageItem({
   // tints the row in danger red, a lighter flag is only a caption. The view
   // drops a blocked flagger's name, since a Realtime echo carries it raw.
   const flagView = messageFlagView(message, viewerId, blockState, nameFor);
+  // The thread card's latest-reply preview (#4297), only where the viewer's
+  // block list clears its replier: the parent's echo carries it raw.
+  const lastReply = message.thread?.last_reply ?? null;
+  const threadPreview =
+    lastReply && threadPreviewVisible(lastReply, message, blockState, viewerId)
+      ? lastReply
+      : null;
   const importantRow = flagView?.important === true;
   const canFlag =
-    !!onFlag && canFlagMessage(message, viewerId, !!canManageChannel);
+    !!onFlag &&
+    canFlagMessage(message, viewerId, !!canManageChannel, inAuditLog);
   // Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
   // an invite-accept DM) wear the crest, not initials: the sender is the
   // product, not a member (#3347).
@@ -509,16 +577,24 @@ export function MessageItem({
   // plain-text message; Delete is own, or anyone's with `channels:manage`.
   const canEdit = canEditMessage(message, viewerId) && !!onEdit;
   const canDelete =
-    canDeleteMessage(message, viewerId, !!canManageChannel) && !!onDelete;
+    canDeleteMessage(message, viewerId, !!canManageChannel, inAuditLog) &&
+    !!onDelete;
   // Report and Block share mobile's rules too (#2687), and sit behind one
   // More button rather than two more icons on a bar that already wraps.
   const canReport = canReportMessage(message, viewerId) && !!onReport;
   const canBlock =
     !!isMember && canBlockSender(message, viewerId, isMember) && !!onBlock;
+  // Forward is the phone's rule (#4864, #4907), on the viewer's own messages
+  // too, so the More button now shows on every forwardable row.
+  const canForward = canForwardMessage(message) && !!onForward;
 
   const [isEditing, setIsEditing] = useState(false);
+  // The tokens the row paints as chips, which the editor opens as chips.
+  const mentionChips = useMentionChips(message);
   const [editValue, setEditValue] = useState(message.content);
   const [editDirty, setEditDirty] = useState(false);
+  // Bumped to load `message.content` into the open editor again (below).
+  const [editResetKey, setEditResetKey] = useState(0);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -588,7 +664,10 @@ export function MessageItem({
     bar.style.marginLeft = `${Math.max(0, Math.min(beside, flush))}px`;
   }
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const editFieldRef = useRef<HTMLTextAreaElement | null>(null);
+  const editFieldRef = useRef<InlineMessageEditorHandle | null>(null);
+  // The members the `@` list put in the open edit (#3835); the ones the
+  // message was sent with are kept by the server.
+  const editPicks = useRef<MentionPick[]>([]);
   const restoreFocusOnExit = useRef(false);
   const restoreFocusOnFailedSave = useRef(false);
   useEffect(() => {
@@ -613,6 +692,7 @@ export function MessageItem({
   // loss.
   if (isEditing && !editDirty && editValue !== message.content) {
     setEditValue(message.content);
+    setEditResetKey((key) => key + 1);
   }
   // Someone else with `channels:manage` (or the sender from another tab) can
   // delete this message out from under an editor that's already open — the
@@ -630,6 +710,7 @@ export function MessageItem({
   }
 
   function startEdit() {
+    editPicks.current = [];
     setEditValue(message.content);
     setEditDirty(false);
     setIsEditing(true);
@@ -646,7 +727,7 @@ export function MessageItem({
     if (trimmed.length === 0 || !onEdit) return;
     setIsSavingEdit(true);
     try {
-      await onEdit(message.id, trimmed);
+      await onEdit(message.id, trimmed, editPicks.current);
       restoreFocusOnExit.current = fromKeyboard;
       setIsEditing(false);
     } catch {
@@ -768,7 +849,15 @@ export function MessageItem({
               ? resolveAuthorLabel(replyParent, nameFor, viewerId)
               : null
           }
-          preview={replyParent ? replyPreviewText(replyParent) : null}
+          preview={
+            replyParent
+              ? // A forwarded parent's copy previews only where the list
+                // clears its author, as its own card draws it (#4864).
+                replyPreviewText(
+                  withForwardedMasked(replyParent, blockState, viewerId),
+                )
+              : null
+          }
           hidden={hiddenParent}
           onOpen={
             replyParent && onJumpToParent
@@ -780,22 +869,40 @@ export function MessageItem({
     ) : null;
 
   /*
+   * A forward's card (#4864), under the forwarder's comment. Not on a deleted
+   * row: the server nulls the copy with the content, and a tombstone carries
+   * no one's words. Its author is classified on their own, so a blocked
+   * author's words draw as the block placeholder inside the forwarder's row.
+   */
+  const forwardedCopy = message.is_deleted ? null : message.forwarded_from;
+  const forwardedCard = forwardedCopy ? (
+    <ForwardedCard
+      forwarded={forwardedCopy}
+      hidden={hiddenForwardedText(forwardedCopy, message, blockState, viewerId)}
+      nameFor={nameFor}
+      viewerId={viewerId}
+    />
+  ) : null;
+
+  /*
     Attachments render under the body for every kind, not inside the text
     renderer: a file is a property of the message, not of how its body is
     drawn, and a deleted message must not offer downloads of what it used to
     carry. The component itself no-ops on a zero count, so this costs nothing
     for the overwhelming majority of messages.
   */
-  const attachments =
-    message.is_deleted || message.attachment_count === 0 ? null : (
-      <MessageAttachments
-        channelId={message.channel_id}
-        messageId={message.id}
-        count={message.attachment_count}
-        confirmed={isConfirmed}
-        photos={message.attachment_photos}
-      />
-    );
+  const attachments = message.is_deleted ? null : message.gif ? (
+    // A GIF message (#4631) is the GIF: no text, no files.
+    <MessageGifImage gif={message.gif} />
+  ) : message.attachment_count === 0 ? null : (
+    <MessageAttachments
+      channelId={message.channel_id}
+      messageId={message.id}
+      count={message.attachment_count}
+      confirmed={isConfirmed}
+      photos={message.attachment_photos}
+    />
+  );
 
   /*
    * `(edited)` and Pinned, after the body's last line on every row — grouped or
@@ -813,7 +920,7 @@ export function MessageItem({
         {edited ? <span>{EDITED_MARKER}</span> : null}
         {pinned ? (
           <span className="inline-flex items-center gap-1">
-            <PinGlyph className="h-3.5 w-3.5" />
+            <PinGlyph className="h-3.5 w-3.5" active />
             Pinned
           </span>
         ) : null}
@@ -876,6 +983,7 @@ export function MessageItem({
         isConfirmed={isConfirmed}
         onAct={onAct ?? (() => {})}
         onClosePoll={onClosePoll}
+        onCloseCard={onCloseCard}
         trailing={trailingOnOwnLine ? undefined : trailing}
         muted={isPending || isFailed}
       />
@@ -896,8 +1004,8 @@ export function MessageItem({
     ) : null;
   const authorLineFlag =
     flagView && flagOnAuthorLine ? (
-    <MessageFlagCaption view={flagView} inline />
-  ) : null;
+      <MessageFlagCaption view={flagView} inline />
+    ) : null;
   const body = flagCaption ? (
     <>
       {flagCaption}
@@ -990,8 +1098,9 @@ export function MessageItem({
           // old place, and where a long message's bar ends up anyway.
           "ml-auto",
           // Wraps rather than spilling past the row's left edge: on a coarse
-          // pointer every icon is 44px, and nine of them (your own message) are
-          // wider than a 375px thread, where the scroller would clip the first.
+          // pointer every icon is 44px, and ten of them (your own message, with
+          // More for Forward) are wider than a 375px thread, where the scroller
+          // would clip the first.
           "max-w-full flex-wrap justify-end",
           "rounded-[10px] border border-border bg-card p-0.5",
           "transition-opacity",
@@ -1059,9 +1168,15 @@ export function MessageItem({
             <BookmarkGlyph className="h-4 w-4" active={isBookmarked} />
           </button>
         ) : null}
+        {onRemind ? (
+          <MessageReminderMenu
+            onRemind={(remindAt) => onRemind(message.id, remindAt)}
+          />
+        ) : null}
         {canFlag ? (
           <MessageFlagMenu
             current={message.flag ?? null}
+            options={messageFlagOptions(inAuditLog)}
             onPick={(flag) => onFlag?.(message.id, flag)}
           />
         ) : null}
@@ -1088,7 +1203,7 @@ export function MessageItem({
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : null}
-        {canReport || canBlock ? (
+        {canForward || canReport || canBlock ? (
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
@@ -1101,6 +1216,15 @@ export function MessageItem({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {canForward ? (
+                <DropdownMenuItem onSelect={() => onForward?.(message)}>
+                  <Forward aria-hidden="true" />
+                  Forward
+                </DropdownMenuItem>
+              ) : null}
+              {canForward && (canReport || canBlock) ? (
+                <DropdownMenuSeparator />
+              ) : null}
               {canReport ? (
                 <DropdownMenuItem onSelect={() => onReport?.(message)}>
                   <Flag aria-hidden="true" />
@@ -1127,52 +1251,26 @@ export function MessageItem({
    *
    * In place, not a dialog or popover: it renders where the body was, between
    * the same reply quote and attachment list (`components.md` §11 § Editing (web)).
-   * It is the §4 text input at the full width of the body column. The bubble
-   * editor this replaced had to fight a circular width, because a `<textarea>`
-   * inside a shrink-wrapped bubble sizes itself from its own ~20-character
-   * default; the body column has a definite width, so the field just fills it.
+   * It is the §4 text input at the full width of the body column, and since
+   * 2026-11-11 it is the composer's own rich editor (`InlineMessageEditor`,
+   * #2236): mentions stay chips and `@` opens the member list, where the
+   * textarea before it showed raw `@Name` text and offered nothing.
    */
   const editForm = (
     <div className="mt-0.5 flex w-full flex-col gap-1.5">
-      <Textarea
-        autoFocus
+      <InlineMessageEditor
         ref={editFieldRef}
-        aria-label="Edit message"
         value={editValue}
-        onChange={(event) => {
-          setEditValue(event.target.value);
+        chips={mentionChips}
+        resetKey={editResetKey}
+        disabled={isSavingEdit}
+        onChange={(text, picks) => {
+          setEditValue(text);
+          editPicks.current = picks ?? [];
           setEditDirty(true);
         }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            cancelEdit(true);
-          }
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            void saveEdit(true);
-          }
-        }}
-        disabled={isSavingEdit}
-        /*
-          Width comes from the column; height comes from the draft.
-
-          `leading-[25px]` matches the body's 16 / 25 type, so the draft wraps
-          close to where the message wrapped rather than re-flowing on the way
-          in (the field's own padding moves it by a few pixels).
-
-          `field-sizing-content` grows the field with what is typed, so a
-          message that rendered as six lines is edited as six lines rather than
-          through a porthole. It is a progressive enhancement: an engine
-          without `field-sizing` keeps the fixed 60px floor.
-
-          `max-h-40` is the composer's own cap for a growing chat field
-          (`COMPOSER_INPUT_CLASS`), and it is an absolute length deliberately:
-          this field lives inside the timeline's scroller, which is always
-          shorter than the viewport, so a `vh` cap would let a long draft push
-          Save and Cancel below the fold on a short window.
-        */
-        className="field-sizing-content max-h-40 min-h-[60px] resize-none leading-[25px]"
+        onSave={() => void saveEdit(true)}
+        onCancel={() => cancelEdit(true)}
       />
       <div className="flex items-center justify-end gap-1.5">
         <button
@@ -1460,7 +1558,7 @@ export function MessageItem({
                     {mine ? null : (
                       <AuthorName
                         openProfile={openAuthor}
-                        className="min-w-0 truncate text-sm font-semibold text-foreground"
+                        className="min-w-0 truncate text-label leading-5 text-foreground"
                         style={authorColor ? { color: authorColor } : undefined}
                       >
                         {authorLabel}
@@ -1484,6 +1582,7 @@ export function MessageItem({
                   <div className="px-3">{flagCaption}</div>
                 ) : null}
                 {bubble}
+                {forwardedCard}
                 {attachments}
                 {trailingOnOwnLine && trailing && !isEditing ? (
                   <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
@@ -1519,6 +1618,8 @@ export function MessageItem({
                       avatarFor={avatarFor}
                       roleColorFor={roleColorFor}
                       unread={threadUnread}
+                      preview={threadPreview}
+                      viewerId={viewerId}
                       onOpen={
                         onOpenThread ? () => onOpenThread(message) : undefined
                       }
@@ -1616,22 +1717,22 @@ export function MessageItem({
               The gutter, held open on every row of a run: 32px for the avatar
               in cozy, 56px for the time in compact (§11 § Density).
             */}
-            <div
-              className={cn("relative shrink-0", compact ? "w-14" : "w-8")}
-            >
+            <div className={cn("relative shrink-0", compact ? "w-14" : "w-8")}>
               {message.thread && !compact && !auditLine ? (
                 /*
                   The thread card's connector (#4297, after Discord's): from
                   under the photo (or the follow-on's time) down the gutter's
                   middle, curving into the card's left edge. The card is the
                   column's last item on a confirmed row, so the line ends at
-                  its middle: half its 36px height up from the bottom.
+                  its middle: half its height up from the bottom, 36px, or
+                  60px with the latest reply's preview line.
                 */
                 <span
                   aria-hidden="true"
                   data-slot="thread-spine"
                   className={cn(
-                    "pointer-events-none absolute bottom-[18px] left-[15px] w-[29px] rounded-bl-[10px] border-b-2 border-l-2 border-border",
+                    "pointer-events-none absolute left-[15px] w-[29px] rounded-bl-[10px] border-b-2 border-l-2 border-border",
+                    threadPreview ? "bottom-[30px]" : "bottom-[18px]",
                     drawsHeader ? "top-10" : "top-7",
                   )}
                 />
@@ -1720,8 +1821,8 @@ export function MessageItem({
                 >
                   <AuthorName
                     openProfile={openAuthor}
-                    className="min-w-0 truncate text-sm font-semibold text-foreground"
-                    // A literal from the role palette, which is contrast-checked
+                    className="min-w-0 truncate text-label leading-5 text-foreground"
+                    // A role color `roleColorOrNull` passed, contrast-checked
                     // against these surfaces (`@repo/validation` role-colors).
                     style={authorColor ? { color: authorColor } : undefined}
                   >
@@ -1778,6 +1879,7 @@ export function MessageItem({
               ) : (
                 body
               )}
+              {forwardedCard}
               {attachments}
               {trailingOnOwnLine && trailing && !isEditing ? (
                 <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
@@ -1790,6 +1892,8 @@ export function MessageItem({
                   avatarFor={avatarFor}
                   roleColorFor={roleColorFor}
                   unread={threadUnread}
+                  preview={threadPreview}
+                  viewerId={viewerId}
                   onOpen={
                     onOpenThread ? () => onOpenThread(message) : undefined
                   }
@@ -1860,7 +1964,9 @@ function MessageFlagCaption({
   view: MessageFlagView;
   inline?: boolean;
 }) {
-  const tone = view.important ? "text-destructive-text" : "text-muted-foreground";
+  const tone = view.important
+    ? "text-destructive-text"
+    : "text-muted-foreground";
   if (inline) {
     return (
       <span data-slot="message-flag" className="contents">
@@ -1942,13 +2048,16 @@ function MessageFlagLabel({
 /**
  * The action bar's Flag control (#3921): Important first, then the lighter
  * flags, and Remove flag when the message has one. Tag, not Flag, for its
- * glyph: the More menu's Report message already draws Lucide's flag.
+ * glyph: the More menu's Report message already draws Lucide's flag. In the
+ * audit log `options` is empty and the menu holds only Remove flag.
  */
 function MessageFlagMenu({
   current,
+  options,
   onPick,
 }: {
   current: ChatMessageFlag | null;
+  options: typeof MESSAGE_FLAG_OPTIONS;
   onPick: (flag: ChatMessageFlag | null) => void;
 }) {
   return (
@@ -1964,7 +2073,7 @@ function MessageFlagMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {MESSAGE_FLAG_OPTIONS.map(({ flag, label }) => (
+        {options.map(({ flag, label }) => (
           <DropdownMenuItem
             key={flag}
             className={cn(

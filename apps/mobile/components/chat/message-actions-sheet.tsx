@@ -14,13 +14,9 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-  BottomSheetView,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   CHAT_REPORT_DETAILS_MAX_LENGTH,
   useReportMessage,
@@ -36,11 +32,13 @@ import {
   SheetHeader,
   SheetPrimaryButton,
   SheetScrim,
+  SheetLightScrim,
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
   useSheetVisit,
   SHEET_STACK_BEHAVIOR,
+  type GuardedSheetHandle,
 } from "@/components/sheet-scaffold";
 import * as Clipboard from "expo-clipboard";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -48,7 +46,12 @@ import { selectionHaptic } from "@/lib/haptics";
 import { confirmBlockMember, useBlockActions } from "@/lib/chat/block-actions";
 import { AddReactionGlyph } from "@/components/control-glyphs";
 import { EmojiPickerSheet } from "@/components/chat/emoji-picker-sheet";
-import { canonicalEmoji } from "@/lib/chat/emoji-search";
+import { ForwardSheet } from "@/components/chat/forward-sheet";
+import type { ForwardTarget } from "@repo/chat-core/forward";
+import { RemindSheet } from "@/components/chat/remind-sheet";
+import { MESSAGE_REMINDER_LABEL } from "@repo/hooks/use-message-reminders";
+import { QUICK_REACTIONS, canonicalEmoji } from "@repo/chat-core/emoji-recent";
+import { recordRecentEmoji } from "@/lib/chat/recent-emoji";
 import {
   REPORT_ALREADY_BODY,
   REPORT_ALREADY_TITLE,
@@ -64,6 +67,8 @@ import {
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { MESSAGE_FLAG_OPTIONS } from "@repo/chat-core/flags";
 import type { ChatMessageFlag } from "@repo/validation";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
+import { messageMenuHeight } from "@/lib/chat/message-menu-room";
 
 /**
  * The actions on one message: react to it, reply to it, edit or delete it
@@ -72,48 +77,79 @@ import type { ChatMessageFlag } from "@repo/validation";
  * message or card in s05, by the `+` chip after its reactions, or by the
  * "Message actions" accessibility action.
  *
+ * **It takes the keyboard's place, not the screen** (#5479; Paul,
+ * 2026-11-18: "It should just replace the keyboard"). It opens at the
+ * keyboard's height (`useMessageMenuHeight`) and has no taller detent: a drag
+ * up doesn't grow it, its rows scroll inside it, and a drag down closes it.
+ * The thread leaves that room under its composer and keeps the pressed
+ * message in view above it, highlighted (`useMessageMenuRoom`), as iMessage,
+ * WhatsApp and Telegram do. So the scrim is a light veil (`SheetLightScrim`):
+ * the message must read, and a tap above still closes the menu.
+ *
  * **Laid out the way Discord's long-press is**, because that is the menu the
  * chapters moving off Discord already know: the reaction row, then the
- * conversation actions (Reply, Start thread, Edit), then the copy-and-reference ones (Copy
- * text, Mention), then Report and Delete last. Rows are bare labels: a menu
+ * conversation actions (Reply, Start thread, Forward, Edit), then the copy-and-reference ones (Copy
+ * text, Mark unread, Copy message link, Pin message, Save message, Mention), then the Flag
+ * chips, then Report and Delete last. Flag sat above the copy rows until
+ * #5479; its six chips pushed Copy text out of a keyboard-high sheet. Rows are bare labels: a menu
  * row says what it does, and a sentence under it explaining the button is
  * noise (Paul, 2026-11-07).
  *
  * **Block is one step in, not on the menu.** It is a rare, heavy action that
  * sat as a red row on every long-press of someone else's message. It now
  * lives on the report form and its "Report sent" screen, and on the member's
- * profile (`member-detail-sheet.tsx`), which keeps it reachable for App Store
+ * profile (`member-profile-screen.tsx`), which keeps it reachable for App Store
  * Guideline 1.2 without putting it in front of every reaction.
  *
  * **Quick reactions come first.** The thread draws no reaction control on a
  * message nobody has reacted to (`ReactionRow` in `message-item.tsx`), so this
  * row is where the first reaction starts, as it does in every messenger's
  * long-press. The four picks are web's (`QUICK_REACTIONS` in
- * `apps/web/components/chat/reaction-bar.tsx`), and the last cell opens every
- * emoji (`EmojiPickerSheet`), so any reaction is two taps away. One the viewer
+ * `@repo/chat-core/emoji-recent`), and the last cell opens every emoji
+ * (`EmojiPickerSheet`), recent ones first, so any reaction is two taps away. One the viewer
  * already used is drawn selected, and tapping it takes the reaction back off,
  * the toggle `spec/behavior/chat/README.md` § Reactions describes. Either way
  * the sheet closes: the chip under the message is the confirmation.
  *
  * **Copy text** copies the message's text as written, for a card-free message
- * with a body (`copyableText`). The row turns to "Copied" in place, then the
- * sheet closes.
+ * with a body (`copyableText`). **Copy message link** (#3723) copies a link
+ * that opens the message in the app or on the web, on any message the thread
+ * offers it for, cards included, as Discord's does. Either row turns to
+ * "Copied" in place, then the sheet closes.
+ *
+ * **Mark unread** (#3723) sits after Copy text, where Discord's long-press
+ * puts it. The thread moves the read cursor back and leaves the channel.
  *
  * **Reply, Edit, Mention and Delete hand off to the thread.** Reply and Edit
  * stage in the composer, Mention puts `@Name` in the draft, and Delete asks for
  * confirmation in a native alert, so each row closes the sheet and tells the
  * screen which message it was for.
  *
+ * **Forward** (#4864) opens the Forward to picker (`ForwardSheet`) in place
+ * of the menu, as the report form does, on any confirmed text message
+ * (`canForwardMessage`); where it lands, and Discord's order for it, are
+ * `spec/behavior/chat/README.md` § Forward's.
+ *
+ * **Pin message and Save message** (#3723) sit after Copy message link, where
+ * Discord's long-press puts Pin. Pin is the chapter-public elevation and shows
+ * only to a `channels:manage` holder, the server's gate; Save is the viewer's
+ * private bookmark, on any confirmed message. Each reads its current state
+ * live and flips it, "Unpin message" and "Remove from Saved" once set. The
+ * lists they feed open from the thread header's menu (`MessageListSheet`).
+ *
+ * **Remind me about this** (#4957) sits after Save, the other private,
+ * for-later row, worded as Slack's is. It asks when in its own sheet
+ * (`RemindSheet`), which replaces the menu as Forward's picker does; the
+ * reminder then waits under Reminders on Activity.
+ *
  * **Separate sheets, not one with panes.** The menu is the quick reactions and
- * at most five rows (Reply, Edit, Copy text and Delete on your own message;
- * Reply, Copy text, Mention, Report and Delete on someone else's) and sizes to
- * its content; the emoji picker and the report form each scroll. The report
+ * the rows above, at one keyboard-high detent with its rows scrolling; the
+ * emoji picker and the report form each need more height than that. The report
  * form is seven reasons, a text field and a button, which
- * on a small phone with the keyboard up is taller than the screen. A bounded
- * sheet takes `enableDynamicSizing`, and one with a scrollable body takes a
- * fixed detent with the sheet-aware scroll view as its direct child
- * (`spec/ui/mobile/patterns.md` § Bottom sheets) — one sheet cannot be both, so
- * the report form and the emoji picker are their own sheets that replace the
+ * on a small phone with the keyboard up is taller than the screen. A sheet
+ * with a scrollable body takes a fixed detent with the sheet-aware scroll
+ * view as its direct child (`spec/ui/mobile/patterns.md` § Bottom sheets), so
+ * the report form, the emoji picker and the Forward picker are their own sheets that replace the
  * menu (gorhom's `stackBehavior="replace"`), where s19 stacks its assignee
  * picker on top.
  *
@@ -135,18 +171,30 @@ import type { ChatMessageFlag } from "@repo/validation";
 
 const REPORT_SNAP_POINTS = ["85%"];
 
+/** What a copy row puts on the clipboard. */
+type CopyKind = "text" | "link";
+
+/** The row that copies the message's link (#3723), Discord's words. */
+export const COPY_LINK_LABEL = "Copy message link";
+/** The Pin row's labels (#3723), Discord's words. */
+export const PIN_LABEL = "Pin message";
+export const UNPIN_LABEL = "Unpin message";
+/**
+ * The Save row's labels (#3723): web's Save control and Saved list, in
+ * Slack's words for taking one back.
+ */
+export const SAVE_LABEL = "Save message";
+export const UNSAVE_LABEL = "Remove from Saved";
+
+/** The Forward row's label (#4864), Discord's word. */
+export const FORWARD_LABEL = "Forward";
+/** The row that marks the channel unread from a message (#3723). */
+export const MARK_UNREAD_LABEL = "Mark unread";
+
 /** The Copy text row's label once the text is on the clipboard. */
 export const COPIED_LABEL = "Copied";
 /** How long "Copied" shows before the sheet closes: long enough to read. */
 const COPIED_HOLD_MS = 700;
-
-/**
- * The sheet's quick reactions, in web's order (`QUICK_REACTIONS` in
- * `apps/web/components/chat/reaction-bar.tsx`). A copy rather than a shared
- * export: the list lives in a web component, not in `@repo/chat-core`, so
- * the two must move together until it is hoisted there.
- */
-export const QUICK_REACTIONS: readonly string[] = ["👍", "🙏", "✅", "🔥"];
 
 /** A quick reaction's accessible name, by whether it adds or takes back. */
 export function quickReactionLabel(emoji: string, mine: boolean): string {
@@ -162,12 +210,30 @@ export interface MessageActionsTarget {
    * drawn.
    */
   copyText: string | null;
+  /**
+   * Mark unread (#3723): a confirmed message on the channel's timeline. The
+   * thread moves the viewer's read cursor to just before it and leaves the
+   * channel, so it reads as unread on the list.
+   */
+  canMarkUnread?: boolean;
+  /**
+   * What "Copy message link" copies (#3723): the message's
+   * `app.frapp.live/chat?…` link (`messageLinkUrl` in `@repo/validation`),
+   * which opens it in the app or on the web. Absent where there's no link to
+   * give, which draws no row.
+   */
+  link?: string | null;
   canReply: boolean;
   /**
    * Start thread (#3785): a message in a channel that offers threads, with no
    * thread yet (one that has replies opens from its chip).
    */
   canStartThread?: boolean;
+  /**
+   * Forward (#4864): the message as the picker previews it, present only
+   * where `messageActionsFor` says `canForward`, which draws the row.
+   */
+  forward?: ForwardTarget;
   canEdit: boolean;
   /**
    * Someone else's message in a channel the viewer can post in: Mention puts
@@ -212,8 +278,24 @@ export interface MessageActionsTarget {
    * The Flag row (#3921): the message's current flag, read from the cache on
    * every render like `reactedWith`. Absent where the viewer may not flag it
    * (`canFlagMessage` in `@repo/chat-core/flags`), which draws no row.
+   * `removeOnly` in the audit log (#3909), where nothing takes a new flag:
+   * the row holds only the current flag, and tapping it takes it off.
    */
-  flag?: { current: ChatMessageFlag | null };
+  flag?: { current: ChatMessageFlag | null; removeOnly?: boolean };
+  /**
+   * Pin message / Unpin message (#3723): whether it is pinned now, read from
+   * the cache on every render like `reactedWith`. Absent where the viewer
+   * lacks `channels:manage`, the server's gate (the caller checks it), which
+   * draws no row.
+   */
+  pin?: { pinned: boolean };
+  /**
+   * Save message / Remove from Saved (#3723), the viewer's private bookmark:
+   * whether it is saved now, read from the viewer's bookmarks on every
+   * render. Absent where there is nothing to save (a row the server never
+   * confirmed), which draws no row.
+   */
+  save?: { saved: boolean };
 }
 
 /** What the report form shows once a request has come back. */
@@ -236,6 +318,26 @@ export interface MessageActionsSheetHandle {
 export interface MessageActionsSheetProps {
   target: MessageActionsTarget | null;
   /**
+   * The menu's one detent, in points: the thread's `useMessageMenuRoom`
+   * passes the height it leaves room for, so the two agree. Without it the
+   * sheet opens at the height it would before any keyboard has opened.
+   */
+  height?: number;
+  /**
+   * The menu is closing, however it closes (a row, a swipe, the scrim, back,
+   * or a picker that replaced it): the thread gives its room back and drops
+   * the highlight. Called as the close starts, so the room shrinks with the
+   * sheet and with a keyboard that Reply or Edit raises, and again once it
+   * has closed.
+   */
+  onDismiss?: () => void;
+  /**
+   * Resolves a member's name and says who "You" is, for the Forward picker's
+   * preview of the message. Without them the Forward row is not drawn.
+   */
+  nameFor?: (userId: string) => string | null;
+  viewerId?: string | null;
+  /**
    * A block attempt came back as the API's "not a member of this chapter"
    * (`isMemberNotFound`): the caller can stop offering Block for them.
    */
@@ -250,6 +352,8 @@ export interface MessageActionsSheetProps {
   onDelete?: (messageId: string) => void;
   /** Put `@Sender` in the composer's draft. */
   onMention?: (messageId: string) => void;
+  /** Mark the channel unread from this message on (#3723). */
+  onMarkUnread?: (messageId: string) => void;
   /**
    * Add a reaction from the quick row. Omit it, with `onUnreact`, and the row
    * is not drawn.
@@ -259,6 +363,15 @@ export interface MessageActionsSheetProps {
   onUnreact?: (messageId: string, emoji: string) => void;
   /** Put a flag on the message, or (`null`) take its flag off (#3921). */
   onFlag?: (messageId: string, flag: ChatMessageFlag | null) => void;
+  /** Pin (`true`) or unpin (`false`) the message for the channel (#3723). */
+  onSetPinned?: (messageId: string, pinned: boolean) => void;
+  /** Save (`true`) or unsave (`false`) the message for the viewer (#3723). */
+  onSetSaved?: (messageId: string, saved: boolean) => void;
+  /**
+   * Remind the viewer about the message at a time (#4957). Omit it and the
+   * "Remind me about this" row is not drawn.
+   */
+  onRemind?: (messageId: string, remindAt: Date) => void;
 }
 
 export const MessageActionsSheet = forwardRef<
@@ -267,15 +380,23 @@ export const MessageActionsSheet = forwardRef<
 >(function MessageActionsSheet(
   {
     target,
+    height,
+    onDismiss,
+    nameFor,
+    viewerId = null,
     onSenderDeparted,
     onReply,
     onStartThread,
     onEdit,
     onDelete,
     onMention,
+    onMarkUnread,
     onReact,
     onUnreact,
     onFlag,
+    onSetPinned,
+    onSetSaved,
+    onRemind,
   },
   ref,
 ) {
@@ -285,9 +406,13 @@ export const MessageActionsSheet = forwardRef<
   const danger = tokens.color.semantic.destructive;
   const dangerText = tokens.color.semantic.destructiveText;
   const backgroundStyle = useSheetBackgroundStyle();
+  const { height: windowHeight } = useWindowDimensions();
+  const menuSnapPoints = [height ?? messageMenuHeight(windowHeight, null)];
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
   const pickerRef = useRef<BottomSheetModal>(null);
+  const forwardSheetRef = useRef<GuardedSheetHandle>(null);
+  const remindSheetRef = useRef<GuardedSheetHandle>(null);
   const closeMenu = useSheetClose(menuRef);
   const closeReport = useSheetClose(reportRef);
   // Whether each modal is up, so the thread's dismiss (its message was
@@ -323,13 +448,15 @@ export const MessageActionsSheet = forwardRef<
         willPresentMenu();
         menuRef.current?.present();
       },
-      // The picker too: it replaced the menu and acts on the same message.
-      // Each only while presented. The thread calls this whenever the
-      // long-pressed message is deleted, which can be long after the menu
-      // closed, and usually while the picker was never opened (#3795).
+      // The pickers too: each replaced the menu and acts on the same
+      // message. Each only while presented. The thread calls this whenever
+      // the long-pressed message is deleted, which can be long after the menu
+      // closed, and usually while neither picker was opened (#3795).
       dismiss: () => {
         dismissMenu();
         dismissPicker();
+        forwardSheetRef.current?.dismiss();
+        remindSheetRef.current?.dismiss();
       },
     }),
     [dismissMenu, dismissPicker, willPresentMenu],
@@ -379,11 +506,15 @@ export const MessageActionsSheet = forwardRef<
   );
 
   /**
-   * Which message's text was just copied. "Copy text" confirms in place: the
-   * row reads "Copied" with a tick of haptics, then the sheet closes, so the
-   * member sees it worked without a toast landing over the thread.
+   * Which message's text or link was just copied. "Copy text" and "Copy
+   * message link" confirm in place: the row reads "Copied" with a tick of
+   * haptics, then the sheet closes, so the member sees it worked without a
+   * toast landing over the thread.
    */
-  const [copiedFor, setCopiedFor] = useState<string | null>(null);
+  const [copiedFor, setCopiedFor] = useState<{
+    messageId: string;
+    what: CopyKind;
+  } | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -401,29 +532,34 @@ export const MessageActionsSheet = forwardRef<
     copyTimer.current = null;
     setCopiedFor(null);
   }, []);
-  const copyText = useCallback(() => {
-    const text = target?.copyText;
-    const messageId = target?.messageId;
-    if (!text || !messageId) return;
-    // The visit the copy was tapped in: a clipboard write that settles after
-    // the menu closed arms no timer, since nothing would clear it (#3795).
-    const visit = menuVisitNow();
-    void Clipboard.setStringAsync(text)
-      .then(() => {
-        if (!isSameMenuVisit(visit)) return;
-        selectionHaptic();
-        setCopiedFor(messageId);
-        announce(COPIED_LABEL);
-        if (copyTimer.current) clearTimeout(copyTimer.current);
-        copyTimer.current = setTimeout(() => {
-          copyTimer.current = null;
-          dismissMenu();
-        }, COPIED_HOLD_MS);
-      })
-      .catch(() => {
-        Alert.alert("Couldn't copy", "Try again in a moment.");
-      });
-  }, [dismissMenu, isSameMenuVisit, menuVisitNow, target]);
+  const copy = useCallback(
+    (what: CopyKind) => {
+      const text = what === "text" ? target?.copyText : target?.link;
+      const messageId = target?.messageId;
+      if (!text || !messageId) return;
+      // The visit the copy was tapped in: a clipboard write that settles after
+      // the menu closed arms no timer, since nothing would clear it (#3795).
+      const visit = menuVisitNow();
+      void Clipboard.setStringAsync(text)
+        .then(() => {
+          if (!isSameMenuVisit(visit)) return;
+          selectionHaptic();
+          setCopiedFor({ messageId, what });
+          announce(COPIED_LABEL);
+          if (copyTimer.current) clearTimeout(copyTimer.current);
+          copyTimer.current = setTimeout(() => {
+            copyTimer.current = null;
+            dismissMenu();
+          }, COPIED_HOLD_MS);
+        })
+        .catch(() => {
+          Alert.alert("Couldn't copy", "Try again in a moment.");
+        });
+    },
+    [dismissMenu, isSameMenuVisit, menuVisitNow, target],
+  );
+  const isCopied = (what: CopyKind) =>
+    copiedFor?.messageId === target?.messageId && copiedFor?.what === what;
 
   const senderLabel = target?.senderName ?? UNNAMED_MEMBER;
   const canBlock = !!target?.blockUserId;
@@ -457,7 +593,10 @@ export const MessageActionsSheet = forwardRef<
       menuRef.current?.dismiss();
       if (!messageId) return;
       if (mine) onUnreact?.(messageId, emoji);
-      else onReact?.(messageId, emoji);
+      else {
+        onReact?.(messageId, emoji);
+        recordRecentEmoji(emoji);
+      }
     },
     [onReact, onUnreact, target],
   );
@@ -480,7 +619,10 @@ export const MessageActionsSheet = forwardRef<
         ...QUICK_REACTIONS,
       ]);
       if (mine) onUnreact?.(messageId, spelled);
-      else onReact?.(messageId, spelled);
+      else {
+        onReact?.(messageId, spelled);
+        recordRecentEmoji(spelled);
+      }
     },
     [onReact, onUnreact, target],
   );
@@ -489,6 +631,17 @@ export const MessageActionsSheet = forwardRef<
   // mounts, so closing the form returns to the thread, not to the menu.
   const openReport = useCallback(() => {
     reportRef.current?.present();
+  }, []);
+  // The Forward picker replaces the menu the same way, presented from here
+  // rather than by the thread after the menu closed (`ForwardSheet`).
+  const openForward = useCallback(() => {
+    forwardSheetRef.current?.present();
+  }, []);
+  const canForward = !!target?.forward && !!nameFor;
+  // "Remind me about this" (#4957) asks when in its own sheet, which replaces
+  // the menu the same way.
+  const openRemind = useCallback(() => {
+    remindSheetRef.current?.present();
   }, []);
 
   /** Block, from the report form or its "Report sent" screen. */
@@ -559,18 +712,30 @@ export const MessageActionsSheet = forwardRef<
       <BottomSheetModal
         ref={menuRef}
         stackBehavior={SHEET_STACK_BEHAVIOR}
-        enableDynamicSizing
+        // The keyboard's height and no taller (#5479): one detent, no
+        // over-drag, and the rows scroll in the sheet-aware scroll view, its
+        // direct child (`spec/ui/mobile/patterns.md` § Bottom sheets).
+        enableDynamicSizing={false}
+        snapPoints={menuSnapPoints}
+        enableOverDrag={false}
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
-        backdropComponent={SheetScrim}
-        onAnimate={menuVisit.onAnimate}
+        backdropComponent={SheetLightScrim}
+        onAnimate={(from: number, to: number) => {
+          menuVisit.onAnimate(from, to);
+          if (to < 0) onDismiss?.();
+        }}
         onDismiss={() => {
           menuVisit.markClosed();
           resetCopy();
+          onDismiss?.();
         }}
       >
         <SheetBackToClose onClose={closeMenu} />
-        <BottomSheetView onAccessibilityEscape={closeMenu} style={styles.body}>
+        <BottomSheetScrollView
+          onAccessibilityEscape={closeMenu}
+          contentContainerStyle={styles.body}
+        >
           {/* No title and no Cancel: this is a menu of actions, not a form.
               The line naming the message is its heading, and the grabber,
               the scrim, Android back and VoiceOver's escape close it
@@ -625,6 +790,7 @@ export const MessageActionsSheet = forwardRef<
           ) : null}
           {target?.canReply ||
           (target?.canStartThread && onStartThread) ||
+          (target?.forward && nameFor) ||
           target?.canEdit ? (
             <ListSection>
               {target.canReply ? (
@@ -641,11 +807,79 @@ export const MessageActionsSheet = forwardRef<
                   onPress={() => handOff(onStartThread)}
                 />
               ) : null}
+              {canForward ? (
+                <ListRow label={FORWARD_LABEL} action onPress={openForward} />
+              ) : null}
               {target.canEdit ? (
                 <ListRow
                   label="Edit message"
                   action
                   onPress={() => handOff(onEdit)}
+                />
+              ) : null}
+            </ListSection>
+          ) : null}
+          {target?.copyText ||
+          (target?.canMarkUnread && onMarkUnread) ||
+          target?.link ||
+          (target?.pin && onSetPinned) ||
+          (target?.save && onSetSaved) ||
+          (target && onRemind) ||
+          (target?.canMention && onMention) ? (
+            <ListSection>
+              {target.copyText ? (
+                <ListRow
+                  label={isCopied("text") ? COPIED_LABEL : "Copy text"}
+                  action
+                  onPress={() => copy("text")}
+                />
+              ) : null}
+              {target.canMarkUnread && onMarkUnread ? (
+                <ListRow
+                  label={MARK_UNREAD_LABEL}
+                  action
+                  onPress={() => handOff(onMarkUnread)}
+                />
+              ) : null}
+              {target.link ? (
+                <ListRow
+                  label={isCopied("link") ? COPIED_LABEL : COPY_LINK_LABEL}
+                  action
+                  onPress={() => copy("link")}
+                />
+              ) : null}
+              {target.pin && onSetPinned ? (
+                <ListRow
+                  label={target.pin.pinned ? UNPIN_LABEL : PIN_LABEL}
+                  action
+                  onPress={() => {
+                    const next = !target.pin?.pinned;
+                    handOff((id) => onSetPinned(id, next));
+                  }}
+                />
+              ) : null}
+              {target.save && onSetSaved ? (
+                <ListRow
+                  label={target.save.saved ? UNSAVE_LABEL : SAVE_LABEL}
+                  action
+                  onPress={() => {
+                    const next = !target.save?.saved;
+                    handOff((id) => onSetSaved(id, next));
+                  }}
+                />
+              ) : null}
+              {onRemind ? (
+                <ListRow
+                  label={MESSAGE_REMINDER_LABEL}
+                  action
+                  onPress={openRemind}
+                />
+              ) : null}
+              {target.canMention && onMention ? (
+                <ListRow
+                  label="Mention"
+                  action
+                  onPress={() => handOff(onMention)}
                 />
               ) : null}
             </ListSection>
@@ -656,7 +890,12 @@ export const MessageActionsSheet = forwardRef<
             <View style={styles.flagSection}>
               <Text style={styles.caption}>Flag</Text>
               <View style={styles.flags} accessibilityRole="radiogroup">
-                {MESSAGE_FLAG_OPTIONS.map(({ flag, label }) => {
+                {(target.flag.removeOnly
+                  ? MESSAGE_FLAG_OPTIONS.filter(
+                      ({ flag }) => flag === target.flag?.current,
+                    )
+                  : MESSAGE_FLAG_OPTIONS
+                ).map(({ flag, label }) => {
                   const selected = target.flag?.current === flag;
                   const important = flag === "important";
                   return (
@@ -698,26 +937,6 @@ export const MessageActionsSheet = forwardRef<
               </View>
             </View>
           ) : null}
-          {target?.copyText || (target?.canMention && onMention) ? (
-            <ListSection>
-              {target.copyText ? (
-                <ListRow
-                  label={
-                    copiedFor === target.messageId ? COPIED_LABEL : "Copy text"
-                  }
-                  action
-                  onPress={copyText}
-                />
-              ) : null}
-              {target.canMention && onMention ? (
-                <ListRow
-                  label="Mention"
-                  action
-                  onPress={() => handOff(onMention)}
-                />
-              ) : null}
-            </ListSection>
-          ) : null}
           {target?.canReport || target?.canDelete ? (
             <ListSection>
               {target.canReport ? (
@@ -738,7 +957,7 @@ export const MessageActionsSheet = forwardRef<
               ) : null}
             </ListSection>
           ) : null}
-        </BottomSheetView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -872,6 +1091,23 @@ export const MessageActionsSheet = forwardRef<
         </BottomSheetScrollView>
       </BottomSheetModal>
 
+      {nameFor ? (
+        <ForwardSheet
+          ref={forwardSheetRef}
+          target={target?.forward ?? null}
+          nameFor={nameFor}
+          viewerId={viewerId}
+        />
+      ) : null}
+
+      {onRemind ? (
+        <RemindSheet
+          ref={remindSheetRef}
+          messageId={target?.messageId ?? null}
+          onRemind={onRemind}
+        />
+      ) : null}
+
       {onReact && onUnreact ? (
         <EmojiPickerSheet
           ref={pickerRef}
@@ -886,10 +1122,12 @@ export const MessageActionsSheet = forwardRef<
 });
 
 /**
- * "Today at 5:16 PM", "Sunday, Sep 28 at 9:41 PM": the day as the thread's
+ * "Today at 5:16 PM", "Sunday, September 28 at 9:41 PM": the day as the thread's
  * divider names it, then the time. The only place a phone shows a follow-on
  * row's time.
  */
+/** `Today at 9:41 PM`: when a message was sent, as the sheet's header line
+ * and the Pinned and Saved lists (`message-list-sheet.tsx`) say it. */
 export function sentAtLabel(sentAt: string): string {
   const day = dayDividerLabel(sentAt);
   const time = formatTimeOfDay(sentAt);
@@ -979,7 +1217,7 @@ function createStyles(tokens: SignetTokens) {
       height: RADIO_SIZE,
       borderRadius: RADIO_SIZE / 2,
       borderWidth: 2,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       alignItems: "center",
       justifyContent: "center",
     },

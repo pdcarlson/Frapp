@@ -16,6 +16,14 @@
       "reason": "Memory exhaustion in zod <4.6.6 when an unbounded array schema validates a huge array. Two copies are in the tree. The runtime one, packages/validation's (which the API and apps validate with), is on 4.6.7, held there by its ^4.6.7 floor. The other is the hoisted root zod@3.25.76, which NO 3.x RELEASE FIXES (3.25.76 is the newest 3.x); its consumers are @expo/cli@57 (^3.25.76), eslint-plugin-react-hooks and zod-validation-error, all dev or build-time tooling reading local config, never network input. CAUTION: the gate matches by GHSA id, so this entry also hides any later regression of the runtime copy below 4.6.6; check `npm ls zod` before renewing. @expo/cli 58.1.19 (Expo SDK 58, required by expo 58.0.23) drops zod, and the other two consumers accept ^4.0.0, so the SDK 58 upgrade (#2329) clears this: delete the entry then. Checked 2026-11-03.",
       "trackedBy": "#2329",
       "expires": "2026-12-15"
+    },
+    {
+      "ghsa": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "severity": "high",
+      "reason": "ReDoS in picomatch <=4.0.7 when the glob PATTERN repeats a single-branch extglob. 4.0.7 is the newest release, so no version fixes it (checked with `npm view picomatch versions`, 2026-11-17). The root overrides hold one copy, 4.0.4, whose consumers are build and test tooling (Expo CLI and Metro, Rollup plugins, Vite and Vitest, Jest, knip, dependency-cruiser, micromatch, tinyglobby, anymatch) matching patterns from local config and file paths. No glob pattern comes from network input in the API or the apps, which the advisory needs. Delete this entry when a fixed release lands and the lockfile moves to it. Checked 2026-11-17.",
+      "trackedBy": "#5374",
+      "expires": "2026-12-15"
     }
   ]
 }

@@ -13,7 +13,7 @@ import {
  * section or categories (a 112-role chapter imported from Discord has a few
  * dozen), and small enough that the RPC's `unnest` stays trivial.
  */
-export const REORDER_MAX_ITEMS = 500;
+const REORDER_MAX_ITEMS = 500;
 
 /**
  * `PUT /v1/channels/order`: one section of the channel list, in the order an

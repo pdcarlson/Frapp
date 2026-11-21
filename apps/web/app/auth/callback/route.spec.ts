@@ -2,12 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const exchangeCodeForSession = vi.fn();
 const verifyOtp = vi.fn();
+const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+
+vi.mock("@sentry/nextjs", () => ({ captureException }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: { exchangeCodeForSession, verifyOtp },
   })),
 }));
+
+
 
 import { GET } from "./route";
 
@@ -24,6 +29,7 @@ describe("GET /auth/callback", () => {
   beforeEach(() => {
     exchangeCodeForSession.mockReset();
     verifyOtp.mockReset();
+    captureException.mockReset();
   });
 
   it("exchanges the PKCE code and sends the member on to `next`, signed in", async () => {
@@ -149,71 +155,99 @@ describe("GET /auth/callback", () => {
     expect(url.searchParams.get("authError")).toBe("verify_failed");
   });
 
-  describe("a sign-in that created a new account (#3786)", () => {
-    const now = "2026-11-09T04:23:05.120Z";
-    const freshGoogleUser = {
-      email: "member@gmail.com",
-      created_at: now,
-      last_sign_in_at: "2026-11-09T04:23:05.410Z",
-      app_metadata: { provider: "google" },
-    };
-
-    it("sends a brand-new Google account from the sign-in screen to the notice, keeping `next`", async () => {
-      exchangeCodeForSession.mockResolvedValue({
-        data: { user: freshGoogleUser },
-        error: null,
-      });
-      const { url } = await callback("code=abc123&next=%2Fjoin%3Ftoken%3Dinv-1&intent=sign-in");
-      expect(url.origin).toBe(ORIGIN);
-      expect(url.pathname).toBe("/new-account");
-      expect(url.searchParams.get("next")).toBe("/join?token=inv-1");
-    });
-
-    it("treats a brand-new Apple account the same way", async () => {
-      exchangeCodeForSession.mockResolvedValue({
-        data: { user: { ...freshGoogleUser, app_metadata: { provider: "apple" } } },
-        error: null,
-      });
-      const { url } = await callback("code=abc123&intent=sign-in");
-      expect(url.pathname).toBe("/new-account");
-      expect(url.searchParams.get("next")).toBe("/chat");
-    });
-
-    it("sends a returning member straight on to `next`", async () => {
+  describe("a sign-in from the sign-in screen", () => {
+    // The "New account created" stop (#3786, #3801) is gone: a brand-new
+    // account goes straight on, and s02's "Already in a chapter?" line is the
+    // way back for someone who meant another account.
+    it("sends a brand-new Google account straight on to `next`", async () => {
       exchangeCodeForSession.mockResolvedValue({
         data: {
           user: {
-            ...freshGoogleUser,
-            created_at: "2026-09-01T12:00:00Z",
-            last_sign_in_at: now,
+            email: "member@gmail.com",
+            created_at: "2026-11-09T04:23:05.120Z",
+            last_sign_in_at: "2026-11-09T04:23:05.410Z",
+            app_metadata: { provider: "google" },
           },
         },
         error: null,
       });
-      const { url } = await callback("code=abc123&next=%2Fevents&intent=sign-in");
-      expect(url.pathname).toBe("/events");
-    });
-
-    it("does not stop a new account made from the sign-up screen", async () => {
-      exchangeCodeForSession.mockResolvedValue({
-        data: { user: freshGoogleUser },
-        error: null,
-      });
-      const { url } = await callback("code=abc123&next=%2Fchat");
-      expect(url.pathname).toBe("/chat");
-    });
-
-    it("never carries an off-origin `next` onto the notice", async () => {
-      exchangeCodeForSession.mockResolvedValue({
-        data: { user: freshGoogleUser },
-        error: null,
-      });
-      const { url } = await callback(
-        `code=abc123&intent=sign-in&next=${encodeURIComponent("//evil.example/x")}`,
-      );
+      const { url } = await callback("code=abc123&next=%2Fjoin%3Ftoken%3Dinv-1&intent=sign-in");
       expect(url.origin).toBe(ORIGIN);
-      expect(url.pathname).toBe("/new-account");
-      expect(url.searchParams.get("next")).toBe("/chat");
+      expect(url.pathname).toBe("/join");
+      expect(url.searchParams.get("token")).toBe("inv-1");
+    });
+
+    it("still reads a Confirm-signup code that won't exchange as a confirmed address", async () => {
+      // The sign-in magic link keeps #3831's good-news handling: an email link
+      // whose code GoTrue handed out was verified, so the address is confirmed.
+      exchangeCodeForSession.mockResolvedValue({
+        error: { name: "AuthPKCECodeVerifierMissingError", message: "verifier missing" },
+      });
+      const { url } = await callback("code=abc123&intent=sign-in-link&next=%2Fchat");
+      expect(url.pathname).toBe("/sign-in");
+      expect(url.searchParams.get("authError")).toBe("email_confirmed");
+    });
+
+    it("keeps a Google or Apple code that won't exchange a real failure", async () => {
+      exchangeCodeForSession.mockResolvedValue({ error: { message: "invalid code" } });
+      const { url } = await callback("code=stale&intent=sign-in&next=%2Fchat");
+      expect(url.searchParams.get("authError")).toBe("exchange_failed");
+    });
+  });
+
+  describe("reporting what failed (#3832)", () => {
+    type Captured = [Error, { level: string; fingerprint: string[]; tags: Record<string, string> }];
+    const only = (): Captured => {
+      expect(captureException).toHaveBeenCalledTimes(1);
+      return captureException.mock.calls[0] as unknown as Captured;
+    };
+    const noLinkSecrets = ([error, context]: Captured) => {
+      const payload = JSON.stringify({ message: error.message, stack: error.stack, context });
+      for (const secret of ["pkce_secret", "code-secret", "inv-1", "token"]) {
+        expect(payload, secret).not.toContain(secret);
+      }
+    };
+
+    it("reports nothing when the link signs in", async () => {
+      exchangeCodeForSession.mockResolvedValue({ error: null });
+      await callback("code=abc123");
+      expect(captureException).not.toHaveBeenCalled();
+    });
+
+    it("reports an Auth outage on a magic link at error, with GoTrue's status, not the member's verify_failed", async () => {
+      verifyOtp.mockResolvedValue({
+        error: Object.assign(new Error("upstream"), { name: "AuthApiError", status: 503, code: "unexpected_failure" }),
+      });
+      const { url } = await callback("token_hash=pkce_secret&type=magiclink&next=%2Fjoin%3Ftoken%3Dinv-1");
+      expect(url.searchParams.get("authError")).toBe("verify_failed");
+      const captured = only();
+      expect(captured[1]).toMatchObject({
+        level: "error",
+        fingerprint: ["signed-out-auth", "auth_callback", "unexpected_failure"],
+        tags: { auth_flow: "auth_callback", auth_screen: "/auth/callback", auth_failure_kind: "server", "http.status_code": "503" },
+      });
+      noLinkSecrets(captured);
+    });
+
+    it("counts a link opened in another browser by GoTrue's code, at info", async () => {
+      exchangeCodeForSession.mockResolvedValue({
+        error: Object.assign(new Error("code verifier"), { name: "AuthApiError", status: 400, code: "bad_code_verifier" }),
+      });
+      await callback("code=code-secret&intent=confirm");
+      const captured = only();
+      expect(captured[1]).toMatchObject({ level: "info", tags: { auth_error_code: "bad_code_verifier" } });
+      noLinkSecrets(captured);
+    });
+
+    it("counts an expired link GoTrue sent back, once", async () => {
+      await callback("error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid");
+      expect(only()[1]).toMatchObject({ level: "info", tags: { auth_error_code: "otp_expired" } });
+    });
+
+    it("reports a link whose type GoTrue never sends as a template fault", async () => {
+      await callback("token_hash=pkce_secret&type=bogus");
+      expect(only()[1]).toMatchObject({ level: "error", tags: { auth_error_code: "otp_type_invalid" } });
+      expect(verifyOtp).not.toHaveBeenCalled();
     });
   });
 });

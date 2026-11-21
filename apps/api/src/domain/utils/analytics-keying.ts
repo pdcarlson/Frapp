@@ -84,6 +84,29 @@ export function hashChapterIdForAnalytics(
 }
 
 /**
+ * Derive the pseudonymous analytics key for an **invite card visit** (#5663).
+ *
+ * The visit id is a random UUID the card mints, so it already names no one.
+ * It is hashed anyway, under a prefix so it can never land on a user's or a
+ * chapter's digest, because it is client-chosen: hashing means whatever a
+ * client sends, PostHog only ever sees a 64-hex digest.
+ *
+ * @throws if `salt` or `visitId` is empty, as the user hash does.
+ */
+export function hashInviteVisitForAnalytics(
+  salt: string,
+  visitId: string,
+): string {
+  if (!salt) {
+    throw new Error('Analytics salt is required to key an invite visit');
+  }
+  if (!visitId) {
+    throw new Error('visitId is required to derive an analytics key');
+  }
+  return hmacSha256Hex(salt, `invite-visit:${visitId.toLowerCase()}`);
+}
+
+/**
  * Derive the pseudonymous observability key for a **request origin** (IP).
  *
  * `spec/behavior/observability.md` § Structured Logging is unconditional: IPs

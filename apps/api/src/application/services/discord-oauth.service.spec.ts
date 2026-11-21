@@ -1364,7 +1364,7 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
         chapter_id: CHAPTER,
         created_by: USER,
         purpose: 'author_link',
-        return_path: '/preferences?section=discord',
+        return_path: '/preferences?section=apps',
       }),
     );
     expect(oauth.buildAuthorizeUrl).toHaveBeenCalledWith(
@@ -1395,7 +1395,7 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
     expect(outcome.code).toBe('expired');
     const url = new URL(outcome.returnUrl);
     expect(url.pathname).toBe('/preferences');
-    expect(url.searchParams.get('section')).toBe('discord');
+    expect(url.searchParams.get('section')).toBe('apps');
     expect(url.searchParams.get('discord')).toBe('expired');
   });
 
@@ -1419,7 +1419,7 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
     expect(outcome.code).toBe('failed');
     const url = new URL(outcome.returnUrl);
     expect(url.pathname).toBe('/preferences');
-    expect(url.searchParams.get('section')).toBe('discord');
+    expect(url.searchParams.get('section')).toBe('apps');
     expect(url.searchParams.get('discord')).toBe('failed');
   });
 
@@ -1443,7 +1443,7 @@ describe('DiscordOAuthService — a member linking their Discord account (#2878)
     expect(url.origin + url.pathname).toBe(
       'https://app.example.test/preferences',
     );
-    expect(url.searchParams.get('section')).toBe('discord');
+    expect(url.searchParams.get('section')).toBe('apps');
     expect(url.searchParams.get('discord')).toBe('pending');
     expect(url.searchParams.get('handshake')).toMatch(/^[0-9a-f-]{36}$/);
 

@@ -1,19 +1,26 @@
 /**
- * The typing line's words for a message thread (#3785), built as the one
- * helper #4014 is to move the channel lines onto (both still read "Someone is
- * typing…" today): `Paul is typing…`, `Paul and Shawn are typing…`,
+ * The typing line's words, for a channel and for a message thread (#3785)
+ * alike, on web and mobile: `Paul is typing…`, `Paul and Shawn are typing…`,
  * `Paul, Shawn and Alex are typing…`, then `Several people are typing…` for
  * four or more. `null` when nobody is.
  *
  * Who may be named is the caller's filter (`visibleTypingUsers` in
  * `./blocks`: never the viewer, never a member the viewer blocked); this only
- * words it. A typist whose name isn't known yet reads as `Someone`.
+ * words it. Pass `typistLabelFor` from `useMemberDisplayNames`: a member the
+ * roster holds with no name reads as `Member 2f4a1c`, as above their messages,
+ * and only one a loaded roster doesn't hold yet comes back `null`. That typist
+ * is left out rather than called `Someone`, the anonymous line Paul asked to be
+ * rid of (#4493, 2026-11-12): the chat surfaces re-read the roster when they
+ * meet an id it lacks (`useRosterCatchUp`), so they are named a moment later.
  */
 export function typingLabel(
   typistIds: readonly string[],
   nameOf: (userId: string) => string | null | undefined,
 ): string | null {
-  const names = typistIds.map((id) => nameOf(id)?.trim() || "Someone");
+  const names = typistIds.flatMap((id) => {
+    const name = nameOf(id)?.trim();
+    return name ? [name] : [];
+  });
   const [first, second, third] = names;
   if (first === undefined) return null;
   if (names.length === 1) return `${first} is typing…`;

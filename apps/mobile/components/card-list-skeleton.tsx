@@ -3,7 +3,11 @@ import { StyleSheet, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { SectionHeaderSkeleton } from "@/components/list-section";
 import { HistoryRowsSkeleton } from "@/components/history-row";
-import { SkeletonRegion, SkeletonText } from "@/components/state-block";
+import {
+  SkeletonOnCard,
+  SkeletonRegion,
+  SkeletonText,
+} from "@/components/state-block";
 import { useFrappTheme } from "@/lib/theme";
 
 /**
@@ -44,8 +48,9 @@ export function CardListSkeleton({
   const { caption } = tokens.typography.role;
 
   return (
-    <SkeletonRegion label={label} style={styles.stack}>
-      {card}
+    <SkeletonRegion label={label} style={styles.stack} flush>
+      {/* The card draws its own frame, so its bars sit on it. */}
+      <SkeletonOnCard>{card}</SkeletonOnCard>
 
       {summary ? (
         <View style={styles.summary}>

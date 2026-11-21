@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import {
   categoryIdFromSectionKey,
+  DEFAULT_SIDEBAR_SORT,
   isSidebarSectionKey,
+  isSidebarSort,
+  type SidebarSort,
 } from '@repo/validation';
 import {
   CHAT_SIDEBAR_REPOSITORY,
@@ -23,6 +26,7 @@ import { ChannelAccessService } from './channel-access.service';
 export interface ChatSidebarView {
   unread_only: boolean;
   hide_muted: boolean;
+  sort: SidebarSort;
   collapsed_sections: string[];
   pinned_channel_ids: string[];
 }
@@ -83,15 +87,22 @@ export class ChatSidebarService {
     return {
       unread_only: preferences?.unread_only ?? false,
       hide_muted: preferences?.hide_muted ?? false,
+      // The default for a member with no row (one who never changed a
+      // setting), and for an API that runs ahead of the migration, whose
+      // `select('*')` has no `sort`. The check constraint holds a stored value
+      // to the list.
+      sort: isSidebarSort(preferences?.sort)
+        ? preferences.sort
+        : DEFAULT_SIDEBAR_SORT,
       collapsed_sections: preferences?.collapsed_sections ?? [],
       pinned_channel_ids: pinnedIds.filter((id) => readable.has(id)),
     };
   }
 
   /**
-   * Switch one or both filters. An empty body is refused rather than treated as
-   * a no-op, since it can only be a client bug: every control sends the one
-   * filter it switched.
+   * Switch a filter, or the sort, or several at once. An empty body is refused
+   * rather than treated as a no-op, since it can only be a client bug: every
+   * control sends the one setting it changed.
    */
   async updateFilters(
     chapterId: string,
@@ -105,8 +116,13 @@ export class ChatSidebarService {
     if (filters.hide_muted !== undefined) {
       given.hide_muted = filters.hide_muted;
     }
+    if (filters.sort !== undefined) {
+      given.sort = filters.sort;
+    }
     if (Object.keys(given).length === 0) {
-      throw new BadRequestException('Send unread_only, hide_muted, or both.');
+      throw new BadRequestException(
+        'Send unread_only, hide_muted, sort, or several.',
+      );
     }
     await this.sidebarRepo.updateFilters(chapterId, userId, given);
     return this.getSidebar(chapterId, userId);

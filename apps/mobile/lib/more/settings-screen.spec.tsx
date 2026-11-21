@@ -3,6 +3,11 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import { AI_SETTINGS_COPY, FRAPP_AI_COPY } from "@repo/validation";
+import { SectionHeader } from "@/components/list-section";
+import { PRIVACY_LINK } from "@/lib/more/legal";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   defaultNotificationCategoryState,
@@ -35,14 +40,33 @@ type PushStatus = { granted: boolean; canAskAgain: boolean; status: string };
  * below can read it.
  */
 const state = vi.hoisted(() => ({
+  setNudges: vi.fn(),
+  // The Read receipts switch (#5519).
+  readReceipts: { enabled: true, ready: true, failed: false },
+  setReadReceipts: vi.fn(),
   permissions: [] as string[],
   pushReason: null as string | null,
   quietHoursEnabled: false,
+  // `null` is a signed-in member whose token names no chapter (#5104).
+  chapterId: "chapter-1" as string | null,
   getPushPermission: (() =>
     new Promise(() => undefined)) as () => Promise<PushStatus | null>,
   isPushChannelBlocked: (async () => false) as () => Promise<boolean>,
   requestPushPermission: vi.fn<() => Promise<boolean>>(async () => true),
   openSettings: vi.fn(async () => undefined),
+  // The member's AI consent read: `null` is a server with AI off.
+  aiConsent: null as null | {
+    answer: "yes" | "no" | null;
+    sheet_changed: boolean;
+  },
+  // The chapter's AI switches, behind the Chapter AI row.
+  aiChapter: {
+    ask: true,
+    meeting_notes: false,
+    chat_source: true,
+    can_change: true,
+    updated_at: null,
+  } as Record<string, unknown>,
 }));
 
 // The suite's stub has no `Linking`; the push switch's fallback opens the OS
@@ -72,6 +96,21 @@ vi.mock("react-native", async () => {
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useBlockedUserIds: () => ({ data: [], isPending: false, isError: false }),
+  useFrappAiChoice: () => ({
+    consent: state.aiConsent,
+    providers: ["Anthropic", "Google"],
+    notNow: aiNotNow,
+    turnOn: vi.fn(),
+    pending: false,
+  }),
+  // The Activity card's switch (#5464), drawn for every member.
+  useActivityNudgeSettings: () => ({ data: { enabled: true } }),
+  useSetActivityNudgesEnabled: () => ({ mutate: state.setNudges }),
+  useReadReceiptsSetting: () => ({
+    ...state.readReceipts,
+    pending: false,
+    setEnabled: state.setReadReceipts,
+  }),
   useChapterChatLevel: () => ({
     data: "all",
     isPending: false,
@@ -88,31 +127,18 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isError: false,
   }),
   useDeleteAccount: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useGeofences: () => ({ data: [], isPending: false, isError: false }),
   usePermissionList: () => state.permissions,
-  useChapterChatBackground: () => ({
-    data: { background: "midnight", photo_url: null },
-    isPending: false,
-    isError: false,
+  useAiConsent: () => ({ data: null }),
+  useAiChapterSettings: (options: { enabled?: boolean }) => ({
+    data: options.enabled ? state.aiChapter : undefined,
   }),
 }));
 
-// The chat background sheet (#4031) as a stand-in whose `present` a spec can see.
-const backgroundSheet = vi.hoisted(() => ({ present: vi.fn() }));
-vi.mock("@/components/settings/chat-background-sheet", async () => {
-  const React = await import("react");
-  return {
-    ChatBackgroundSheet: React.forwardRef(function ChatBackgroundSheet(
-      _props: object,
-      ref: React.Ref<{ present: () => void }>,
-    ) {
-      React.useImperativeHandle(ref, () => ({
-        present: backgroundSheet.present,
-      }));
-      return null;
-    }),
-  };
-});
+// Linked apps has its own spec (`components/settings/linked-apps-section.spec.tsx`);
+// this one only checks the rest of Settings.
+vi.mock("@/components/settings/linked-apps-section", () => ({
+  LinkedAppsSection: () => null,
+}));
 
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({ signOut: vi.fn() }),
@@ -143,13 +169,14 @@ vi.mock("@/lib/use-notification-preferences-sync", () => ({
     setQuietHoursEnabled: vi.fn(),
     categories: defaultNotificationCategoryState(),
     setCategory: vi.fn(),
+    categoriesEditable: state.chapterId !== null,
     quietHoursWindow: { start: "22:00", end: "07:00", tz: "America/New_York" },
     setQuietHoursWindow: vi.fn(),
     isHydrated: true,
     hydrationRecovered: false,
     persistenceFailed: false,
     isAuthenticated: true,
-    chapterId: "chapter-1",
+    chapterId: state.chapterId,
     quietHoursSync: "synced",
     categorySync: "synced",
   }),
@@ -158,6 +185,20 @@ vi.mock("@/lib/use-notification-preferences-sync", () => ({
 vi.mock("@/components/settings/blocked-members-sheet", () => ({
   BlockedMembersSheet: "BlockedMembersSheet",
 }));
+
+// Meet Frapp AI as a stand-in whose `present` a spec can see; the sheet
+// itself has its own spec (`components/ai/meet-frapp-ai.spec.tsx`).
+const aiSheet = vi.hoisted(() => ({ present: vi.fn() }));
+const aiNotNow = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+vi.mock("@/components/ai/meet-frapp-ai", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    MeetFrappAiSheet: forwardRef(function MeetFrappAiSheet(_props, ref) {
+      useImperativeHandle(ref, () => aiSheet);
+      return null;
+    }),
+  };
+});
 
 // The density sheet as a stand-in whose `present` a spec can see.
 const densitySheet = vi.hoisted(() => ({ present: vi.fn() }));
@@ -208,6 +249,7 @@ beforeEach(() => {
   state.permissions = [];
   state.pushReason = null;
   state.quietHoursEnabled = false;
+  state.chapterId = "chapter-1";
   state.getPushPermission = () => new Promise(() => undefined);
   state.isPushChannelBlocked = async () => false;
   state.requestPushPermission.mockReset().mockResolvedValue(true);
@@ -259,13 +301,13 @@ function primerWrites(): unknown[] {
     .map(([, value]) => value);
 }
 
-/** #3022. s16 opens from More's Settings row and draws `‹ More`. */
+/** #3022. s16 opens from You's Settings row and draws `‹ You`. */
 describe("Settings back row (#3022)", () => {
-  it("draws ‹ More above the title", () => {
+  it("draws ‹ You above the title", () => {
     const tree = render();
 
-    expect(screenText(tree).startsWith("More\nSettings")).toBe(true);
-    expectBackRow(tree, "More", "/more");
+    expect(screenText(tree).startsWith("You\nSettings")).toBe(true);
+    expectBackRow(tree, "You", "/you");
   });
 });
 
@@ -291,9 +333,13 @@ describe("Settings switches", () => {
     );
 
     // Push, quiet hours, then one per notification category this member is
-    // shown (no permissions here, so not the officers' join switch).
+    // shown (no permissions here, so not the officers' join switch, nor the
+    // weekly recap, which goes to `members:view`), Read receipts under Chat
+    // (#5519), and the Activity card's own switch (#5464).
     expect(pushSwitches(tree)).toHaveLength(1);
-    expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length - 1);
+    expect(switches).toHaveLength(
+      2 + NOTIFICATION_CATEGORIES.length - 2 + 1 + 1,
+    );
     for (const node of switches) {
       expect(node.props.trackColor.true).toBe("#8E4EC6");
       expect(node.props.activeThumbColor).toBe("#FFFFFF");
@@ -311,6 +357,30 @@ describe("Settings switches", () => {
  * where a read-only value is changed, or what went wrong.
  */
 describe("Settings copy", () => {
+  // Search settings (2026-11-19): typing swaps the rows for the matches, and a
+  // match on this screen is lit in place.
+  it("finds a setting by another word, and lights its row", async () => {
+    const tree = render();
+    const search = tree.root.findByProps({
+      accessibilityLabel: "Search settings",
+    });
+    act(() => search.props.onChangeText("dnd"));
+    const text = screenText(tree);
+    expect(text).toContain("Quiet hours");
+    expect(text).toContain("Settings · Notifications");
+    expect(text).not.toContain("Chat density");
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Quiet hours",
+    );
+    act(() => row.props.onPress());
+    expect(screenText(tree)).toContain("Chat density");
+    expect(
+      tree.root.findAllByProps({ testID: "setting-lit-quiet-hours" }),
+    ).not.toHaveLength(0);
+  });
+
   it("draws the category switches with their labels only", () => {
     state.permissions = ["*"];
     const text = screenText(render());
@@ -335,6 +405,37 @@ describe("Settings copy", () => {
 
     expect(text).not.toContain("Billing");
     expect(text).toContain("Tasks");
+  });
+
+  it("holds the category switches, and says so, until a chapter is confirmed (#5104)", () => {
+    const categorySwitches = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Switch" &&
+          NOTIFICATION_CATEGORIES.some(
+            (category) => category.label === node.props.accessibilityLabel,
+          ),
+      );
+
+    const withChapter = render();
+    expect(categorySwitches(withChapter).length).toBeGreaterThan(0);
+    for (const node of categorySwitches(withChapter)) {
+      expect(node.props.disabled).toBe(false);
+    }
+
+    state.chapterId = null;
+    const noChapter = render();
+    expect(categorySwitches(noChapter).length).toBeGreaterThan(0);
+    for (const node of categorySwitches(noChapter)) {
+      expect(node.props.disabled).toBe(true);
+    }
+    const text = screenText(noChapter);
+    expect(text).toContain(
+      "Category switches turn on once your chapter is confirmed.",
+    );
+    // A flip here was only ever kept on this device and then dropped, so
+    // nothing may promise it syncs later.
+    expect(text).not.toContain("sync");
   });
 
   it("says nothing about sync once the preferences are synced", () => {
@@ -395,6 +496,206 @@ describe("Settings copy", () => {
     expect(densitySheet.present).toHaveBeenCalled();
   });
 
+  describe("the Frapp AI switch", () => {
+    const aiSwitch = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === "Frapp AI" &&
+          typeof node.props.onValueChange === "function",
+      );
+    afterEach(() => {
+      state.aiConsent = null;
+      state.aiChapter = {
+        ask: true,
+        meeting_notes: false,
+        chat_source: true,
+        can_change: true,
+        updated_at: null,
+      };
+    });
+
+    it("isn't drawn where the server has no AI", () => {
+      state.aiConsent = null;
+      const tree = render();
+      expect(aiSwitch(tree)).toHaveLength(0);
+      expect(screenText(tree)).not.toContain("Frapp AI");
+    });
+
+    it.each([
+      ["yes" as const, true],
+      ["no" as const, false],
+      [null, false],
+    ])("is on only for a member who said yes (%s)", (answer, on) => {
+      state.aiConsent = { answer, sheet_changed: false };
+      const tree = render();
+      expect(aiSwitch(tree)[0].props.value).toBe(on);
+      // What it does, never who it works with (Paul, 2026-11-17): the
+      // companies are named on Meet Frapp AI, where the yes is given.
+      expect(screenText(tree)).toContain(FRAPP_AI_COPY.settingsCaption);
+      expect(screenText(tree)).not.toMatch(/Anthropic|Google/);
+    });
+
+    it("sits in its own AI section, before Account", () => {
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const tree = render();
+      // The header itself, not a row label that happens to contain "AI".
+      const headers = tree.root
+        .findAll((node) => node.type === SectionHeader)
+        .map((node) => node.props.children);
+      expect(headers).toEqual([
+        "Notifications",
+        "Chat",
+        "Activity",
+        "AI",
+        "Account",
+      ]);
+      const text = screenText(tree);
+      expect(text.indexOf("Nudges on Activity")).toBeGreaterThan(
+        text.indexOf("Chat density"),
+      );
+      expect(text.indexOf("Nudges on Activity")).toBeLessThan(
+        text.indexOf("Appearance"),
+      );
+    });
+
+    it("links the privacy policy under the section, and says so there if it can't open", async () => {
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const open = vi.mocked(WebBrowser.openBrowserAsync);
+      open.mockClear();
+      const tree = render();
+      const link = tree.root.find(
+        (node) =>
+          node.props.accessibilityRole === "link" &&
+          node.props.children === FRAPP_AI_COPY.privacyLink &&
+          typeof node.props.onPress === "function",
+      );
+      open.mockRejectedValueOnce(new Error("already presenting"));
+      await act(async () => {
+        link.props.onPress();
+      });
+      expect(open).toHaveBeenCalledWith(PRIVACY_LINK.url);
+      const text = screenText(tree);
+      const error = text.indexOf("Privacy Policy couldn't be opened");
+      expect(error).toBeGreaterThan(-1);
+      // Under the AI section, not a screen away under Account.
+      expect(error).toBeLessThan(text.indexOf("Appearance"));
+    });
+
+    it("offers Chapter AI only to a member who sees the chapter's AI switches", () => {
+      vi.mocked(useRouter().push).mockClear();
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const chapterRow = (tree: ReactTestRenderer) =>
+        tree.root.findAll(
+          (node) =>
+            node.props.label === AI_SETTINGS_COPY.chapterRow &&
+            typeof node.props.onPress === "function",
+        );
+      state.permissions = [];
+      expect(chapterRow(render())).toHaveLength(0);
+      // A roles manager opens Chapter settings for Roles, but web's AI tab
+      // is `chapter-config:view`'s, so neither shows them the switches.
+      state.permissions = ["roles:manage"];
+      expect(chapterRow(render())).toHaveLength(0);
+
+      state.permissions = ["chapter-config:view"];
+      const [row] = chapterRow(render());
+      expect(row.props.value).toBe("2 on");
+      act(() => row.props.onPress());
+      expect(vi.mocked(useRouter().push)).toHaveBeenCalledWith(
+        "/chapter-settings",
+      );
+    });
+
+    it("counts only the chapter's AI features that work", () => {
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      state.permissions = ["chapter-config:view"];
+      // Include channel messages left on under an Ask that is off does
+      // nothing, so it isn't counted.
+      state.aiChapter = {
+        ask: false,
+        meeting_notes: false,
+        chat_source: true,
+        can_change: true,
+        updated_at: null,
+      };
+      const row = render().root.find(
+        (node) =>
+          node.props.label === AI_SETTINGS_COPY.chapterRow &&
+          typeof node.props.onPress === "function",
+      );
+      expect(row.props.value).toBe("0 on");
+    });
+
+    it("offers Read receipts under Chat, and turns them off (#5519)", () => {
+      const receiptsSwitch = (tree: ReactTestRenderer) =>
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityLabel === "Read receipts" &&
+            typeof node.props.onValueChange === "function",
+        );
+      state.readReceipts = { enabled: true, ready: true, failed: false };
+      state.setReadReceipts.mockClear();
+      const tree = render();
+      const text = screenText(tree);
+      expect(text.indexOf("Read receipts")).toBeGreaterThan(
+        text.indexOf("Chat density"),
+      );
+      expect(text.indexOf("Read receipts")).toBeLessThan(
+        text.indexOf("Nudges on Activity"),
+      );
+      const [toggle] = receiptsSwitch(tree);
+      expect(toggle!.props.value).toBe(true);
+      act(() => toggle!.props.onValueChange(false));
+      expect(state.setReadReceipts).toHaveBeenCalledWith(false);
+
+      // Not drawn until settings answer, so it never flips under a thumb.
+      state.readReceipts = { enabled: false, ready: false, failed: false };
+      expect(receiptsSwitch(render())).toHaveLength(0);
+
+      // A failed save says so under the section.
+      state.readReceipts = { enabled: true, ready: true, failed: true };
+      expect(screenText(render())).toContain("Couldn't change read receipts");
+      state.readReceipts = { enabled: true, ready: true, failed: false };
+    });
+
+    it("offers the nudge switch to every member, AI or not (#5464)", () => {
+      const nudgeSwitch = (tree: ReactTestRenderer) =>
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityLabel === "Nudges on Activity" &&
+            typeof node.props.onValueChange === "function",
+        );
+      // The card shows without AI, so the switch does too.
+      state.aiConsent = { answer: "no", sheet_changed: false };
+      expect(nudgeSwitch(render()).length).toBeGreaterThan(0);
+
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      state.setNudges.mockClear();
+      const [toggle] = nudgeSwitch(render());
+      expect(toggle.props.value).toBe(true);
+      act(() => toggle.props.onValueChange(false));
+      expect(state.setNudges).toHaveBeenCalledWith(false);
+    });
+
+    it("opens Meet Frapp AI to turn it on, so the yes is given there", () => {
+      aiSheet.present.mockClear();
+      aiNotNow.mockClear();
+      state.aiConsent = { answer: "no", sheet_changed: false };
+      const tree = render();
+      act(() => aiSwitch(tree)[0].props.onValueChange(true));
+      expect(aiSheet.present).toHaveBeenCalled();
+      expect(aiNotNow).not.toHaveBeenCalled();
+    });
+
+    it("turns it off at once", () => {
+      aiNotNow.mockClear();
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const tree = render();
+      act(() => aiSwitch(tree)[0].props.onValueChange(false));
+      expect(aiNotNow).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("marks the What's new row while another device showed the newest entry first (#4043)", async () => {
     const whatsNewRow = (tree: ReactTestRenderer) =>
       tree.root.find(
@@ -428,73 +729,14 @@ describe("Settings copy", () => {
     expect(row.props.disabled).toBe(false);
   });
 
-  it("gives an editor's accent row no narration, and no web footnote", () => {
+  it("leaves the chapter's side to Chapter settings (#4074)", () => {
+    // Even for the President: the accent, chat background and study zones
+    // moved to Chapter settings.
     state.permissions = ["*"];
     const text = screenText(render());
-
-    expect(text).toContain("Chapter accent");
-    expect(text).not.toContain("Your organization's colors");
-    expect(text).not.toContain("Set by an officer");
-    expect(text).not.toContain(
-      "Other chapter settings are edited on the web dashboard.",
-    );
-  });
-
-  it("tells a member who can't edit the accent who can", () => {
-    // Chapter config in view, without the manage half of
-    // CHAPTER_PROFILE_PERMISSIONS: the row can't open, so it says why.
-    state.permissions = ["chapter-config:view"];
-    const tree = render();
-
-    expect(screenText(tree)).toContain(
-      "Set by an officer with chapter settings access.",
-    );
-    expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          node.props.accessibilityLabel === "Chapter accent",
-      ),
-    ).toHaveLength(0);
-  });
-
-  it("opens the chat background sheet for an editor, showing the default (#4031)", () => {
-    state.permissions = ["*"];
-    backgroundSheet.present.mockClear();
-    const tree = render();
-    expect(screenText(tree)).toContain("Chat background");
-    expect(screenText(tree)).toContain("Midnight");
-    const row = tree.root.find(
-      (node) =>
-        node.props.accessibilityHint ===
-          "Choose the background every channel shows unless it has its own." &&
-        typeof node.props.onPress === "function",
-    );
-    act(() => row.props.onPress());
-    expect(backgroundSheet.present).toHaveBeenCalled();
-  });
-
-  it("gives a member who can't edit the chapter no way into the background sheet", () => {
-    state.permissions = ["chapter-config:view"];
-    const tree = render();
-    expect(screenText(tree)).toContain("Chat background");
-    expect(
-      tree.root.findAll(
-        (node) =>
-          node.props.accessibilityHint ===
-            "Choose the background every channel shows unless it has its own." &&
-          typeof node.props.onPress === "function",
-      ),
-    ).toHaveLength(0);
-  });
-
-  it("says where study zones are changed, on their read-only row", () => {
-    state.permissions = ["*"];
-
-    // Label, its line, then the value: the line sits under this row's label.
-    expect(screenText(render())).toContain(
-      "Study zones\nManaged on the web dashboard.\n0 zones",
-    );
+    expect(text).not.toContain("Chapter accent");
+    expect(text).not.toContain("Chat background");
+    expect(text).not.toContain("Study zones");
   });
 });
 

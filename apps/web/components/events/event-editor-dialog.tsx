@@ -1,73 +1,119 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
-  ChevronDown,
-  Loader2,
   Plus,
-  Save,
   Trash2,
 } from "lucide-react";
-import {
-  RolesGlyph,
-  StudyZonesGlyph,
-} from "@/components/events/chapter-ops-glyphs";
 import { AttendanceEditor } from "@/components/events/attendance-editor";
-import { EventTypePicker } from "@/components/events/event-type-picker";
-import { MoreOptionsToggle } from "@/components/ui/more-options-toggle";
+import { EventTypeRow } from "@/components/events/event-type-picker";
+import { AgendaDraftList } from "@/components/events/event-agenda";
+import {
+  PropertyGroup,
+  PropertyRow,
+  QUIET_FIELD,
+  RowInput,
+  RowTextarea,
+  RowValueButton,
+} from "@/components/events/event-form-rows";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { FOCUS_RING } from "@/components/ui/focus";
 import {
   EVENT_CREATE_UNCONFIRMED,
   useCreateEvent,
+  useEvent,
+  useEvents,
   useMyPermissions,
   useRoles,
   useUpdateEvent,
   type EventType,
 } from "@repo/hooks";
 import {
-  RECURRENCE_REPEAT_LABELS,
-  RECURRENCE_RULES,
   attendanceFieldsOf,
   attendanceFromEvent,
   attendanceInvitesNobody,
   attendanceToWire,
   can,
+  CHECK_IN_OPENS_ERROR,
+  checkInOpensMinutes,
+  DEFAULT_CHECK_IN_OPENS_MINUTES,
+  describeCheckIn,
+  EVENT_FORM_MEMBER_NOTE,
+  EVENT_FORM_PLACEHOLDERS,
+  EVENT_FORM_ROW_LABELS,
+  parseCheckInOpens,
   othersInvitedForCreate,
   withEveryone,
   describeAttendance,
   emptyAttendanceDraft,
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
+  EVENT_NOTES_MAX_LENGTH,
   eventLimitsAudience,
-  isRecurrenceRule,
-  describeSeriesLength,
+  eventRequiresAnyone,
+  eventEditPatch,
+  isEmptyEventPatch,
+  leavesAfterSave,
+  noRepeatDraft,
+  REPEAT_PRESET_LABELS,
+  proposedRepeatDraft,
+  repeatDraftFromRule,
+  repeatEditAnchor,
+  repeatEditDraft,
+  repeatEditSeriesOf,
+  seriesStartsIn,
+  repeatRuleForEdit,
+  repeatRuleOf,
+  repeatSummary,
+  saveRequestFor,
+  saveScopeFor,
+  SERIES_SCOPE_COPY,
+  EVENT_FORM_AGENDA_REPEAT_NOTE,
+  agendaWithPending,
+  EVENT_LENGTH_CHOICES,
+  eventLengthLabel,
+  eventTypeFromForm,
+  type EventAgendaItem,
   type EventAttendanceDraft,
+  type EventEditScope,
+  type RepeatDraft,
+  type RepeatEditSeries,
 } from "@repo/validation";
+import { MemberFacingError } from "@repo/hooks/error-copy";
+import {
+  keepEditsOver as keepFieldEditsOver,
+  useKeptFormDraft,
+} from "@repo/hooks/kept-drafts";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { editTargetOf } from "@/components/events/edit-target";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { pointsLabel } from "@/components/events/event-labels";
+import { RepeatOptions } from "@/components/shared/repeat-options";
 import {
   Panel,
   PanelBody,
   PanelContent,
-  PanelFooter,
   PanelHeader,
+  type PanelDocking,
 } from "@/components/shared/panel";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
+import { TimeField } from "@/components/ui/time-field";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { normalizeRoleOptions } from "@/lib/roles";
+import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
   cn,
   getErrorMessage,
@@ -75,25 +121,215 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
-import { randomClientId } from "@repo/api-sdk";
+import { isoToLocalInput } from "@/components/events/local-input";
+import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
   eventCardOutcomeCopy,
   type EventCardTrack,
 } from "@repo/chat-core/dispatch";
+import { useMeetingsModuleOn } from "@/components/meetings/event-minutes";
 
 type EventRecord = Record<string, unknown>;
 
-export function isoToLocalInput(value: unknown): string {
-  const date = parseInstant(value);
-  if (!date) return "";
-  const timezoneOffset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 16);
-}
+const textOf = (value: unknown): string | null =>
+  typeof value === "string" ? value : null;
 
 function localInputToIso(value: string): string {
+  // The editor holds a day and a time apart; either may still be empty.
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return "";
   const date = parseInstant(value);
   if (!date) return "";
   return date.toISOString();
+}
+
+/** `YYYY-MM-DD` plus `days`, read at local noon so a clock change can't skip one. */
+function addDays(day: string, days: number): string {
+  const at = new Date(`${day}T12:00`);
+  if (Number.isNaN(at.getTime())) return day;
+  at.setDate(at.getDate() + days);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+/** A day or time in the When row, drawn as the rows' quiet chip (#5742). */
+const INLINE_FIELD = cn(
+  "h-9 px-2 text-sm shadow-none pointer-coarse:h-11",
+  QUIET_FIELD,
+);
+
+/**
+ * The When row's value, laid out as Google Calendar's event editor sets it
+ * (Paul 2026-11-19: "typing the exact same thing in the second row and just
+ * adding an hour is really tedious"): the day once, then the start and the
+ * end as times. Each time is typed or picked from a list of quarter hours
+ * (`TimeField`, not the browser's own input), and the end's list says how
+ * long each choice runs ("9 PM · 1 hr"). Moving the day or the start carries
+ * the end with it; an end before the start runs past midnight. A meeting
+ * that spans days (a retreat) gets its end's own day from "Ends another
+ * day".
+ *
+ * The values are the `YYYY-MM-DDTHH:MM` the editor has always held, either
+ * half empty until it is filled in.
+ */
+function WhenFields({
+  startAt,
+  endAt,
+  onStart,
+  onEnd,
+  invalid,
+}: {
+  startAt: string;
+  endAt: string;
+  onStart: (next: string) => void;
+  onEnd: (next: string) => void;
+  invalid: boolean;
+}) {
+  const [startDay = "", startTime = ""] = startAt.split("T");
+  const [endDay = "", endTime = ""] = endAt.split("T");
+  // Only past midnight: the next day, at a time before the start.
+  const overnight =
+    !!startDay &&
+    endDay === addDays(startDay, 1) &&
+    !!endTime &&
+    !!startTime &&
+    endTime <= startTime;
+  const spansDays =
+    !!startDay && !!endDay && endDay !== startDay && !overnight;
+  const [askedForEndDay, setAskedForEndDay] = useState(false);
+  const showEndDay = askedForEndDay || spansDays;
+  const startInstant = parseInstant(localInputToIso(startAt));
+  const endInstant = parseInstant(localInputToIso(endAt));
+  const lengthMinutes =
+    startInstant && endInstant
+      ? Math.round((endInstant.getTime() - startInstant.getTime()) / 60_000)
+      : null;
+  const join = (day: string, time: string) =>
+    day || time ? `${day}T${time}` : "";
+  const setEndTime = (time: string) => {
+    if (showEndDay) {
+      onEnd(join(endDay || startDay, time));
+      return;
+    }
+    // On the start's day, or the next one when it runs past midnight.
+    const day =
+      startDay && time && startTime && time <= startTime
+        ? addDays(startDay, 1)
+        : startDay;
+    onEnd(join(day, time));
+  };
+  return (
+    <div className="grid gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1">
+        <div className="min-w-[9.5rem] flex-1">
+          <DateField
+            id="event-start"
+            aria-label="Starts, day"
+            placeholder="Pick a day"
+            lean="ahead"
+            value={startDay}
+            className={INLINE_FIELD}
+            onChange={(day) => onStart(join(day, startTime))}
+          />
+        </div>
+        <div className="w-[5.75rem]">
+          <TimeField
+            id="event-start-time"
+            aria-label="Starts, time"
+            placeholder="Start"
+            value={startTime}
+            className={INLINE_FIELD}
+            onChange={(time) => onStart(join(startDay, time))}
+          />
+        </div>
+        <span aria-hidden="true" className="text-muted-foreground">
+          –
+        </span>
+        <div className="w-[5.75rem]">
+          <TimeField
+            id="event-end-time"
+            aria-label="Ends, time"
+            placeholder="End"
+            value={endTime}
+            anchor={startTime || undefined}
+            // The end's list runs a day on from the start, each with its
+            // length, as Google Calendar's does.
+            from={showEndDay ? undefined : startTime || undefined}
+            className={cn(INLINE_FIELD, invalid && "text-destructive-text")}
+            aria-invalid={invalid || undefined}
+            onChange={setEndTime}
+          />
+        </div>
+      </div>
+      {/* How long, one click each, as the phone's sheet offers: the end
+          moves, the start stays. */}
+      {startDay && startTime ? (
+        <div
+          role="radiogroup"
+          aria-label="How long"
+          className="flex flex-wrap items-center gap-1 px-1"
+        >
+          {EVENT_LENGTH_CHOICES.map((minutes) => {
+            const held = lengthMinutes === minutes;
+            return (
+              <button
+                key={minutes}
+                type="button"
+                role="radio"
+                aria-checked={held}
+                onClick={() => {
+                  const from = parseInstant(localInputToIso(startAt));
+                  if (!from) return;
+                  onEnd(
+                    isoToLocalInput(
+                      new Date(from.getTime() + minutes * 60_000).toISOString(),
+                    ),
+                  );
+                }}
+                className={cn(
+                  "h-7 rounded-full border px-2.5 text-caption transition-colors pointer-coarse:h-9",
+                  held
+                    ? "border-transparent bg-accent-subtle font-semibold text-accent-text"
+                    : "border-border text-muted-foreground hover:bg-card-hover hover:text-foreground",
+                  FOCUS_RING,
+                )}
+              >
+                {eventLengthLabel(minutes)}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      {showEndDay ? (
+        <div className="flex items-center gap-2">
+          <span className="w-10 shrink-0 pl-2 text-caption text-muted-foreground">
+            Ends
+          </span>
+          <div className="min-w-[9.5rem] flex-1">
+            <DateField
+              id="event-end"
+              aria-label="Ends, day"
+              placeholder="Pick a day"
+              lean="ahead"
+              value={endDay}
+              className={INLINE_FIELD}
+              onChange={(day) => onEnd(join(day, endTime))}
+            />
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAskedForEndDay(true)}
+          className={cn(
+            "w-fit rounded-sm px-2 text-caption text-muted-foreground hover:text-foreground hover:underline",
+            FOCUS_RING,
+          )}
+        >
+          Ends another day
+        </button>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -105,6 +341,181 @@ function localInputToIso(value: string): string {
  * so reordering rows moves the values rather than the focus.
  */
 type ZoneVertexDraft = { id: string; lat: string; lng: string };
+
+/** The rows that open a menu (#5561); one is open at a time. */
+type EventFormMenu = "repeat" | "attendance" | "checkIn";
+
+/**
+ * What the form keeps when the officer leaves it unsaved (#4593): every field
+ * as typed, so it comes back as it was left.
+ */
+type EventFields = {
+  name: string;
+  description: string;
+  location: string;
+  startAt: string;
+  endAt: string;
+  pointValue: string;
+  attendance: EventAttendanceDraft;
+  repeat: RepeatDraft;
+  notes: string;
+  eventTypeId: string | null;
+  checkInZone: ZoneVertexDraft[];
+  checkInZoneName: string;
+  /** Minutes before the start that check-in opens, as typed (#5561). */
+  checkInOpens: string;
+  /** A new event's agenda (create only; an event's own is edited on it). */
+  agenda: EventAgendaItem[];
+};
+type EventFormDraft = EventFields & {
+  typeFilledName: string | null;
+  /**
+   * An edit's record as the form opened on it. A kept edit is only the fields
+   * the officer changed from this: the rest come from the record as it is
+   * when the form opens again, so a kept draft never sends back a location
+   * someone else has changed since.
+   */
+  base: EventFields | null;
+};
+
+const EVENT_FIELD_KEYS = [
+  "name",
+  "description",
+  "location",
+  "startAt",
+  "endAt",
+  "pointValue",
+  "attendance",
+  "repeat",
+  "notes",
+  "eventTypeId",
+  "checkInZone",
+  "checkInZoneName",
+  "checkInOpens",
+  "agenda",
+] as const satisfies readonly (keyof EventFields)[];
+
+/** A kept edit over the record as it is now: only what the officer changed. */
+function keepEditsOver(
+  kept: EventFormDraft,
+  now: EventFormDraft,
+): EventFormDraft {
+  const base = kept.base;
+  if (!base) return kept;
+  const merged = keepFieldEditsOver<EventFields>(
+    kept,
+    base,
+    now,
+    EVENT_FIELD_KEYS,
+    [["startAt", "endAt"]],
+  );
+  return {
+    ...now,
+    ...merged,
+    typeFilledName: kept.typeFilledName,
+    base: now.base,
+  };
+}
+
+/** What the form opens on: the record, a template, or a fresh event. */
+function openingDraft({
+  mode,
+  event,
+  template,
+  initialStartAt,
+  initialEndAt,
+  initialName,
+  initialLocation,
+  initialPointValue,
+  initialRepeatRule,
+}: {
+  mode: "create" | "edit";
+  event: EventRecord | null;
+  template: EventRecord | null | undefined;
+  initialStartAt?: string;
+  initialEndAt?: string;
+  initialName?: string;
+  initialLocation?: string;
+  initialPointValue?: number;
+  initialRepeatRule?: string | null;
+}): EventFormDraft {
+  const openingRepeat = initialRepeatRule
+    ? proposedRepeatDraft(initialRepeatRule)
+    : noRepeatDraft();
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  const points = (value: unknown) =>
+    String(typeof value === "number" ? value : 10);
+  if (mode === "edit" && event) {
+    const zone = zoneToDrafts(event.check_in_zone);
+    const fields: EventFields = {
+      name: text(event.name),
+      description: text(event.description),
+      location: text(event.location),
+      startAt: isoToLocalInput(event.start_time),
+      endAt: isoToLocalInput(event.end_time),
+      pointValue: points(event.point_value),
+      attendance: attendanceFromEvent(attendanceFieldsOf(event)),
+      // A generated meeting's rule arrives with its parent (the effect
+      // after the fill).
+      repeat: repeatDraftFromRule(
+        editTargetOf(event, null)?.seriesRule ?? null,
+      ),
+      notes: text(event.notes),
+      eventTypeId:
+        typeof event.event_type_id === "string" ? event.event_type_id : null,
+      checkInZone: zone,
+      checkInZoneName: text(event.check_in_zone_name),
+      checkInOpens: String(checkInOpensMinutes(event.check_in_opens_minutes)),
+      agenda: [],
+    };
+    return { ...fields, typeFilledName: null, base: fields };
+  }
+  if (template) {
+    const zone = zoneToDrafts(template.check_in_zone);
+    return {
+      name: text(template.name),
+      description: text(template.description),
+      location: text(template.location),
+      startAt: initialStartAt ?? "",
+      endAt: initialEndAt ?? "",
+      pointValue: points(template.point_value),
+      attendance: attendanceFromEvent(attendanceFieldsOf(template)),
+      repeat: openingRepeat,
+      notes: text(template.notes),
+      eventTypeId:
+        typeof template.event_type_id === "string"
+          ? template.event_type_id
+          : null,
+      checkInZone: zone,
+      checkInZoneName: text(template.check_in_zone_name),
+      checkInOpens: String(
+        checkInOpensMinutes(template.check_in_opens_minutes),
+      ),
+      // Last year's agenda isn't this year's meeting.
+      agenda: [],
+      typeFilledName: null,
+      base: null,
+    };
+  }
+  return {
+    name: initialName ?? "",
+    description: "",
+    location: initialLocation ?? "",
+    startAt: initialStartAt ?? "",
+    endAt: initialEndAt ?? "",
+    pointValue: String(initialPointValue ?? 10),
+    attendance: emptyAttendanceDraft(),
+    repeat: openingRepeat,
+    notes: "",
+    eventTypeId: null,
+    checkInZone: [],
+    checkInZoneName: "",
+    checkInOpens: String(DEFAULT_CHECK_IN_OPENS_MINUTES),
+    agenda: [],
+    typeFilledName: null,
+    base: null,
+  };
+}
 
 let vertexKeySequence = 0;
 function nextVertexKey(): string {
@@ -205,7 +616,7 @@ function parseZoneDrafts(drafts: ZoneVertexDraft[]): ZoneParseResult {
  * create that couldn't post one says why rather than leaving the member to
  * wonder where it went. Neither case is a failure: the event exists.
  */
-export function createdToast(
+function createdToast(
   name: string,
   card: { cardKeptOut: boolean; cardLost: boolean },
 ): { title: string; description: string } {
@@ -233,10 +644,17 @@ type EventEditorDialogProps = {
   usingPreviewData: boolean;
   onSaved: () => Promise<void> | void;
   /**
-   * Open inside the Events page instead of over the app (`shared/panel.tsx`
-   * § Docked). `/event` in chat has no page to open in and keeps the sheet.
+   * Told, before the panel closes, that a series save rebuilt or moved the
+   * event it was opened on (`leavesAfterSave`), so the caller doesn't go back
+   * to that event's view: its id may be gone.
    */
-  docked?: boolean;
+  onLeftEvent?: () => void;
+  /**
+   * Open inside the Events page instead of over the app (`shared/panel.tsx`
+   * § Docked). Opened from chat's + card or an Ask answer, it docks `"here"`:
+   * over the chat column or Ask's card it came from.
+   */
+  docked?: PanelDocking;
   /** The docked back arrow's name: where it returns to. */
   backLabel?: string;
   /**
@@ -253,6 +671,29 @@ type EventEditorDialogProps = {
   initialName?: string;
   initialLocation?: string;
   initialPointValue?: number;
+  /**
+   * An earlier event a fresh create starts as a copy of (#3930, "this time
+   * last year"): its name, description, location, points, who it is for,
+   * notes, type and check-in zone. Never its schedule or its repeat, which
+   * come from `initialStartAt` / `initialEndAt`, `initialRepeatRule` and the
+   * officer. Ignored in edit mode.
+   */
+  template?: EventRecord | null;
+  /**
+   * The repeat a fresh create opens with: the series Ask proposed (#5117),
+   * following the first meeting as the officer moves it. Ignored in edit
+   * mode.
+   */
+  initialRepeatRule?: string | null;
+  /**
+   * Keep what is typed when the officer leaves without saving (#4593), under
+   * this name (`event-create`, `event-edit:<id>`): going back, Escape or
+   * leaving the page keep it, and the form opens on it next time. Cancel and
+   * a save drop it. Omitted from chat's `/event`, whose + card keeps its own.
+   */
+  keptDraft?: string;
+  /** Told the new event's id after a create, before `onSaved`. */
+  onCreated?: (eventId: string) => Promise<void> | void;
   /**
    * The chat channel a create came from. The event's card posts there, as the
    * `/event` one-liner's does, unless the event keeps anyone out: the API
@@ -278,6 +719,7 @@ export function EventEditorDialog({
   event,
   usingPreviewData,
   onSaved,
+  onLeftEvent,
   docked = false,
   backLabel = "Back to events",
   initialStartAt,
@@ -285,6 +727,10 @@ export function EventEditorDialog({
   initialName,
   initialLocation,
   initialPointValue,
+  template,
+  initialRepeatRule,
+  keptDraft,
+  onCreated,
   postToChannelId,
   trackChatCard,
 }: EventEditorDialogProps) {
@@ -294,11 +740,56 @@ export function EventEditorDialog({
   // are paid-ops and this dialog has to mirror the subscription gate (#841).
   const gate = useSubscriptionGate();
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
+  /**
+   * A new start carries the end with it, keeping the event's length, the way
+   * Google Calendar moves both: moving a meeting a day on shouldn't leave its
+   * end behind, before its start.
+   *
+   * The day field reports every keystroke, through text it can't read yet
+   * (`""`) and partial readings (`11/1` on the way to `11/15`). So the shift is
+   * measured from the last start that was a whole date and time, not from the
+   * previous keystroke: the partial steps then add up to the real move.
+   */
+  const lastWholeStart = useRef<Date | null>(null);
+  const moveStart = (next: string) => {
+    const before = lastWholeStart.current;
+    const after = parseInstant(localInputToIso(next));
+    const end = parseInstant(localInputToIso(endAt));
+    setStartAt(next);
+    if (after) lastWholeStart.current = after;
+    if (after && !end) {
+      const [startDay = "", startTime = ""] = next.split("T");
+      const endTime = endAt.split("T")[1] ?? "";
+      if (endTime) {
+        // An end time picked before the start was whole keeps that time, on
+        // the start's day, or the next when it runs past midnight.
+        setEndAt(
+          `${endTime <= startTime ? addDays(startDay, 1) : startDay}T${endTime}`,
+        );
+      } else {
+        // No end yet: an hour, as a new event in Google Calendar starts.
+        setEndAt(
+          isoToLocalInput(
+            new Date(after.getTime() + 60 * 60_000).toISOString(),
+          ),
+        );
+      }
+    } else if (before && after && end) {
+      setEndAt(
+        isoToLocalInput(
+          new Date(
+            end.getTime() + after.getTime() - before.getTime(),
+          ).toISOString(),
+        ),
+      );
+    }
+  };
   // Held as text so a cleared field stays cleared while the officer types,
   // rather than React writing 0 back into it. An empty field still saves as 0.
   const [pointValue, setPointValue] = useState("10");
@@ -307,33 +798,128 @@ export function EventEditorDialog({
   // it absent, so it is a choice, not a default.
   const [attendance, setAttendance] =
     useState<EventAttendanceDraft>(emptyAttendanceDraft);
-  const [recurrenceRule, setRecurrenceRule] = useState("NONE");
+  // The Repeat section (`repeat-draft.ts` in `@repo/validation`).
+  const [repeat, setRepeat] = useState<RepeatDraft>(() => noRepeatDraft());
   const [notes, setNotes] = useState("");
+  const meetingsOn = useMeetingsModuleOn();
   // The chapter's event type this is made as, or none (#3730). Picking one
   // only fills the form; the event keeps its own points and attendance.
   const [eventTypeId, setEventTypeId] = useState<string | null>(null);
   // The name the last picked type wrote into the name field, so picking a
   // different type replaces it but never a name the officer typed.
   const [typeFilledName, setTypeFilledName] = useState<string | null>(null);
-  // Closed on create, so the form opens on the four fields every event needs;
-  // open on edit, where the officer came to change something.
-  const [showMore, setShowMore] = useState(false);
-  const [showZone, setShowZone] = useState(false);
+  // The row whose menu is open (#5561): one at a time, and a check on
+  // Create that stops on a row opens that row's menu.
+  const [menu, setMenu] = useState<EventFormMenu | null>(null);
+  // The fields as the form opened, so Discard shows once something changes.
+  const [openedFields, setOpenedFields] = useState<EventFields | null>(null);
+  const [checkInOpens, setCheckInOpens] = useState(
+    String(DEFAULT_CHECK_IN_OPENS_MINUTES),
+  );
   const [checkInZone, setCheckInZone] = useState<ZoneVertexDraft[]>([]);
   const [checkInZoneName, setCheckInZoneName] = useState("");
+  const [agenda, setAgenda] = useState<EventAgendaItem[]>([]);
+  // The Agenda row's add field: a line typed but never entered still goes
+  // with Create.
+  const [agendaDraft, setAgendaDraft] = useState("");
+  // Kept when left unsaved (#4593). The open sections are kept with it but
+  // aren't an edit, so only the fields decide whether there is a draft.
+  const fields = {
+    name,
+    description,
+    location,
+    startAt,
+    endAt,
+    pointValue,
+    attendance,
+    repeat,
+    notes,
+    eventTypeId,
+    checkInZone,
+    checkInZoneName,
+    checkInOpens,
+    agenda,
+  };
+  // An edit's record as the form opened on it (`EventFormDraft.base`).
+  const [openedBase, setOpenedBase] = useState<EventFields | null>(null);
+  const kept = useKeptFormDraft<EventFormDraft>(
+    keptDraft ?? null,
+    open,
+    { ...fields, typeFilledName, base: openedBase },
+    { signature: JSON.stringify(fields) },
+  );
+  // Set where the form fills on open, for the effect after it in the same
+  // pass: `kept.restored` is state and reads the last render's.
+  const openedOnDraft = useRef(false);
+  // And whether that draft changed Repeat, which a series rule arriving
+  // after the fill then leaves alone.
+  const keptRepeatEdited = useRef(false);
+  // Discard refills the form from scratch.
+  const [fillCount, setFillCount] = useState(0);
   const rolesQuery = useRoles();
   // Adding or changing a type is `events:update` on the server; anyone who
   // can open this form may pick one.
   const { data: permissionsPayload } = useMyPermissions();
   const canManageTypes = can("events:update", permissionsPayload?.permissions);
+  // The same permission decides who makes anyone required or attaches
+  // points (#3709): a member who may only create events makes optional
+  // events worth no points, and the API holds them to it
+  // (`EventService.create`). Editing takes `events:update` anyway.
+  const canSetRequirements = canManageTypes;
 
-  const eventId = typeof event?.id === "string" ? event.id : "";
+  // A generated meeting carries no rule of its own: its series' rule and
+  // first start live on its parent, read here as the phone does
+  // (`event-details.tsx`). A series time change goes to it as a shift.
+  const parentId =
+    mode === "edit" && typeof event?.parent_event_id === "string"
+      ? event.parent_event_id
+      : "";
+  const parentQuery = useEvent(usingPreviewData ? "" : parentId);
+  // The chapter's events, for the series' real next meeting: a Repeat change
+  // on a started series steps from it (`repeatEditAnchor`, #4746). Read only
+  // when editing a series; the Events page has the list cached already.
+  const seriesListQuery = useEvents({
+    enabled:
+      mode === "edit" &&
+      !usingPreviewData &&
+      (parentId !== "" || !!textOf(event?.recurrence_rule)),
+  });
+  const editTarget = useMemo(() => {
+    if (mode !== "edit") return null;
+    const target = editTargetOf(event, parentQuery.data ?? null);
+    return target
+      ? {
+          ...target,
+          seriesStarts: seriesStartsIn(target, seriesListQuery.data),
+        }
+      : null;
+  }, [mode, event, parentQuery.data, seriesListQuery.data]);
+  // A generated meeting waits for its parent before it saves, as the phone's
+  // Edit does (`event-details.tsx`): until then "All upcoming events" can't be
+  // offered, and a save would go to this meeting alone without asking. A
+  // series also waits for the chapter's events while they load, so a Repeat
+  // change steps from the real next meeting, not a guess (#4746). A list
+  // read that fails leaves the guess from the rule.
+  const parentLoading =
+    !usingPreviewData &&
+    ((parentId !== "" && parentQuery.isPending) || seriesListQuery.isLoading);
+  // Repeat waits for the parent: without it the series' rule is unknown.
+  const repeatLocked =
+    (!!editTarget?.event.parent_event_id && editTarget.parent === null) ||
+    parentLoading;
+  const repeatSeriesAt = (
+    start: Date,
+    now: Date,
+  ): RepeatEditSeries | undefined =>
+    editTarget && !repeatLocked
+      ? repeatEditSeriesOf(editTarget, start, now)
+      : undefined;
   const isSubmitting =
     createEventMutation.isPending || updateEventMutation.isPending;
 
   const roleOptions = useMemo(
     () =>
-      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
+      toRoleOptions(rolesQuery.data, "hide").sort((first, second) =>
         first.name.localeCompare(second.name),
       ),
     [rolesQuery.data],
@@ -347,59 +933,53 @@ export function EventEditorDialog({
     return (id: string) => byId.get(id);
   }, [roleOptions]);
 
+  const takeKept = kept.take;
   /* eslint-disable react-hooks/set-state-in-effect -- hydrate or reset the form when the dialog opens on a different event */
   useEffect(() => {
     if (!open) return;
-    if (mode === "edit" && event) {
-      setName(typeof event.name === "string" ? event.name : "");
-      setDescription(
-        typeof event.description === "string" ? event.description : "",
-      );
-      setLocation(typeof event.location === "string" ? event.location : "");
-      setStartAt(isoToLocalInput(event.start_time));
-      setEndAt(isoToLocalInput(event.end_time));
-      setPointValue(
-        String(typeof event.point_value === "number" ? event.point_value : 10),
-      );
-      setAttendance(attendanceFromEvent(attendanceFieldsOf(event)));
-      setRecurrenceRule(
-        typeof event.recurrence_rule === "string" &&
-          event.recurrence_rule.length > 0
-          ? event.recurrence_rule
-          : "NONE",
-      );
-      setNotes(typeof event.notes === "string" ? event.notes : "");
-      setEventTypeId(
-        typeof event.event_type_id === "string" ? event.event_type_id : null,
-      );
-      setTypeFilledName(null);
-      setCheckInZone(zoneToDrafts(event.check_in_zone));
-      setShowMore(true);
-      setShowZone(zoneToDrafts(event.check_in_zone).length > 0);
-      setCheckInZoneName(
-        typeof event.check_in_zone_name === "string"
-          ? event.check_in_zone_name
-          : "",
-      );
-      return;
-    }
-
-    setName(initialName ?? "");
-    setDescription("");
-    setLocation(initialLocation ?? "");
-    setStartAt(initialStartAt ?? "");
-    setEndAt(initialEndAt ?? "");
-    setPointValue(String(initialPointValue ?? 10));
-    setAttendance(emptyAttendanceDraft());
-    setRecurrenceRule("NONE");
-    setNotes("");
-    setEventTypeId(null);
-    setTypeFilledName(null);
-    setCheckInZone([]);
-    setCheckInZoneName("");
-    setShowMore(false);
-    setShowZone(false);
+    const opened = openingDraft({
+      mode,
+      event,
+      template,
+      initialStartAt,
+      initialEndAt,
+      initialName,
+      initialLocation,
+      initialPointValue,
+      initialRepeatRule,
+    });
+    const draft = takeKept();
+    openedOnDraft.current = draft !== undefined;
+    keptRepeatEdited.current =
+      !!draft?.base &&
+      JSON.stringify(draft.repeat) !== JSON.stringify(draft.base.repeat);
+    const fill = draft ? keepEditsOver(draft, opened) : opened;
+    setName(fill.name);
+    setDescription(fill.description);
+    setLocation(fill.location);
+    setStartAt(fill.startAt);
+    // As every fill does: without it a start move here would be measured
+    // from whatever the dialog last held (#4473).
+    lastWholeStart.current = parseInstant(localInputToIso(fill.startAt));
+    setEndAt(fill.endAt);
+    setPointValue(fill.pointValue);
+    setAttendance(fill.attendance);
+    setRepeat(fill.repeat);
+    setNotes(fill.notes);
+    setEventTypeId(fill.eventTypeId);
+    setTypeFilledName(fill.typeFilledName);
+    setCheckInZone(fill.checkInZone);
+    setCheckInZoneName(fill.checkInZoneName);
+    setCheckInOpens(fill.checkInOpens);
+    // A draft kept before the form had an agenda has none.
+    setAgenda(fill.agenda ?? []);
+    setAgendaDraft("");
+    setMenu(null);
+    // What the form opened on, so Discard shows only once something is typed.
+    setOpenedFields(fill);
+    setOpenedBase(opened.base);
   }, [
+    template,
     event,
     mode,
     open,
@@ -408,14 +988,43 @@ export function EventEditorDialog({
     initialName,
     initialLocation,
     initialPointValue,
+    initialRepeatRule,
+    takeKept,
+    fillCount,
   ]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // A generated meeting's rule arrives with its parent, after the form has
+  // opened. Repeat is locked until then, so nothing typed is overwritten.
+  const parentRule = editTarget?.parent ? editTarget.seriesRule : null;
+  const rebaseKept = kept.rebase;
+  /* eslint-disable react-hooks/set-state-in-effect -- the parent's rule lands after the form hydrates */
+  useEffect(() => {
+    if (!open || parentRule === null) return;
+    const rule = repeatDraftFromRule(parentRule);
+    // The record's Repeat, as the kept edit's base.
+    setOpenedBase((base) => (base ? { ...base, repeat: rule } : base));
+    // The form filling itself is not a change to discard.
+    if (!keptRepeatEdited.current) {
+      setOpenedFields((opened) =>
+        opened ? { ...opened, repeat: rule } : opened,
+      );
+    }
+    // A kept draft that changed Repeat keeps the officer's own.
+    if (!keptRepeatEdited.current) setRepeat(rule);
+    // The form filling itself, not an edit to keep.
+    if (!openedOnDraft.current) rebaseKept();
+    // `fillCount`: Discard refills from the record, rule included.
+  }, [open, parentRule, rebaseKept, fillCount]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const submitLabel = useMemo(() => {
     if (isSubmitting) {
-      return mode === "create" ? "Creating..." : "Saving...";
+      return mode === "create" ? "Creating" : "Saving";
     }
-    return mode === "create" ? "Create event" : "Save changes";
+    // The phone's header says the same (#5561); the button's name is the
+    // whole "Create event" / "Save changes".
+    return mode === "create" ? "Create" : "Save";
   }, [isSubmitting, mode]);
 
   /**
@@ -424,15 +1033,32 @@ export function EventEditorDialog({
    * the name is blank or still the one the last pick wrote. Letting the type
    * go leaves the form as it is.
    */
-  function handlePickType(type: EventType | null) {
+  function handlePickType(type: EventType | null, made = false) {
+    // The held type picked again keeps it and what was changed since, as
+    // the phone's Type sheet does: it never resets the points or attendance.
+    if (type && type.id === eventTypeId) return;
     setEventTypeId(type?.id ?? null);
     if (!type) return;
-    setPointValue(String(type.point_value));
-    setAttendance((previous) =>
-      previous.everyone === "not_invited"
-        ? previous
-        : withEveryone(previous, type.is_mandatory ? "required" : "optional"),
-    );
+    // A type just made from this form (`eventTypeFromForm`) took its values
+    // from it: the form keeps what it holds, refused points included, and
+    // only a blank name takes the type's.
+    if (made) {
+      if (name.trim() === "") {
+        setName(type.name);
+        setTypeFilledName(type.name);
+      }
+      return;
+    }
+    // A member's event carries no points and requires nobody, whatever the
+    // type says: the type still names it.
+    if (canSetRequirements) {
+      setPointValue(String(type.point_value));
+      setAttendance((previous) =>
+        previous.everyone === "not_invited"
+          ? previous
+          : withEveryone(previous, type.is_mandatory ? "required" : "optional"),
+      );
+    }
     if (name.trim() === "" || name === typeFilledName) {
       setName(type.name);
       setTypeFilledName(type.name);
@@ -491,12 +1117,26 @@ export function EventEditorDialog({
     }
     const startIso = localInputToIso(startAt);
     const endIso = localInputToIso(endAt);
+    // The first of the When fields that is missing, or the end's time.
+    const focusScheduleProblem = () => {
+      const [startDay, startTime] = startAt.split("T");
+      document
+        .getElementById(
+          !startDay
+            ? "event-start"
+            : !startTime
+              ? "event-start-time"
+              : "event-end-time",
+        )
+        ?.focus();
+    };
     if (!startIso || !endIso) {
       toast({
         title: "Valid schedule required",
         description: "Provide both start and end times.",
         variant: "destructive",
       });
+      focusScheduleProblem();
       return;
     }
     if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
@@ -505,6 +1145,7 @@ export function EventEditorDialog({
         description: "End must be after start.",
         variant: "destructive",
       });
+      focusScheduleProblem();
       return;
     }
 
@@ -515,6 +1156,7 @@ export function EventEditorDialog({
         description: parsedZone.message,
         variant: "destructive",
       });
+      setMenu("checkIn");
       return;
     }
     const zone = parsedZone.zone;
@@ -534,12 +1176,51 @@ export function EventEditorDialog({
       return;
     }
 
+    const opensMinutes = parseCheckInOpens(checkInOpens);
+    if (opensMinutes === null) {
+      setMenu("checkIn");
+      toast({
+        title: "Check when check-in opens",
+        description: CHECK_IN_OPENS_ERROR,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const wire = attendanceToWire(attendance);
+    if (!canSetRequirements && eventRequiresAnyone(wire)) {
+      setMenu("attendance");
+      toast({
+        title: "Only officers who manage events can make one required",
+        description: "Set it to optional, or ask one of them to make it.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (attendanceInvitesNobody(wire)) {
-      setShowMore(true);
+      setMenu("attendance");
       toast({
         title: "Nobody is invited",
         description: "Add a role, or invite everyone.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // On create the rule steps from the event's start. On an edit it steps
+    // from the meeting that is the series' first once the save lands
+    // (`repeatEditAnchor`); an untouched draft gives back the stored rule.
+    const editRepeatSeries = repeatSeriesAt(new Date(startIso), new Date());
+    const repeatResult = repeatLocked
+      ? ({ ok: true, rule: null } as const)
+      : editRepeatSeries
+        ? repeatRuleForEdit(repeat, editRepeatSeries)
+        : repeatRuleOf(repeat, new Date(startIso));
+    if (!repeatResult.ok) {
+      setMenu("repeat");
+      toast({
+        title: "Check the repeat",
+        description: repeatResult.error,
         variant: "destructive",
       });
       return;
@@ -551,23 +1232,17 @@ export function EventEditorDialog({
       location: location.trim() || undefined,
       start_time: startIso,
       end_time: endIso,
-      point_value: pointValueNumber,
+      point_value: canSetRequirements ? pointValueNumber : 0,
       is_mandatory: wire.is_mandatory,
-      recurrence_rule: recurrenceRule === "NONE" ? undefined : recurrenceRule,
       notes: notes.trim() || undefined,
+      check_in_opens_minutes: opensMinutes,
     };
-    // Sent on create only when one is picked, so a plain event still creates
-    // against an API that predates types; always sent on an edit, so letting
-    // the type go clears it.
-    const typeField =
-      mode === "create"
-        ? eventTypeId
-          ? { event_type_id: eventTypeId }
-          : {}
-        : { event_type_id: eventTypeId };
-
+    // Out of the store while the save runs: an officer who leaves and comes
+    // back before it lands mustn't be offered the same form to send twice.
+    kept.hold();
     try {
       if (mode === "create") {
+        const sentAgenda = agendaWithPending(agenda, agendaDraft, randomClientId);
         // Role lists are omitted when empty on create; on update (below)
         // every list is sent, so an emptied one clears.
         //
@@ -587,11 +1262,16 @@ export function EventEditorDialog({
                 lost: () => undefined,
               })
             : null;
-        let created: { card_posted?: boolean } | undefined;
+        let created: { id?: string; card_posted?: boolean } | undefined;
         try {
           created = await createEventMutation.mutateAsync({
             ...payload,
-            ...(typeField as { event_type_id?: string }),
+            ...(repeatResult.rule
+              ? { recurrence_rule: repeatResult.rule }
+              : {}),
+            // Only when one is picked, so a plain event still creates
+            // against an API that predates types.
+            ...(eventTypeId ? { event_type_id: eventTypeId } : {}),
             ...(card
               ? {
                   channel_id: postToChannelId,
@@ -616,6 +1296,9 @@ export function EventEditorDialog({
                   ...(zoneName ? { check_in_zone_name: zoneName } : {}),
                 }
               : {}),
+            // The first meeting's own (a series' later meetings start with
+            // none, `spec/behavior/events.md` § Agenda and attachments).
+            ...(sentAgenda.length > 0 ? { agenda: sentAgenda } : {}),
           });
         } catch (error) {
           card?.failed();
@@ -624,33 +1307,122 @@ export function EventEditorDialog({
         const cardLost = card !== null && created?.card_posted === false;
         if (cardLost) card.lost();
         toast(createdToast(payload.name, { cardKeptOut, cardLost }));
+        if (created?.id && onCreated) {
+          // The event exists whatever this does, so it never fails the save.
+          try {
+            await onCreated(created.id);
+          } catch {
+            // The caller reports its own failure.
+          }
+        }
       } else {
-        if (!eventId) return;
-        await updateEventMutation.mutateAsync({
-          id: eventId,
-          body: {
-            ...payload,
-            ...typeField,
-            required_role_ids: wire.required_role_ids,
-            optional_role_ids: wire.optional_role_ids,
-            excluded_role_ids: wire.excluded_role_ids,
-            // Always sent on an update: the stored row may hold an explicit
-            // value that a derived one wouldn't replace.
-            others_invited: wire.others_invited,
-            // Always sent, so emptying the editor clears the stored zone:
-            // UpdateEventDto omits @ArrayMinSize and normalizeCheckInZone maps
-            // [] to null. The name is cleared alongside it — a leftover name on
-            // a zone-less event is inert but misleading in the editor.
+        if (!event || !editTarget || parentLoading) {
+          kept.release();
+          return;
+        }
+        // Only what changed is sent (`eventEditPatch`): a time or location in
+        // the patch pushes "Event Updated" to the chapter, so a renamed
+        // meeting must not carry them.
+        const patch = eventEditPatch(
+          {
+            name: textOf(event.name) ?? "",
+            start_time: editTarget.event.start_time,
+            end_time: editTarget.event.end_time,
+            location: textOf(event.location),
+            description: textOf(event.description),
+            notes: textOf(event.notes),
+            point_value:
+              typeof event.point_value === "number" ? event.point_value : null,
+            // As the form read it, so an event that never set one doesn't
+            // send the default back as a change.
+            check_in_opens_minutes: checkInOpensMinutes(
+              event.check_in_opens_minutes,
+            ),
+            attendance: attendanceFieldsOf(event),
+            event_type_id: textOf(event.event_type_id),
+            check_in_zone: event.check_in_zone,
+            check_in_zone_name: textOf(event.check_in_zone_name),
+          },
+          editTarget.seriesRule,
+          {
+            name: payload.name,
+            start: new Date(startIso),
+            end: new Date(endIso),
+            location: location,
+            description: description,
+            notes: notes,
+            point_value: payload.point_value,
+            check_in_opens_minutes: opensMinutes,
+            attendance: wire,
+            event_type_id: eventTypeId,
+            // Locked while a generated meeting's parent is unread, and then
+            // not sent: the series' rule isn't known.
+            ...(repeatLocked ? {} : { recurrence_rule: repeatResult.rule }),
             check_in_zone: zone,
+            // A leftover name on a zone-less event is inert but misleading.
             check_in_zone_name: zone.length > 0 ? zoneName : "",
           },
-        });
+        );
+        // Nothing changed: nothing to send, and nobody to notify.
+        if (isEmptyEventPatch(patch)) {
+          kept.drop();
+          onOpenChange(false);
+          return;
+        }
+        // A Repeat change is about the series, so it isn't asked
+        // (`saveScopeFor`); anything else on a repeating event is.
+        const asked = saveScopeFor(editTarget, patch, new Date());
+        let scope: EventEditScope = asked === "ask" ? "instance" : asked;
+        if (asked === "ask") {
+          const picked = await confirm({
+            title: SERIES_SCOPE_COPY.saveTitle,
+            description: SERIES_SCOPE_COPY.saveMessage,
+            confirmLabel: SERIES_SCOPE_COPY.allUpcoming,
+            alternativeLabel: SERIES_SCOPE_COPY.thisEvent,
+            tone: "default",
+          });
+          if (!picked) {
+            kept.release();
+            return;
+          }
+          scope = picked.alternative ? "instance" : "series";
+        }
+        const request = saveRequestFor(editTarget, patch, scope);
+        let saved: unknown;
+        try {
+          saved = await updateEventMutation.mutateAsync({
+            id: request.id,
+            body: { ...request.body, scope: request.scope },
+          });
+        } catch (error) {
+          // Only when the officer picked "All upcoming events": a Repeat
+          // change is always the series, so "this event only" isn't an
+          // option to point them to.
+          if (
+            asked === "ask" &&
+            request.scope === "series" &&
+            statusOf(error) === 400
+          ) {
+            // Sending it again can't win, so say what to do instead.
+            throw new MemberFacingError(SERIES_SCOPE_COPY.seriesRefused);
+          }
+          throw error;
+        }
+        const savedId =
+          saved && typeof saved === "object" && "id" in saved
+            ? String((saved as { id: unknown }).id)
+            : null;
+        if (leavesAfterSave(request, editTarget, savedId)) onLeftEvent?.();
         toast({
           title: "Event updated",
-          description: `${payload.name} was updated successfully.`,
+          description:
+            request.scope === "series"
+              ? `${payload.name} was updated for every upcoming event.`
+              : `${payload.name} was updated successfully.`,
         });
       }
     } catch (error) {
+      kept.release();
       // A lost answer isn't a refusal: the event may exist (#1717).
       const unconfirmed =
         error instanceof Error && error.message === EVENT_CREATE_UNCONFIRMED;
@@ -669,6 +1441,7 @@ export function EventEditorDialog({
       return;
     }
 
+    kept.drop();
     onOpenChange(false);
     try {
       await onSaved();
@@ -683,18 +1456,41 @@ export function EventEditorDialog({
   }
 
   const repeatStart = parseInstant(localInputToIso(startAt));
-  const repeatNote =
-    repeatStart && isRecurrenceRule(recurrenceRule)
-      ? describeSeriesLength(repeatStart, recurrenceRule)
-      : null;
-  const moreSummary = [
-    pointsLabel(Number(pointValue.trim() === "" ? 0 : pointValue)) ??
-      "No points",
-    describeAttendance(attendance, roleName),
-    isRecurrenceRule(recurrenceRule)
-      ? RECURRENCE_REPEAT_LABELS[recurrenceRule]
-      : "Doesn't repeat",
-  ].join(" · ");
+  const repeatSeries = repeatStart
+    ? repeatSeriesAt(repeatStart, new Date())
+    : undefined;
+  const repeatAnchorStart = repeatSeries
+    ? repeatEditAnchor(repeatSeries)
+    : repeatStart;
+  const repeatValue = repeatLocked
+    ? parentLoading
+      ? "Loading the series…"
+      : "Part of a series"
+    : repeatStart
+      ? repeatSummary(repeat, repeatAnchorStart ?? repeatStart, repeatSeries)
+      : repeat.preset === "NONE"
+        ? REPEAT_PRESET_LABELS.NONE
+        : "Repeats";
+  const startIso = localInputToIso(startAt);
+  const endIso = localInputToIso(endAt);
+  const endsBeforeStart =
+    !!startIso &&
+    !!endIso &&
+    new Date(endIso).getTime() <= new Date(startIso).getTime();
+  const fieldSignature = (value: EventFields | null) =>
+    value ? JSON.stringify(EVENT_FIELD_KEYS.map((key) => value[key])) : "";
+  const touched =
+    fieldSignature(fields) !== fieldSignature(openedFields) ||
+    agendaDraft.trim() !== "";
+  const menuProps = (row: EventFormMenu) => ({
+    open: menu === row,
+    onOpenChange: (next: boolean) => setMenu(next ? row : null),
+  });
+  const notesLabel = meetingsOn ? "Notes" : "Meeting minutes";
+  const checkInValue = describeCheckIn(
+    parseCheckInOpens(checkInOpens),
+    checkInZone.some((row) => row.lat.trim() !== "" || row.lng.trim() !== ""),
+  );
 
   return (
     <Panel
@@ -705,9 +1501,9 @@ export function EventEditorDialog({
     >
       {/*
         A panel, not a dialog (`components.md` § Surface size): this form runs
-        to a role list and a polygon of any length, so it scrolled inside a
-        672px dialog capped at 90vh. It opens at the event panel's own width,
-        so Edit event reads as that panel turning into its editor.
+        to a role list and a polygon of any length. It opens at the event
+        panel's own width, so Edit event reads as that panel turning into its
+        editor.
 
         No description: the one this had restated the form's own fields.
         `aria-describedby={undefined}` tells Radix the omission is deliberate.
@@ -715,12 +1511,71 @@ export function EventEditorDialog({
       <PanelContent
         onCloseAutoFocus={onCloseAutoFocus}
         aria-describedby={undefined}
+        onKeyDown={(keyEvent) => {
+          // Ctrl/Cmd+Enter creates from anywhere in the form, as Linear's
+          // create does. Not from a menu or dialog opened over it (React
+          // carries their keys here through the portal): the Type search
+          // takes Enter as a pick, and the series question as its answer.
+          const target = keyEvent.target;
+          if (
+            keyEvent.defaultPrevented ||
+            !(target instanceof Node) ||
+            !keyEvent.currentTarget.contains(target)
+          ) {
+            return;
+          }
+          if (
+            keyEvent.key === "Enter" &&
+            (keyEvent.metaKey || keyEvent.ctrlKey) &&
+            gate.allowed &&
+            !usingPreviewData &&
+            !isSubmitting &&
+            !parentLoading
+          ) {
+            keyEvent.preventDefault();
+            void handleSubmit();
+          }
+        }}
       >
-        <PanelHeader>
-          {mode === "create" ? "Create event" : "Edit event"}
+        {/* Create sits in the header, opposite the way back, as Apple
+            Calendar's new event sheet puts Add (#5561): the action stays by
+            the fields however short the form is. Going back keeps what was
+            typed (#4593); Discard is the one way to drop it, shown once
+            something is typed, and Kept-draft's own line offers it when the
+            form opened on one. */}
+        <PanelHeader
+          actions={
+            <div className="flex items-center gap-1">
+              {touched && !kept.restored ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    kept.drop();
+                    onOpenChange(false);
+                  }}
+                >
+                  Discard
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                aria-label={mode === "create" ? "Create event" : "Save changes"}
+                onClick={handleSubmit}
+                {...gate.controlProps(
+                  usingPreviewData || isSubmitting || parentLoading,
+                )}
+                className="min-w-[5.5rem]"
+              >
+                {submitLabel}
+              </Button>
+            </div>
+          }
+        >
+          {mode === "create" ? "New event" : "Edit event"}
         </PanelHeader>
 
-        <PanelBody>
+        <PanelBody className="gap-3">
           {usingPreviewData ? (
             <div className="flex items-start gap-3 rounded-md border border-warning/45 bg-warning-tint p-3 text-caption text-warning">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -739,81 +1594,138 @@ export function EventEditorDialog({
         */}
           <SubscriptionNotice gate={gate} feature="managing events" />
 
-          <div className="grid gap-3">
-            <EventTypePicker
+          {/* The name first and largest, borderless until it holds the
+              caret, as Linear's and Notion's titles are. */}
+          <input
+            id="event-name"
+            aria-label="Event name"
+            maxLength={EVENT_NAME_MAX_LENGTH}
+            value={name}
+            onChange={(eventValue) => setName(eventValue.target.value)}
+            placeholder={EVENT_FORM_PLACEHOLDERS.name}
+            autoFocus={mode === "create"}
+            className={cn(
+              "-mx-2 h-11 rounded-md bg-transparent px-2 text-xl font-semibold text-foreground caret-primary placeholder:text-muted-foreground",
+              "hover:bg-card-hover focus:bg-surface-1",
+              FOCUS_RING,
+            )}
+          />
+
+          {/*
+            One row per setting, each a click from changing (#5561, Paul
+            2026-11-19): points, who must come and repeat show what they are
+            at rest instead of waiting behind More options. The phone's sheet
+            draws the same rows in the same order (`EVENT_FORM_ROWS`).
+          */}
+          <PropertyGroup>
+            <EventTypeRow
               value={eventTypeId}
               onPick={handlePickType}
               canManage={canManageTypes && !usingPreviewData}
+              showSets={canSetRequirements}
+              typeFromForm={(typeName) =>
+                eventTypeFromForm(
+                  typeName,
+                  canSetRequirements ? pointValue : null,
+                  canSetRequirements && attendance.everyone === "required",
+                )
+              }
               disabled={usingPreviewData}
             />
 
-            <div className="grid gap-1">
-              <Label htmlFor="event-name">Event name</Label>
-              <Input
-                id="event-name"
-                value={name}
-                onChange={(eventValue) => setName(eventValue.target.value)}
-                placeholder="Chapter meeting"
+            <PropertyRow
+              glyph="when"
+              label={EVENT_FORM_ROW_LABELS.when}
+              align="start"
+            >
+              <WhenFields
+                startAt={startAt}
+                endAt={endAt}
+                onStart={moveStart}
+                onEnd={setEndAt}
+                invalid={endsBeforeStart}
               />
-            </div>
+              {endsBeforeStart ? (
+                <p className="px-2 text-caption text-destructive-text">
+                  Ends before it starts.
+                </p>
+              ) : null}
+            </PropertyRow>
 
-            {/* Wraps by the panel's own width, not the window's: docked beside chat
-                the panel can be 375px wide on a wide screen. */}
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
-              <div className="grid gap-1">
-                <Label htmlFor="event-start">Start</Label>
-                <Input
-                  id="event-start"
-                  type="datetime-local"
-                  value={startAt}
-                  onChange={(eventValue) => setStartAt(eventValue.target.value)}
-                />
-              </div>
-              <div className="grid gap-1">
-                <Label htmlFor="event-end">End</Label>
-                <Input
-                  id="event-end"
-                  type="datetime-local"
-                  value={endAt}
-                  onChange={(eventValue) => setEndAt(eventValue.target.value)}
-                />
-              </div>
-            </div>
+            <PropertyRow glyph="repeat" label={EVENT_FORM_ROW_LABELS.repeat}>
+              <Popover {...menuProps("repeat")}>
+                <PopoverTrigger asChild>
+                  <RowValueButton
+                    aria-label={`Repeat: ${repeatValue}`}
+                    empty={!repeatLocked && repeat.preset === "NONE"}
+                  >
+                    {repeatValue}
+                  </RowValueButton>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-[24rem]">
+                  {repeatLocked ? (
+                    <p className="text-caption text-muted-foreground">
+                      {parentLoading
+                        ? "Loading the series…"
+                        : "Part of a repeating series. Its first meeting couldn't be loaded, so how it repeats can't be changed here."}
+                    </p>
+                  ) : (
+                    <RepeatOptions
+                      draft={
+                        repeatSeries
+                          ? repeatEditDraft(repeat, repeatSeries)
+                          : repeat
+                      }
+                      start={repeatAnchorStart}
+                      onChange={setRepeat}
+                      disabled={usingPreviewData}
+                      // An existing series' length was set when it was made;
+                      // the line comes back once the officer changes Repeat.
+                      showLength={!(mode === "edit" && repeat.pristine)}
+                      series={repeatSeries}
+                    />
+                  )}
+                </PopoverContent>
+              </Popover>
+            </PropertyRow>
 
-            <div className="grid gap-1">
-              <Label htmlFor="event-location">Location</Label>
-              <Input
+            <PropertyRow
+              glyph="location"
+              label={EVENT_FORM_ROW_LABELS.location}
+              labelFor="event-location"
+            >
+              <RowInput
                 id="event-location"
+                maxLength={EVENT_LOCATION_MAX_LENGTH}
                 value={location}
                 onChange={(eventValue) => setLocation(eventValue.target.value)}
-                placeholder="Chapter house"
+                placeholder={EVENT_FORM_PLACEHOLDERS.location}
               />
-            </div>
+            </PropertyRow>
 
-            {/*
-              Everything past the four fields every event needs waits behind
-              one row, which says what it holds while closed (owner,
-              2026-11-06: nobody wants every option at once on create).
-            */}
-            <MoreOptionsToggle
-              open={showMore}
-              onToggle={() => setShowMore((open) => !open)}
-              summary={moreSummary}
-              controls="event-more-options"
-            />
+          </PropertyGroup>
 
-            {showMore ? (
-              <div id="event-more-options" className="grid gap-4">
-                <section className="grid gap-2" aria-label="Who's coming">
-                  <div className="flex items-center gap-2 text-sm">
-                    <RolesGlyph className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-semibold text-muted-foreground">
-                      Who&apos;s coming
-                    </span>
-                  </div>
+          <PropertyGroup>
+            <PropertyRow
+              glyph="attendance"
+              label={EVENT_FORM_ROW_LABELS.attendance}
+            >
+              <Popover {...menuProps("attendance")}>
+                <PopoverTrigger asChild>
+                  <RowValueButton
+                    aria-label={`Who's coming: ${describeAttendance(attendance, roleName)}`}
+                  >
+                    {describeAttendance(attendance, roleName)}
+                  </RowValueButton>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="max-h-[min(32rem,70vh)] w-[26rem] overflow-y-auto"
+                >
                   <AttendanceEditor
                     value={attendance}
                     onChange={setAttendance}
+                    allowRequired={canSetRequirements}
                     roles={roleOptions}
                     rolesState={
                       rolesQuery.isError
@@ -824,254 +1736,281 @@ export function EventEditorDialog({
                     }
                     disabled={usingPreviewData}
                   />
-                </section>
+                </PopoverContent>
+              </Popover>
+            </PropertyRow>
 
-                {/* Wraps by the panel's own width, not the window's: docked beside chat
-                the panel can be 375px wide on a wide screen. */}
-                <div className="grid grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-3">
+            {canSetRequirements ? (
+              <PropertyRow
+                glyph="points"
+                label={EVENT_FORM_ROW_LABELS.points}
+                labelFor="event-point-value"
+              >
+                <div className="flex items-center gap-1">
+                  <RowInput
+                    id="event-point-value"
+                    aria-label="Points for attending"
+                    type="number"
+                    min={0}
+                    inputMode="numeric"
+                    className={cn("w-20 tabular-nums", QUIET_FIELD)}
+                    value={pointValue}
+                    onChange={handlePointValueChange}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {pointValue.trim() === "1" ? "point" : "points"}
+                  </span>
+                </div>
+              </PropertyRow>
+            ) : null}
+
+          </PropertyGroup>
+
+          <PropertyGroup>
+            {/*
+              The agenda while the event is made (Paul 2026-11-19: "where is
+              the ability to add agenda items"). Only on create: an event's
+              agenda is edited on its page, checked off there during the
+              meeting, so an edit here would race that one.
+            */}
+            {mode === "create" ? (
+              <PropertyRow
+                glyph="agenda"
+                label={EVENT_FORM_ROW_LABELS.agenda}
+                align="start"
+              >
+                <AgendaDraftList
+                  agenda={agenda}
+                  onChange={setAgenda}
+                  draft={agendaDraft}
+                  onDraftChange={setAgendaDraft}
+                  disabled={usingPreviewData}
+                />
+                {repeat.preset !== "NONE" && agenda.length > 0 ? (
+                  <p className="px-2 text-caption text-muted-foreground">
+                    {EVENT_FORM_AGENDA_REPEAT_NOTE}
+                  </p>
+                ) : null}
+              </PropertyRow>
+            ) : null}
+
+            <PropertyRow
+              glyph="description"
+              label={EVENT_FORM_ROW_LABELS.description}
+              labelFor="event-description"
+              align="start"
+            >
+              <RowTextarea
+                id="event-description"
+                maxLength={EVENT_DESCRIPTION_MAX_LENGTH}
+                value={description}
+                onChange={(eventValue) =>
+                  setDescription(eventValue.target.value)
+                }
+                placeholder={EVENT_FORM_PLACEHOLDERS.description}
+              />
+            </PropertyRow>
+
+            {/* Labeled as the sheet labels them: Notes while minutes are
+                their own record (#4934). On create too, as the phone's
+                sheet has it (#5561). */}
+            <PropertyRow
+              glyph="notes"
+              label={notesLabel}
+              labelFor="event-meeting-minutes"
+              align="start"
+            >
+              <RowTextarea
+                id="event-meeting-minutes"
+                maxLength={EVENT_NOTES_MAX_LENGTH}
+                value={notes}
+                onChange={(eventValue) => setNotes(eventValue.target.value)}
+                placeholder={EVENT_FORM_PLACEHOLDERS.notes}
+              />
+            </PropertyRow>
+
+            <PropertyRow glyph="checkIn" label={EVENT_FORM_ROW_LABELS.checkIn}>
+              <Popover {...menuProps("checkIn")}>
+                <PopoverTrigger asChild>
+                  <RowValueButton
+                    aria-label={`Check-in: ${checkInValue}`}
+                    invalid={parseCheckInOpens(checkInOpens) === null}
+                  >
+                    {checkInValue}
+                  </RowValueButton>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="grid max-h-[min(36rem,75vh)] w-[26rem] gap-4 overflow-y-auto"
+                >
+                  {/* #3703: members arrive early, so check-in opens ahead of
+                      the start; 10 minutes unless the officer says. The
+                      phone's sheet sets the same field. */}
                   <div className="grid gap-1">
-                    <Label htmlFor="event-recurrence">Repeat</Label>
-                    {/*
-                      The app's Select, not a native one: /events carries no
-                      browser select (#3822).
-                    */}
-                    <Select
-                      value={recurrenceRule}
-                      onValueChange={setRecurrenceRule}
-                    >
-                      <SelectTrigger id="event-recurrence">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="NONE">
-                          Doesn&apos;t repeat
-                        </SelectItem>
-                        {RECURRENCE_RULES.map((rule) => (
-                          <SelectItem key={rule} value={rule}>
-                            {RECURRENCE_REPEAT_LABELS[rule]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {repeatNote ? (
-                      <p className="text-caption text-muted-foreground">
-                        {repeatNote}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="grid content-start gap-1">
-                    <Label htmlFor="event-point-value">
-                      Points for attending
+                    <Label htmlFor="event-check-in-opens">
+                      Opens how many minutes early
                     </Label>
                     <Input
-                      id="event-point-value"
-                      type="number"
-                      min={0}
-                      value={pointValue}
-                      onChange={handlePointValueChange}
+                      id="event-check-in-opens"
+                      inputMode="numeric"
+                      className="max-w-[8rem]"
+                      value={checkInOpens}
+                      disabled={usingPreviewData}
+                      onChange={(eventValue) => {
+                        const next = guardIntDraft(eventValue.target.value);
+                        if (next !== undefined) setCheckInOpens(next);
+                      }}
+                      aria-invalid={parseCheckInOpens(checkInOpens) === null}
                     />
                   </div>
-                </div>
-
-                <div className="grid gap-1">
-                  <Label htmlFor="event-description">Description</Label>
-                  <Textarea
-                    id="event-description"
-                    value={description}
-                    onChange={(eventValue) =>
-                      setDescription(eventValue.target.value)
-                    }
-                    rows={3}
-                    className="min-h-[96px]"
-                    placeholder="What members should know before they come."
-                  />
-                </div>
-
-                <div className="grid gap-2 text-sm">
-                  <button
-                    type="button"
-                    aria-expanded={showZone}
-                    onClick={() => setShowZone((open) => !open)}
-                    className="flex min-h-9 items-center gap-2 text-left"
-                  >
-                    <StudyZonesGlyph className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-semibold text-muted-foreground">
-                      Check-in zone
-                    </span>
-                    <span className="text-caption text-muted-foreground">
-                      {checkInZone.length > 0
-                        ? `${checkInZone.length} points`
-                        : "None, members check in from anywhere"}
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        "ml-auto h-4 w-4 text-muted-foreground transition-transform",
-                        showZone && "rotate-180",
-                      )}
-                    />
-                  </button>
-                  {showZone ? (
-                    <div className="space-y-2">
-                      <p className="text-caption text-muted-foreground">
-                        Optional. Members must be inside it to check in. At
-                        least 3 points; don&apos;t repeat the first.
-                      </p>
-
-                      <div className="grid gap-1">
-                        <Label htmlFor="event-zone-name">Zone name</Label>
-                        <Input
-                          id="event-zone-name"
-                          value={checkInZoneName}
-                          maxLength={120}
-                          disabled={usingPreviewData}
-                          onChange={(eventValue) =>
-                            setCheckInZoneName(eventValue.target.value)
-                          }
-                          placeholder="Great Hall"
-                        />
-                      </div>
-
-                      {checkInZone.length === 0 ? (
-                        <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
-                          No check-in zone. Members can check in from anywhere.
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {checkInZone.map((vertex, index) => (
-                            <div
-                              key={vertex.id}
-                              className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
-                            >
-                              <div className="grid min-w-[9rem] flex-1 gap-1">
-                                <Label htmlFor={`${vertex.id}-lat`}>
-                                  Point {index + 1} latitude
-                                </Label>
-                                <Input
-                                  id={`${vertex.id}-lat`}
-                                  value={vertex.lat}
-                                  inputMode="decimal"
-                                  disabled={usingPreviewData}
-                                  onChange={(eventValue) =>
-                                    handleVertexChange(
-                                      vertex.id,
-                                      "lat",
-                                      eventValue.target.value,
-                                    )
-                                  }
-                                  placeholder="42.7298"
-                                />
-                              </div>
-                              <div className="grid min-w-[9rem] flex-1 gap-1">
-                                <Label htmlFor={`${vertex.id}-lng`}>
-                                  Point {index + 1} longitude
-                                </Label>
-                                <Input
-                                  id={`${vertex.id}-lng`}
-                                  value={vertex.lng}
-                                  inputMode="decimal"
-                                  disabled={usingPreviewData}
-                                  onChange={(eventValue) =>
-                                    handleVertexChange(
-                                      vertex.id,
-                                      "lng",
-                                      eventValue.target.value,
-                                    )
-                                  }
-                                  placeholder="-73.6789"
-                                />
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Move point ${index + 1} up`}
-                                  disabled={usingPreviewData || index === 0}
-                                  onClick={() => handleMoveVertex(index, -1)}
-                                >
-                                  <ArrowUp className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Move point ${index + 1} down`}
-                                  disabled={
-                                    usingPreviewData ||
-                                    index === checkInZone.length - 1
-                                  }
-                                  onClick={() => handleMoveVertex(index, 1)}
-                                >
-                                  <ArrowDown className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Remove point ${index + 1}`}
-                                  disabled={usingPreviewData}
-                                  onClick={() => handleRemoveVertex(vertex.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <Button
-                        type="button"
-                        variant="secondary"
+                  <div className="grid gap-2">
+                    <span className="text-sm font-semibold">Check-in zone</span>
+                    <p className="text-caption text-muted-foreground">
+                      Optional. Members must be inside it to check in. At
+                      least 3 points; don&apos;t repeat the first.
+                    </p>
+                    <div className="grid gap-1">
+                      <Label htmlFor="event-zone-name">Zone name</Label>
+                      <Input
+                        id="event-zone-name"
+                        value={checkInZoneName}
+                        maxLength={120}
                         disabled={usingPreviewData}
-                        onClick={handleAddVertex}
-                      >
-                        <Plus className="h-4 w-4" />
-                        Add point
-                      </Button>
+                        onChange={(eventValue) =>
+                          setCheckInZoneName(eventValue.target.value)
+                        }
+                        placeholder="Great Hall"
+                      />
                     </div>
-                  ) : null}
-                </div>
+                  {checkInZone.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-border p-3 text-caption text-muted-foreground">
+                      No check-in zone. Members can check in from anywhere.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {checkInZone.map((vertex, index) => (
+                        <div
+                          key={vertex.id}
+                          className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3"
+                        >
+                          <div className="grid min-w-[9rem] flex-1 gap-1">
+                            <Label htmlFor={`${vertex.id}-lat`}>
+                              Point {index + 1} latitude
+                            </Label>
+                            <Input
+                              id={`${vertex.id}-lat`}
+                              value={vertex.lat}
+                              inputMode="decimal"
+                              disabled={usingPreviewData}
+                              onChange={(eventValue) =>
+                                handleVertexChange(
+                                  vertex.id,
+                                  "lat",
+                                  eventValue.target.value,
+                                )
+                              }
+                              placeholder="42.7298"
+                            />
+                          </div>
+                          <div className="grid min-w-[9rem] flex-1 gap-1">
+                            <Label htmlFor={`${vertex.id}-lng`}>
+                              Point {index + 1} longitude
+                            </Label>
+                            <Input
+                              id={`${vertex.id}-lng`}
+                              value={vertex.lng}
+                              inputMode="decimal"
+                              disabled={usingPreviewData}
+                              onChange={(eventValue) =>
+                                handleVertexChange(
+                                  vertex.id,
+                                  "lng",
+                                  eventValue.target.value,
+                                )
+                              }
+                              placeholder="-73.6789"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Move point ${index + 1} up`}
+                              disabled={usingPreviewData || index === 0}
+                              onClick={() => handleMoveVertex(index, -1)}
+                            >
+                              <ArrowUp className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Move point ${index + 1} down`}
+                              disabled={
+                                usingPreviewData ||
+                                index === checkInZone.length - 1
+                              }
+                              onClick={() => handleMoveVertex(index, 1)}
+                            >
+                              <ArrowDown className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Remove point ${index + 1}`}
+                              disabled={usingPreviewData}
+                              onClick={() => handleRemoveVertex(vertex.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                {mode === "edit" ? (
-                  <div className="grid gap-1">
-                    <Label htmlFor="event-meeting-minutes">
-                      Meeting minutes
-                    </Label>
-                    <Textarea
-                      id="event-meeting-minutes"
-                      value={notes}
-                      onChange={(eventValue) =>
-                        setNotes(eventValue.target.value)
-                      }
-                      rows={2}
-                      placeholder="Visible to members who can see this event."
-                    />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={usingPreviewData}
+                    onClick={handleAddVertex}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add point
+                  </Button>
                   </div>
-                ) : null}
-              </div>
-            ) : null}
+                </PopoverContent>
+              </Popover>
+            </PropertyRow>
+          </PropertyGroup>
+
+          {canSetRequirements ? null : (
+            <p className="text-caption text-muted-foreground">
+              {EVENT_FORM_MEMBER_NOTE}
+            </p>
+          )}
+
+          <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-caption text-muted-foreground">
+            {kept.restored ? (
+              <KeptDraftNote
+                onDiscard={() => {
+                  kept.discard();
+                  setFillCount((count) => count + 1);
+                }}
+              />
+            ) : (
+              <span>Going back keeps your draft.</span>
+            )}
+            <span>
+              <kbd className="font-sans">Ctrl</kbd> +{" "}
+              <kbd className="font-sans">Enter</kbd> to{" "}
+              {mode === "create" ? "create" : "save"}
+            </span>
           </div>
         </PanelBody>
-
-        <PanelFooter>
-          {/* Cancel only closes the panel — gating the way out of a surface the
-              gate just blocked would be a trap. */}
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            {...gate.controlProps(usingPreviewData || isSubmitting)}
-          >
-            {isSubmitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {submitLabel}
-          </Button>
-        </PanelFooter>
+        {confirmDialog}
       </PanelContent>
     </Panel>
   );

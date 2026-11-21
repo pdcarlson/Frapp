@@ -7,14 +7,14 @@ import {
  * Shape `posthog-node` expects from a custom `fetch`. Not the Fetch `Response`
  * object — the SDK reads `.status` / `.text()` / `.json()` only.
  */
-export type PosthogFetchResponse = {
+type PosthogFetchResponse = {
   status: number;
   text: () => Promise<string>;
   json: () => Promise<unknown>;
   headers?: { get(name: string): string | null };
 };
 
-export type PosthogFetchOptions = {
+type PosthogFetchOptions = {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH';
   headers: { [key: string]: string };
   body?: string | Blob;

@@ -2,19 +2,15 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { SettingsSearch } from "@/components/settings/settings-search";
 
 /**
- * A settings rail row that is a link. Board `4d`'s row geometry
+ * A settings rail row that is a link, in a container-sized rail
+ * (`SettingsNavRail`). Board `4d`'s row geometry
  * (`height:34px;border-radius:10px;padding:0 10px`), with the nav's hover
  * step. `pointer-coarse` keeps the 44px touch floor where the rail wraps into
  * chips on a phone.
  */
-export const RAIL_LINK_CLASS = cn(
-  "flex h-[34px] items-center rounded-[10px] px-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground pointer-coarse:h-11 lg:w-full",
-  FOCUS_RING,
-);
-
-/** The same row inside a container-sized rail (`SettingsNavRail`). */
 const RAIL_NAV_LINK_CLASS = cn(
   "flex h-[34px] items-center rounded-[10px] px-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground pointer-coarse:h-11 @3xl:w-full",
   FOCUS_RING,
@@ -43,8 +39,8 @@ export type SettingsNavGroup = {
  *
  * The rail answers to its container, not the window (`@3xl`, 768px): the page
  * that draws it wraps it in `@container`. A tool page shares the window with
- * chat (#3779), so at a 1440px window its pane can be 480px wide, where a
- * 200px rail leaves the section about 210px. Below the container width each
+ * chat (#3779), so its pane can be as narrow as 375px when the member widens
+ * chat (#5575), where a 200px rail leaves the section about 120px. Below the container width each
  * group wraps into a row of chips under its eyebrow, above the section.
  */
 export function SettingsNavRail({
@@ -62,6 +58,8 @@ export function SettingsNavRail({
       aria-label={label}
       className="flex w-full flex-col gap-3 @3xl:w-[200px] @3xl:shrink-0 @3xl:self-stretch @3xl:border-r @3xl:border-border @3xl:px-2 @3xl:py-3"
     >
+      {/* Settings search, as atop Chapter settings' rail (2026-11-19). */}
+      <SettingsSearch />
       {groups.map((group) => (
         <div key={group.label} className="flex flex-col gap-0.5">
           <p className={cn(EYEBROW, "px-[10px] pb-1 text-muted")}>

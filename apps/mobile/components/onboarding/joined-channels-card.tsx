@@ -8,6 +8,7 @@ import {
 } from "@/lib/onboarding/welcome-channels";
 import { SkeletonRegion, SkeletonText } from "@/components/state-block";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * The chapter's public channels, as a card: chapter setup's live step shows it
@@ -16,7 +17,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * role-gated, so only the public ones are named (`selectJoinedPublicChannels`).
  *
  * s03 showed it to a member who just joined, marked "joined", until the
- * first-run tour replaced that card (2026-11-07, `lib/onboarding/tour.ts`).
+ * first-run tour replaced that card (2026-11-07). The welcome card in the
+ * chapter's default channel does that job now (#5627).
  */
 export function JoinedChannelsCard() {
   const trailing = "ready";
@@ -96,12 +98,13 @@ export function JoinedChannelsSkeleton({ rows = 3 }: { rows?: number }) {
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingVertical: tokens.spacing.xs,
     },
     row: {

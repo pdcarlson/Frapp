@@ -16,6 +16,7 @@ import { useFieldReveal } from "@repo/hooks/field-reveal";
 import { SignetTokens } from "@repo/theme/signet";
 import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
+import { eyebrowStyle } from "@/components/eyebrow";
 
 /**
  * The chapter accent picker. One component for every place an officer sets the accent on mobile: the
@@ -286,10 +287,9 @@ function createStyles(tokens: SignetTokens, focusColor: string) {
     root: { gap: tokens.spacing.md },
     group: { gap: tokens.spacing.sm },
     groupLabel: {
-      ...typeRole(tokens.typography.role.label),
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.text.muted,
+      ...eyebrowStyle(tokens),
+      // Web's accent swatches draw these groups in `text-muted-foreground`.
+      color: tokens.color.text.mutedForeground,
     },
     row: {
       flexDirection: "row",

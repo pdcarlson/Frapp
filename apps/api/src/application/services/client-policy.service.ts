@@ -6,6 +6,7 @@ import {
   parseClientVersionHeader,
   parseVersionWithBuild,
 } from '#domain/constants/client-version';
+import { STORE_LISTING_URLS } from '@repo/validation';
 import { type Env, envValue } from '#domain/utils/env-value';
 
 /**
@@ -19,6 +20,10 @@ import { type Env, envValue } from '#domain/utils/env-value';
  * builds of one version); `validateClientPolicyEnv` refuses anything else at
  * boot, because a typo that parsed as "no minimum" would switch the gate off
  * without a sound.
+ *
+ * @public Exported for `scripts/ci/__tests__/client-version.test.mjs`, which
+ * loads this file by path to pin the deploy check's copy of the rule, so no
+ * import of it shows up to knip or tsc.
  */
 export const MINIMUM_VERSION_ENV: Readonly<Record<ClientPlatform, string>> = {
   ios: 'MOBILE_MIN_VERSION_IOS',
@@ -31,20 +36,21 @@ export const MINIMUM_VERSION_ENV: Readonly<Record<ClientPlatform, string>> = {
  * TestFlight link rather than the App Store listing, and the binary cannot
  * learn a new link any other way, which is why it is never baked into it.
  */
-export const UPDATE_URL_ENV: Readonly<Record<ClientPlatform, string>> = {
+const UPDATE_URL_ENV: Readonly<Record<ClientPlatform, string>> = {
   ios: 'MOBILE_UPDATE_URL_IOS',
   android: 'MOBILE_UPDATE_URL_ANDROID',
 };
 
 /**
- * The store listings. The App Store id is App Store Connect's Apple ID for
- * `live.frapp.mobile` (`apps/mobile/store/README.md`); the Play URL keys on
- * the package name, which is permanent from the first upload.
+ * The store listings (`STORE_LISTING_URLS` in `@repo/validation`, which the
+ * web's Get the app buttons fall back to for the store app,
+ * `apps/web/lib/app-install.ts`). A set `MOBILE_UPDATE_URL_*` replaces it here,
+ * and the web reads the same value through an Infisical reference. The App Store id is App Store Connect's
+ * Apple ID for `live.frapp.mobile` (`apps/mobile/store/README.md`); the Play
+ * URL keys on the package name, which is permanent from the first upload.
  */
-export const DEFAULT_UPDATE_URLS: Readonly<Record<ClientPlatform, string>> = {
-  ios: 'https://apps.apple.com/app/id6812025642',
-  android: 'https://play.google.com/store/apps/details?id=live.frapp.mobile',
-};
+export const DEFAULT_UPDATE_URLS: Readonly<Record<ClientPlatform, string>> =
+  STORE_LISTING_URLS;
 
 export interface ClientPolicy {
   updateRequired: boolean;

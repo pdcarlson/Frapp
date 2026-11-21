@@ -36,7 +36,7 @@ export function nextDocumentFields(sticky: BulkFields, fileName: string): BulkFi
   return { ...sticky, title: titleFromFileName(fileName), assignment_number: "" };
 }
 
-export function titleFromFileName(name: string): string {
+function titleFromFileName(name: string): string {
   return name
     .replace(/\.pdf$/i, "")
     .replace(/[_]+/g, " ")

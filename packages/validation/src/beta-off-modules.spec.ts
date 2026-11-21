@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { BETA_OFF_MODULES, isBetaOffModule } from "./beta-off-modules";
+import {
+  BETA_OFF_MODULES,
+  CHAPTER_BILLING_BETA_OFF,
+  isBetaOffModule,
+} from "./beta-off-modules";
 import {
   defaultNotificationCategoryState,
   isModuleEnabled,
@@ -18,6 +22,14 @@ describe("BETA_OFF_MODULES", () => {
   it("names only what it holds", () => {
     expect(isBetaOffModule("dues")).toBe(true);
     expect(isBetaOffModule("events")).toBe(false);
+  });
+});
+
+describe("CHAPTER_BILLING_BETA_OFF", () => {
+  // The decision itself (Paul, 2026-11-15): new chapters start active while
+  // chapter billing is off. Bringing checkout back has to touch this line.
+  it("is on for the beta", () => {
+    expect(CHAPTER_BILLING_BETA_OFF).toBe(true);
   });
 });
 

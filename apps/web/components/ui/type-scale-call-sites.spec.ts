@@ -74,7 +74,6 @@ const EXCEPTIONS: { file: string; literal: string; count: number; reason: string
   { file: "components/chat/mention-list.tsx", literal: "text-[10px]", count: 1, reason: DRAWN_MARK },
   { file: "components/chat/channel-member-list.tsx", literal: "text-[10px]", count: 1, reason: DRAWN_MARK },
   { file: "components/layout/account-menu.tsx", literal: "text-[11px]", count: 1, reason: DRAWN_MARK },
-  { file: "components/roles/roles-matrix.tsx", literal: "text-[10px]", count: 1, reason: DRAWN_MARK },
   { file: "components/alumni/alumni-directory.tsx", literal: "text-[9px]", count: 1, reason: DRAWN_MARK },
   { file: "components/members/members-directory.tsx", literal: "text-[9px]", count: 1, reason: DRAWN_MARK },
   {
@@ -96,21 +95,30 @@ const EXCEPTIONS: { file: string; literal: string; count: number; reason: string
     reason: "The unread count, fitted inside its 14px dot.",
   },
   {
-    file: "components/events/events-calendar.tsx",
-    literal: "text-[11px]",
-    count: 2,
+    file: "components/chat/gif-picker.tsx",
+    literal: "text-[10px]",
+    count: 1,
     reason:
-      "Grandfathered: the month grid's event chips and overflow link. At " +
-      "caption size four of seven demo titles truncate in a 160px day cell " +
-      "that fits them at the board's 11px. #3075 decides.",
+      "The GIF button's glyph: the word GIF drawn in a rounded outline to " +
+      "sit in the composer's 16px icon slot beside the emoji icon (#4631).",
+  },
+  {
+    file: "components/events/events-time-grid.tsx",
+    literal: "text-[11px]",
+    count: 1,
+    reason:
+      "Grandfathered: `EventChip`, the hour grid's All day chip (once the " +
+      "month grid's, which #5560 removed). At caption size most titles " +
+      "truncate in a narrow day column that fits them at the board's 11px. " +
+      "#3075 decides.",
   },
   {
     file: "components/events/calendar-tasks.tsx",
     literal: "text-[11px]",
     count: 1,
     reason:
-      "The month grid's task chip (#4144), which shares a day cell with the " +
-      "event chips above and must match their size. #3075 decides both.",
+      "The hour grid's All day task chip (#4144), which shares the strip " +
+      "with the event chips and must match their size. #3075 decides both.",
   },
   {
     file: "components/billing/pro-chip.tsx",

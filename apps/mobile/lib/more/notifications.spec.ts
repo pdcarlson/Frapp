@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  categoryLabelFor,
   selectNotificationGroups,
   selectUnreadIds,
+  selectReadNonChatIds,
   selectUnreadNonChatCount,
 } from "./notifications";
 
@@ -32,42 +32,34 @@ function row(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("categoryLabelFor", () => {
-  // The label is derived from the deep-link target because the notification row
-  // does not store its category — `notifyUser` persists `payload.data` only and
-  // forwards `category` to the push provider for telemetry.
-  it("maps a known target screen to its drawn label", () => {
-    expect(categoryLabelFor({ target: { screen: "chat" } })).toBe("Chat");
-    expect(categoryLabelFor({ target: { screen: "service" } })).toBe(
-      "Service hours",
+describe("a row's data", () => {
+  // What the row looks like is `@repo/hooks/notification-rows` (#4346), which
+  // reads `data`; the row carries it through as served.
+  it("is carried through for the shared look", () => {
+    const data = { target: { screen: "chat" }, senderId: "u1", chatKind: "dm" };
+    const [group] = selectNotificationGroups(
+      [row({ data, created_at: iso(at(2026, 8, 17, 18)) })],
+      at(2026, 8, 17, 20),
     );
-    expect(categoryLabelFor({ target: { screen: "event" } })).toBe("Events");
+    expect(group?.rows[0]?.data).toEqual(data);
   });
+});
 
-  it("labels the officer report notification, though mobile routes it to the list", () => {
-    // `ChatReportService`'s new-report notification targets `chat_reports`.
-    // Mobile has no queue to open, but an officer reading the row here should
-    // still see what kind of notice it is.
-    expect(categoryLabelFor({ target: { screen: "chat_reports" } })).toBe(
-      "Reports",
+describe("a reminder's row (#4957)", () => {
+  it("opens chat at the message its chat_message_id names", () => {
+    const [group] = selectNotificationGroups(
+      [
+        row({
+          data: { target: { screen: "chat", channelId: "c1" }, reminder: true },
+          chat_message_id: "m9",
+        }),
+      ],
+      NOW,
     );
-  });
-
-  it("labels the Discord import notice, though its page is web-only", () => {
-    expect(categoryLabelFor({ target: { screen: "discord_import" } })).toBe(
-      "Discord import",
-    );
-  });
-
-  // Better no label than a guessed one: nothing in the row says what category
-  // the server used, so an unmapped screen is genuinely unknown.
-  it("returns null rather than guessing for an unknown or absent target", () => {
-    expect(
-      categoryLabelFor({ target: { screen: "something-new" } }),
-    ).toBeNull();
-    expect(categoryLabelFor({})).toBeNull();
-    expect(categoryLabelFor(undefined)).toBeNull();
-    expect(categoryLabelFor({ target: "chat" })).toBeNull();
+    expect(group?.rows[0]?.target).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
   });
 });
 
@@ -203,5 +195,61 @@ describe("selectUnreadNonChatCount", () => {
       ]),
     ).toBe(0);
     expect(selectUnreadNonChatCount(undefined)).toBe(0);
+  });
+});
+
+describe("selectReadNonChatIds", () => {
+  it("names read rows that don't target chat, and nothing else (#4011)", () => {
+    const read = iso(at(2026, 8, 17, 19));
+    expect(
+      selectReadNonChatIds([
+        row({ id: "read-event", read_at: read }),
+        row({ id: "unread-event", read_at: null }),
+        row({
+          id: "read-chat",
+          read_at: read,
+          data: { target: { screen: "chat" } },
+        }),
+        row({ id: "read-no-target", read_at: read, data: null }),
+      ]),
+    ).toEqual(new Set(["read-event", "read-no-target"]));
+    expect(selectReadNonChatIds(undefined).size).toBe(0);
+  });
+});
+
+describe("selectNotificationGroups: one entry per conversation (#3948)", () => {
+  const chat = (id: string, hour: number, read = false) =>
+    row({
+      id,
+      created_at: iso(at(2026, 8, 17, hour)),
+      read_at: read ? iso(at(2026, 8, 17, 19)) : null,
+      data: { target: { screen: "chat", channelId: "c1" }, senderId: "u1" },
+    });
+
+  it("collapses a channel's rows into its newest, unread while any is", () => {
+    const [today] = selectNotificationGroups(
+      [chat("old", 10), row({ id: "event" }), chat("new", 19, true)],
+      NOW,
+    );
+    expect(today?.rows.map((r) => r.id)).toEqual(["new", "event"]);
+    expect(today?.rows[0]).toMatchObject({
+      isUnread: true,
+      count: "2 messages",
+    });
+    expect(today?.rows[1]?.count).toBeNull();
+  });
+
+  it("under unread, lists only what is still new", () => {
+    const [today] = selectNotificationGroups(
+      [
+        chat("old", 10),
+        chat("new", 19, true),
+        row({ id: "event", read_at: iso(NOW) }),
+      ],
+      NOW,
+      "unread",
+    );
+    expect(today?.rows.map((r) => r.id)).toEqual(["old"]);
+    expect(today?.rows[0]?.count).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import type { CollectedFiles } from "./collect-files";
+import type { CollectedFiles } from "@/lib/bulk-upload/collect-files";
 import { nextDocumentFields, type BulkFields } from "./fields";
 
 /**

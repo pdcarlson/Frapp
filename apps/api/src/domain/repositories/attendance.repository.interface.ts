@@ -8,6 +8,19 @@ export interface IAttendanceRepository {
     eventId: string,
     userId: string,
   ): Promise<EventAttendance | null>;
+  /**
+   * One member's rows for many events, in one read. Events with no row for
+   * the member are simply absent from the result.
+   */
+  findByUserForEvents(
+    userId: string,
+    eventIds: readonly string[],
+  ): Promise<EventAttendance[]>;
+  /**
+   * Every row for many events, in one read: Activity's count of who has
+   * checked in to the events a member made (#4792).
+   */
+  findByEvents(eventIds: readonly string[]): Promise<EventAttendance[]>;
   createMany(data: Partial<EventAttendance>[]): Promise<EventAttendance[]>;
   update(id: string, data: Partial<EventAttendance>): Promise<EventAttendance>;
   /**

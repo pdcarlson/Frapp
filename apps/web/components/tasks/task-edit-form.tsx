@@ -1,7 +1,24 @@
 "use client";
 
-import { useUpdateTask, type TaskEdit, type TaskSubtask } from "@repo/hooks";
-import { dueEntryFromTask } from "@repo/formatting";
+import { useRef } from "react";
+import {
+  useUpdateTask,
+  type LiveTaskPhoto,
+  type TaskEdit,
+  type TaskSubtask,
+} from "@repo/hooks";
+import {
+  TASK_SERIES_SCOPE_COPY,
+  noTaskRepeatDraft,
+  taskRepeatDraftFromRule,
+  taskSaveScope,
+  taskSeriesBody,
+  taskSeriesLive,
+  type TaskProofKind,
+  type TaskSeriesLine,
+} from "@repo/validation";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
 import type { TaskInput } from "@repo/chat-core/dispatch";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { getErrorMessage } from "@/lib/utils";
@@ -21,10 +38,44 @@ export interface EditableTask {
   stored_status?: string;
   status: string;
   subtasks?: TaskSubtask[];
+  /** Task photos, reference then proof (#4635). */
+  photos?: LiveTaskPhoto[];
+  /** What Mark done needs (#4635). */
+  proof_kind?: TaskProofKind;
+  /** How it repeats, on a copy of a series (#5119). */
+  series?: TaskSeriesLine | null;
+}
+
+/**
+ * Whether the edit moves the task to another day, both days read on this
+ * device's calendar (`dueEntryFromTask` puts a timed task on its local
+ * day), so a time change seen from another zone isn't a move (#5119).
+ */
+function movesDay(task: EditableTask, input: TaskInput): boolean {
+  return movesDayTo(task, input.due_date);
+}
+
+/** Whether a new `due_date` is another day than the task's, read as above. */
+export function movesDayTo(
+  task: { due_date: string; due_at?: string | null },
+  dueDate: string,
+): boolean {
+  const before = dueEntryFields(dueEntryFromTask(task)).due_date;
+  return dueDate.slice(0, 10) !== before.slice(0, 10);
+}
+
+/** A copy of a series that still makes copies (#5119). */
+function repeats(task: EditableTask): boolean {
+  return taskSeriesLive(task.series);
+}
+
+/** The task's reference photos, in order. */
+function referencePhotos(task: EditableTask): LiveTaskPhoto[] {
+  return (task.photos ?? []).filter((photo) => photo.kind === "reference");
 }
 
 /** The form's draft for a task as it stands. */
-export function taskDraftFromTask(task: EditableTask): TaskDraft {
+function taskDraftFromTask(task: EditableTask): TaskDraft {
   return {
     title: task.title,
     assigneeId: task.assignee_id,
@@ -32,6 +83,13 @@ export function taskDraftFromTask(task: EditableTask): TaskDraft {
     points: task.point_reward ? String(task.point_reward) : "",
     description: task.description ?? "",
     subtasks: [],
+    photoFiles: [],
+    keptPhotos: referencePhotos(task),
+    proofKind: task.proof_kind ?? "none",
+    repeat:
+      task.series && repeats(task)
+        ? taskRepeatDraftFromRule(task.series.recurrence_rule)
+        : noTaskRepeatDraft(),
     showMore: false,
   };
 }
@@ -64,14 +122,41 @@ export function taskEditFrom(task: EditableTask, input: TaskInput): TaskEdit {
   }
   const points = input.point_reward || null;
   if (points !== (task.point_reward || null)) body.point_reward = points;
+  // The reference photos as they should stand, sent only when they changed:
+  // one removed, one added, or a new order (#4635).
+  if (input.reference_photo_paths !== undefined) {
+    const held = referencePhotos(task).map((photo) => photo.storage_path);
+    const next = input.reference_photo_paths;
+    if (
+      next.length !== held.length ||
+      next.some((path, i) => path !== held[i])
+    ) {
+      body.reference_photo_paths = next;
+    }
+  }
+  if (
+    input.proof_kind !== undefined &&
+    input.proof_kind !== (task.proof_kind ?? "none")
+  ) {
+    body.proof_kind = input.proof_kind;
+  }
+  // A Repeat change, on a copy of a live series only (#5119): the new rule,
+  // or null to stop repeating.
+  if (
+    repeats(task) &&
+    input.recurrence_rule !== undefined &&
+    input.recurrence_rule !== (task.series?.recurrence_rule ?? null)
+  ) {
+    body.recurrence_rule = input.recurrence_rule;
+  }
   return body;
 }
 
 /**
- * A board tile in edit (#4296): the + card's task form, opened on the task
- * as it stands, in the tile's place, the way Todoist's board turns a card
- * into its editor. Steps are the task's live checklist, added and removed as
- * they're typed, as they are on the tile; the other fields save together.
+ * A chat task card in edit (#4296, #4512): the + card's task form, opened on
+ * the task as it stands, in the card's place. Steps are the task's live
+ * checklist, added and removed as they're typed; the other fields save
+ * together. The Tasks page edits in its panel instead (`task-panel.tsx`).
  */
 export function TaskEditForm({
   task,
@@ -86,48 +171,86 @@ export function TaskEditForm({
   onClose: () => void;
 }) {
   const updateTask = useUpdateTask();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  // The scope `beforeSave` settled on, for the write that follows it.
+  const scope = useRef<"instance" | "series">("instance");
   const stored = task.stored_status ?? task.status;
   return (
-    <TaskForm
-      initialDraft={taskDraftFromTask(task)}
-      onDiscard={onClose}
-      onDone={onClose}
-      onPost={async (input) => {
-        const body = taskEditFrom(task, input);
-        if (Object.keys(body).length === 0) return { ok: true };
-        try {
-          await updateTask.mutateAsync({ id: task.id, body });
-          return { ok: true };
-        } catch (error) {
-          return {
-            ok: false,
-            error: getErrorMessage(error, "Retry in a moment."),
-          };
-        }
-      }}
-      editing={{
-        steps: (
-          <div className="grid gap-1">
-            <p className="text-sm font-medium">Subtasks</p>
-            <TaskSubtaskList
-              taskId={task.id}
-              subtasks={task.subtasks ?? []}
-              canCheck
-              canEdit
-              closed={false}
-              gate={gate}
-              embedded
-            />
-          </div>
-        ),
-        assigneeNote: (assigneeId) =>
-          assigneeId !== task.assignee_id && stored !== "TODO" ? (
-            <p className="text-caption text-muted-foreground">
-              Saving starts it over at To do. {assigneeName}&apos;s progress
-              doesn&apos;t carry.
-            </p>
-          ) : null,
-      }}
-    />
+    <>
+      {confirmDialog}
+      <TaskForm
+        initialDraft={taskDraftFromTask(task)}
+        onDiscard={onClose}
+        onDone={onClose}
+        beforeSave={async (input, hasNewPhotos) => {
+          // On a copy of a live series (#5119), decided before any photo
+          // uploads, so backing out leaves nothing behind.
+          const body = taskEditFrom(task, input);
+          const { recurrence_rule, ...rest } = body;
+          const decided = taskSaveScope(task, {
+            ...(recurrence_rule !== undefined ? { recurrence_rule } : {}),
+            movesDay: movesDay(task, input),
+            changesOther: Object.keys(rest).length > 0 || hasNewPhotos,
+          });
+          if (decided.kind === "refuse") return decided.message;
+          if (decided.kind !== "ask") {
+            scope.current = decided.kind;
+            return true;
+          }
+          const picked = await confirm({
+            title: TASK_SERIES_SCOPE_COPY.saveTitle,
+            description: TASK_SERIES_SCOPE_COPY.saveMessage,
+            confirmLabel: TASK_SERIES_SCOPE_COPY.allUpcoming,
+            alternativeLabel: TASK_SERIES_SCOPE_COPY.thisTask,
+            tone: "default",
+          });
+          // Dismissed: the form stays open with the edit, and nothing failed.
+          if (!picked) return false;
+          scope.current = picked.alternative ? "instance" : "series";
+          return true;
+        }}
+        onPost={async (input) => {
+          const body = taskEditFrom(task, input);
+          if (Object.keys(body).length === 0) return { ok: true };
+          try {
+            await updateTask.mutateAsync({
+              id: task.id,
+              body: scope.current === "series" ? taskSeriesBody(body) : body,
+            });
+            return { ok: true };
+          } catch (error) {
+            return {
+              ok: false,
+              error: getErrorMessage(error, "Retry in a moment."),
+            };
+          }
+        }}
+        editing={{
+          taskId: task.id,
+          steps: (
+            <div className="grid gap-1">
+              <p className="text-sm font-medium">Subtasks</p>
+              <TaskSubtaskList
+                taskId={task.id}
+                subtasks={task.subtasks ?? []}
+                canCheck
+                canEdit
+                closed={false}
+                gate={gate}
+                embedded
+              />
+            </div>
+          ),
+          assigneeNote: (assigneeId) =>
+            assigneeId !== task.assignee_id && stored !== "TODO" ? (
+              <p className="text-caption text-muted-foreground">
+                Saving starts it over at To do. {assigneeName}&apos;s progress
+                doesn&apos;t carry.
+              </p>
+            ) : null,
+          repeats: repeats(task),
+        }}
+      />
+    </>
   );
 }

@@ -17,6 +17,7 @@ import {
   presentEventOutcome,
   presentPostOutcome,
 } from "./use-composer-plus";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 function ctx(overrides: Partial<PlusMenuContext> = {}): PlusMenuContext {
   return {
@@ -67,6 +68,10 @@ function render(
       },
     );
   });
+  // What gorhom reports as `present()` starts bringing the sheet up.
+  act(() =>
+    tree.root.findByType("BottomSheetModal" as never).props.onAnimate(-1, 0),
+  );
   return { tree, onPhoto, onOpenForm };
 }
 
@@ -95,9 +100,7 @@ describe("ComposerPlusSheet (#3865)", () => {
           node.props.accessibilityLabel !== "Cancel",
       )
       .map((node) => node.props.accessibilityLabel);
-    expect(labels).toEqual(
-      expect.arrayContaining(["Photo", "Poll", "Event", "Service hours"]),
-    );
+    expect(labels).toEqual(expect.arrayContaining(["Photo", "Poll", "Event"]));
     expect(labels).not.toContain("Task");
     expect(screenText(tree)).toContain("Your role can't create tasks.");
   });
@@ -173,13 +176,13 @@ describe("presentPostOutcome", () => {
   it("titles a lost answer as unconfirmed, never as failed", () => {
     const alert = vi.fn();
     presentPostOutcome(
-      "hours",
-      { unconfirmed: true, warning: "Check the Service page." },
+      "link",
+      { unconfirmed: true, warning: "Check the channel." },
       alert,
     );
     expect(alert).toHaveBeenCalledWith(
-      "Couldn't confirm the hours",
-      "Check the Service page.",
+      "Couldn't confirm the link",
+      "Check the channel.",
     );
   });
 
@@ -194,19 +197,35 @@ describe("presentEventOutcome", () => {
   it("says where the card went when it isn't in the thread", () => {
     const alert = vi.fn();
     presentEventOutcome(
-      { name: "Formal", cardKeptOut: true, cardLost: false },
+      { id: "e1", name: "Formal", cardKeptOut: true, cardLost: false },
       alert,
     );
     presentEventOutcome(
-      { name: "Formal", cardKeptOut: false, cardLost: true },
+      { id: "e1", name: "Formal", cardKeptOut: false, cardLost: true },
       alert,
     );
     presentEventOutcome(
-      { name: "Formal", cardKeptOut: false, cardLost: false },
+      { id: "e1", name: "Formal", cardKeptOut: false, cardLost: false },
       alert,
     );
     expect(alert).toHaveBeenCalledTimes(2);
     expect(alert.mock.calls[0]![1]).toMatch(/only for some roles/);
     expect(alert.mock.calls[1]![1]).toMatch(/couldn't be posted in chat/);
+  });
+});
+
+describe("ComposerPlusSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <ComposerPlusSheet
+          ref={ref}
+          model={plusMenuModel(ctx())}
+          photoDisabledReason={null}
+          onPhoto={vi.fn()}
+          onOpenForm={vi.fn()}
+        />
+      </FrappThemeProvider>
+    ));
   });
 });

@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { MAX_BACKWORK_UPLOAD_BYTES, MAX_UPLOAD_BYTES } from '@repo/validation';
-import { BackworkService } from './backwork.service';
+import { AI_FILL_CLAIM_STALE_MS, BackworkService } from './backwork.service';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
   BACKWORK_DEPARTMENT_REPOSITORY,
@@ -29,6 +29,16 @@ import type {
   BackworkProfessor,
   BackworkCourse,
 } from '#domain/entities/backwork.entity';
+
+/** The file names the confirms and checks below upload. */
+const UPLOADED_NAMES = [
+  'a.pdf',
+  'file.pdf',
+  'midterm1.pdf',
+  'same.pdf',
+  'leak.pdf',
+  'logo.png',
+];
 
 describe('BackworkService', () => {
   let service: BackworkService;
@@ -83,6 +93,7 @@ describe('BackworkService', () => {
     is_redacted: false,
     tags: ['midterm', 'cs101'],
     created_at: '2026-01-01T00:00:00.000Z',
+    draft_fields: null,
   };
 
   beforeEach(async () => {
@@ -97,6 +108,15 @@ describe('BackworkService', () => {
       countByProfessor: jest.fn(),
       reassignDepartment: jest.fn(),
       reassignProfessor: jest.fn(),
+      findDrafts: jest.fn(),
+      findDraftsByIds: jest.fn(),
+      updateDraftFields: jest.fn(),
+      replaceDraftFile: jest.fn(),
+      countByStoragePath: jest.fn().mockResolvedValue(0),
+      publishDraft: jest.fn(),
+      deleteDraft: jest.fn(),
+      claimAiFill: jest.fn(),
+      releaseAiFill: jest.fn(),
     };
 
     mockDepartmentRepo = {
@@ -134,7 +154,11 @@ describe('BackworkService', () => {
       uploadFile: jest.fn(),
       downloadFile: jest.fn(),
       deleteFile: jest.fn(),
-      listFiles: jest.fn(),
+      // Every folder holds a file of each name these tests use, so a confirm
+      // or check finds its upload unless a test says otherwise.
+      listFiles: jest.fn(async (_bucket: string, folder: string) =>
+        UPLOADED_NAMES.map((name) => `${folder}/${name}`),
+      ),
       listObjects: jest.fn().mockResolvedValue([]),
       listFolders: jest.fn().mockResolvedValue([]),
       deleteFiles: jest.fn(),
@@ -213,7 +237,10 @@ describe('BackworkService', () => {
           filename: 'malicious.exe',
           contentType: 'application/pdf', // Even with a valid content type
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        // Backwork has always named the refused extension (#4645 kept it).
+        new BadRequestException('File extension ".exe" is not allowed'),
+      );
     });
 
     it('should throw BadRequestException for disallowed content types', async () => {
@@ -223,7 +250,11 @@ describe('BackworkService', () => {
           filename: 'valid.pdf',
           contentType: 'application/x-msdownload',
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(
+        new BadRequestException(
+          'Content type "application/x-msdownload" is not allowed',
+        ),
+      );
     });
 
     it('accepts image/gif (same document kind as chapter files and chat)', async () => {
@@ -290,6 +321,29 @@ describe('BackworkService', () => {
   });
 
   describe('confirmUpload', () => {
+    it('refuses a path that names no uploaded file, and files nothing', async () => {
+      mockStorageProvider.listFiles.mockResolvedValueOnce([]);
+
+      const attempt = service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-9/never-sent.pdf',
+        file_hash: 'h',
+        draft: true,
+      });
+
+      await expect(attempt).rejects.toThrow(BadRequestException);
+      await expect(attempt).rejects.toThrow(
+        "We couldn't find the uploaded file.",
+      );
+      expect(mockStorageProvider.listFiles).toHaveBeenCalledWith(
+        'backwork',
+        'chapters/ch-1/backwork/res-9',
+      );
+      expect(mockResourceRepo.findByFileHash).not.toHaveBeenCalled();
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+    });
+
     it('should create a resource with full metadata', async () => {
       mockResourceRepo.findByFileHash.mockResolvedValue(null);
       mockDepartmentRepo.findByCode.mockResolvedValue(baseDepartment);
@@ -311,6 +365,7 @@ describe('BackworkService', () => {
         assignment_number: 1,
         document_variant: 'Student Copy',
         tags: ['midterm', 'cs101'],
+        is_redacted: true,
       });
 
       expect(result).toEqual(baseResource);
@@ -322,6 +377,23 @@ describe('BackworkService', () => {
           file_hash: 'abc123hash',
         }),
       );
+    });
+
+    it('refuses a Student Copy that was not redacted, and files nothing', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/ch-1/backwork/res-1/a.pdf',
+          file_hash: 'h',
+          document_variant: 'Student Copy',
+          is_redacted: false,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+      expect(mockDepartmentRepo.create).not.toHaveBeenCalled();
     });
 
     describe('course_name (#3848)', () => {
@@ -527,6 +599,95 @@ describe('BackworkService', () => {
       );
     });
 
+    // #3918: a new department is stored by its matching key, so the next
+    // upload typing any case of it finds this row.
+    it('stores a new department code trimmed and upper-cased', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockDepartmentRepo.findByCode.mockResolvedValue(null);
+      mockDepartmentRepo.create.mockResolvedValue({
+        id: 'dept-new',
+        chapter_id: 'ch-1',
+        code: 'MATH',
+        name: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+      mockResourceRepo.create.mockResolvedValue(baseResource);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+        file_hash: 'uniquehash-case',
+        department_code: ' math ',
+      });
+
+      expect(mockDepartmentRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        code: 'MATH',
+      });
+    });
+
+    it('files under the department another upload created a moment before', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockDepartmentRepo.findByCode
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(baseDepartment);
+      mockDepartmentRepo.create.mockRejectedValue(
+        Object.assign(new Error('duplicate key'), { code: '23505' }),
+      );
+      mockResourceRepo.create.mockResolvedValue(baseResource);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+        file_hash: 'uniquehash-race',
+        department_code: 'Math',
+      });
+
+      expect(mockResourceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: baseDepartment.id }),
+      );
+    });
+
+    it('still fails an upload whose department insert fails for another reason', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockDepartmentRepo.findByCode.mockResolvedValue(null);
+      mockDepartmentRepo.create.mockRejectedValue(
+        new Error('connection reset'),
+      );
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+          file_hash: 'uniquehash-err',
+          department_code: 'MATH',
+        }),
+      ).rejects.toThrow('connection reset');
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('files no department for a code that is only spaces', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockResourceRepo.create.mockResolvedValue(baseResource);
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-1/file.pdf',
+        file_hash: 'uniquehash-blank',
+        department_code: '   ',
+      });
+
+      expect(mockDepartmentRepo.findByCode).not.toHaveBeenCalled();
+      expect(mockDepartmentRepo.create).not.toHaveBeenCalled();
+      expect(mockResourceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ department_id: null }),
+      );
+    });
+
     it('should auto-vivify a new professor', async () => {
       mockResourceRepo.findByFileHash.mockResolvedValue(null);
       mockProfessorRepo.findByName.mockResolvedValue(null);
@@ -580,7 +741,7 @@ describe('BackworkService', () => {
   });
 
   describe('findById', () => {
-    it('should return resource with download URL', async () => {
+    it('returns the resource with a forced-download link named after the stored file (#3867)', async () => {
       mockResourceRepo.findById.mockResolvedValue(baseResource);
       mockStorageProvider.getSignedDownloadUrl.mockResolvedValue(
         'https://storage.supabase.co/download/signed',
@@ -592,6 +753,12 @@ describe('BackworkService', () => {
         'https://storage.supabase.co/download/signed',
       );
       expect(result.id).toBe('res-1');
+      expect(mockStorageProvider.getSignedDownloadUrl).toHaveBeenCalledWith(
+        'backwork',
+        'chapters/ch-1/backwork/res-1/midterm1.pdf',
+        undefined,
+        'midterm1.pdf',
+      );
     });
 
     it('should throw NotFoundException when resource not found', async () => {
@@ -1211,6 +1378,711 @@ describe('BackworkService', () => {
       await service.deleteCourse('course-1', 'ch-1');
 
       expect(mockCourseRepo.delete).toHaveBeenCalledWith('course-1', 'ch-1');
+    });
+  });
+
+  describe('drafts (#5208)', () => {
+    const draftRow = (
+      overrides: Partial<BackworkResource> = {},
+    ): BackworkResource => ({
+      ...baseResource,
+      id: 'draft-1',
+      title: null,
+      department_id: null,
+      course_number: null,
+      professor_id: null,
+      year: null,
+      semester: null,
+      assignment_type: null,
+      assignment_number: null,
+      document_variant: null,
+      tags: [],
+      is_redacted: true,
+      draft_fields: { title: 'Midterm', department_code: 'cs' },
+      ...overrides,
+    });
+
+    it('saves a draft with the fields as typed and creates no department or professor', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(null);
+      mockResourceRepo.create.mockResolvedValue(draftRow());
+
+      await service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/r/a.pdf',
+        file_hash: 'h',
+        title: 'Midterm',
+        department_code: 'cs',
+        professor_name: '  ',
+        course_number: '',
+        is_redacted: true,
+        draft: true,
+      });
+
+      expect(mockResourceRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/r/a.pdf',
+        file_hash: 'h',
+        is_redacted: true,
+        draft_fields: { title: 'Midterm', department_code: 'cs' },
+      });
+      expect(mockDepartmentRepo.findByCode).not.toHaveBeenCalled();
+      expect(mockDepartmentRepo.create).not.toHaveBeenCalled();
+      expect(mockProfessorRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a draft whose file is already in the chapter', async () => {
+      mockResourceRepo.findByFileHash.mockResolvedValue(draftRow());
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/ch-1/backwork/r/a.pdf',
+          file_hash: 'h',
+          draft: true,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("lists only the caller's drafts", async () => {
+      mockResourceRepo.findDrafts.mockResolvedValue([draftRow()]);
+
+      await expect(service.findDrafts('ch-1', 'user-1')).resolves.toHaveLength(
+        1,
+      );
+      expect(mockResourceRepo.findDrafts).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
+    });
+
+    it('sets a field on every draft, keeps the rest, and clears what is sent as null', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({ id: 'a', draft_fields: { title: 'A', year: 2020 } }),
+        draftRow({ id: 'b', draft_fields: { title: 'B' } }),
+      ]);
+      mockResourceRepo.updateDraftFields.mockImplementation(
+        async (id, _chapter, _uploader, fields) =>
+          draftRow({ id, draft_fields: fields }),
+      );
+
+      const rows = await service.updateDrafts('ch-1', 'user-1', ['a', 'b'], {
+        semester: 'Fall',
+        year: null,
+      });
+
+      expect(mockResourceRepo.findDraftsByIds).toHaveBeenCalledWith(
+        ['a', 'b'],
+        'ch-1',
+        'user-1',
+      );
+      expect(mockResourceRepo.updateDraftFields).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        'user-1',
+        { title: 'A', semester: 'Fall' },
+      );
+      expect(mockResourceRepo.updateDraftFields).toHaveBeenCalledWith(
+        'b',
+        'ch-1',
+        'user-1',
+        { title: 'B', semester: 'Fall' },
+      );
+      expect(rows.map((row) => row.id)).toEqual(['a', 'b']);
+    });
+
+    it('an edit takes the edited fields off the AI-filled list', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({
+          id: 'a',
+          draft_fields: {
+            title: 'T',
+            year: 2024,
+            semester: 'Spring',
+            ai_filled: ['title', 'year', 'semester'],
+            ai_fill: 'filled',
+          },
+        }),
+      ]);
+      mockResourceRepo.updateDraftFields.mockImplementation(
+        async (id, _chapter, _uploader, fields) =>
+          draftRow({ id, draft_fields: fields }),
+      );
+
+      await service.updateDrafts('ch-1', 'user-1', ['a'], {
+        title: 'Mine',
+        year: null,
+      });
+
+      expect(mockResourceRepo.updateDraftFields).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        'user-1',
+        {
+          title: 'Mine',
+          semester: 'Spring',
+          ai_filled: ['semester'],
+          ai_fill: 'filled',
+        },
+      );
+    });
+
+    it('an AI fill sets only fields that are still empty when it lands', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({ id: 'a', draft_fields: { title: 'Typed meanwhile' } }),
+      ]);
+      mockResourceRepo.updateDraftFields.mockImplementation(
+        async (id, _chapter, _uploader, fields) =>
+          draftRow({ id, draft_fields: fields }),
+      );
+
+      await service.applyAiFill('a', 'ch-1', 'user-1', {
+        fields: { title: 'AI title', semester: 'Fall' },
+        outcome: 'filled',
+      });
+
+      expect(mockResourceRepo.updateDraftFields).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        'user-1',
+        {
+          title: 'Typed meanwhile',
+          semester: 'Fall',
+          ai_filled: ['semester'],
+          ai_fill: 'filled',
+        },
+      );
+    });
+
+    it("downloads a redacted draft's own stored file, and refuses one uploaded as-is", async () => {
+      const bytes = new Uint8Array([1]);
+      const redacted = draftRow({ id: 'a', is_redacted: true });
+      mockStorageProvider.listObjects.mockResolvedValueOnce([
+        { path: redacted.storage_path, createdAt: null, sizeBytes: 1 },
+      ]);
+      mockStorageProvider.downloadFile.mockResolvedValueOnce(bytes);
+      await expect(service.redactedDraftFile(redacted, 10)).resolves.toEqual({
+        bytes,
+      });
+      expect(mockStorageProvider.listObjects).toHaveBeenCalledWith(
+        'backwork',
+        redacted.storage_path.slice(0, redacted.storage_path.lastIndexOf('/')),
+      );
+      expect(mockStorageProvider.downloadFile).toHaveBeenCalledWith(
+        'backwork',
+        redacted.storage_path,
+      );
+
+      mockStorageProvider.downloadFile.mockClear();
+      await expect(
+        service.redactedDraftFile(
+          draftRow({ id: 'b', is_redacted: false }),
+          10,
+        ),
+      ).rejects.toThrow('uploaded as-is');
+      expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('answers too_large from the stored size, without downloading the file', async () => {
+      const redacted = draftRow({ id: 'a', is_redacted: true });
+      mockStorageProvider.listObjects.mockResolvedValueOnce([
+        { path: redacted.storage_path, createdAt: null, sizeBytes: 11 },
+      ]);
+
+      await expect(service.redactedDraftFile(redacted, 10)).resolves.toBe(
+        'too_large',
+      );
+      expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('answers null when the stored file is gone, without downloading', async () => {
+      mockStorageProvider.listObjects.mockResolvedValueOnce([]);
+
+      await expect(
+        service.redactedDraftFile(draftRow({ id: 'a', is_redacted: true }), 10),
+      ).resolves.toBeNull();
+      expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('still downloads when storage reports no size, leaving the cap to the extractor', async () => {
+      const bytes = new Uint8Array([1]);
+      const redacted = draftRow({ id: 'a', is_redacted: true });
+      mockStorageProvider.listObjects.mockResolvedValueOnce([
+        { path: redacted.storage_path, createdAt: null },
+      ]);
+      mockStorageProvider.downloadFile.mockResolvedValueOnce(bytes);
+
+      await expect(service.redactedDraftFile(redacted, 10)).resolves.toEqual({
+        bytes,
+      });
+    });
+
+    it('claims a draft for one AI fill and hands back its release', async () => {
+      const now = new Date('2026-11-17T12:00:00.000Z');
+      mockResourceRepo.claimAiFill.mockResolvedValueOnce(now.toISOString());
+
+      const release = await service.claimAiFill('a', 'ch-1', 'user-1', now);
+
+      expect(mockResourceRepo.claimAiFill).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        'user-1',
+        now,
+        new Date(now.getTime() - AI_FILL_CLAIM_STALE_MS),
+      );
+      expect(release).toEqual(expect.any(Function));
+      await release!();
+      expect(mockResourceRepo.releaseAiFill).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        now.toISOString(),
+      );
+    });
+
+    it('answers null while another fill holds the draft, and a failed release only logs', async () => {
+      mockResourceRepo.claimAiFill.mockResolvedValueOnce(null);
+      await expect(
+        service.claimAiFill('a', 'ch-1', 'user-1'),
+      ).resolves.toBeNull();
+
+      mockResourceRepo.claimAiFill.mockResolvedValueOnce('claim');
+      mockResourceRepo.releaseAiFill.mockRejectedValueOnce(new Error('down'));
+      const release = await service.claimAiFill('a', 'ch-1', 'user-1');
+      await expect(release!()).resolves.toBeUndefined();
+    });
+
+    it("finds only the caller's own draft", async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValueOnce([]);
+      await expect(
+        service.findOwnDraft('a', 'ch-1', 'user-1'),
+      ).resolves.toBeNull();
+      expect(mockResourceRepo.findDraftsByIds).toHaveBeenCalledWith(
+        ['a'],
+        'ch-1',
+        'user-1',
+      );
+    });
+
+    it('publishes a draft the way a confirm files one', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({
+          draft_fields: {
+            title: 'Midterm',
+            department_code: 'cs',
+            course_number: ' 101 ',
+            professor_name: 'Dr. Smith',
+            semester: 'Fall',
+            document_variant: 'Student Copy',
+          },
+        }),
+      ]);
+      mockDepartmentRepo.findByCode.mockResolvedValue(baseDepartment);
+      mockProfessorRepo.findByName.mockResolvedValue(baseProfessor);
+      mockResourceRepo.publishDraft.mockResolvedValue(baseResource);
+
+      const result = await service.publishDrafts('ch-1', 'user-1', ['draft-1']);
+
+      expect(mockResourceRepo.publishDraft).toHaveBeenCalledWith(
+        'draft-1',
+        'ch-1',
+        'user-1',
+        {
+          title: 'Midterm',
+          department_id: 'dept-1',
+          course_number: '101',
+          professor_id: 'prof-1',
+          year: null,
+          semester: 'Fall',
+          assignment_type: null,
+          assignment_number: null,
+          document_variant: 'Student Copy',
+          tags: [],
+        },
+      );
+      expect(result).toEqual({ published: [baseResource], failed: [] });
+    });
+
+    it('keeps an unredacted Student Copy a draft and publishes the rest', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({
+          id: 'as-is',
+          is_redacted: false,
+          draft_fields: { document_variant: 'Student Copy' },
+        }),
+        draftRow({ id: 'ok', draft_fields: { title: 'Fine' } }),
+      ]);
+      mockResourceRepo.publishDraft.mockImplementation(async (id) =>
+        draftRow({ id, draft_fields: null }),
+      );
+
+      const result = await service.publishDrafts('ch-1', 'user-1', [
+        'as-is',
+        'ok',
+        'gone',
+      ]);
+
+      expect(result.published.map((row) => row.id)).toEqual(['ok']);
+      expect(result.failed).toEqual([
+        { id: 'as-is', message: expect.stringContaining('Student Copy') },
+        { id: 'gone', message: 'This draft is no longer here.' },
+      ]);
+      expect(mockResourceRepo.publishDraft).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a draft another tab published first instead of filing it twice', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([draftRow()]);
+      mockDepartmentRepo.findByCode.mockResolvedValue(baseDepartment);
+      mockResourceRepo.publishDraft.mockResolvedValue(null);
+
+      const result = await service.publishDrafts('ch-1', 'user-1', ['draft-1']);
+
+      expect(result).toEqual({
+        published: [],
+        failed: [{ id: 'draft-1', message: 'This draft is no longer here.' }],
+      });
+    });
+
+    it('keeps going when one draft fails to file', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({ id: 'bad' }),
+        draftRow({ id: 'good', draft_fields: { title: 'x' } }),
+      ]);
+      mockDepartmentRepo.findByCode.mockRejectedValue(new Error('db down'));
+      mockResourceRepo.publishDraft.mockImplementation(async (id) =>
+        draftRow({ id, draft_fields: null }),
+      );
+
+      const result = await service.publishDrafts('ch-1', 'user-1', [
+        'bad',
+        'good',
+      ]);
+
+      expect(result.published.map((row) => row.id)).toEqual(['good']);
+      expect(result.failed).toEqual([
+        { id: 'bad', message: "Couldn't publish this one. Try again." },
+      ]);
+    });
+
+    it("deletes the row before the file, and only the caller's draft", async () => {
+      const calls: string[] = [];
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([draftRow()]);
+      mockResourceRepo.deleteDraft.mockImplementation(async () => {
+        calls.push('row');
+        return true;
+      });
+      mockStorageProvider.deleteFile.mockImplementation(async () => {
+        calls.push('file');
+      });
+
+      await service.deleteDraft('draft-1', 'ch-1', 'user-1');
+
+      expect(mockResourceRepo.deleteDraft).toHaveBeenCalledWith(
+        'draft-1',
+        'ch-1',
+        'user-1',
+      );
+      expect(calls).toEqual(['row', 'file']);
+    });
+
+    it("answers 404 for a draft that is not the caller's", async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([]);
+
+      await expect(
+        service.deleteDraft('draft-1', 'ch-1', 'user-2'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockResourceRepo.deleteDraft).not.toHaveBeenCalled();
+      expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['user-1', 'This file is already in your drafts.'],
+      ['user-2', 'Someone in your chapter already saved this file as a draft.'],
+    ])(
+      'says a duplicate is a draft, not a library file (uploader %s)',
+      async (uploaderId, message) => {
+        mockResourceRepo.findByFileHash.mockResolvedValue(
+          draftRow({ uploader_id: 'user-1' }),
+        );
+
+        const attempt = service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: uploaderId,
+          storage_path: 'chapters/ch-1/backwork/r/a.pdf',
+          file_hash: 'h',
+          draft: true,
+        });
+
+        await expect(attempt).rejects.toThrow(ConflictException);
+        await expect(attempt).rejects.toMatchObject({
+          response: { message, existingResourceId: 'draft-1' },
+        });
+      },
+    );
+
+    it('lets an admin delete a draft someone left behind', async () => {
+      mockResourceRepo.findById.mockResolvedValue(draftRow());
+      mockStorageProvider.deleteFile.mockResolvedValue();
+      mockResourceRepo.delete.mockResolvedValue();
+
+      await service.delete('draft-1', 'ch-1');
+
+      expect(mockResourceRepo.findById).toHaveBeenCalledWith(
+        'draft-1',
+        'ch-1',
+        { includeDrafts: true },
+      );
+      expect(mockResourceRepo.delete).toHaveBeenCalledWith('draft-1', 'ch-1');
+    });
+
+    it('looks up a shared department and professor once per publish', async () => {
+      const fields = { department_code: 'CS', professor_name: 'Dr. Smith' };
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({ id: 'a', draft_fields: fields }),
+        draftRow({ id: 'b', draft_fields: fields }),
+        draftRow({
+          id: 'c',
+          draft_fields: { ...fields, department_code: 'cs' },
+        }),
+      ]);
+      mockDepartmentRepo.findByCode.mockResolvedValue(baseDepartment);
+      mockProfessorRepo.findByName.mockResolvedValue(baseProfessor);
+      mockResourceRepo.publishDraft.mockImplementation(async (id) =>
+        draftRow({ id, draft_fields: null }),
+      );
+
+      const result = await service.publishDrafts('ch-1', 'user-1', [
+        'a',
+        'b',
+        'c',
+      ]);
+
+      expect(result.published).toHaveLength(3);
+      expect(mockDepartmentRepo.findByCode).toHaveBeenCalledTimes(1);
+      expect(mockProfessorRepo.findByName).toHaveBeenCalledTimes(1);
+    });
+    describe('pages to check (#5252)', () => {
+      const unchecked = (overrides: Partial<BackworkResource> = {}) =>
+        draftRow({
+          draft_fields: {
+            title: 'Midterm',
+            pages_unchecked: true,
+            ai_fill: 'filled',
+          },
+          ...overrides,
+        });
+      const replacement = {
+        storage_path: 'chapters/ch-1/backwork/r2/a.pdf',
+        file_hash: 'b'.repeat(64),
+      };
+
+      it('saves a folder draft as waiting for its pages to be checked', async () => {
+        mockResourceRepo.findByFileHash.mockResolvedValue(null);
+        mockResourceRepo.create.mockResolvedValue(draftRow());
+
+        await service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/ch-1/backwork/r/a.pdf',
+          file_hash: 'h',
+          title: 'Midterm',
+          is_redacted: true,
+          draft: true,
+          pages_checked: false,
+        });
+
+        expect(mockResourceRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            draft_fields: { title: 'Midterm', pages_unchecked: true },
+          }),
+        );
+      });
+
+      it('refuses to publish a draft whose pages nobody has checked', async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+
+        const result = await service.publishDrafts('ch-1', 'user-1', [
+          'draft-1',
+        ]);
+
+        expect(result).toEqual({
+          published: [],
+          failed: [
+            {
+              id: 'draft-1',
+              message: 'Check its pages before you publish it.',
+            },
+          ],
+        });
+        expect(mockResourceRepo.publishDraft).not.toHaveBeenCalled();
+      });
+
+      it("hands the uploader a short link to their own draft's file, and 404s anyone else", async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValueOnce([unchecked()]);
+        mockStorageProvider.getSignedDownloadUrl.mockResolvedValue('https://x');
+
+        await expect(
+          service.draftFileUrl('draft-1', 'ch-1', 'user-1'),
+        ).resolves.toBe('https://x');
+        expect(mockStorageProvider.getSignedDownloadUrl).toHaveBeenCalledWith(
+          'backwork',
+          baseResource.storage_path,
+          300,
+        );
+
+        mockResourceRepo.findDraftsByIds.mockResolvedValueOnce([]);
+        await expect(
+          service.draftFileUrl('draft-1', 'ch-1', 'user-2'),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('marks a draft checked and keeps its fields and earlier fill', async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+        mockResourceRepo.updateDraftFields.mockImplementation(
+          async (id, _chapter, _uploader, fields) =>
+            draftRow({ id, draft_fields: fields }),
+        );
+
+        const row = await service.checkDraft('draft-1', 'ch-1', 'user-1');
+
+        expect(mockResourceRepo.updateDraftFields).toHaveBeenCalledWith(
+          'draft-1',
+          'ch-1',
+          'user-1',
+          { title: 'Midterm', ai_fill: 'filled' },
+        );
+        expect(row.draft_fields).not.toHaveProperty('pages_unchecked');
+        expect(mockResourceRepo.replaceDraftFile).not.toHaveBeenCalled();
+      });
+
+      it('swaps in the file flattened again with the added boxes, then deletes the old one', async () => {
+        const calls: string[] = [];
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+        mockResourceRepo.findByFileHash.mockResolvedValue(null);
+        mockResourceRepo.replaceDraftFile.mockImplementation(async () => {
+          calls.push('row');
+          return draftRow();
+        });
+        mockStorageProvider.deleteFile.mockImplementation(async () => {
+          calls.push('file');
+        });
+
+        await service.checkDraft('draft-1', 'ch-1', 'user-1', replacement);
+
+        expect(mockResourceRepo.replaceDraftFile).toHaveBeenCalledWith(
+          'draft-1',
+          'ch-1',
+          'user-1',
+          {
+            ...replacement,
+            is_redacted: true,
+            // The fill read the old file, so it may read the new one.
+            draft_fields: { title: 'Midterm' },
+          },
+        );
+        expect(mockStorageProvider.deleteFile).toHaveBeenCalledWith(
+          'backwork',
+          baseResource.storage_path,
+        );
+        expect(calls).toEqual(['row', 'file']);
+      });
+
+      it("keeps the check when the old file won't delete", async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+        mockResourceRepo.findByFileHash.mockResolvedValue(null);
+        mockResourceRepo.replaceDraftFile.mockResolvedValue(draftRow());
+        mockStorageProvider.deleteFile.mockRejectedValue(new Error('down'));
+
+        await expect(
+          service.checkDraft('draft-1', 'ch-1', 'user-1', replacement),
+        ).resolves.toBeDefined();
+      });
+
+      it("refuses a replacement outside the chapter's folder", async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+
+        await expect(
+          service.checkDraft('draft-1', 'ch-1', 'user-1', {
+            ...replacement,
+            storage_path: 'chapters/ch-2/backwork/r2/a.pdf',
+          }),
+        ).rejects.toThrow();
+        expect(mockResourceRepo.replaceDraftFile).not.toHaveBeenCalled();
+      });
+
+      it('refuses a replacement file already in the chapter', async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+        mockResourceRepo.findByFileHash.mockResolvedValue(
+          draftRow({ id: 'other' }),
+        );
+
+        await expect(
+          service.checkDraft('draft-1', 'ch-1', 'user-1', replacement),
+        ).rejects.toThrow(ConflictException);
+        expect(mockResourceRepo.replaceDraftFile).not.toHaveBeenCalled();
+      });
+
+      it("never points a draft at another row's file", async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+        mockResourceRepo.countByStoragePath.mockResolvedValue(1);
+
+        await expect(
+          service.checkDraft('draft-1', 'ch-1', 'user-1', {
+            ...replacement,
+            storage_path: baseResource.storage_path,
+          }),
+        ).rejects.toThrow(ConflictException);
+        expect(mockResourceRepo.replaceDraftFile).not.toHaveBeenCalled();
+        expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+      });
+
+      it('takes a new file only while the draft waits for its check', async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([draftRow()]);
+
+        await expect(
+          service.checkDraft('draft-1', 'ch-1', 'user-1', replacement),
+        ).rejects.toThrow(ConflictException);
+        expect(mockResourceRepo.replaceDraftFile).not.toHaveBeenCalled();
+      });
+
+      it('keeps the old file when another row still uses it', async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+        mockResourceRepo.findByFileHash.mockResolvedValue(null);
+        mockResourceRepo.replaceDraftFile.mockResolvedValue(draftRow());
+        mockResourceRepo.countByStoragePath.mockImplementation(
+          async (_chapter: string, path: string) =>
+            path === baseResource.storage_path ? 1 : 0,
+        );
+
+        await service.checkDraft('draft-1', 'ch-1', 'user-1', replacement);
+
+        expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+      });
+
+      it("refuses a new upload at a path another row's file is at", async () => {
+        mockResourceRepo.countByStoragePath.mockResolvedValue(1);
+
+        await expect(
+          service.confirmUpload({
+            chapter_id: 'ch-1',
+            uploader_id: 'user-1',
+            storage_path: baseResource.storage_path,
+            file_hash: 'h',
+            draft: true,
+          }),
+        ).rejects.toThrow(ConflictException);
+        expect(mockResourceRepo.create).not.toHaveBeenCalled();
+      });
+
+      it("answers 404 for a draft that is not the caller's", async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([]);
+
+        await expect(
+          service.checkDraft('draft-1', 'ch-1', 'user-2'),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockResourceRepo.updateDraftFields).not.toHaveBeenCalled();
+      });
     });
   });
 });

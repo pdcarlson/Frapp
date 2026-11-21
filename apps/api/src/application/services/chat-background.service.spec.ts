@@ -1,9 +1,5 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import {
-  ANNOUNCE_CHANNEL_FORBIDDEN,
-  ChatBackgroundService,
-  NO_ANNOUNCE_CHANNEL,
-} from './chat-background.service';
+import { BadRequestException } from '@nestjs/common';
+import { ChatBackgroundService } from './chat-background.service';
 import type { ChatChannel } from '#domain/entities/chat.entity';
 
 const CHAPTER = 'chapter-1';
@@ -338,40 +334,33 @@ describe('ChatBackgroundService (#3973)', () => {
       );
     });
 
-    // #4262: a Discord-imported chapter keeps its Discord channel names, so it
-    // can have no #general and no default; its photo default 400'd.
-    it('announces in the oldest channel the setter can post in when there is no default or #general', async () => {
-      const { service, access, messageRepo, chapterRepo } = setup({
+    it('announces a default photo in the oldest open public channel when there is no default or #general (a Discord import)', async () => {
+      const { service, messageRepo, chapterRepo } = setup({
         channels: [
           channel({
-            id: 'rush',
-            name: 'rush',
-            created_at: '2026-10-02T00:00:00Z',
+            id: 'gated',
+            name: 'announcements',
+            type: 'ROLE_GATED',
+            who_can_see: ['role:role-1'],
           }),
           channel({
-            id: 'exec',
-            name: 'exec',
-            created_at: '2026-10-01T00:00:00Z',
+            id: 'ro',
+            name: 'rules',
+            is_read_only: true,
+            who_can_post: [],
           }),
           channel({
-            id: 'house',
-            name: 'house-chat',
-            created_at: '2026-10-01T12:00:00Z',
+            id: 'officers',
+            name: 'notes',
+            who_can_post: ['role:role-1'],
           }),
+          channel({ id: 'academics', name: 'academics' }),
+          channel({ id: 'anyone', name: 'anyone' }),
         ],
-      });
-      // The oldest one is role-gated away from this setter.
-      access.assertChannelAccess.mockImplementation(async (id: string) => {
-        if (id === 'exec') {
-          throw new ForbiddenException(
-            'You do not have access to this channel',
-          );
-        }
-        return undefined;
       });
       await service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO);
       expect(messageRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ channel_id: 'house' }),
+        expect.objectContaining({ channel_id: 'academics' }),
       );
       expect(chapterRepo.update).toHaveBeenCalledWith(
         CHAPTER,
@@ -379,17 +368,38 @@ describe('ChatBackgroundService (#3973)', () => {
       );
     });
 
-    it('refuses a default photo only when the setter can post in no channel', async () => {
-      const { service, access, chapterRepo, messageRepo } = setup({
-        channels: [channel({ name: 'house' })],
+    it('prefers #general over an older open public channel', async () => {
+      const { service, messageRepo } = setup({
+        channels: [
+          channel({ id: 'academics', name: 'academics' }),
+          channel({ id: 'gen', name: 'general' }),
+        ],
       });
-      access.assertChannelAccess.mockRejectedValue(
-        new ForbiddenException('You do not have access to this channel'),
+      await service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO);
+      expect(messageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ channel_id: 'gen' }),
       );
+    });
+
+    it('refuses a default photo when there is nowhere to announce it', async () => {
+      const { service, chapterRepo } = setup({
+        channels: [
+          channel({
+            name: 'house',
+            type: 'ROLE_GATED',
+            who_can_see: ['role:role-1'],
+          }),
+          channel({
+            id: 'ro',
+            name: 'rules',
+            is_read_only: true,
+            who_can_post: [],
+          }),
+        ],
+      });
       await expect(
         service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO),
-      ).rejects.toThrow(NO_ANNOUNCE_CHANNEL);
-      expect(messageRepo.create).not.toHaveBeenCalled();
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(chapterRepo.update).not.toHaveBeenCalled();
     });
   });
@@ -411,17 +421,6 @@ describe('ChatBackgroundService (#3973)', () => {
         chat_background_photo_path: PHOTO,
         chat_background_message_id: 'msg-new',
       });
-    });
-
-    it('names the announcement channel when the setter cannot post there (#4262)', async () => {
-      const { service, access, messageRepo } = setup();
-      access.assertChannelAccess.mockRejectedValueOnce(
-        new ForbiddenException('You do not have access to this channel'),
-      );
-      await expect(
-        service.setChapterDefault(CHAPTER, 'actor', 'photo', PHOTO),
-      ).rejects.toThrow(ANNOUNCE_CHANNEL_FORBIDDEN);
-      expect(messageRepo.create).not.toHaveBeenCalled();
     });
 
     it('sets a built-in default without a line', async () => {

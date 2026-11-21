@@ -10,6 +10,35 @@ from what he said. As of 2026-11-11 nothing in this record is built: there is no
 `apps/api/src/modules`, no AI SDK in any `package.json`, and no vector or usage table in
 `supabase/migrations/`.
 
+> **Updated 2026-11-12 ([#4306](https://github.com/pdcarlson/Frapp/issues/4306)).** The gateway of
+> decisions 1, 2, 4 and 12 is built: the `ai` module, the port, the model catalog, the Anthropic
+> and scripted adapters, the quote check and the content-free telemetry. It is off unless the
+> server sets `AI_ENABLED=true`, and no feature calls it yet. Consent, the caps and the ledger are
+> still to come; the gateway asks for each through an interface that allows everything today.
+>
+> **Updated 2026-11-12 ([#4311](https://github.com/pdcarlson/Frapp/issues/4311)).** The Google
+> adapter of decision 1 is built on `@google/genai`, in Vertex AI mode with a service account and no
+> API-key path. It is off until `GOOGLE_VERTEX_PROJECT` and `GOOGLE_VERTEX_CREDENTIALS_JSON` are set.
+> The eval harness is provider-neutral and the bake-off command exists; its first paid run waits on
+> the credentials, so "Not verified" below still stands.
+>
+> **Updated 2026-11-12 ([#714](https://github.com/pdcarlson/Frapp/issues/714)).** The ledger and
+> the caps of decision 1 are built: `ai_usage_events`, one row per provider call, held before the
+> call against the chapter's month, the member's day and the provider's month, and settled before
+> the gateway returns ([`billing.md` § Caps](../../behavior/billing.md#caps)).
+>
+> **Updated 2026-11-12 ([#4308](https://github.com/pdcarlson/Frapp/issues/4308)).** Consent is built:
+> the gateway refuses every call unless the chapter has switched the call's family on and the member
+> it acts for said yes on the current AI sheet ([`ai.md` § Consent](../../behavior/ai.md#consent)).
+>
+> **Updated 2026-11-12 ([#720](https://github.com/pdcarlson/Frapp/issues/720)).** The index and the
+> retrieval of decision 3 are built for chapter documents and posted minutes
+> ([`../README.md` §13](../README.md#what-is-built-2026-11-12-720)). Two of the points under "What
+> this record does not decide" were settled with it and are marked there: how retrieval is isolated,
+> and the index type. Both wait on Paul's read of the pull request. Indexing a chapter's own records
+> needs the chapter's switch and no member's yes; embedding a member's question needs that member's
+> yes. Chat is not indexed yet (#4314), and nothing calls retrieval until Ask (#450).
+
 This record answers [#1303](https://github.com/pdcarlson/Frapp/issues/1303) (model access) and
 [#1456](https://github.com/pdcarlson/Frapp/issues/1456) (embeddings and rerank). It is the ADR
 [#2534](https://github.com/pdcarlson/Frapp/issues/2534) asked for, and records that issue's
@@ -32,6 +61,9 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
 3. **Both providers, split by job, for the beta.**
    - Claude, on Anthropic's own API, runs the text features: minutes, suggested tasks, and later Ask
      Frapp and the acting agent. It also judges evals.
+     Overridden in #4313 by pdcarlson's suggested-tasks session, 2026-11-12; pending Paul: suggested
+     tasks call no model. They are the posted minutes' action items as written
+     ([`meetings.md` § Suggested tasks](../../behavior/meetings.md#suggested-tasks)).
    - Gemini, on Google Cloud's paid platform (Vertex AI, which Google now calls the Gemini
      Enterprise Agent Platform), runs embeddings from the first day there is an index: Gemini
      Embedding at 1,536 dimensions. It is the first candidate for bulk PDF reading, and Google's
@@ -63,6 +95,28 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    - **An answer says how many messages were left out, and never whose.** He described a notice on
      the member's messages. Marking them would show the chapter who said no.
 
+   > **Paul, 2026-11-13 (#4790):** "I don't know why we need consent again. Just put this in the
+   > privacy policy." Then: "make it one of those screens", an onboarding screen that introduces
+   > Frapp AI, with "a continue button that's highly prominent" and a small underlined opt-out.
+   > "It's not forced... it should be encouraged during the signup process." The member's yes is
+   > now given once, on that screen (Meet Frapp AI), not on a separate AI sheet at the first AI
+   > feature. Continue is the yes; Not now is a no, changed any time in Settings. The screen
+   > names the companies in one line and links the privacy policy, which carries the kinds of
+   > data and the rest, so a new kind of data no longer asks everyone again (a new company
+   > still does). Silence still counts as no, and the yes is still explicit, which is what keeps
+   > it within Apple's 5.1.2(i). The four tester accounts were recorded as yes by migration. A
+   > president whose chapter never set its switches turns them on with the same Continue.
+   >
+   > **Paul, 2026-11-17 (#5294):** "I would like more AI stuff on by default." The chapter's
+   > three switches now start on and stay on until the president turns one off; the president's
+   > Continue no longer touches them. The member's own yes is unchanged and still explicit.
+   >
+   > *Changed in #5627 by pdcarlson, 2026-11-19 (Paul's pick on the onboarding overhaul, epic
+   > #5624):* a member who joins a chapter now meets Meet Frapp AI at their first use of AI, not
+   > during onboarding; a founder's chapter setup keeps it as a step. Members may join at 17, so
+   > the Continue line also confirms the member is 18 or older (`AI_MINIMUM_AGE`), which keeps
+   > this record's Google bar on people under 18.
+
    The president also turns chat on as a source for the chapter, separately from the other AI
    features. All of it is in [`spec/behavior/ai.md` § Chat as a source](../../behavior/ai.md#chat-as-a-source)
    and [§ Consent](../../behavior/ai.md#consent).
@@ -72,16 +126,30 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
 7. **Recording rules** (Paul). Standards meetings are never recorded and never reach a model. Raw
    audio is deleted when the minutes post, and after 30 days if they never post. Frapp stores no
    voiceprint and never recognises a member by voice.
+   Overridden in #712 by pdcarlson's recording-upload session, 2026-11-12; pending Paul: the audio
+   is deleted sooner, as soon as the transcript is written or the transcription fails for good,
+   because nothing built reads it after that
+   ([`meetings.md` § Retention](../../behavior/meetings.md#retention)).
+   Reverted in #5381 by pdcarlson, 2026-11-17 (Paul picked "Keep audio until minutes are posted"):
+   the audio is kept for playback until the minutes post, and 30 days at most, as this item first said.
 8. **AI text is stored in two cases only.** A member can report an answer or a draft, which keeps
    that one exchange for 30 days, encrypted, for the Frapp team to read. During the beta, one
    chapter can have a 14-day diagnostics window on Ask, with a visible notice. The research that
    proposed the window kept it off meeting and chat-derived features, so it has nothing to keep
    until Ask exists, and Ask comes after the beta (decision 6). Until then the report is the only
    stored text. Nothing else stores prompt or answer text, and no external sink ever receives it.
+   Overridden in #4312 by pdcarlson's drafting session, 2026-11-12; pending Paul: an officer's
+   notes for drafted minutes, and what the draft is checked against, are kept beside the unposted
+   minutes and deleted when they post, at most 30 days
+   ([`meetings.md` § Drafting from notes](../../behavior/meetings.md#drafting-from-notes)).
 9. **Google Cloud holds model calls only** (Paul: "no set date" for anything more). The calls run
    from two new projects, `frapp-ai-staging` and `frapp-ai-prod`. Hosting stays where
    [ADR-24](adr-24.md) put it, on that ADR's triggers. This record adds a vendor and changes nothing
    in ADR-24.
+   *(Corrected 2026-11-16: the `frapp-ai-*` projects were not used. Staging's calls run from the
+   frapp.live organization's nonprod project since 2026-11-15, and Paul moved hosting to Cloud Run
+   the next day, so once each environment's API runs there, its calls run from the same project as the API
+   ([`cloud-run.md`](../../../docs/ops/deployment/cloud-run.md#secrets), #5228).)*
 10. **Frapp owns the state.** No provider-side store holds chapter content: no File Search, no Files
     API, no managed retrieval corpus. No agent framework owns the loop or its memory. The usage
     ledger, the prompts, the search index, the job queue and the suggestions are Frapp's tables and
@@ -203,7 +271,7 @@ The catalog names the models. This table is a dated observation, not a pin.
 - The credentials are Paul's to create: the Anthropic organization
   ([#3279](https://github.com/pdcarlson/Frapp/issues/3279)) and the Google Cloud projects
   ([#4316](https://github.com/pdcarlson/Frapp/issues/4316)).
-- The consent sheet, the privacy page's subprocessor list and the store answers ship in the same
+- The consent screen (Meet Frapp AI since #4790), the privacy page's subprocessor list and the store answers ship in the same
   release that first sends member data to a model, not before and not after
   ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)).
 
@@ -213,6 +281,12 @@ The catalog names the models. This table is a dated observation, not a pin.
 - **The transcription vendor.** A second bake-off, on one real recorded meeting, between Google's
   transcription model and AssemblyAI. [#712](https://github.com/pdcarlson/Frapp/issues/712) stays
   open for it.
+  - Added 2026-11-12 (#712, pending Paul): the upload and both adapters are built, and the bake-off
+    has not run. Until it does, the catalog routes `meetings.transcribe` to AssemblyAI, because a
+    two-hour recording is one request there and four or more under Google's 30-minute cap. That is
+    a default to be confirmed or replaced by the bake-off, not the decision. The audio is deleted
+    when the transcript is written, sooner than decision 7's wording; the reason is in
+    [`meetings.md` § Retention](../../behavior/meetings.md#retention).
 - **The monthly allowance.** [`billing.md`](../../behavior/billing.md#ai-usage-pricing) still reads
   it off real usage.
 - **When hosting moves.** ADR-24's triggers.
@@ -223,12 +297,40 @@ The catalog names the models. This table is a dated observation, not a pin.
   The API reads with the service role today, which bypasses row-level security, and a background
   job has no caller. It is settled with the corpus schema
   ([#720](https://github.com/pdcarlson/Frapp/issues/720)).
+  - **Settled 2026-11-12 in #720, pending Paul.** Retrieval does not run under a member's database
+    token. The API has no client that carries one (the anon key is deliberately not loaded), and a
+    background run has no token at all, so a rule that lived in row-level security would not cover
+    the runs that most need it. What the research wanted from it is kept another way: the one
+    function that reads passages takes the chapter and the acting member, and returns nothing unless
+    that member belongs to that chapter. If it is ever called with a member's token, the token must
+    be the acting member's. Row-level security stays on with no policies, only the service role may
+    run the function, and the migration gate proves the isolation cases against the real SQL.
 - **The eval gate's thresholds and how often live models run** (#2534's decision 5). #3282 owns
   both. The research recommended manual runs plus runs on pull requests that touch prompts,
   retrieval or the catalog during the beta, and nightly from about ten chapters.
 - **The vector index type and the database plan it needs.** Settled with the corpus schema (#720).
+  - **Settled 2026-11-12 in #720, pending Paul.** No approximate index in the first version, so no
+    change of database plan. One chapter holds a few thousand passages, and an exact scan of one
+    chapter's rows is fast and always right. An approximate index spans every chapter and is
+    filtered by chapter afterwards, so it returns mostly other chapters' neighbours and loses recall
+    as chapters are added. HNSW with pgvector's iterative scan is the later, additive step once one
+    chapter passes about 20,000 passages. The word half has a GIN index.
 - **AI over vault content, rush data and backwork.** All three stay out.
   [`ai.md`](../../behavior/ai.md)'s list of sources is closed.
+  - **Changed in #5209 by pdcarlson, 2026-11-16, Paul's decision.** Backwork's catalog is in, its
+    files are not: Frapp AI's `find_backwork` tool reads each file's course, professor, type, term,
+    kind of copy and whether names are blacked out, as the asker and only for a member who may
+    browse the library, and hands the file over as a download fetched when the member taps it. No
+    backwork file's contents are read, indexed or quoted ([`ai.md`](../../behavior/ai.md) § Live
+    structured data). The upload pipeline's AI that reads redacted pages to propose fields (#3487)
+    is a separate decision. Vault and rush still stay out.
+  - **Changed in #5233 by pdcarlson, 2026-11-16, Paul's decision** ("the AI for uploads and
+    processing is different from Frapp AI itself"). The upload pipeline's AI may read one backwork
+    file's redacted text, for its uploader, to propose the draft's fields: catalog task
+    `backwork.fill`, family `backwork`, behind the Frapp AI switch and the uploader's Yes. Only a
+    redacted draft's stored, flattened file's text layer is read, never an as-is upload, an original
+    or a file name, and the uploader checks every value before it is filed ([`backwork.md`](../../behavior/backwork.md) § AI Fill).
+    Ask still never reads a backwork file.
 
 **Not verified.** The session could not reach `ai.google.dev` or `docs.cloud.google.com`, so every
 statement about Google in this record rests on search results. Two of them carry a decision, and

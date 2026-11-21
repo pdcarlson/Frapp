@@ -2,16 +2,13 @@
  * Invite tokens arrive as a pasted secret, a `?token=` query on `/join`, or a
  * full web/app URL (`app.frapp.live/join?token=…`, `frapp://join?token=…`).
  *
- * Officers copy the join URL (`buildJoinUrl` / first-officer wizard) or the
- * Members invite dialog's copy-link payload, which wraps that URL in role and expiry lines.
+ * Officers copy the join URL (`buildJoinUrl` / first-officer wizard, the
+ * Members invite panel's Copy link). Until 2026-11-06 Copy link wrapped it in
+ * role and expiry lines, which a paste of an older copy may still carry.
  * Mobile already pulled the query off a paste; web `/join` used to POST the
  * whole clipboard as the token, which the API treated as unknown (**410 Gone**).
  * Both surfaces call this before `POST /v1/invites/redeem`. The API still
  * requires the opaque token.
- *
- * The drawn s02 six-cell code is a Canvas shorthand. Joining is single-use
- * invite tokens (`spec/behavior/onboarding.md`), not a shared 6-character
- * chapter code.
  */
 
 const TOKEN_QUERY_KEYS = ["token", "invite", "code"] as const;

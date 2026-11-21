@@ -26,7 +26,7 @@ import { landingAuthUrls } from "../lib/auth-urls";
  *  1. **Only what ships may be claimed.** Pre-event RSVP is not modelled
  *     (`spec/behavior/events.md`), the dues chat card is a stub renderer and
  *     the Ask affordance cannot answer anything (`spec/behavior/ai.md`). So:
- *     Check in and never RSVP, no Going / Can't-make-it control, no Ask pill,
+ *     Check in and never RSVP, no Going / Can't-make-it control, no Ask entry,
  *     and the sentence about the conversation names events, check-in and points
  *     and stops there. Behaviour spec beats the reference boards on what the
  *     product does.

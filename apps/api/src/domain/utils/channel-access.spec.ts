@@ -4,9 +4,11 @@ import {
   channelAllowsThreads,
   EMPTY_ACCESS_HOLDER,
   isAlumniPostableChannel,
+  listsNameGroups,
   needsAccessHolder,
   type ChannelAccessHolder,
   type ChannelAccessRecord,
+  type ChannelOperation,
 } from './channel-access';
 
 const EXEC_TIER = '00000000-0000-4000-8000-0000000000e1';
@@ -66,7 +68,7 @@ const channel = (
 const check = (
   record: ChannelAccessRecord,
   holder: ChannelAccessHolder,
-  operation?: 'read' | 'post' | 'vote' | 'thread',
+  operation?: ChannelOperation,
   extra: { userId?: string; isChapterMember?: boolean } = {},
 ) =>
   canAccessChannel({
@@ -115,6 +117,20 @@ describe('accessHolderFromRoles', () => {
         'post',
       ),
     ).toBe(true);
+  });
+});
+
+describe('canAccessChannel — groups (#4076)', () => {
+  const FLOOR = '00000000-0000-4000-8000-0000000000f1';
+  it("admits a listed group's member to read and post, and nobody else", () => {
+    const listed = channel({
+      type: 'ROLE_GATED',
+      who_can_see: [`group:${FLOOR}`],
+    });
+    const inGroup = accessHolderFromRoles([roles.brother], [FLOOR]);
+    expect(check(listed, inGroup)).toBe(true);
+    expect(check(listed, inGroup, 'post')).toBe(true);
+    expect(check(listed, holding(roles.brother))).toBe(false);
   });
 });
 
@@ -247,6 +263,52 @@ describe('canAccessChannel', () => {
       expect(check(announcements, holding(roles.brother), 'thread')).toBe(true);
     });
 
+    // #4046: who may close is the poll's rule (its creator, or
+    // channels:manage), so a creator dropped from the posters, or an officer
+    // who was never on them, can still end a poll they can read.
+    it('lets any reader through to close a poll, whoever can post', () => {
+      expect(check(announcements, holding(roles.brother), 'close')).toBe(true);
+      const locked = channel({
+        type: 'PRIVATE',
+        member_ids: ['user-1'],
+        who_can_post: [`tier:${EXEC_TIER}`],
+      });
+      expect(check(locked, holding(roles.brother), 'close')).toBe(true);
+      expect(needsAccessHolder(channel(), 'close')).toBe(false);
+    });
+
+    // #3926: a form posted in an announcement channel is for every reader.
+    it('lets any reader answer a form, whoever can post', () => {
+      expect(check(announcements, holding(roles.brother), 'answer')).toBe(true);
+      expect(needsAccessHolder(announcements, 'answer')).toBe(false);
+    });
+
+    // A delete, flag or pin adds no content: whoever can read may reach the
+    // caller's own rule (the sender, or channels:manage), wherever they post.
+    it('lets any reader through to modify a message, whoever can post', () => {
+      expect(check(announcements, holding(roles.brother), 'modify')).toBe(true);
+      expect(check(announcements, holding(roles.alumni), 'modify')).toBe(true);
+      expect(needsAccessHolder(announcements, 'modify')).toBe(false);
+    });
+
+    it('still refuses a modify to someone who cannot see the channel', () => {
+      const hidden = channel({
+        type: 'ROLE_GATED',
+        who_can_see: [`tier:${EXEC_TIER}`],
+      });
+      expect(check(hidden, holding(roles.brother), 'modify')).toBe(false);
+      const dm = channel({ type: 'DM', member_ids: ['user-2', 'user-3'] });
+      expect(check(dm, holding(roles.president), 'modify')).toBe(false);
+    });
+
+    it('still refuses a close to someone who cannot see the channel', () => {
+      const hidden = channel({
+        type: 'ROLE_GATED',
+        who_can_see: [`tier:${EXEC_TIER}`],
+      });
+      expect(check(hidden, holding(roles.brother), 'close')).toBe(false);
+    });
+
     it('defaults the operation to read', () => {
       expect(check(announcements, holding(roles.brother))).toBe(true);
     });
@@ -259,7 +321,7 @@ describe('canAccessChannel', () => {
       expect(check(audit, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each(['post', 'vote', 'thread'] as const)(
+    it.each(['post', 'vote', 'thread', 'close', 'answer'] as const)(
       'refuses a %s even from the wildcard and with no post list',
       (operation) => {
         expect(
@@ -271,6 +333,14 @@ describe('canAccessChannel', () => {
         ).toBe(false);
       },
     );
+
+    // Which change to which line decides a modify there, and the predicate
+    // never sees the line: `ChannelAccessService` applies the audit log's
+    // own rule (`auditLogAllowsChange`).
+    it('lets a reader through to modify, for the line rule to decide', () => {
+      expect(check(audit, EMPTY_ACCESS_HOLDER, 'modify')).toBe(true);
+      expect(needsAccessHolder(audit, 'modify')).toBe(false);
+    });
   });
 
   describe('archived channel (#348)', () => {
@@ -284,7 +354,7 @@ describe('canAccessChannel', () => {
       expect(check(archived, EMPTY_ACCESS_HOLDER)).toBe(true);
     });
 
-    it.each(['post', 'vote', 'thread'] as const)(
+    it.each(['post', 'vote', 'thread', 'close', 'answer'] as const)(
       'refuses a %s from anyone',
       (operation) => {
         expect(check(archived, holding(roles.president), operation)).toBe(
@@ -292,6 +362,10 @@ describe('canAccessChannel', () => {
         );
       },
     );
+
+    it('still lets a remaining member delete, flag or pin there', () => {
+      expect(check(archived, EMPTY_ACCESS_HOLDER, 'modify')).toBe(true);
+    });
   });
 
   describe('the Alumni rule', () => {
@@ -390,6 +464,17 @@ describe('isAlumniPostableChannel', () => {
       ),
     ).toBe(true);
     expect(isAlumniPostableChannel(channel(), alumni)).toBe(false);
+  });
+});
+
+describe('listsNameGroups (#4076)', () => {
+  it.each([
+    [['group:g1'], null, true],
+    [null, ['role:r', 'group:g1'], true],
+    [['role:r', 'tier:t'], ['role:r'], false],
+    [null, null, false],
+  ])('see %j, post %j: %s', (who_can_see, who_can_post, named) => {
+    expect(listsNameGroups({ who_can_see, who_can_post })).toBe(named);
   });
 });
 

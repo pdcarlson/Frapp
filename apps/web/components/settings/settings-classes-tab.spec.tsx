@@ -255,6 +255,30 @@ describe("SettingsClassesTab", () => {
     });
   });
 
+  it("opens the class editor in place of the page beside chat (#4593)", async () => {
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <SettingsClassesTab
+            canManage
+            classTerm="Pledge class"
+            orderTerm="Fraternal order"
+          />
+        </div>
+      </div>,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Edit members of Alpha" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const region = screen.getByRole("region", { name: "Alpha" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Back to Pledge class" }),
+    );
+    expect(screen.queryByRole("region", { name: "Alpha" })).toBeNull();
+  });
+
   it("offers no editing to a viewer without roles:manage", () => {
     renderTab(false);
     expect(screen.queryByRole("button", { name: /reorder/i })).toBeNull();
@@ -271,19 +295,18 @@ describe("SettingsClassesTab", () => {
       return screen.getByRole("list", { name: "Members of Alpha" });
     }
 
-    it("lists the class's members in fraternal order", async () => {
+    it("lists the class's members in fraternal order, numbered by the list", async () => {
       const list = await openAlpha();
       expect(
         within(list)
-          .getAllByRole("textbox")
-          .map((field) => [
-            field.getAttribute("aria-label"),
-            (field as HTMLInputElement).value,
-          ]),
+          .getAllByRole("listitem")
+          .map((item) => item.textContent),
       ).toEqual([
-        ["Fraternal order for Ben", "1"],
-        ["Fraternal order for Ada", "2"],
+        expect.stringMatching(/^1Ben/),
+        expect.stringMatching(/^2Ada/),
       ]);
+      // The order is set by moving rows, never by typing a number (#5738).
+      expect(within(list).queryByRole("textbox")).toBeNull();
     });
 
     it("renumbers on a move and saves only what changed, in one request", async () => {
@@ -298,11 +321,58 @@ describe("SettingsClassesTab", () => {
       ]);
     });
 
+    it("lists everyone who can be added as soon as the search is clicked (#5738)", async () => {
+      await openAlpha();
+      await userEvent.click(screen.getByLabelText("Add a member"));
+      const options = screen
+        .getAllByRole("option")
+        .map((option) => option.textContent);
+      // Members in no class first, then members of another class.
+      expect(options).toEqual(["Dee", "CalMoves from Beta"]);
+    });
+
+    it("narrows the list as you type, and keeps it open to add the next one", async () => {
+      await openAlpha();
+      await userEvent.type(screen.getByLabelText("Add a member"), "de");
+      expect(
+        screen.getAllByRole("option").map((option) => option.textContent),
+      ).toEqual(["Dee"]);
+      await userEvent.keyboard("{Enter}");
+      expect(screen.getByLabelText("Add a member")).toHaveValue("");
+      expect(
+        screen.getAllByRole("option").map((option) => option.textContent),
+      ).toEqual(["CalMoves from Beta"]);
+    });
+
+    it("clears a search on Escape, then closes the list until an arrow key", async () => {
+      await openAlpha();
+      const field = screen.getByLabelText("Add a member");
+      await userEvent.type(field, "de");
+      await userEvent.keyboard("{Escape}");
+      expect(field).toHaveValue("");
+      expect(screen.getAllByRole("option")).toHaveLength(2);
+      await userEvent.keyboard("{Escape}");
+      expect(screen.queryAllByRole("option")).toHaveLength(0);
+      // Only the arrows (or typing) bring it back.
+      await userEvent.keyboard("{Shift}");
+      expect(screen.queryAllByRole("option")).toHaveLength(0);
+      await userEvent.keyboard("{ArrowDown}");
+      expect(screen.getAllByRole("option")).toHaveLength(2);
+    });
+
+    it("says so when nobody matches", async () => {
+      await openAlpha();
+      await userEvent.type(screen.getByLabelText("Add a member"), "zed");
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Nothing matches “zed”.",
+      );
+    });
+
     it("adds a member from another class and says where they move from", async () => {
       await openAlpha();
       await userEvent.type(screen.getByLabelText("Add a member"), "ca");
       expect(screen.getByText("Moves from Beta")).toBeInTheDocument();
-      await userEvent.click(screen.getByRole("button", { name: "Add Cal" }));
+      await userEvent.click(screen.getByRole("option", { name: /Cal/ }));
       await userEvent.click(screen.getByRole("button", { name: "Save" }));
       expect(mockAssign).toHaveBeenCalledWith([
         { member_id: "m3", pledge_class_id: "alpha", order_number: 3 },
@@ -318,15 +388,6 @@ describe("SettingsClassesTab", () => {
       expect(mockAssign).toHaveBeenCalledWith([
         { member_id: "m1", pledge_class_id: null, order_number: 2 },
       ]);
-    });
-
-    it("refuses to save a number the API would refuse", async () => {
-      await openAlpha();
-      const field = screen.getByLabelText("Fraternal order for Ben");
-      await userEvent.clear(field);
-      await userEvent.type(field, "0");
-      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-      expect(screen.getByRole("alert")).toHaveTextContent(/whole number/i);
     });
 
     it("leaves alone a member another officer added while the editor was open", async () => {
@@ -360,5 +421,107 @@ describe("SettingsClassesTab", () => {
       await openAlpha();
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     });
+  });
+});
+
+/**
+ * Leaving a class's member editor keeps its draft (#4593): no "are you
+ * sure", and it opens on it next time. Cancel and Save give it up.
+ */
+describe("SettingsClassesTab keeps the class editor's draft (#4593)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockClasses.mockReturnValue({
+      data: CLASSES,
+      isPending: false,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "idle",
+      refetch: vi.fn().mockResolvedValue(undefined),
+    });
+    mockMembers.mockReturnValue({ data: MEMBERS, isError: false });
+    mockAssign.mockResolvedValue(undefined);
+  });
+
+  const editAlpha = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: "Edit members of Alpha" }),
+    );
+  const removeAda = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: "Remove Ada from Alpha" }),
+    );
+
+  it("opens on the draft after it was closed, and says so", async () => {
+    renderTab();
+    await editAlpha();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    await removeAda();
+    await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    await editAlpha();
+
+    expect(
+      screen.queryByRole("button", { name: "Remove Ada from Alpha" }),
+    ).toBeNull();
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+    // Still worked out against the roster it opened on.
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(mockAssign).toHaveBeenCalledWith([
+      { member_id: "m1", pledge_class_id: null, order_number: 2 },
+    ]);
+  });
+
+  it("reopens the editor when Settings was left with it open", async () => {
+    const first = renderTab();
+    await editAlpha();
+    await removeAda();
+    first.unmount();
+
+    renderTab();
+    expect(await screen.findByText("Draft restored")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Remove Ada from Alpha" }),
+    ).toBeNull();
+  });
+
+  it("doesn't reopen it for an officer who can no longer manage classes", async () => {
+    const first = renderTab();
+    await editAlpha();
+    await removeAda();
+    first.unmount();
+
+    renderTab(false);
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Members of Alpha" })).toBeNull();
+  });
+
+  it("keeps nothing on Cancel, or for an editor left untouched", async () => {
+    renderTab();
+    await editAlpha();
+    await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    await editAlpha();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+
+    await removeAda();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await editAlpha();
+    expect(
+      screen.getByRole("button", { name: "Remove Ada from Alpha" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over from the roster on Discard", async () => {
+    renderTab();
+    await editAlpha();
+    await removeAda();
+    await userEvent.click(screen.getByRole("button", { name: /^close$/i }));
+    await editAlpha();
+    await userEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(
+      screen.getByRole("button", { name: "Remove Ada from Alpha" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Draft restored")).toBeNull();
   });
 });

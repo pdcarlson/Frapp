@@ -9,7 +9,7 @@
  * A **day divider** sits above the first row of each local calendar day, and is
  * the only place a date appears in the thread.
  */
-import { dayDelta, parseInstant } from "@repo/formatting";
+import { dayDelta, formatWeekdayDay, parseInstant } from "@repo/formatting";
 import { isAuditLine } from "./cards";
 import { isCardMessage } from "./message-actions";
 
@@ -61,6 +61,8 @@ export interface GroupableMessage extends MessageAuthorKey {
   created_at: string;
   kind?: string | null;
   reply_to_id?: string | null;
+  /** A forward's copy (#4864); only its presence is read. */
+  forwarded_from?: unknown;
   is_deleted?: boolean;
   /** A flag a member put on the message (#3921), which rides its author line. */
   flag?: string | null;
@@ -86,8 +88,8 @@ export function calendarDayKey(iso: string): string | null {
 
 /**
  * The day divider's label: `Today`, `Yesterday`, then the weekday, month and
- * day ("Sunday, Sep 28") in the viewer's locale, with the year when it is not
- * this one ("Tuesday, Mar 3, 2020") — the divider is the only date in the
+ * day ("Sunday, September 28") in the viewer's locale, with the year when it is not
+ * this one ("Tuesday, March 3, 2020") — the divider is the only date in the
  * thread, and an imported archive spans years. Empty for an unparseable
  * timestamp, so a divider never prints "Invalid Date". Calendar days are the
  * viewer's local ones (`dayDelta`, the shared arithmetic).
@@ -98,12 +100,7 @@ export function dayDividerLabel(iso: string, now: Date = new Date()): string {
   const delta = dayDelta(at, now);
   if (delta === 0) return "Today";
   if (delta === 1) return "Yesterday";
-  return at.toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
-  });
+  return formatWeekdayDay(at, now) ?? "";
 }
 
 /**
@@ -126,6 +123,9 @@ function startsRun(
   }
   // The quote above a reply needs the author line under it.
   if (message.reply_to_id) return true;
+  // So does a forward's card: "Forwarded" over someone else's words needs
+  // the forwarder's name above it (#4864).
+  if (message.forwarded_from) return true;
   // Audit lines stack: one under another draws tight, with no gap between
   // them, however far apart in time (each line carries its own time).
   // A deleted entry draws as the deleted placeholder, not a line, so it

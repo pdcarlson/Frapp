@@ -19,8 +19,12 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { GifService } from '../../application/services/gif.service';
 import { ChatService } from '../../application/services/chat.service';
-import { ChatMentionService } from '../../application/services/chat-mention.service';
+import {
+  ChatMentionService,
+  toMentionRoleEntry,
+} from '../../application/services/chat-mention.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
 import { ChatCategoryService } from '../../application/services/chat-category.service';
@@ -50,6 +54,7 @@ import {
   cardVoteSelection,
   type CardPollPayload,
 } from '#domain/utils/poll-vote-rules';
+import { isReactionActionType } from '#domain/utils/message-action-types';
 import {
   CreateChannelDto,
   SetChannelDisplayLockDto,
@@ -79,10 +84,18 @@ import {
   KindNotificationPreferenceDto,
   ClearedKindNotificationPreferenceDto,
   ResolveAuthorAvatarsDto,
+  ListMessagesAttachmentsQueryDto,
   GetChannelMessagesQueryDto,
   ChatMessageDto,
+  ForwardMessageDto,
+  ForwardResultDto,
 } from '../dtos/chat.dto';
-import type { ChannelType, ChatChannel } from '#domain/entities/chat.entity';
+import type {
+  ChannelType,
+  ChatChannel,
+  ChatMessage,
+} from '#domain/entities/chat.entity';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /** What `POST :id/messages` answers with. */
 type SentMessage = Awaited<ReturnType<ChatService['sendMessage']>>;
@@ -91,9 +104,6 @@ type SentMessage = Awaited<ReturnType<ChatService['sendMessage']>>;
 type RecordedMessageAction = Awaited<
   ReturnType<ChatReactionService['recordMessageAction']>
 >;
-
-/** The prefix every emoji reaction's `action_type` carries (`reaction:<emoji>`). */
-const REACTION_ACTION_PREFIX = 'reaction:';
 
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -111,11 +121,13 @@ export class ChatController {
     private readonly rbacService: RbacService,
     private readonly mentions: ChatMentionService,
     private readonly accessLists: ChannelAccessListService,
+    private readonly gifs: GifService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'List chapter channels' })
   async listChannels(
     @CurrentChapterId() chapterId: string,
@@ -129,6 +141,7 @@ export class ChatController {
   // `getChannel('unread')` and answering 404 for a route that exists.
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('unread')
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'Unread and mention counts for every channel the caller can read',
   })
@@ -143,6 +156,7 @@ export class ChatController {
   // MUST stay above `@Get(':id')`, for the same reason as `unread` above.
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('latest')
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'The latest message in every channel the caller can read, for the channel list previews',
@@ -175,9 +189,10 @@ export class ChatController {
   // above: `:id` would resolve this as `getChannel('mention-roles')`.
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('mention-roles')
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
-      'The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each',
+      'The chapter roles, tiers and groups the caller’s @-mention picker offers, with whether the caller may ping each',
   })
   @ApiOkResponse({ type: MentionRoleDto, isArray: true })
   async getMentionRoles(
@@ -185,12 +200,7 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ): Promise<MentionRoleDto[]> {
     const roles = await this.mentions.listMentionRoles(chapterId, userId);
-    return roles.map(({ role_id, name, color, mentionable }) => ({
-      role_id,
-      name,
-      color,
-      mentionable,
-    }));
+    return roles.map(toMentionRoleEntry);
   }
 
   // MUST stay above `@Get(':id')`, for the same reason as `unread` directly
@@ -302,10 +312,11 @@ export class ChatController {
   }
 
   @Get(':id')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get channel by ID' })
   async getChannel(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
   ) {
     return this.chatService.getChannel(id, chapterId, userId);
@@ -346,10 +357,14 @@ export class ChatController {
 
   @Patch(':id')
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
-  @ApiOperation({ summary: 'Update a channel' })
+  @ApiOperation({
+    summary: 'Update a channel',
+    description:
+      'Refused (400) on a DM or group DM, whatever the body: a direct conversation belongs to its members, not the chapter (#3633).',
+  })
   async updateChannel(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateChannelDto,
   ) {
     return this.chatService.updateChannel(id, chapterId, dto);
@@ -362,7 +377,7 @@ export class ChatController {
   })
   async setChannelDisplayLock(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
     @Body() dto: SetChannelDisplayLockDto,
   ) {
@@ -386,17 +401,25 @@ export class ChatController {
 
   @Delete(':id')
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
-  @ApiOperation({ summary: 'Delete a channel' })
+  @ApiOperation({
+    summary: 'Delete a channel',
+    description:
+      'Refused (400) on a DM, a group DM (#3633) and the audit log channel (#3909); nothing is deleted.',
+  })
   async deleteChannel(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.chatService.deleteChannel(id, chapterId);
     return { success: true };
   }
 
   @Post('dm')
-  @ApiOperation({ summary: 'Get or create a 1-on-1 DM channel' })
+  @ApiOperation({
+    summary: 'Get or create a 1-on-1 DM channel',
+    description:
+      'A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.',
+  })
   // Get-or-create, and the result does not say which: reopening an existing
   // DM counts the same as starting one.
   @FeatureEvent('dm-opened')
@@ -412,14 +435,24 @@ export class ChatController {
   }
 
   @Post('group-dm')
-  @ApiOperation({ summary: 'Create a group DM channel' })
+  @ApiOperation({
+    summary: 'Create a group DM channel',
+    description:
+      "Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.",
+  })
+  // Not idempotent: every call adds a conversation to each member's list.
+  @ThrottleFanOutWrite()
   async createGroupDm(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: CreateGroupDmDto,
   ) {
-    const memberIds = Array.from(new Set([userId, ...dto.member_ids]));
-    return this.chatService.createGroupDm(chapterId, memberIds, dto.name);
+    // The service counts each person once, however their id is spelled.
+    return this.chatService.createGroupDm(
+      chapterId,
+      [userId, ...dto.member_ids],
+      dto.name,
+    );
   }
 
   /**
@@ -438,7 +471,7 @@ export class ChatController {
     summary: 'Leave a Group DM, or hide a 1-on-1 DM from your own list',
   })
   async leaveGroupDm(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -452,6 +485,7 @@ export class ChatController {
    * another chapter 404, from the same check every channel read goes through.
    */
   @Get(':id/members')
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'Everyone who can read a channel, with their top role rank',
   })
@@ -506,6 +540,7 @@ export class ChatController {
   // ── Categories ───────────────────────────────────────────────────────
 
   @Get('categories/list')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'List channel categories' })
   async listCategories(@CurrentChapterId() chapterId: string) {
     return this.categories.getCategories(chapterId);
@@ -531,7 +566,7 @@ export class ChatController {
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Update a channel category' })
   async updateCategory(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: UpdateCategoryDto,
   ) {
@@ -542,7 +577,7 @@ export class ChatController {
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Delete a channel category' })
   async deleteCategory(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
   ) {
     await this.categories.deleteCategory(id, chapterId);
@@ -559,12 +594,13 @@ export class ChatController {
    * of `spec/behavior/chat/README.md` § The masking contract unreachable.
    */
   @Get(':id/messages')
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'Get channel message history (supports since= reconnect replay)',
   })
   @ApiOkResponse({ type: ChatMessageDto, isArray: true })
   async getMessages(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Query() query: GetChannelMessagesQueryDto,
@@ -619,13 +655,16 @@ export class ChatController {
       result.deduplicated || result.message.kind !== 'announcement' ? null : {},
   )
   async sendMessage(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Body() dto: SendMessageDto,
   ) {
-    return this.chatService.sendMessage({
+    // Checked before the send, so a GIF this server's search didn't hand out
+    // is a 400 and nothing is written (#4631).
+    const gif = dto.gif ? this.gifs.messageGif(dto.gif) : null;
+    const sent = await this.chatService.sendMessage({
       chapter_id: chapterId,
       channel_id: channelId,
       sender_id: userId,
@@ -637,8 +676,46 @@ export class ChatController {
       thread_root_id: dto.thread_root_id,
       metadata: dto.metadata,
       attachments: dto.attachments,
+      gif,
+      mention_picks: dto.mention_picks,
       enabled_modules: enabledModules,
+      // A role picker (#4958) is an officer's post listing marked roles;
+      // the service calls this after its replay check.
+      assertRolePicker: (roleIds) =>
+        this.rbacService.assertMayPostRolePicker(chapterId, userId, roleIds),
     });
+    // Tells the provider what got sent, which tunes its results; never fails
+    // the send.
+    if (gif && !sent.deduplicated) this.gifs.recordShare(gif.id);
+    return sent;
+  }
+
+  /**
+   * Attachments on up to 50 messages of this channel at once, keyed by message
+   * id (#5667): what a message list renders, in one request instead of one per
+   * message. Same rules as `listMessageAttachments`, applied per message. A
+   * GET so it stays a read everywhere a read is treated differently: the
+   * `read` rate limit (100 a minute, not `write`'s 30) and a chapter whose
+   * subscription lapsed, which keeps reading its chat. Three segments, so it
+   * cannot meet `:id/messages/:messageId/attachments`.
+   */
+  @Get(':id/messages/attachments')
+  @ApiOperation({
+    summary:
+      'Attachments on several messages, with signed download URLs, keyed by message id',
+  })
+  async listMessagesAttachments(
+    @Param('id', ParseUUIDPipe) channelId: string,
+    @Query() query: ListMessagesAttachmentsQueryDto,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.attachments.listAttachmentsForMessages(
+      channelId,
+      chapterId,
+      userId,
+      query.message_ids,
+    );
   }
 
   /**
@@ -655,8 +732,8 @@ export class ChatController {
     summary: 'Attachments on a message, with signed download URLs',
   })
   async listMessageAttachments(
-    @Param('id') channelId: string,
-    @Param('messageId') messageId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -684,7 +761,7 @@ export class ChatController {
     summary: "Signed download URLs for a set of messages' author avatars",
   })
   async resolveAuthorAvatars(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @Body() dto: ResolveAuthorAvatarsDto,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -700,7 +777,7 @@ export class ChatController {
   @Patch('messages/:messageId')
   @ApiOperation({ summary: 'Edit a message (own only)' })
   async editMessage(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: EditMessageDto,
@@ -710,6 +787,7 @@ export class ChatController {
       chapterId,
       userId,
       dto.content,
+      dto.mention_picks,
     );
   }
 
@@ -719,7 +797,7 @@ export class ChatController {
       'Delete a message (soft delete; own message, or any in an accessible channel with channels:manage)',
   })
   async deleteMessage(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -743,16 +821,91 @@ export class ChatController {
     );
   }
 
+  /**
+   * Forward a message to one channel or DM (#4864): a new text message there,
+   * sent by the caller, with their optional comment and a copy of the
+   * original the server builds (`forwarded_from`). The original must be
+   * readable and the destination postable; a card or a deleted message is a
+   * 400. A retry with the same `client_message_id` answers the forward
+   * already made.
+   */
+  @Post('messages/:messageId/forward')
+  @ApiOperation({
+    summary:
+      'Forward a message to a channel or DM, with an optional comment (idempotent on client_message_id)',
+  })
+  @ApiCreatedResponse({ type: ForwardResultDto })
+  // The caller's own new row, so its `content` is their comment, unmasked. A
+  // retry on the same `client_message_id` answers `deduplicated: true` and
+  // records nothing: the forward was counted when it was first made.
+  @FeatureEvent(
+    'message-forwarded',
+    ({
+      result,
+    }: FeatureEventInput<
+      ForwardMessageDto,
+      ChatMessage & { deduplicated: boolean }
+    >) =>
+      result.deduplicated
+        ? null
+        : {
+            has_comment:
+              typeof result.content === 'string' &&
+              result.content.trim() !== '',
+          },
+  )
+  async forwardMessage(
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: ForwardMessageDto,
+  ) {
+    return this.chatService.forwardMessage({
+      message_id: messageId,
+      chapter_id: chapterId,
+      sender_id: userId,
+      channel_id: dto.channel_id,
+      content: dto.content,
+      client_message_id: dto.client_message_id,
+      mention_picks: dto.mention_picks,
+    });
+  }
+
+  // ── Sign-up and form cards (#3926) ───────────────────────────────────
+
+  @Post('messages/:messageId/close')
+  @ApiOperation({
+    summary:
+      'Close a sign-up or form card early (its creator, or channels:manage); answers already made stay',
+  })
+  // The closed row, so a client can draw the close before its Realtime echo.
+  @ApiCreatedResponse({ type: ChatMessageDto })
+  async closeCard(
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    // Resolved here rather than by `@RequirePermissions`, as `deleteMessage`
+    // does: the card's creator needs no permission. Lazy: asked only when the
+    // caller isn't the creator.
+    return this.chatService.closeCard(messageId, chapterId, userId, () =>
+      this.rbacService.memberHasAnyPermission(chapterId, userId, [
+        SystemPermissions.CHANNELS_MANAGE,
+      ]),
+    );
+  }
+
   // ── Pins ─────────────────────────────────────────────────────────────
 
   @Get(':id/pins')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get pinned messages in a channel' })
   // Masked exactly like `GET :id/messages`, so it owes the same declared
   // schema — a pin is channel content that stays in front of the blocker
   // indefinitely, and a client cannot honour `sender_blocked` it cannot see.
   @ApiOkResponse({ type: ChatMessageDto, isArray: true })
   async getPinnedMessages(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -763,7 +916,7 @@ export class ChatController {
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Pin a message' })
   async pinMessage(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -774,7 +927,7 @@ export class ChatController {
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Unpin a message' })
   async unpinMessage(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -801,7 +954,7 @@ export class ChatController {
     }),
   )
   async setMessageFlag(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: SetMessageFlagDto,
@@ -827,7 +980,7 @@ export class ChatController {
   })
   @ApiOkResponse({ type: ChatMessageDto })
   async clearMessageFlag(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -849,7 +1002,7 @@ export class ChatController {
   @Post('messages/:messageId/actions')
   @ApiOperation({
     summary:
-      'Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS)',
+      'Record a reaction / vote / sign-up claim / card action (hot path; atomic dedup; vote and sign-up claim UPSERT; 409 on a full sign-up slot)',
   })
   // Neither event carries the `action_type`: a reaction's holds the emoji, and
   // any other is free-form. A repeated reaction answers `deduplicated: true`
@@ -862,7 +1015,7 @@ export class ChatController {
       result,
     }: FeatureEventInput<ChatMessageActionDto, RecordedMessageAction>) =>
       typeof body.action_type === 'string' &&
-      body.action_type.startsWith(REACTION_ACTION_PREFIX) &&
+      isReactionActionType(body.action_type) &&
       !result.deduplicated
         ? {}
         : null,
@@ -891,7 +1044,7 @@ export class ChatController {
     },
   )
   async recordMessageAction(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
@@ -911,7 +1064,7 @@ export class ChatController {
   @Post('messages/:messageId/reactions')
   @ApiOperation({ summary: 'Toggle reaction (add/remove)' })
   async toggleReaction(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: ReactionDto,
@@ -925,9 +1078,10 @@ export class ChatController {
   }
 
   @Get('messages/:messageId/reactions')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get reactions for a message' })
   async getReactions(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -943,7 +1097,7 @@ export class ChatController {
   })
   @ApiCreatedResponse({ type: ChatUploadUrlResponseDto })
   async requestUploadUrl(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: RequestChatUploadUrlDto,
@@ -986,11 +1140,28 @@ export class ChatController {
   @Post(':id/read')
   @ApiOperation({ summary: 'Mark channel as read' })
   async markRead(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
     return this.chatService.markChannelRead(channelId, chapterId, userId);
+  }
+
+  /**
+   * Mark unread (#3723): the caller's own read cursor, so it needs only read
+   * access to the message's channel, like Mark as read.
+   */
+  @Post('messages/:messageId/unread')
+  @ApiOperation({
+    summary:
+      'Mark a message unread: move the caller’s read cursor to just before it',
+  })
+  async markMessageUnread(
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.markMessageUnread(messageId, chapterId, userId);
   }
 
   // ── Per-channel notification level (mute) ────────────────────────────

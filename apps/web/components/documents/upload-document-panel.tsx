@@ -1,18 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { localIsoDate } from "@repo/formatting";
 import { ChevronRight, Loader2, Upload } from "lucide-react";
 import {
   putSignedUpload,
   useConfirmDocumentUpload,
   useRequestDocumentUploadUrl,
+  type DocumentTypeRow,
 } from "@repo/hooks";
+import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Sheet, SheetTrigger } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -21,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelFooter,
@@ -36,6 +40,12 @@ import {
   useGatedDialog,
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { DocumentTypesEditor } from "@/components/documents/document-types-editor";
+import { ChannelAccessField } from "@/components/chat-admin/channel-access-field";
+import {
+  FILE_ALWAYS_LINE,
+  useDocumentAccessChoices,
+} from "@/components/documents/document-access";
 import { useToast } from "@/lib/hooks/use-toast";
 import { cn, getErrorMessage } from "@/lib/utils";
 import {
@@ -44,6 +54,16 @@ import {
   titleFromFilename,
 } from "@/lib/documents/upload-defaults";
 import {
+  readKeptDraft,
+  useKeptDraftKeys,
+  useKeptFormDraft,
+  useKeptPanel,
+} from "@repo/hooks/kept-drafts";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
+import { ZIP_REFUSAL } from "@/lib/documents/folder-import";
+import {
+  DOCUMENT_TYPE_NAME_MAX_LENGTH,
+  DOCUMENT_TYPES_MAX,
   MAX_UPLOAD_LABEL,
   acceptAttribute,
   inspectUploadFile,
@@ -57,9 +77,17 @@ import {
   Each string names the verdict, because it is the whole inline error under the
   file field rather than a toast body under a title that named it.
 */
-function uploadRejectionDescription(reason: "type" | "size"): string {
+function uploadRejectionDescription(
+  reason: "type" | "size",
+  filename: string,
+): string {
   if (reason === "size") {
     return `That file is too large. Chapter documents accept files up to ${MAX_UPLOAD_LABEL}.`;
+  }
+  // A zipped folder is a way forward, not a dead end (#5331): Import a folder
+  // takes the folder once it's unzipped.
+  if (/\.zip$/i.test(filename)) {
+    return ZIP_REFUSAL;
   }
   return "That file type is not allowed. Chapter documents accept PDFs, Office files, text, CSV, and common images (no SVG).";
 }
@@ -70,6 +98,11 @@ type UploadDraft = {
   folder: string;
   documentType: string;
   effectiveDate: string;
+  /**
+   * Who can see the file (#3642 piece 1): `null` is the same as its folder
+   * (everyone, filed in no folder), a list narrows that to whom it names.
+   */
+  whoCanSee: string[] | null;
   file: File | null;
   /*
     Whether each guessable field still holds what the panel put there (or
@@ -80,6 +113,12 @@ type UploadDraft = {
   autoTitle: boolean;
   autoType: boolean;
   autoFolder: boolean;
+  /**
+   * The effective date still reads Today (Paul, 2026-11-16): today is read
+   * when the panel draws and when it sends, so a draft kept overnight still
+   * means the day it is uploaded. Picking a date, or clearing it, ends that.
+   */
+  autoDate: boolean;
 };
 
 const EMPTY_UPLOAD_DRAFT: UploadDraft = {
@@ -88,17 +127,36 @@ const EMPTY_UPLOAD_DRAFT: UploadDraft = {
   folder: "",
   documentType: "",
   effectiveDate: "",
+  whoCanSee: null,
   file: null,
   autoTitle: true,
   autoType: true,
   autoFolder: true,
+  autoDate: true,
 };
+
+/** The kept draft's name (`@repo/hooks/kept-drafts`, #4593). */
+const UPLOAD_DRAFT = "document-upload";
+
+/** What decides "changed" for a kept draft: a `File` is opaque to JSON. */
+function uploadSignature(draft: UploadDraft): string {
+  const { file, ...fields } = draft;
+  return JSON.stringify({
+    ...fields,
+    file: file ? [file.name, file.size, file.lastModified] : null,
+  });
+}
 
 /** The draft fields an officer edits by hand; editing one ends its guessing. */
 type EditableField = Exclude<
   keyof UploadDraft,
-  "file" | "autoTitle" | "autoType" | "autoFolder"
+  "file" | "autoTitle" | "autoType" | "autoFolder" | "autoDate"
 >;
+
+/** The date the draft files under: Today until the officer changes it. */
+function draftEffectiveDate(draft: UploadDraft): string {
+  return draft.autoDate ? localIsoDate(new Date()) : draft.effectiveDate;
+}
 
 /**
  * The upload panel's state and submit. The page calls this rather than the
@@ -117,8 +175,11 @@ export function useDocumentUpload(
     typeOptions,
     folders,
     documents,
+    canUpload = true,
   }: {
     activeFolder: string | null;
+    /** The viewer may upload: the panel reopens on return only then. */
+    canUpload?: boolean;
     typeOptions: readonly string[];
     folders: readonly string[];
     documents: ReadonlyArray<{
@@ -131,8 +192,25 @@ export function useDocumentUpload(
   const requestUpload = useRequestDocumentUploadUrl();
   const confirmUpload = useConfirmDocumentUpload();
   const uploadDialog = useGatedDialog(gate);
-  const [uploadDraft, setUploadDraft] =
-    useState<UploadDraft>(EMPTY_UPLOAD_DRAFT);
+  const keptKeys = useKeptDraftKeys();
+  /*
+    Kept when the officer goes back or leaves the page mid-upload (#4593),
+    file and all, in memory for the tab: coming back opens the panel on it if
+    the page was left with the panel open, and the toolbar button opens on it
+    otherwise. The page is keyed by chapter, and so are these.
+  */
+  const [uploadDraft, setUploadDraft] = useState<UploadDraft>(
+    () =>
+      readKeptDraft<UploadDraft>(keptKeys.draft(UPLOAD_DRAFT)) ??
+      EMPTY_UPLOAD_DRAFT,
+  );
+  const panelOpen = uploadDialog.dialogProps.open;
+  const kept = useKeptFormDraft<UploadDraft>(
+    UPLOAD_DRAFT,
+    panelOpen,
+    uploadDraft,
+    { signature: uploadSignature(uploadDraft) },
+  );
   const [uploading, setUploading] = useState(false);
   /** Bumped when an upload lands and the draft starts over. */
   const [draftGeneration, setDraftGeneration] = useState(0);
@@ -174,6 +252,7 @@ export function useDocumentUpload(
         const next = { ...prev, [key]: value };
         if (key === "title") next.autoTitle = false;
         if (key === "folder") next.autoFolder = false;
+        if (key === "effectiveDate") next.autoDate = false;
         if (key === "documentType") {
           next.autoType = false;
           if (prev.autoFolder) {
@@ -196,18 +275,34 @@ export function useDocumentUpload(
   const openPanel = useCallback(
     (file?: File) => {
       setUploadError(null);
+      // What the officer left here, said so in the footer (#4593).
+      const restored = kept.take();
       // A folder on screen is a choice the officer already made, so it is
       // not guessed over; from "All files" or "No folder" the type decides.
-      setUploadDraft((prev) =>
-        prev.file || !prev.autoFolder
+      setUploadDraft((current) => {
+        const prev = restored ?? current;
+        return prev.file || !prev.autoFolder
           ? prev
-          : { ...prev, folder: activeFolder || "", autoFolder: !activeFolder },
-      );
+          : { ...prev, folder: activeFolder || "", autoFolder: !activeFolder };
+      });
       if (file) chooseFile(file);
       uploadDialog.setOpen(true);
     },
-    [activeFolder, chooseFile, uploadDialog],
+    [activeFolder, chooseFile, uploadDialog, kept],
   );
+  // Back to the panel the page was left with open, through the same door as
+  // the toolbar button, so it says the draft was restored.
+  const reopenPanel = useCallback(
+    (next: boolean) => (next ? openPanel() : uploadDialog.setOpen(false)),
+    [openPanel, uploadDialog],
+  );
+  useKeptPanel({
+    page: "documents",
+    form: UPLOAD_DRAFT,
+    open: panelOpen,
+    setOpen: reopenPanel,
+    ready: gate.allowed && canUpload,
+  });
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -221,14 +316,20 @@ export function useDocumentUpload(
       setUploadError("Choose a file to upload.");
       return;
     }
+    // The API refuses an empty Chosen list, and only after the file is in
+    // the bucket, so the panel waits for an entry (its field says so).
+    if (isEmptyChannelAccessChoice(uploadDraft.whoCanSee ?? null)) return;
     const inspected = inspectUploadFile("document", file);
     if (!inspected.ok) {
-      setUploadError(uploadRejectionDescription(inspected.reason));
+      setUploadError(uploadRejectionDescription(inspected.reason, file.name));
       return;
     }
     setUploadError(null);
     const contentType = inspected.contentType;
     setUploading(true);
+    // Out of the store while it uploads: an officer who leaves and comes back
+    // before it lands mustn't be offered the same file to upload twice.
+    kept.hold();
     try {
       const signed = await requestUpload.mutateAsync({
         filename: file.name,
@@ -253,7 +354,8 @@ export function useDocumentUpload(
         content_type: contentType,
         byte_size: file.size,
         document_type: uploadDraft.documentType.trim() || undefined,
-        effective_date: uploadDraft.effectiveDate || undefined,
+        effective_date: draftEffectiveDate(uploadDraft) || undefined,
+        who_can_see: uploadDraft.whoCanSee ?? undefined,
       });
       const folder = uploadDraft.folder.trim();
       toast({
@@ -263,9 +365,11 @@ export function useDocumentUpload(
           : `${file.name} is now in the chapter library.`,
       });
       uploadDialog.setOpen(false);
+      kept.drop();
       setUploadDraft(EMPTY_UPLOAD_DRAFT);
       setDraftGeneration((n) => n + 1);
     } catch (error) {
+      kept.release();
       toast({
         title: "Couldn't upload document",
         description: getErrorMessage(error, "Try the upload again."),
@@ -276,9 +380,36 @@ export function useDocumentUpload(
     }
   }
 
+  /*
+    Cancel and Discard: the officer's own ways to drop the draft. Going back,
+    Escape and leaving the page keep it. Cancel closes, so the next open files
+    into whichever folder is on screen then; Discard starts over in place, on
+    the folder on screen now, as opening does.
+  */
+  const cancelDraft = useCallback(() => {
+    kept.drop();
+    setUploadError(null);
+    setUploadDraft(EMPTY_UPLOAD_DRAFT);
+    setDraftGeneration((n) => n + 1);
+    uploadDialog.setOpen(false);
+  }, [kept, uploadDialog]);
+  const discardDraft = useCallback(() => {
+    kept.discard();
+    setUploadError(null);
+    setUploadDraft({
+      ...EMPTY_UPLOAD_DRAFT,
+      folder: activeFolder || "",
+      autoFolder: !activeFolder,
+    });
+    setDraftGeneration((n) => n + 1);
+  }, [activeFolder, kept]);
+
   return {
     uploadDialog,
     uploadDraft,
+    restored: kept.restored,
+    cancelDraft,
+    discardDraft,
     editField,
     uploading,
     uploadError,
@@ -297,24 +428,35 @@ const NEW_FOLDER = "__new-folder__";
 
 /**
  * The chapter document upload panel (2026-11-06 rethink; parked follow-ups in
- * #3642). A right-side `Panel`, like the event editor and member detail, led
+ * #3642). A `Panel` docked in place of the Documents page (2026-11-12, #4593),
+ * like the event editor and the Directory's member profile, led
  * by the file well, which also takes a dropped file. Picking a file fills the
  * title from its name, guesses the type from it, and files it into the folder
- * on screen. Type is a row of chips and folder a picker of the chapter's
- * folders, where both used to be free text that let "Bylaws", "bylaws" and
- * "By-laws" pile up as three. Description and effective date wait behind one
- * line, because most uploads never set them.
+ * on screen. Type is a row of chips over the chapter's own list of types
+ * (#3642), and folder a picker of the chapter's folders, where both used to be
+ * free text that let "Bylaws", "bylaws" and "By-laws" pile up as three. The
+ * effective date shows and starts on Today; the description waits behind one
+ * line, because most uploads never set one.
  */
 export function UploadDocumentPanel({
   gate,
   upload,
   folders,
   typeOptions,
+  typeRows = null,
+  triggerClassName,
 }: {
   gate: SubscriptionGate;
   upload: DocumentUpload;
+  /** Joins the button to the Upload menu beside it (#5576). */
+  triggerClassName?: string;
   folders: readonly string[];
   typeOptions: readonly string[];
+  /**
+   * The chapter's types, for "Edit types"; null hides it (no
+   * `chapter_docs:manage`, or the list hasn't loaded).
+   */
+  typeRows?: readonly DocumentTypeRow[] | null;
 }) {
   const {
     uploadDialog,
@@ -325,6 +467,9 @@ export function UploadDocumentPanel({
     chooseFile,
     openPanel,
     handleUpload,
+    restored,
+    cancelDraft,
+    discardDraft,
   } = upload;
 
   const folderIsNew =
@@ -337,9 +482,19 @@ export function UploadDocumentPanel({
     !typeOptions.includes(uploadDraft.documentType);
   const [customTypeOpen, setCustomTypeOpen] = useState(false);
   const showCustomType = customTypeOpen || typeIsCustom;
+  /*
+    A type picked from the chips that then left the list (renamed or deleted
+    in Edit types) is not a new type to add back: let it go. One typed under
+    New type stays, since that is the officer's own.
+  */
+  const staleType =
+    typeIsCustom && !customTypeOpen ? uploadDraft.documentType : null;
+  useEffect(() => {
+    if (staleType !== null) set("documentType", "");
+  }, [staleType, set]);
+  const atTypeCap = typeOptions.length >= DOCUMENT_TYPES_MAX;
 
-  const hasDetails =
-    uploadDraft.description !== "" || uploadDraft.effectiveDate !== "";
+  const hasDetails = uploadDraft.description !== "";
   const [detailsOpen, setDetailsOpen] = useState(false);
   const showDetails = detailsOpen || hasDetails;
 
@@ -363,138 +518,187 @@ export function UploadDocumentPanel({
       : uploadDraft.folder;
 
   return (
-    <Sheet
-      open={uploadDialog.dialogProps.open}
-      onOpenChange={(next) => {
-        if (next) openPanel();
-        else uploadDialog.dialogProps.onOpenChange(false);
-      }}
-    >
-      <SheetTrigger asChild>
-        <Button size="toolbar" className="gap-2" {...gate.controlProps()}>
-          <Upload className="h-4 w-4" /> Upload document
-        </Button>
-      </SheetTrigger>
-      <PanelContent
-        {...uploadDialog.contentProps}
-        aria-describedby={undefined}
+    <>
+      {/*
+        Compact and outlined (#5576): the page's fill goes to the files, not
+        to the button that adds one. In the accent, as every page's main
+        action is (`new-button.tsx`, Paul 2026-11-19). "Upload" on the button, the full name
+        for a screen reader.
+      */}
+      <Button
+        variant="action"
+        size="toolbar"
+        className={cn("gap-2", triggerClassName)}
+        aria-label="Upload document"
+        onClick={() => openPanel()}
+        {...gate.controlProps()}
       >
-        <PanelHeader>Upload document</PanelHeader>
-        <PanelBody as="form" id="doc-upload-form" onSubmit={handleUpload}>
-          <UploadFileField
-            id="doc-file"
-            label="File"
-            hint={`PDFs, Office files, text, CSV or images, up to ${MAX_UPLOAD_LABEL}.`}
-            accept={acceptAttribute("document")}
-            file={uploadDraft.file}
-            error={uploadError}
-            disabled={uploading}
-            onSelect={chooseFile}
-          />
-
-          <UploadField id="doc-title" label="Title">
-            <Input
-              id="doc-title"
-              className={UPLOAD_FIELD_CLASS}
-              value={uploadDraft.title}
-              onChange={(event) => set("title", event.target.value)}
-              placeholder="Filled in from the file name"
+        <Upload className="h-4 w-4" aria-hidden="true" /> Upload
+      </Button>
+      <Panel
+        open={uploadDialog.dialogProps.open}
+        onOpenChange={(next) => {
+          if (next) {
+            openPanel();
+            return;
+          }
+          uploadDialog.dialogProps.onOpenChange(false);
+        }}
+        docked
+        backLabel="Back to documents"
+      >
+        <PanelContent
+          {...uploadDialog.contentProps}
+          aria-describedby={undefined}
+        >
+          <PanelHeader>Upload document</PanelHeader>
+          <PanelBody as="form" id="doc-upload-form" onSubmit={handleUpload}>
+            <UploadFileField
+              id="doc-file"
+              label="File"
+              hint={`PDFs, Office files, text, CSV or images, up to ${MAX_UPLOAD_LABEL}.`}
+              accept={acceptAttribute("document")}
+              file={uploadDraft.file}
+              error={uploadError}
+              disabled={uploading}
+              onSelect={chooseFile}
             />
-          </UploadField>
 
-          <div className="grid content-start gap-1.5">
-            <Label id="doc-type-label">Type</Label>
-            <div
-              role="group"
-              aria-labelledby="doc-type-label"
-              className="flex flex-wrap gap-1.5"
-            >
-              {typeOptions.map((type) => {
-                const on = !showCustomType && uploadDraft.documentType === type;
-                return (
+            <UploadField id="doc-title" label="Title">
+              <Input
+                id="doc-title"
+                className={UPLOAD_FIELD_CLASS}
+                value={uploadDraft.title}
+                onChange={(event) => set("title", event.target.value)}
+                placeholder="Filled in from the file name"
+              />
+            </UploadField>
+
+            <div className="grid content-start gap-1.5">
+              <Label id="doc-type-label">Type</Label>
+              <div
+                role="group"
+                aria-labelledby="doc-type-label"
+                className="flex flex-wrap gap-1.5"
+              >
+                {typeOptions.map((type) => {
+                  const on =
+                    !showCustomType && uploadDraft.documentType === type;
+                  return (
+                    <TypeChip
+                      key={type}
+                      on={on}
+                      onClick={() => {
+                        setCustomTypeOpen(false);
+                        set("documentType", on ? "" : type);
+                      }}
+                    >
+                      {type}
+                    </TypeChip>
+                  );
+                })}
+                {atTypeCap && !showCustomType ? null : (
                   <TypeChip
-                    key={type}
-                    on={on}
+                    on={showCustomType}
                     onClick={() => {
-                      setCustomTypeOpen(false);
-                      set("documentType", on ? "" : type);
+                      if (showCustomType) {
+                        setCustomTypeOpen(false);
+                        set("documentType", "");
+                      } else {
+                        setCustomTypeOpen(true);
+                        set("documentType", "");
+                      }
                     }}
                   >
-                    {type}
+                    New type
                   </TypeChip>
-                );
-              })}
-              <TypeChip
-                on={showCustomType}
-                onClick={() => {
-                  if (showCustomType) {
-                    setCustomTypeOpen(false);
-                    set("documentType", "");
-                  } else {
-                    setCustomTypeOpen(true);
-                    set("documentType", "");
+                )}
+                {typeRows ? (
+                  <DocumentTypesEditor
+                    types={typeRows}
+                    disabled={uploading}
+                    chipClassName={TYPE_CHIP_CLASS}
+                  />
+                ) : null}
+              </div>
+              {showCustomType ? (
+                <Input
+                  id="doc-type-other"
+                  aria-label="New type name"
+                  autoFocus={customTypeOpen && !typeIsCustom}
+                  className={UPLOAD_FIELD_CLASS}
+                  value={uploadDraft.documentType}
+                  onChange={(event) => set("documentType", event.target.value)}
+                  placeholder="Constitution, Contract, Schedule"
+                  maxLength={DOCUMENT_TYPE_NAME_MAX_LENGTH}
+                />
+              ) : null}
+              {showCustomType ? (
+                <p className="text-caption text-muted-foreground">
+                  Uploading adds it to the chapter&apos;s types.
+                </p>
+              ) : null}
+            </div>
+
+            <UploadField id="doc-folder" label="Folder">
+              <Select
+                value={folderValue}
+                onValueChange={(value) => {
+                  if (value === NEW_FOLDER) {
+                    setNewFolderOpen(true);
+                    set("folder", "");
+                    return;
                   }
+                  setNewFolderOpen(false);
+                  set("folder", value === NO_FOLDER ? "" : value);
                 }}
               >
-                Other
-              </TypeChip>
-            </div>
-            {showCustomType ? (
-              <Input
-                id="doc-type-other"
-                aria-label="Other type"
-                autoFocus={customTypeOpen && !typeIsCustom}
-                className={UPLOAD_FIELD_CLASS}
-                value={uploadDraft.documentType}
-                onChange={(event) => set("documentType", event.target.value)}
-                placeholder="Constitution, Contract, Schedule"
-                maxLength={100}
-              />
-            ) : null}
-          </div>
+                <SelectTrigger id="doc-folder" className={UPLOAD_FIELD_CLASS}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_FOLDER}>No folder</SelectItem>
+                  {folders.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={NEW_FOLDER}>New folder</SelectItem>
+                </SelectContent>
+              </Select>
+              {showNewFolder ? (
+                <Input
+                  id="doc-folder-new"
+                  aria-label="New folder name"
+                  autoFocus={newFolderOpen && !folderIsNew}
+                  className={cn(UPLOAD_FIELD_CLASS, "mt-1.5")}
+                  value={uploadDraft.folder}
+                  onChange={(event) => set("folder", event.target.value)}
+                  placeholder="Folder name"
+                  maxLength={100}
+                />
+              ) : null}
+            </UploadField>
 
-          <UploadField id="doc-folder" label="Folder">
-            <Select
-              value={folderValue}
-              onValueChange={(value) => {
-                if (value === NEW_FOLDER) {
-                  setNewFolderOpen(true);
-                  set("folder", "");
-                  return;
-                }
-                setNewFolderOpen(false);
-                set("folder", value === NO_FOLDER ? "" : value);
-              }}
-            >
-              <SelectTrigger id="doc-folder" className={UPLOAD_FIELD_CLASS}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={NO_FOLDER}>No folder</SelectItem>
-                {folders.map((name) => (
-                  <SelectItem key={name} value={name}>
-                    {name}
-                  </SelectItem>
-                ))}
-                <SelectItem value={NEW_FOLDER}>New folder</SelectItem>
-              </SelectContent>
-            </Select>
-            {showNewFolder ? (
-              <Input
-                id="doc-folder-new"
-                aria-label="New folder name"
-                autoFocus={newFolderOpen && !folderIsNew}
-                className={cn(UPLOAD_FIELD_CLASS, "mt-1.5")}
-                value={uploadDraft.folder}
-                onChange={(event) => set("folder", event.target.value)}
-                placeholder="Folder name"
-                maxLength={100}
-              />
-            ) : null}
-          </UploadField>
+            <UploadAccessField
+              value={uploadDraft.whoCanSee ?? null}
+              folder={uploadDraft.folder.trim()}
+              onChange={(next) => set("whoCanSee", next)}
+              disabled={uploading}
+            />
 
-          {showDetails ? (
-            <>
+            <UploadField id="doc-effective-date" label="Effective date">
+              <DateField
+                id="doc-effective-date"
+                lean="back"
+                placeholder="e.g. September 1"
+                className={cn(UPLOAD_FIELD_CLASS, "w-48")}
+                value={draftEffectiveDate(uploadDraft)}
+                onChange={(date) => set("effectiveDate", date)}
+              />
+            </UploadField>
+
+            {showDetails ? (
               <UploadField id="doc-description" label="Description">
                 <Textarea
                   id="doc-description"
@@ -503,59 +707,63 @@ export function UploadDocumentPanel({
                   onChange={(event) => set("description", event.target.value)}
                 />
               </UploadField>
-              <UploadField id="doc-effective-date" label="Effective date">
-                <Input
-                  id="doc-effective-date"
-                  type="date"
-                  className={cn(UPLOAD_FIELD_CLASS, "w-48")}
-                  value={uploadDraft.effectiveDate}
-                  onChange={(event) =>
-                    set("effectiveDate", event.target.value)
-                  }
-                />
-              </UploadField>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setDetailsOpen(true)}
-              className={cn(
-                "flex w-fit items-center gap-1 rounded-sm text-label font-semibold text-muted-foreground hover:text-foreground",
-                FOCUS_RING,
+            ) : (
+              <button
+                type="button"
+                onClick={() => setDetailsOpen(true)}
+                className={cn(
+                  "flex w-fit items-center gap-1 rounded-sm text-label font-semibold text-muted-foreground hover:text-foreground",
+                  FOCUS_RING,
+                )}
+              >
+                <ChevronRight aria-hidden className="h-4 w-4" />
+                Add a description
+              </button>
+            )}
+          </PanelBody>
+          <PanelFooter>
+            {restored && !uploading ? (
+              <KeptDraftNote onDiscard={discardDraft} />
+            ) : null}
+            {/* Cancel isn't gated: gating the way out of a surface the gate
+              just blocked would be a trap. It drops the draft; going back
+              keeps it (#4593). */}
+            <Button
+              variant="secondary"
+              className={UPLOAD_SHEET_BUTTON_CLASS}
+              onClick={cancelDraft}
+              disabled={uploading}
+            >
+              Cancel
+            </Button>
+            {/* Enabled with no file chosen (board `1j`): the press answers inline
+              under the file field. The subscription gate still disables it. */}
+            <Button
+              form="doc-upload-form"
+              type="submit"
+              className={UPLOAD_SHEET_BUTTON_CLASS}
+              {...gate.controlProps(
+                uploading || isEmptyChannelAccessChoice(uploadDraft.whoCanSee),
               )}
             >
-              <ChevronRight aria-hidden className="h-4 w-4" />
-              Add a description or effective date
-            </button>
-          )}
-        </PanelBody>
-        <PanelFooter>
-          {/* Cancel only closes. Gating the way out of a surface the gate just
-              blocked would be a trap. */}
-          <Button
-            variant="secondary"
-            className={UPLOAD_SHEET_BUTTON_CLASS}
-            onClick={() => uploadDialog.setOpen(false)}
-            disabled={uploading}
-          >
-            Cancel
-          </Button>
-          {/* Enabled with no file chosen (board `1j`): the press answers inline
-              under the file field. The subscription gate still disables it. */}
-          <Button
-            form="doc-upload-form"
-            type="submit"
-            className={UPLOAD_SHEET_BUTTON_CLASS}
-            {...gate.controlProps(uploading)}
-          >
-            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Upload
-          </Button>
-        </PanelFooter>
-      </PanelContent>
-    </Sheet>
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Upload
+            </Button>
+          </PanelFooter>
+        </PanelContent>
+      </Panel>
+    </>
   );
 }
+
+/**
+ * The find dialog's filter chip, one step taller to sit with the panel's
+ * fields. "Edit types" wears it too, so it sits in the row as a chip.
+ */
+const TYPE_CHIP_CLASS = cn(
+  "inline-flex h-8 items-center rounded-full border px-3 text-sm transition-colors pointer-coarse:h-10",
+  FOCUS_RING,
+);
 
 function TypeChip({
   on,
@@ -572,10 +780,7 @@ function TypeChip({
       aria-pressed={on}
       onClick={onClick}
       className={cn(
-        // The find dialog's filter chip, one step taller to sit with the
-        // panel's fields.
-        "inline-flex h-8 items-center rounded-full border px-3 text-sm transition-colors pointer-coarse:h-10",
-        FOCUS_RING,
+        TYPE_CHIP_CLASS,
         on
           ? "border-transparent bg-accent-subtle font-semibold text-accent-text"
           : "border-border text-muted-foreground hover:text-foreground",
@@ -666,8 +871,7 @@ export function DocumentsPageDropTarget({
   // Where the drop will land: a kept or hand-picked folder wins over the one
   // on screen, as `openPanel` decides.
   const draft = upload.uploadDraft;
-  const target =
-    draft.file || !draft.autoFolder ? draft.folder : activeFolder;
+  const target = draft.file || !draft.autoFolder ? draft.folder : activeFolder;
   return (
     <div
       aria-hidden
@@ -682,5 +886,42 @@ export function DocumentsPageDropTarget({
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * Who can see the file being uploaded (#3642 piece 1): "Same as folder" (or
+ * "Everyone" with no folder) unless the uploader chooses tiers, roles or
+ * groups, which narrow the folder's. Left out for a member outside the
+ * tiers, who may not set a list, and while the choices load: the default is
+ * the same as before lists existed.
+ */
+function UploadAccessField({
+  value,
+  folder,
+  onChange,
+  disabled,
+}: {
+  value: string[] | null;
+  folder: string;
+  onChange: (next: string[] | null) => void;
+  disabled: boolean;
+}) {
+  const access = useDocumentAccessChoices();
+  if (!access.canLimit && value === null) return null;
+  return (
+    <ChannelAccessField
+      id="doc-access"
+      question="see"
+      value={value}
+      onChange={onChange}
+      options={access.options}
+      optionsState={access.optionsState}
+      everyoneLabel={folder ? "Same as folder" : "Everyone"}
+      locked={access.locked}
+      alwaysLine={FILE_ALWAYS_LINE}
+      canChoose={access.canLimit}
+      disabled={disabled || access.optionsState === "loading"}
+    />
   );
 }

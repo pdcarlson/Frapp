@@ -49,7 +49,7 @@ export interface PointsDraft {
   reason: string;
 }
 
-export function emptyPointsDraft(): PointsDraft {
+function emptyPointsDraft(): PointsDraft {
   return { targetUserId: "", amount: "10", category: "MANUAL", reason: "" };
 }
 
@@ -61,7 +61,7 @@ type MemberOption = { userId: string; label: string };
  * set up a refusal after submit. Two members who share a name are told apart
  * by their email, never by a user id (#3983).
  */
-export function pointsMemberOptions(
+function pointsMemberOptions(
   members: readonly {
     user_id?: unknown;
     display_name?: unknown;

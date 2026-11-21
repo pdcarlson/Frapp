@@ -20,7 +20,7 @@ import { ProfileSection } from "@/components/profile/profile-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
+import { cn, guardIntDraft, parseGuardedInt } from "@/lib/utils";
 
 /**
  * The Rules block of a module page (#4073): only settings that are stored and
@@ -38,7 +38,7 @@ import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
 type Patch = (diff: PatchChapterConfig, successTitle: string) => Promise<void>;
 
 /** A bounded whole number as typed, or the sentence saying why it isn't one. */
-function readBounded(
+export function readBounded(
   draft: string,
   min: number,
   max: number,
@@ -52,7 +52,7 @@ function readBounded(
   return { value };
 }
 
-function NumberRule({
+export function NumberRule({
   label,
   hint,
   suffix,
@@ -114,39 +114,60 @@ function NumberRule({
   );
 }
 
-function SwitchRule({
+export function SwitchRule({
   label,
   hint,
   checked,
   onChange,
   disabled,
+  nested = false,
+  muted = false,
 }: {
   label: string;
   hint: ReactNode;
   checked: boolean;
   onChange: (next: boolean) => void;
   disabled: boolean;
+  /** A switch that only matters under the row above it: drawn indented. */
+  nested?: boolean;
+  /** Its label greys while the switch it waits on is off. */
+  muted?: boolean;
 }) {
   const id = useId();
+  const hintId = `${id}-hint`;
   return (
-    <div className="flex items-start justify-between gap-8 px-4 py-4">
+    <div
+      className={cn(
+        "flex items-start justify-between gap-8 px-4 py-4",
+        nested && "pl-10",
+      )}
+    >
       <div className="min-w-0 space-y-0.5">
-        <label htmlFor={id} className="text-sm font-medium text-foreground">
+        <label
+          htmlFor={id}
+          className={cn(
+            "text-sm font-medium",
+            muted ? "text-muted-foreground" : "text-foreground",
+          )}
+        >
           {label}
         </label>
-        <p className="text-caption text-muted-foreground">{hint}</p>
+        <div id={hintId} className="text-caption text-muted-foreground">
+          {hint}
+        </div>
       </div>
       <Switch
         id={id}
         checked={checked}
         disabled={disabled}
         onCheckedChange={onChange}
+        aria-describedby={hintId}
       />
     </div>
   );
 }
 
-function RulesList({ children }: { children: ReactNode }) {
+export function RulesList({ children }: { children: ReactNode }) {
   return (
     <div className="divide-y divide-border rounded-[14px] border border-border">
       {children}
@@ -154,7 +175,7 @@ function RulesList({ children }: { children: ReactNode }) {
   );
 }
 
-function SaveRow({
+export function SaveRow({
   dirty,
   saving,
   disabled,

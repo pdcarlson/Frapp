@@ -18,15 +18,16 @@ import {
   type IBillingProvider,
 } from '#domain/adapters/billing.interface';
 import type { WebhookRequest } from '../types/request-context.types';
+import { UNVERIFIED_BEARER_THROTTLER } from '../guards/custom-throttler.guard';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 // Webhooks carry no bearer token, so the global throttler keys them by IP —
 // and Stripe delivers bursts from a small shared IP pool, which 429s real
 // billing events. Signature verification (401 below) is the abuse control
 // here instead. The named keys are mandatory: this app registers named
-// `read`/`write` throttlers, and a bare @SkipThrottle() only sets the
-// `default` key, which matches neither — a silent no-op.
-@SkipThrottle({ read: true, write: true })
+// `read`/`write`/`unverified` throttlers, and a bare @SkipThrottle() only
+// sets the `default` key, which matches none of them — a silent no-op.
+@SkipThrottle({ read: true, write: true, [UNVERIFIED_BEARER_THROTTLER]: true })
 @ApiTags('Webhooks')
 @Controller('webhooks')
 export class WebhookController {

@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_BACKWORK_UPLOAD_BYTES } from "@repo/validation";
 import { EMPTY_FIELDS, type BulkFields } from "./fields";
-import { finishUpload, flattenedFileName, sha256Hex, type FinishDeps } from "./finish";
+import {
+  finishUpload,
+  flattenedFileName,
+  putStallMs,
+  type FinishDeps,
+} from "./finish";
+import { UploadStalledError } from "@/lib/bulk-upload/stall";
+import { sha256Hex } from "@/lib/bulk-upload/hash";
 import type { BoxesByPage } from "./geometry";
 
 /**
@@ -76,6 +83,27 @@ describe("finishUpload", () => {
     expect(await bytesOf(put.mock.calls[0]![0].body)).toBe(text(FLAT));
   });
 
+  it("saves a document from Save the rest as waiting for its page check", async () => {
+    const { deps } = harness();
+    await finishUpload(
+      {
+        file: new File([ORIGINAL as BlobPart], "exam.pdf", { type: "application/pdf" }),
+        prepared: { bytes: ORIGINAL, hash: await sha256Hex(ORIGINAL), doc: DOC },
+        submission: { fields: EMPTY_FIELDS, boxes: {}, flatten: false, unchecked: true },
+      },
+      deps,
+    );
+    expect(deps.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ draft: true, pages_checked: false }),
+    );
+    // A document the person saved by hand says nothing about its check.
+    const plain = harness();
+    await run({}, {}, plain.deps);
+    expect(plain.deps.confirm).toHaveBeenCalledWith(
+      expect.not.objectContaining({ pages_checked: expect.anything() }),
+    );
+  });
+
   it("uploads an unboxed Blank Copy as the original", async () => {
     const { deps, put, flatten } = harness();
     await run({ document_variant: "Blank Copy" }, {}, deps);
@@ -84,6 +112,12 @@ describe("finishUpload", () => {
     expect(deps.confirm).toHaveBeenCalledWith(
       expect.objectContaining({ file_hash: await sha256Hex(ORIGINAL), is_redacted: false }),
     );
+  });
+
+  it("saves every document as a draft for the review table (#5208)", async () => {
+    const { deps } = harness();
+    await run({ document_variant: "Blank Copy" }, {}, deps);
+    expect(deps.confirm).toHaveBeenCalledWith(expect.objectContaining({ draft: true }));
   });
 
   it("re-flattens smaller when the first pass is over the cap", async () => {
@@ -235,5 +269,85 @@ describe("flattenedFileName", () => {
     expect(flattenedFileName("Café / Exam #2: Final?")).toBe("Cafe-Exam-2-Final.pdf");
     expect(flattenedFileName("..-Midterm-..")).toBe("Midterm.pdf");
     expect(flattenedFileName("x".repeat(120))).toBe(`${"x".repeat(80)}.pdf`);
+  });
+});
+
+describe("finishUpload when a step stalls", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A Blank Copy job, hashed before the clock is faked: nothing in it hashes again. */
+  async function blankJob(signal?: AbortSignal) {
+    return {
+      file: new File([ORIGINAL as BlobPart], "exam.pdf", { type: "application/pdf" }),
+      prepared: { bytes: ORIGINAL, hash: await sha256Hex(ORIGINAL), doc: DOC },
+      submission: { fields: { ...EMPTY_FIELDS, document_variant: "Blank Copy" }, boxes: {}, flatten: false },
+      signal,
+    };
+  }
+
+  /** A PUT that never answers, and stops only when its signal aborts. */
+  function hangingPut(put: ReturnType<typeof harness>["put"]) {
+    put.mockImplementation(
+      ({ signal }) =>
+        new Promise<void>((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason));
+        }),
+    );
+  }
+
+  it("stops a file upload that never finishes, and says so", async () => {
+    const { deps, put } = harness();
+    hangingPut(put);
+    const job = await blankJob();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const outcome = finishUpload(job, deps).then(
+      () => "resolved",
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(putStallMs(ORIGINAL.byteLength) - 1);
+    expect(put.mock.calls[0]![0].signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await outcome).toBeInstanceOf(UploadStalledError);
+    expect(put.mock.calls[0]![0].signal.aborted).toBe(true);
+    expect(deps.confirm).not.toHaveBeenCalled();
+  });
+
+  it("stops the file upload when the queue gives up on it", async () => {
+    const { deps, put } = harness();
+    hangingPut(put);
+    const controller = new AbortController();
+    const outcome = finishUpload(await blankJob(controller.signal), deps).catch(
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(put).toHaveBeenCalled());
+    controller.abort();
+    await outcome;
+    expect(put.mock.calls[0]![0].signal.aborted).toBe(true);
+    expect(deps.confirm).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when the queue gave up while the upload link was requested", async () => {
+    const { deps, put } = harness();
+    const controller = new AbortController();
+    deps.requestUpload = vi.fn(async () => {
+      controller.abort();
+      return {
+        upload_url: "https://storage.example/upload",
+        storage_path: "chapters/c1/backwork/r1/exam.pdf",
+      };
+    });
+    await expect(finishUpload(await blankJob(controller.signal), deps)).rejects.toThrow();
+    expect(put).not.toHaveBeenCalled();
+    expect(deps.confirm).not.toHaveBeenCalled();
+  });
+
+  it("asks for no upload link once the queue has given up", async () => {
+    const { deps } = harness();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(finishUpload(await blankJob(controller.signal), deps)).rejects.toThrow();
+    expect(deps.requestUpload).not.toHaveBeenCalled();
   });
 });

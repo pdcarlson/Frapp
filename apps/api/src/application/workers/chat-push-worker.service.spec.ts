@@ -10,10 +10,8 @@ const threadRepoStub = {
   findFollowStates: jest.fn().mockResolvedValue(new Map()),
 };
 import { NotificationService } from '../services/notification.service';
-import {
-  ChatPushWorkerService,
-  chatPushPreview,
-} from './chat-push-worker.service';
+import { ChatPushWorkerService } from './chat-push-worker.service';
+import { chatPushPreview } from '../services/chat-push-preview';
 import {
   CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
   type ChatNotificationPreferenceRow,
@@ -538,6 +536,24 @@ describe('ChatPushWorkerService', () => {
   });
 
   it('skips recipients currently in the channel (presence)', async () => {
+    const general = { ...CHANNEL, id: 'ch-general', name: 'general' };
+    service.__setChannelForTest(general);
+    service.__setPresenceForTest(general.id, ['a']);
+    setMembers(['sender', 'a', 'b']);
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: general.id,
+      sender_id: 'sender',
+      content: 'Who is around tonight?',
+      kind: 'text',
+      mentions: [],
+      created_at: '',
+    });
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith('b', 'chap-1', expect.any(Object));
+  });
+
+  it('pushes an announcement through presence', async () => {
     service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
     service.__setPresenceForTest(ANNOUNCEMENT_CHANNEL.id, ['a']);
     setMembers(['sender', 'a', 'b']);
@@ -550,7 +566,8 @@ describe('ChatPushWorkerService', () => {
       mentions: [],
       created_at: '',
     });
-    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledTimes(2);
+    expect(notifyUser).toHaveBeenCalledWith('a', 'chap-1', expect.any(Object));
     expect(notifyUser).toHaveBeenCalledWith('b', 'chap-1', expect.any(Object));
   });
 
@@ -682,7 +699,141 @@ describe('ChatPushWorkerService', () => {
     );
   });
 
+  // #4864: a forward with no comment previews the copy, whose author is not
+  // the sender. A recipient who blocked that author still gets the push (the
+  // forwarder is not blocked), without the author's words.
+  it("previews a forward's copy, withheld from whoever blocked its author", async () => {
+    service.__setChannelForTest(CHANNEL);
+    setMembers(['sender', 'blocker', 'bystander']);
+    filterOutBlockers.mockImplementation(
+      async (_chapterId: string, senderId: string | null, ids: string[]) =>
+        senderId === 'author' ? ids.filter((id) => id !== 'blocker') : ids,
+    );
+
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: '',
+      kind: 'text',
+      mentions: ['blocker', 'bystander'],
+      forwarded_from: { sender_id: 'author', content: 'grill is ready' },
+      created_at: '',
+    });
+
+    expect(filterOutBlockers).toHaveBeenCalledWith('chap-1', 'author', [
+      'blocker',
+      'bystander',
+    ]);
+    expect(notifyUser).toHaveBeenCalledWith(
+      'bystander',
+      'chap-1',
+      expect.objectContaining({ body: 'Forwarded: grill is ready' }),
+    );
+    expect(notifyUser).toHaveBeenCalledWith(
+      'blocker',
+      'chap-1',
+      expect.objectContaining({ body: 'Forwarded a message' }),
+    );
+  });
+
+  it('asks nothing more of the block list for a forward with a comment', async () => {
+    service.__setChannelForTest(CHANNEL);
+    setMembers(['sender', 'a']);
+
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: 'look at this',
+      kind: 'text',
+      mentions: ['a'],
+      forwarded_from: { sender_id: 'author', content: 'grill is ready' },
+      created_at: '',
+    });
+
+    expect(filterOutBlockers).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith(
+      'a',
+      'chap-1',
+      expect.objectContaining({ body: 'look at this' }),
+    );
+  });
+
   describe('chatPushPreview', () => {
+    it('names a GIF message, which has no text (#4631)', () => {
+      expect(
+        chatPushPreview({
+          content: '',
+          metadata: { gif: { url: 'https://static.klipy.com/h.webp' } },
+        }),
+      ).toBe('Sent a GIF');
+    });
+
+    describe('a forward (#4864)', () => {
+      const copy = { content: 'grill is in my garage', gif: null };
+
+      it('is the comment when there is one', () => {
+        expect(
+          chatPushPreview({ content: 'see below', forwarded_from: copy }),
+        ).toBe('see below');
+      });
+
+      it("quotes the copy's text when there is no comment", () => {
+        expect(chatPushPreview({ content: '', forwarded_from: copy })).toBe(
+          'Forwarded: grill is in my garage',
+        );
+        expect(
+          chatPushPreview({
+            content: '',
+            forwarded_from: { content: 'y'.repeat(300) },
+          }),
+        ).toBe(`Forwarded: ${'y'.repeat(189)}`);
+      });
+
+      it('names a GIF, and anything else as a message', () => {
+        expect(
+          chatPushPreview({
+            content: '',
+            forwarded_from: { content: '', gif: { url: 'https://x/g.webp' } },
+          }),
+        ).toBe('Forwarded a GIF');
+        expect(
+          chatPushPreview({
+            content: '',
+            forwarded_from: { content: '', gif: null },
+          }),
+        ).toBe('Forwarded a message');
+      });
+
+      it('says only that something was forwarded when withheld or deleted', () => {
+        expect(
+          chatPushPreview(
+            { content: '', forwarded_from: copy },
+            { withholdForwarded: true },
+          ),
+        ).toBe('Forwarded a message');
+        expect(
+          chatPushPreview({
+            content: '',
+            forwarded_from: { ...copy, content: '', deleted: true },
+          }),
+        ).toBe('Forwarded a message');
+      });
+    });
+
+    it('drops U+FFFC, which every surface drew as an "OBJ" box (#4346)', () => {
+      expect(chatPushPreview({ content: 'take a look \uFFFC' })).toBe(
+        'take a look',
+      );
+      expect(
+        chatPushPreview({
+          content: '\uFFFC',
+          metadata: { attachment_count: 1 },
+        }),
+      ).toBe('Sent an attachment');
+    });
+
     it('is the first 200 characters of the text', () => {
       expect(chatPushPreview({ content: 'x'.repeat(250) })).toBe(
         'x'.repeat(200),
@@ -760,6 +911,11 @@ describe('ChatPushWorkerService', () => {
         data: expect.objectContaining({ bundled: true, count: 3 }),
       }),
     );
+    // A single push is tied to the message it quotes, so deleting the message
+    // deletes its row (#4418); a bundle quotes no one message and is not.
+    expect(notifyUser.mock.calls[0][2]).toMatchObject({ chatMessageId: 'm0' });
+    expect(notifyUser.mock.calls[1][2]).toMatchObject({ chatMessageId: 'm1' });
+    expect(bundledCall[2]).not.toHaveProperty('chatMessageId');
   });
   it('does not push a private channel to a chapter member who is not in it', async () => {
     // The recipient list starts as the whole chapter roster, and `decidePush`
@@ -876,6 +1032,24 @@ describe('ChatPushWorkerService', () => {
       kind: 'imported',
       mentions: [],
       created_at: '2019-03-04T00:00:00.000Z',
+    });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+    expect(findByChapter).not.toHaveBeenCalled();
+  });
+
+  it('exits on a posted Ask Frapp answer: no push, no notification, no roster read (#4713)', async () => {
+    service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+    setMembers(['sender', 'a', 'b']);
+
+    await service.handleMessage({
+      id: 'm-ask-answer-1',
+      channel_id: ANNOUNCEMENT_CHANNEL.id,
+      sender_id: '00000000-0000-0000-0000-000000000000',
+      content: 'Chapter meeting is Sunday at 7:00 PM.',
+      kind: 'ask_answer',
+      mentions: [],
+      created_at: '2026-11-13T18:00:00.000Z',
     });
 
     expect(notifyUser).not.toHaveBeenCalled();
@@ -1483,6 +1657,182 @@ describe('ChatPushWorkerService', () => {
       service.__setChannelForTest(CHANNEL); // `mentions` default, no mention
       await send(CHANNEL.id, { id: 'm2' });
       expect(findDisplayIdentitiesByIds).not.toHaveBeenCalled();
+    });
+
+    describe('what the in-app list draws a row by (#4346)', () => {
+      const dataFor = (recipient: string) =>
+        notifyUser.mock.calls
+          .filter((c) => c[0] === recipient)
+          .map((c) => (c[2] as { data: Record<string, unknown> }).data);
+
+      it('marks a DM as one, with no channel name', async () => {
+        service.__setChannelForTest(DM);
+        setMembers(['sender', 'alice']);
+        await send(DM.id);
+        const [data] = dataFor('alice');
+        expect(data).toMatchObject({ chatKind: 'dm', senderId: 'sender' });
+        expect(data).not.toHaveProperty('channelName');
+        expect(data).not.toHaveProperty('mentioned');
+      });
+
+      it('names a channel, and flags the mention only for the member it mentioned', async () => {
+        service.__setChannelForTest({
+          ...CHANNEL,
+          id: 'ch-gen',
+          name: 'general',
+        });
+        setMembers(['sender', 'alice', 'bob']);
+        setPrefs({
+          bob: [
+            {
+              user_id: 'bob',
+              chapter_id: 'chap-1',
+              scope: 'channel',
+              scope_id: 'ch-gen',
+              scope_kind: null,
+              level: 'all',
+            },
+          ],
+        });
+        await send('ch-gen', { content: 'hey @alice', mentions: ['alice'] });
+        expect(dataFor('alice')).toEqual([
+          expect.objectContaining({
+            chatKind: 'channel',
+            channelName: 'general',
+            mentioned: true,
+          }),
+        ]);
+        const [bobs] = dataFor('bob');
+        expect(bobs).toMatchObject({
+          chatKind: 'channel',
+          channelName: 'general',
+        });
+        expect(bobs).not.toHaveProperty('mentioned');
+      });
+
+      it('marks an announcement as one', async () => {
+        service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
+        setMembers(['sender', 'alice']);
+        await send(ANNOUNCEMENT_CHANNEL.id);
+        expect(dataFor('alice')[0]).toMatchObject({
+          chatKind: 'announcement',
+          channelName: 'announcements',
+        });
+      });
+
+      it('carries the same fields on a bundled burst', async () => {
+        service.__setChannelForTest(DM);
+        setMembers(['sender', 'alice']);
+        // The third message in a burst is the one pushed as the bundle.
+        for (let i = 0; i < 3; i++) {
+          await send(DM.id, {
+            id: `m${i}`,
+            content: i === 2 ? 'hey @alice' : 'hi',
+            mentions: i === 2 ? ['alice'] : [],
+          });
+        }
+        const bundled = dataFor('alice').filter((d) => d.bundled === true);
+        expect(bundled).toHaveLength(1);
+        expect(bundled[0]).toMatchObject({
+          chatKind: 'dm',
+          senderId: 'sender',
+          mentioned: true,
+        });
+      });
+
+      it('still reaches the recipient when a mention is the 4th message of a burst (#4359)', async () => {
+        service.__setChannelForTest({
+          ...CHANNEL,
+          id: 'ch-gen',
+          name: 'general',
+        });
+        setMembers(['sender', 'alice', 'bob']);
+        // Both get every message here, so the burst bundles for each; only
+        // Alice is mentioned, in the 4th, after her bundle row was written.
+        setPrefs({
+          alice: [
+            {
+              user_id: 'alice',
+              chapter_id: 'chap-1',
+              scope: 'channel',
+              scope_id: 'ch-gen',
+              scope_kind: null,
+              level: 'all',
+            },
+          ],
+          bob: [
+            {
+              user_id: 'bob',
+              chapter_id: 'chap-1',
+              scope: 'channel',
+              scope_id: 'ch-gen',
+              scope_kind: null,
+              level: 'all',
+            },
+          ],
+        });
+        // The 5th mentions her again: one mention push per burst, so a
+        // sender pinging in every message stays capped like any burst.
+        for (let i = 0; i < 5; i++) {
+          await send('ch-gen', {
+            id: `m${i}`,
+            content:
+              i === 3
+                ? '@alice can you cover saturday?'
+                : i === 4
+                  ? '@alice and sunday?'
+                  : `msg ${i}`,
+            mentions: i >= 3 ? ['alice'] : [],
+          });
+        }
+        const alices = dataFor('alice');
+        // 1, 2, the bundle at 3, then the mention on its own; not the 5th.
+        expect(alices).toHaveLength(4);
+        expect(alices[2]).toMatchObject({ bundled: true, count: 3 });
+        expect(alices[2]).not.toHaveProperty('mentioned');
+        expect(alices[3]).toMatchObject({
+          chatKind: 'channel',
+          channelName: 'general',
+          senderId: 'sender',
+          mentioned: true,
+        });
+        expect(alices[3]).not.toHaveProperty('bundled');
+        const mentionPush = notifyUser.mock.calls.filter(
+          (c) => c[0] === 'alice',
+        )[3][2] as { body: string };
+        expect(mentionPush.body).toContain('can you cover saturday');
+
+        // Bob was not mentioned: his 4th and 5th stay inside the bundle.
+        expect(dataFor('bob')).toHaveLength(3);
+      });
+
+      it('names a named group DM and leaves an unnamed one unnamed', async () => {
+        const group = {
+          ...DM,
+          id: 'gdm-1',
+          name: 'Rush chairs',
+          type: 'GROUP_DM',
+          member_ids: ['sender', 'alice', 'bob'],
+        } satisfies CachedChannelRow;
+        service.__setChannelForTest(group);
+        setMembers(['sender', 'alice', 'bob']);
+        await send(group.id);
+        expect(dataFor('alice')[0]).toMatchObject({
+          chatKind: 'group',
+          channelName: 'Rush chairs',
+        });
+
+        notifyUser.mockClear();
+        service.__setChannelForTest({
+          ...group,
+          id: 'gdm-2',
+          name: 'group-dm-1700000000',
+        });
+        await send('gdm-2', { id: 'm2' });
+        const [unnamed] = dataFor('alice');
+        expect(unnamed).toMatchObject({ chatKind: 'group' });
+        expect(unnamed).not.toHaveProperty('channelName');
+      });
     });
   });
 

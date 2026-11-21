@@ -47,9 +47,11 @@ import {
 import { mergeServerRow, trimOlderThan } from "./cache";
 import {
   CHAT_MESSAGE_QUERY_ROOT,
+  chatMessagesChannelId,
   chatMessagesKey,
   type ChannelCache,
   type ChatMessage,
+  type ForwardedFrom,
   type RawChatMessage,
   type ReactionState,
 } from "./types";
@@ -145,6 +147,126 @@ export function classifyMessage(
   if (blockState.status === "ready") return "visible";
   if (blockState.unblocked.has(sender)) return "visible";
   return blockState.cleared.has(message.id) ? "visible" : "held";
+}
+
+/**
+ * Whether the thread card may show its latest reply's preview (#4297).
+ *
+ * The preview is the replier's words on the parent's row, so it is
+ * classified as the replier's own message would be, with the parent's
+ * provenance and the server's verdict on the preview itself: a REST read
+ * withholds a blocked replier's preview (`chat-block-mask.ts`,
+ * `sender_blocked: true`, kept onto later echoes by `mergeServerRow`), so one
+ * it served clear was cleared; the parent's Realtime echo carries it raw. Anything short of `visible` shows no
+ * preview: there is no tombstone line on a card, and a held one fails
+ * closed until the list is back. The card itself stays either way.
+ */
+export function threadPreviewVisible(
+  reply: { id: string; sender_id: string | null; sender_blocked?: boolean },
+  parent: Pick<ChatMessage, "_blockEvaluated">,
+  blockState: BlockState,
+  viewerId: string | null,
+): boolean {
+  return (
+    classifyMessage(
+      {
+        id: reply.id,
+        sender_id: reply.sender_id,
+        sender_blocked: reply.sender_blocked === true,
+        _blockEvaluated: parent._blockEvaluated,
+      },
+      blockState,
+      viewerId,
+    ) === "visible"
+  );
+}
+
+/**
+ * The placeholder a forward's card draws for a copy the viewer's block list
+ * hides (#4864), or `null` when the copy may be drawn.
+ *
+ * The copy is its original author's words riding on the forwarder's row, so
+ * it is classified as the author's own message would be, with the row's
+ * provenance and the server's verdict on the copy itself, the way
+ * `threadPreviewVisible` classifies a thread card's preview: a REST read
+ * withholds a blocked author's copy (`sender_blocked: true`, carried onto
+ * later echoes by `mergeServerRow`), and the row's Realtime echo carries it
+ * raw. The words match `hiddenQuoteText`: the tombstone's for a blocked
+ * author, "Message hidden" while the list can't be read. A copy whose
+ * original was deleted holds nothing to hide, so it is never masked.
+ */
+export function hiddenForwardedText(
+  forwarded: Pick<
+    ForwardedFrom,
+    "message_id" | "sender_id" | "sender_blocked" | "deleted"
+  >,
+  message: Pick<ChatMessage, "_blockEvaluated">,
+  blockState: BlockState,
+  viewerId: string | null,
+): string | null {
+  if (forwarded.deleted) return null;
+  const author = { sender_id: forwarded.sender_id };
+  switch (
+    classifyMessage(
+      {
+        id: forwarded.message_id,
+        sender_id: forwarded.sender_id,
+        sender_blocked: forwarded.sender_blocked,
+        _blockEvaluated: message._blockEvaluated,
+      },
+      blockState,
+      viewerId,
+    )
+  ) {
+    case "visible":
+      return null;
+    case "held":
+      return HELD_QUOTE_TEXT;
+    case "tombstone":
+      return tombstoneCanUnblock(author, blockState)
+        ? TOMBSTONE_TEXT
+        : TOMBSTONE_STALE_TEXT;
+  }
+}
+
+/** Whether a forward's copy may be drawn: `hiddenForwardedText` is `null`. */
+export function forwardedSnapshotVisible(
+  forwarded: Pick<
+    ForwardedFrom,
+    "message_id" | "sender_id" | "sender_blocked" | "deleted"
+  >,
+  message: Pick<ChatMessage, "_blockEvaluated">,
+  blockState: BlockState,
+  viewerId: string | null,
+): boolean {
+  return hiddenForwardedText(forwarded, message, blockState, viewerId) === null;
+}
+
+/**
+ * The message with its forward's copy emptied when the viewer's list hides
+ * it (#4864): no text, GIF or files, and `sender_blocked: true`, the shape
+ * the server masks it to. Anything that reads the copy without drawing the
+ * card (a reply quote's `replyPreviewText`, "Copy text"'s `copyableText`)
+ * goes through this, so it can't print what the card hides. Returns the same
+ * object when there is nothing to mask.
+ */
+export function withForwardedMasked<
+  M extends Pick<ChatMessage, "forwarded_from" | "_blockEvaluated">,
+>(message: M, blockState: BlockState, viewerId: string | null): M {
+  const copy = message.forwarded_from;
+  if (!copy || forwardedSnapshotVisible(copy, message, blockState, viewerId)) {
+    return message;
+  }
+  return {
+    ...message,
+    forwarded_from: {
+      ...copy,
+      content: "",
+      gif: null,
+      attachment_count: 0,
+      sender_blocked: true,
+    },
+  };
 }
 
 /**
@@ -256,10 +378,25 @@ export function contradictingRows(
   if (blockState.status !== "ready") return [];
   const rows: string[] = [];
   for (const message of messages) {
-    const sender = message.sender_id;
-    if (!message._blockEvaluated || !message.sender_blocked) continue;
-    if (!isBlockableSender(sender) || blockState.ids.has(sender)) continue;
-    rows.push(message.id);
+    if (!message._blockEvaluated) continue;
+    // The row's own sender, or its thread preview's replier (#4297).
+    const masked = [
+      message.sender_blocked ? message.sender_id : null,
+      message.thread?.last_reply?.sender_blocked
+        ? message.thread.last_reply.sender_id
+        : null,
+      // A forward's copy of a blocked author's message (#4864).
+      message.forwarded_from?.sender_blocked
+        ? message.forwarded_from.sender_id
+        : null,
+    ];
+    if (
+      masked.some(
+        (sender) => isBlockableSender(sender) && !blockState.ids.has(sender),
+      )
+    ) {
+      rows.push(message.id);
+    }
   }
   return rows.sort();
 }
@@ -314,9 +451,10 @@ export function visibleReactions(
  *
  * `typing` is a Broadcast on `chat:channel:<id>`, and anyone who can read the
  * channel may send one, so the server delivers a blocked member's too. The
- * indicator is anonymous, but in a two-person DM "Someone is typing…" tells
- * the blocker, live, that the member they blocked is writing to them. So both
- * clients pass the manager's list through this before rendering it.
+ * indicator names the typist ("Winston is typing…", `typingLabel`), so it
+ * would tell the blocker, live, that the member they blocked is writing in a
+ * channel they share, and in a two-person DM that they are writing to them.
+ * So both clients pass the manager's list through this before rendering it.
  *
  * Everyone else goes by a reaction chip's rule (`visibleReactions`), for the
  * same reason: against a ready list a blocked member is dropped; while the
@@ -370,6 +508,9 @@ export function isVisibleMember(
  * purpose (#2257 review, finding 3). It runs against the cache **as it is when
  * the response lands**, never a snapshot taken before the request: a Realtime
  * row, a send or a delete that landed in between is still there afterwards.
+ * A thread parent whose latest-reply preview the server withheld for this
+ * sender (#4297) is a masked copy too, of the preview: it is swapped when the
+ * re-read serves that preview clear, under the same evaluated-only guard.
  * And it only ever swaps a masked row for its clear twin — it never adds a row
  * the cache no longer holds (that would resurrect a deleted message) and never
  * overwrites one the echo has updated since. That row is no longer a *masked
@@ -385,18 +526,64 @@ export function replaceMaskedCopies(
 ): ChannelCache {
   let next = cache;
   for (const row of rows) {
-    if (row.sender_id !== senderId || row.sender_blocked !== false) continue;
     const cached = next.byId[row.id];
-    if (!cached || !cached._blockEvaluated || !cached.sender_blocked) continue;
-    next = mergeServerRow(next, row);
+    if (!cached || !cached._blockEvaluated) continue;
+    if (row.sender_id === senderId && row.sender_blocked === false) {
+      if (cached.sender_blocked) next = mergeServerRow(next, row);
+      continue;
+    }
+    // Another member's thread parent whose latest-reply preview the server
+    // withheld for this sender (#4297), now served clear.
+    const fresh = row.thread_last_reply;
+    if (
+      typeof row.sender_blocked === "boolean" &&
+      maskedPreviewFrom(cached, senderId) &&
+      fresh?.sender_id === senderId &&
+      fresh.sender_blocked === false
+    ) {
+      next = mergeServerRow(next, row);
+      continue;
+    }
+    // A forward whose copy of this sender's message the server withheld
+    // (#4864), now served clear.
+    const copy = row.forwarded_from;
+    if (
+      typeof row.sender_blocked === "boolean" &&
+      maskedForwardFrom(cached, senderId) &&
+      copy?.sender_id === senderId &&
+      copy.sender_blocked === false
+    ) {
+      next = mergeServerRow(next, row);
+    }
   }
   return next;
+}
+
+/** A REST-evaluated forward whose copy the server withheld for `senderId`. */
+function maskedForwardFrom(message: ChatMessage, senderId: string): boolean {
+  const copy = message.forwarded_from;
+  return (
+    message._blockEvaluated &&
+    copy?.sender_blocked === true &&
+    copy.sender_id === senderId
+  );
+}
+
+/** A REST-evaluated parent whose preview the server withheld for `senderId`. */
+function maskedPreviewFrom(message: ChatMessage, senderId: string): boolean {
+  const reply = message.thread?.last_reply;
+  return (
+    message._blockEvaluated &&
+    reply?.sender_blocked === true &&
+    reply.sender_id === senderId
+  );
 }
 
 /**
  * Whether a channel cache holds a server-masked copy from this sender — an
  * evaluated row with its masked body, not an echo carrying the verdict (see
- * `replaceMaskedCopies`).
+ * `replaceMaskedCopies`) — or a thread parent whose latest-reply preview the
+ * server withheld for them (#4297).
  */
 export function hasMaskedCopyFrom(
   cache: ChannelCache | undefined,
@@ -405,9 +592,11 @@ export function hasMaskedCopyFrom(
   if (!cache) return false;
   return Object.values(cache.byId).some(
     (message) =>
-      message.sender_id === senderId &&
-      message._blockEvaluated &&
-      message.sender_blocked,
+      (message.sender_id === senderId &&
+        message._blockEvaluated &&
+        message.sender_blocked) ||
+      maskedPreviewFrom(message, senderId) ||
+      maskedForwardFrom(message, senderId),
   );
 }
 
@@ -606,17 +795,6 @@ export const maskedRefresh = {
 
 type FrappClient = ReturnType<typeof createFrappClient>;
 
-/** The channel id in a `chatMessagesKey`, or `null` for any other `["chat", …]` key. */
-function channelIdOf(queryKey: readonly unknown[]): string | null {
-  const [root, channelId, leaf] = queryKey;
-  return root === CHAT_MESSAGE_QUERY_ROOT &&
-    typeof channelId === "string" &&
-    leaf === "messages" &&
-    queryKey.length === 3
-    ? channelId
-    : null;
-}
-
 /** Rows per page of the re-read. Under the API's cap of 200. */
 export const MASKED_REFRESH_PAGE_LIMIT = 100;
 
@@ -635,10 +813,16 @@ function oldestMaskedCopyTime(
   if (!cache) return null;
   let oldest: number | null = null;
   for (const message of Object.values(cache.byId)) {
+    const ownMasked =
+      message.sender_id === senderId &&
+      message._blockEvaluated &&
+      message.sender_blocked;
+    // A parent holding this sender's withheld preview is read back to by its
+    // own place in the thread (#4297).
     if (
-      message.sender_id !== senderId ||
-      !message._blockEvaluated ||
-      !message.sender_blocked
+      !ownMasked &&
+      !maskedPreviewFrom(message, senderId) &&
+      !maskedForwardFrom(message, senderId)
     ) {
       continue;
     }
@@ -707,7 +891,7 @@ export async function refreshMaskedCopies(
   const channelIds = queryClient
     .getQueryCache()
     .findAll({ queryKey: [CHAT_MESSAGE_QUERY_ROOT] })
-    .map((query) => channelIdOf(query.queryKey))
+    .map((query) => chatMessagesChannelId(query.queryKey))
     .filter((channelId): channelId is string => channelId !== null)
     .filter(holdsMaskedCopy);
 

@@ -3,8 +3,8 @@
 **Vercel build fails with "module not found"**
 → Ensure `transpilePackages` in `next.config.js` includes all `@repo/*` packages used by that app.
 
-**Render deploy fails**
-→ Check that the Dockerfile path is `apps/api/Dockerfile` and the build context is the repo root (Render default).
+**API deploy fails**
+→ Read the failed step of the **Deploy staging** / **Deploy production** run. The image builds from `apps/api/Dockerfile` with the repo root as context; the Cloud Run step's failures and their fixes are in [`cloud-run.md`](cloud-run.md).
 
 **Supabase connection refused in deployed API**
 → Ensure `SUPABASE_URL` uses `https://` (not `http://`) and points to the cloud project, not `localhost`.

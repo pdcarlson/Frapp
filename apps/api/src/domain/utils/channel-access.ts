@@ -30,7 +30,8 @@ export interface ChannelAccessRecord {
   /**
    * Who can see a PUBLIC or ROLE_GATED channel (#3722): `null` is everyone in
    * the chapter, a list admits members holding any entry in it
-   * (`tier:<id>`, `role:<id>`). An empty list admits nobody but `*`.
+   * (`tier:<id>`, `role:<id>`, `group:<id>`). An empty list admits nobody
+   * but `*`.
    * Ignored for PRIVATE / DM / GROUP_DM, which `member_ids` decides.
    */
   who_can_see: string[] | null;
@@ -68,8 +69,28 @@ export interface ChannelAccessRecord {
  *   archive, the audit log and the Alumni rule apply as for `post`, but not
  *   who can post: any member who can read an announcement may thread under it
  *   (Winston, 2026-11-10; spec/behavior/chat/README.md § Message threads).
+ * - `close`: end something already readable (a poll, #4046). Archive and the
+ *   audit log apply, but not who can post nor the Alumni rule: the caller
+ *   decides who may close (the poll's creator, or `channels:manage`), and a
+ *   creator dropped from a read-only channel's posters must still be able to
+ *   end their own poll.
+ * - `answer`: fill in something already readable that every reader may
+ *   answer (a form card's answers, #3926; a chat card's poll vote and a
+ *   sign-up claim, #4695). Archive and the audit log apply,
+ *   as for `close`, but not who can post nor the Alumni rule: a form posted
+ *   in an announcement channel is for everyone who can read it.
+ * - `modify`: change a message already in the channel without writing new
+ *   content: delete it, flag or unflag it, pin or unpin it. Who may do it to
+ *   which message is the caller's rule (the sender, or `channels:manage`).
+ *   Neither archive nor the audit log refuses it here, since which change it
+ *   is and to which line decides that: `ChannelAccessService` applies the
+ *   audit log's own rule (`auditLogAllowsChange` in `@repo/validation`) with
+ *   the message in hand. An archived group DM takes it, as it did when these
+ *   authorized as a read, so a member can still delete their own message
+ *   there.
  */
-export type ChannelOperation = 'read' | 'post' | 'vote' | 'thread';
+export type ChannelOperation =
+  'read' | 'post' | 'vote' | 'thread' | 'close' | 'answer' | 'modify';
 
 /**
  * What a member holds that a list can name, resolved from a TRUSTED read of
@@ -77,7 +98,10 @@ export type ChannelOperation = 'read' | 'post' | 'vote' | 'thread';
  * or `getChapterMemberAccess` for a whole chapter).
  */
 export interface ChannelAccessHolder {
-  /** `role:<id>` for each role they hold here and `tier:<id>` for its tier. */
+  /**
+   * `role:<id>` for each role they hold here, `tier:<id>` for its tier, and
+   * `group:<id>` for each group they are in (#4076) when those were read.
+   */
   entries: ReadonlySet<string>;
   /**
    * Holds `*` (the President). Passes every list, so a chapter can't lock
@@ -107,11 +131,19 @@ export const EMPTY_ACCESS_HOLDER: ChannelAccessHolder = {
  * `*` comes from a role's own `permissions`; custom roles never carry it
  * (`flattenPermissionSets`), so they are not read. The Alumni role is the one
  * with `system_key` `ALUMNI`, as `RbacService.getAlumniRoleId` resolves it.
+ *
+ * `groupIds` are the groups they are in (#4076), read from
+ * `chapter_group_memberships` only when a list can name one
+ * ({@link listsNameGroups}). A group carries no permissions and is never the
+ * Alumni role, so it adds entries and nothing else.
  */
 export function accessHolderFromRoles(
   roles: readonly Pick<Role, 'id' | 'tier_id' | 'permissions' | 'system_key'>[],
+  groupIds: readonly string[] = [],
 ): ChannelAccessHolder {
-  const entries = new Set<string>();
+  const entries = new Set<string>(
+    groupIds.map((groupId) => channelAccessEntry('group', groupId)),
+  );
   let wildcard = false;
   let alumniEntries: Set<string> | null = null;
   for (const role of roles) {
@@ -157,8 +189,11 @@ const LIST_TYPES: ReadonlySet<string> = new Set<ChannelType>([
   'ROLE_GATED',
 ]);
 
-/** Whether `list` admits `holder`: `null` admits everyone, `*` passes any list. */
-function listAdmits(
+/**
+ * Whether `list` admits `holder`: `null` admits everyone, `*` passes any list.
+ * Documents' who can see asks the same (`document-access.ts`).
+ */
+export function listAdmits(
   list: readonly string[] | null,
   holder: ChannelAccessHolder,
 ): boolean {
@@ -187,6 +222,20 @@ export function isAlumniPostableChannel(
 }
 
 /**
+ * Whether either of a channel's lists names a group (#4076), so a holder for
+ * it must carry the member's groups. Groups cost a read of their own, so the
+ * chat hot path makes it only for a channel where one can decide; on any
+ * other channel a holder without them decides exactly the same.
+ */
+export function listsNameGroups(
+  channel: Pick<ChannelAccessRecord, 'who_can_see' | 'who_can_post'>,
+): boolean {
+  const named = (list: readonly string[] | null) =>
+    (list ?? []).some((entry) => entry.startsWith('group:'));
+  return named(channel.who_can_see) || named(channel.who_can_post);
+}
+
+/**
  * Whether {@link canAccessChannel} can read the holder for this channel and
  * operation, so callers skip the role lookup when it can't change the answer:
  * a read of a channel everyone sees, anything in a DM or group DM, a read of a
@@ -210,6 +259,9 @@ export function needsAccessHolder(
   if (channel.who_can_see !== null) return true;
   switch (operation) {
     case 'read':
+    case 'close':
+    case 'answer':
+    case 'modify':
       return false;
     case 'vote':
       return channel.who_can_post !== null;
@@ -242,8 +294,10 @@ export function channelAllowsThreads(
  *   only `*`.
  * - Unknown channel type: denied (guarded default, never falls open).
  *
- * A write (`post`, `vote`, `thread`) must also pass the read, and is refused
- * in an archived channel and in the audit log whatever the caller holds.
+ * A write (`post`, `vote`, `thread`, `close`, `answer`) must also pass the
+ * read, and is refused in an archived channel and in the audit log whatever
+ * the caller holds. `modify` must pass the read, and nothing else here: in
+ * the audit log, the change and the line decide it (`ChannelAccessService`).
  * Then:
  *
  * - The Alumni rule, for `post` and `thread`: a holder of the Alumni role
@@ -273,14 +327,20 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   if (!canRead) return false;
   if (operation === 'read') return true;
 
-  // An archived channel (#348) is frozen: no further writes from anyone.
-  // There is no "unarchive" flow, so there is no override either.
-  if (channel.archived_at) return false;
+  // Deleting, flagging or pinning adds no content, so nothing below decides
+  // it: who may change which message is the caller's rule, and in the audit
+  // log which change to which line (`auditLogAllowsChange`), which needs the
+  // message this predicate never sees.
+  if (operation === 'modify') return true;
 
   // The audit log (#3909) is system-write only. The audit mirror inserts its
   // rows directly and never comes through here, so refusing every caller,
   // the President's `*` included, leaves exactly the server writing in it.
   if (channel.is_audit_log) return false;
+
+  // An archived channel (#348) is frozen: no further writes from anyone.
+  // There is no "unarchive" flow, so there is no override either.
+  if (channel.archived_at) return false;
 
   if (
     (operation === 'post' || operation === 'thread') &&
@@ -294,6 +354,10 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   // A thread reply is open to every reader. The timeline of an announcement
   // stays with who can post; its threads do not.
   if (operation === 'thread') return true;
+
+  // Who may close is the caller's rule (`PollService.close`), not the list's;
+  // a form's answers are open to every reader.
+  if (operation === 'close' || operation === 'answer') return true;
 
   // A DM or group DM has no who-can-post list. A private channel does only
   // when someone made it read-only before #3722 (migration 20261111233000).

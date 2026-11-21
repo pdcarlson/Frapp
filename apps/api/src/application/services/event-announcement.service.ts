@@ -4,7 +4,7 @@ import type { IUserRepository } from '#domain/repositories/user.repository.inter
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { Event } from '#domain/entities/event.entity';
-import { isRecurrenceRule } from '@repo/validation';
+import { isRepeatRule } from '@repo/validation';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload, NotifyRecipient } from './notification.service';
 import { ChatService } from './chat.service';
@@ -35,10 +35,10 @@ function sameInstant(a: string, b: string): boolean {
 
 /**
  * Which of when and where `patch` actually moves on `before`, or null when it
- * moves neither. Compares values, not key presence: both clients round-trip
- * the whole event, so a rename arrives carrying the same times and location,
- * and announcing that as "rescheduled" would push the whole chapter for a typo
- * fix. Instants are compared as instants (`+00:00` vs `Z` is no change), and a
+ * moves neither. Compares values, not key presence: a client that
+ * round-trips the whole event (web did until #3667; an older build still may)
+ * sends a rename carrying the same times and location, and announcing that as
+ * "rescheduled" would push the whole chapter for a typo fix. Instants are compared as instants (`+00:00` vs `Z` is no change), and a
  * new recurrence pattern counts as a change of time.
  */
 export function eventChangeOf(
@@ -194,6 +194,13 @@ export class EventAnnouncementService {
       location: event.location ?? null,
       point_value: event.point_value,
       is_mandatory: event.is_mandatory,
+      // Who the event asks for, so the card can offer Can't make it to the
+      // members it requires without reading the event (#4660). A snapshot,
+      // like the rest: the event page reads the live answer.
+      required_role_ids: event.required_role_ids ?? [],
+      optional_role_ids: event.optional_role_ids ?? [],
+      excluded_role_ids: event.excluded_role_ids ?? [],
+      others_invited: event.others_invited ?? true,
       check_in_opens_minutes: event.check_in_opens_minutes,
       created_at: event.created_at,
     };
@@ -317,7 +324,7 @@ export class EventAnnouncementService {
     }
     if (attendanceByUser.size === 0) return;
 
-    const recurrence = isRecurrenceRule(event.recurrence_rule)
+    const recurrence = isRepeatRule(event.recurrence_rule)
       ? event.recurrence_rule
       : null;
     // A recipient with no zone of their own reads the event in its

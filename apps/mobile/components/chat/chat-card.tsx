@@ -1,14 +1,19 @@
 import { useMemo, type ComponentType, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { formatPointsChip } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
-import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
+import {
+  useChapterBranding,
+  type ChapterBranding,
+} from "@/lib/chapter-branding";
 import {
   deliveryChrome,
   type DeliveryChrome,
 } from "@/lib/chat/delivery-status";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { eyebrowStyle } from "@/components/eyebrow";
+import { HairlineChip } from "@/components/status-chip";
 import type { TabGlyphProps } from "@/components/tab-glyphs";
 import {
   groupReactions,
@@ -18,8 +23,9 @@ import {
 import type { MessageLink } from "./message-markdown";
 
 /**
- * The frame every mobile chat card shares: the poll, event, task, points,
- * service hours, rush candidate and announcement cards (#3185, #3383). An
+ * The frame every mobile chat card shares: the poll, sign-up sheet, event,
+ * task, points, service hours, rush candidate and announcement cards (#3185,
+ * #3383, #3926). An
  * audit entry is a line, not a card (`system-audit-card.tsx`).
  *
  * `thread-message-row.tsx` puts a card inside `MessageRowFrame`, which draws
@@ -111,7 +117,9 @@ export function ChatCardShell({
         accessible={hasActions || message._status === "pending"}
         // The dimmed card is the whole pending state on screen; a screen
         // reader hears it here.
-        accessibilityHint={message._status === "pending" ? "Sending" : undefined}
+        accessibilityHint={
+          message._status === "pending" ? "Sending" : undefined
+        }
         {...a11yActions}
       >
         {header}
@@ -252,7 +260,8 @@ export function CardTitle({ children }: { children: ReactNode }) {
 export function CardMeta({ items }: { items: ReactNode[] }) {
   const styles = useCardStyles();
   const shown = items.filter(
-    (item) => item !== null && item !== undefined && item !== false && item !== "",
+    (item) =>
+      item !== null && item !== undefined && item !== false && item !== "",
   );
   if (shown.length === 0) return null;
   return (
@@ -345,17 +354,13 @@ export function CardMetaWithGlyph({
 }
 
 /**
- * "+10 pts": a hairline outline with muted text, the reward a card offers,
- * as web's outline badge draws it. Not a status chip: §5 keeps those for
- * status, and a reward is not one.
+ * "+10 pts": the reward a card offers, in §5's hairline kind
+ * (`HairlineChip`), as web's outline badge draws it. Not a status chip: §5
+ * keeps those for status, and a reward is not one. It sits beside the event
+ * card's Mandatory, which is the same chip (#4132).
  */
 export function PointsChip({ points }: { points: number }) {
-  const styles = useCardStyles();
-  return (
-    <View style={styles.pointsChip}>
-      <Text style={styles.pointsText}>+{points} pts</Text>
-    </View>
-  );
+  return <HairlineChip label={formatPointsChip(points)} />;
 }
 
 /** The row a card's buttons sit in, wrapping on a narrow phone. */
@@ -367,7 +372,8 @@ export function CardActions({ children }: { children: ReactNode }) {
 /**
  * One card action. `primary` is the chapter's solid-fill pair
  * (accent-engine.md §8), the one a card's main action takes; `secondary` is an
- * outline. A disabled button keeps its label and explains itself through
+ * outline; `link` is a quiet underlined line for the answer a card shouldn't
+ * invite (Can't make it?, #4933), which keeps the 44pt target unboxed. A disabled button keeps its label and explains itself through
  * `accessibilityHint`, so a screen reader hears why it can't be pressed.
  */
 export function CardButton({
@@ -376,13 +382,19 @@ export function CardButton({
   variant = "secondary",
   disabled = false,
   accessibilityHint,
+  accessibilityLabel,
   icon,
 }: {
   label: string;
   onPress: () => void;
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "link";
   disabled?: boolean;
   accessibilityHint?: string;
+  /**
+   * What a screen reader says, when the label alone doesn't say what it acts
+   * on: a list of Join buttons is "Join Intramurals" (#4958). Defaults to the label.
+   */
+  accessibilityLabel?: string;
   /** Drawn before the label, in the label's color. */
   icon?: (color: string) => ReactNode;
 }) {
@@ -390,11 +402,16 @@ export function CardButton({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const primary = variant === "primary";
-  const labelColor = primary ? brand.accentOnPrimary : tokens.color.text.foreground;
+  const link = variant === "link";
+  const labelColor = primary
+    ? brand.accentOnPrimary
+    : link
+      ? tokens.color.text.mutedForeground
+      : tokens.color.text.foreground;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled }}
       accessibilityHint={accessibilityHint}
       disabled={disabled}
@@ -404,13 +421,23 @@ export function CardButton({
         styles.button,
         primary
           ? { backgroundColor: brand.accentPrimary }
-          : styles.buttonSecondary,
+          : link
+            ? styles.buttonLink
+            : styles.buttonSecondary,
         disabled ? styles.buttonDisabled : null,
         pressed && !disabled ? styles.buttonPressed : null,
       ]}
     >
       {icon ? icon(labelColor) : null}
-      <Text style={[styles.buttonLabel, { color: labelColor }]}>{label}</Text>
+      <Text
+        style={[
+          styles.buttonLabel,
+          link ? styles.buttonLinkLabel : null,
+          { color: labelColor },
+        ]}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -452,10 +479,19 @@ export function useCardStyles() {
   return useMemo(() => createStyles(tokens, brand), [tokens, brand]);
 }
 
+/**
+ * Web's 28rem (`MESSAGE_CARD`'s `w-[28rem] max-w-full`): the widest a chat
+ * card draws on either app.
+ */
+const CARD_MAX_WIDTH = 448;
+
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   return StyleSheet.create({
-    // The body column's full width: a card in the row, under its author line.
+    // The body column's full width up to web's cap (`MESSAGE_CARD`'s
+    // 28rem, 448), so a card is one width on both apps and a tablet's
+    // wide column doesn't stretch it (#4136).
     card: {
+      maxWidth: CARD_MAX_WIDTH,
       marginTop: tokens.spacing.xs,
       // components.md's card padding, the 16 web's MESSAGE_CARD draws.
       padding: tokens.spacing.lg,
@@ -489,7 +525,9 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
         weight: tokens.typography.weight.bold,
       }),
       color: tokens.color.text.foreground,
-      marginTop: tokens.spacing.xs,
+      // 8 under the eyebrow, 8 to the meta and 12 to the actions: web's
+      // card spacing, one rhythm on both apps (#4136).
+      marginTop: tokens.spacing.sm,
     },
     // A card's body copy: a record card's sentence, an announcement's text.
     bodyText: {
@@ -518,7 +556,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       flexWrap: "wrap",
       alignItems: "center",
       rowGap: tokens.spacing.xs,
-      marginTop: tokens.spacing.xs + 2,
+      marginTop: tokens.spacing.sm,
     },
     metaItem: {
       flexDirection: "row",
@@ -541,22 +579,11 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     metaSeparator: {
       marginHorizontal: tokens.spacing.xs + 2,
     },
-    pointsChip: {
-      borderRadius: tokens.radius.chip,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      paddingHorizontal: tokens.spacing.sm,
-      paddingVertical: 2,
-    },
-    pointsText: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
     actions: {
       flexDirection: "row",
       flexWrap: "wrap",
       gap: tokens.spacing.sm,
-      marginTop: tokens.spacing.md - 2,
+      marginTop: tokens.spacing.md,
     },
     button: {
       flexDirection: "row",
@@ -572,6 +599,12 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.popover,
     },
+    // No side padding, so a lone link lines up with the card's text; the
+    // 44pt height and width keep the target (hitSlop adds the rest).
+    buttonLink: {
+      paddingHorizontal: 0,
+      minWidth: 44,
+    },
     buttonDisabled: {
       opacity: 0.5,
     },
@@ -580,6 +613,9 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     buttonLabel: {
       ...typeRole(tokens.typography.role.label),
+    },
+    buttonLinkLabel: {
+      textDecorationLine: "underline",
     },
     note: {
       ...typeRole(tokens.typography.role.caption),

@@ -3,16 +3,18 @@ import { MemberFacingError } from "@repo/hooks/error-copy";
 import React from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
+import { StyleSheet } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { EventPayload } from "@repo/chat-core/cards";
 import { moduleDisabledMessage } from "@repo/validation";
-import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { formatEventWindow } from "@/lib/events/format";
+import { CHECK_IN_NEEDS_CODE_MESSAGE } from "@/lib/events/check-in-outcome";
+import * as expoRouter from "expo-router";
 
 /**
  * The mobile chat event card (#3185): the snapshot, the officer-only count,
@@ -30,6 +32,10 @@ const state = vi.hoisted(() => ({
   writeBlockedReason: null as string | null,
   attendanceIds: [] as string[],
   eventIds: [] as string[],
+  mine: undefined as unknown,
+  mineIds: [] as string[],
+  excuse: { kind: "none" } as unknown,
+  excuseArgs: [] as unknown[],
 }));
 const checkIn = vi.hoisted(() => vi.fn());
 const requireForegroundFix = vi.hoisted(() => vi.fn());
@@ -53,7 +59,19 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
         }
       : { data: undefined, isError: false, refetch: () => refetchEvent() };
   },
+  useMyAttendance: (id: string) => {
+    state.mineIds.push(id);
+    return { data: id ? state.mine : undefined };
+  },
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
+  // A viewer with no roles: the default decides (the rule is its own spec).
+  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
+    fields.is_mandatory === true,
+  // The rule is the hook's own spec in @repo/hooks (#4660).
+  useEventCardExcuse: (card: unknown) => {
+    state.excuseArgs.push(card);
+    return state.excuse;
+  },
   useCurrentChapter: () => ({
     data:
       state.enabledModules === undefined
@@ -74,20 +92,15 @@ vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason: state.writeBlockedReason }),
 }));
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#C49A3A",
-    accentPrimary: "#C49A3A",
-    accentOnPrimary: "#2B2009",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, MUTED_GOLD_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(MUTED_GOLD_BRANDING);
+});
 
 import { EventCard } from "./event-card";
 import { CardMeta } from "./chat-card";
+import { HairlineChip } from "@/components/status-chip";
 
 /** Inside the window: it started at 23:00 and ends at 00:00. */
 const PAYLOAD: EventPayload = {
@@ -141,7 +154,11 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
 }
 
 function render(
-  options: { payload?: EventPayload; isConfirmed?: boolean } = {},
+  options: {
+    payload?: EventPayload;
+    isConfirmed?: boolean;
+    onNavigate?: () => void;
+  } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -152,6 +169,7 @@ function render(
           payload={options.payload ?? PAYLOAD}
           viewerId="viewer-1"
           isConfirmed={options.isConfirmed ?? true}
+          onNavigate={options.onNavigate}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
@@ -161,6 +179,24 @@ function render(
     );
   });
   return tree;
+}
+
+/** The same card element `render()` mounts, for `tree.update` after state changes. */
+function rerenderCard() {
+  return (
+    <FrappThemeProvider>
+      <EventCard
+        message={message()}
+        payload={PAYLOAD}
+        viewerId="viewer-1"
+        isConfirmed
+        onRetry={vi.fn()}
+        onDiscard={vi.fn()}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+      />
+    </FrappThemeProvider>
+  );
 }
 
 function button(tree: ReactTestRenderer, label: string) {
@@ -198,6 +234,10 @@ beforeEach(() => {
   state.writeBlockedReason = null;
   state.attendanceIds = [];
   state.eventIds = [];
+  state.mine = { attendance: null };
+  state.mineIds = [];
+  state.excuse = { kind: "none" };
+  state.excuseArgs = [];
   checkIn.mockReset().mockResolvedValue({});
   requireForegroundFix.mockReset();
   refetchEvent.mockReset().mockResolvedValue({ data: undefined });
@@ -213,9 +253,20 @@ describe("EventCard — the snapshot", () => {
     expect(text).toContain("Mandatory");
   });
 
-  it("draws Mandatory red, as every other Mandatory card does (#3830)", () => {
-    const chip = render().root.findByProps({ label: "Mandatory" });
-    expect(chip.props.hue).toBe(signetDarkTokens.color.semantic.destructive);
+  it("draws Mandatory as the hairline chip, as the Events list does (#4132)", () => {
+    // Mandatory and "+10 pts" are the one hairline chip.
+    expect(
+      render()
+        .root.findAllByType(HairlineChip)
+        .map((chip) => chip.props.label),
+    ).toEqual(["Mandatory", "+10 pts"]);
+  });
+
+  it("goes by the card's own answer for this viewer over the default (#4132)", () => {
+    const text = screenText(
+      render({ payload: { ...PAYLOAD, viewer_required: false } }),
+    );
+    expect(text).not.toContain("Mandatory");
   });
 
   it("draws when it is in the viewer's own time, not the server's sentence", () => {
@@ -245,7 +296,12 @@ describe("EventCard — the snapshot", () => {
   it("leaves out what the payload doesn't carry", () => {
     const text = screenText(
       render({
-        payload: { ...PAYLOAD, location: null, point_value: 0, is_mandatory: false },
+        payload: {
+          ...PAYLOAD,
+          location: null,
+          point_value: 0,
+          is_mandatory: false,
+        },
       }),
     );
     expect(text).not.toContain("pts");
@@ -299,7 +355,10 @@ describe("EventCard — Check in", () => {
     const payload = { ...PAYLOAD, check_in_opens_minutes: 30 };
     expect(hasButton(render({ payload }), "Check in")).toBe(true);
     expect(
-      hasButton(render({ payload: { ...PAYLOAD, check_in_opens_minutes: 0 } }), "Check in"),
+      hasButton(
+        render({ payload: { ...PAYLOAD, check_in_opens_minutes: 0 } }),
+        "Check in",
+      ),
     ).toBe(false);
   });
 
@@ -330,6 +389,24 @@ describe("EventCard — Check in", () => {
       eventId: "evt-1",
       lat: 42.73,
       lng: -73.68,
+    });
+  });
+
+  it("says to use the camera, and turns Check in into Scan code, once the officer's screen wants the code (#4532)", async () => {
+    vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
+    checkIn.mockRejectedValue({
+      statusCode: 403,
+      message: CHECK_IN_NEEDS_CODE_MESSAGE,
+    });
+    const tree = render();
+    await press(tree, "Check in");
+    expect(screenText(tree)).toContain(
+      "Point your phone's camera at the code on the officer's screen to check in.",
+    );
+    await press(tree, "Scan code");
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/check-in",
+      params: { eventId: "evt-1", scan: "1" },
     });
   });
 
@@ -400,7 +477,9 @@ describe("EventCard — Check in", () => {
     expect(text).not.toContain("complete checkout");
     const retry = button(tree, "Check in");
     expect(retry.props.disabled).toBe(true);
-    expect(retry.props.accessibilityHint).toBe(SUBSCRIPTION_REFUSAL_COPY.checkIn);
+    expect(retry.props.accessibilityHint).toBe(
+      SUBSCRIPTION_REFUSAL_COPY.checkIn,
+    );
   });
 
   it("relays any other refusal and leaves the button to retry", async () => {
@@ -426,9 +505,9 @@ describe("EventCard — Check in", () => {
   });
 
   it("can't be pressed on a row the server hasn't acknowledged", () => {
-    expect(button(render({ isConfirmed: false }), "Check in").props.disabled).toBe(
-      true,
-    );
+    expect(
+      button(render({ isConfirmed: false }), "Check in").props.disabled,
+    ).toBe(true);
   });
 
   it("gives way to the module note once Events is known to be off", () => {
@@ -452,5 +531,166 @@ describe("EventCard — Check in", () => {
     const tree = render();
     await press(tree, "Check in");
     expect(screenText(tree)).toContain(MODULE_REFUSAL_COPY.checkIn);
+  });
+});
+
+describe("EventCard — already on the list", () => {
+  it("says Checked in for a member who checked in somewhere else", () => {
+    // Scanned at the door, another device, or this card before it scrolled
+    // away and remounted: the local outcome is gone, the server's row isn't.
+    state.mine = {
+      attendance: {
+        status: "PRESENT",
+        check_in_time: "2026-11-05T23:10:00.000Z",
+      },
+    };
+    const tree = render();
+    expect(button(tree, "Checked in").props.disabled).toBe(true);
+    expect(hasButton(tree, "Check in")).toBe(false);
+  });
+
+  it("shows an officer's mark instead of offering a check-in it can't replace", () => {
+    state.mine = { attendance: { status: "EXCUSED", check_in_time: null } };
+    const tree = render();
+    expect(screenText(tree)).toContain("Marked excused");
+    expect(hasButton(tree, "Check in")).toBe(false);
+  });
+
+  it("shows an officer's mark, not Checked in, when the tap's 409 was the mark", async () => {
+    // The row read before the officer marked the member; the server refuses
+    // the check-in for any existing row, and the re-read row says which.
+    checkIn.mockRejectedValue({
+      statusCode: 409,
+      message: "Already checked in",
+    });
+    const tree = render();
+    await press(tree, "Check in");
+    state.mine = { attendance: { status: "EXCUSED", check_in_time: null } };
+    act(() => tree.update(rerenderCard()));
+    expect(screenText(tree)).toContain("Marked excused");
+    expect(hasButton(tree, "Checked in")).toBe(false);
+  });
+
+  it("drops an earlier failure once the member's row says checked in", async () => {
+    checkIn.mockRejectedValue(new Error("network down"));
+    const tree = render();
+    await press(tree, "Check in");
+    const failure = screenText(tree);
+    state.mine = {
+      attendance: {
+        status: "PRESENT",
+        check_in_time: "2026-11-05T23:10:00.000Z",
+      },
+    };
+    act(() => tree.update(rerenderCard()));
+    expect(button(tree, "Checked in").props.disabled).toBe(true);
+    expect(failure).toContain("check you in");
+    expect(screenText(tree)).not.toContain("check you in");
+  });
+
+  it("offers Check in while the member has no row", () => {
+    const tree = render();
+    expect(hasButton(tree, "Check in")).toBe(true);
+  });
+
+  it("doesn't read the member's row outside the window", () => {
+    state.now = new Date("2026-11-04T12:00:00.000Z");
+    render();
+    expect(state.mineIds.every((id) => id === "")).toBe(true);
+  });
+});
+
+describe("EventCard — Can't make it (#4660)", () => {
+  it("offers it beside Check in and opens Event details with the line open", async () => {
+    vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
+    state.excuse = { kind: "offer" };
+    const tree = render();
+    expect(screenText(tree)).toContain("Check in");
+    await press(tree, "Can't make it?");
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: "evt-1", excuse: "1" },
+    });
+  });
+
+  it("draws it as a quiet underlined link with a 44pt target (#4933)", () => {
+    state.excuse = { kind: "offer" };
+    const tree = render();
+    const link = button(tree, "Can't make it?");
+    const box = StyleSheet.flatten(link.props.style({ pressed: false }));
+    expect(box.borderWidth).toBeUndefined();
+    expect(box.minHeight).toBeGreaterThanOrEqual(44);
+    expect(box.minWidth).toBeGreaterThanOrEqual(44);
+    const label = link.find((node) => (node.type as unknown) === "Text");
+    expect(StyleSheet.flatten(label.props.style).textDecorationLine).toBe(
+      "underline",
+    );
+  });
+
+  it("offers it before the check-in window opens", () => {
+    state.now = new Date("2026-11-04T12:00:00.000Z");
+    state.excuse = { kind: "offer" };
+    const tree = render();
+    expect(screenText(tree)).toContain("Can't make it?");
+    expect(screenText(tree)).not.toContain("Check in");
+  });
+
+  it("says where a sent excuse stands instead", () => {
+    state.excuse = {
+      kind: "sent",
+      status: "APPROVED",
+      reason: "Away game",
+      title: "Excused",
+      detail: null,
+      canWithdraw: true,
+    };
+    const tree = render();
+    expect(screenText(tree)).toContain("Excused");
+    expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("offers nothing to a member the event doesn't require", () => {
+    const tree = render();
+    expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("hands the rule the card's own payload", () => {
+    render();
+    expect(state.excuseArgs).toContainEqual(PAYLOAD);
+  });
+
+  it("offers nothing while the events module is off", () => {
+    state.enabledModules = { events: false };
+    state.excuse = { kind: "offer" };
+    const tree = render();
+    expect(screenText(tree)).not.toContain("Can't make it");
+  });
+
+  it("closes the Activity sheet before it leaves", async () => {
+    const onNavigate = vi.fn();
+    const push = vi.mocked(expoRouter.useRouter)().push;
+    vi.mocked(push).mockClear();
+    state.excuse = { kind: "offer" };
+    const tree = render({ onNavigate });
+    await press(tree, "Can't make it?");
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(onNavigate.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(push).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("says an approved excuse once while check-in shows the mark", () => {
+    state.mine = { attendance: { status: "EXCUSED", check_in_time: null } };
+    state.excuse = {
+      kind: "sent",
+      status: "APPROVED",
+      reason: "Away game",
+      title: "Excused",
+      detail: null,
+      canWithdraw: false,
+    };
+    const tree = render();
+    expect(screenText(tree)).toContain("Marked excused");
+    expect(screenText(tree)).not.toMatch(/\bExcused\b/);
   });
 });

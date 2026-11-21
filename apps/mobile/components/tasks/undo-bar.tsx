@@ -5,9 +5,11 @@ import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { GlassSurface } from "@/components/glass-surface";
+import { CREATE_BUTTON_SIZE } from "@/components/floating-create-button";
 import {
   FLOATING_TAB_BAR,
   floatingTabBarTop,
+  useAskBarLift,
   useFloatingChrome,
 } from "@/lib/floating-chrome";
 
@@ -25,14 +27,24 @@ export const UNDO_WINDOW_MS = 5000;
  * checkbox itself also unchecks until an officer confirms, so this is the
  * discoverable path, not the only one.
  *
- * The screen owns the timer and passes `message` only while it runs.
+ * The screen owns the timer and passes `message` only while it runs. A screen
+ * with a floating create button passes `aboveCreate`, so the bar sits over
+ * the + rather than on it (a pushed screen draws both at the same height).
  */
 export function UndoBar({
   message,
   onUndo,
+  aboveCreate = false,
+  actionLabel = "Undo",
 }: {
   message: string;
   onUndo: () => void;
+  aboveCreate?: boolean;
+  /**
+   * The one action's word: Undo, or another way back from what just
+   * happened, such as Give it back after a claim (tasks.md § Up for grabs).
+   */
+  actionLabel?: string;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -43,12 +55,17 @@ export function UndoBar({
   useEffect(() => {
     // A screen-reader user hears what happened and that Undo is there, since
     // focus stays on the row they tapped.
-    AccessibilityInfo.announceForAccessibility(`${message}. Undo available.`);
-  }, [message]);
+    AccessibilityInfo.announceForAccessibility(
+      `${message}. ${actionLabel} available.`,
+    );
+  }, [message, actionLabel]);
 
-  const offset = tabBar
-    ? floatingTabBarTop(bottom) + FLOATING_TAB_BAR.gap
-    : bottom + tokens.spacing.lg;
+  const askLift = useAskBarLift();
+  const offset =
+    (tabBar
+      ? floatingTabBarTop(bottom) + askLift + FLOATING_TAB_BAR.gap
+      : bottom + tokens.spacing.lg) +
+    (aboveCreate ? CREATE_BUTTON_SIZE + FLOATING_TAB_BAR.gap : 0);
 
   return (
     <GlassSurface style={[styles.bar, { bottom: offset }]}>
@@ -57,11 +74,11 @@ export function UndoBar({
       </Text>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Undo"
+        accessibilityLabel={actionLabel}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         onPress={onUndo}
       >
-        <Text style={[styles.undo, { color: accent }]}>Undo</Text>
+        <Text style={[styles.undo, { color: accent }]}>{actionLabel}</Text>
       </Pressable>
     </GlassSurface>
   );

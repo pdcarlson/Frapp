@@ -1,0 +1,1005 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { components } from "@repo/api-sdk";
+import { minutesDraftElapsed } from "@repo/validation";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { aiSuggestionKeys } from "./use-ai-suggestions";
+
+/** One row of the Minutes list (`GET /v1/meetings`), with what the list shows on it (#5290). */
+export type MeetingSummary = components["schemas"]["MeetingListItemDto"];
+/** One meeting's minutes, as `GET /v1/meetings/:id` and every write return them. */
+export type MeetingMinutes = components["schemas"]["MeetingDto"];
+export type StartMeetingBody = components["schemas"]["StartMeetingDto"];
+export type UpdateMeetingBody = components["schemas"]["UpdateMeetingDto"];
+/** One action item that became a task, as the minutes' checkbox reads it. */
+export type MeetingActionItemTask =
+  components["schemas"]["MeetingActionItemTaskDto"];
+export type MeetingTemplateSections =
+  components["schemas"]["MeetingTemplateDto"]["sections"];
+
+const meetingsKey = (chapterId: string | null | undefined) =>
+  ["meetings", chapterId] as const;
+
+/**
+ * The Minutes list reads (`useMeetings`, whole or for one event), which carry
+ * whether each minutes had a recording (#5290): a recording that starts, is
+ * confirmed or is removed changes that tag.
+ */
+const isMeetingsList = (query: { queryKey: readonly unknown[] }) =>
+  query.queryKey.length === 2 || query.queryKey[2] === "event";
+const meetingKey = (chapterId: string | null | undefined, id: string) =>
+  ["meetings", chapterId, "one", id] as const;
+const templateKey = (chapterId: string | null | undefined) =>
+  ["meetings", chapterId, "template"] as const;
+
+/**
+ * The minutes the viewer may read, newest meeting first
+ * (`spec/behavior/meetings.md` § Who can read minutes): posted minutes whose
+ * event invites them, and drafts they started. With `eventId`, only that
+ * event's minutes, which the event sheet uses to offer "Open minutes".
+ */
+export function useMeetings(options?: { enabled?: boolean; eventId?: string }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const eventId = options?.eventId;
+  return useQuery({
+    queryKey: eventId
+      ? ([...meetingsKey(chapterId), "event", eventId] as const)
+      : meetingsKey(chapterId),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/meetings", {
+        signal,
+        params: { query: eventId ? { event_id: eventId } : {} },
+      });
+      if (error) throw error;
+      return data;
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/**
+ * The meetings a phone is recording right now whose events this member can
+ * see (`GET /v1/meetings/live-recordings`): who is recording, since when,
+ * and which event, for a line such as "Winston Hewitt is recording" (Paul,
+ * 2026-11-20). Read again every minute, as the recording phone beats.
+ */
+export function useLiveMeetingRecordings(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [...meetingsKey(chapterId), "live-recordings"] as const,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET(
+        "/v1/meetings/live-recordings",
+        { signal },
+      );
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 60_000,
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/**
+ * A meeting's row from a Minutes list already loaded, or null: what the
+ * minutes page names itself with while the minutes load, so a tap from the
+ * list never opens on a blank page (Paul, 2026-11-19: "slow and poor
+ * loading states"). Read once on render; the minutes replace it.
+ */
+export function useCachedMeetingRow(
+  id: string | null | undefined,
+): MeetingSummary | null {
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  if (!id) return null;
+  const lists = queryClient.getQueriesData<MeetingSummary[]>({
+    queryKey: meetingsKey(chapterId),
+    predicate: isMeetingsList,
+  });
+  for (const [, rows] of lists) {
+    const row = Array.isArray(rows)
+      ? rows.find((candidate) => candidate.id === id)
+      : undefined;
+    if (row) return row;
+  }
+  return null;
+}
+
+/**
+ * How long a draft has been written, "0:42", ticking each second while it
+ * is: the clock beside "Writing the minutes" on web and phone alike. Null
+ * when the request time is unknown.
+ */
+export function useMinutesDraftClock(
+  requestedAt: string | null | undefined,
+): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!requestedAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [requestedAt]);
+  return minutesDraftElapsed(requestedAt ?? null, now);
+}
+
+/** One meeting's minutes. A 404 means they are not there for this viewer. */
+export function useMeeting(id: string | null | undefined) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: meetingKey(chapterId, id ?? ""),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/meetings/{id}", {
+        signal,
+        params: { path: { id: id! } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!chapterId && !!id,
+  });
+}
+
+/**
+ * Which action items of posted minutes became tasks, and whether each is
+ * done: the minutes' checkboxes. It follows the tasks as they are checked
+ * off elsewhere, so it is read again every minute while the minutes are open
+ * and whenever the window comes back to them.
+ */
+export function useMeetingActionItemTasks(
+  id: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [
+      ...meetingKey(chapterId, id ?? ""),
+      "action-item-tasks",
+    ] as const,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET(
+        "/v1/meetings/{id}/action-item-tasks",
+        { signal, params: { path: { id: id! } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!id,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/** One posted minutes of a series and its open action items. */
+export type SeriesOpenActionItems =
+  components["schemas"]["SeriesOpenActionItemsDto"];
+
+/**
+ * The action items still open across one repeating meeting's posted minutes,
+ * newest first (#5482): one read for the whole series, which the server
+ * answers from each minutes' content and its tasks together. Read again
+ * when the app comes back to it, not on a timer.
+ */
+export function useSeriesOpenActionItems(
+  seriesKey: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: [
+      ...meetingsKey(chapterId),
+      "series",
+      seriesKey ?? "",
+      "open-action-items",
+    ] as const,
+    queryFn: async ({ signal }): Promise<SeriesOpenActionItems[]> => {
+      const { data, error } = await client.GET(
+        "/v1/meetings/series/{key}/open-action-items",
+        { signal, params: { path: { key: seriesKey! } } },
+      );
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!seriesKey,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/** The sections the chapter's minutes show, in order. */
+export function useMeetingTemplate(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: templateKey(chapterId),
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/meetings/template", {
+        signal,
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/** Choose the template's sections. Needs `chapter-config:manage`. */
+export function useSetMeetingTemplate() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "template"],
+    mutationFn: async (sections: MeetingTemplateSections) => {
+      const { data, error } = await client.PUT("/v1/meetings/template", {
+        body: { sections },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(templateKey(chapterId), data);
+      return queryClient.invalidateQueries({
+        queryKey: meetingsKey(chapterId),
+      });
+    },
+  });
+}
+
+/**
+ * Start minutes for a meeting's event, or for a meeting with none. A 409
+ * `meeting.already_started` carries the id of the minutes that exist.
+ */
+export function useStartMeeting() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "start"],
+    // A lost answer to a start leaves the retry a 409 for minutes that exist.
+    retry: false,
+    mutationFn: async (body: StartMeetingBody) => {
+      const { data, error } = await client.POST("/v1/meetings", { body });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(meetingKey(chapterId, data.id), data);
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: meetingsKey(chapterId) }),
+        // A meeting with no event got one.
+        queryClient.invalidateQueries({ queryKey: ["events", chapterId] }),
+      ]);
+    },
+  });
+}
+
+/** Save minutes. A 409 `meeting.stale` means someone else saved since. */
+export function useUpdateMeeting() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "update"],
+    // A save is compare-and-set: a retry after a lost answer is refused as stale.
+    retry: false,
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: UpdateMeetingBody;
+    }) => {
+      const { data, error } = await client.PATCH("/v1/meetings/{id}", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(meetingKey(chapterId, data.id), data);
+      // The checkboxes are keyed by where each action item sits, so an edit
+      // that moves or drops one reads them again.
+      void queryClient.invalidateQueries({
+        queryKey: [...meetingKey(chapterId, data.id), "action-item-tasks"],
+      });
+      // Suggested tasks follow the action items of posted minutes (#4313).
+      if (data.status === "posted") {
+        void queryClient.invalidateQueries({
+          queryKey: aiSuggestionKeys.all(chapterId),
+        });
+      }
+      return queryClient.invalidateQueries({
+        queryKey: meetingsKey(chapterId),
+        // The open minutes were just set from the answer.
+        predicate: (query) => query.queryKey[2] !== "one",
+      });
+    },
+  });
+}
+
+/** Post minutes to the members their event invites. */
+export function usePostMeeting() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "post"],
+    // Posting is compare-and-set, and a retry would be refused as stale.
+    retry: false,
+    mutationFn: async ({
+      id,
+      expectedUpdatedAt,
+    }: {
+      id: string;
+      expectedUpdatedAt: string;
+    }) => {
+      const { data, error } = await client.POST("/v1/meetings/{id}/post", {
+        params: { path: { id } },
+        body: { expected_updated_at: expectedUpdatedAt },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(meetingKey(chapterId, data.id), data);
+      // Posting is what turns the action items into suggested tasks (#4313).
+      void queryClient.invalidateQueries({
+        queryKey: aiSuggestionKeys.all(chapterId),
+      });
+      return queryClient.invalidateQueries({
+        queryKey: meetingsKey(chapterId),
+        predicate: (query) => query.queryKey[2] !== "one",
+      });
+    },
+  });
+}
+
+/** Delete minutes. */
+export function useDeleteMeeting() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "delete"],
+    // A retry after a lost answer finds nothing to delete.
+    retry: false,
+    mutationFn: async (id: string) => {
+      const { error } = await client.DELETE("/v1/meetings/{id}", {
+        params: { path: { id } },
+      });
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: (id) => {
+      queryClient.removeQueries({ queryKey: meetingKey(chapterId, id) });
+      // Its suggested tasks went with it (#4313).
+      void queryClient.invalidateQueries({
+        queryKey: aiSuggestionKeys.all(chapterId),
+      });
+      return queryClient.invalidateQueries({
+        queryKey: meetingsKey(chapterId),
+      });
+    },
+  });
+}
+
+// ── Drafting from notes (#4312) ──────────────────────────────────────────────
+
+/** Where a meeting's draft from notes stands. */
+export type MeetingDraftState = components["schemas"]["MeetingDraftDto"];
+export type RequestMeetingDraftBody =
+  components["schemas"]["RequestMeetingDraftDto"];
+
+const meetingDraftKey = (chapterId: string | null | undefined, id: string) =>
+  ["meetings", chapterId, "draft", id] as const;
+
+/** How often the page asks while a draft is being written. */
+const DRAFTING_POLL_MS = 1500;
+
+/**
+ * Where the draft from notes stands for one meeting's minutes, for someone
+ * who may edit them. `null` means this server has no AI drafting (the route
+ * answers 404 `ai.not_available`, or the meetings module is off), and the
+ * caller shows the hand-written flow alone. While a draft is being written
+ * the query asks again every second and a half, and stops when it ends.
+ */
+export function useMeetingDraft(
+  id: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: meetingDraftKey(chapterId, id ?? ""),
+    queryFn: async ({ signal }): Promise<MeetingDraftState | null> => {
+      const { data, error, response } = await client.GET(
+        "/v1/meetings/{id}/draft",
+        { signal, params: { path: { id: id! } } },
+      );
+      // Not here for this viewer, whatever the reason: no AI on this server,
+      // minutes they can't edit, a module that is off.
+      if (response.status === 404 || response.status === 403) return null;
+      if (error) throw error;
+      return data;
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!id,
+    refetchInterval: (query) =>
+      query.state.data?.status === "drafting" ? DRAFTING_POLL_MS : false,
+  });
+}
+
+/**
+ * Ask for minutes drafted from notes. Refusals carry a code: `ai.chapter_off`,
+ * `ai.consent.required`, `meeting.stale`, `meeting.draft_posted`,
+ * `meeting.standards_refused`.
+ */
+export function useRequestMeetingDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "draft", "request"],
+    // A retry after a lost answer would start a second draft.
+    retry: false,
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: RequestMeetingDraftBody;
+    }) => {
+      const { data, error } = await client.POST("/v1/meetings/{id}/draft", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      queryClient.setQueryData(meetingDraftKey(chapterId, id), data);
+    },
+  });
+}
+
+/**
+ * Put a draft that waited into the minutes, at the version the editor has.
+ * Refused with `meeting.stale` when the minutes moved again.
+ */
+export function useUseMeetingDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "draft", "use"],
+    retry: false,
+    mutationFn: async ({
+      id,
+      expectedUpdatedAt,
+    }: {
+      id: string;
+      expectedUpdatedAt: string;
+    }) => {
+      const { data, error } = await client.POST("/v1/meetings/{id}/draft/use", {
+        params: { path: { id } },
+        body: { expected_updated_at: expectedUpdatedAt },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      queryClient.setQueryData(meetingDraftKey(chapterId, id), data);
+    },
+  });
+}
+
+/**
+ * Clear the notes and the draft, and stop one still being written. With
+ * `keepNotes`, only stop it: the notes stay stored for another ask.
+ */
+export function useDiscardMeetingDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "draft", "discard"],
+    mutationFn: async ({
+      id,
+      keepNotes = false,
+    }: {
+      id: string;
+      keepNotes?: boolean;
+    }) => {
+      const { error } = await client.DELETE("/v1/meetings/{id}/draft", {
+        params: { path: { id }, query: { keep_notes: keepNotes } },
+      });
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: (id) =>
+      queryClient.invalidateQueries({
+        queryKey: meetingDraftKey(chapterId, id),
+      }),
+  });
+}
+
+/**
+ * Put another version of a disagreement between note-takers into the minutes,
+ * or settle a tie (#4935). Refused with `meeting.stale` when the minutes
+ * moved, `meeting.draft_not_waiting` when the disagreement is gone.
+ */
+export function useChooseMeetingDraftVersion() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "draft", "choose"],
+    retry: false,
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: components["schemas"]["ChooseMeetingDraftVersionDto"];
+    }) => {
+      const { data, error } = await client.POST(
+        "/v1/meetings/{id}/draft/choose",
+        { params: { path: { id } }, body },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      queryClient.setQueryData(meetingDraftKey(chapterId, id), data);
+      void queryClient.invalidateQueries({
+        queryKey: meetingKey(chapterId, id),
+      });
+    },
+  });
+}
+
+// ── Several note-takers (#4935) ──────────────────────────────────────────────
+
+/** The caller's own notes on one meeting, and who else takes notes. */
+export type MeetingNotesState = components["schemas"]["MeetingNotesDto"];
+/** Unposted minutes the caller may take notes on and doesn't edit. */
+export type MeetingNoteTaking = components["schemas"]["MeetingNoteTakingDto"];
+
+const meetingNotesKey = (chapterId: string | null | undefined, id: string) =>
+  ["meetings", chapterId, "notes", id] as const;
+const noteTakingKey = (chapterId: string | null | undefined) =>
+  ["meetings", chapterId, "note-taking"] as const;
+
+/**
+ * The caller's notes on one meeting (`meetings.md` § Several note-takers).
+ * `null` when they can't take notes here, or this server drafts nothing.
+ */
+export function useMeetingNotes(
+  id: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: meetingNotesKey(chapterId, id ?? ""),
+    queryFn: async ({ signal }): Promise<MeetingNotesState | null> => {
+      const { data, error, response } = await client.GET(
+        "/v1/meetings/{id}/notes",
+        { params: { path: { id: id! } }, signal },
+      );
+      if (response.status === 404 || response.status === 403) return null;
+      // Posted since: there is nothing left to take notes on.
+      if (response.status === 409) return null;
+      if (error) throw error;
+      return data;
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!id,
+  });
+}
+
+/** Save the caller's own notes; empty clears them. */
+export function useSaveMeetingNotes() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "notes", "save"],
+    mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
+      const { data, error } = await client.PUT("/v1/meetings/{id}/notes", {
+        params: { path: { id } },
+        body: { notes },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id, notes }) => {
+      queryClient.setQueryData(meetingNotesKey(chapterId, id), data);
+      // The draft read's `notes` are the caller's own notes, the same store:
+      // keep it in step, so the officer's notes box reopens on what was saved
+      // rather than on the notes from before (#5288).
+      queryClient.setQueryData<MeetingDraftState>(
+        meetingDraftKey(chapterId, id),
+        (draft) =>
+          draft ? { ...draft, notes: notes.replace(/\s+$/u, "") } : draft,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: noteTakingKey(chapterId),
+      });
+    },
+  });
+}
+
+/** Add a member of the meeting's audience as a note-taker; they are told. */
+export function useAddMeetingNoteTaker() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "notes", "add"],
+    mutationFn: async ({ id, userId }: { id: string; userId: string }) => {
+      const { data, error } = await client.POST(
+        "/v1/meetings/{id}/note-takers",
+        { params: { path: { id } }, body: { user_id: userId } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      queryClient.setQueryData(meetingNotesKey(chapterId, id), data);
+    },
+  });
+}
+
+/** Remove a note-taker with their notes, or leave as one. */
+export function useRemoveMeetingNoteTaker() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "notes", "remove"],
+    mutationFn: async ({ id, userId }: { id: string; userId: string }) => {
+      const { error } = await client.DELETE(
+        "/v1/meetings/{id}/note-takers/{userId}",
+        { params: { path: { id, userId } } },
+      );
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: (id) =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: meetingNotesKey(chapterId, id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: meetingDraftKey(chapterId, id),
+        }),
+        queryClient.invalidateQueries({ queryKey: noteTakingKey(chapterId) }),
+      ]),
+  });
+}
+
+/**
+ * Unposted minutes the caller may take notes on and doesn't edit, for the
+ * Meetings page and the event sheet. Empty when this server drafts nothing.
+ */
+export function useMeetingNoteTaking(options?: {
+  enabled?: boolean;
+  eventId?: string;
+}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const eventId = options?.eventId;
+  return useQuery({
+    queryKey: eventId
+      ? ([...noteTakingKey(chapterId), "event", eventId] as const)
+      : noteTakingKey(chapterId),
+    queryFn: async ({ signal }): Promise<MeetingNoteTaking[]> => {
+      const { data, error, response } = await client.GET("/v1/meeting-notes", {
+        params: { query: eventId ? { event_id: eventId } : {} },
+        signal,
+      });
+      if (response.status === 404 || response.status === 403) return [];
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/**
+ * Link minutes whose event was deleted to an event, or make one after the
+ * fact (#4935). Refused with `meeting.already_started` when that event has
+ * minutes.
+ */
+export function useLinkMeetingEvent() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "link-event"],
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: components["schemas"]["LinkMeetingEventDto"];
+    }) => {
+      const { data, error } = await client.POST("/v1/meetings/{id}/event", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(meetingKey(chapterId, data.id), data);
+      return Promise.all([
+        queryClient.invalidateQueries({ queryKey: meetingsKey(chapterId) }),
+        queryClient.invalidateQueries({ queryKey: ["events", chapterId] }),
+      ]);
+    },
+  });
+}
+
+// ── Uploading a recording (#712) ─────────────────────────────────────────────
+
+/** Where a meeting's uploaded recording stands. */
+export type MeetingRecordingState =
+  components["schemas"]["MeetingRecordingDto"];
+export type StartMeetingRecordingBody =
+  components["schemas"]["StartMeetingRecordingDto"];
+
+const meetingRecordingKey = (
+  chapterId: string | null | undefined,
+  id: string,
+) => ["meetings", chapterId, "recording", id] as const;
+
+/** How often the page asks while a recording is being transcribed. */
+const TRANSCRIBING_POLL_MS = 4000;
+
+/**
+ * Where one meeting's recording stands, for someone who may edit its
+ * minutes. `null` means there is no recording upload here for this viewer
+ * (no AI on this server, minutes they can't edit, a module that is off), and
+ * the caller shows the notes box alone. While a recording is being
+ * transcribed the query asks again every four seconds, and stops when it
+ * ends, so the state survives a reload or a closed tab.
+ */
+export function useMeetingRecording(
+  id: string | null | undefined,
+  options?: { enabled?: boolean },
+) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: meetingRecordingKey(chapterId, id ?? ""),
+    queryFn: async ({ signal }): Promise<MeetingRecordingState | null> => {
+      const { data, error, response } = await client.GET(
+        "/v1/meetings/{id}/recording",
+        { signal, params: { path: { id: id! } } },
+      );
+      if (response.status === 404 || response.status === 403) return null;
+      if (error) throw error;
+      return data;
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId && !!id,
+    refetchInterval: (query) =>
+      query.state.data?.status === "transcribing"
+        ? TRANSCRIBING_POLL_MS
+        : false,
+  });
+}
+
+/** What recording would do for the caller, before any minutes exist (#5287). */
+export type MeetingRecorderAvailability =
+  components["schemas"]["MeetingRecorderAvailabilityDto"];
+
+/**
+ * Whether a recording made now could be written out, why this member can't
+ * send one yet, and the server's limits, before any minutes exist (#5287):
+ * the phone's + reads it to decide whether New minutes offers Record the meeting. `null` when
+ * the server has AI off (404) or the member may not record (403), which both
+ * mean "can't be written out".
+ */
+export function useMeetingRecorderAvailability(options?: {
+  enabled?: boolean;
+}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["meetings", chapterId, "recorder"] as const,
+    queryFn: async ({
+      signal,
+    }): Promise<MeetingRecorderAvailability | null> => {
+      const { data, error, response } = await client.GET(
+        "/v1/meeting-recorder",
+        { signal },
+      );
+      if (response.status === 404 || response.status === 403) return null;
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/**
+ * Start an upload: the server checks the file and answers with where to send
+ * it (`upload`). Refusals carry a code: `meeting.recording_notice_required`,
+ * `meeting.recording_format`, `meeting.recording_too_large`,
+ * `meeting.recording_too_short`, `meeting.recording_too_long`,
+ * `meeting.recording_unavailable`, `meeting.standards_refused`,
+ * `meeting.draft_posted`, `ai.chapter_off`, `ai.consent.required`.
+ */
+export function useStartMeetingRecording() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "recording", "start"],
+    // A retry after a lost answer would replace the upload it just started.
+    retry: false,
+    mutationFn: async ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: StartMeetingRecordingBody;
+    }) => {
+      const { data, error } = await client.POST("/v1/meetings/{id}/recording", {
+        params: { path: { id } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      // The signature is for the uploader alone, not for the cache.
+      queryClient.setQueryData(meetingRecordingKey(chapterId, id), {
+        ...data,
+        upload: null,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: meetingsKey(chapterId),
+        predicate: isMeetingsList,
+      });
+    },
+  });
+}
+
+/** The file is in storage: transcribe it. Safe to send twice. */
+export function useConfirmMeetingRecording() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "recording", "uploaded"],
+    mutationFn: async ({ id, uploadId }: { id: string; uploadId: string }) => {
+      const { data, error } = await client.POST(
+        "/v1/meetings/{id}/recording/uploaded",
+        { params: { path: { id } }, body: { upload_id: uploadId } },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, { id }) => {
+      queryClient.setQueryData(meetingRecordingKey(chapterId, id), data);
+    },
+  });
+}
+
+/** Remove the recording and its transcript, and stop a transcription. */
+export function useRemoveMeetingRecording() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["meetings", "recording", "remove"],
+    // With `uploadId`, only that upload is removed: what a page giving up on
+    // its own upload sends, so it cannot take down one that replaced it.
+    mutationFn: async ({ id, uploadId }: { id: string; uploadId?: string }) => {
+      const { error } = await client.DELETE("/v1/meetings/{id}/recording", {
+        params: {
+          path: { id },
+          ...(uploadId ? { query: { upload_id: uploadId } } : {}),
+        },
+      });
+      if (error) throw error;
+      return id;
+    },
+    onSuccess: (id) =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: meetingRecordingKey(chapterId, id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: meetingsKey(chapterId),
+          predicate: isMeetingsList,
+        }),
+      ]),
+  });
+}
+
+const noMinutesKey = (chapterId: string | null | undefined) =>
+  ["meetings", chapterId, "no-minutes"] as const;
+
+/**
+ * The events marked "No minutes" (Paul, 2026-11-20): meetings an officer
+ * settled as having none, so the Meetings list stops asking. Read only by
+ * someone who can start minutes; anyone else gets an empty set.
+ */
+export function useMeetingsNoMinutes(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: noMinutesKey(chapterId),
+    queryFn: async ({ signal }): Promise<string[]> => {
+      const { data, error, response } = await client.GET(
+        "/v1/meetings-no-minutes",
+        { signal },
+      );
+      if (response.status === 404 || response.status === 403) return [];
+      if (error) throw error;
+      return data?.event_ids ?? [];
+    },
+    enabled: (options?.enabled ?? true) && !!chapterId,
+  });
+}
+
+/**
+ * Mark a meeting that ended as "No minutes", or take the mark off
+ * (`noMinutes: false`). Shown at once; a refusal puts the list back.
+ */
+export function useSetMeetingNoMinutes() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  const key = noMinutesKey(chapterId);
+  return useMutation({
+    mutationKey: ["meetings", "no-minutes"],
+    mutationFn: async ({
+      eventId,
+      noMinutes,
+    }: {
+      eventId: string;
+      noMinutes: boolean;
+    }) => {
+      const params = { path: { id: eventId } };
+      const { error } = noMinutes
+        ? await client.PUT("/v1/events/{id}/no-minutes", { params })
+        : await client.DELETE("/v1/events/{id}/no-minutes", { params });
+      if (error) throw error;
+    },
+    onMutate: async ({ eventId, noMinutes }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const before = queryClient.getQueryData<string[]>(key);
+      const rest = (before ?? []).filter((id) => id !== eventId);
+      queryClient.setQueryData<string[]>(
+        key,
+        noMinutes ? [...rest, eventId] : rest,
+      );
+      return { had: (before ?? []).includes(eventId) };
+    },
+    onError: (_error, { eventId }, context) => {
+      // Undo this one event only, so a mark made meanwhile keeps its place.
+      queryClient.setQueryData<string[]>(key, (current) => {
+        const rest = (current ?? []).filter((id) => id !== eventId);
+        return context?.had ? [...rest, eventId] : rest;
+      });
+      // A refusal can mean minutes started meanwhile: read the list again.
+      void queryClient.invalidateQueries({
+        queryKey: meetingsKey(chapterId),
+        exact: true,
+      });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+  });
+}

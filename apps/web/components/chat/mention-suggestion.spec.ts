@@ -26,6 +26,10 @@ describe("createMentionSuggestion — items()", () => {
     expect(result.some((item) => item.id === "u3")).toBe(false);
   });
 
+  it("carries a member row's id onto the pick, so the send names who was picked (#3835)", () => {
+    expect(itemsFor("jane")[0]?.memberId).toBe("u1");
+  });
+
   it("filters case-insensitively against display_name", () => {
     const result = itemsFor("jane");
     expect(result.map((item) => item.id)).toEqual(["u1"]);
@@ -162,5 +166,72 @@ describe("createMentionSuggestion — roles", () => {
         avatarTint: null,
       },
     ]);
+  });
+});
+
+describe("createMentionSuggestion — Frapp's own row (#4713)", () => {
+  const roster = [
+    { user_id: "u1", display_name: "Fran Ortiz", avatar_url: null },
+    { user_id: "u2", display_name: "Jane Doe", avatar_url: null },
+  ];
+
+  function itemsFor(query: string, ask: boolean): MentionSuggestionItem[] {
+    const suggestion = createMentionSuggestion(
+      { current: roster },
+      { current: [] },
+      { current: ask },
+    );
+    return suggestion.items!({
+      query,
+      editor: {} as never,
+      signal: new AbortController().signal,
+    }) as MentionSuggestionItem[];
+  }
+
+  it("is first on a bare @, so a member finds it unprompted (#5476)", () => {
+    expect(itemsFor("", true).map((item) => item.kind)).toEqual([
+      "ask",
+      "member",
+      "member",
+    ]);
+  });
+
+  it("is first once its name is being typed, and inserts @Frapp", () => {
+    expect(itemsFor("fr", true)).toEqual([
+      {
+        kind: "ask",
+        id: "ask-frapp",
+        label: "Frapp",
+        displayName: "Frapp",
+        avatarUrl: null,
+        avatarTint: null,
+      },
+      expect.objectContaining({ kind: "member", id: "u1" }),
+    ]);
+  });
+
+  it("is not offered to a member without Ask", () => {
+    expect(itemsFor("", false).some((item) => item.kind === "ask")).toBe(false);
+    expect(itemsFor("frapp", false)).toEqual([]);
+  });
+
+  it("reads whether to offer it on each keystroke, since the editor is built once", () => {
+    const askRef = { current: false };
+    const suggestion = createMentionSuggestion(
+      { current: roster },
+      { current: [] },
+      askRef,
+    );
+    const ask = () =>
+      (
+        suggestion.items!({
+          query: "frapp",
+          editor: {} as never,
+          signal: new AbortController().signal,
+        }) as MentionSuggestionItem[]
+      ).map((item) => item.kind);
+    expect(ask()).toEqual([]);
+    askRef.current = true;
+    expect(ask()).toEqual(["ask"]);
   });
 });

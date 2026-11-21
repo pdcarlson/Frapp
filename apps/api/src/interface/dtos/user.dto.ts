@@ -1,23 +1,65 @@
 import {
   Equals,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsInt,
   Min,
   Max,
   MaxLength,
+  Validate,
   ValidateIf,
+  ValidatorConstraint,
+  type ValidatorConstraintInterface,
   Matches,
+  IsIn,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  BIRTH_YEAR_MAX,
+  BIRTH_YEAR_MIN,
+  BIRTHDAY_VISIBILITIES,
+  BLANK_NAME_REFUSAL,
+  type BirthdayVisibility,
+  DISPLAY_NAME_MAX_LENGTH,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
+  isPhoneNumber,
   LEGAL_ACCEPTANCE_LABEL,
   MAJOR_MAX_LENGTH,
+  PHONE_INVALID_MESSAGE,
+  PHONE_MAX_LENGTH,
   RELEASE_NOTE_VERSION_PATTERN,
+  tooLongRefusal,
+  USER_BIO_MAX_LENGTH,
+  USER_CITY_MAX_LENGTH,
+  USER_COMPANY_MAX_LENGTH,
 } from '@repo/validation';
+import { Trim } from '../decorators/trim.decorator';
+
+/**
+ * A phone number as `isPhoneNumber` (`@repo/validation`) reads one: the same
+ * rule both profile forms apply before sending (#3711).
+ */
+@ValidatorConstraint({ name: 'phoneNumber', async: false })
+class PhoneNumberConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return typeof value === 'string' && isPhoneNumber(value);
+  }
+
+  defaultMessage(): string {
+    return PHONE_INVALID_MESSAGE;
+  }
+}
+
+/** Trims a string, and turns a blank one into null (cleared). */
+function blankToNull(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
 
 export class MyPermissionsDto {
   @ApiProperty({
@@ -158,14 +200,33 @@ export class ConfirmAvatarDto {
  * the caller's own object, and cleared by `DELETE /v1/users/me/avatar`.
  */
 export class UpdateUserDto {
-  @ApiPropertyOptional()
-  @IsOptional()
+  @ApiPropertyOptional({
+    description:
+      "The member's name as their chapters see it. Trimmed; it may not be blank.",
+    maxLength: DISPLAY_NAME_MAX_LENGTH,
+  })
+  // Not `@IsOptional`, which would also skip the checks for `null` and let it
+  // reach the NOT NULL column as a 500: only an absent name is skipped. The
+  // same rule as an officer's correction (`CorrectMemberProfileDto`), so a
+  // name one route takes the other takes too.
+  @ValidateIf((_obj, value) => value !== undefined)
+  @Trim()
   @IsString()
+  @IsNotEmpty({ message: BLANK_NAME_REFUSAL })
+  @MaxLength(DISPLAY_NAME_MAX_LENGTH, {
+    message: tooLongRefusal('your name', DISPLAY_NAME_MAX_LENGTH),
+  })
   display_name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'An empty string clears it.',
+    maxLength: USER_BIO_MAX_LENGTH,
+  })
   @IsOptional()
   @IsString()
+  @MaxLength(USER_BIO_MAX_LENGTH, {
+    message: tooLongRefusal('your bio', USER_BIO_MAX_LENGTH),
+  })
   bio?: string;
 
   @ApiPropertyOptional({ type: Number, nullable: true })
@@ -186,13 +247,96 @@ export class UpdateUserDto {
   @MaxLength(MAJOR_MAX_LENGTH)
   major?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'An empty string clears it.',
+    maxLength: USER_CITY_MAX_LENGTH,
+  })
   @IsOptional()
   @IsString()
+  @MaxLength(USER_CITY_MAX_LENGTH, {
+    message: tooLongRefusal('your city', USER_CITY_MAX_LENGTH),
+  })
   current_city?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description: 'An empty string clears it.',
+    maxLength: USER_COMPANY_MAX_LENGTH,
+  })
   @IsOptional()
   @IsString()
+  @MaxLength(USER_COMPANY_MAX_LENGTH, {
+    message: tooLongRefusal('your company', USER_COMPANY_MAX_LENGTH),
+  })
   current_company?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: PHONE_MAX_LENGTH,
+    description:
+      "The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.",
+    example: '(518) 555-0142',
+  })
+  @IsOptional()
+  @Transform(({ value }) => blankToNull(value))
+  @ValidateIf((_obj, value) => value !== null)
+  @IsString()
+  @Validate(PhoneNumberConstraint)
+  phone?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 1,
+    maximum: 12,
+    description:
+      "The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year).",
+  })
+  @IsOptional()
+  @ValidateIf((_obj, value) => value !== null)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  birthday_month?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: 1,
+    maximum: 31,
+    description:
+      'The day of `birthday_month`. It must exist in that month; 29 February is taken.',
+  })
+  @IsOptional()
+  @ValidateIf((_obj, value) => value !== null)
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  birthday_day?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    minimum: BIRTH_YEAR_MIN,
+    maximum: BIRTH_YEAR_MAX,
+    description:
+      'The birth year, optional. Never shown to anyone but the member. Needs a month and day.',
+  })
+  @IsOptional()
+  @ValidateIf((_obj, value) => value !== null)
+  @IsInt()
+  @Min(BIRTH_YEAR_MIN)
+  @Max(BIRTH_YEAR_MAX)
+  birthday_year?: number | null;
+
+  @ApiPropertyOptional({
+    enum: BIRTHDAY_VISIBILITIES,
+    description:
+      "Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default.",
+  })
+  // Not `@IsOptional()`: it skips null too, and the column is NOT NULL, so
+  // a null would pass here and fail as a 500. Omit is legal; null is a 400.
+  @ValidateIf((_obj, value) => value !== undefined)
+  @IsIn(BIRTHDAY_VISIBILITIES)
+  birthday_visibility?: BirthdayVisibility;
 }

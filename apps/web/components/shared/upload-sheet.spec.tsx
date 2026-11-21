@@ -1,17 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  UploadField,
-  UploadFileField,
-  UploadSheetBody,
-  UploadSheetContent,
-  UploadSheetFooter,
-  UploadSheetTitle,
-} from "@/components/shared/upload-sheet";
+import { UploadField, UploadFileField } from "@/components/shared/upload-sheet";
 
 /*
  * The upload sheet is chrome transcribed from framework board option `1j`, and
@@ -19,13 +11,14 @@ import {
  * (`/documents`, `/backwork`) pin what they do with it; this suite pins what it
  * is, so the next screen to adopt it inherits a contract rather than a shape.
  *
- * Two of the six cases are regressions that already happened once during the
- * lane, caught in review rather than in production, and are written down
- * because neither was visible on screen: the accessible name concatenating
- * across two labels, and Radix warning about a description the board deletes.
+ * One case is a regression that already happened once during the lane, caught
+ * in review rather than in production, and is written down because it was not
+ * visible on screen: the accessible name concatenating across two labels. (The
+ * sheet chrome and its Radix-description case left with the chrome, when both
+ * screens moved to a docked `Panel`, #4593.)
  */
 
-function Sheet({
+function Fields({
   file,
   error,
   onSelect = () => {},
@@ -35,30 +28,21 @@ function Sheet({
   onSelect?: (next: File | null) => void;
 }) {
   return (
-    <Dialog open>
-      <UploadSheetContent>
-        <UploadSheetTitle>Upload backwork</UploadSheetTitle>
-        <UploadSheetBody id="test-form" onSubmit={(e) => e.preventDefault()}>
-          <UploadFileField
-            id="test-file"
-            label="File"
-            hint="Up to 25 MB."
-            accept=".pdf"
-            file={file ?? null}
-            error={error}
-            onSelect={onSelect}
-          />
-          <UploadField id="test-title" label="Title">
-            <Input id="test-title" />
-          </UploadField>
-        </UploadSheetBody>
-        <UploadSheetFooter>
-          <button type="submit" form="test-form">
-            Upload
-          </button>
-        </UploadSheetFooter>
-      </UploadSheetContent>
-    </Dialog>
+    <form id="test-form" onSubmit={(e) => e.preventDefault()}>
+      <UploadFileField
+        id="test-file"
+        label="File"
+        hint="Up to 25 MB."
+        accept=".pdf"
+        file={file ?? null}
+        error={error}
+        onSelect={onSelect}
+      />
+      <UploadField id="test-title" label="Title">
+        <Input id="test-title" />
+      </UploadField>
+      <button type="submit">Upload</button>
+    </form>
   );
 }
 
@@ -71,7 +55,7 @@ describe("upload sheet", () => {
       as the control being renamed mid-form. Nothing about that is visible on
       screen; six call-site cases went red on it and none of them said why.
     */
-    render(<Sheet />);
+    render(<Fields />);
 
     const input = screen.getByLabelText(/^file$/i);
     expect(input).toHaveAttribute("type", "file");
@@ -82,7 +66,7 @@ describe("upload sheet", () => {
     const file = new File(["x".repeat(2048)], "midterm.pdf", {
       type: "application/pdf",
     });
-    const { rerender } = render(<Sheet />);
+    const { rerender } = render(<Fields />);
 
     // Empty: the affordance offers a choice and the constraint is stated
     // beside it, as field help rather than the instructional paragraph `1j`
@@ -90,7 +74,7 @@ describe("upload sheet", () => {
     expect(screen.getByText("Choose file")).toBeInTheDocument();
     expect(screen.getByText(/up to 25 MB/i)).toBeInTheDocument();
 
-    rerender(<Sheet file={file} />);
+    rerender(<Fields file={file} />);
 
     // Chosen: name, size and type, and the affordance becomes Replace.
     expect(screen.getByText("midterm.pdf")).toBeInTheDocument();
@@ -102,7 +86,7 @@ describe("upload sheet", () => {
   });
 
   it("announces the file error alongside the constraint, not instead of it", () => {
-    render(<Sheet error="Choose a file to upload." />);
+    render(<Fields error="Choose a file to upload." />);
 
     // The red hairline and the announcement are one state, not two: a border a
     // screen reader cannot reach is half an error.
@@ -130,7 +114,7 @@ describe("upload sheet", () => {
       `undefined` rather than `false` so React drops it, and this case catches a
       future rewrite spelling it as a boolean.
     */
-    render(<Sheet />);
+    render(<Fields />);
 
     const fileInput = screen.getByLabelText(/^file$/i);
     expect(fileInput).not.toHaveAttribute("aria-invalid");
@@ -143,7 +127,7 @@ describe("upload sheet", () => {
     // away: it still governs the Replace that state offers, and the id the
     // input points at has to keep resolving.
     render(
-      <Sheet file={new File(["x"], "a.pdf", { type: "application/pdf" })} />,
+      <Fields file={new File(["x"], "a.pdf", { type: "application/pdf" })} />,
     );
 
     const fileInput = screen.getByLabelText(/^file$/i);
@@ -151,32 +135,10 @@ describe("upload sheet", () => {
     expect(document.querySelectorAll("#test-file-hint")).toHaveLength(1);
   });
 
-  it("titles the sheet without a description Radix would warn about", () => {
-    /*
-      `1j` deletes the instructional paragraph, so the sheet renders no
-      `DialogDescription`. `UploadSheetContent` therefore has to pass
-      `aria-describedby={undefined}` explicitly — otherwise Radix logs a
-      missing-description warning on every open, which is noise that trains
-      reviewers to ignore console output.
-    */
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    render(<Sheet />);
-
-    const dialog = screen.getByRole("dialog");
-    expect(
-      within(dialog).getByRole("heading", { name: "Upload backwork" }),
-    ).toBeInTheDocument();
-    expect(dialog).not.toHaveAttribute("aria-describedby");
-    expect(warn).not.toHaveBeenCalledWith(
-      expect.stringContaining("Description"),
-    );
-    warn.mockRestore();
-  });
-
   it("hands the chosen file back to its owner", async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
-    render(<Sheet onSelect={onSelect} />);
+    render(<Fields onSelect={onSelect} />);
 
     await user.upload(
       screen.getByLabelText(/^file$/i),

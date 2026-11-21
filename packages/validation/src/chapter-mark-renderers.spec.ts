@@ -27,7 +27,7 @@ const FIELD = /greek_letters|greekLetters/;
 const ALLOWED: Record<string, string> = {
   "packages/validation/src/chapter-mark.ts":
     "the resolver itself: the one place that decides whether the letters show",
-  "packages/validation/src/index.ts": "the branding schema declares the field",
+  "packages/validation/src/chapter-branding.ts": "the branding schema declares the field",
   "packages/hooks/src/chapter-identity.ts":
     "the wizards' identity form and the onboarding payload it builds",
   "packages/hooks/src/use-chapters.ts": "the onboarding request type",

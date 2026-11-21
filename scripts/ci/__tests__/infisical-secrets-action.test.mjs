@@ -648,7 +648,12 @@ describe("local actions resolve at every call site", () => {
       list.includes(".github/actions/**") ||
       (list[0] === "**" && !list.some((p) => /^!\.github(\/|\*)/.test(p) || p === "!**"));
     const gated = workflowJobs(path).flatMap((job) =>
-      [...(job.if ?? "").matchAll(/needs\.changes\.outputs\.([\w-]+)/g)].map((m) => ({ job: job.jobId, filter: m[1] })),
+      [...(job.if ?? "").matchAll(/needs\.changes\.outputs\.([\w-]+)/g)]
+        // Neither is a path filter a job's own files can miss: `queue_tested`
+        // skips a push the merge queue already passed (#5084), and `skip_suite`
+        // adds a docs-only change (#5141), which touches no action.
+        .filter((m) => m[1] !== "queue_tested" && m[1] !== "skip_suite")
+        .map((m) => ({ job: job.jobId, filter: m[1] })),
     );
     assert.ok(gated.length >= 4, `expected ci.yml's path-gated jobs, saw ${gated.length}`);
     const usesAction = new Set(

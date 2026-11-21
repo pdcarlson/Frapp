@@ -11,7 +11,7 @@ import {
   redeemChapterId,
   useAccessibleChapters,
   useActiveChapterId,
-  useJoinTermsCheckbox,
+  joinRedeemBody,
   useMyPermissions,
   usePendingInvites,
   useRedeemInvite,
@@ -21,12 +21,16 @@ import {
   chapterInitials,
   extractInviteToken,
   extractInviteTokenFromQuery,
+  INVITE_PASTE_COPY,
 } from "@repo/validation";
+import { JoinWithInvite } from "@/components/join/join-with-invite";
+import { TermsLine } from "@/components/join/terms-line";
 import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
-import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { CrestTile } from "@/components/layout/crest-tile";
 import { SignedInAs } from "@/components/auth/signed-in-as";
+import { OtherAccountLine } from "@/components/auth/other-account-line";
+import { useSignOutToSignIn } from "@/components/auth/use-sign-out";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +47,9 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
 import { asArray } from "@/lib/utils";
 import { isLockedOutOfChapter } from "@/lib/auth/no-access";
 import {
+  CREATE_CHAPTER_PATH,
+  JOIN_FROM_SIGN_IN_PATH,
+  WELCOME_PATH,
   isJoinSkipCandidate,
   shouldSkipJoinForMember,
 } from "@/lib/auth/join-visit";
@@ -50,15 +57,11 @@ import {
 /**
  * s02 — Join chapter (`spec/ui/design-system/reference/canvas-screens.dc.html`).
  *
- * **Where the transcription stops, and why.** s02 draws a six-cell row for a
- * shared chapter code. `spec/behavior/onboarding.md` §Invite Token Rules
- * specifies single-use opaque tokens that expire after 24 hours, and
- * `spec/ui/README.md`'s precedence rule puts behavior above UI on what the
- * product *does* — so the chrome transfers and the input model does not. This
- * is the same call `apps/mobile/app/(auth)/join.tsx` already records in its own
- * docstring; both surfaces now say it in the same place so neither drifts.
- * The field accepts a pasted raw token or the join URL officers copy
- * (`extractInviteToken`); posting the URL as the token is a 410.
+ * s02's canvas draws a six-cell row for a shared chapter code; joining is by
+ * invite link instead (a personal one, or an officer's chapter link), so the page takes s02's chrome and not its
+ * input (`spec/ui/web-dashboard/README.md` records the call). The field, behind
+ * the invite card, takes a pasted raw token or a join link
+ * (`extractInviteToken`); posting the link as the token is a 410.
  *
  * The #920 Profile & pre-auth slice replaced a two-card grid that explained
  * database behaviour to a member ("Invite redemption writes directly to the
@@ -98,6 +101,23 @@ import {
  * re-triggers it mid-redeem. The other entries are deliberate.
  */
 function JoinPageContent() {
+  const searchParams = useSearchParams();
+  const token = useMemo(
+    () => extractInviteTokenFromQuery((key) => searchParams.get(key)),
+    [searchParams],
+  );
+  // Keyed by the invite, so opening another link starts its card fresh.
+  if (token) return <JoinWithInvite key={token} token={token} />;
+  return <JoinWithoutInvite />;
+}
+
+/**
+ * `/join` with no invite in the URL: the chapter switcher's Join another
+ * chapter, `/no-access`, or the sign-in footer's Join your chapter. It offers
+ * the invites emailed to the account and takes a pasted link. An invite link
+ * gets `JoinWithInvite` instead (#5625).
+ */
+function JoinWithoutInvite() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -105,14 +125,10 @@ function JoinPageContent() {
   const redeemInviteMutation = useRedeemInvite();
   const selectChapter = useSelectChapter();
   const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
-  const initialToken = useMemo(
-    () => extractInviteTokenFromQuery((key) => searchParams.get(key)) ?? "",
-    [searchParams],
-  );
   const [editedToken, setEditedToken] = useState<string | null>(null);
-  const token = editedToken ?? initialToken;
+  const token = editedToken ?? "";
   const [sessionState, setSessionState] = useState<
-    "checking" | "ready" | "failed"
+    "checking" | "signed-out" | "ready" | "failed"
   >("checking");
   const [account, setAccount] = useState<{
     id: string;
@@ -121,14 +137,10 @@ function JoinPageContent() {
   const userId = account?.id ?? null;
   const [attempt, setAttempt] = useState(0);
   const [redeemError, setRedeemError] = useState<string | null>(null);
-  // When to show the Terms checkbox, and what a refused join means for it,
-  // is shared with mobile s02 (#2302).
-  const terms = useJoinTermsCheckbox({ enabled: sessionState === "ready" });
   const pendingInvites = usePendingInvites(
     sessionState === "ready" ? userId : null,
   );
-  // A link carries one invite, and that is the one the visitor came for.
-  const offers = initialToken ? [] : (pendingInvites.data ?? []);
+  const offers = pendingInvites.data ?? [];
   const chaptersQuery = useAccessibleChapters({
     enabled: sessionState === "ready",
   });
@@ -151,11 +163,7 @@ function JoinPageContent() {
   const openChatMembership = hasAccess ? currentMembership : null;
 
   const visitFrom = searchParams.get("from");
-  const visitHasInvite = initialToken !== "";
-  const skipCandidate = isJoinSkipCandidate({
-    from: visitFrom,
-    hasInvite: visitHasInvite,
-  });
+  const skipCandidate = isJoinSkipCandidate({ from: visitFrom });
   // Decided once, on arrival. Re-deciding on every render would fire mid-join:
   // a redeem refetches the chapter list, which turns 0 memberships into 1
   // while `selectChapter` is still running.
@@ -172,11 +180,18 @@ function JoinPageContent() {
     skipCandidate && sessionState === "ready" && skipDecision === "undecided";
   const [joiningToken, setJoiningToken] = useState<string | null>(null);
   const [offerError, setOfferError] = useState<string | null>(null);
+  // With an emailed invite on offer, the invite card's Join is the one to
+  // press (#5076): the paste field and its own Join chapter wait behind "Have
+  // a different invite?" instead of drawing a second Join under the card's.
+  const [pasteOpen, setPasteOpen] = useState(false);
   // Held for the whole join, not just the API call: `selectChapter` and the
   // navigation run after the mutation settles, and a second Join in that
   // window would redeem another invite and race the first over which chapter
   // ends up active.
   const [busy, setBusy] = useState(false);
+  // "Already in a chapter?"'s sign-out. It lands the right account on
+  // `/join?from=sign-in`, which sends a member on to their chapter (#3850).
+  const otherAccount = useSignOutToSignIn(JOIN_FROM_SIGN_IN_PATH);
 
   useEffect(() => {
     let isMounted = true;
@@ -189,12 +204,7 @@ function JoinPageContent() {
         }
 
         if (!user) {
-          const signInUrl = new URL("/sign-in", window.location.origin);
-          signInUrl.searchParams.set(
-            "redirectTo",
-            `/join${window.location.search}`,
-          );
-          router.replace(signInUrl.pathname + signInUrl.search);
+          setSessionState("signed-out");
           return;
         }
 
@@ -213,7 +223,16 @@ function JoinPageContent() {
     return () => {
       isMounted = false;
     };
-  }, [router, attempt]);
+  }, [attempt]);
+
+  // Signed out, the page goes on to sign-in.
+  useEffect(() => {
+    if (sessionState !== "signed-out") return;
+    const query = searchParams.toString();
+    const signInUrl = new URL("/sign-in", window.location.origin);
+    signInUrl.searchParams.set("redirectTo", `/join${query ? `?${query}` : ""}`);
+    router.replace(signInUrl.pathname + signInUrl.search);
+  }, [sessionState, router, searchParams]);
 
   // Decided while rendering (React's "adjusting state when a prop changes"),
   // once the reads it needs have settled; the effect below only navigates.
@@ -221,7 +240,6 @@ function JoinPageContent() {
     setSkipDecision(
       shouldSkipJoinForMember({
         from: visitFrom,
-        hasInvite: visitHasInvite,
         membershipCount: memberships.length,
         offerCount: pendingInvites.data?.length ?? 0,
         hasAccess,
@@ -267,11 +285,7 @@ function JoinPageContent() {
   }
 
   async function redeem(extracted: string, onError: (copy: string) => void) {
-    if (busy) return;
-    if (terms.blocker) {
-      onError(terms.blocker);
-      return;
-    }
+    if (busy || otherAccount.signingOut) return;
     setBusy(true);
     let joined = false;
     try {
@@ -280,19 +294,19 @@ function JoinPageContent() {
       joined = await joinWith(extracted, onError);
     } finally {
       // A join that landed keeps the page locked: `router.replace` only starts
-      // the navigation, and this page stays mounted until `/chat` arrives.
+      // the navigation, and this page stays mounted until `/welcome` arrives.
       if (!joined) setBusy(false);
     }
   }
 
-  /** True once the member is in and the page is on its way to `/chat`. */
+  /** True once the member is in and the page is on its way to `/welcome`. */
   async function joinWith(
     extracted: string,
     onError: (copy: string) => void,
   ): Promise<boolean> {
     try {
       const result = await redeemInviteMutation.mutateAsync(
-        terms.redeemBody(extracted),
+        joinRedeemBody(extracted),
       );
       const chapterId = redeemChapterId(result);
 
@@ -302,29 +316,37 @@ function JoinPageContent() {
         await selectChapter(chapterId);
       }
 
-      toast({
-        title: "Chapter joined",
-        description: "You're in. Opening chat.",
-      });
-      router.replace("/chat");
+      toast({ title: "Chapter joined" });
+      // Their name and photo first, then chat (#5627).
+      router.replace(WELCOME_PATH);
       router.refresh();
       return true;
     } catch (error) {
-      terms.onJoinError(error);
       onError(joinErrorCopy(error));
       return false;
     }
   }
 
+  const hasOffers = offers.length > 0;
+  // A field already in use stays: typed into, or showing a redeem's error
+  // that a refetch of the invites must not fold away.
+  const showPasteForm =
+    !hasOffers || pasteOpen || editedToken !== null || redeemError !== null;
+  // Held while the emailed invites are read, so the field never shows and
+  // then folds away under a member already typing in it, taking a redeem
+  // error with it.
+  const awaitingOffers = pendingInvites.isLoading;
+
   if (
     sessionState === "checking" ||
+    sessionState === "signed-out" ||
     awaitingSkipDecision ||
     skipDecision === "skip"
   ) {
     return (
       <AuthScreen
         title="Join your chapter"
-        subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+        subtitle="Enter the invite link or code your officer sent."
       >
         <div role="status" aria-busy="true" aria-live="polite">
           <span className="sr-only">Verifying your session…</span>
@@ -338,7 +360,7 @@ function JoinPageContent() {
     return (
       <AuthScreen
         title="Join your chapter"
-        subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+        subtitle="Enter the invite link or code your officer sent."
       >
         {isOffline ? (
           <OfflineState
@@ -362,13 +384,13 @@ function JoinPageContent() {
       toggle={
         <SignedInAs
           email={account?.email ?? null}
-          disabled={busy}
+          disabled={busy || otherAccount.signingOut}
           // Signing in as someone else keeps the invite this page was opened with.
           returnTo={`/join${searchParams.toString() ? `?${searchParams.toString()}` : ""}`}
         />
       }
       title="Join your chapter"
-      subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+      subtitle="Enter the invite link or code your officer sent."
       footer={JOIN_FOOTER}
     >
       {openChatMembership ? (
@@ -381,7 +403,9 @@ function JoinPageContent() {
               {`You're already in ${openChatMembership.chapter?.name ?? "a chapter"}`}
             </p>
             <p className="text-xs text-muted-foreground">
-              Have an invite to another chapter? Use it below.
+              {hasOffers
+                ? "Your invite to another chapter is below."
+                : "Have an invite to another chapter? Use it below."}
             </p>
           </div>
           <Button
@@ -393,7 +417,7 @@ function JoinPageContent() {
           </Button>
         </section>
       ) : null}
-      {offers.length > 0 ? (
+      {hasOffers ? (
         <section aria-label="Your invites" className="mb-6 flex flex-col gap-3">
           {offers.map((offer) => (
             <div
@@ -418,7 +442,7 @@ function JoinPageContent() {
               <Button
                 type="button"
                 onClick={() => void handleJoinOffer(offer.token)}
-                disabled={busy}
+                disabled={busy || otherAccount.signingOut}
                 aria-label={`Join ${offer.chapter_name}`}
               >
                 {joiningToken === offer.token ? (
@@ -433,68 +457,104 @@ function JoinPageContent() {
               {offerError}
             </p>
           ) : null}
+          <TermsLine action="joining" className="text-left" />
+          {pasteOpen ? null : (
+            <Button
+              type="button"
+              variant="link"
+              className="self-start px-0"
+              onClick={() => {
+                setPasteOpen(true);
+                // The link unmounts itself; focus moves to the field it opened.
+                requestAnimationFrame(() =>
+                  document.getElementById("invite-token")?.focus(),
+                );
+              }}
+              disabled={busy || otherAccount.signingOut}
+            >
+              Have a different invite?
+            </Button>
+          )}
         </section>
       ) : null}
-      <form className="flex flex-col gap-4" onSubmit={handleRedeem}>
-        <div className="space-y-1.5">
-          <Label htmlFor="invite-token">Invite</Label>
-          <Input
-            id="invite-token"
-            // foundations §7 names invite tokens in the reserved mono list: it
-            // is a machine value a member reads character by character.
-            className="font-mono"
-            value={token}
-            onChange={(event) => {
-              setEditedToken(event.target.value);
-              setRedeemError(null);
-            }}
-            placeholder="Paste your invite"
-            required
-            aria-invalid={redeemError ? true : undefined}
-            aria-describedby={redeemError ? "invite-error" : undefined}
-          />
-          {redeemError ? (
-            <p id="invite-error" className="text-sm text-destructive">
-              {redeemError}
-            </p>
-          ) : null}
+      {awaitingOffers ? (
+        <div role="status" aria-busy="true" aria-live="polite">
+          <span className="sr-only">Checking for your invites…</span>
+          <SkeletonText lines={3} />
         </div>
-        {terms.needed ? (
-          <TermsAcceptance
-            id="join-accept-legal"
-            accepted={terms.accepted}
-            onAcceptedChange={(next) => {
-              terms.setAccepted(next);
-              setRedeemError(null);
-              setOfferError(null);
-            }}
-            disabled={busy}
-          />
-        ) : null}
-        <Button
-          type="submit"
-          className="w-full"
-          // One primary per screen: an offered invite's Join, else the
-          // member's Open chat, outranks it.
-          variant={
-            offers.length > 0 || openChatMembership ? "secondary" : "default"
-          }
-          disabled={busy}
-        >
-          {busy && joiningToken === null ? (
-            <Loader2 className="animate-spin" />
-          ) : null}
-          Join chapter
-        </Button>
-      </form>
+      ) : showPasteForm ? (
+        <form className="flex flex-col gap-4" onSubmit={handleRedeem}>
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-token">Invite</Label>
+            <Input
+              id="invite-token"
+              // foundations §7 names invite tokens in the reserved mono list: it
+              // is a machine value a member reads character by character.
+              className="font-mono"
+              value={token}
+              onChange={(event) => {
+                setEditedToken(event.target.value);
+                setRedeemError(null);
+              }}
+              placeholder="Paste your invite"
+              required
+              aria-invalid={redeemError ? true : undefined}
+              aria-describedby={redeemError ? "invite-error" : undefined}
+            />
+            {redeemError ? (
+              <p id="invite-error" className="text-sm text-destructive">
+                {redeemError}
+              </p>
+            ) : null}
+          </div>
+          <Button
+            type="submit"
+            className="w-full"
+            // One primary per screen: an offered invite's Join, else the
+            // member's Open chat, outranks it.
+            variant={hasOffers || openChatMembership ? "secondary" : "default"}
+            disabled={busy || otherAccount.signingOut}
+          >
+            {busy && joiningToken === null ? (
+              <Loader2 className="animate-spin" />
+            ) : null}
+            Join chapter
+          </Button>
+          {hasOffers ? null : <TermsLine action="joining" />}
+        </form>
+      ) : null}
 
-      <div className="mt-6">
-        <AuthNote glyph={<LinkGlyph className="h-5 w-5" />}>
-          Got an invite link? Paste it here, or open it and this page fills
-          itself in.
-        </AuthNote>
-      </div>
+      {showPasteForm && !awaitingOffers ? (
+        <div className="mt-6">
+          <AuthNote glyph={<LinkGlyph className="h-5 w-5" />}>
+            Got an invite link? Paste it here, or open it and this page fills
+            itself in.
+          </AuthNote>
+        </div>
+      ) : null}
+      {
+        // For someone already in a chapter who signed in with another account
+        // than the one they joined with. Not for a member, an invite link, or
+        // an emailed invite, and held until both reads have settled, so it
+        // never shows and then vanishes. A read that failed counts as settled:
+        // this is the way out, so it shows rather than hides.
+        !pendingInvites.isLoading &&
+        offers.length === 0 &&
+        !chaptersQuery.isLoading &&
+        !chaptersQuery.isPending &&
+        memberships.length === 0 ? (
+          <div className="mt-4">
+            <OtherAccountLine
+              signOut={otherAccount.signOut}
+              signingOut={otherAccount.signingOut}
+              failed={otherAccount.failed}
+              disabled={busy}
+            />
+          </div>
+        ) : null
+      }
       {confirmDropDialog}
+      {otherAccount.confirmDropDialog}
     </AuthScreen>
   );
 }
@@ -502,12 +562,12 @@ function JoinPageContent() {
 /** Shared with the Suspense fallback, so the column does not grow on hydration. */
 const JOIN_FOOTER = (
   <p>
-    Starting a chapter?{" "}
+    {INVITE_PASTE_COPY.startingPrompt}{" "}
     <Link
-      href="/chat"
+      href={CREATE_CHAPTER_PATH}
       className="font-semibold text-accent-text hover:underline"
     >
-      Create a chapter
+      {INVITE_PASTE_COPY.startingAction}
     </Link>
   </p>
 );
@@ -518,7 +578,7 @@ export default function JoinPage() {
       fallback={
         <AuthScreen
           title="Join your chapter"
-          subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+          subtitle="Enter the invite link or code your officer sent."
           footer={JOIN_FOOTER}
         >
           <div role="status" aria-busy="true" aria-live="polite">

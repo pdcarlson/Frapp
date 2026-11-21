@@ -5,30 +5,11 @@
  * board-transcribed internals, bounded by `spec/behavior/`) open `chat-frame.tsx`.
  */
 
-function QrGlyph() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5 shrink-0"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
-      <path d="M8.5 8.5h2v2h-2zM13.5 8.5h2v2h-2zM8.5 13.5h2v2h-2zM13.5 13.5h2v2h-2z" />
-    </svg>
-  );
-}
-
 export function EventFrame() {
   return (
     <div
       role="img"
-      aria-label="The Frapp mobile app: an event detail with check-in open and a Scan QR to check in button."
+      aria-label="The Frapp mobile app: an event detail with check-in open, a line saying to scan the officer's code here or with the phone's camera, and a Scan code link."
       /*
        * Phone geometry is the base and desktop is the override, because the two
        * boards draw different frames rather than one frame at two widths:
@@ -86,9 +67,19 @@ export function EventFrame() {
             closes 7:45
           </span>
         </div>
-        <span className="flex h-12 items-center justify-center gap-2 rounded-md bg-primary text-[16px] font-bold text-primary-foreground">
-          <QrGlyph />
-          Scan QR to check in
+        {/*
+          What the app's check-in card says to a member while the window is
+          open (`apps/mobile/app/(app)/event-details.tsx`, `CheckInCard`): one
+          line naming the phone's camera, since the QR is a link the camera
+          opens, and a quieter Scan code text action. The boards' gold "Scan QR
+          to check in" button is a product the app no longer has (#4768).
+        */}
+        <p className="text-[16px] leading-[25px] text-foreground">
+          Scan the code on the officer&apos;s screen, here or with your
+          phone&apos;s camera.
+        </p>
+        <span className="flex h-11 items-center justify-center text-[16px] font-semibold text-accent-text">
+          Scan code
         </span>
       </div>
 

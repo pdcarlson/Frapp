@@ -160,12 +160,10 @@ describe("createQueryErrorReporter", () => {
       ]);
     });
 
-    it("keeps a member-caused or uncoded 4xx at warning", () => {
+    it("keeps an uncoded 4xx, or one with an unlisted code, at warning", () => {
       const h = harness();
       h.query(apiBody(404), ["channels"]);
-      h.query(apiBody(400, { code: "service_entry.receipt_required" }), [
-        "service",
-      ]);
+      h.query(apiBody(400, { code: "something.new" }), ["service"]);
       h.query(apiBody(400), ["events"]);
       h.query(apiBody(410), ["invites"]);
 
@@ -180,6 +178,43 @@ describe("createQueryErrorReporter", () => {
         expect(report.tags.api_error_class).toBeUndefined();
         expect(report.fingerprint).not.toContain("client-contract");
       }
+    });
+
+    it("leaves out a 4xx whose code is member-caused: normal use, nothing to fix", () => {
+      const h = harness();
+      h.mutation(apiBody(400, { code: "study.outside_zone" }), [
+        "study-sessions",
+        "start-study-session",
+      ]);
+      h.mutation(apiBody(400, { code: "attendance.check_in.window_closed" }), [
+        "attendance",
+        "check-in",
+      ]);
+      h.mutation(apiBody(409, { code: "attendance.already_checked_in" }), [
+        "attendance",
+        "check-in",
+      ]);
+      h.query(apiBody(400, { code: "service_entry.receipt_required" }), [
+        "service",
+      ]);
+      expect(h.reports).toHaveLength(0);
+    });
+
+    it("still reports a member-caused code that means the server's setup is wrong", () => {
+      const h = harness();
+      h.mutation(apiBody(409, { code: "meeting.recording_unavailable" }), [
+        "meetings",
+        "upload-recording",
+      ]);
+      expect(h.reports).toHaveLength(1);
+      expect(h.reports[0]!.level).toBe("warning");
+    });
+
+    it("still reports a 5xx that carries a member-caused code", () => {
+      const h = harness();
+      h.query(apiBody(503, { code: "chapter.module.disabled" }));
+      expect(h.reports).toHaveLength(1);
+      expect(h.reports[0]!.level).toBe("warning");
     });
 
     it("keeps a 5xx at warning even when its code is a client-contract one", () => {
@@ -254,9 +289,69 @@ describe("createQueryErrorReporter", () => {
       expect(report!.error.message).toBe(
         `query "members" got no response (${message})`,
       );
-      expect(report!.fingerprint).toEqual(["react-query", "query", "members", "network"]);
+      expect(report!.fingerprint).toEqual(["react-query", "query", "network"]);
       expect(report!.tags.query_failure).toBe("network");
+      expect(report!.tags.query_key_root).toBe("members");
       expect(report!.tags).not.toHaveProperty("http.status_code");
+    });
+  });
+
+  // `expo/fetch` (mobile's global fetch since Expo SDK 57) rejects with its
+  // `FetchError`: an `Error` subclass that keeps the name `Error`, message
+  // `fetch failed: <native message>` (expo src/winter/fetch/FetchErrors.ts).
+  class ExpoFetchError extends Error {
+    constructor(message: string) {
+      super(`fetch failed: ${message}`);
+    }
+  }
+
+  describe("an expo/fetch transport failure (#3746)", () => {
+    it.each([
+      "UnexpectedException: The network connection was lost. (at ExpoModulesCore/Promise.swift:56)",
+      "UnexpectedException: cancelled (at ExpoModulesCore/Promise.swift:56)",
+      "java.net.SocketTimeoutException: timeout",
+    ])("reports %j as a network failure", (native) => {
+      const h = harness();
+      h.query(new ExpoFetchError(native));
+      expect(h.reports).toHaveLength(1);
+      const [report] = h.reports;
+      expect(report!.error.name).toBe("NetworkError");
+      expect(report!.error.message).toBe(
+        `query "members" got no response (fetch failed: ${native})`,
+      );
+      expect(report!.fingerprint).toEqual(["react-query", "query", "network"]);
+      expect(report!.tags.query_failure).toBe("network");
+    });
+
+    it("skips the rejection for a signal that was already aborted", () => {
+      const h = harness();
+      h.query(new ExpoFetchError("The operation was aborted."));
+      expect(h.reports).toHaveLength(0);
+    });
+
+    it("files one drop across many query roots under one fingerprint, each root still reported", () => {
+      const h = harness();
+      const roots = ["user", "tasks", "points", "channels", "events"];
+      for (const root of roots) {
+        h.query(
+          new ExpoFetchError("UnexpectedException: The network connection was lost."),
+          [root, CHAPTER_ID],
+        );
+      }
+      expect(new Set(h.reports.map((r) => r.fingerprint.join(" ")))).toEqual(
+        new Set(["react-query query network"]),
+      );
+      expect(h.reports.map((r) => r.tags.query_key_root)).toEqual(roots);
+      // The rate limit is per root: the same root again inside the window is held.
+      h.query(new ExpoFetchError("UnexpectedException: cancelled"), ["user", CHAPTER_ID]);
+      expect(h.reports).toHaveLength(roots.length);
+    });
+
+    it("keeps an Error named otherwise with that prefix an exception", () => {
+      const h = harness();
+      const error = new TypeError("fetch failed: something");
+      h.query(error);
+      expect(h.reports[0]!.tags.query_failure).toBe("exception");
     });
   });
 
@@ -410,7 +505,7 @@ describe("createQueryErrorReporter", () => {
         "react-query query members 4xx",
         "react-query query tasks 5xx",
         "react-query mutation members 5xx",
-        "react-query query members network",
+        "react-query query network",
       ]);
     });
 

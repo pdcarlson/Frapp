@@ -40,16 +40,18 @@ export type FuzzyResult<T> = {
 
 /** Lowercase, strip punctuation, collapse whitespace. */
 export function normalizeWords(text: string): string[] {
-  return text
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    // Letters and digits of any script, so a Greek or CJK query narrows the
-    // list instead of normalising to nothing and matching everything.
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean);
+  return (
+    text
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[̀-ͯ]/g, "")
+      // Letters and digits of any script, so a Greek or CJK query narrows the
+      // list instead of normalising to nothing and matching everything.
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim()
+      .split(" ")
+      .filter(Boolean)
+  );
 }
 
 /**
@@ -68,7 +70,18 @@ export function matchesWordStarts(label: string, query: string): boolean {
   return terms.every((term) => words.some((word) => word.startsWith(term)));
 }
 
-const ROMAN_NUMERALS = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
+const ROMAN_NUMERALS = [
+  "i",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
+];
 
 /**
  * Whether `word` is a number from 1 to 10 in either spelling ("1", "10", "i",
@@ -112,12 +125,7 @@ export function boundedEditDistance(a: string, b: string, max: number): number {
     for (let j = 1; j <= b.length; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       let value = Math.min(prev[j]! + 1, row[j - 1]! + 1, prev[j - 1]! + cost);
-      if (
-        i > 1 &&
-        j > 1 &&
-        a[i - 1] === b[j - 2] &&
-        a[i - 2] === b[j - 1]
-      ) {
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
         value = Math.min(value, prevPrev[j - 2]! + 1);
       }
       row.push(value);
@@ -148,7 +156,8 @@ function scoreWord(
   // A short number, in digits or as a Roman numeral from I to X, matches a
   // whole word only: "1" must not start "12", nor "i" start "ii" or
   // "integral", nor "viii" fuzz to "vii".
-  const wholeWordOnly = /^\d{1,2}$/.test(query) || ROMAN_NUMERALS.includes(query);
+  const wholeWordOnly =
+    /^\d{1,2}$/.test(query) || ROMAN_NUMERALS.includes(query);
   const edits = wholeWordOnly || /\d/.test(query) ? 0 : allowedEdits(query);
   const prefixOk = !wholeWordOnly;
   let best = 0;
@@ -208,7 +217,12 @@ export function fuzzyMatch<T>(
   toText: (item: T) => string,
   aliases: Readonly<Record<string, string>> = {},
 ): FuzzyResult<T>[] {
-  return fuzzyMatchWords(items, query, (item) => normalizeWords(toText(item)), aliases);
+  return fuzzyMatchWords(
+    items,
+    query,
+    (item) => normalizeWords(toText(item)),
+    aliases,
+  );
 }
 
 /**
@@ -228,7 +242,10 @@ export function fuzzyMatchWords<T>(
    * `hit`: it counts toward the item but lights up none of its words, for a
    * match the caller highlights itself.
    */
-  fallback?: (item: T, queryWord: string) => { score: number; hit: string | null },
+  fallback?: (
+    item: T,
+    queryWord: string,
+  ) => { score: number; hit: string | null },
 ): FuzzyResult<T>[] {
   const queryWords = normalizeWords(query);
   if (queryWords.length === 0) {

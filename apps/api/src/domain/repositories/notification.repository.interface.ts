@@ -12,7 +12,12 @@ export const NOTIFICATION_PREFERENCE_REPOSITORY =
 export const USER_SETTINGS_REPOSITORY = 'USER_SETTINGS_REPOSITORY';
 
 export interface INotificationRepository {
-  create(data: Partial<Notification>): Promise<Notification>;
+  /**
+   * Null when the database drops the row: a chat row whose message was
+   * deleted (or removed) before it landed (#4418,
+   * `notifications_skip_deleted_message`).
+   */
+  create(data: Partial<Notification>): Promise<Notification | null>;
   createMany(data: Partial<Notification>[]): Promise<Notification[]>;
   /**
    * The member's newest in-app rows in this chapter.
@@ -62,7 +67,49 @@ export interface INotificationRepository {
     chapterId: string,
     readThrough: string,
     screens?: readonly string[],
+    ids?: readonly string[],
   ): Promise<number>;
+  /**
+   * Delete the named rows that belong to `userId` in `chapterId` (#3948),
+   * answering how many went. An id that isn't theirs matches nothing.
+   */
+  deleteMany(
+    userId: string,
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<number>;
+  /**
+   * Delete every row that told members task `taskId` was marked done: the
+   * officer's review row (`data.target.view` is `review`) and a follower's
+   * "finished" row (`data.about` is `task-completed`), from this completion
+   * and any before it. Whatever reopens a completion (a take-back, a
+   * send-back, a reassign) calls it, so Activity never says a task was
+   * finished once it is open again. Answers how many went.
+   */
+  deleteTaskCompletionRows(chapterId: string, taskId: string): Promise<number>;
+  /**
+   * Delete every chat row `userId` has in `chapterId` for one conversation
+   * (#3948): channel `channelId`'s own rows, or with `threadRootId` that
+   * thread's, created at or before `through`, leaving rows that mention them.
+   * Answers how many went.
+   */
+  deleteConversation(
+    userId: string,
+    chapterId: string,
+    conversation: { channelId: string; threadRootId?: string },
+    through: string,
+  ): Promise<number>;
+  /**
+   * Replace the body of the rows in the chapter that quote chat message
+   * `messageId` (an edit, #4418), for the members in `userIds` only. Deletes need no call: a trigger on
+   * `chat_messages` removes those rows with the message.
+   */
+  rewriteChatMessageBody(
+    chapterId: string,
+    messageId: string,
+    body: string,
+    userIds: readonly string[],
+  ): Promise<void>;
 }
 
 export interface IPushTokenRepository {
@@ -71,6 +118,20 @@ export interface IPushTokenRepository {
   findByUserIds(userIds: string[]): Promise<PushToken[]>;
   findById(id: string): Promise<PushToken | null>;
   findByToken(token: string): Promise<PushToken | null>;
+  /**
+   * A re-register by the token's own member: stamps `last_registered_at`
+   * with `now`, and sets `device_name` only when `deviceName` is given (an
+   * absent label never clears a stored one). Null when no row with that id
+   * belongs to the user any more.
+   */
+  markRegistered(
+    id: string,
+    userId: string,
+    now: string,
+    deviceName?: string,
+    /** Left as stored when `undefined` (an older phone build). */
+    notificationsEnabled?: boolean,
+  ): Promise<PushToken | null>;
   delete(id: string, userId: string): Promise<void>;
   deleteByToken(token: string): Promise<void>;
 }

@@ -1,31 +1,39 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import {
-  BottomSheetFlatList,
   BottomSheetModal,
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
+import { codeOf, statusOf } from "@repo/api-sdk";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  AI_SUGGESTION_COPY,
+  TASK_AUDIENCE_COPY,
+  TASK_PHOTOS_MAX,
+  TASK_TITLE_MAX_LENGTH,
+  aiSuggestionRefusalLine,
+  noTaskRepeatDraft,
+  taskFirstDue,
+  taskRepeatRuleOf,
+  taskRepeatSummary,
+  type RepeatDraft,
+  type TaskProofKind,
+  type TaskWho,
+} from "@repo/validation";
+import {
   memberFallbackLabel,
-  useChapterRoster,
+  useCreateOpenTask,
   useCreateTask,
-  useUpdateTask,
+  useRequestTaskPhotoUploadUrl,
   useViewerUserId,
 } from "@repo/hooks";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
-import {
-  avatarRadius,
-  fieldTypeRole,
-  typeRole,
-  useFrappTheme,
-} from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 import {
   useChapterBranding,
   type ChapterBranding,
 } from "@/lib/chapter-branding";
-import { initialsFor } from "@/lib/more/narrow";
 import { FilterChips } from "@/components/filter-chips";
 import {
   SheetGrabber,
@@ -33,39 +41,61 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   sheetFieldStyles,
-  TallSheetHeader,
   useSheetBackgroundStyle,
-  useSheetVisit,
-  useTallSheetProps,
+  useGuardedSheetRef,
   SheetBackToClose,
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import { WhoPickerSheet } from "@/components/tasks/who-picker-sheet";
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { DueTimeField } from "@/components/tasks/due-time-field";
 import { SubtaskDraftField } from "@/components/tasks/subtask-draft-field";
-import { localIsoDate } from "@repo/formatting";
-import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
+import { TaskPhotoPicker } from "@/components/tasks/task-photos";
+import { TaskRepeatField } from "@/components/tasks/repeat-field";
+import { FollowerField } from "@/components/tasks/task-follower";
+import {
+  AssigneeRow,
+  PointsField,
+  ProofField,
+} from "@/components/tasks/task-form-fields";
+import {
+  photoRoom,
+  pickTaskPhotos,
+  uploadTaskPhotos,
+  TASK_PHOTO_GATE_COPY,
+  type PendingTaskPhoto,
+} from "@/lib/tasks/task-photos";
+import {
+  dueTimePassed,
+  localIsoDate,
+  suggestedDueTime,
+} from "@repo/formatting";
 import {
   DEFAULT_DUE_CHOICE,
+  TASK_FORM_COPY,
+  createRequestOf,
+  storedDueOf,
+  whoTakesPhotos,
   dueChoiceOf,
-  editDraftOf,
-  taskEditBody,
-  type TaskEditTarget,
-  dueTimePassed,
+  type TaskPrefill,
   duePresets,
   parsePointReward,
   resolveDue,
-  suggestedDueTime,
   validateNewTask,
   type DueChoice,
+  type ValidatedNewTask,
 } from "@/lib/tasks/create-task";
 import { successHaptic } from "@/lib/haptics";
+import { useKeptSheetDraft, useKeptSheetOpening } from "@/lib/kept-sheet-draft";
 import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
+import { useWhoDirectory } from "@/lib/tasks/use-who-directory";
+import { isGroupWho, whoHint, whoLabel } from "@repo/hooks/task-who-picker";
+import { whoOfLegacyAssignee } from "@/lib/tasks/who-rows";
 
 /**
  * s19 — the "New task" bottom sheet (`canvas-screens.dc.html`, `id="s19"`).
@@ -131,8 +161,15 @@ import {
 export interface NewTaskSheetProps {
   /** Injected so the presets are deterministic under test. */
   now?: Date;
-  /** Fired after a successful create, with the assignee's name for the confirmation. */
-  onCreated?: (assigneeName: string | null, wasSelf: boolean) => void;
+  /**
+   * Fired after a successful create, with who it went to for the
+   * confirmation, and whether it went on Up for grabs instead of to anyone.
+   */
+  onCreated?: (
+    assigneeName: string | null,
+    wasSelf: boolean,
+    upForGrabs: boolean,
+  ) => void;
   /**
    * Set when the sheet was opened from a chat's + (#3865): the create goes
    * through chat-core's `postTask` into that channel, the call web's `/task`
@@ -144,48 +181,94 @@ export interface NewTaskSheetProps {
   postToChannel?: (input: TaskInput) => Promise<DispatchResult>;
   onPosted?: (result: DispatchResult) => void;
   /**
-   * Edit this task instead of making one (#4296): the same fields, opened on
-   * the task as it stands, titled "Edit task" and saved with Save. Steps are
-   * added and removed in the task's own sheet, so the subtask field is left
-   * out. The host mounts one sheet per task edited (`key` on its id), so the
-   * draft starts from the task, and a close gives it up.
+   * Accept a suggested task through the form (#4313): the fields open on what
+   * the minutes suggested, titled "Change before creating", and the button
+   * creates it. Who it is for starts empty when the meeting named nobody, never
+   * on the viewer: a wrong owner is worse than none. Points are left out (a
+   * suggestion carries none). The host mounts one sheet per suggestion
+   * (`key` on its id).
    */
-  editing?: TaskEditTarget;
-  /** Fired after an edit saves. */
-  onSaved?: () => void;
+  suggestion?: TaskSuggestionSeed;
+  /**
+   * Duplicate a task (#5492): a new task, opened on the original's words,
+   * points, proof, steps and who (`taskDuplicateOf`), and created as any new
+   * task is. Its description, which the form has no field for, goes with it.
+   * The host mounts one sheet per duplicate (`key`), with no kept draft.
+   */
+  prefill?: TaskPrefill;
+  /**
+   * Offer more than one person in Assign to (#4295 step 3; Paul,
+   * 2026-11-18): several people, a role, a group or everyone in the
+   * chapter, each doing it or one of them claiming it from Up for grabs
+   * (`who-picker-sheet.tsx`). For a new task or a suggestion only; a chat's
+   * + posts one card for one member, so they pick one person.
+   */
+  offerGroups?: boolean;
   /** Fired when the sheet has closed, however it closed. */
   onClosed?: () => void;
+  /**
+   * Keeps the sheet's draft past its host, under this name (#4593): the
+   * Tasks screen's sheet goes when the member goes back, and its draft is
+   * there the next time they make a task from that screen. Not for a
+   * suggestion, whose sheet starts from what it opens on.
+   */
+  keptDraft?: string;
 }
 
-interface RosterMember {
-  userId: string;
-  name: string | null;
+/** What a kept task draft holds (`keptDraft`). */
+type KeptTask = {
+  title: string;
+  pointsInput: string;
+  due: DueChoice;
+  dueTime: string | null;
+  subtasks: string[];
+  subtaskText: string;
+  who: TaskWho | null;
+  /** A draft kept before `who`: a member's id, or "everyone". */
+  assigneeId?: string | null;
+  proofKind: TaskProofKind;
+  pickedPhotos: PendingTaskPhoto[];
+  /** How it repeats (#5119); absent in a draft kept before Repeat. */
+  repeat?: RepeatDraft;
+  /** The tier, role or group it is from (#5473); absent before From. */
+  followedBy?: string | null;
+};
+
+/** Who a kept draft holds, read from a draft kept before `who` too. */
+function keptWho(kept: KeptTask): TaskWho | null {
+  return kept.who !== undefined
+    ? kept.who
+    : whoOfLegacyAssignee(kept.assigneeId);
 }
 
-/**
- * The roster, read off the generated types rather than hand-narrowed.
- *
- * `GET /v1/members/roster` is one of the few reads that **does** declare a
- * response schema, so the SDK gives its rows a real type — which is why
- * `useMemberDisplayNames` says "No `unknown`-parsing here". Narrowing it by
- * string key anyway would turn a future `display_name` rename from a compile
- * error into a picker that silently renders every brother as "Member".
- *
- * `display_name` is `NOT NULL DEFAULT ''`, so empty is normalized to `null` —
- * absent and empty are the same "no name set" case, as `narrow.ts` documents.
- */
-function selectRoster(
-  data: readonly { user_id: string; display_name: string }[] | undefined,
-): RosterMember[] {
-  return (data ?? []).map((row) => ({
-    userId: row.user_id,
-    name: row.display_name.trim().length > 0 ? row.display_name : null,
-  }));
+export interface TaskSuggestionSeed {
+  title: string;
+  /** Who the suggestion names, or `null` when it names nobody. */
+  who: TaskWho | null;
+  /** `YYYY-MM-DD`, or null when the meeting gave no day. */
+  dueDay: string | null;
+  dueAt: string | null;
+  subtasks: readonly string[];
+  /**
+   * Accepts the suggestion as the form stands. Rejects with the server's
+   * error, whose refusal codes the sheet puts into words.
+   */
+  accept: (task: ValidatedNewTask) => Promise<void>;
 }
 
 export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
   function NewTaskSheet(
-    { now, onCreated, postToChannel, onPosted, editing, onSaved, onClosed },
+    {
+      now,
+      onCreated,
+      postToChannel,
+      onPosted,
+      onClosed,
+      suggestion,
+      prefill,
+      keptDraft,
+      offerGroups = false,
+    },
     ref,
   ) {
     const { tokens } = useFrappTheme();
@@ -193,21 +276,30 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const { accent } = brand;
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
-    const pickerSheet = useTallSheetProps();
     const pickerRef = useRef<BottomSheetModal>(null);
     const closeSheet = useSheetClose(ref);
-    const closePicker = useSheetClose(pickerRef);
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
 
     const viewerUserId = useViewerUserId();
-    const rosterQuery = useChapterRoster();
+    const whoRead = useWhoDirectory({ groups: offerGroups });
+    const { directory } = whoRead;
     const createTask = useCreateTask();
-    const updateTask = useUpdateTask();
-    // The task as it stands, as the fields start (an edit only).
-    const original = useMemo(
-      () => (editing ? editDraftOf(editing) : null),
-      [editing],
+    const createOpenTask = useCreateOpenTask();
+    // What the minutes suggested, as the fields start (a suggestion only): a
+    // timed suggestion on the day and time of its `due_at` on this device.
+    const suggested = useMemo(
+      () =>
+        suggestion?.dueDay
+          ? storedDueOf({
+              dueDay: suggestion.dueDay,
+              dueAt: suggestion.dueAt,
+            })
+          : null,
+      [suggestion],
     );
     // `postToChannel` isn't a mutation, so its flight is held here.
     const [posting, setPosting] = useState(false);
@@ -217,25 +309,98 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const at = useMemo(() => now ?? new Date(), [now]);
     const presets = useMemo(() => duePresets(at), [at]);
 
-    const [title, setTitle] = useState(original?.title ?? "");
-    const [pointsInput, setPointsInput] = useState(original?.pointsInput ?? "");
+    // The draft kept from the screen's last visit (`keptDraft`).
+    const keptName = keptDraft && !suggestion && !prefill ? keptDraft : null;
+    const opening = useKeptSheetOpening<KeptTask>(keptName);
+    const [title, setTitle] = useState(
+      opening?.title ?? suggestion?.title ?? prefill?.title ?? "",
+    );
+    const [pointsInput, setPointsInput] = useState(
+      opening?.pointsInput ?? prefill?.pointsInput ?? "",
+    );
     // The chip as the draft holds it, resolved against today's below.
     const [due, setDue] = useState<DueChoice>(
-      original ? { kind: "date", date: original.dueDate } : DEFAULT_DUE_CHOICE,
+      opening
+        ? opening.due
+        : suggested
+          ? { kind: "date", date: suggested.dueDate }
+          : (prefill?.due ?? DEFAULT_DUE_CHOICE),
     );
     // `HH:MM`, or null for a task due by the day (#4003).
     const [dueTime, setDueTime] = useState<string | null>(
-      original?.dueTime ?? null,
+      opening
+        ? opening.dueTime
+        : (suggested?.dueTime ?? prefill?.dueTime ?? null),
     );
     // The steps (#4003), and the one being typed, which sends as the last.
-    const [subtasks, setSubtasks] = useState<string[]>([]);
-    const [subtaskText, setSubtaskText] = useState("");
-    // Defaults to the viewer, so the common case needs no picker interaction.
-    const [assigneeId, setAssigneeId] = useState<string | null>(
-      original?.assigneeId ?? null,
+    const [subtasks, setSubtasks] = useState<string[]>(() => [
+      ...(opening?.subtasks ?? suggestion?.subtasks ?? prefill?.subtasks ?? []),
+    ]);
+    const [subtaskText, setSubtaskText] = useState(
+      () => opening?.subtaskText ?? "",
     );
+    // Defaults to the viewer, so the common case needs no picker interaction.
+    const [who, setWho] = useState<TaskWho | null>(
+      opening ? keptWho(opening) : (suggestion?.who ?? prefill?.who ?? null),
+    );
+    // Photos and proof (#4635): the ones picked here, which go up on Create,
+    // and the proof control. A suggestion carries none, so its form leaves
+    // them out.
+    const [proofKind, setProofKind] = useState<TaskProofKind>(
+      opening?.proofKind ?? prefill?.proofKind ?? "none",
+    );
+    const [pickedPhotos, setPickedPhotos] = useState<PendingTaskPhoto[]>(
+      () => opening?.pickedPhotos ?? [],
+    );
+    // How it repeats (#5119): the event sheet's control with a Never end,
+    // where a new task starts, shown once the member opens the Repeat row.
+    const [repeat, setRepeat] = useState<RepeatDraft>(
+      () => opening?.repeat ?? noTaskRepeatDraft(),
+    );
+    const [repeatOpen, setRepeatOpen] = useState(
+      () => !!opening?.repeat && opening.repeat.preset !== "NONE",
+    );
+    // From (#5473): a tier, role or group the officer is in, or just them.
+    const [followedBy, setFollowedBy] = useState<string | null>(
+      () => opening?.followedBy ?? prefill?.followedBy ?? null,
+    );
+    const kept = useKeptSheetDraft<KeptTask>(
+      keptName,
+      {
+        title,
+        pointsInput,
+        due,
+        dueTime,
+        subtasks,
+        subtaskText,
+        who,
+        proofKind,
+        pickedPhotos,
+        repeat,
+        followedBy,
+      },
+      JSON.stringify([
+        title,
+        pointsInput,
+        due,
+        dueTime,
+        subtasks,
+        subtaskText,
+        who,
+        proofKind,
+        pickedPhotos.map(({ image }) => image.uri),
+        repeat,
+        followedBy,
+      ]),
+      opening,
+    );
+    const { clear: clearKept, hold: holdKept, release: releaseKept } = kept;
+    const [photoProblem, setPhotoProblem] = useState<string | null>(null);
+    const [uploading, setUploading] = useState(false);
+    const [addingPhotos, setAddingPhotos] = useState(false);
+    const pickingPhotos = useRef(false);
+    const requestPhotoUrl = useRequestTaskPhotoUploadUrl();
     const [titleFocused, setTitleFocused] = useState(false);
-    const [search, setSearch] = useState("");
     const [submitFailed, setSubmitFailed] = useState(false);
     /**
      * The member copy for a gate refusal, or `null`. A refusal is a different
@@ -254,14 +419,29 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     // s20's log sheet.
     const sending = useRef(false);
 
-    const roster = useMemo(
-      () => selectRoster(rosterQuery.data),
-      [rosterQuery.data],
-    );
-
-    const effectiveAssigneeId = assigneeId ?? viewerUserId;
-    const assignee = roster.find((row) => row.userId === effectiveAssigneeId);
-    const assigneeName = assignee?.name ?? null;
+    // A suggestion the meeting named nobody for stays unassigned until the
+    // officer picks: defaulting it to them would be a guess. A host that
+    // offers one person only never keeps more than one.
+    const pickedWho = who && !offerGroups && who.kind !== "person" ? null : who;
+    const effectiveWho: TaskWho | null =
+      pickedWho ??
+      (suggestion || !viewerUserId
+        ? null
+        : { kind: "person", userId: viewerUserId });
+    const effectiveAssigneeId =
+      effectiveWho?.kind === "person" ? effectiveWho.userId : null;
+    // A copy each can't carry photos yet (#4295 step 3), and a task up for
+    // grabs takes none, so the photo picker steps aside and none are sent;
+    // proof still applies.
+    const forGroup = isGroupWho(effectiveWho);
+    const photosAllowed = whoTakesPhotos(effectiveWho);
+    const upForGrabs = effectiveWho?.kind === "someone";
+    const groupLabel = forGroup ? whoLabel(effectiveWho, directory) : null;
+    const assigneeName = forGroup
+      ? groupLabel
+      : (directory.people.find(
+          (person) => person.named && person.userId === effectiveAssigneeId,
+        )?.name ?? null);
     const assigneeIsViewer =
       effectiveAssigneeId !== null && effectiveAssigneeId === viewerUserId;
     /**
@@ -273,62 +453,149 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
      * task to themselves — and the post-create confirmation, which compares ids,
      * would then contradict the field.
      */
-    const assigneeLabel = assigneeIsViewer
-      ? (assigneeName ?? "You")
-      : (assigneeName ??
-        (effectiveAssigneeId
-          ? memberFallbackLabel(effectiveAssigneeId)
-          : "Member"));
+    const assigneeLabel = forGroup
+      ? (groupLabel ?? TASK_AUDIENCE_COPY.everyone)
+      : assigneeIsViewer
+        ? (assigneeName ?? "You")
+        : (assigneeName ??
+          (effectiveAssigneeId
+            ? memberFallbackLabel(effectiveAssigneeId)
+            : suggestion
+              ? AI_SUGGESTION_COPY.who
+              : "Member"));
 
     // See the header: a relative chip re-reads today, a held date stays put.
-    //
-    // An edit keeps a task's own due date even once it has passed: an
-    // overdue task's title or points can change without moving it to today.
-    const keepsPastDue =
-      original !== null &&
-      due.kind === "date" &&
-      due.date === original.dueDate &&
-      due.date < localIsoDate(at);
-    const { date: dueDate, chipId: dueChipId } = keepsPastDue
-      ? { date: original.dueDate, chipId: null }
-      : resolveDue(due, at);
-    const pending = createTask.isPending || updateTask.isPending || posting;
+    const { date: dueDate, chipId: dueChipId } = resolveDue(due, at);
+    const pending =
+      createTask.isPending || createOpenTask.isPending || posting || uploading;
 
     const draft = {
       title,
       dueDate,
       dueTime,
       subtasks: [...subtasks, subtaskText],
-      assigneeId: effectiveAssigneeId,
+      who: effectiveWho,
       pointsInput,
+      proofKind,
+      description: prefill?.description ?? null,
     };
-    const body = validateNewTask(draft, at, original ?? undefined);
-    const timePassed = dueTimePassed(draft, at, original ?? undefined);
-    // A new assignee starts a task that is under way over (the API resets
-    // it), so the sheet says so before Save rather than after.
-    const restarts =
-      editing !== undefined &&
-      effectiveAssigneeId !== editing.assigneeId &&
-      editing.storedStatus !== null &&
-      editing.storedStatus !== "TODO";
+    // Repeat is for one person's task made from the Tasks screen (#5119): a
+    // task for a group or up for grabs can't repeat yet, a chat's + posts one
+    // card, and a suggestion is one task from one meeting.
+    const repeatOffered = !suggestion && !postToChannel;
+    const showRepeat = repeatOffered && !forGroup && !upForGrabs;
+    const firstDue = taskFirstDue(
+      dueTime ? `${dueDate}T${dueTime}` : dueDate,
+      repeat.timeZone,
+    );
+    const repeatRule =
+      showRepeat && firstDue ? taskRepeatRuleOf(repeat, firstDue) : null;
+    // From (#5473), for a task made from the Tasks screen or the quick
+    // actions: not a chat's card or a suggestion, whose routes carry none,
+    // nor a task up for grabs, which is the claimer's own once claimed. A
+    // repeating task can't have one yet; the field says so.
+    const fromOffered = offerGroups && !suggestion && !postToChannel;
+    const followerChoices = fromOffered ? whoRead.followers : [];
+    const repeating = !!(repeatRule?.ok && repeatRule.rule);
+    // Only one of the officer's own (#5473): a Duplicate of a task from a
+    // group they aren't in, or one deleted since, would only be refused, so
+    // it opens on Just you; so does a kept draft until the choices are read.
+    const ownFollower =
+      followedBy &&
+      followerChoices.some((choice) => choice.entry === followedBy)
+        ? followedBy
+        : null;
+    const sentFollower =
+      fromOffered && !upForGrabs && !repeating ? ownFollower : null;
+    const body = withFollower(
+      withRepeat(validateNewTask(draft, at), repeatRule),
+      sentFollower,
+    );
+    const timePassed = dueTimePassed(draft, at);
     const pointsInvalid = parsePointReward(pointsInput).kind === "invalid";
-    const canSubmit = body !== null && !pending && refusal === null;
+    const canSubmit =
+      body !== null && repeatRule?.ok !== false && !pending && refusal === null;
 
     /** The draft itself: what a create sends. */
     const clearDraft = useCallback(() => {
+      clearKept();
       setTitle("");
       setPointsInput("");
       setDue(DEFAULT_DUE_CHOICE);
       setDueTime(null);
       setSubtasks([]);
       setSubtaskText("");
-      setAssigneeId(null);
-    }, []);
+      setWho(null);
+      setProofKind("none");
+      setPickedPhotos([]);
+      setPhotoProblem(null);
+      setRepeat(noTaskRepeatDraft());
+      setRepeatOpen(false);
+      setFollowedBy(null);
+    }, [clearKept]);
+
+    /** Add photos from the library, several at once, up to the room left. */
+    const addPhotos = useCallback(async () => {
+      if (pickingPhotos.current || sending.current) return;
+      pickingPhotos.current = true;
+      setAddingPhotos(true);
+      try {
+        const result = await pickTaskPhotos(photoRoom(pickedPhotos.length));
+        if (result.status === "picked") {
+          setPickedPhotos((current) => [
+            ...current,
+            ...result.images
+              .slice(0, photoRoom(current.length))
+              .map((image) => ({ image })),
+          ]);
+          setPhotoProblem(result.refused);
+        } else if (result.status === "refused") {
+          setPhotoProblem(result.reason);
+        }
+      } finally {
+        pickingPhotos.current = false;
+        setAddingPhotos(false);
+      }
+    }, [pickedPhotos.length]);
+
+    /** The body with the newly uploaded `reference_photo_paths` (#4635). */
+    const attachPhotos = useCallback(
+      (base: ValidatedNewTask, paths: string[]): ValidatedNewTask =>
+        paths.length > 0 ? { ...base, reference_photo_paths: paths } : base,
+      [],
+    );
+
+    /**
+     * Uploads the photos picked here that aren't up yet: their paths, in
+     * order, or `null` when one didn't go, having said why. A gate's refusal
+     * takes the button, as a create's does.
+     */
+    const uploadPicked = useCallback(
+      async (sentFrom: number): Promise<string[] | null> => {
+        setUploading(true);
+        setPhotoProblem(null);
+        const up = await uploadTaskPhotos(
+          pickedPhotos,
+          (request) => requestPhotoUrl.mutateAsync(request),
+          TASK_PHOTO_GATE_COPY.task,
+        );
+        setUploading(false);
+        setPickedPhotos(up.photos);
+        if (up.status === "uploaded") return up.paths;
+        // A gate's refusal belongs to the visit that asked: one landing after
+        // the sheet was closed must not hold the next visit's Create, which
+        // a reopen promises is a fresh try (`closed`).
+        if (up.final) {
+          if (isSameVisit(sentFrom)) setRefusal(up.reason);
+        } else setPhotoProblem(up.reason);
+        return null;
+      },
+      [pickedPhotos, requestPhotoUrl, isSameVisit],
+    );
 
     /** Gives the draft up, and the visit's state with it: Cancel. */
     const reset = useCallback(() => {
       clearDraft();
-      setSearch("");
       setSubmitFailed(false);
       setRefusal(null);
       setTitleFocused(false);
@@ -343,7 +610,6 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const closed = useCallback(() => {
       markClosed();
       setTitleFocused(false);
-      setSearch("");
       setSubmitFailed(false);
       setRefusal(null);
       onClosed?.();
@@ -354,11 +620,81 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     // `isPending` reaches a render.
     const cancel = useCallback(() => {
       if (sending.current) return;
-      // An edit's draft goes with its sheet (the host unmounts it on close),
-      // so its fields keep the task's values while the sheet slides away.
-      if (!editing) reset();
+      reset();
       dismiss();
-    }, [reset, dismiss, editing]);
+    }, [reset, dismiss]);
+
+    /** Sends the body, photos already up, by whichever route opened the sheet. */
+    const dispatchBody = useCallback(
+      (
+        body: ValidatedNewTask,
+        sentFrom: number,
+        handlers: {
+          onSuccess: (posted?: DispatchResult) => void;
+          onError: (error: unknown) => void;
+        },
+      ) => {
+        if (suggestion) {
+          setPosting(true);
+          void suggestion.accept(body).then(
+            () => {
+              setPosting(false);
+              handlers.onSuccess();
+            },
+            (error: unknown) => {
+              setPosting(false);
+              // Decided by someone else, expired, or its minutes changed:
+              // asking again can't work, so the reason takes the button.
+              const line = aiSuggestionRefusalLine(codeOf(error));
+              if (line && isSameVisit(sentFrom)) {
+                sending.current = false;
+                setRefusal(line);
+                return;
+              }
+              handlers.onError(error);
+            },
+          );
+          return;
+        }
+        if (!postToChannel) {
+          // One person or a copy each to `POST /v1/tasks`; one task up for
+          // grabs to `POST /v1/open-tasks` (`createRequestOf`).
+          const request = createRequestOf(body);
+          const callbacks = {
+            onSuccess: () => handlers.onSuccess(),
+            onError: handlers.onError,
+          };
+          if (request.route === "open") {
+            createOpenTask.mutate(request.body, callbacks);
+          } else {
+            createTask.mutate(request.body, callbacks);
+          }
+          return;
+        }
+        // A chat card is for one member; this route offers one person only.
+        if (body.who.kind !== "person") {
+          handlers.onError(new Error("A chat task needs one member."));
+          return;
+        }
+        const { who: chatWho, ...chatTask } = body;
+        setPosting(true);
+        void postToChannel({ ...chatTask, assignee_id: chatWho.userId })
+          .catch((cause: unknown): DispatchResult => ({
+            ok: false,
+            error: "Couldn't create task",
+            cause,
+          }))
+          .then((result) => {
+            setPosting(false);
+            if (!result.ok) {
+              handlers.onError(result.cause ?? new Error(result.error));
+              return;
+            }
+            handlers.onSuccess(result);
+          });
+      },
+      [createTask, createOpenTask, isSameVisit, postToChannel, suggestion],
+    );
 
     const submit = useCallback(() => {
       // `canSubmit`, not just `body`, as in s20's log sheet: otherwise only the
@@ -367,13 +703,17 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       // reached a render; `sending` stops a second tap in the same batch.
       if (!body || !canSubmit || sending.current) return;
       sending.current = true;
+      // Out of the kept store until it lands or fails, so the screen reopened
+      // mid-create can't send it twice.
+      holdKept();
       setSubmitFailed(false);
       setRefusal(null);
       const sentFrom = visit();
       const handlers = {
         onSuccess: (posted?: DispatchResult) => {
           sending.current = false;
-          const wasSelf = body.assignee_id === viewerUserId;
+          const wasSelf =
+            body.who.kind === "person" && body.who.userId === viewerUserId;
           // The confirming action (`spec/ui/mobile/README.md` § Native-feel
           // rules), felt once the task exists.
           // Not for a lost answer: the task may not exist.
@@ -386,11 +726,21 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           // A sheet closed and reopened since is the member's new visit, and
           // the create doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
-          onCreated?.(assigneeName, wasSelf);
+          // "Assigned to everyone." for a task for the chapter, "Assigned
+          // to Everyone in Recruitment Committee." for a role's, "Posted to
+          // Up for grabs." for one to claim.
+          const everyone =
+            body.who.kind === "each" && body.who.target.kind === "chapter";
+          onCreated?.(
+            everyone ? "everyone" : assigneeName,
+            wasSelf,
+            body.who.kind === "someone",
+          );
           if (posted) onPosted?.(posted);
         },
         onError: (error: unknown) => {
           sending.current = false;
+          releaseKept();
           // A visit that has ended doesn't latch its outcome into the next
           // one, which would greet the member with a stale error.
           if (!isSameVisit(sentFrom)) return;
@@ -405,82 +755,65 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             setRefusal(MODULE_REFUSAL_COPY.task);
             return;
           }
+          // A 400 may be a photo path the server turned down (one a create
+          // that landed, its answer lost, already holds), which can't win
+          // again: upload anew on the retry. A 5xx or a dropped connection
+          // keeps the paths, so a retry doesn't upload twice.
+          if (statusOf(error) === 400) {
+            setPickedPhotos((current) =>
+              current.map(({ image }) => ({ image })),
+            );
+          }
           setSubmitFailed(true);
         },
       };
-      if (editing) {
-        const changes = taskEditBody(editing, body);
-        if (Object.keys(changes).length === 0) {
+      // A task for a group, or up for grabs, sends no photos, even ones
+      // picked before the group was chosen.
+      if (!photosAllowed) {
+        dispatchBody(body, sentFrom, handlers);
+        return;
+      }
+      // Photos already up (or none picked) send in this tap; any still on
+      // the device go up first.
+      const uploaded = pickedPhotos.flatMap((photo) =>
+        photo.storagePath ? [photo.storagePath] : [],
+      );
+      if (uploaded.length === pickedPhotos.length) {
+        dispatchBody(attachPhotos(body, uploaded), sentFrom, handlers);
+        return;
+      }
+      void uploadPicked(sentFrom).then((paths) => {
+        if (!paths) {
           sending.current = false;
-          dismiss();
+          releaseKept();
           return;
         }
-        updateTask.mutate(
-          { id: editing.id, body: changes },
-          {
-            onSuccess: () => {
-              sending.current = false;
-              successHaptic();
-              if (isSameVisit(sentFrom)) dismiss();
-              onSaved?.();
-            },
-            onError: handlers.onError,
-          },
-        );
-        return;
-      }
-      if (!postToChannel) {
-        createTask.mutate(body, {
-          onSuccess: () => handlers.onSuccess(),
-          onError: handlers.onError,
-        });
-        return;
-      }
-      setPosting(true);
-      void postToChannel(body)
-        .catch((cause: unknown): DispatchResult => ({
-          ok: false,
-          error: "Couldn't create task",
-          cause,
-        }))
-        .then((result) => {
-          setPosting(false);
-          if (!result.ok) {
-            handlers.onError(result.cause ?? new Error(result.error));
-            return;
-          }
-          handlers.onSuccess(result);
-        });
+        dispatchBody(attachPhotos(body, paths), sentFrom, handlers);
+      });
     }, [
       body,
       canSubmit,
-      createTask,
+      visit,
+      photosAllowed,
+      pickedPhotos,
+      attachPhotos,
+      uploadPicked,
+      dispatchBody,
       viewerUserId,
       clearDraft,
-      dismiss,
-      visit,
       isSameVisit,
+      dismiss,
       onCreated,
       assigneeName,
-      postToChannel,
       onPosted,
-      editing,
-      updateTask,
-      onSaved,
+      holdKept,
+      releaseKept,
     ]);
-
-    const filteredRoster = useMemo(() => {
-      const needle = search.trim().toLowerCase();
-      if (needle.length === 0) return roster;
-      return roster.filter((row) =>
-        (row.name ?? "").toLowerCase().includes(needle),
-      );
-    }, [roster, search]);
 
     return (
       <>
         <BottomSheetModal
-          ref={ref}
+          ref={modalRef}
           stackBehavior={SHEET_STACK_BEHAVIOR}
           enableDynamicSizing
           keyboardBehavior="interactive"
@@ -496,7 +829,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             style={styles.body}
           >
             <SheetHeader
-              title={editing ? "Edit task" : "New task"}
+              title={suggestion ? AI_SUGGESTION_COPY.change : "New task"}
               onCancel={cancel}
               cancelDisabled={pending}
             />
@@ -509,7 +842,16 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
             >
               <BottomSheetTextInput
                 value={title}
-                onChangeText={setTitle}
+                // Wraps so a long title (a suggestion from minutes often is)
+                // reads whole in place, as on the web (#5562; Paul,
+                // 2026-11-19). Still one line of text: Return closes the
+                // keyboard and a pasted line break is a space.
+                multiline
+                submitBehavior="blurAndSubmit"
+                returnKeyType="done"
+                onChangeText={(next) =>
+                  setTitle(next.replace(/\s*[\r\n]+\s*/g, " "))
+                }
                 onFocus={() => setTitleFocused(true)}
                 onBlur={() => setTitleFocused(false)}
                 // Read-only while the create runs: it sent what was typed when
@@ -518,9 +860,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 placeholder="Collect ride-share forms"
                 placeholderTextColor={tokens.color.text.muted}
                 accessibilityLabel="Task title"
-                maxLength={TITLE_MAX_LENGTH}
+                maxLength={TASK_TITLE_MAX_LENGTH}
                 style={[
                   styles.field,
+                  styles.titleText,
                   titleFocused ? styles.fieldFocused : null,
                 ]}
               />
@@ -536,19 +879,15 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
                 />
               </View>
 
-              <View style={[styles.field, styles.splitField]}>
-                <Text style={[styles.pointsSign, { color: accent }]}>+</Text>
-                <BottomSheetTextInput
+              {suggestion ? null : (
+                <PointsField
+                  input={BottomSheetTextInput}
                   value={pointsInput}
                   onChangeText={setPointsInput}
                   editable={!pending}
-                  placeholder="pts"
-                  placeholderTextColor={tokens.color.text.muted}
-                  accessibilityLabel="Point reward"
-                  keyboardType="number-pad"
-                  style={styles.pointsInput}
+                  style={styles.splitField}
                 />
-              </View>
+              )}
             </View>
 
             <FilterChips
@@ -573,76 +912,127 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               />
             </View>
 
-            {editing ? null : (
-              <SubtaskDraftField
-                items={subtasks}
-                onChange={setSubtasks}
-                text={subtaskText}
-                onTextChange={setSubtaskText}
+            {showRepeat ? (
+              <TaskRepeatField
+                draft={repeat}
+                first={firstDue}
+                summary={
+                  repeat.preset !== "NONE" && firstDue
+                    ? taskRepeatSummary(repeat, firstDue)
+                    : null
+                }
+                open={repeatOpen}
+                onOpenChange={setRepeatOpen}
+                onChange={setRepeat}
                 disabled={pending}
                 fieldStyle={styles.field}
+                input={BottomSheetTextInput}
+                error={repeatRule && !repeatRule.ok ? repeatRule.error : null}
               />
+            ) : repeatOffered && repeat.preset !== "NONE" ? (
+              <Text style={styles.note}>
+                {upForGrabs
+                  ? `A task ${TASK_AUDIENCE_COPY.upForGrabs.toLowerCase()} can't repeat yet.`
+                  : TASK_AUDIENCE_COPY.noRepeat}
+              </Text>
+            ) : null}
+
+            <SubtaskDraftField
+              items={subtasks}
+              onChange={setSubtasks}
+              text={subtaskText}
+              onTextChange={setSubtaskText}
+              disabled={pending}
+              fieldStyle={styles.field}
+            />
+
+            {/* Photos of what the job is, and what Mark done needs (#4635),
+              the way Google Classroom and Canvas set what a submission takes.
+              Web puts them under More options; this sheet has none, so they
+              sit here, quiet until used. */}
+            {suggestion ? null : (
+              <>
+                <View style={styles.group}>
+                  <Text style={styles.groupLabel}>Photos</Text>
+                  <Text style={styles.note}>
+                    {photosAllowed
+                      ? `What the job looks like (optional, up to ${TASK_PHOTOS_MAX}).`
+                      : upForGrabs
+                        ? `A task ${TASK_AUDIENCE_COPY.upForGrabs.toLowerCase()} can't carry photos yet.`
+                        : TASK_AUDIENCE_COPY.noPhotos}
+                  </Text>
+                  {!photosAllowed ? null : (
+                    <TaskPhotoPicker
+                      picked={pickedPhotos.map(({ image }) => image)}
+                      onRemovePicked={(index) =>
+                        setPickedPhotos((current) =>
+                          current.filter((_, i) => i !== index),
+                        )
+                      }
+                      onAdd={() => void addPhotos()}
+                      disabled={pending}
+                      adding={addingPhotos}
+                    />
+                  )}
+                  {photoProblem && photosAllowed ? (
+                    <Text style={styles.error}>{photoProblem}</Text>
+                  ) : null}
+                </View>
+
+                <ProofField
+                  value={proofKind}
+                  onChange={setProofKind}
+                  disabled={pending}
+                />
+              </>
             )}
 
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Assignee: ${assigneeLabel}`}
-              accessibilityHint="Choose who this task is for."
-              accessibilityState={{ disabled: pending }}
+            <AssigneeRow
+              label={assigneeLabel}
+              name={assigneeName}
               disabled={pending}
-              onPress={() => {
-                setSearch("");
-                pickerRef.current?.present();
-              }}
-              style={styles.assigneeRow}
-            >
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {initialsFor(assigneeName)}
-                </Text>
-              </View>
-              <Text style={styles.fieldValue} numberOfLines={1}>
-                {assigneeLabel}
-              </Text>
-              <Text style={styles.assigneeHint}>assignee</Text>
-            </Pressable>
+              onPress={() => pickerRef.current?.present()}
+            />
 
-            {restarts ? (
+            {forGroup ? (
               <Text style={styles.note}>
-                Saving starts it over at To do for {assigneeLabel}.
+                {whoHint(effectiveWho, directory)}
               </Text>
+            ) : null}
+
+            {fromOffered && !upForGrabs ? (
+              <FollowerField
+                value={sentFollower}
+                choices={followerChoices}
+                onChange={setFollowedBy}
+                disabled={pending}
+                repeating={repeating}
+              />
             ) : null}
 
             {timePassed ? (
-              <Text style={styles.error}>
-                That time has already passed today. Pick a later time or another
-                day.
-              </Text>
+              <Text style={styles.error}>{TASK_FORM_COPY.timePassed}</Text>
             ) : null}
 
             {pointsInvalid ? (
-              <Text style={styles.error}>
-                Points must be a whole number, up to 100,000.
-              </Text>
+              <Text style={styles.error}>{TASK_FORM_COPY.points}</Text>
             ) : null}
 
             {refusal ? <Text style={styles.error}>{refusal}</Text> : null}
 
             {submitFailed ? (
               <Text style={styles.error}>
-                {editing
-                  ? "That didn't save. Your changes are still here. Try again."
-                  : "That didn't save. Your task is still here — try again."}
+                That didn&apos;t save. Your task is still here — try again.
               </Text>
             ) : null}
 
             <SheetPrimaryButton
               label={
-                editing
-                  ? updateTask.isPending
-                    ? "Saving…"
-                    : "Save"
-                  : createTask.isPending
+                suggestion
+                  ? posting
+                    ? AI_SUGGESTION_COPY.accepting
+                    : AI_SUGGESTION_COPY.accept
+                  : createTask.isPending || createOpenTask.isPending
                     ? "Creating…"
                     : "Create task"
               }
@@ -655,94 +1045,42 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           </BottomSheetView>
         </BottomSheetModal>
 
-        {/* A second, stacked sheet rather than an inline list.
-          `BottomSheetFlatList` must be a **direct** child of the sheet: nested
-          inside a `BottomSheetView` under `enableDynamicSizing`, the view writes
-          its frame height and the scrollable writes its content height to the
-          same animated `contentHeight`, so a 60-member roster snaps the sheet to
-          full screen and then jumps back on the next layout pass. Fixed
-          snap points here for the same reason — a list has no natural height to
-          size to. Snap points alone don't turn dynamic sizing off in v5: it
-          defaults on and adds a content-height detent below 100%, so a short or
-          filtered roster would open the picker short and shrink it per
-          keystroke. */}
-        <BottomSheetModal
+        {/* A second, stacked sheet rather than an inline list, tall, with
+          its scroller the modal's direct child (`who-picker-sheet.tsx`):
+          nested in a `BottomSheetView` under dynamic sizing, a long roster
+          snapped the sheet to full screen and back. */}
+        <WhoPickerSheet
           ref={pickerRef}
-          stackBehavior={SHEET_STACK_BEHAVIOR}
-          // A tall sheet (`components.md` § Surface size): the whole roster,
-          // and a search the keyboard would otherwise squeeze into a sliver of
-          // the old 70% box.
-          {...pickerSheet}
-          keyboardBehavior="interactive"
-          backgroundStyle={backgroundStyle}
-          handleComponent={SheetGrabber}
-          backdropComponent={SheetScrim}
-        >
-          <SheetBackToClose onClose={closePicker} />
-          <BottomSheetFlatList
-            onAccessibilityEscape={closePicker}
-            data={filteredRoster}
-            keyExtractor={(row: RosterMember) => row.userId}
-            contentContainerStyle={styles.pickerContent}
-            keyboardShouldPersistTaps="handled"
-            // The title and search stay pinned while the roster scrolls under
-            // them, so the field is still there after a long scroll.
-            stickyHeaderIndices={[0]}
-            ListHeaderComponent={
-              <View style={styles.pickerHeader}>
-                <TallSheetHeader title="Assign to" onClose={closePicker} />
-                {/* Not `SearchField` from `components/filter-chips.tsx`: that is a
-                  plain `TextInput`, and inside a gorhom sheet a plain input
-                  breaks the sheet's keyboard coordination — `patterns.md` makes
-                  `BottomSheetTextInput` mandatory here. */}
-                <BottomSheetTextInput
-                  value={search}
-                  onChangeText={setSearch}
-                  placeholder="Search members"
-                  placeholderTextColor={tokens.color.text.muted}
-                  accessibilityLabel="Search members"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={styles.field}
-                />
-              </View>
-            }
-            ListEmptyComponent={
-              <Text style={styles.pickerEmpty}>
-                {rosterQuery.isPending
-                  ? "Loading your chapter…"
-                  : "No members match that search."}
-              </Text>
-            }
-            renderItem={({ item }: { item: RosterMember }) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{
-                  selected: item.userId === effectiveAssigneeId,
-                }}
-                onPress={() => {
-                  setAssigneeId(item.userId);
-                  setSearch("");
-                  pickerRef.current?.dismiss();
-                }}
-                style={styles.pickerRow}
-              >
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {initialsFor(item.name)}
-                  </Text>
-                </View>
-                <Text style={styles.fieldValue} numberOfLines={1}>
-                  {item.name ?? memberFallbackLabel(item.userId)}
-                </Text>
-              </Pressable>
-            )}
-          />
-        </BottomSheetModal>
+          value={pickedWho ?? effectiveWho}
+          onChange={setWho}
+          directory={directory}
+          people={whoRead.people}
+          sets={whoRead.sets}
+          single={!offerGroups}
+          tiers={!suggestion}
+        />
       </>
     );
   },
 );
+
+/** The validated task with its From (#5473), when it has one. */
+function withFollower(
+  task: ValidatedNewTask | null,
+  followedBy: string | null,
+): ValidatedNewTask | null {
+  return task && followedBy ? { ...task, followed_by: followedBy } : task;
+}
+
+/** The validated task with the Repeat's rule, when it repeats (#5119). */
+function withRepeat(
+  task: ValidatedNewTask | null,
+  repeat: ReturnType<typeof taskRepeatRuleOf> | null,
+): ValidatedNewTask | null {
+  return task && repeat?.ok && repeat.rule
+    ? { ...task, recurrence_rule: repeat.rule }
+    : task;
+}
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   const fieldStyles = sheetFieldStyles(tokens, brand.accent);
@@ -761,77 +1099,13 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       gap: tokens.spacing.sm,
     },
     fieldFocused: fieldStyles.fieldFocused,
+    titleText: fieldStyles.fieldMultilineText,
     splitRow: {
       flexDirection: "row",
       gap: tokens.spacing.sm,
     },
     splitField: {
       flex: 1,
-    },
-    fieldValue: {
-      flex: 1,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    pointsSign: {
-      ...typeRole(tokens.typography.role.label),
-    },
-    pointsInput: {
-      flex: 1,
-      // No lineHeight on a single-line input, or iOS draws the text low.
-      ...fieldTypeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    assigneeRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-    },
-    assigneeHint: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    avatar: {
-      width: 26,
-      height: 26,
-      borderRadius: avatarRadius(26),
-      backgroundColor: tokens.color.surface.popover,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    avatarText: {
-      // TODO-DESIGN: Canvas draws these initials at 10.5px/700; `caption` is
-      // 12.5/400 and is the smallest role available.
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    pickerContent: {
-      paddingHorizontal: tokens.spacing.lg,
-      paddingBottom: tokens.spacing.xl,
-    },
-    pickerHeader: {
-      gap: tokens.spacing.sm,
-      paddingBottom: tokens.spacing.sm,
-      // Sticky, so it paints the sheet's own fill over the rows passing under.
-      backgroundColor: tokens.color.surface.popover,
-    },
-    pickerEmpty: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      paddingVertical: tokens.spacing.md,
-    },
-    pickerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      paddingVertical: tokens.spacing.sm,
-      minHeight: tokens.touch.minimum,
     },
     error: {
       ...typeRole(tokens.typography.role.caption),
@@ -840,6 +1114,13 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     note: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    group: {
+      gap: tokens.spacing.xs,
+    },
+    groupLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
   });
 }

@@ -1,6 +1,6 @@
 // Provider ids live in `.github/environments.json` and nowhere else (#2806).
 //
-// Workflows used to carry the Render service ids and the Vercel team and
+// Workflows used to carry the API's service ids and the Vercel team and
 // project ids as literals, in several files, with comments asking humans to keep
 // the copies in step. A copy that drifts deploys to, or asserts against, some
 // other service while every check reads green. So: the file holds them, the
@@ -17,7 +17,6 @@ import { fileURLToPath } from "node:url";
 
 import {
   ENVIRONMENTS,
-  RENDER_SERVICE_ID_PATTERN,
   VERCEL_PROJECT_ID_PATTERN,
   VERCEL_TEAM_ID_PATTERN,
   parseProviderIds,
@@ -31,11 +30,23 @@ const WORKFLOW_DIR = join(REPO_ROOT, ".github", "workflows");
 const ACTIONS_DIR = join(REPO_ROOT, ".github", "actions");
 const SCRIPT = join(REPO_ROOT, "scripts", "ci", "provider-ids.mjs");
 
+const cloudRun = (overrides = {}) => ({
+  projectId: "nonprod-123",
+  projectNumber: "211663803311",
+  region: "us-east4",
+  minInstances: 0,
+  maxInstances: 1,
+  ...overrides,
+});
+
 const config = (mutate = (c) => c) => {
   const base = {
     environments: {
-      staging: { supabaseProjectRef: "aaaaaaaaaaaaaaa", renderServiceId: "srv-staging1" },
-      production: { supabaseProjectRef: "bbbbbbbbbbbbbbb", renderServiceId: "srv-prod1" },
+      staging: { supabaseProjectRef: "aaaaaaaaaaaaaaa", cloudRun: cloudRun() },
+      production: {
+        supabaseProjectRef: "bbbbbbbbbbbbbbb",
+        cloudRun: cloudRun({ projectId: "prod-456", projectNumber: "930610426605", region: "us-east5", minInstances: 1 }),
+      },
     },
     vercel: { teamId: "team_abc", webProjectId: "prj_web", landingProjectId: "prj_landing" },
   };
@@ -43,15 +54,15 @@ const config = (mutate = (c) => c) => {
 };
 
 describe("the committed config", () => {
-  it("names a distinct Render service per environment, and the Vercel team and projects", () => {
+  it("names a distinct Google Cloud project per environment, and the Vercel team and projects", () => {
     const seen = new Set();
     for (const name of ENVIRONMENTS) {
       const ids = providerIdsFor(name);
-      assert.match(ids.renderServiceId, RENDER_SERVICE_ID_PATTERN, name);
+      assert.ok(ids.gcpProjectId, name);
       assert.match(ids.vercelTeamId, VERCEL_TEAM_ID_PATTERN, name);
       assert.match(ids.vercelWebProjectId, VERCEL_PROJECT_ID_PATTERN, name);
       assert.match(ids.vercelLandingProjectId, VERCEL_PROJECT_ID_PATTERN, name);
-      seen.add(ids.renderServiceId);
+      seen.add(ids.gcpProjectId);
     }
     assert.equal(seen.size, ENVIRONMENTS.length);
   });
@@ -63,8 +74,8 @@ describe("the committed config", () => {
   // and moving one is a reviewed change in two files. These are the literals
   // each workflow step used before #2806 moved them.
   it("pins which service and project each id is", () => {
-    assert.equal(providerIdsFor("staging").renderServiceId, "srv-d6lqsq75r7bs73c2fdc0", "frapp-api-staging");
-    assert.equal(providerIdsFor("production").renderServiceId, "srv-d6lqu41aae7s73f62df0", "frapp-api-prod");
+    assert.equal(providerIdsFor("staging").gcpProjectId, "cs-project-6vw9f5xp", "nonprod");
+    assert.equal(providerIdsFor("production").gcpProjectId, "cs-project-nyit2x59", "prod");
     const ids = providerIdsFor("production");
     assert.equal(ids.vercelWebProjectId, "prj_xkn32taKrJCgYRZoN6pZRfGfPT9T", "frapp-web");
     assert.equal(ids.vercelLandingProjectId, "prj_aAkER9EZJcxR51vUY0mwNDnCf8vy", "frapp-landing");
@@ -73,24 +84,29 @@ describe("the committed config", () => {
 });
 
 describe("parseProviderIds", () => {
-  it("returns the named environment's service and the shared Vercel ids", () => {
+  it("returns the named environment's project and the shared Vercel ids", () => {
     assert.deepEqual(parseProviderIds(config(), "staging"), {
       environment: "staging",
-      renderServiceId: "srv-staging1",
+      gcpProjectId: "nonprod-123",
+      gcpRegion: "us-east4",
+      cloudRunService: "frapp-api",
+      cloudRunImage: "us-east4-docker.pkg.dev/nonprod-123/frapp/api",
+      cloudRunDeployer: "frapp-deployer@nonprod-123.iam.gserviceaccount.com",
+      cloudRunRuntime: "frapp-api-runtime@nonprod-123.iam.gserviceaccount.com",
+      cloudRunProvider: "projects/211663803311/locations/global/workloadIdentityPools/github/providers/frapplive-frapp",
+      cloudRunMinInstances: "0",
+      cloudRunMaxInstances: "1",
       vercelTeamId: "team_abc",
       vercelWebProjectId: "prj_web",
       vercelLandingProjectId: "prj_landing",
     });
-    assert.equal(parseProviderIds(config(), "production").renderServiceId, "srv-prod1");
+    assert.equal(parseProviderIds(config(), "production").gcpProjectId, "prod-456");
   });
 
   // No default anywhere: a wrong id deploys to some other service.
   it("refuses an unknown environment, a missing or malformed id, and shared ids", () => {
     const refusals = [
       ["an unknown environment", config(), "preview"],
-      ["no Render id", config((c) => (delete c.environments.production.renderServiceId, c)), "staging"],
-      ["a malformed Render id", config((c) => ((c.environments.staging.renderServiceId = "d6lq"), c)), "staging"],
-      ["one Render service for both", config((c) => ((c.environments.production.renderServiceId = "srv-staging1"), c)), "production"],
       ["no vercel block", config((c) => (delete c.vercel, c)), "staging"],
       ["a malformed team id", config((c) => ((c.vercel.teamId = "j9XL"), c)), "staging"],
       ["a malformed project id", config((c) => ((c.vercel.landingProjectId = "landing"), c)), "production"],
@@ -102,12 +118,60 @@ describe("parseProviderIds", () => {
   });
 });
 
+describe("Cloud Run (#5228)", () => {
+  it("derives the service, registry, accounts and sign-in provider from the project", () => {
+    const ids = parseProviderIds(config(), "staging");
+    assert.equal(ids.cloudRunService, "frapp-api");
+    assert.equal(ids.cloudRunImage, "us-east4-docker.pkg.dev/nonprod-123/frapp/api");
+    assert.equal(ids.cloudRunDeployer, "frapp-deployer@nonprod-123.iam.gserviceaccount.com");
+    assert.equal(ids.cloudRunRuntime, "frapp-api-runtime@nonprod-123.iam.gserviceaccount.com");
+    assert.equal(
+      ids.cloudRunProvider,
+      "projects/211663803311/locations/global/workloadIdentityPools/github/providers/frapplive-frapp",
+    );
+    assert.equal(ids.cloudRunMinInstances, "0");
+  });
+
+  it("refuses a missing or bad block and a shared project", () => {
+    const refusals = [
+      ["no block", config((c) => (delete c.environments.staging.cloudRun, c)), "staging"],
+      ["a malformed project", config((c) => ((c.environments.staging.cloudRun.projectId = "Bad_Id"), c)), "staging"],
+      ["a missing number", config((c) => (delete c.environments.staging.cloudRun.projectNumber, c)), "staging"],
+      ["min above max", config((c) => ((c.environments.staging.cloudRun.minInstances = 2), c)), "staging"],
+      ["no max", config((c) => (delete c.environments.staging.cloudRun.maxInstances, c)), "staging"],
+      [
+        "one project for both",
+        config((c) => ((c.environments.production.cloudRun = cloudRun({ minInstances: 1 })), c)),
+        "staging",
+      ],
+    ];
+    for (const [label, text, name] of refusals) {
+      assert.throws(() => parseProviderIds(text, name), Error, label);
+    }
+  });
+
+  it("pins the committed projects: staging deploys to nonprod, production's block names prod", () => {
+    const staging = providerIdsFor("staging");
+    assert.equal(staging.gcpProjectId, "cs-project-6vw9f5xp");
+    assert.equal(staging.gcpRegion, "us-east4");
+    const production = providerIdsFor("production");
+    assert.equal(production.gcpProjectId, "cs-project-nyit2x59");
+    assert.equal(production.gcpRegion, "us-east5");
+  });
+});
+
 describe("provider-ids.mjs", () => {
   it("writes one output per id, named as the workflows read them", () => {
     const ids = parseProviderIds(config(), "production");
     assert.equal(
       formatProviderOutputs(ids),
-      "render_service_id=srv-prod1\nvercel_team_id=team_abc\n" +
+      "gcp_project_id=prod-456\ngcp_region=us-east5\ncloud_run_service=frapp-api\n" +
+        "cloud_run_image=us-east5-docker.pkg.dev/prod-456/frapp/api\n" +
+        "cloud_run_deployer=frapp-deployer@prod-456.iam.gserviceaccount.com\n" +
+        "cloud_run_runtime=frapp-api-runtime@prod-456.iam.gserviceaccount.com\n" +
+        "cloud_run_provider=projects/930610426605/locations/global/workloadIdentityPools/github/providers/frapplive-frapp\n" +
+        "cloud_run_min_instances=1\ncloud_run_max_instances=1\n" +
+        "vercel_team_id=team_abc\n" +
         "vercel_web_project_id=prj_web\nvercel_landing_project_id=prj_landing\n",
     );
   });
@@ -136,7 +200,7 @@ describe("provider-ids.mjs", () => {
 
 // The acceptance criterion of #2806, as a grep: the ids' own prefixes.
 describe("no workflow or action names a provider id", () => {
-  const LITERAL = /\b(?:srv-[a-z0-9]{6,}|prj_[A-Za-z0-9]{6,}|team_[A-Za-z0-9]{6,})\b/;
+  const LITERAL = /\b(?:cs-project-[a-z0-9]{6,}|prj_[A-Za-z0-9]{6,}|team_[A-Za-z0-9]{6,})\b/;
   // Every file, not only YAML: an action's shell helper or README could carry
   // a literal just as well.
   const files = (dir) =>
@@ -158,7 +222,8 @@ describe("no workflow or action names a provider id", () => {
         });
     }
     // The pattern is live: it matches what the config holds.
-    for (const id of Object.values(providerIdsFor("production")).slice(1)) assert.match(id, LITERAL);
+    const { gcpProjectId, vercelTeamId, vercelWebProjectId, vercelLandingProjectId } = providerIdsFor("production");
+    for (const id of [gcpProjectId, vercelTeamId, vercelWebProjectId, vercelLandingProjectId]) assert.match(id, LITERAL);
   });
 });
 
@@ -167,7 +232,15 @@ describe("no workflow or action names a provider id", () => {
 describe("every consumer reads the ids step of its own job", () => {
   const OUTPUTS = PROVIDER_ID_OUTPUTS.map(([, output]) => output);
   const NAMES = new Map([
-    ["RENDER_SERVICE_ID", "render_service_id"],
+    ["GCP_PROJECT_ID", "gcp_project_id"],
+    ["GCP_REGION", "gcp_region"],
+    ["CLOUD_RUN_SERVICE", "cloud_run_service"],
+    ["CLOUD_RUN_IMAGE", "cloud_run_image"],
+    ["CLOUD_RUN_DEPLOYER", "cloud_run_deployer"],
+    ["CLOUD_RUN_RUNTIME", "cloud_run_runtime"],
+    ["CLOUD_RUN_PROVIDER", "cloud_run_provider"],
+    ["CLOUD_RUN_MIN_INSTANCES", "cloud_run_min_instances"],
+    ["CLOUD_RUN_MAX_INSTANCES", "cloud_run_max_instances"],
     ["VERCEL_TEAM_ID", "vercel_team_id"],
     ["VERCEL_WEB_PROJECT_ID", "vercel_web_project_id"],
     ["VERCEL_LANDING_PROJECT_ID", "vercel_landing_project_id"],
@@ -178,7 +251,6 @@ describe("every consumer reads the ids step of its own job", () => {
     ["deploy-staging.yml/prune-vercel-staging", "staging"],
     ["production-guardrails.yml/guardrails", "production"],
     ["production-release-pin.yml/pin", "production"],
-    ["staging-conformance.yml/conformance", "staging"],
   ]);
 
   it("covers every output the script writes", () => {

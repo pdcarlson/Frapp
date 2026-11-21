@@ -24,8 +24,9 @@ import { describe, expect, it } from "vitest";
  * Verified the way slices 6 and 7 verified theirs, and the result is the reason
  * this file exists: reverting the archetype card to `border-primary
  * bg-primary/5` / `hover:bg-accent/50` and the tutorial strip to
- * `bg-secondary/60` turns **two** tests here red and leaves all thirteen in
- * `profile-contrast.spec.ts` green.
+ * `bg-secondary/60` turned **two** tests here red and left all thirteen in
+ * `profile-contrast.spec.ts` green. (The strip went with the first-run
+ * slideshow in #5080, so only the archetype half can be re-run.)
  */
 
 const ROOT = join(__dirname, "..", "..");
@@ -43,8 +44,6 @@ const FAMILY = [
   "app/(auth)/sign-up/page.tsx",
   "app/(auth)/join/page.tsx",
   "app/(auth)/no-access/page.tsx",
-  // The notice a sign-in that created a new account lands on (#3786).
-  "app/(auth)/new-account/page.tsx",
   "app/global-error.tsx",
   "app/(dashboard)/profile/page.tsx",
   "components/auth/auth-screen.tsx",
@@ -57,8 +56,8 @@ const FAMILY = [
   "components/auth/chapter-showcase.tsx",
   // `/no-access`'s sign-out action, split out as a client component (#3236).
   "components/auth/no-access-sign-out.tsx",
-  // `/new-account`'s sign-out and continue actions (#3786).
-  "components/auth/new-account-actions.tsx",
+  // `/join`'s "Already in a chapter?" line, which replaced `/new-account`.
+  "components/auth/other-account-line.tsx",
   "components/auth/signet-mark.tsx",
   "components/profile/profile-panel.tsx",
   // `/profile`'s settings blocks, moved to the personal Settings page (#3856).
@@ -67,6 +66,7 @@ const FAMILY = [
   "components/personal-settings/personal-settings-page.tsx",
   "components/personal-settings/quiet-hours-section.tsx",
   "components/personal-settings/chapter-alerts-section.tsx",
+  "components/personal-settings/chat-level-control.tsx",
   "components/personal-settings/account-section.tsx",
   "components/profile/profile-glyphs.tsx",
   "components/onboarding/chapter-wizard.tsx",
@@ -76,7 +76,6 @@ const FAMILY = [
   // a governed file moving to a new path is exactly the case that would
   // otherwise drop out of coverage without a single test going red.
   "components/onboarding/chapter-wizard-gate.tsx",
-  "components/onboarding/onboarding-tutorial.tsx",
   "components/onboarding/step-dots.tsx",
 ] as const;
 
@@ -126,7 +125,8 @@ const OPACITY_WASH = new RegExp(
  * `--destructive` is deliberately absent from `TOKENS` for the border's sake;
  * the separate rule below keeps it honest.
  */
-const SANCTIONED = /\b(?:border-destructive\/\[\.28\]|ring-ring\/25|ring-destructive\/25)/g;
+const SANCTIONED =
+  /\b(?:border-destructive\/\[\.28\]|ring-ring\/25|ring-destructive\/25)/g;
 
 describe("no token is painted through an opacity wash", () => {
   it.each(FAMILY)("%s", (file) => {
@@ -227,7 +227,6 @@ describe("the accent slot never paints a pre-auth screen", () => {
     "app/(auth)/sign-up/page.tsx",
     "app/(auth)/join/page.tsx",
     "app/(auth)/no-access/page.tsx",
-    "app/(auth)/new-account/page.tsx",
     "components/auth/auth-screen.tsx",
     "components/auth/auth-frame.tsx",
     "components/auth/sign-in-screen.tsx",
@@ -235,7 +234,7 @@ describe("the accent slot never paints a pre-auth screen", () => {
     "components/auth/floating-field.tsx",
     "components/auth/oauth-buttons.tsx",
     "components/auth/no-access-sign-out.tsx",
-    "components/auth/new-account-actions.tsx",
+    "components/auth/other-account-line.tsx",
   ] as const;
 
   it.each(PRE_AUTH)("%s paints no bare accent-slot class", (file) => {

@@ -23,6 +23,13 @@ describe("titleFromFilename", () => {
 describe("guessDocumentType", () => {
   const options = [...DEFAULT_DOCUMENT_TYPES];
 
+  it("never guesses a type the chapter's list doesn't have (#3642)", () => {
+    const withoutForm = options.filter((type) => type !== "Form");
+    expect(guessDocumentType("waiver.pdf", withoutForm)).toBeNull();
+    // The next keyword still gets its chance.
+    expect(guessDocumentType("budget waiver.pdf", withoutForm)).toBe("Budget");
+  });
+
   it("matches whole words only", () => {
     expect(guessDocumentType("exec-minutes.pdf", options)).toBe("Minutes");
     expect(guessDocumentType("formal-dinner.pdf", options)).toBeNull();
@@ -49,6 +56,7 @@ describe("documentTypeOptions", () => {
       "Budget",
       "Policy",
       "Form",
+      "Other",
       "contract",
     ]);
   });

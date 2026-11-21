@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatMessageFlag } from "@repo/validation";
+import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import {
   forwardRef,
@@ -20,6 +20,9 @@ import { cn } from "@/lib/utils";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
+import { JumpToLatestButton } from "./jump-to-latest-button";
+import { useJumpToLatest } from "@/lib/chat/use-jump-to-latest";
+import type { LatestRow } from "@repo/chat-core/jump-to-latest";
 import {
   ImageViewer,
   ImageViewerProvider,
@@ -32,9 +35,22 @@ import {
   type ThreadRow,
 } from "@repo/chat-core/blocks";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
-import type { MemberLookup } from "@repo/chat-core/message-actions";
+import type { ClosableCardKind } from "@repo/chat-core/chat-client";
+import {
+  isOwnPostedAnswer,
+  type MemberLookup,
+} from "@repo/chat-core/message-actions";
 import type { ThreadBlockList } from "@/lib/chat/use-thread-block-list";
-import { resolveAuthorAvatar, useAuthorAvatars } from "@repo/hooks";
+import {
+  ASK_TURNS_ABOVE_ALL,
+  placeAskTurns,
+  resolveAuthorAvatar,
+  useAuthorAvatars,
+} from "@repo/hooks";
+import {
+  AskChannelTurn,
+  type AskChannelPlace,
+} from "@/components/ask/ask-in-channel";
 import { dayDividerLabel, decorateThread } from "@repo/chat-core/grouping";
 
 /**
@@ -512,10 +528,19 @@ export interface MessageTimelineProps {
     actionType: string,
     payload: Record<string, unknown>,
   ) => void;
-  onEdit?: (messageId: string, content: string) => Promise<void>;
+  onEdit?: (
+    messageId: string,
+    content: string,
+    mentionPicks?: readonly MentionPick[],
+  ) => Promise<void>;
   onDelete?: (messageId: string) => void;
   /** A poll card's Close poll, on the viewer's own open poll (#3794). */
   onClosePoll?: (messageId: string) => void;
+  /**
+   * A sign-up card's Close sign-ups or a form card's Close form (#3926), its
+   * creator's or a moderator's.
+   */
+  onCloseCard?: (messageId: string, kind: ClosableCardKind) => void;
   /** Flag, re-flag or (`null`) unflag a message (#3921). */
   onFlag?: (messageId: string, flag: ChatMessageFlag | null) => void;
   /**
@@ -525,12 +550,18 @@ export interface MessageTimelineProps {
    */
   bookmarkedMessageIds?: Set<string>;
   onToggleBookmark?: (messageId: string, next: boolean) => void;
+  /** "Remind me about this" (#4957); see `MessageItemProps`. */
+  onRemind?: (messageId: string, remindAt: Date) => void;
   canManageChannel?: boolean;
+  /** The channel is the audit log (#3909); see `MessageItemProps`. */
+  inAuditLog?: boolean;
   /** A row's Report and Block (#2687); see `MessageItemProps`. */
   onReport?: (message: ChatMessage) => void;
   onBlock?: (message: ChatMessage) => void;
+  /** A row's Forward (#4907); see `MessageItemProps`. */
+  onForward?: (message: ChatMessage) => void;
   /** Opens a member's profile by `users.id` (#3726); see `MessageItemProps`. */
-  onOpenProfile?: (userId: string) => void;
+  onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
   isMember?: MemberLookup;
   /**
    * Older history (#1571). The timeline asks for the next page when the member
@@ -568,6 +599,13 @@ export interface MessageTimelineProps {
    * timeline keeps its own.
    */
   tapRevealed?: ReturnType<typeof useTapRevealedMessage>;
+  /**
+   * The turns this member asked Frapp from this channel's composer (#4713),
+   * oldest first. Each is drawn under the message that was newest when it
+   * was asked (`placeAskTurns`), for this member alone: it is not one of
+   * `messages` and never becomes one. Omitted, nothing is drawn.
+   */
+  askTurns?: readonly AskChannelPlace[];
 }
 
 /**
@@ -609,12 +647,16 @@ export const MessageTimeline = forwardRef<
     onEdit,
     onDelete,
     onClosePoll,
+    onCloseCard,
     onFlag,
     bookmarkedMessageIds,
     onToggleBookmark,
+    onRemind,
     canManageChannel,
+    inAuditLog,
     onReport,
     onBlock,
+    onForward,
     onOpenProfile,
     isMember,
     hasOlder = false,
@@ -625,6 +667,7 @@ export const MessageTimeline = forwardRef<
     channelStart,
     header,
     tapRevealed: sharedTapRevealed,
+    askTurns,
   },
   ref,
 ) {
@@ -753,12 +796,165 @@ export const MessageTimeline = forwardRef<
       ),
     [decorated],
   );
+  // Where each turn asked of Frapp here sits: by the row's key, so the row
+  // count and the keys the list is virtualized on are the messages' alone.
+  const askTurnsByRow = useMemo(
+    () =>
+      placeAskTurns(
+        decorated.map((entry) => ({
+          key: entry.message.client_message_id ?? entry.message.id,
+          at: entry.message.created_at,
+        })),
+        askTurns ?? [],
+      ),
+    [decorated, askTurns],
+  );
   const { firstItemIndex, prepended } = usePrependAwareFirstIndex(rowKeys);
   const stickToBottom = useStickToBottom({
     virtuoso,
     rowCount: decorated.length,
     hold: holdFollow,
   });
+
+  // The way back to the newest message once the member has read back through
+  // history, as mobile draws it: past one screen, or once someone else's
+  // message lands out of sight below them (`useJumpToLatest`).
+  const latestRows = useMemo<LatestRow[]>(() => {
+    const out: LatestRow[] = [];
+    for (let index = decorated.length - 1; index >= 0; index -= 1) {
+      const { message, visibility } = decorated[index]!;
+      out.push({
+        id: message.client_message_id ?? message.id,
+        own: viewerId !== null && message.sender_id === viewerId,
+        silent: visibility === "tombstone" || message.is_deleted === true,
+      });
+    }
+    return out;
+  }, [decorated, viewerId]);
+  const jump = useJumpToLatest({
+    rows: latestRows,
+    channelKey: channelId ?? null,
+    followWithin: STICK_TO_BOTTOM_SLACK_PX,
+  });
+  const markNewest = jump.markNewest;
+  const pinToBottom = stickToBottom.pinned;
+  const jumpToLatest = useCallback(() => {
+    if (!virtuoso.current) return;
+    // Instant, for the reason `scrollToMessage` gives: a smooth scroll is
+    // aimed once from estimated row heights and settles short.
+    virtuoso.current.scrollToIndex({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+    pinToBottom();
+    markNewest();
+  }, [markNewest, pinToBottom]);
+
+  /*
+    A question the member just asked Frapp brings the list to it, as their
+    own send does below: the turn is drawn under the newest message, which
+    may be below the fold. Only a turn that sits there; one asked again from
+    further up the channel stays where it is and moves nothing.
+  */
+  const newestTurn = askTurns?.at(-1) ?? null;
+  const newestTurnId = newestTurn?.id ?? null;
+  const newestTurnIsLast =
+    newestTurn !== null &&
+    (askTurnsByRow
+      .get(rowKeys.at(-1) ?? ASK_TURNS_ABOVE_ALL)
+      ?.includes(newestTurn) ??
+      false);
+  const seenTurnId = useRef(newestTurnId);
+  useEffect(() => {
+    if (seenTurnId.current === newestTurnId) return;
+    seenTurnId.current = newestTurnId;
+    if (newestTurnId !== null && newestTurnIsLast) jumpToLatest();
+  }, [newestTurnId, newestTurnIsLast, jumpToLatest]);
+
+  /*
+    The member's own send brings the list to it, wherever they were reading,
+    as the phone's Send does (`jumpToLatest` on the tap). The list used to
+    follow a new row only from within `STICK_TO_BOTTOM_SLACK_PX` of its end, so
+    a member a line or two up when they pressed Enter (a photo above that grew,
+    a nudge of the wheel) saw their message go nowhere: it landed below the
+    fold and read as unsent (2026-11-12, #4537).
+
+    A send is a key of theirs, still pending, that wasn't one on the last
+    render, wherever it sorts: an optimistic row is placed by this device's
+    clock, so one a few seconds slow puts it under another member's newer
+    message. A pending row already there (an outbox send waiting on a
+    reconnect) is not a new send, so the backfill merged in under it leaves the
+    reader where they are, and so does a channel opening onto pending rows.
+    Everyone else's message still follows only from the bottom
+    (`followOutput`).
+
+    A frame later: Virtuoso takes the new count in its own effects, so a jump
+    made in this commit lands on the row before the send (measured against the
+    real list in a browser). Not cancelled by the next render, which has
+    already recorded the key and won't schedule it again.
+  */
+  const ownPendingKeys = useMemo(() => {
+    if (viewerId === null) return [];
+    const keys: string[] = [];
+    for (const { message } of decorated) {
+      if (message.sender_id === viewerId && message._status === "pending") {
+        keys.push(message.client_message_id ?? message.id);
+      }
+    }
+    return keys;
+  }, [decorated, viewerId]);
+  const ownSendsSeen = useRef<{
+    channelKey: string | null;
+    keys: ReadonlySet<string>;
+  } | null>(null);
+  const sendFrame = useRef<number | null>(null);
+  useEffect(() => {
+    const channelKey = channelId ?? null;
+    const previous = ownSendsSeen.current;
+    const keys = new Set(ownPendingKeys);
+    ownSendsSeen.current = { channelKey, keys };
+    if (previous === null || previous.channelKey !== channelKey) return;
+    if (!ownPendingKeys.some((key) => !previous.keys.has(key))) return;
+    if (sendFrame.current !== null) cancelAnimationFrame(sendFrame.current);
+    sendFrame.current = requestAnimationFrame(() => {
+      sendFrame.current = null;
+      jumpToLatest();
+    });
+  }, [ownPendingKeys, channelId, jumpToLatest]);
+  useEffect(
+    () => () => {
+      if (sendFrame.current !== null) cancelAnimationFrame(sendFrame.current);
+    },
+    [],
+  );
+
+  /*
+    An Ask answer the member just posted for the channel (#4713) brings the
+    list to it, as their own send does. It is the Frapp sender's row and is
+    never pending, so the rule above doesn't see it; and their private copy
+    of the answer leaves the channel in the same moment, so the list's end
+    moves under a member who was reading it.
+  */
+  const newestRow = decorated.at(-1)?.message ?? null;
+  const ownAnswerId =
+    newestRow && isOwnPostedAnswer(newestRow, viewerId) ? newestRow.id : null;
+  const ownAnswerSeen = useRef<{
+    channelKey: string | null;
+    id: string | null;
+  } | null>(null);
+  useEffect(() => {
+    const channelKey = channelId ?? null;
+    const previous = ownAnswerSeen.current;
+    ownAnswerSeen.current = { channelKey, id: ownAnswerId };
+    if (previous === null || previous.channelKey !== channelKey) return;
+    if (ownAnswerId === null || previous.id === ownAnswerId) return;
+    if (sendFrame.current !== null) cancelAnimationFrame(sendFrame.current);
+    sendFrame.current = requestAnimationFrame(() => {
+      sendFrame.current = null;
+      jumpToLatest();
+    });
+  }, [ownAnswerId, channelId, jumpToLatest]);
 
   /*
     Load the next older page while the member sits at the top of what is
@@ -889,12 +1085,14 @@ export const MessageTimeline = forwardRef<
   // `useStickToBottom`'s callback is stable, and must stay so: Virtuoso calls
   // a new `scrollerRef` again, which would re-pin the list to its bottom.
   const stickScrollerRef = stickToBottom.scrollerRef;
+  const jumpScrollerRef = jump.scrollerRef;
   const scrollerRef = useCallback(
     (element: HTMLElement | Window | null) => {
       scroller.current = element instanceof HTMLElement ? element : null;
       stickScrollerRef(element);
+      jumpScrollerRef(element);
     },
-    [stickScrollerRef],
+    [stickScrollerRef, jumpScrollerRef],
   );
   const reportVisible = useCallback(() => {
     const range = visibleRange.current;
@@ -1049,6 +1247,12 @@ export const MessageTimeline = forwardRef<
     );
   }
 
+  // Turns older than every row, or asked in a channel with none: above the
+  // first message, and in an empty channel under its start.
+  const askTurnsAbove = askTurnsByRow
+    .get(ASK_TURNS_ABOVE_ALL)
+    ?.map((turn) => <AskChannelTurn key={turn.id} id={turn.id} />);
+
   if (isLoading || viewerUnresolved) {
     return (
       <>
@@ -1082,7 +1286,14 @@ export const MessageTimeline = forwardRef<
     // Counted after the block list, held rows included: a channel whose only
     // messages are being held is not an empty channel, so it gets no channel
     // start either. `BlockListNotice` above the timeline says they are held.
-    if (thread.heldCount > 0) return <div className="h-full">{header}</div>;
+    if (thread.heldCount > 0) {
+      return (
+        <div className="h-full overflow-y-auto">
+          {header}
+          {askTurnsAbove}
+        </div>
+      );
+    }
     // Not an empty-state card: the channel's start, at the bottom where its
     // first message will land (`writing.md` § Chat (dashboard), Channel start).
     // The box scrolls and the inner column is at least its height, so a start
@@ -1092,6 +1303,7 @@ export const MessageTimeline = forwardRef<
         <div className="flex min-h-full flex-col justify-end">
           {header}
           {channelStart}
+          {askTurnsAbove}
         </div>
       </div>
     );
@@ -1099,7 +1311,7 @@ export const MessageTimeline = forwardRef<
 
   return (
     <ImageViewerProvider value={imageViewer.open}>
-      <div className="h-full">
+      <div className="relative h-full">
         <Virtuoso
           ref={virtuoso}
           data={decorated}
@@ -1124,6 +1336,7 @@ export const MessageTimeline = forwardRef<
           }}
           itemContent={(_, entry) => (
             <>
+              {entry === decorated[0] ? askTurnsAbove : null}
               {entry.startsDay ? (
                 // components.md §11 § Grouping: a hairline either side of a
                 // centred 12.5 / 600 caption, and the only date in the thread.
@@ -1208,24 +1421,36 @@ export const MessageTimeline = forwardRef<
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onClosePoll={onClosePoll}
+                  onCloseCard={onCloseCard}
                   onFlag={onFlag}
                   isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
                   onToggleBookmark={onToggleBookmark}
+                  onRemind={onRemind}
                   canManageChannel={canManageChannel}
+                  inAuditLog={inAuditLog}
                   onReport={onReport}
                   onBlock={onBlock}
+                  onForward={onForward}
                   onOpenProfile={onOpenProfile}
                   isMember={isMember}
                   isTapRevealed={tapRevealed.isRevealed(entry.message)}
                   onToggleTapReveal={() => tapRevealed.toggle(entry.message)}
                 />
               )}
+              {askTurnsByRow
+                .get(entry.message.client_message_id ?? entry.message.id)
+                ?.map((turn) => (
+                  <AskChannelTurn key={turn.id} id={turn.id} />
+                ))}
             </>
           )}
           computeItemKey={(_, entry) =>
             entry.message.client_message_id ?? entry.message.id
           }
         />
+        {jump.showsJump ? (
+          <JumpToLatestButton hasNew={jump.hasNewBelow} onJump={jumpToLatest} />
+        ) : null}
       </div>
       <ImageViewer viewer={imageViewer} />
     </ImageViewerProvider>

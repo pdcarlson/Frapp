@@ -32,6 +32,10 @@ import {
 import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
 import { decidePush } from '../services/push-rules';
 import {
+  chatPushPreview,
+  type ChatPushForwardedCopy,
+} from '../services/chat-push-preview';
+import {
   isAnnouncementChannel,
   isDirectChannel,
   SYSTEM_SENDER_ID,
@@ -39,6 +43,7 @@ import {
 import {
   canAccessChannel,
   EMPTY_ACCESS_HOLDER,
+  listsNameGroups,
   needsAccessHolder,
   type ChannelAccessHolder,
 } from '#domain/utils/channel-access';
@@ -56,7 +61,6 @@ import {
   WORKER_SUBSCRIPTION_DOWN_AFTER_MS,
   WorkerSubscription,
 } from './worker-subscription';
-import { isAuditMirrorRow } from './chat-bridge-worker.service';
 
 interface ChatMessageRow {
   id: string;
@@ -79,29 +83,14 @@ interface ChatMessageRow {
    * which is how a file-only message, whose `content` is empty, is told apart.
    */
   metadata?: Record<string, unknown> | null;
-  /** `audit:<id>` on an audit mirror (`isAuditMirrorRow`); a UUID or null otherwise. */
-  client_message_id?: string | null;
   /** The parent when this row is a thread reply (#3785); pushes only its followers. */
   thread_root_id?: string | null;
+  /**
+   * The forwarded copy when this row is a forward (#4864): a forward with no
+   * comment previews it, withheld from a recipient who blocked its author.
+   */
+  forwarded_from?: (ChatPushForwardedCopy & { sender_id?: unknown }) | null;
   created_at: string;
-}
-
-/**
- * The body of a single chat push: the first 200 characters of the message, or,
- * for a message with no text (a photo or file sent on its own), what was sent.
- * Those used to push an empty body under the sender's name (#3846). The cut is
- * by code point, so it never splits an emoji into a broken character.
- */
-export function chatPushPreview(
-  row: Pick<ChatMessageRow, 'content' | 'metadata'>,
-): string {
-  const text = row.content?.trim() ?? '';
-  if (text) return Array.from(text).slice(0, 200).join('');
-  const raw = Number(row.metadata?.attachment_count);
-  const count = Number.isInteger(raw) && raw > 0 ? raw : 0;
-  if (count === 1) return 'Sent an attachment';
-  if (count > 1) return `Sent ${count} attachments`;
-  return 'Sent a message';
 }
 
 /** Alias kept local so the rest of this file reads in its own domain terms. */
@@ -120,13 +109,13 @@ interface FanOutOutcome {
  * of the same INSERT to every other instance, which is seconds; a day leaves
  * room for an instance whose socket reconnected late.
  */
-export const CHAT_PUSH_CLAIM_RETENTION_MS = 24 * 60 * 60 * 1000;
+const CHAT_PUSH_CLAIM_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The iOS stack a chat push joins (`PushPayload.threadId`): one per channel,
  * which for a DM is one per person.
  */
-export function chatPushThreadId(channelId: string): string {
+function chatPushThreadId(channelId: string): string {
   return `chat:${channelId}`;
 }
 
@@ -134,17 +123,54 @@ export function chatPushThreadId(channelId: string): string {
 const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
 
 /**
+ * The kind of conversation a chat notification came from, as `data.chatKind`
+ * carries it to the in-app list (#4346): a 1:1 DM, a group DM, an
+ * announcement, or any other channel. The announcement test is the push's own
+ * (`isAnnouncementPush`), so the badge and the URGENT priority can't disagree.
+ */
+type ChatNotificationKind = 'dm' | 'group' | 'announcement' | 'channel';
+
+function chatNotificationKind(
+  channel: Pick<CachedChannelRow, 'type'>,
+  isAnnouncement: boolean,
+): ChatNotificationKind {
+  if (channel.type === 'DM') return 'dm';
+  if (channel.type === 'GROUP_DM') return 'group';
+  return isAnnouncement ? 'announcement' : 'channel';
+}
+
+/**
+ * `{ channelName }` when the channel has a name a member would recognize, else
+ * nothing. A DM's `name` is `dm-<uuid>-<uuid>` and an unnamed group DM's is
+ * `group-dm-<timestamp>`, both internal, so neither ever reaches a member.
+ */
+function readableChannelName(
+  channel: Pick<CachedChannelRow, 'type' | 'name'>,
+): { channelName?: string } {
+  if (channel.type === 'DM') return {};
+  if (channel.type === 'GROUP_DM' && UNNAMED_GROUP_DM.test(channel.name)) {
+    return {};
+  }
+  return channel.name ? { channelName: channel.name } : {};
+}
+
+/**
  * Most presence channels one process keeps open (#2507).
  *
  * Every Realtime channel a process opens rides its one Supabase client, and
- * Supabase refuses a join past 100 channels per client. Two of them are the
- * workers' own subscriptions (`chat-push-worker:messages` here,
- * `chat-bridge-worker:audit-log`). The rest were one presence channel per chat
+ * Supabase refuses a join past 100 channels per client. One was a
+ * worker's own subscription (`chat-push-worker:messages` here; the audit
+ * mirror's `chat-bridge-worker:audit-log` was the other until the Logs page
+ * replaced `#chapter-audit`, 2026-11-21). The rest were one presence channel per chat
  * channel ever messaged, opened for the life of the process, so somewhere near
  * 98 active chat channels (roughly 8 to 12 chapters) every further join was
  * refused. `subscribe()` had no status callback, so nothing said so, and people
  * reading those channels were pushed their own conversation. 80 leaves room for
  * both worker channels and a third without re-deriving this number.
+ *
+ * The third is `ChapterPresenceReader` (`@here`, 2026-11-12), which holds up
+ * to `MAX_CONCURRENT_CHAPTER_READS` (8) channels on the same client for a
+ * moment each: 80 + 2 + 8 stays under the 100.
  */
 export const MAX_PRESENCE_CHANNELS = 80;
 
@@ -388,6 +414,11 @@ export class ChatPushWorkerService
     // a reader auditing the rules will find), but nothing should ever reach it.
     if (row.kind === 'imported') return;
 
+    // An Ask Frapp answer its asker posted to the channel (#4713) notifies
+    // nobody: no push and no notification row. Nothing downstream is needed
+    // to decide that, so it leaves here, before the roster is loaded.
+    if (row.kind === 'ask_answer') return;
+
     try {
       // Join the channel's presence before the claim, on every instance.
       // Presence is what suppresses a push to someone already reading the
@@ -522,6 +553,24 @@ export class ChatPushWorkerService
 
     const presenceMap = this.readPresence(channel.id);
     const senderPreview = chatPushPreview(row);
+    // A forward with no comment previews the copy (#4864), whose author is
+    // not the sender: a recipient who blocked that author gets the preview
+    // without their words. Fails closed like the block read above.
+    const withheldPreview = chatPushPreview(row, { withholdForwarded: true });
+    const forwardedAuthor =
+      senderPreview !== withheldPreview &&
+      typeof row.forwarded_from?.sender_id === 'string'
+        ? row.forwarded_from.sender_id
+        : null;
+    const copyReaders = forwardedAuthor
+      ? new Set(
+          await this.chatBlocks.filterOutBlockers(
+            channel.chapter_id,
+            forwardedAuthor,
+            recipientIds,
+          ),
+        )
+      : null;
     // `chat_messages.mentions` is a `users.id[]` resolved by the API at send
     // time. Until C1 this read went through a structural cast over a column
     // that had never existed and was typed as a map, so it resolved to `{}`
@@ -553,16 +602,15 @@ export class ChatPushWorkerService
     // messages in a `mentions` channel push nobody.
     let senderName: Promise<string | null> | null = null;
 
-    const isAuditMirror = isAuditMirrorRow(row);
     for (const recipientId of recipientIds) {
       const prefs = prefsByUser.get(recipientId) ?? [];
+      const mentioned = mentions.includes(recipientId);
       const decision = decidePush({
         channel,
         messageKind: row.kind,
         recipientIsPresent: presenceMap.has(recipientId),
-        hasMention: mentions.includes(recipientId),
+        hasMention: mentioned,
         preferences: prefs,
-        isAuditMirror,
         ...(followStates
           ? {
               thread: {
@@ -578,17 +626,24 @@ export class ChatPushWorkerService
       // early exit in `handleMessage`), so the null arm is only reachable for a
       // future null-sender kind.
       const bundleKey = `${row.sender_id ?? 'none'}:${channel.id}:${recipientId}`;
-      const burst = this.bundler.record(bundleKey);
+      // Past the threshold the bundle covers a burst, but the first later
+      // message that mentions this recipient still pushes on its own, as a
+      // single message with `mentioned: true` (#4359; `BurstBundler.record`).
+      const burst = this.bundler.record(bundleKey, mentioned);
       if (burst.action === 'skip') continue;
 
       senderName ??= this.resolveSenderName(row.sender_id);
       const payload = this.buildPayload(
         channel,
         row.sender_id,
-        senderPreview,
+        !copyReaders || copyReaders.has(recipientId)
+          ? senderPreview
+          : withheldPreview,
         burst,
         await senderName,
         threadRootId,
+        mentioned,
+        row.id,
       );
       try {
         await this.notificationService.notifyUser(
@@ -646,7 +701,10 @@ export class ChatPushWorkerService
 
     let holders: Map<string, ChannelAccessHolder>;
     try {
-      const access = await this.rbac.getChapterMemberAccess(channel.chapter_id);
+      const access = await this.rbac.getChapterMemberAccess(
+        channel.chapter_id,
+        listsNameGroups(shape),
+      );
       holders = new Map(
         access.map((member) => [member.user_id, member.channel_access]),
       );
@@ -950,6 +1008,8 @@ export class ChatPushWorkerService
     burst: ReturnType<BurstBundler['record']>,
     senderName: string | null,
     threadRootId: string | null = null,
+    mentioned = false,
+    messageId: string | null = null,
   ) {
     // One predicate for the title, the priority and the category, bundled or
     // not. A burst of announcements is still announcements: it used to go out
@@ -978,17 +1038,37 @@ export class ChatPushWorkerService
       ? { screen: 'chat', channelId: channel.id, threadRootId }
       : { screen: 'chat', channelId: channel.id };
     const sender = senderId ? { senderId } : {};
+    // What the in-app list draws a row by (#4346): the kind of conversation,
+    // the channel's name where it has a readable one, and whether this
+    // message mentioned the recipient. The title says the first two in words,
+    // and a client must not parse a title. Only this message's mention
+    // counts: a bundle's earlier messages were each decided on their own.
+    const shape = {
+      chatKind: chatNotificationKind(channel, isAnnouncement),
+      ...readableChannelName(channel),
+      ...(mentioned ? { mentioned: true } : {}),
+    };
     if (burst.action === 'bundle') {
       return {
         ...shared,
         body: `${burst.count} new messages`,
-        data: { target, ...sender, bundled: true, count: burst.count },
+        data: {
+          target,
+          ...sender,
+          ...shape,
+          bundled: true,
+          count: burst.count,
+        },
       };
     }
+    // A single push quotes this one message, so its row is tied to it: a
+    // delete of the message deletes the row and an edit rewrites its body
+    // (#4418). A bundle quotes nothing and is not tied to any one message.
     return {
       ...shared,
       body: preview,
-      data: { target, ...sender },
+      data: { target, ...sender, ...shape },
+      ...(messageId ? { chatMessageId: messageId } : {}),
     };
   }
 
@@ -998,10 +1078,14 @@ export class ChatPushWorkerService
    * mismatch once let URGENT pushes escape the member's Chat switch, #1041).
    *
    * **The channel decides, never the message's `kind`.** `kind` comes from the
-   * client (`SendMessageDto.kind`), and `ChatService.sendMessage` accepts
-   * `announcement` from any member in any channel it may post in, so trusting
-   * it let a member who couldn't post in #announcements send an URGENT push that skips
-   * quiet hours to everyone at `all` in #general, or in any DM (#2771 review).
+   * client (`SendMessageDto.kind`), and `ChatService.sendMessage` used to
+   * accept `announcement` from any member in any channel it may post in, so
+   * trusting it let a member who couldn't post in #announcements send an
+   * URGENT push that skips quiet hours to everyone at `all` in #general, or in
+   * any DM (#2771 review). The send now refuses that kind outside this same
+   * predicate (#3414), but the push still decides by the channel: a row
+   * written before that, or by a writer that skips `sendMessage`, keeps its
+   * kind.
    * Only an announcements channel (`isAnnouncementChannel`: PUBLIC, read-only,
    * so only its who-can-post list writes there, #3722) makes one.
    *
@@ -1031,10 +1115,7 @@ export class ChatPushWorkerService
         : 'New Announcement';
     }
     if (isDirectChannel(channel)) {
-      const groupName =
-        channel.type === 'GROUP_DM' && !UNNAMED_GROUP_DM.test(channel.name)
-          ? channel.name
-          : null;
+      const groupName = readableChannelName(channel).channelName ?? null;
       if (senderName) {
         return groupName ? `${senderName} in ${groupName}` : senderName;
       }

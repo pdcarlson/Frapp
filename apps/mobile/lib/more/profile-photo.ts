@@ -48,6 +48,7 @@ export async function pickAndSetProfilePhoto(
   return pickUploadAndConfirmImage({
     kind: "image",
     cropSquare: true,
+    avatar: "photo",
     requestUploadUrl: mutations.requestUploadUrl,
     confirm: mutations.confirm,
     copy: {

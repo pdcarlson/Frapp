@@ -44,6 +44,12 @@ export interface ActivityLink {
   url: string;
   /** Lower-cased, without `www.`: what a row shows as where the link goes. */
   host: string;
+  /**
+   * The page's own name, read once in the background (#4187); null when it
+   * had none worth showing or hasn't been read yet, and the row shows its
+   * kind instead.
+   */
+  title: string | null;
   /** The chat message it was posted in, for "Open in chat". */
   message_id: string;
   /**
@@ -66,6 +72,12 @@ export interface ActivityLink {
    * reads every section's opens at once.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
 }
 
 /**
@@ -142,6 +154,7 @@ export class ActivityLinkService {
         id: link.id,
         url: link.url,
         host: link.host,
+        title: link.title ?? null,
         message_id: link.message_id,
         thread_root_id: link.thread_root_id ?? null,
         channel_id: link.channel_id,
@@ -151,6 +164,7 @@ export class ActivityLinkService {
         posted_by_name: link.posted_by ? (names.get(link.posted_by) ?? '') : '',
         posted_at: link.posted_at,
         unread: false,
+        snoozed_until: null,
       };
     });
   }

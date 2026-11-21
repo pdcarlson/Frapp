@@ -191,13 +191,13 @@ describe("the no-retint boundary holds on the cached path", () => {
    * families (the locked brand golds, and the neutral scrollbar). This cache
    * is a second writer of those same tokens, so it needs
    * the same guard — a cache that could carry one extra key would retint the
-   * mark, the Ask pill or the scrollbars on every chapter that had one stored.
+   * mark, Ask's markers or the scrollbars on every chapter that had one stored.
    */
   it("caches exactly the bridge's output — no more, no fewer", () => {
     expect([...ACCENT_TOKEN_ORDER].sort()).toEqual(Object.keys(BLUE).sort());
   });
 
-  it("has no slot for the mark, the Ask pill or the scrollbars", () => {
+  it("has no slot for the mark, Ask's fixed gold or the scrollbars", () => {
     const locked = [
       "--gold-house",
       "--gold-on-house",

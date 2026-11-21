@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
 import { MODULE_SETTINGS } from "@/components/settings/settings-modules";
 import { InlineNote } from "@/components/shared/inline-note";
+import { CHAPTER_LOGS_TITLE } from "@repo/validation";
+import { SettingsSearch } from "@/components/settings/settings-search";
 
 // Board `4d`: rail rows are `height:34px;border-radius:10px;padding:0 10px`,
 // inactive `#A9A399`, active a filled gold chip (`background:#2A2410;
@@ -12,7 +14,7 @@ import { InlineNote } from "@/components/shared/inline-note";
 // rail used to run down its side.
 //
 // **The fill is the chapter accent, not `--gold-ask-*`.** The board paints the
-// Ask pill and the active tab at the same hexes only because the demo tenant's
+// Ask family and the active tab at the same hexes only because the demo tenant's
 // seed and the house gold coincide — the trap `tokens.md` §L-01 names and
 // `pro-chip.tsx` already refused once in this lane. Ask is fixed; a settings
 // tab is product UI and retints.
@@ -38,11 +40,9 @@ const RAIL_ROW_RESET =
 const RAIL_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-muted-foreground enabled:hover:bg-card data-[state=active]:bg-accent-subtle data-[state=active]:font-semibold data-[state=active]:text-accent-text data-[state=active]:shadow-none enabled:data-[state=active]:text-accent-text lg:w-full lg:flex-none`;
 
 /** The rail's groups, in order. */
-export type SettingsTabGroup = "chapter" | "people" | "modules";
+type SettingsTabGroup = "chapter" | "people" | "modules";
 
-export const SETTINGS_TAB_GROUP_LABELS: Readonly<
-  Record<SettingsTabGroup, string>
-> = {
+const SETTINGS_TAB_GROUP_LABELS: Readonly<Record<SettingsTabGroup, string>> = {
   chapter: "Chapter",
   people: "People",
   modules: "Modules",
@@ -83,7 +83,8 @@ export type SettingsTab = {
   - **`classes` is ours**, live chapter configuration with no other home. It
     takes the chapter's own word for a class, which the page sets.
 
-  `beta` and `audit` are gone rather than reordered. They rendered
+  `beta` and the old `audit` stub are gone rather than reordered (the
+  built Logs row took the audit's place). They rendered
   `SettingsComingSoon` stubs naming "Chunk 08", generated chrome advertising
   unbuilt work.
 */
@@ -91,8 +92,20 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   { value: "org", label: "Chapter", group: "chapter" },
   { value: "semester", label: "Semester", group: "chapter" },
   { value: "privacy", label: "Privacy", group: "chapter" },
+  /*
+    The president's AI switches (#4308). Only while the server has AI: the
+    page drops the row when `useAiConsent` answers `null` (`AI_ENABLED` off),
+    so with AI off the rail is what it was.
+  */
+  { value: "ai", label: "AI", group: "chapter" },
   { value: "billing", label: "Plan and billing", group: "chapter" },
-  { value: "roles", label: "Roles", group: "people" },
+  /*
+    The record of officer changes (Paul, 2026-11-21), which was the
+    `#chapter-audit` channel in chat. Last in the group: read when something
+    needs looking into, not set up.
+  */
+  { value: "logs", label: CHAPTER_LOGS_TITLE, group: "chapter" },
+  { value: "roles", label: "Roles and groups", group: "people" },
   { value: "classes", label: "Pledge class", group: "people" },
   { value: "fields", label: "Member fields", group: "people" },
   ...MODULE_SETTINGS.map((module): SettingsTab => ({
@@ -110,8 +123,10 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
  * bookmarks keep working. `?tab=modules&module=<key>` opens that module's
  * page instead (`settings-page.tsx`).
  */
-export const SETTINGS_TAB_ALIASES: Readonly<Record<string, string>> = {
+const SETTINGS_TAB_ALIASES: Readonly<Record<string, string>> = {
   theme: "org",
+  // Groups share the Roles page since 2026-11-19.
+  groups: "roles",
   danger: "billing",
   modules: "events",
   workflows: "hours",
@@ -139,8 +154,15 @@ export function resolveSettingsTabParam(
  */
 export function SettingsRail({
   visibleTabs,
+  onRowClick,
 }: {
   visibleTabs: readonly SettingsTab[];
+  /**
+   * Every click on a row, the lit one included, which Radix's
+   * `onValueChange` skips: the lit row is the way back from a page opened
+   * inside it (#3837), as a lit row in Discord's settings rail is.
+   */
+  onRowClick?: (value: string) => void;
 }) {
   const groups = (Object.keys(SETTINGS_TAB_GROUP_LABELS) as SettingsTabGroup[])
     .map((group) => ({
@@ -150,36 +172,43 @@ export function SettingsRail({
     }))
     .filter((entry) => entry.tabs.length > 0);
   return (
-    <div className="flex w-full flex-col gap-4 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:w-[200px] lg:shrink-0 lg:self-start lg:overflow-y-auto lg:py-1">
-      {groups.map((entry) => (
-        <div key={entry.group} className="flex flex-col gap-0.5">
-          <p
-            id={`settings-rail-${entry.group}`}
-            className={cn(EYEBROW, "px-[10px] pb-1 text-muted")}
-          >
-            {entry.label}
-          </p>
-          <TabsList
-            aria-labelledby={`settings-rail-${entry.group}`}
-            className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 border-b-0 bg-transparent p-0 lg:flex-col lg:flex-nowrap lg:items-stretch"
-          >
-            {entry.tabs.map((tab) => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                className={RAIL_TRIGGER_CLASS}
-              >
-                <span className="min-w-0 truncate">{tab.label}</span>
-                {tab.off ? (
-                  <span className="ml-auto pl-2 text-caption font-normal text-muted">
-                    Off
-                  </span>
-                ) : null}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
-      ))}
+    <div className="flex w-full flex-col gap-4 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-7rem)] lg:w-[200px] lg:shrink-0 lg:self-start lg:py-1">
+      {/* Settings search (2026-11-19): every setting by name and synonym.
+          It sits outside the rows' scroll box, so its wider list is not
+          clipped to the 200px rail. */}
+      <SettingsSearch />
+      <div className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
+        {groups.map((entry) => (
+          <div key={entry.group} className="flex flex-col gap-0.5">
+            <p
+              id={`settings-rail-${entry.group}`}
+              className={cn(EYEBROW, "px-[10px] pb-1 text-muted")}
+            >
+              {entry.label}
+            </p>
+            <TabsList
+              aria-labelledby={`settings-rail-${entry.group}`}
+              className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 border-b-0 bg-transparent p-0 lg:flex-col lg:flex-nowrap lg:items-stretch"
+            >
+              {entry.tabs.map((tab) => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className={RAIL_TRIGGER_CLASS}
+                  onClick={onRowClick ? () => onRowClick(tab.value) : undefined}
+                >
+                  <span className="min-w-0 truncate">{tab.label}</span>
+                  {tab.off ? (
+                    <span className="ml-auto pl-2 text-caption font-normal text-muted">
+                      Off
+                    </span>
+                  ) : null}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

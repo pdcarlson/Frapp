@@ -10,16 +10,24 @@
  * it is a tab of Chapter settings (and a member's invoices a section of
  * `/preferences`), and a pathname can't tell Plan and billing from Roles, so
  * mapping `/settings` would mark a lapse alert read on a visit to Roles. A
- * billing row is read when it is opened.
+ * billing row is read when it is opened. The report queue and Discord import
+ * live inside Chapter settings too (#3837), so they mark their own rows read
+ * while they are open (`MarkScreensSeen` in `settings-page.tsx`).
  */
 const SCREENS_BY_ROUTE: readonly (readonly [string, readonly string[]])[] = [
-  ["/events", ["events"]],
-  ["/tasks", ["tasks"]],
+  // Events suggested from this time last year are reviewed here (#3930).
+  ["/events", ["events", "ai_suggestions"]],
+  // The board's Suggested list is where suggested tasks are reviewed (#4313).
+  ["/tasks", ["tasks", "ai_suggestions"]],
+  // And under the minutes they came from, where the push for them opens.
+  ["/meetings", ["ai_suggestions"]],
+  // A submitted task's review opens here (`?review=`), as do the tasks
+  // waiting on the member, so a visit reads task rows too, and the weekly
+  // recap push (#4985) opens here.
+  ["/activity", ["tasks", "activity"]],
   ["/points", ["points"]],
   ["/service", ["service"]],
   ["/members", ["members"]],
-  ["/chat-admin", ["chat_reports"]],
-  ["/discord-import", ["discord_import"]],
 ];
 
 const NONE: readonly string[] = [];

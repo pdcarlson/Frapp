@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OAuthButtons } from "./oauth-buttons";
 import { GOOGLE_MARK_COLORS } from "./oauth-brand-icons";
-import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth/oauth";
+import { OAUTH_MEMBERSHIP_HINT } from "@repo/hooks/auth-error-copy";
 
 describe("OAuthButtons", () => {
   it("renders Apple and Google as equal secondary actions", () => {

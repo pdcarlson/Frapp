@@ -14,21 +14,36 @@ import {
   MinLength,
   ValidateIf,
   ValidateNested,
+  ArrayNotEmpty,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
-import { Type } from 'class-transformer';
+import { MaxJsonLength } from '../decorators/max-json-length.decorator';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   CHANNEL_ACCESS_ENTRY_PATTERN,
   CHANNEL_ACCESS_LIST_MAX,
   CHAT_CHAPTER_LEVELS,
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+  MAX_MENTION_LABEL_LENGTH,
+  MAX_MENTION_PICKS,
   CHAT_MESSAGE_FLAGS,
   CHAT_NOTIFICATION_LEVELS,
   type ChatChapterLevel,
   type ChatMessageFlag,
 } from '@repo/validation';
 import { POSITION_MAX } from '#domain/constants/field-limits';
+import {
+  CHAT_CARD_PAYLOAD_MAX_CHARS,
+  CHAT_FORM_CARD_PAYLOAD_MAX_CHARS,
+  CHAT_MESSAGE_METADATA_MAX_CHARS,
+  MAX_GROUP_DM_MEMBERS,
+} from '#domain/constants/chat';
+import {
+  MESSAGE_ACTION_PAYLOAD_MAX_CHARS,
+  MESSAGE_ACTION_TYPE_PATTERN,
+} from '#domain/utils/message-action-types';
+import { MAX_GIF_EDGE } from '#domain/adapters/gif-search.interface';
 import {
   CHAT_MESSAGE_KINDS,
   CHAT_THREAD_FOLLOW_STATES,
@@ -49,17 +64,18 @@ import {
   LIST_QUERY_LIMIT_MAX,
   LIST_QUERY_LIMIT_MIN,
 } from '#domain/constants/list-query-limits';
+import { splitIdList } from './id-list-query';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 
 const ENTRY_MESSAGE =
-  'each entry must be tier:<id> or role:<id>, as GET /v1/channels/access-options lists them';
+  'each entry must be tier:<id>, role:<id> or group:<id>, as GET /v1/channels/access-options lists them';
 
 const WHO_CAN_SEE_DESCRIPTION =
-  "Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).";
+  "Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category).";
 
 const WHO_CAN_POST_DESCRIPTION =
-  "Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.";
+  "Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list.";
 
 const LEGACY_FIELD_DESCRIPTION =
   'Replaced by `who_can_see` and `who_can_post` (#3722); kept so an open page from before the change gets a clear refusal. A value that would change who can see or post is refused with a reload message.';
@@ -247,7 +263,7 @@ export class UpdateChannelDto {
     type: String,
     nullable: true,
     description:
-      "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.",
+      "The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. A DM or group DM always defaults to `all`.",
   })
   @IsOptional()
   @IsIn(CHAT_NOTIFICATION_LEVELS)
@@ -255,7 +271,7 @@ export class UpdateChannelDto {
 
   @ApiPropertyOptional({
     description:
-      "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM.",
+      "Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none.",
   })
   // Not `@IsOptional()`, which lets `null` through to a not-null column (a
   // 500): absent skips validation, `null` is refused as not a boolean.
@@ -265,15 +281,31 @@ export class UpdateChannelDto {
 
   @ApiPropertyOptional({
     description:
-      "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM.",
+      "Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business.",
   })
   @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   activity_excluded?: boolean;
 }
 
+/**
+ * A user id as the API compares it: lowercased, since Postgres answers with
+ * lowercase UUIDs and a DM's members are compared and counted as strings
+ * (`ChatService.getOrCreateDm` / `createGroupDm` lowercase them again).
+ */
+function lowercased({ value }: { value: unknown }): unknown {
+  if (typeof value === 'string') return value.toLowerCase();
+  if (Array.isArray(value)) {
+    return value.map((entry: unknown) =>
+      typeof entry === 'string' ? entry.toLowerCase() : entry,
+    );
+  }
+  return value;
+}
+
 export class CreateDmDto {
   @ApiProperty({ description: 'The other member user ID' })
+  @Transform(lowercased)
   @IsUUID()
   member_id: string;
 }
@@ -297,7 +329,7 @@ export class ChannelMemberDto {
     type: Number,
     nullable: true,
     description:
-      "The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`.",
+      "Where the member's highest-ranked role sits among the chapter's roles in rank order (the President's role first, then by tier, then each role's order in its tier), 0 for the top; lower ranks higher, null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`.",
   })
   role_rank: number | null;
 
@@ -314,14 +346,58 @@ export class ChannelMemberDto {
     type: String,
     nullable: true,
     description:
-      "That role's name, the group's heading, or null when they hold no role.",
+      'That role\'s name, "Members" for the chapter\'s Everyone role, or null when they hold no role. Older app builds group by it; current ones group by tier.',
   })
   role_name: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "The member's title: their highest-ranked role's name, or null for the chapter's Everyone role or no role.",
+  })
+  title: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The highest tier any of their roles is in, the group the list files them under, or null when none of their roles is in a tier.',
+  })
+  tier_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "That tier's name, the group's heading; null with tier_id.",
+  })
+  tier_name: string | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: "That tier's position, 1 for the top tier; null with tier_id.",
+  })
+  tier_rank: number | null;
 }
 
 export class CreateGroupDmDto {
-  @ApiProperty({ type: [String] })
+  /**
+   * The other people in the group, each a member of the caller's chapter
+   * (404 otherwise). The caller is added and may be left out; a group DM
+   * holds up to {@link MAX_GROUP_DM_MEMBERS} people, the caller included.
+   */
+  @ApiProperty({
+    type: [String],
+    maxItems: MAX_GROUP_DM_MEMBERS - 1,
+    description: `The other members of the chapter to add, at most ${MAX_GROUP_DM_MEMBERS - 1}: a group DM holds up to ${MAX_GROUP_DM_MEMBERS} people, you included.`,
+  })
+  @Transform(lowercased)
   @IsArray()
+  @ArrayMaxSize(MAX_GROUP_DM_MEMBERS - 1, {
+    message: `A group DM holds up to ${MAX_GROUP_DM_MEMBERS} people, you included`,
+  })
   @IsUUID(undefined, { each: true })
   member_ids: string[];
 
@@ -350,7 +426,7 @@ export class CreateCategoryDto {
     nullable: true,
     maxItems: CHANNEL_ACCESS_LIST_MAX,
     description:
-      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it.',
+      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. A new channel in the category starts with it.',
   })
   @IsOptional()
   @IsArray()
@@ -364,7 +440,7 @@ export class CreateCategoryDto {
     nullable: true,
     maxItems: CHANNEL_ACCESS_LIST_MAX,
     description:
-      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.',
+      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries.',
   })
   @IsOptional()
   @IsArray()
@@ -393,7 +469,7 @@ export class UpdateCategoryDto {
     nullable: true,
     maxItems: CHANNEL_ACCESS_LIST_MAX,
     description:
-      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those.',
+      'Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. Changing it changes every channel in the category that matched it, and only those.',
   })
   @IsOptional()
   @IsArray()
@@ -407,7 +483,7 @@ export class UpdateCategoryDto {
     nullable: true,
     maxItems: CHANNEL_ACCESS_LIST_MAX,
     description:
-      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries.',
+      'Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries.',
   })
   @IsOptional()
   @IsArray()
@@ -486,6 +562,72 @@ export class MessageAttachmentDto {
   preview_storage_path?: string;
 }
 
+/**
+ * A GIF picked in the composer's GIF picker (#4631), as `GET /v1/gifs/*`
+ * returned it. `ChatService` stores it as the server's own `metadata.gif`
+ * after `GifService.messageGif` holds the URL to the provider's media host.
+ */
+export class MessageGifDto {
+  @ApiProperty({ maxLength: 200 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  id: string;
+
+  @ApiPropertyOptional({ maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @ApiProperty({ maxLength: 2048 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2048)
+  url: string;
+
+  @ApiProperty({ minimum: 1, maximum: MAX_GIF_EDGE })
+  @IsInt()
+  @Min(1)
+  @Max(MAX_GIF_EDGE)
+  width: number;
+
+  @ApiProperty({ minimum: 1, maximum: MAX_GIF_EDGE })
+  @IsInt()
+  @Min(1)
+  @Max(MAX_GIF_EDGE)
+  height: number;
+
+  @ApiProperty({
+    maxLength: 128,
+    description:
+      'The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused.',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  token: string;
+}
+
+/**
+ * A member a mention picker wrote into the body (#3835): their id, and the
+ * label it wrote after the `@`. A token spelling the label exactly reaches
+ * that member, or nobody when they have left the chapter or no longer go by
+ * that name; it never falls back to another member by name. The body itself
+ * stays `@Name`, so every reader draws it as before.
+ */
+export class MentionPickDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  user_id: string;
+
+  @ApiProperty({ minLength: 1, maxLength: MAX_MENTION_LABEL_LENGTH })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(MAX_MENTION_LABEL_LENGTH)
+  label: string;
+}
+
 export class SendMessageDto {
   /**
    * Client-generated idempotency key. The server dedupes on
@@ -537,8 +679,27 @@ export class SendMessageDto {
   @IsIn(CHAT_MESSAGE_KINDS)
   kind?: (typeof CHAT_MESSAGE_KINDS)[number];
 
-  /** Inline card payload for rich kinds (event, poll, task, …). */
-  @ApiPropertyOptional({ type: Object })
+  /**
+   * A GIF from the GIF picker (#4631). The message is the GIF: `content` is
+   * empty, and it carries no attachments. Only on a plain text message.
+   */
+  @ApiPropertyOptional({ type: MessageGifDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => MessageGifDto)
+  gif?: MessageGifDto;
+
+  /**
+   * Inline card payload for rich kinds (poll, sign-up, form, announcement, …).
+   * Checked on send by `ChatService.sendMessage`: a poll, sign-up, form or
+   * role picker card is rebuilt from its known fields, and once checked a
+   * card holds at most {@link CHAT_CARD_PAYLOAD_MAX_CHARS} characters as
+   * JSON, or {@link CHAT_FORM_CARD_PAYLOAD_MAX_CHARS} for a form.
+   */
+  @ApiPropertyOptional({
+    type: Object,
+    description: `A rich card's data. Once checked, at most ${CHAT_CARD_PAYLOAD_MAX_CHARS} characters as JSON, or ${CHAT_FORM_CARD_PAYLOAD_MAX_CHARS} for a form.`,
+  })
   @IsOptional()
   @IsObject()
   payload?: Record<string, any>;
@@ -560,38 +721,115 @@ export class SendMessageDto {
   thread_root_id?: string;
 
   /**
-   * Free-form client annotations, persisted verbatim onto the message row.
-   * `@IsObject` is the type check `payload` above already carries — without it
-   * this was the one request-DTO property in the API with a gate but no
-   * constraint, so a caller could store a bare string or array in a column the
-   * readers treat as an object. Overall size stays bounded by the body parser's
-   * default 100 kB JSON limit.
+   * Free-form client annotations, persisted onto the message row (less the
+   * keys only the server writes). `@IsObject` is the type check `payload`
+   * above already carries — without it this was the one request-DTO property
+   * in the API with a gate but no constraint, so a caller could store a bare
+   * string or array in a column the readers treat as an object. Capped at
+   * {@link CHAT_MESSAGE_METADATA_MAX_CHARS} characters as JSON: every reader
+   * of the channel downloads it, and the body parser's limit (1 MB on this
+   * route) is no bound for that. No app sends any today.
    */
-  @ApiPropertyOptional({ type: Object })
+  @ApiPropertyOptional({
+    type: Object,
+    description: `Client annotations, at most ${CHAT_MESSAGE_METADATA_MAX_CHARS} characters as JSON.`,
+  })
   @IsOptional()
   @IsObject()
+  @MaxJsonLength(CHAT_MESSAGE_METADATA_MAX_CHARS)
   metadata?: Record<string, any>;
+
+  /**
+   * The members the composer's `@` picker wrote into `content` (#3835). Left
+   * out (every client before it, and a hand-typed mention), `@Name` resolves
+   * by name as it always has.
+   */
+  @ApiPropertyOptional({ type: [MentionPickDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MENTION_PICKS)
+  @ValidateNested({ each: true })
+  @Type(() => MentionPickDto)
+  mention_picks?: MentionPickDto[];
 }
 
 /**
- * Per-user reaction / vote / RSVP / card-action. Writes to
- * `chat_message_actions` (Chunk 02). For `action_type === "vote"` the
- * server UPSERTS — same row, replaced `payload` — so a poll vote can
- * be changed without thrashing the Realtime subscription.
+ * `POST /v1/channels/messages/{messageId}/forward` (#4864): send a copy of
+ * that message to one channel or DM the caller can post in, with an optional
+ * comment. The copy is built server-side (`forwarded_from` on the new
+ * message); nothing about the original is taken from the client.
+ */
+export class ForwardMessageDto {
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'The channel or DM to forward to. It may be the channel the message is in.',
+  })
+  @IsUUID()
+  channel_id: string;
+
+  @ApiPropertyOptional({
+    minLength: 0,
+    maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH,
+    description:
+      'The forwarder’s own comment, posted as the new message’s text. May be empty or left out. Its @mentions reach people as a message’s do.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
+  content?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Client-generated idempotency key, as on a send: a retry with the same key in the same destination answers the forward already made.',
+  })
+  @IsOptional()
+  @IsUUID()
+  client_message_id?: string;
+
+  @ApiPropertyOptional({ type: [MentionPickDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MENTION_PICKS)
+  @ValidateNested({ each: true })
+  @Type(() => MentionPickDto)
+  mention_picks?: MentionPickDto[];
+}
+
+/**
+ * Per-user reaction / vote / sign-up claim. Writes to `chat_message_actions`
+ * (Chunk 02). For `action_type === "vote"` the server UPSERTS — same row,
+ * replaced `payload` — so a poll vote can be changed without thrashing the
+ * Realtime subscription.
+ *
+ * `action_type` is one of the three the apps send
+ * (`MESSAGE_ACTION_TYPE_PATTERN`); it was free-form, and every reader of the
+ * channel loads every row with the message.
  */
 export class ChatMessageActionDto {
   @ApiProperty({
     description:
-      'Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions.',
+      'Action discriminator: `reaction:<emoji>` for an emoji reaction, `vote` for a poll vote (UPSERT), or `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full). Anything else is a 400.',
+    // No `pattern` in the schema: the shipped-build contract check reads a
+    // new one as a break, though every shipped app sends only these three.
+    maxLength: 50,
   })
   @IsString()
   @MinLength(1)
   @MaxLength(50)
+  @Matches(MESSAGE_ACTION_TYPE_PATTERN, {
+    message: 'action_type must be vote, signup, or reaction:<emoji>',
+  })
   action_type: string;
 
-  @ApiPropertyOptional({ type: Object })
+  @ApiPropertyOptional({
+    type: Object,
+    description: `The vote or claim (\`{ option_id }\` or \`{ slot_ids, note? }\`), at most ${MESSAGE_ACTION_PAYLOAD_MAX_CHARS} characters as JSON. A reaction carries none and any sent is not stored.`,
+  })
   @IsOptional()
   @IsObject()
+  @MaxJsonLength(MESSAGE_ACTION_PAYLOAD_MAX_CHARS)
   payload?: Record<string, any>;
 }
 
@@ -603,6 +841,18 @@ export class EditMessageDto {
   @MinLength(1)
   @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
+
+  /**
+   * Members picked while editing (#3835), as on a send. The picks the message
+   * was sent with are kept server-side, so an edit needn't repeat them.
+   */
+  @ApiPropertyOptional({ type: [MentionPickDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_MENTION_PICKS)
+  @ValidateNested({ each: true })
+  @Type(() => MentionPickDto)
+  mention_picks?: MentionPickDto[];
 }
 
 export class SetMessageFlagDto {
@@ -697,23 +947,35 @@ export class ChatUploadUrlResponseDto {
  * caller may ping it, and the server expands the role when the message lands.
  */
 export class MentionRoleDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      "The role's id, or the tier's or group's (`kind`). A class year's standing (`@Seniors`, #5786) has its own id, fixed for that group and standing, so no two rows share one.",
+  })
   role_id: string;
 
-  @ApiProperty({ description: 'The role name; the picker inserts it folded.' })
+  @ApiProperty({
+    enum: ['role', 'tier', 'group'],
+    description:
+      'What it is (#4076): a role, a tier (reaching everyone holding a role in it) or a group. A picker labels its row by it, so a tier and a role sharing a name read apart; a mention of a name several share reaches all of them.',
+  })
+  kind: 'role' | 'tier' | 'group';
+
+  @ApiProperty({ description: 'The name; the picker inserts it folded.' })
   name: string;
 
   @ApiProperty({
     type: String,
     nullable: true,
-    description: 'The role’s palette color, or null.',
+    description:
+      'The role’s color (a palette color or a readable custom `#RRGGBB`, `isPaintableRoleColor`), or null.',
   })
   color: string | null;
 
   @ApiProperty({
     type: Boolean,
     description:
-      'Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody.',
+      'Whether the caller may `@` it: its own switch (`mentionable` on the role, tier or group, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming one the sender may not ping reaches nobody.',
   })
   mentionable: boolean;
 }
@@ -722,14 +984,14 @@ export class MentionRoleDto {
 export class ChannelAccessOptionDto {
   @ApiProperty({
     description:
-      'The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`.',
+      'The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`.',
   })
   entry: string;
 
   @ApiProperty({
-    enum: ['tier', 'role'],
+    enum: ['tier', 'role', 'group'],
     description:
-      'What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading.',
+      'What the entry names: a tier, a role or a group (#4076). More kinds may come; an editor groups by kind and should show an unknown one under its own heading.',
   })
   kind: string;
 
@@ -743,7 +1005,7 @@ export class ChannelAccessOptionDto {
     type: String,
     nullable: true,
     description:
-      "A role's palette color; null for a tier or an uncolored role.",
+      "A role's color (palette or readable custom, `isPaintableRoleColor`); null for a tier or an uncolored role.",
   })
   color: string | null;
 
@@ -761,6 +1023,12 @@ export class ChannelAccessOptionDto {
       'The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice.',
   })
   user_ids: string[];
+
+  @ApiProperty({
+    description:
+      'True for the Everyone role (#4191): an editor shows it on a list that already names it but does not offer to add it, since it names only the members holding it. False for every other option.',
+  })
+  hidden: boolean;
 }
 
 export class ChannelUnreadCountDto {
@@ -830,6 +1098,29 @@ export class ChannelLatestMessageDto {
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+
+  @ApiProperty({
+    type: () => ForwardedMessageDto,
+    nullable: true,
+    description:
+      'When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise.',
+  })
+  forwarded_from: ForwardedMessageDto | null;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”.',
+  })
+  has_gif: boolean;
+
+  @ApiProperty({
+    enum: ['sent', 'read'],
+    nullable: true,
+    description:
+      'Read receipts (#5519). On a DM or group DM whose latest message is the caller’s: `read` once every other member has read past it, `sent` until then. A member who turned read receipts off never counts as having read it, and a caller who turned them off always gets `sent`. Null on any other row.',
+  })
+  read_status: 'sent' | 'read' | null;
 }
 
 /**
@@ -947,7 +1238,7 @@ export class ClearedKindNotificationPreferenceDto {
 }
 
 /** Bounds one request to roughly one page of distinct message authors (#1231). */
-export const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
+const MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST = 50;
 
 export class ResolveAuthorAvatarsDto {
   @ApiProperty({
@@ -960,6 +1251,159 @@ export class ResolveAuthorAvatarsDto {
   @ArrayMaxSize(MAX_AUTHOR_AVATAR_PATHS_PER_REQUEST)
   @IsUUID(undefined, { each: true })
   message_ids: string[];
+}
+
+/**
+ * Server cap on one batched attachments request (#5667). Clients chunk at
+ * this size (`ATTACHMENT_REQUEST_CHUNK_SIZE` in `@repo/hooks`). With at most
+ * 10 attachments a message, a full request stays under PostgREST's 1000-row
+ * read cap.
+ */
+const MAX_ATTACHMENT_MESSAGES_PER_REQUEST = 50;
+
+export class ListMessagesAttachmentsQueryDto {
+  @ApiProperty({
+    type: String,
+    description:
+      'Comma-separated IDs of messages in this channel whose attachments to list, at most 50. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list.',
+    example:
+      '3f0c1d9e-0000-4000-8000-000000000001,3f0c1d9e-0000-4000-8000-000000000002',
+  })
+  @Transform(({ value }: { value: unknown }) => splitIdList(value))
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(MAX_ATTACHMENT_MESSAGES_PER_REQUEST)
+  @IsUUID(undefined, { each: true })
+  message_ids: string[];
+}
+
+/** What a thread's parent holds of its newest reply (#4297). */
+export class ChatThreadLastReplyDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  sender_id: string | null;
+
+  @ApiProperty({ description: 'The reply’s text, cut to 500 characters.' })
+  content: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  kind: string | null;
+
+  @ApiProperty({
+    description:
+      'The reply’s `metadata.attachment_count`, or 0 when it has none.',
+  })
+  attachment_count: number;
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies.',
+  })
+  has_gif?: boolean;
+
+  @ApiProperty()
+  created_at: string;
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list.',
+  })
+  sender_blocked?: boolean;
+}
+
+/** The GIF a forwarded copy carries: the same shape as a GIF message's `metadata.gif`. */
+export class ForwardedGifDto {
+  @ApiProperty()
+  provider: string;
+
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  title: string;
+
+  @ApiProperty()
+  url: string;
+
+  @ApiProperty()
+  width: number;
+
+  @ApiProperty()
+  height: number;
+}
+
+/**
+ * What a forward holds of the message it copies (#4864). A copy made when it
+ * was forwarded, not a live reference: an edit to the original changes
+ * nothing here, and a delete of the original blanks it (`deleted: true`).
+ */
+export class ForwardedMessageDto {
+  @ApiProperty({ format: 'uuid', description: 'The original message.' })
+  message_id: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'Where the original lives. Never named in the copy: a reader shows the channel’s name only when its own channel list has it, so a private channel’s name never leaks.',
+  })
+  channel_id: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The original’s author; null for an imported archive message, and once the original is deleted.',
+  })
+  sender_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The author’s name when it was forwarded (“Deleted User” after account deletion). Null once the original is deleted, or when masked.',
+  })
+  author_name: string | null;
+
+  @ApiProperty({
+    description:
+      'The original’s text. Empty for a GIF or files only, once deleted, and when masked. Cut to 500 characters on Chat home’s preview.',
+  })
+  content: string;
+
+  @ApiProperty({ type: () => ForwardedGifDto, nullable: true })
+  gif: ForwardedGifDto | null;
+
+  @ApiProperty({
+    description:
+      'How many files the original had. They are not copied; the card says “1 attachment” or “N attachments”.',
+  })
+  attachment_count: number;
+
+  @ApiProperty({ description: 'When the original was sent.' })
+  created_at: string;
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'True once the original was deleted: the copy keeps only where and when it was, and reads “Original message was deleted”. Absent or false otherwise.',
+  })
+  deleted?: boolean;
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'Set by a read that masks: true when the viewer blocked the original’s author, with the content, GIF, name and count withheld; false when cleared. Absent on the Realtime echo, which carries the copy raw: a client applies its own list.',
+  })
+  sender_blocked?: boolean;
 }
 
 /**
@@ -1028,7 +1472,7 @@ export class ChatMessageDto {
     nullable: true,
     required: false,
     description:
-      'Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text.',
+      'Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575).',
   })
   payload?: Record<string, any> | null;
 
@@ -1117,6 +1561,24 @@ export class ChatMessageDto {
   })
   thread_recent_sender_ids?: string[];
 
+  @ApiProperty({
+    type: () => ChatThreadLastReplyDto,
+    nullable: true,
+    required: false,
+    description:
+      'On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`).',
+  })
+  thread_last_reply?: ChatThreadLastReplyDto | null;
+
+  @ApiProperty({
+    type: () => ForwardedMessageDto,
+    nullable: true,
+    required: false,
+    description:
+      'Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it).',
+  })
+  forwarded_from?: ForwardedMessageDto | null;
+
   @ApiProperty()
   created_at: string;
 
@@ -1181,11 +1643,48 @@ export class BookmarkedMessageDto {
   created_at: string;
 
   @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The thread this message is a reply in (#3785), or null for a channel message. A client opens a saved reply in its thread (#3723). Null on a redacted row.',
+  })
+  thread_root_id: string | null;
+
+  @ApiProperty({
+    type: () => ForwardedMessageDto,
+    nullable: true,
+    description:
+      'Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author.',
+  })
+  forwarded_from: ForwardedMessageDto | null;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked.',
+  })
+  has_gif: boolean;
+
+  @ApiProperty({
     type: Boolean,
     description:
       'Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows.',
   })
   sender_blocked: boolean;
+}
+
+/**
+ * What `POST /v1/channels/messages/{messageId}/forward` answers (#4864): the
+ * new message as a read would serve it, and whether a retry answered it.
+ */
+export class ForwardResultDto extends ChatMessageDto {
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'True when a retry on the same `client_message_id` answered the forward already made, rather than making a new one.',
+  })
+  deduplicated: boolean;
 }
 
 /**
@@ -1338,4 +1837,27 @@ export class FollowedThreadDto {
     description: 'Replies new to the caller; always 0 when muted.',
   })
   unread_count: number;
+}
+
+/** One row of `GET /v1/threads` (#4960): a thread the caller is part of, in any channel they may read. */
+export class MemberThreadDto extends FollowedThreadDto {
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'When the newest reply landed; null before any reply.',
+  })
+  last_reply_at: string | null;
+
+  @ApiProperty({ description: 'Replies in the thread, deleted ones included.' })
+  reply_count: number;
+
+  @ApiProperty({
+    type: () => ChatMessageDto,
+    description:
+      'The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier.',
+  })
+  root: ChatMessageDto;
 }

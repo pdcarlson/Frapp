@@ -24,6 +24,7 @@ import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage } from "@/lib/utils";
+import { DISCORD_IMPORT_SETTINGS_PATH } from "@/components/settings/settings-paths";
 
 /**
  * Where the browser comes back to after Discord.
@@ -34,7 +35,7 @@ import { getErrorMessage } from "@/lib/utils";
  * it against its own configured app origin on the way back, so it cannot be
  * turned into an off-site redirect.
  */
-export const DISCORD_CONNECT_RETURN_PATH = "/discord-import?wizard=bot";
+const DISCORD_CONNECT_RETURN_PATH = `${DISCORD_IMPORT_SETTINGS_PATH}&wizard=bot`;
 
 /**
  * Link the chapter's Discord server.

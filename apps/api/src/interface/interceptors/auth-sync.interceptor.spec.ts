@@ -6,6 +6,9 @@ import { AuthService } from '../../application/services/auth.service';
 import { TimeZoneSyncService } from '../../application/services/time-zone-sync.service';
 
 describe('AuthSyncInterceptor', () => {
+  // The memo is process-wide, so every case uses its own sessions.
+  let caseNo = 0;
+  let auth: (name: string) => string;
   let interceptor: AuthSyncInterceptor;
   let mockAuthService: jest.Mocked<Pick<AuthService, 'syncUser'>>;
   let mockTimeZones: jest.Mocked<Pick<TimeZoneSyncService, 'record'>>;
@@ -14,14 +17,17 @@ describe('AuthSyncInterceptor', () => {
     handle: () => of({ result: 'ok' }),
   };
 
-  const mockExecutionContext = (supabaseUser?: {
-    id: string;
-    email: string | null | undefined;
-    user_metadata?: Record<string, unknown>;
-  }): ExecutionContext => {
+  const mockExecutionContext = (
+    supabaseUser?: {
+      id: string;
+      email: string | null | undefined;
+      user_metadata?: Record<string, unknown>;
+    },
+    appUser?: { id: string },
+  ): ExecutionContext => {
     const request = {
       supabaseUser,
-      appUser: undefined as unknown,
+      appUser: appUser as unknown,
       headers: { 'x-time-zone': 'America/Chicago' },
     };
     return {
@@ -32,6 +38,8 @@ describe('AuthSyncInterceptor', () => {
   };
 
   beforeEach(async () => {
+    caseNo += 1;
+    auth = (name) => `${name}-case-${caseNo}`;
     mockAuthService = {
       syncUser: jest.fn(),
     };
@@ -52,7 +60,7 @@ describe('AuthSyncInterceptor', () => {
     mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
 
     const ctx = mockExecutionContext({
-      id: 'auth-123',
+      id: auth('auth-123'),
       email: 'test@example.com',
     });
     const result$ = await interceptor.intercept(ctx, mockCallHandler);
@@ -64,7 +72,7 @@ describe('AuthSyncInterceptor', () => {
       'America/Chicago',
     );
     expect(mockAuthService.syncUser).toHaveBeenCalledWith(
-      'auth-123',
+      auth('auth-123'),
       'test@example.com',
       undefined,
     );
@@ -87,14 +95,40 @@ describe('AuthSyncInterceptor', () => {
     });
   });
 
+  // A read `SupabaseAuthGuard` verified locally (#5043) has claims, not the
+  // Auth user, and claims can be an hour stale: it must not sync them.
+  it('syncs nothing for a session verified locally, but records its time zone', async () => {
+    const request = {
+      locallyVerifiedAuthId: auth('auth-123'),
+      appUser: { id: 'user-1' },
+      method: 'GET',
+      headers: { 'x-time-zone': 'America/Chicago' },
+    };
+    const ctx = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
+
+    const result$ = await interceptor.intercept(ctx, mockCallHandler);
+
+    expect(mockAuthService.syncUser).not.toHaveBeenCalled();
+    expect(request.appUser).toEqual({ id: 'user-1' });
+    expect(mockTimeZones.record).toHaveBeenCalledWith(
+      'user-1',
+      'America/Chicago',
+    );
+    await new Promise<void>((resolve) => {
+      result$.subscribe({ complete: resolve });
+    });
+  });
+
   it('should use empty string for email when supabaseUser email is null', async () => {
     mockAuthService.syncUser.mockResolvedValue({ id: 'user-2' });
 
-    const ctx = mockExecutionContext({ id: 'auth-456', email: null });
+    const ctx = mockExecutionContext({ id: auth('auth-456'), email: null });
     const result$ = await interceptor.intercept(ctx, mockCallHandler);
 
     expect(mockAuthService.syncUser).toHaveBeenCalledWith(
-      'auth-456',
+      auth('auth-456'),
       '',
       undefined,
     );
@@ -108,16 +142,370 @@ describe('AuthSyncInterceptor', () => {
     mockAuthService.syncUser.mockResolvedValue({ id: 'user-3' });
 
     const ctx = mockExecutionContext({
-      id: 'auth-789',
+      id: auth('auth-789'),
       email: 'n@privaterelay.appleid.com',
       user_metadata: { full_name: 'Ada Lovelace' },
     });
     await interceptor.intercept(ctx, mockCallHandler);
 
     expect(mockAuthService.syncUser).toHaveBeenCalledWith(
-      'auth-789',
+      auth('auth-789'),
       'n@privaterelay.appleid.com',
       { full_name: 'Ada Lovelace' },
     );
+  });
+
+  describe('when a guard already resolved the users row', () => {
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    it("keeps the guard's id and does not wait on the sync", async () => {
+      let finish: (value: { id: string }) => void = () => undefined;
+      mockAuthService.syncUser.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+
+      const ctx = mockExecutionContext(
+        { id: auth('auth-1'), email: 'a@example.com' },
+        { id: 'user-1' },
+      );
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      const request = ctx.switchToHttp().getRequest();
+      expect(request.appUser).toEqual({ id: 'user-1' });
+      expect(mockAuthService.syncUser).toHaveBeenCalledWith(
+        auth('auth-1'),
+        'a@example.com',
+        undefined,
+      );
+      expect(mockTimeZones.record).toHaveBeenCalledWith(
+        'user-1',
+        'America/Chicago',
+      );
+      finish({ id: 'user-1' });
+    });
+
+    it('syncs a session once while its email and metadata stay the same', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const session = { id: auth('auth-1'), email: 'a@example.com' };
+
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+      await flush();
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+    });
+
+    it("waits on a fresh sync when the session's email changes", async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+
+      await interceptor.intercept(
+        mockExecutionContext(
+          { id: auth('auth-1'), email: 'a@example.com' },
+          { id: 'user-1' },
+        ),
+        mockCallHandler,
+      );
+      await flush();
+      await interceptor.intercept(
+        mockExecutionContext(
+          { id: auth('auth-1'), email: 'b@example.com' },
+          { id: 'user-1' },
+        ),
+        mockCallHandler,
+      );
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+      expect(mockAuthService.syncUser).toHaveBeenLastCalledWith(
+        auth('auth-1'),
+        'b@example.com',
+        undefined,
+      );
+    });
+
+    it('tries again on the next request after a failed sync', async () => {
+      mockAuthService.syncUser
+        .mockRejectedValueOnce(new Error('pool timeout'))
+        .mockResolvedValue({ id: 'user-1' });
+      const session = { id: auth('auth-1'), email: 'a@example.com' };
+
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+      await flush();
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips the background sync after a waited sync of the same session', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const session = { id: auth('auth-1'), email: 'a@example.com' };
+
+      await interceptor.intercept(
+        mockExecutionContext(session),
+        mockCallHandler,
+      );
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits on a fresh sync when only the metadata changes', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const id = auth('auth-apple');
+      const email = 'n@privaterelay.appleid.com';
+
+      await interceptor.intercept(
+        mockExecutionContext({ id, email }, { id: 'user-1' }),
+        mockCallHandler,
+      );
+      await flush();
+      // The Apple name reaches the Auth metadata after the row was created.
+      let finish: (value: { id: string }) => void = () => undefined;
+      mockAuthService.syncUser.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const waited = interceptor.intercept(
+        mockExecutionContext(
+          { id, email, user_metadata: { full_name: 'Ada Lovelace' } },
+          { id: 'user-1' },
+        ),
+        mockCallHandler,
+      );
+      let settled = false;
+      void waited.then(() => {
+        settled = true;
+      });
+      await flush();
+
+      expect(settled).toBe(false);
+      expect(mockAuthService.syncUser).toHaveBeenLastCalledWith(id, email, {
+        full_name: 'Ada Lovelace',
+      });
+      finish({ id: 'user-1' });
+      await waited;
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('syncs the same session again once the memo is ten minutes old', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const session = { id: auth('auth-1'), email: 'a@example.com' };
+      const start = Date.now();
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(start);
+
+      try {
+        await interceptor.intercept(
+          mockExecutionContext(session, { id: 'user-1' }),
+          mockCallHandler,
+        );
+        await flush();
+        clock.mockReturnValue(start + 10 * 60 * 1000 - 1);
+        await interceptor.intercept(
+          mockExecutionContext(session, { id: 'user-1' }),
+          mockCallHandler,
+        );
+        expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+
+        clock.mockReturnValue(start + 10 * 60 * 1000);
+        await interceptor.intercept(
+          mockExecutionContext(session, { id: 'user-1' }),
+          mockCallHandler,
+        );
+        expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
+    it('forgets the session heard from longest ago past 5,000 sessions', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const first = { id: auth('auth-first'), email: 'a@example.com' };
+      const second = { id: auth('auth-second'), email: 'a@example.com' };
+
+      await interceptor.intercept(mockExecutionContext(first), mockCallHandler);
+      await interceptor.intercept(
+        mockExecutionContext(second),
+        mockCallHandler,
+      );
+      for (let i = 0; i < 4_999; i += 1) {
+        await interceptor.intercept(
+          mockExecutionContext({ id: auth(`auth-${i}`), email: 'x@e.com' }),
+          mockCallHandler,
+        );
+      }
+      mockAuthService.syncUser.mockClear();
+
+      await interceptor.intercept(
+        mockExecutionContext(second, { id: 'user-1' }),
+        mockCallHandler,
+      );
+      expect(mockAuthService.syncUser).not.toHaveBeenCalled();
+      await interceptor.intercept(
+        mockExecutionContext(first, { id: 'user-1' }),
+        mockCallHandler,
+      );
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('shares its memo between the instances each module builds', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const other = new AuthSyncInterceptor(
+        mockAuthService as unknown as AuthService,
+        mockTimeZones as unknown as TimeZoneSyncService,
+      );
+      const session = { id: auth('auth-1'), email: 'a@example.com' };
+
+      await interceptor.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+      await flush();
+      await other.intercept(
+        mockExecutionContext(session, { id: 'user-1' }),
+        mockCallHandler,
+      );
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('makes one waited sync for a burst that carries the same session', async () => {
+    mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+    const session = { id: auth('auth-burst'), email: 'a@example.com' };
+    const contexts = [1, 2, 3].map(() => mockExecutionContext(session));
+
+    await Promise.all(
+      contexts.map((ctx) => interceptor.intercept(ctx, mockCallHandler)),
+    );
+
+    expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+    for (const ctx of contexts) {
+      expect(ctx.switchToHttp().getRequest().appUser).toEqual({
+        id: 'user-1',
+      });
+    }
+  });
+  describe('on a route with no chapter guard, given the guard’s row lookup (#3583)', () => {
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    /** A request with no guard row, carrying `SupabaseAuthGuard`'s lookup. */
+    const withLookup = (
+      session: { id: string; email: string },
+      lookup: jest.Mock,
+    ) => {
+      const ctx = mockExecutionContext(session);
+      ctx.switchToHttp().getRequest().appUserLookup = lookup;
+      return ctx;
+    };
+
+    it('still waits on the sync for a session this process never synced', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const lookup = jest.fn().mockResolvedValue('user-1');
+      const ctx = withLookup({ id: auth('a'), email: 'a@example.com' }, lookup);
+
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      expect(lookup).not.toHaveBeenCalled();
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+      expect(ctx.switchToHttp().getRequest().appUser).toEqual({ id: 'user-1' });
+    });
+
+    it('takes the looked-up id without waiting once the session is synced and unchanged', async () => {
+      const session = { id: auth('a'), email: 'a@example.com' };
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      await interceptor.intercept(
+        mockExecutionContext(session),
+        mockCallHandler,
+      );
+      // Any further sync would never settle, so a request that waited on one
+      // would never get past `intercept`.
+      mockAuthService.syncUser.mockReturnValue(new Promise(() => undefined));
+
+      const lookup = jest.fn().mockResolvedValue('user-1');
+      const ctx = withLookup(session, lookup);
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      expect(lookup).toHaveBeenCalledTimes(1);
+      expect(ctx.switchToHttp().getRequest().appUser).toEqual({ id: 'user-1' });
+      expect(mockTimeZones.record).toHaveBeenLastCalledWith(
+        'user-1',
+        'America/Chicago',
+      );
+      // Within the memo window, no background sync either.
+      await flush();
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits on the sync when the lookup finds no row or fails', async () => {
+      const session = { id: auth('a'), email: 'a@example.com' };
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      await interceptor.intercept(
+        mockExecutionContext(session),
+        mockCallHandler,
+      );
+
+      const ctx = withLookup(session, jest.fn().mockResolvedValue(null));
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+      expect(ctx.switchToHttp().getRequest().appUser).toEqual({ id: 'user-1' });
+    });
+
+    it('waits on the sync, without the lookup, when the session changed', async () => {
+      const id = auth('a');
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      await interceptor.intercept(
+        mockExecutionContext({ id, email: 'a@example.com' }),
+        mockCallHandler,
+      );
+
+      const lookup = jest.fn().mockResolvedValue('user-1');
+      await interceptor.intercept(
+        withLookup({ id, email: 'b@example.com' }, lookup),
+        mockCallHandler,
+      );
+
+      expect(lookup).not.toHaveBeenCalled();
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+      expect(mockAuthService.syncUser).toHaveBeenLastCalledWith(
+        id,
+        'b@example.com',
+        undefined,
+      );
+    });
+
+    it("prefers a guard's row over the lookup", async () => {
+      const session = { id: auth('a'), email: 'a@example.com' };
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      await interceptor.intercept(
+        mockExecutionContext(session),
+        mockCallHandler,
+      );
+
+      const lookup = jest.fn().mockResolvedValue('user-other');
+      const ctx = mockExecutionContext(session, { id: 'user-1' });
+      ctx.switchToHttp().getRequest().appUserLookup = lookup;
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      expect(lookup).not.toHaveBeenCalled();
+      expect(ctx.switchToHttp().getRequest().appUser).toEqual({ id: 'user-1' });
+    });
   });
 });

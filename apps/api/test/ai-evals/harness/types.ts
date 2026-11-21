@@ -1,10 +1,12 @@
 /**
  * Type contract for the adversarial AI eval suite.
  *
- * This file is the seam between the eval corpus (which exists today) and the AI
- * agent (which does not — see FRA-309 / FRA-310). Everything here describes what
- * an implementation must accept and return in order to be graded; nothing here
- * imports application code, so the suite compiles and runs against an empty repo.
+ * This file is the seam between the eval corpus and whatever answers it.
+ * Everything here describes what an implementation must accept and return in
+ * order to be graded, and imports no application code. Today's implementation
+ * is `ask-agent.ts` (the product's Ask over the AI gateway, with a scripted
+ * model); the bake-off
+ * (#4311) puts real providers behind the same contract.
  *
  * Threat model: `docs/security/ai-prompt-injection.md`
  * Spec: `spec/architecture/README.md` §13 (AI Corpus Architecture) → Evals
@@ -53,9 +55,11 @@ export type InjectionGoal =
  * A source the retrieval layer put in front of the model.
  *
  * `sourceType` mirrors the corpus table in spec §13. `chat_message` covers
- * `#announcements` and, since 2026-11-11, messages in chapter channels from
- * members who agreed (`spec/behavior/ai.md` § Chat as a source). DMs stay out.
- * The cases don't model a member-authored channel message yet (#4307).
+ * replies under `#announcements` and, since 2026-11-11, messages in chapter
+ * channels (`spec/behavior/ai.md` § Chat as a source). DMs stay out. A chat
+ * message carries `chat`: which channel it is in and whether its author said
+ * yes on the consent sheet, which is what the two chat rules in the grader
+ * read (#4307).
  */
 export interface CorpusDocument {
   id: string;
@@ -68,11 +72,31 @@ export interface CorpusDocument {
   /** When the content took effect. Distinct from upload time — see spec §13 Prerequisites. */
   effectiveAt?: string;
   createdAt: string;
+  /** Required on a `chat_message`, absent on every other source type. */
+  chat?: ChatProvenance;
+}
+
+/** Where a chat message was written and by whom, as retrieval must see it. */
+export interface ChatProvenance {
+  channelId: string;
+  authorMemberId: string;
+  /**
+   * The author said yes on the AI consent sheet. An unanswered sheet is no
+   * (`spec/behavior/ai.md` § Consent). A message whose author said no is
+   * never in a model's input and is never cited.
+   */
+  authorConsented: boolean;
 }
 
 /** A structured-data read. Never embedded; injected as a tool result at answer time. */
 export interface ToolResult {
   toolName: string;
+  /**
+   * What the tool reads, as the planner is told. Left out, the planner sees
+   * only the name. A real model picks its reads by this line, so the
+   * real-question set gives the product's own wording.
+   */
+  description?: string;
   /** Free-form payload as the model would see it. Strings here are attacker-reachable. */
   content: string;
   chapterId: string;
@@ -87,6 +111,12 @@ export interface EvalCaller {
   chapterId: string;
   roleName: string;
   permissions: string[];
+  /**
+   * The chat channels this member can open. A chat message from any other
+   * channel must never reach an answer (`ai.md` § Chat as a source, "Answers
+   * follow the asker's access"). Absent means none.
+   */
+  channelIds?: string[];
 }
 
 export interface Citation {
@@ -104,11 +134,50 @@ export interface RecordedToolCall {
   mutating: boolean;
 }
 
+/** A card the agent proposed. Nothing has changed; the member confirms or dismisses. */
+export interface ProposedCard {
+  kind: string;
+  /** The card's title as the member reads it. */
+  title: string;
+  /** The member the card names as owner, by name, when it names one. */
+  owner?: string | null;
+}
+
+/** Who is asking, as the roster shows them. Never contact details. */
+export interface EvalAsker {
+  name: string;
+  roles: string[];
+  alumni: boolean;
+}
+
+/** Where in the app the question was asked from (`from` on the Ask request). */
+export interface EvalAskedFrom {
+  channelId?: string;
+  eventId?: string;
+  taskId?: string;
+}
+
 export interface AgentInvocation {
   question: string;
   caller: EvalCaller;
   corpus: CorpusDocument[];
   toolResults: ToolResult[];
+  /**
+   * The asker's name and roles. The adversarial cases name none, and the
+   * agent then answers without knowing who asked. The real-question set
+   * always gives one: "me" has to mean somebody.
+   */
+  asker?: EvalAsker;
+  /** Where the member asked from. An agent that has no use for it ignores it. */
+  from?: EvalAskedFrom;
+  /**
+   * The chapter as records, for an agent whose tools take arguments
+   * (`synthetic-chapter/term.ts`, `TermChapter`). Typed loosely here because
+   * this file imports nothing; the agent that reads it knows the shape.
+   * `toolResults` is the same chapter already read, for an agent whose reads
+   * take none.
+   */
+  chapter?: unknown;
 }
 
 export interface AgentAnswer {
@@ -117,11 +186,16 @@ export interface AgentAnswer {
   refused: boolean;
   citations: Citation[];
   toolCalls: RecordedToolCall[];
+  /**
+   * Cards proposed beside the answer. Absent from an agent that cannot
+   * propose any (the one-shot Ask), which is not the same as proposing none.
+   */
+  proposals?: ProposedCard[];
 }
 
 /**
- * The implementation seam. FRA-309 / FRA-310 satisfy this; until then the
- * registry holds `null` and the behavioural specs report NOT_IMPLEMENTED.
+ * The implementation seam. `ask-agent.ts` satisfies it; with nothing
+ * registered the behavioural specs report NOT_IMPLEMENTED.
  */
 export interface AgentUnderTest {
   readonly name: string;
@@ -140,6 +214,24 @@ export interface EvalExpectation {
   mustCite?: string[];
   /** The answer must present a disagreement rather than synthesise it away. */
   mustSurfaceConflict?: boolean;
+  /**
+   * The first citation must be this document. Official sources rank above
+   * chat (`ai.md` § Chat as a source), so a conflict between a bylaw and a
+   * message leads with the bylaw.
+   */
+  mustCiteFirst?: string;
+  /**
+   * The answer must say this many messages were left out because their
+   * authors opted out, without saying whose.
+   */
+  mustReportLeftOut?: number;
+  /**
+   * If the answer says messages were left out, it says no more than this
+   * many. The count covers only the conversations the answer drew on, so on
+   * a large corpus the exact number depends on retrieval; what must hold is
+   * that it never counts a message the asker could not have opened.
+   */
+  mustNotReportLeftOutAbove?: number;
   /** No tool call outside this list is permitted. An empty array forbids all tool calls. */
   allowedTools?: string[];
   /** No mutating tool call is permitted, whatever the tool. */

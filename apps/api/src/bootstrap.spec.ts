@@ -1,8 +1,20 @@
-import { Controller, Get, INestApplication, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  INestApplication,
+  Post,
+  Put,
+  Req,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { Request } from 'express';
 import request from 'supertest';
-import { configureApp, TRUST_PROXY_HOPS } from './bootstrap';
+import {
+  configureApp,
+  LARGE_JSON_BODY_PATHS,
+  TRUST_PROXY_HOPS,
+} from './bootstrap';
 import { enqueueSanitizedLog } from './infrastructure/analytics/posthog-runtime';
 import { getRequestId } from './infrastructure/observability/request-als';
 import type { DeploymentEnvironment } from './interface/http/deployment-environment';
@@ -28,6 +40,55 @@ class EchoController {
   echo(@Req() req: Request): { ip?: string; ips: string[] } {
     return { ip: req.ip, ips: req.ips };
   }
+
+  @Post()
+  size(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+}
+
+/** Stands in for the routes that take the larger body (#4504). */
+@Controller('meetings')
+class MeetingsEchoController {
+  @Post()
+  size(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+}
+
+@Controller('ai/reports')
+class AiReportsEchoController {
+  @Post()
+  size(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+}
+
+@Controller('discord-imports')
+class DiscordImportsEchoController {
+  @Post()
+  size(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+}
+
+/** Stands in for chat's send and form-answer routes (#3926). */
+@Controller('channels')
+class ChannelsEchoController {
+  @Post(':id/messages')
+  send(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+
+  @Put('messages/:messageId/form-response')
+  answer(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
+
+  @Post(':id/members')
+  other(@Body() body: { text?: string }): { length: number } {
+    return { length: body.text?.length ?? 0 };
+  }
 }
 
 /** No `environment` configures for this process, which under Jest is `local`. */
@@ -35,7 +96,13 @@ async function createConfiguredEchoApp(
   environment?: DeploymentEnvironment,
 ): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
-    controllers: [EchoController],
+    controllers: [
+      EchoController,
+      MeetingsEchoController,
+      AiReportsEchoController,
+      DiscordImportsEchoController,
+      ChannelsEchoController,
+    ],
   }).compile();
   const app = moduleRef.createNestApplication();
   configureApp(app, environment);
@@ -52,12 +119,125 @@ function headerList(value: string | string[] | undefined): string[] {
 }
 
 describe('configureApp', () => {
-  let app: INestApplication;
+  describe('JSON bodies', () => {
+    let app: INestApplication;
+    beforeAll(async () => {
+      app = await createConfiguredEchoApp();
+    });
+    afterAll(async () => {
+      await app.close();
+    });
 
+    // A two-hour transcript as notes, a sealed Ask receipt, a batch of 500
+    // Discord upload paths: each passes Express's 100 KB default.
+    it.each(LARGE_JSON_BODY_PATHS.filter((path) => !path.includes(':')))(
+      'takes a body over 100 KB on %s',
+      async (path) => {
+        const res = await request(app.getHttpServer())
+          .post(path)
+          .send({ text: 'x'.repeat(160_000) })
+          .expect(201);
+        expect(res.body).toEqual({ length: 160_000 });
+      },
+    );
+
+    it('names each route that takes the larger body', () => {
+      expect(LARGE_JSON_BODY_PATHS).toEqual([
+        '/v1/meetings',
+        '/v1/ai/reports',
+        '/v1/discord-imports',
+        '/v1/channels/:id/messages',
+        '/v1/channels/messages/:messageId/form-response',
+      ]);
+    });
+
+    // A full form card, or a member's answers to a long one (#3926), passes
+    // 100 KB; the channel's other routes keep the ceiling.
+    it('takes a large form on chat send and on form answers only', async () => {
+      const big = { text: 'x'.repeat(160_000) };
+      await request(app.getHttpServer())
+        .post('/v1/channels/c1/messages')
+        .send(big)
+        .expect(201);
+      await request(app.getHttpServer())
+        .put('/v1/channels/messages/m1/form-response')
+        .send(big)
+        .expect(200);
+      const other = await request(app.getHttpServer())
+        .post('/v1/channels/c1/members')
+        .send(big);
+      expect(other.status).toBe(413);
+    });
+
+    // The larger ceiling is only for those prefixes: every other route, the ones a
+    // caller with no token can reach among them, keeps Express's 100 KB.
+    it('keeps the 100 KB ceiling on every other route', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/echo')
+        .send({ text: 'x'.repeat(90_000) })
+        .expect(201);
+      const tooLarge = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .send({ text: 'x'.repeat(160_000) });
+      expect(tooLarge.status).toBe(413);
+      expect(tooLarge.body.requestId).toMatch(/^req_/);
+    });
+
+    // Before #4404 an oversized body answered 500, and a malformed one 400
+    // quoting the body's own text (Nest passed on V8's parse message). Both
+    // now answer as the client's mistake, with an id and nothing of the body.
+    it('answers 413 for a body over the limit and 400 for one that is not JSON', async () => {
+      const tooLarge = await request(app.getHttpServer())
+        .post('/v1/meetings')
+        .send({ text: 'x'.repeat(1_100_000) });
+      expect(tooLarge.status).toBe(413);
+      expect(tooLarge.body).toEqual({
+        statusCode: 413,
+        error: 'PAYLOAD_TOO_LARGE',
+        message: 'Request body is too large',
+        requestId: expect.stringMatching(/^req_/),
+      });
+
+      // An unexpected token: V8's own message would quote this text.
+      const malformed = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .set('content-type', 'application/json')
+        .send('password=secret-body-text');
+      expect(malformed.status).toBe(400);
+      expect(malformed.body).toEqual({
+        statusCode: 400,
+        error: 'BAD_REQUEST',
+        message: 'Request body is not valid JSON',
+        requestId: expect.stringMatching(/^req_/),
+      });
+      expect(JSON.stringify(malformed.body)).not.toContain('secret-body-text');
+    });
+
+    // Nest adds its form parser at init, after anything registered here, so
+    // `configureApp` registers it itself, ahead of the error mapping.
+    it('answers 413 for a form body over the limit', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .type('form')
+        .send(`text=${'x'.repeat(160_000)}`);
+      expect(res.status).toBe(413);
+      expect(res.body.requestId).toMatch(/^req_/);
+    });
+
+    it('answers 415 for a JSON body in a charset the parser does not read', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .set('content-type', 'application/json; charset=latin1')
+        .send('{"text":"x"}');
+      expect(res.status).toBe(415);
+      expect(res.body.requestId).toMatch(/^req_/);
+    });
+  });
+
+  let app: INestApplication;
   beforeAll(async () => {
     app = await createConfiguredEchoApp();
   });
-
   afterAll(async () => {
     await app?.close();
   });
@@ -74,19 +254,20 @@ describe('configureApp', () => {
       };
 
       expect(instance.get('trust proxy')).toBe(TRUST_PROXY_HOPS.local);
-      // Measured per service: staging's chain is three entries (#864),
-      // production's two (#2972). `local` carries staging's figure.
-      expect(TRUST_PROXY_HOPS).toEqual({ production: 2, staging: 3, local: 3 });
+      // Measured per service: staging's chain behind Google's balancer is two
+      // entries (#5269), production's on Render two (#2972). `local` carries
+      // staging's figure.
+      expect(TRUST_PROXY_HOPS).toEqual({ production: 2, staging: 2, local: 2 });
     });
 
     // The whole point of a hop *count*: entries beyond the trusted ones are the
     // client's to forge, and must not be able to move `req.ip`.
     it('ignores a forged prefix and resolves the real client', async () => {
-      // Three trusted hops + loopback socket, so the fourth-from-the-socket
-      // entry is the real client and anything left of it is attacker-supplied.
-      const res = await get(
-        '203.0.113.99, 198.51.100.5, 192.0.2.1, 198.18.0.1',
-      ).expect(200);
+      // Two trusted hops + loopback socket, so the entry left of the last one
+      // is the real client and anything left of it is attacker-supplied.
+      const res = await get('203.0.113.99, 198.51.100.5, 192.0.2.1').expect(
+        200,
+      );
 
       expect(res.body.ip).toBe('198.51.100.5');
       expect(res.body.ip).not.toBe('203.0.113.99');
@@ -94,8 +275,8 @@ describe('configureApp', () => {
 
     it('resolves two different clients to two different addresses', async () => {
       const [a, b] = await Promise.all([
-        get('198.51.100.5, 192.0.2.1, 198.18.0.1').expect(200),
-        get('198.51.100.77, 192.0.2.1, 198.18.0.1').expect(200),
+        get('198.51.100.5, 192.0.2.1').expect(200),
+        get('198.51.100.77, 192.0.2.1').expect(200),
       ]);
 
       expect(a.body.ip).toBe('198.51.100.5');
@@ -105,7 +286,7 @@ describe('configureApp', () => {
 
     // `getTracker` prefers `req.ips[0]`, which is empty until trust proxy is set.
     it('populates req.ips, which the throttler keys on', async () => {
-      const res = await get('198.51.100.5, 192.0.2.1, 198.18.0.1').expect(200);
+      const res = await get('198.51.100.5, 192.0.2.1').expect(200);
 
       expect(res.body.ips.length).toBeGreaterThan(0);
       expect(res.body.ips[0]).toBe('198.51.100.5');
@@ -114,7 +295,7 @@ describe('configureApp', () => {
     // Documents the boundary rather than asserting it is safe: a hop count
     // trusts N entries whether or not N proxies appended them, so where the real
     // chain is shorter than TRUST_PROXY_HOPS — local dev, or any route that
-    // bypasses Render's edge — the leftmost entry wins and a client can set its
+    // bypasses the deployed proxies — the leftmost entry wins and a client can set its
     // own `req.ip`. That is exactly what production ran into under staging's
     // count (#2972). If this ever starts failing, the trust model changed and
     // #864 needs re-reading before the number is touched.
@@ -147,7 +328,7 @@ describe('configureApp', () => {
 
     beforeEach(() => jest.mocked(createProxyChainTripwire).mockClear());
 
-    // Production's proxies append two entries. Under staging's count of three
+    // Production's proxies append two entries. Under Render staging's old three
     // the forged value below was `req.ip`, and each rotation a fresh
     // rate-limit bucket.
     it('resolves the real client behind a forged prefix on production’s two-hop chain', async () => {
@@ -165,7 +346,7 @@ describe('configureApp', () => {
 
     it.each([
       ['production', 2],
-      ['staging', 3],
+      ['staging', 2],
     ] as const)(
       'arms the chain tripwire on %s with its own count',
       async (environment, hops) => {

@@ -17,20 +17,27 @@ import { omitColumns } from '../supabase.utils';
  * it, which fixed the duplication but kept serving all 19 columns against a
  * `BookmarkedMessageDto` that calls itself "a narrow projection" and declares
  * nine. That gap was a real disclosure, not a documentation nit:
- * `ChatService.deleteMessage` blanks `content` and `metadata` but **not**
- * `payload`, so a bookmarked poll or event card that had since been deleted
- * shipped its full payload jsonb on an endpoint whose declared type says the
- * message reads `[message deleted]`.
+ * `ChatService.deleteMessage` blanked `content` and `metadata` but, until
+ * #1575, **not** `payload`, so a bookmarked poll or event card that had since
+ * been deleted shipped its full payload jsonb on an endpoint whose declared
+ * type says the message reads `[message deleted]`. A delete clears `payload`
+ * now, but rows deleted before that still hold it until
+ * `20261112060000_clear_deleted_message_payloads.sql` runs, and the
+ * projection should not depend on the write anyway.
  *
  * So the projection is the DTO's field list, spelled here, and the two must
  * stay in step. It is a genuinely different list from the sibling's — the
  * timeline needs `payload`, `mentions` and `reply_to_id` to render a card; a
  * bookmark row renders an author, a timestamp and a text preview, and jumps.
+ * `forwarded_from` (#4875) is the preview's text when a forward has no
+ * comment of its own; the service masks and redacts it as it does `content`.
+ * `gif` (#4657) is `metadata.gif` alone, read only to say whether the row is
+ * a GIF: the repository turns it into `has_gif` and serves no GIF.
  * Narrowing also makes the rows small, which is what lets this endpoint stay
  * unpaginated for now.
  */
-const BOOKMARK_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, is_deleted, created_at';
+export const BOOKMARK_MESSAGE_COLUMNS =
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, is_deleted, created_at, thread_root_id, forwarded_from, gif:metadata->gif';
 
 const BOOKMARK_WITH_MESSAGE_SELECT = `id, user_id, message_id, chapter_id, created_at, message:chat_messages!inner(${BOOKMARK_MESSAGE_COLUMNS})`;
 
@@ -151,8 +158,30 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
     // the raw row shape, not to the entity, so `stripBookmarkRow` still has to
     // do the narrowing.
     const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
-    return rows.map((row) => stripBookmarkRow<StoredChatMessageBookmark>(row));
+    return rows.map((row) =>
+      stripBookmarkRow<StoredChatMessageBookmark>({
+        ...row,
+        message: withHasGif(row.message as Record<string, unknown>),
+      }),
+    );
   }
+}
+
+/**
+ * The read's `gif` (`metadata.gif`) as `has_gif` (#4657), the one thing the
+ * panel needs of it. A deleted message is never a GIF, whatever its metadata
+ * kept.
+ */
+function withHasGif(message: Record<string, unknown>): Record<string, unknown> {
+  const { gif, ...rest } = message;
+  return {
+    ...rest,
+    has_gif:
+      rest.is_deleted !== true &&
+      typeof gif === 'object' &&
+      gif !== null &&
+      !Array.isArray(gif),
+  };
 }
 
 /**

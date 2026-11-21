@@ -1,0 +1,93 @@
+name: Retry a store upload
+
+# Send a store build that already exists to TestFlight or the Play internal
+# track again, after its upload failed, without rebuilding or redeploying
+# anything (docs/ops/deployment/mobile.md § 6.6). Dispatched by hand from
+# `main`; nothing calls it. Deploy production's `confirm` job already retries
+# a store server error on its own (`SERVER_ERROR`, up to twice); this is for
+# what is left after that, or for a submission made by hand.
+#
+# It asks EAS to retry the failed submission (`retrySubmission`, what
+# `eas submit:retry` runs), which re-sends the same build with the same submit
+# config, then waits out Expo's queue and reports how it ended, through
+# `scripts/ci/confirm-store-submissions.mjs` with RETRY_ANY_ERROR. EAS allows
+# a retry only for a while after a submission fails; past that, the run says
+# so and gives the `eas submit --id` command instead.
+#
+# ── Trust ──────────────────────────────────────────────────────────────────
+# `automation` environment (no reviewers, holds EXPO_TOKEN), as the `confirm`
+# job. Dispatching is the decision: it re-sends only a build EAS already holds
+# and uploaded once, and releases nothing to testers by itself. The script
+# runs from the dispatched ref with nothing installed, and the inputs reach it
+# only as environment values, which it checks are EAS ids.
+#
+# When the retry finishes, the Deploy production run's record PR, which its
+# `merge-record` job left open with a comment, is true again: merge it by hand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Which store"
+        required: true
+        type: choice
+        options: [ios, android]
+      submission:
+        description: "The failed submission's ID, from the Deploy production run's confirm job or expo.dev (Submissions)"
+        required: true
+        type: string
+      build:
+        description: "Optional: the EAS build ID, so a failure can name the eas submit command to run instead"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-retry-upload-${{ inputs.platform }}
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    name: Retry the upload, then wait for it to finish
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    environment:
+      name: automation
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (trusted ref)
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Node only, no install: the script uses fetch and Node built-ins.
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      # Its own deadline ends the poll at 280, so it reports before the step
+      # is killed at 290.
+      - name: Retry the submission and wait for it on EAS
+        timeout-minutes: 290
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PLATFORM: ${{ inputs.platform }}
+          SUBMISSION: ${{ inputs.submission }}
+          BUILD: ${{ inputs.build }}
+          RETRY_ANY_ERROR: "true"
+          DEADLINE_MINUTES: "280"
+          POLL_SECONDS: "60"
+        run: |
+          set -euo pipefail
+          case "$PLATFORM" in
+            ios) export IOS_UPLOAD=success IOS_SUBMISSION="$SUBMISSION" IOS_BUILD="$BUILD" ;;
+            android) export ANDROID_UPLOAD=success ANDROID_SUBMISSION="$SUBMISSION" ANDROID_BUILD="$BUILD" ;;
+            *) echo "::error::platform must be ios or android; got '$PLATFORM'."; exit 1 ;;
+          esac
+          node scripts/ci/confirm-store-submissions.mjs

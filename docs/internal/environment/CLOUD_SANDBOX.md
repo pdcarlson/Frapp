@@ -103,7 +103,7 @@ STRIPE_PRICE_ID=price_...
 - `STRIPE_*` should be **restricted test-mode** keys. Optional: if absent, the bringup
   writes non-empty placeholders so the API still boots (billing endpoints that call
   Stripe won't work).
-- Provider/research creds (`GITHUB_PAT`, etc.) and the full list:
+- Provider/research creds (Infisical) and the full list:
   [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md).
 
 `FRAPP_CLOUD_SANDBOX` is **optional** — the setup script drops a marker
@@ -186,7 +186,7 @@ fix just delays the answer:
 | `transient` — 5xx, timeout, connection reset, truncated transfer | yes | upstream hiccup; usually clears |
 | `unknown` — anything unrecognised | yes | the point is resilience against errors nobody enumerated, and every class that genuinely cannot be retried is named below |
 | `policy` — network policy blocked a registry host | **no** | an allowlist does not heal on retry |
-| `ratelimit` — Docker Hub pull limit | **no** | needs credentials, not patience |
+| `ratelimit` — a registry's pull limit (Docker Hub's `toomanyrequests`, ECR Public's `Rate exceeded`) | **no** | usually needs working Docker Hub credentials, not patience; the sentinel says how the login went |
 | `deterministic` — denied ulimit, port in use, dockerd down, incompatible data volume | **no** | local and repeatable; each has a row in the symptom table below, and adding a pattern to the matcher means adding one |
 | `toolchain` — `cs_supabase` exit 127 | **no** | bad version pin or blocked npm registry; a retry repeats a failing `npm install` |
 | `dependencies` — `node_modules/.bin/turbo` does not run | **no** | not a retry at all. Unlike every class above it, this one never comes out of `cs_classify_failure` — bringup's last step raises it directly, and the fix is a foreground `npm ci` the session runs itself, then the package build bringup skipped |
@@ -211,7 +211,8 @@ The ACL repair is sequenced **after `db push`** because it fixes the tables thos
 just created: the pinned Postgres image grants `anon`/`authenticated`/`service_role` no DML on
 objects created by `postgres`, so without it the API's first query is `42501 permission
 denied`. It also resets the schema's *default* privileges, so migrations added in a later
-session inherit working grants.
+session inherit working grants. It repairs `service_role` only, the API's role: the client
+roles keep exactly the narrow grants migration 20261119210325 gives them, as on hosted.
 
 It is sequenced **after `write_env_files`** for a different reason: the repair is fatal, and
 nothing in the env file depends on the grants. Running it earlier meant a failed repair
@@ -406,7 +407,7 @@ every session), so skim the log even when bringup succeeds.
 | Symptom | Cause | What to do |
 |---------|-------|------------|
 | `403 Forbidden` / `Host not in allowlist` on `public.ecr.aws` or `*.cloudfront.net`; sentinel says `(policy)` | Network policy too restrictive | Set Network = **Full**, or Custom + `public.ecr.aws` + `*.cloudfront.net`. Fails **fast** — classified `policy`, so no attempts are wasted retrying it |
-| Docker Hub `Rate exceeded` / `toomanyrequests`; sentinel says `(ratelimit)` | Missing/invalid Docker Hub creds | Add `DOCKERHUB_USERNAME` + a read-only `DOCKERHUB_TOKEN`. Also fails **fast** |
+| `Rate exceeded` / `toomanyrequests`; sentinel says `(ratelimit)` | Anonymous pulls: no Docker Hub creds, or a login that failed | The sentinel follows the login, whose reason is also in the log's `Docker Hub login failed (…)` line. No creds: add `DOCKERHUB_USERNAME` + a read-only `DOCKERHUB_TOKEN`. Login failed with `unauthorized` / `incorrect username or password` / `expired`: check the username (not the email) and replace the token with a new read-only one. Login failed for another reason (a timeout, a blocked host): fix that, not the credentials. Login succeeded: the limit is the account's own or ECR Public's; retry later. Also fails **fast** |
 | `503 Service Unavailable` / `502` / `504` / `connection reset` / `unexpected EOF` on a registry or CDN host, **and** the bringup still succeeded | Transient registry/CDN hiccup | **Nothing — this is handled.** `cs_retry` retries `supabase start` with backoff; the log keeps the failed attempts, which is why they appear even on a healthy run |
 | Same transient errors, but the sentinel says `'supabase start' failed (transient)` | Registry/CDN outage that outlasted every retry | Not an env-config problem. Start a fresh session to retry; if it persists, check the Supabase and AWS ECR Public status pages. Raise `FRAPP_SANDBOX_START_RETRIES` to widen the window |
 | `posthog … 403 Host not in allowlist` | The Supabase CLI's **telemetry** call being blocked — **harmless, and never the cause** | Nothing. `DO_NOT_TRACK=1` + `SUPABASE_TELEMETRY_DISABLED=1` are exported in the shared lib so it should not appear at all; if a CLI version emits it anyway, the failure classifier filters telemetry lines out before matching, so it cannot be mistaken for the allowlist row above |
@@ -422,7 +423,7 @@ every session), so skim the log even when bringup succeeds.
 | The hook says bringup "already finished", but `docker` cannot connect and `uptime` is minutes old | The VM restarted and the lock plus sentinel from before it were trusted. Since #2515 the hook detects a lock from an earlier boot (by boot id, or by age for a lock written before boot ids) and relaunches on its own, so this now means a host that exposes no boot id | `bash scripts/cloud-sandbox-up.sh` |
 | Log ends mid-step with no `.done`/`.failed` (e.g. frozen at "Starting Docker daemon") | A prior bringup was killed when the session paused/was reclaimed, leaving a stale `/tmp/cloud-sandbox-up.lock` | Self-heals — the SessionStart hook clears the stale lock and relaunches next session. To force it now: `bash scripts/cloud-sandbox-up.sh`. If that refuses because the old bringup is still alive but hung, `bash scripts/cloud-sandbox-up.sh --stop`, then run it again |
 | `Error: No matching Supabase CLI binary package found for linux-x64` (from `supabase/dist/supabase.js`), then a sentinel reading `'supabase start' failed (toolchain)` | The Supabase v2 CLI ships its binary as a platform-specific **optionalDependency** (`@supabase/cli-<platform>`). If that optional install is skipped, the launcher finds no binary and throws — and npx caches the broken tree under `~/.npm/_npx`, so it stays broken all session | **Repo fix, not an env change** — already handled: both scripts go through `cs_supabase`, which installs a pinned CLI into `.cache/supabase-cli/` and probes it by running `--version`. If it recurs, delete `.cache/supabase-cli/` to force a clean reinstall |
-| API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bringup that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. Migrations are applied as `postgres`, so every table inherits it. The **defect** is not cleared by `supabase db reset --local` — a reset rebuilds from the same template and reintroduces it (and drops the repair) | **Already handled at bringup** — `frapp_repair_local_acls` (shared with the laptop path via `scripts/lib/local-postgres-acl.sh`) runs after `db push`, granting table/sequence DML and fixing the schema's default privileges for future migrations. **Re-run `bash scripts/cloud-sandbox-up.sh` after any `supabase db reset --local`**, which is the usual way this reappears mid-session (bringup takes the session-start lock itself, so a resumed session does not launch a second one alongside it). Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `anon=arwdDxtm/postgres`, broken shows `anon=Dxtm/postgres`. On an API that is still running, re-check with `/health/ready`, since `/health` reuses its probe for up to 60 s. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
+| API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bringup that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. Migrations are applied as `postgres`, so every table inherits it. The **defect** is not cleared by `supabase db reset --local` — a reset rebuilds from the same template and reintroduces it (and drops the repair) | **Already handled at bringup** — `frapp_repair_local_acls` (shared with the laptop path via `scripts/lib/local-postgres-acl.sh`) runs after `db push`, granting `service_role` table/sequence DML and fixing the schema's default privileges for future migrations. **Re-run `bash scripts/cloud-sandbox-up.sh` after any `supabase db reset --local`**, which is the usual way this reappears mid-session (bringup takes the session-start lock itself, so a resumed session does not launch a second one alongside it). Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `service_role=arwdDxtm/postgres` and no `anon` or `authenticated` entry (migration 20261119210325 revokes the client roles' defaults), broken shows `service_role=Dxtm/postgres`. On an API that is still running, re-check with `/health/ready`, since `/health` reuses its probe for up to 60 s. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
 
 Env var and network changes **apply to new sessions only** — the user must start a fresh
 session for them to take effect.
@@ -481,12 +482,12 @@ apply it. To call it directly, source
 `EXECUTE`:
 
 ```sql
-grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
-grant usage, select on all sequences in schema public to anon, authenticated, service_role;
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
 alter default privileges for role postgres in schema public
-  grant select, insert, update, delete on tables to anon, authenticated, service_role;
+  grant select, insert, update, delete on tables to service_role;
 alter default privileges for role postgres in schema public
-  grant usage, select on sequences to anon, authenticated, service_role;
+  grant usage, select on sequences to service_role;
 ```
 
 ⚠️ **`supabase db reset --local` undoes this.** The reset rebuilds the database from the
@@ -507,7 +508,7 @@ for how an agent is expected to use it.
 | ---- | ------- |
 | `staging.frapp.live` | the landing site (apex — see wildcard note) |
 | `*.staging.frapp.live` | `app.staging.frapp.live`, the web dashboard |
-| `api-staging.frapp.live` | the Render-hosted API. A **sibling** of `staging.frapp.live`, not a subdomain of it, so `*.staging.frapp.live` does **not** cover it |
+| `api-staging.frapp.live` | the API, on Cloud Run behind a Google load balancer. A **sibling** of `staging.frapp.live`, not a subdomain of it, so `*.staging.frapp.live` does **not** cover it |
 | `hnoyzpidbmizhbqaiity.supabase.co` | the hosted `frapp-staging` project — Realtime, Presence, GoTrue. The **staging project ref**, not a wildcard; if the project is ever rotated this line must be updated — and so must [`.github/environments.json`](../../../.github/environments.json), which `run-migration.mjs` fails closed against and `check-migration-order.mjs` reads, so a rotation that misses it blocks every production migration and every migration-bearing PR. The bringup probe below is what will tell you about this line |
 
 ### Wildcard semantics — weaker than the docs imply
@@ -565,7 +566,7 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   probes then need a staging user; `scripts/ci/staging-conformance.mjs` already defines the
   convention (`STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`). Use a dedicated
   smoke account, never a real member's.
-- **Provider APIs.** Render, Vercel, Sentry, PostHog and the Supabase Management API stay
+- **Provider APIs.** Vercel, Sentry, PostHog and the Supabase Management API stay
   blocked to direct `fetch` (`api.supabase.com` answered `000` through the proxy and `403
   host_not_allowed` direct on 2026-09-24, so a `403` there says nothing about a token), so
   agents fall back to **MCP connectors**, which do not go through this allowlist at all —

@@ -19,8 +19,30 @@ describe("recurrenceLabel", () => {
     expect(recurrenceLabel("")).toBeNull();
   });
 
+  it("reads a structured rule as its pattern", () => {
+    expect(
+      recurrenceLabel(
+        "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York",
+      ),
+    ).toBe("Every Mon and Thu");
+  });
+
   it("never prints a raw token it does not know", () => {
     expect(recurrenceLabel("EVERY_OTHER_DAY")).toBe("Every other day");
+  });
+
+  it("says a structured rule's pattern, never the raw string (#4488)", () => {
+    expect(
+      recurrenceLabel(
+        "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York",
+        "2026-11-09T23:00:00Z",
+      ),
+    ).toBe("Every Mon and Thu");
+    expect(
+      recurrenceLabel(
+        "FREQ=MONTHLY;INTERVAL=1;BYDAY=2TU;COUNT=6;TZID=America/New_York",
+      ),
+    ).toBe("Every month on the second Tuesday");
   });
 });
 
@@ -52,7 +74,7 @@ describe("checkInLabel", () => {
       start,
       new Date(2026, 10, 5),
     );
-    expect(label).toMatch(/^Checked in Sat, Nov 7 · 12:10\sAM$/);
+    expect(label).toMatch(/^Checked in Saturday, November 7 · 12:10\sAM$/);
   });
 
   it("never prints seconds or a numeric date", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localIsoDate } from "./local-date";
+import { localClock, localIsoDate } from "./local-date";
 
 // The package's tests run in America/Los_Angeles (vitest.config.ts), so an
 // evening there is already the next day in UTC.
@@ -12,5 +12,12 @@ describe("localIsoDate", () => {
 
   it("pads the month and day", () => {
     expect(localIsoDate(new Date(2026, 0, 5, 12))).toBe("2026-01-05");
+  });
+});
+
+describe("localClock", () => {
+  it("reads the time of day in the runtime's zone, zero-padded on the 24-hour clock", () => {
+    expect(localClock(new Date(2026, 10, 13, 18, 0))).toBe("18:00");
+    expect(localClock(new Date(2026, 10, 13, 7, 5))).toBe("07:05");
   });
 });

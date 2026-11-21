@@ -9,6 +9,7 @@ import { act } from "react";
 import { StyleSheet } from "react-native";
 import { create } from "react-test-renderer";
 import { describe, expect, it } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { PresenceStatus } from "@repo/hooks/presence-status";
 import { StatusDot } from "./status-dot";
@@ -49,6 +50,14 @@ describe("StatusDot", () => {
     expect(idle.style.borderWidth).toBeGreaterThan(0);
     expect(invisible.style.borderWidth).toBeGreaterThan(0);
     expect(idle.style.borderColor).not.toBe(invisible.style.borderColor);
+  });
+
+  // The You tab's Status row is a list on a screen, which is `surface1`
+  // (#4682): a ring filled a step lighter reads as a disc.
+  it("fills a ring with a screen's card step", () => {
+    expect(dotStyle("invisible").style.backgroundColor).toBe(
+      signetDarkTokens.color.surface.surface1,
+    );
   });
 
   it("draws Offline as a faint fill, not an empty dot", () => {

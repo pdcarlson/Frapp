@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -33,12 +34,15 @@ import {
   RegisterPushTokenDto,
   ListNotificationPreferencesQueryDto,
   ListNotificationsQueryDto,
+  ClearNotificationsDto,
+  ClearNotificationsResultDto,
   MarkNotificationsReadDto,
   MarkNotificationsReadResultDto,
   UpdateNotificationPreferenceDto,
   UpdateUserSettingsDto,
   UserSettingsDto,
 } from '../dtos/notification.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -58,6 +62,7 @@ export class NotificationController {
       userId,
       dto.token,
       dto.device_name,
+      dto.notifications_enabled,
     );
   }
 
@@ -65,13 +70,14 @@ export class NotificationController {
   @ApiOperation({ summary: 'Remove push token' })
   async removePushToken(
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.notificationService.removePushToken(id, userId);
     return { success: true };
   }
 
   @Get('notifications')
+  @VerifySessionLocally()
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @FreeTier()
@@ -93,7 +99,7 @@ export class NotificationController {
   @FreeTier()
   @ApiOperation({
     summary:
-      'Mark all unread notifications read, or only those pointing at the named screens',
+      'Mark all unread notifications read, or only those pointing at the named screens, or only the named ids',
   })
   @ApiOkResponse({ type: MarkNotificationsReadResultDto })
   async markAllRead(
@@ -103,7 +109,30 @@ export class NotificationController {
   ): Promise<MarkNotificationsReadResultDto> {
     return this.notificationService.markNotificationsRead(userId, chapterId, {
       screens: dto.screens,
+      ids: dto.ids,
     });
+  }
+
+  @Post('notifications/clear')
+  @HttpCode(200)
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @FreeTier()
+  @ApiOperation({
+    summary: "Clear (delete) the caller's own notifications by id",
+  })
+  @ApiOkResponse({ type: ClearNotificationsResultDto })
+  async clearNotifications(
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: ClearNotificationsDto,
+  ): Promise<ClearNotificationsResultDto> {
+    return this.notificationService.clearNotifications(
+      userId,
+      chapterId,
+      dto.ids,
+      dto.conversation,
+    );
   }
 
   @Patch('notifications/:id/read')
@@ -113,7 +142,7 @@ export class NotificationController {
   @ApiOperation({ summary: 'Mark notification as read' })
   async markRead(
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
   ) {
     return this.notificationService.markNotificationRead(id, userId, chapterId);

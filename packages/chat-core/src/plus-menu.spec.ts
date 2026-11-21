@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   PLUS_MENU_COMMANDS,
+  PLUS_MENU_ROWS,
   plusMenuForms,
   plusMenuModel,
+  plusMenuShortcut,
   type PlusMenuContext,
 } from "./plus-menu";
 
@@ -167,9 +169,34 @@ describe("plusMenuModel (#3865)", () => {
       "Poll",
       "Event",
       "Task",
-      "Service hours",
-      "Points",
     ]);
+  });
+});
+
+describe("the trimmed menu (#5772)", () => {
+  it("offers Poll, Event and Task only; hours and points stay typed-only forms", () => {
+    expect(PLUS_MENU_ROWS).toEqual(["poll", "event", "task"]);
+    expect(PLUS_MENU_COMMANDS).toEqual(
+      expect.arrayContaining(["hours", "points"]),
+    );
+    const model = plusMenuModel(
+      ctx({ forms: plusMenuForms(PLUS_MENU_COMMANDS, ["*"], false) }),
+    );
+    expect(model.rows.map((row) => row.command)).toEqual([
+      "poll",
+      "event",
+      "task",
+    ]);
+  });
+
+  it("lets a member without tasks:manage open Task to link one they can see", () => {
+    const [task] = plusMenuForms(["task"], ["members:view"], false);
+    expect(task).toEqual({ command: "task", roleAllows: true });
+  });
+
+  it("shows each row's typed shortcut", () => {
+    expect(plusMenuShortcut("poll")).toBe("/poll");
+    expect(plusMenuShortcut("task")).toBe("/task");
   });
 });
 
@@ -183,7 +210,7 @@ describe("plusMenuForms", () => {
     expect(forms).toEqual([
       { command: "poll", roleAllows: true },
       { command: "event", roleAllows: false },
-      // `tasks:manage` alone isn't enough: the route also needs `members:view`.
+      // Linking a task reads it, under the controller's `members:view`.
       { command: "task", roleAllows: false },
       { command: "hours", roleAllows: true },
       { command: "points", roleAllows: false },
@@ -197,5 +224,10 @@ describe("plusMenuForms", () => {
     expect(plusMenuForms(["poll"], undefined, true)).toEqual([
       { command: "poll", roleAllows: "unknown" },
     ]);
+  });
+
+  it("allows a form once its grants are read and held", () => {
+    const forms = plusMenuForms(["poll"], ["polls:create"], false);
+    expect(forms[0]!.roleAllows).toBe(true);
   });
 });

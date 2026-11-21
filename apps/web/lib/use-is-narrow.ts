@@ -6,8 +6,8 @@ import { useCallback, useState } from "react";
  * jsdom, whose observer stub never fires and whose boxes measure 0).
  *
  * For a shape a CSS container query can't draw, where the narrow layout is a
- * different tree rather than restyled boxes (the Events calendar's compact
- * month, #4022). Beside chat (#3779) a tool page is narrow while the window
+ * different tree rather than restyled boxes (the Events navigator's week
+ * strip in place of its small month, #5560). Beside chat (#3779) a tool page is narrow while the window
  * is wide, so a viewport media query gives the wrong answer there. Restyling
  * alone belongs in CSS: an `@container` and `@` variants.
  *

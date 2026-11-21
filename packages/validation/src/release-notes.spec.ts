@@ -11,6 +11,12 @@ import {
   isLaterReleaseNoteVersion,
   RELEASE_NOTE_VERSION_PATTERN,
   releaseNoteLineProblem,
+  releaseNoteGroups,
+  releaseNoteStoreText,
+  releaseNoteLineCount,
+  nextReleaseNoteSnapshot,
+  parseReleaseNoteSnapshot,
+  freshReleaseNoteLines,
   type ReleaseNote,
 } from "./release-notes";
 
@@ -26,12 +32,21 @@ describe("RELEASE_NOTES", () => {
       expect(note.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(formatReleaseNoteDate(note.date)).not.toBe(note.date);
       expect(note.title.trim()).not.toBe("");
-      expect(note.changes.length).toBeGreaterThan(0);
-      for (const line of [note.title, ...note.changes]) {
+      expect(releaseNoteLineCount(note)).toBeGreaterThan(0);
+      const lines = releaseNoteGroups(note).flatMap((group) => group.lines);
+      expect(lines).toHaveLength(releaseNoteLineCount(note));
+      for (const line of [note.title, ...lines]) {
         expect(releaseNoteLineProblem(line)).toBeNull();
       }
     },
   );
+
+  it("leaves the place out of a web or phone line, which its heading says", () => {
+    for (const note of RELEASE_NOTES) {
+      for (const line of note.web ?? []) expect(line).not.toMatch(/^on the web\b/i);
+      for (const line of note.phone ?? []) expect(line).not.toMatch(/^on your phone\b/i);
+    }
+  });
 });
 
 describe("releaseNoteLineProblem", () => {
@@ -77,11 +92,86 @@ describe("releaseNoteText", () => {
   });
 });
 
+describe("releaseNoteText with places", () => {
+  const split: ReleaseNote = {
+    date: "2026-11-12",
+    title: "A title",
+    changes: ["Both."],
+    web: ["Web."],
+    phone: ["Phone."],
+  };
+
+  it("lists the lines for both first, then Web and Mobile under their subheadings", () => {
+    expect(releaseNoteText(split)).toBe(
+      "What's new in Frapp (November 12, 2026)\n\nA title\n\n" +
+        "- Both.\n\nWeb\n- Web.\n\nMobile\n- Phone.",
+    );
+  });
+
+  it("keeps only the places asked for, as the store text does", () => {
+    expect(releaseNoteText(split, ["everywhere", "phone"])).toBe(
+      "What's new in Frapp (November 12, 2026)\n\nA title\n\n- Both.\n\nMobile\n- Phone.",
+    );
+  });
+});
+
+describe("releaseNoteStoreText", () => {
+  const note: ReleaseNote = {
+    date: "2026-11-12",
+    title: "T",
+    changes: ["Both one.", "Both two."],
+    web: ["Web only."],
+    phone: ["Phone only."],
+  };
+
+  it("leaves the web-only lines out, for phone testers", () => {
+    const text = releaseNoteStoreText(note);
+    expect(text).not.toContain("Web only.");
+    expect(text).toContain("Mobile\n- Phone only.");
+  });
+
+  it("keeps as many whole lines as fit under a limit, in order", () => {
+    const full = releaseNoteStoreText(note);
+    const short = releaseNoteStoreText(note, full.length - 1);
+    expect(short.length).toBeLessThan(full.length);
+    expect(short).toContain("- Both two.");
+    expect(short).not.toContain("Phone only.");
+    expect(releaseNoteStoreText(note, full.length)).toBe(full);
+  });
+});
+
+describe("releaseNoteGroups", () => {
+  it("gives an entry from before the split one group with no subheading", () => {
+    expect(
+      releaseNoteGroups({ date: "2026-11-07", title: "t", changes: ["A."] }),
+    ).toEqual([{ place: "everywhere", label: null, lines: ["A."] }]);
+  });
+
+  it("subheads Web and Mobile, leaving out empty places", () => {
+    expect(
+      releaseNoteGroups({ date: "2026-11-12", title: "t", changes: [], phone: ["P."] }),
+    ).toEqual([{ place: "phone", label: "Mobile", lines: ["P."] }]);
+    expect(
+      releaseNoteGroups({
+        date: "2026-11-12",
+        title: "t",
+        changes: ["A."],
+        web: ["W."],
+      }).map((group) => group.label),
+    ).toEqual([null, "Web"]);
+  });
+});
+
 describe("releaseNoteVersion", () => {
   const note = { date: "2026-11-09", title: "A title", changes: ["One.", "Two."] };
 
   it("is the date and the number of lines", () => {
     expect(releaseNoteVersion(note)).toBe("2026-11-09#2");
+  });
+
+  it("counts the web and phone lines too, so moving a line between places isn't news", () => {
+    expect(releaseNoteVersion({ ...note, web: ["Three."], phone: ["Four."] })).toBe("2026-11-09#4");
+    expect(releaseNoteVersion({ ...note, changes: ["One."], web: ["Two."] })).toBe("2026-11-09#2");
   });
 
   it("moves when lines are added, not when one is reworded", () => {
@@ -121,7 +211,7 @@ const decide = (
   decideWhatsNew({
     notes: NOTES,
     seen: null,
-    tourDue: false,
+    welcomeDue: false,
     existingInstall: true,
     ...overrides,
   });
@@ -161,6 +251,14 @@ describe("decideWhatsNew", () => {
     });
   });
 
+  it("shows the same day's entry again when a later release added only Web or Mobile lines", () => {
+    const extended = { ...NOTES[0]!, phone: ["Mobile only."] };
+    expect(decide({ notes: [extended, NOTES[1]!], seen: ID[0]! })).toEqual({
+      show: [extended],
+      record: releaseNoteVersion(extended),
+    });
+  });
+
   it("shows nothing for a reworded entry, which isn't news", () => {
     const reworded = { ...NOTES[0]!, title: "Reworded", changes: ["Fixed a typo."] };
     expect(decide({ notes: [reworded, NOTES[1]!], seen: ID[0]! })).toEqual({
@@ -193,12 +291,12 @@ describe("decideWhatsNew", () => {
     });
   });
 
-  it("records without showing while the first-run tour is due, marker or not", () => {
-    expect(decide({ seen: null, tourDue: true })).toEqual({
+  it("records without showing while the welcome card is due, marker or not", () => {
+    expect(decide({ seen: null, welcomeDue: true })).toEqual({
       show: [],
       record: ID[0],
     });
-    expect(decide({ seen: ID[1]!, tourDue: true })).toEqual({
+    expect(decide({ seen: ID[1]!, welcomeDue: true })).toEqual({
       show: [],
       record: ID[0],
     });
@@ -263,5 +361,111 @@ describe("isLaterReleaseNoteVersion", () => {
     expect(isLaterReleaseNoteVersion("2026-11-10#9", "2026-11-10#9")).toBe(false);
     expect(isLaterReleaseNoteVersion("2026-11-10#8", "2026-11-10#9")).toBe(false);
     expect(isLaterReleaseNoteVersion("2026-11-09#20", "2026-11-10#1")).toBe(false);
+  });
+});
+
+describe("nextReleaseNoteSnapshot", () => {
+  const day = (date: string, changes: string[], extra: Partial<ReleaseNote> = {}): ReleaseNote => ({
+    date,
+    title: "New in this update",
+    changes,
+    ...extra,
+  });
+  const morning = [day("2026-11-16", ["a", "b"]), day("2026-11-15", ["x"])];
+  const evening = [
+    day("2026-11-16", ["a", "b", "c"], { phone: ["d"] }),
+    day("2026-11-15", ["x"]),
+  ];
+
+  it("marks nothing on a device with no snapshot, and remembers the newest entry", () => {
+    expect(nextReleaseNoteSnapshot(morning, null)).toEqual({
+      date: "2026-11-16",
+      lines: ["a", "b"],
+      fresh: [],
+    });
+  });
+
+  it("marks the lines a later update added to the same day, in any place", () => {
+    const stored = nextReleaseNoteSnapshot(morning, null);
+    expect(nextReleaseNoteSnapshot(evening, stored)).toEqual({
+      date: "2026-11-16",
+      lines: ["a", "b", "c", "d"],
+      fresh: ["c", "d"],
+    });
+  });
+
+  it("keeps the marks on a later launch of the same update", () => {
+    const after = nextReleaseNoteSnapshot(evening, nextReleaseNoteSnapshot(morning, null));
+    expect(nextReleaseNoteSnapshot(evening, after)).toEqual(after);
+  });
+
+  it("marks a new day's lines, and the lines its last day gained, after skipped updates", () => {
+    const stored = { date: "2026-11-15", lines: [], fresh: ["old"] };
+    expect(nextReleaseNoteSnapshot(evening, stored)?.fresh).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+      "x",
+    ]);
+  });
+
+  it("refreshes the lines after a reword without marking it", () => {
+    const stored = { date: "2026-11-16", lines: ["a", "b"], fresh: ["b"] };
+    const reworded = [day("2026-11-16", ["a, said better", "b"])];
+    expect(nextReleaseNoteSnapshot(reworded, stored)).toEqual({
+      date: "2026-11-16",
+      lines: ["a, said better", "b"],
+      fresh: ["b"],
+    });
+  });
+
+  it("keeps a fresh line marked under its new words", () => {
+    const stored = { date: "2026-11-16", lines: ["a", "b"], fresh: ["b"] };
+    const reworded = [day("2026-11-16", ["a", "b, said better"])];
+    expect(nextReleaseNoteSnapshot(reworded, stored)?.fresh).toEqual([
+      "b, said better",
+    ]);
+  });
+
+  it("changes nothing for an older bundle, so a newer one isn't marked twice", () => {
+    const stored = nextReleaseNoteSnapshot(evening, nextReleaseNoteSnapshot(morning, null));
+    expect(nextReleaseNoteSnapshot(morning, stored)).toBe(stored);
+    expect(nextReleaseNoteSnapshot([day("2026-11-14", ["z"])], stored)).toBe(stored);
+  });
+
+  it("keeps what it has with no entries", () => {
+    expect(nextReleaseNoteSnapshot([], null)).toBeNull();
+  });
+});
+
+describe("parseReleaseNoteSnapshot", () => {
+  it("reads a stored snapshot back", () => {
+    const snapshot = { date: "2026-11-16", lines: ["a"], fresh: ["a"] };
+    expect(parseReleaseNoteSnapshot(JSON.stringify(snapshot))).toEqual(snapshot);
+  });
+
+  it("reads anything else as none", () => {
+    for (const raw of [null, "", "nope", "[]", "null", '{"date":1,"lines":[],"fresh":[]}', '{"date":"d","lines":[1],"fresh":[]}']) {
+      expect(parseReleaseNoteSnapshot(raw)).toBeNull();
+    }
+  });
+});
+
+describe("freshReleaseNoteLines", () => {
+  const note: ReleaseNote = {
+    date: "2026-11-16",
+    title: "New in this update",
+    changes: ["a", "b"],
+    web: ["c"],
+  };
+
+  it("sets apart the entry's fresh lines", () => {
+    expect([...freshReleaseNoteLines(note, ["c", "elsewhere"])]).toEqual(["c"]);
+  });
+
+  it("sets apart nothing when the whole entry is fresh, or nothing is", () => {
+    expect(freshReleaseNoteLines(note, ["a", "b", "c"]).size).toBe(0);
+    expect(freshReleaseNoteLines(note, []).size).toBe(0);
   });
 });

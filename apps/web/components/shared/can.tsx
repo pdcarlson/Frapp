@@ -5,7 +5,10 @@ import { useMyPermissions } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { can, canAll, canAny } from "@repo/validation";
-import { PermissionsOffline } from "@/components/shared/async-states";
+import {
+  PermissionsOffline,
+  pausedRead,
+} from "@/components/shared/async-states";
 import { useRefetchAfterOutage } from "@/lib/hooks/use-refetch-after-outage";
 
 type BaseProps = {
@@ -173,7 +176,7 @@ export function Can({
     );
   };
 
-  if (isPending && fetchStatus === "paused") {
+  if (pausedRead({ isPending, fetchStatus })) {
     // Above the bare `isPending` below, which would otherwise swallow it: a
     // paused query is pending too.
     return unanswerable();

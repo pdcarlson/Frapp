@@ -1,9 +1,17 @@
-import { ReportsPage } from "@/components/reports/reports-page";
+import { redirect } from "next/navigation";
+import {
+  REPORTS_SETTINGS_PATH,
+  settingsRedirectPath,
+} from "@/components/settings/settings-paths";
 
-export const metadata = {
-  title: "Reports",
-};
-
-export default function Reports() {
-  return <ReportsPage />;
+/**
+ * Reports moved inside Chapter settings' Reports page (#3837); this route only
+ * redirects old links there.
+ */
+export default async function Reports({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  redirect(settingsRedirectPath(REPORTS_SETTINGS_PATH, await searchParams));
 }

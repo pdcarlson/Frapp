@@ -3,110 +3,23 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  EXPECTED_HEALTH_CHECK_PATH,
-  assertRenderService,
   assertVercelNoGitLink,
   buildSummary,
   collectFindings,
   looksLikeVercelProject,
-  readHealthCheckPath,
   syncGuardrailsAlert,
   ALERT,
 } from "../production-guardrails.mjs";
 import { quiet } from "./helpers.mjs";
 
-const RENDER_SERVICE_ID = "srv-test";
 const VERCEL_PROJECTS = [
   { projectId: "prj_web", label: "frapp-web" },
   { projectId: "prj_landing", label: "frapp-landing" },
 ];
 
-const HEALTHY_RENDER = {
-  autoDeploy: "no",
-  branch: "main",
-  serviceDetails: { healthCheckPath: EXPECTED_HEALTH_CHECK_PATH },
-};
-
 function okJson(body) {
   return { ok: true, status: 200, json: async () => body };
 }
-
-describe("readHealthCheckPath", () => {
-  it("reads the nested Render API field", () =>
-    assert.equal(readHealthCheckPath(HEALTHY_RENDER), "/health"));
-
-  it("treats a missing serviceDetails object as unreadable, not empty", () =>
-    assert.equal(readHealthCheckPath({ autoDeploy: "no", branch: "main" }), undefined));
-
-  it("keeps empty string distinct from unreadable", () =>
-    assert.equal(readHealthCheckPath({ serviceDetails: { healthCheckPath: "" } }), ""));
-});
-
-describe("assertRenderService", () => {
-  it("passes the intended configuration", () =>
-    assert.deepEqual(assertRenderService(HEALTHY_RENDER), []));
-
-  // The live configuration before the cutover, and the reason this file exists:
-  // autoDeploy "yes" + branch "main" means every merge deploys production with
-  // no CI gate, no migration gate, and no approval.
-  it("flags autoDeploy left on", () => {
-    const findings = assertRenderService({ ...HEALTHY_RENDER, autoDeploy: "yes" });
-    assert.equal(findings.length, 1);
-    assert.match(findings[0], /without CI/);
-  });
-
-  it("flags a service still tracking the deleted production branch", () => {
-    const findings = assertRenderService({ ...HEALTHY_RENDER, branch: "production" });
-    assert.equal(findings.length, 1);
-    assert.match(findings[0], /expected 'main'/);
-  });
-
-  it("flags autoDeploy and branch together when healthCheckPath still holds", () =>
-    assert.equal(
-      assertRenderService({ ...HEALTHY_RENDER, autoDeploy: "yes", branch: "production" }).length,
-      2,
-    ));
-
-  it("treats an unreadable service as three violations, not a pass", () =>
-    assert.equal(assertRenderService({}).length, 3));
-
-  // 2026-08-21 live staging value. Empty is TCP-only; it must not read as
-  // "path absent therefore we skip".
-  it("flags an empty healthCheckPath as a TCP-only probe", () => {
-    const findings = assertRenderService({
-      ...HEALTHY_RENDER,
-      serviceDetails: { healthCheckPath: "" },
-    });
-    assert.equal(findings.length, 1);
-    assert.match(findings[0], /TCP socket check/);
-  });
-
-  it("flags /health/ready — that path 503s on a degraded dependency", () => {
-    const findings = assertRenderService({
-      ...HEALTHY_RENDER,
-      serviceDetails: { healthCheckPath: "/health/ready" },
-    });
-    assert.equal(findings.length, 1);
-    assert.match(findings[0], /health\/ready/);
-    assert.match(findings[0], /cancel a deploy/);
-  });
-
-  it("flags a missing serviceDetails rather than treating it as /health", () => {
-    const findings = assertRenderService({ autoDeploy: "no", branch: "main" });
-    assert.equal(findings.length, 1);
-    assert.match(findings[0], /unreadable/);
-  });
-
-  it("does not treat a top-level healthCheckPath as the live Render field", () => {
-    const findings = assertRenderService({
-      autoDeploy: "no",
-      branch: "main",
-      healthCheckPath: "/health",
-    });
-    assert.equal(findings.length, 1);
-    assert.match(findings[0], /unreadable/);
-  });
-});
 
 describe("looksLikeVercelProject", () => {
   // This predicate is what keeps the inverted assertion from failing open. It
@@ -170,16 +83,13 @@ describe("assertVercelNoGitLink", () => {
 });
 
 describe("collectFindings", () => {
-  const goodRender = HEALTHY_RENDER;
   const goodVercel = { id: "prj_test", name: "frapp-test", link: null };
 
-  it("is clean when every provider is configured correctly", async () => {
+  it("is clean when every project is configured correctly", async () => {
     const findings = await collectFindings({
-      renderApiKey: "r",
       vercelApiKey: "v",
-      renderServiceId: RENDER_SERVICE_ID,
       vercelProjects: VERCEL_PROJECTS,
-      fetchImpl: async (url) => okJson(url.includes("render.com") ? goodRender : goodVercel),
+      fetchImpl: async () => okJson(goodVercel),
     });
     assert.deepEqual(findings, []);
   });
@@ -187,46 +97,27 @@ describe("collectFindings", () => {
   // staging-conformance.mjs has a `skipped` outcome. This one deliberately does
   // not: "I could not check whether production auto-deploys" is not a state in
   // which to deploy to production.
-  it("treats an unreadable Render API as a violation, never a skip", async () => {
+  it("treats an unreadable Vercel project as a violation, never a skip", async () => {
     const findings = await collectFindings({
-      renderApiKey: "r",
       vercelApiKey: "v",
-      renderServiceId: RENDER_SERVICE_ID,
       vercelProjects: VERCEL_PROJECTS,
-      fetchImpl: async (url) =>
-        url.includes("render.com") ? { ok: false, status: 401 } : okJson(goodVercel),
-    });
-    assert.equal(findings.length, 1);
-    assert.match(findings[0], /Unreadable is not a pass/);
-  });
-
-  it("treats an unreadable Vercel project as a violation", async () => {
-    const findings = await collectFindings({
-      renderApiKey: "r",
-      vercelApiKey: "v",
-      renderServiceId: RENDER_SERVICE_ID,
-      vercelProjects: VERCEL_PROJECTS,
-      fetchImpl: async (url) =>
-        url.includes("render.com") ? okJson(goodRender) : { ok: false, status: 403 },
+      fetchImpl: async () => ({ ok: false, status: 403 }),
     });
     // Both projects fail to read.
     assert.equal(findings.length, 2);
+    assert.match(findings[0], /Unreadable is not a pass/);
   });
 
   it("reports each Vercel project independently", async () => {
     const findings = await collectFindings({
-      renderApiKey: "r",
       vercelApiKey: "v",
-      renderServiceId: RENDER_SERVICE_ID,
       vercelProjects: VERCEL_PROJECTS,
-      fetchImpl: async (url) => {
-        if (url.includes("render.com")) return okJson(goodRender);
-        return okJson(
+      fetchImpl: async (url) =>
+        okJson(
           url.includes("prj_landing")
             ? { id: "prj_landing", name: "frapp-landing", link: { type: "github", org: "pdcarlson", repo: "Frapp" } }
             : goodVercel,
-        );
-      },
+        ),
     });
     assert.equal(findings.length, 1);
     assert.match(findings[0], /frapp-landing/);
@@ -236,37 +127,16 @@ describe("collectFindings", () => {
   // back: the live provider state (both projects unlinked) must be a PASS.
   it("is clean against the real post-ADR-21 provider state", async () => {
     const findings = await collectFindings({
-      renderApiKey: "r",
       vercelApiKey: "v",
-      renderServiceId: RENDER_SERVICE_ID,
       vercelProjects: VERCEL_PROJECTS,
       fetchImpl: async (url) =>
         okJson(
-          url.includes("render.com")
-            ? HEALTHY_RENDER
-            : url.includes("prj_landing")
-              ? { id: "prj_aAkER9EZJcxR51vUY0mwNDnCf8vy", name: "frapp-landing", link: null }
-              : { id: "prj_xkn32taKrJCgYRZoN6pZRfGfPT9T", name: "frapp-web", link: null },
+          url.includes("prj_landing")
+            ? { id: "prj_aAkER9EZJcxR51vUY0mwNDnCf8vy", name: "frapp-landing", link: null }
+            : { id: "prj_xkn32taKrJCgYRZoN6pZRfGfPT9T", name: "frapp-web", link: null },
         ),
     });
     assert.deepEqual(findings, []);
-  });
-
-  it("flags a TCP-only healthCheckPath even when auto-deploy is off", async () => {
-    const findings = await collectFindings({
-      renderApiKey: "r",
-      vercelApiKey: "v",
-      renderServiceId: RENDER_SERVICE_ID,
-      vercelProjects: VERCEL_PROJECTS,
-      fetchImpl: async (url) =>
-        okJson(
-          url.includes("render.com")
-            ? { ...HEALTHY_RENDER, serviceDetails: { healthCheckPath: "" } }
-            : goodVercel,
-        ),
-    });
-    assert.equal(findings.length, 1);
-    assert.match(findings[0], /TCP socket check/);
   });
 });
 
@@ -281,42 +151,33 @@ describe("buildSummary", () => {
 });
 
 describe("provider identifiers are inputs, never defaults", () => {
-  // The failure this guards: `frapp-api-prod` is recreated and gets a new
-  // service id. Whoever updates `_deploy.yml` (which is what actually deploys)
-  // has no reason to touch this script — so a default baked in here
-  // would keep the daily watchdog asserting auto-deploy against the OLD
-  // service, reporting green forever about an object nothing deploys to. Every
-  // sibling script requires its ids from env for the same reason.
-  it("queries exactly the service and projects it was handed", async () => {
+  // The failure this guards: a project is recreated and gets a new id.
+  // Whoever updates `_deploy.yml` (which is what actually deploys) has no
+  // reason to touch this script — so a default baked in here would keep the
+  // daily watchdog asserting against the OLD project, reporting green forever
+  // about an object nothing deploys to. Every sibling script requires its ids
+  // from env for the same reason.
+  it("queries exactly the projects it was handed", async () => {
     const urls = [];
     await collectFindings({
-      renderApiKey: "r",
       vercelApiKey: "v",
-      renderServiceId: "srv-somewhere-else",
       vercelProjects: [{ projectId: "prj_only", label: "solo" }],
       fetchImpl: async (url) => {
         urls.push(url);
-        return okJson(
-          url.includes("render.com")
-            ? HEALTHY_RENDER
-            : { id: "prj_only", name: "solo", link: null },
-        );
+        return okJson({ id: "prj_only", name: "solo", link: null });
       },
     });
 
-    assert.equal(urls.length, 2);
-    assert.ok(urls[0].endsWith("/services/srv-somewhere-else"));
-    assert.ok(urls[1].includes("prj_only"));
+    assert.equal(urls.length, 1);
+    assert.ok(urls[0].includes("prj_only"));
     // No hardcoded production id leaked into the calls.
-    assert.ok(!urls.some((u) => u.includes("srv-d6lqu41aae7s73f62df0")));
     assert.ok(!urls.some((u) => u.includes("prj_xkn32taKrJCgYRZoN6pZRfGfPT9T")));
   });
 });
 
 describe("buildSummary — a pass must not assert what it did not read", () => {
-  it("names both settings when both were checked", () => {
+  it("names both projects when both were checked", () => {
     const text = buildSummary([]);
-    assert.match(text, /Render auto-deploy is off, tracking main, and healthCheckPath is \/health/);
     assert.match(text, /neither Vercel project is linked to Git/);
   });
 
@@ -337,8 +198,7 @@ describe("buildSummary — a pass must not assert what it did not read", () => {
     // stated grounds that a Production Branch "bears on nothing a migration
     // does". That was false for frapp-web, and stays false after #1579 inverted
     // the assertion to a Git-link check — only the mechanism changed.
-    const text = buildSummary([], { checked: ["render", "vercel-web"] });
-    assert.match(text, /Render auto-deploy is off, tracking main, and healthCheckPath is \/health/);
+    const text = buildSummary([], { checked: ["vercel-web"] });
     assert.match(text, /frapp-web is not linked to Git/);
     assert.doesNotMatch(text, /neither Vercel project is linked to Git/);
     assert.match(text, /frapp-landing's Git link was NOT read/);
@@ -347,21 +207,9 @@ describe("buildSummary — a pass must not assert what it did not read", () => {
   });
 
   it("still reports violations verbatim regardless of scope", () => {
-    const text = buildSummary(["Render auto-deploy is ON"], { checked: ["render", "vercel-web"] });
+    const text = buildSummary(["frapp-web is linked to Git"], { checked: ["vercel-web"] });
     assert.match(text, /1 production guardrail violation/);
-    assert.match(text, /Render auto-deploy is ON/);
-  });
-});
-
-describe("health-check-path helper lives in the shared lib", () => {
-  it("production-guardrails.mjs re-exports rather than keeping a local copy", () => {
-    const src = readFileSync(
-      new URL("../production-guardrails.mjs", import.meta.url),
-      "utf8",
-    );
-    assert.match(src, /from "\.\/lib\/render-health-check-path\.mjs"/);
-    assert.match(src, /export \{ EXPECTED_HEALTH_CHECK_PATH, readHealthCheckPath \}/);
-    assert.doesNotMatch(src, /frapp-api-staging/);
+    assert.match(text, /frapp-web is linked to Git/);
   });
 });
 
@@ -438,7 +286,7 @@ describe("syncGuardrailsAlert — a clean run whose alert can't be read or close
     const { fetchImpl } = issuesFetch({ lookup: [] });
     const out = await syncGuardrailsAlert({
       ...base,
-      findings: ["frapp-api: autoDeploy is on"],
+      findings: ["frapp-web is linked to Git"],
       fetchImpl,
       logger: quiet,
     });

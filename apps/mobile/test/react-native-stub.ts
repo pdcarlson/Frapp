@@ -28,9 +28,13 @@ export const reactNativeStub = {
   Alert: {
     alert: vi.fn(),
   },
-  // s15's photo choices are iOS's own action sheet (Android takes an Alert).
-  ActionSheetIOS: {
-    showActionSheetWithOptions: vi.fn(),
+  // The app's own glass menu (`openItemMenu` in
+  // `components/item-actions-menu.tsx`) opens a third of the way down the
+  // window when a press gives it no point: the same iPhone 17 window as
+  // `useWindowDimensions` below.
+  Dimensions: {
+    get: vi.fn(() => ({ width: 402, height: 874, scale: 3, fontScale: 1 })),
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
   },
   // Outcomes a sighted member reads off the screen are announced to VoiceOver
   // through this, because `accessibilityLiveRegion` is Android-only. A spec
@@ -40,10 +44,15 @@ export const reactNativeStub = {
     // An overlay moves a screen reader's focus onto itself as it appears
     // (spec/ui/mobile/patterns.md § Overlays).
     sendAccessibilityEvent: vi.fn(),
+    // The glass menu hands focus back to a row named by its tag on close.
+    setAccessibilityFocus: vi.fn(),
     // The skeleton's pulse follows the Reduce Motion setting live
     // (`components/state-block.tsx`). Off by default; a spec flips it, or
     // runs the listener a block registered.
     isReduceMotionEnabled: vi.fn().mockResolvedValue(false),
+    // The tab bar never folds under a screen reader
+    // (`components/glass-tab-bar.tsx`, `lib/screen-reader.ts`). Off by default.
+    isScreenReaderEnabled: vi.fn().mockResolvedValue(false),
     // Glass falls back to solid under Reduce Transparency
     // (`components/glass-surface.tsx`). Off by default.
     isReduceTransparencyEnabled: vi.fn().mockResolvedValue(false),
@@ -96,9 +105,26 @@ export const reactNativeStub = {
   // below.
   FlatList: "FlatList",
   ActivityIndicator: "ActivityIndicator",
-  // A channel row's long-press menu (`channel-actions-menu.tsx`) opens in one.
+  // A task's photo viewer (`components/tasks/task-photos.tsx`) opens in one,
+  // a known exception to patterns.md § Overlays tracked in #5545; the glass
+  // menu's spec checks that it never does (#5517).
   Modal: "Modal",
   KeyboardAvoidingView: "KeyboardAvoidingView",
+  // Settings search lights the row it lands on with a fading wash
+  // (`components/settings/setting-anchor.tsx`). Enough of `Animated` to draw
+  // it: the wash's view, a value, and animations that never run.
+  Animated: {
+    View: "Animated.View",
+    Value: class {
+      constructor(public value: number) {}
+      setValue(next: number) {
+        this.value = next;
+      }
+    },
+    timing: vi.fn(() => ({ start: vi.fn() })),
+    delay: vi.fn(() => ({ start: vi.fn() })),
+    sequence: vi.fn(() => ({ start: vi.fn() })),
+  },
   Share: {
     share: vi.fn().mockResolvedValue({ action: "sharedAction" }),
   },
@@ -109,6 +135,9 @@ export const reactNativeStub = {
   },
   Keyboard: {
     dismiss: vi.fn(),
+    // Ask's opening steps its crest down while the keyboard is up (#4904).
+    addListener: vi.fn(() => ({ remove: vi.fn() })),
+    isVisible: vi.fn(() => false),
   },
 };
 

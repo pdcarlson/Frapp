@@ -1,7 +1,9 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
+import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
 import { useEffect, useMemo, useRef } from "react";
+import { AskConversationHost } from "./ask/ask-conversation";
 import { readAuthToken } from "./auth-token";
 import { readClientVersion } from "./client-version";
 import { useAuthSession } from "./auth-session";
@@ -11,11 +13,8 @@ import { createRejectedSessionHandler } from "./rejected-session";
 import { createFreshAuthTokenReader } from "./fresh-auth-token";
 import { getSupabaseClient } from "./supabase";
 
-export { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
-export { useIsApiAuthenticated } from "./use-is-api-authenticated";
-
 export function FrappProvider({ children }: { children: React.ReactNode }) {
-  const { chapterId, signOut } = useAuthSession();
+  const { chapterId, userId, signOut } = useAuthSession();
   const signOutRef = useRef(signOut);
   useEffect(() => {
     signOutRef.current = signOut;
@@ -60,12 +59,11 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
    * (`["user","me"]`, `["settings"]`) are dropped in `auth-session.tsx`
    * `applySession` when the auth uid changes.
    *
-   * Skipped when there was no previous chapter (first paint, the claim read
-   * settling, a first selection from the picker): nothing chapter-scoped can be
-   * cached under a chapter yet, and clearing there would only cancel in-flight
-   * bootstrap queries for no benefit. Note `chapterId` does *not* flap to null
-   * on a failed claim read — `auth-session.tsx` retains the last known chapter,
-   * tagged by user id — so a network blip cannot trigger a spurious clear.
+   * Skipped when there was no previous chapter (first paint, a session with
+   * no token yet, a first selection from the picker): nothing chapter-scoped
+   * can be cached under a chapter yet, and clearing there would only cancel
+   * in-flight bootstrap queries for no benefit. `chapterId` is decoded from
+   * the token in hand (#5768), so no network read can make it flap to null.
    */
   const previousChapterId = useRef<string | null | undefined>(undefined);
   useEffect(() => {
@@ -76,40 +74,66 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear();
     // A chapter switch ends Dues' hold (`spec/ui/mobile/screens.md` s11).
     forgetDuesMemory();
+    // And every form draft kept for a screen to come back to (#4593).
+    dropAllKeptDrafts();
   }, [chapterId]);
 
+  // A form draft kept for a screen to come back to (#4593) is the signed-in
+  // member's: signing out or into another account drops them all. Their keys
+  // carry the user too, so this only frees what nobody can open now.
+  const previousUserId = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const previous = previousUserId.current;
+    previousUserId.current = userId;
+    if (previous === undefined || previous === userId) return;
+    dropAllKeptDrafts();
+  }, [userId]);
+
   /* eslint-disable react-hooks/refs -- getChapterId is invoked per request by SDK middleware, not while constructing the client; capturing chapterId would stale in-flight calls */
-  const client = useMemo(
-    () =>
-      createFrappClient({
-        // Bare origin — the generated SDK paths already carry `/v1`.
-        baseUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001",
-        // The mirrored token, refreshed first when it is about to expire, so a
-        // foreground refetch never goes out with the token the OS let lapse
-        // in the background (#3907). `lib/fresh-auth-token.ts`.
-        getAuthToken: createFreshAuthTokenReader({
-          readToken: readAuthToken,
-          getSupabase: getSupabaseClient,
-        }),
-        getChapterId: () => chapterIdRef.current,
-        // Read once: a running process never changes its native build.
-        clientVersion: readClientVersion(),
-        // A 401 means the API no longer accepts this session (an account
-        // deleted on another device, most often): sign out once, for every
-        // screen. `lib/rejected-session.ts`.
-        onUnauthorized: createRejectedSessionHandler({
-          getSupabase: getSupabaseClient,
-          signOut: () => signOutRef.current(),
-        }),
-      }),
-    [],
-  );
+  const client = useMemo(() => {
+    const readFreshToken = createFreshAuthTokenReader({
+      readToken: readAuthToken,
+      getSupabase: getSupabaseClient,
+    });
+    const checkRejectedSession = createRejectedSessionHandler({
+      getSupabase: getSupabaseClient,
+      signOut: () => signOutRef.current(),
+    });
+    return createFrappClient({
+      // Bare origin — the generated SDK paths already carry `/v1`.
+      baseUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001",
+      // The mirrored token, refreshed first when it is about to expire, so a
+      // foreground refetch never goes out with the token the OS let lapse
+      // in the background (#3907). `lib/fresh-auth-token.ts`.
+      getAuthToken: readFreshToken,
+      getChapterId: () => chapterIdRef.current,
+      // Read once: a running process never changes its native build.
+      clientVersion: readClientVersion(),
+      // A 401 means the API no longer accepts this session (an account
+      // deleted on another device, most often): sign out once, for every
+      // screen. `lib/rejected-session.ts`.
+      // The reader's learned clock offset is dropped first: a 401 means a
+      // token it called current wasn't (`lib/fresh-auth-token.ts`).
+      onUnauthorized: () => {
+        readFreshToken.forgetClockOffset();
+        checkRejectedSession();
+      },
+      // A launch or a return to the app fires its reads at once; the ones
+      // `GET /v1/bootstrap` covers go out as one request (#4709, #3728).
+      batchFirstScreenReads: true,
+    });
+  }, []);
   /* eslint-enable react-hooks/refs */
 
   return (
     <QueryClientProvider client={queryClient}>
-      <FrappClientProvider client={client} chapterId={chapterId}>
-        {children}
+      <FrappClientProvider
+        client={client}
+        chapterId={chapterId}
+        userId={userId}
+      >
+        {/* The one Ask conversation, above every place that shows it. */}
+        <AskConversationHost>{children}</AskConversationHost>
       </FrappClientProvider>
     </QueryClientProvider>
   );

@@ -42,8 +42,10 @@ export function useDiscordAvailability(options?: { enabled?: boolean }) {
 
   return useQuery({
     queryKey: discordConnectionKeys.availability(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord/availability");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/discord/availability", {
+        signal,
+      });
       if (error) throw error;
       return data ?? { available: false };
     },
@@ -60,8 +62,10 @@ export function useDiscordConnection(options?: { enabled?: boolean }) {
 
   return useQuery({
     queryKey: discordConnectionKeys.connection(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord/connection");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/discord/connection", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -134,7 +138,7 @@ export function useConfirmDiscordConnect() {
 }
 
 /** One channel or thread the scan found in the connected server. */
-export interface DiscoveredDiscordChannel {
+interface DiscoveredDiscordChannel {
   id: string;
   discord_channel_id: string;
   discord_channel_name: string;
@@ -174,7 +178,7 @@ export interface DiscoveredDiscordChannel {
   read_only_in_discord?: boolean | null;
 }
 
-export interface DiscordDiscoveryResult {
+interface DiscordDiscoveryResult {
   channels: DiscoveredDiscordChannel[];
   /** The roles the chapter can map, highest first; no @everyone, no bot roles. */
   roles: { discord_role_id: string; discord_role_name: string }[];

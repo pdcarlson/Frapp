@@ -1,14 +1,18 @@
+import { SYSTEM_SENDER_ID } from "@repo/validation";
 import { describe, expect, it, test } from "vitest";
 import {
   channelAllowsThreadReplies,
   channelAllowsThreads,
   messageCanStartThread,
   canActOnMessage,
+  canChangeMessagePin,
   canDeleteMessage,
   canEditMessage,
+  canReportMessage,
   channelAllowsReplies,
   copyableText,
   isOwnMessage,
+  isOwnPostedAnswer,
   isCardMessage,
   replyTargetId,
 } from "./message-actions";
@@ -88,6 +92,101 @@ describe("canDeleteMessage", () => {
       false,
     );
     expect(canDeleteMessage({ sender_id: null }, VIEWER, false)).toBe(false);
+  });
+
+  // #3909: Frapp's entries in the audit log are never deleted, whoever asks;
+  // a member's post there from before it was read-only still is.
+  describe("in the audit log", () => {
+    const entry = {
+      sender_id: SYSTEM_SENDER_ID,
+      kind: "system_audit" as const,
+    };
+
+    it("withholds it on Frapp's entries, even with channels:manage", () => {
+      expect(canDeleteMessage(entry, VIEWER, true, true)).toBe(false);
+    });
+
+    it("still offers it on a member's post, by the usual rule", () => {
+      const post = { sender_id: VIEWER, kind: "text" as const };
+      expect(canDeleteMessage(post, VIEWER, false, true)).toBe(true);
+      expect(
+        canDeleteMessage({ ...post, sender_id: "user-2" }, VIEWER, true, true),
+      ).toBe(true);
+      expect(
+        canDeleteMessage({ ...post, sender_id: "user-2" }, VIEWER, false, true),
+      ).toBe(false);
+    });
+
+    it("leaves a Frapp notice elsewhere to channels:manage", () => {
+      expect(canDeleteMessage(entry, VIEWER, true)).toBe(true);
+    });
+  });
+});
+
+describe("canChangeMessagePin", () => {
+  it("is a channels:manage holder's control", () => {
+    expect(canChangeMessagePin({ is_pinned: false }, true)).toBe(true);
+    expect(canChangeMessagePin({ is_pinned: true }, true)).toBe(true);
+    expect(canChangeMessagePin({ is_pinned: false }, false)).toBe(false);
+  });
+
+  // #3909: nothing in the audit log takes a new pin; one from before can go.
+  it("in the audit log, only takes a pin off", () => {
+    expect(canChangeMessagePin({ is_pinned: false }, true, true)).toBe(false);
+    expect(canChangeMessagePin({ is_pinned: true }, true, true)).toBe(true);
+    expect(canChangeMessagePin({ is_pinned: true }, false, true)).toBe(false);
+  });
+});
+
+describe("an Ask Frapp answer posted to the channel (#4713)", () => {
+  const SYSTEM = "00000000-0000-0000-0000-000000000000";
+  const posted = (askedBy: unknown) => ({
+    sender_id: SYSTEM,
+    kind: "ask_answer" as const,
+    payload: { asked_by: askedBy },
+  });
+
+  it("is the asker's to delete, though the row is the Frapp sender's", () => {
+    expect(isOwnPostedAnswer(posted(VIEWER), VIEWER)).toBe(true);
+    expect(canDeleteMessage(posted(VIEWER), VIEWER, false)).toBe(true);
+  });
+
+  it("is not another member's to delete without channels:manage", () => {
+    expect(canDeleteMessage(posted("user-2"), VIEWER, false)).toBe(false);
+    expect(canDeleteMessage(posted("user-2"), VIEWER, true)).toBe(true);
+  });
+
+  it("reads the asker from this kind alone, so a payload naming the viewer on another kind grants nothing", () => {
+    const poll = {
+      sender_id: "user-2",
+      kind: "poll" as const,
+      payload: { asked_by: VIEWER },
+    };
+    expect(isOwnPostedAnswer(poll, VIEWER)).toBe(false);
+    expect(canDeleteMessage(poll, VIEWER, false)).toBe(false);
+  });
+
+  it("is nobody's for a signed-out viewer or a payload with no asker", () => {
+    expect(isOwnPostedAnswer(posted(null), null)).toBe(false);
+    expect(isOwnPostedAnswer(posted(undefined), VIEWER)).toBe(false);
+    expect(
+      isOwnPostedAnswer({ kind: "ask_answer", payload: null }, VIEWER),
+    ).toBe(false);
+  });
+
+  it("is not the asker's to report, and is anyone else's", () => {
+    const row = (askedBy: string) => ({
+      ...posted(askedBy),
+      _status: "confirmed" as const,
+      is_deleted: false,
+    });
+    expect(canReportMessage(row(VIEWER), VIEWER)).toBe(false);
+    expect(canReportMessage(row("user-2"), VIEWER)).toBe(true);
+  });
+
+  it("is a card, so it is never edited", () => {
+    expect(isCardMessage({ kind: "ask_answer" })).toBe(true);
+    expect(canEditMessage(posted(VIEWER), VIEWER)).toBe(false);
   });
 });
 

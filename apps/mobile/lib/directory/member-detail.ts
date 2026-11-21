@@ -10,12 +10,12 @@
  * enforced server-side"), so it needs no client-side gate. Point balance is
  * the one card field deliberately omitted: `GET /v1/points/members/{userId}`
  * needs the officer-only `points:view_all`, which most viewers of this sheet
- * do not hold — the same "omit, don't fake" call `lib/more/profile.ts`
- * already makes for the drawn attendance stat no member can read.
+ * do not hold — the same "omit, don't fake" call `@repo/hooks`
+ * `profile-stats.ts` makes for the drawn attendance stat no member can read.
  */
 import { parseInstant } from "@repo/formatting";
-import { memberLabel } from "@repo/hooks";
-import { formatGraduationYear } from "../more/profile";
+import { formatGraduationYear, memberLabel } from "@repo/hooks";
+import { formatBirthday } from "@repo/validation";
 import {
   initialsFor,
   isRecord,
@@ -25,10 +25,10 @@ import {
   str,
 } from "../more/narrow";
 
-export interface MemberCustomField {
+interface MemberCustomField {
   fieldId: string;
   label: string;
-  /** Already display-formatted — booleans as Yes/No, empty as "—". */
+  /** Already display-formatted, booleans as Yes/No. Never empty: unset fields are left out. */
   value: string;
 }
 
@@ -39,8 +39,20 @@ export interface MemberDetail {
   /** Signed photo URL, or `null` for initials. */
   avatarUrl: string | null;
   displayName: string;
+  /**
+   * The stored name, trimmed, or `""` when none is set: what an officer's
+   * correction opens on, where {@link displayName} would put the "Member
+   * 1a2b3c4d" fallback label in the field.
+   */
+  storedName: string;
   initials: string;
   email: string | null;
+  /** The member's own phone (#3711), as they typed it, or `null`. */
+  phone: string | null;
+  /** "March 4" when they share their birthday with the chapter (#4959), else `null`. */
+  birthday: string | null;
+  /** Their graduation year, the value the officer's editor opens on. */
+  graduationYear: number | null;
   bio: string | null;
   /**
    * e.g. `"Economics · Acme Inc. · Chicago · '27"`, or `null` when nothing is
@@ -57,6 +69,17 @@ export interface MemberDetail {
   /** The member's pledge class and order number (#3939), each `null` when unset. */
   pledgeClassId: string | null;
   orderNumber: number | null;
+  /**
+   * The API's `viewer_can_remove`: whether this viewer may remove this member
+   * from the chapter (`members:remove`, not their own profile, and the member
+   * ranks below them). `false` when the read doesn't say.
+   */
+  canRemove: boolean;
+  /**
+   * The API's `viewer_can_edit_profile` (#4367): whether this viewer may fix
+   * this member's name and graduation year. `false` when the read doesn't say.
+   */
+  canEditProfile: boolean;
 }
 
 export function selectMemberDetail(data: unknown): MemberDetail | null {
@@ -72,8 +95,15 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     // `display_name` is `NOT NULL DEFAULT ''`, so absent and empty are the
     // same "no name set" case — matches `DirectoryRow`'s fallback.
     displayName: memberLabel(rawDisplayName, userId),
+    storedName: rawDisplayName?.trim() ?? "",
     initials: initialsFor(rawDisplayName),
     email: str(data, "email"),
+    phone: str(data, "phone"),
+    birthday: birthdayLabel(
+      num(data, "birthday_month"),
+      num(data, "birthday_day"),
+    ),
+    graduationYear: num(data, "graduation_year"),
     bio: str(data, "bio"),
     meta: metaLine([
       str(data, "major"),
@@ -86,6 +116,8 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     customFields: parseCustomFields(data.custom_fields),
     pledgeClassId: str(data, "pledge_class_id"),
     orderNumber: num(data, "order_number"),
+    canRemove: data.viewer_can_remove === true,
+    canEditProfile: data.viewer_can_edit_profile === true,
   };
 }
 
@@ -107,20 +139,27 @@ function formatJoinedDate(value: string | null): string | null {
 
 /**
  * `MemberProfileDto.custom_fields`, already tier-filtered server-side. A
- * field missing an id or label is dropped rather than rendered blank.
+ * field missing an id or label is dropped rather than rendered blank, and so
+ * is one with no value (`spec/behavior/members.md` § Custom Fields).
  */
 function parseCustomFields(data: unknown): MemberCustomField[] {
   if (!Array.isArray(data)) return [];
   return records(data).flatMap((row) => {
     const fieldId = str(row, "field_id");
     const label = str(row, "label");
-    if (!fieldId || !label) return [];
-    return [{ fieldId, label, value: formatCustomFieldValue(row) }];
+    const raw = str(row, "value");
+    if (!fieldId || !label || !raw) return [];
+    const value =
+      str(row, "type") === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
+    return [{ fieldId, label, value }];
   });
 }
 
-function formatCustomFieldValue(row: Record<string, unknown>): string {
-  const raw = str(row, "value");
-  if (raw === null) return "—";
-  return str(row, "type") === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
+/** The shared birthday as "March 4", or `null` (#4959). */
+function birthdayLabel(
+  month: number | null,
+  day: number | null,
+): string | null {
+  if (month === null || day === null) return null;
+  return formatBirthday(month, day) || null;
 }

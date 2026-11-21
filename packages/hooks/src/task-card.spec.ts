@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   actionStatus,
+  canEditCardTask,
   canReadCardTask,
+  readEditableCardTask,
   isTaskStatus,
   readLiveTask,
+  taskDueLine,
   taskCardControls,
+  taskSendBackOpen,
   taskStatusLabel,
   canReopenOwnTask,
   viewerIsCardAssignee,
@@ -20,6 +24,17 @@ function live(overrides: Partial<LiveTask> = {}): LiveTask {
     points_awarded: false,
     assignee_id: undefined,
     subtasks: [],
+    due: undefined,
+    // Points, so a completion waits on an officer unless a test says not.
+    point_reward: 5,
+    proof_kind: "none",
+    proof_link: null,
+    sent_back_at: null,
+    sent_back_reason: null,
+    completion_note: null,
+    completed_at: null,
+    confirmed_at: null,
+    photos: [],
     ...overrides,
   };
 }
@@ -86,12 +101,28 @@ describe("readLiveTask", () => {
         status: "OVERDUE",
         stored_status: "IN_PROGRESS",
         points_awarded: true,
+        point_reward: 5,
+        proof_kind: "link",
+        proof_link: "https://docs.google.com/x",
+        sent_back_at: "2026-11-13T10:00:00.000Z",
+        sent_back_reason: "Floor is still sticky",
+        completion_note: "",
+        photos: [
+          { id: "p1", kind: "proof", storage_path: "chapters/c/tasks/1/a.jpg" },
+        ],
       }),
     ).toEqual(
       live({
         status: "OVERDUE",
         stored_status: "IN_PROGRESS",
         points_awarded: true,
+        proof_kind: "link",
+        proof_link: "https://docs.google.com/x",
+        sent_back_at: "2026-11-13T10:00:00.000Z",
+        sent_back_reason: "Floor is still sticky",
+        photos: [
+          { id: "p1", kind: "proof", storage_path: "chapters/c/tasks/1/a.jpg" },
+        ],
       }),
     );
   });
@@ -121,6 +152,60 @@ describe("taskStatusLabel", () => {
       taskStatusLabel(live({ status: "COMPLETED", points_awarded: true })),
     ).toBe("Confirmed");
   });
+
+  it("reads Done for a completion that needed no sign-off (#4635)", () => {
+    const done = live({
+      status: "COMPLETED",
+      points_awarded: true,
+      point_reward: null,
+    });
+    expect(taskStatusLabel(done)).toBe("Done");
+    // Proof makes it the officer's to confirm.
+    expect(taskStatusLabel({ ...done, proof_kind: "photo" })).toBe("Confirmed");
+    // A caller that doesn't pass the proof kind can't tell, so Confirmed.
+    expect(taskStatusLabel({ status: "COMPLETED", points_awarded: true })).toBe(
+      "Confirmed",
+    );
+  });
+
+  it("reads Needs changes for a sent-back task until it is marked done (#4635)", () => {
+    const sentBack = live({
+      status: "IN_PROGRESS",
+      stored_status: "IN_PROGRESS",
+      sent_back_at: "2026-11-13T10:00:00.000Z",
+    });
+    expect(taskStatusLabel(sentBack)).toBe("Needs changes");
+    expect(taskStatusLabel({ ...sentBack, status: "OVERDUE" })).toBe(
+      "Needs changes",
+    );
+    expect(
+      taskStatusLabel({
+        ...sentBack,
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+      }),
+    ).toBe("Waiting on an officer");
+  });
+});
+
+describe("canReopenOwnTask (#4635)", () => {
+  it("lets the assignee take back a Done that needed no sign-off", () => {
+    expect(
+      canReopenOwnTask({
+        stored: "COMPLETED",
+        pointsAwarded: true,
+        isAssignee: true,
+        signedOffAutomatically: true,
+      }),
+    ).toBe(true);
+    expect(
+      canReopenOwnTask({
+        stored: "COMPLETED",
+        pointsAwarded: true,
+        isAssignee: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("canReopenOwnTask", () => {
@@ -145,6 +230,43 @@ describe("canReadCardTask", () => {
     expect(canReadCardTask({ isAssignee: false, canManage: false })).toBe(
       false,
     );
+  });
+});
+
+describe("taskCardControls (#4635)", () => {
+  it("offers only Send back on a completion that needed no sign-off", () => {
+    const at = "2026-11-13T10:00:00.000Z";
+    expect(
+      taskCardControls({
+        live: live({
+          status: "COMPLETED",
+          stored_status: "COMPLETED",
+          point_reward: null,
+          points_awarded: true,
+          completed_at: at,
+          confirmed_at: at,
+        }),
+        isAssignee: false,
+        canManage: true,
+      }),
+    ).toEqual(["reject"]);
+  });
+
+  it("keeps Confirmed on a no-points task an officer confirmed", () => {
+    expect(
+      taskCardControls({
+        live: live({
+          status: "COMPLETED",
+          stored_status: "COMPLETED",
+          point_reward: null,
+          points_awarded: true,
+          completed_at: "2026-11-01T10:00:00.000Z",
+          confirmed_at: "2026-11-02T10:00:00.000Z",
+        }),
+        isAssignee: false,
+        canManage: true,
+      }),
+    ).toEqual(["confirmed"]);
   });
 });
 
@@ -220,6 +342,41 @@ describe("taskCardControls", () => {
   });
 });
 
+describe("taskSendBackOpen (#4635, #5513)", () => {
+  const done = {
+    stored_status: "COMPLETED",
+    completed_at: "2026-11-13T10:00:00.000Z",
+  };
+  it("is open on a completion not yet paid, whether or not it needs a sign-off", () => {
+    expect(taskSendBackOpen({ ...done, point_reward: 5 })).toBe(true);
+    expect(taskSendBackOpen({ ...done, point_reward: null })).toBe(true);
+  });
+
+  it("is open on one signed off as it was marked, where nothing was paid", () => {
+    expect(
+      taskSendBackOpen({
+        ...done,
+        points_awarded: true,
+        confirmed_at: done.completed_at,
+        point_reward: null,
+        proof_kind: "none",
+      }),
+    ).toBe(true);
+  });
+
+  it("is shut once an officer confirmed it, or before it is done", () => {
+    expect(
+      taskSendBackOpen({
+        ...done,
+        points_awarded: true,
+        confirmed_at: "2026-11-13T11:00:00.000Z",
+        point_reward: 5,
+      }),
+    ).toBe(false);
+    expect(taskSendBackOpen({ stored_status: "IN_PROGRESS" })).toBe(false);
+  });
+});
+
 describe("countCheckedIn", () => {
   it("counts PRESENT and LATE rows only", () => {
     expect(
@@ -254,5 +411,170 @@ describe("viewerIsCardAssignee (#4296)", () => {
     expect(viewerIsCardAssignee("u-old", "u-old", null)).toBe(true);
     expect(viewerIsCardAssignee("", "", null)).toBe(false);
     expect(viewerIsCardAssignee(null, undefined, live())).toBe(false);
+  });
+});
+
+describe("readLiveTask's due (#4135)", () => {
+  it("takes due_at over due_date, and neither when blank", () => {
+    const base = { id: "task-1", status: "TODO" };
+    expect(readLiveTask({ ...base, due_date: "2026-11-20" })?.due).toBe(
+      "2026-11-20",
+    );
+    expect(
+      readLiveTask({
+        ...base,
+        due_date: "2026-11-20",
+        due_at: "2026-11-20T22:00:00.000Z",
+      })?.due,
+    ).toBe("2026-11-20T22:00:00.000Z");
+    expect(readLiveTask({ ...base, due_date: "", due_at: null })?.due).toBe(
+      undefined,
+    );
+  });
+});
+
+describe("taskDueLine (#4133, #4135)", () => {
+  const NOW = new Date(2026, 10, 12, 12);
+
+  it("counts down while open and is red only once overdue", () => {
+    expect(taskDueLine("2026-11-12", "TODO", NOW)).toEqual({
+      text: "Due today",
+      overdue: false,
+    });
+    expect(taskDueLine("2026-11-13", "IN_PROGRESS", NOW)).toEqual({
+      text: "Due tomorrow",
+      overdue: false,
+    });
+    expect(taskDueLine("2026-11-10", "TODO", NOW)).toEqual({
+      text: "Overdue by 2 days",
+      overdue: true,
+    });
+  });
+
+  it("is red when the server already says OVERDUE", () => {
+    expect(taskDueLine("2026-11-12", "OVERDUE", NOW)?.overdue).toBe(true);
+  });
+
+  it("never charges a finished task with lateness", () => {
+    expect(taskDueLine("2026-11-10", "COMPLETED", NOW)).toEqual({
+      text: "Due November 10",
+      overdue: false,
+    });
+    expect(taskDueLine("2026-11-13", "COMPLETED", NOW)?.text).toBe(
+      "Due tomorrow",
+    );
+  });
+
+  it("gives the plain date when the status is unknown, and null for no date", () => {
+    expect(taskDueLine("2026-11-10", null, NOW)).toEqual({
+      text: "Due November 10",
+      overdue: false,
+    });
+    expect(taskDueLine(null, "TODO", NOW)).toBeNull();
+    expect(taskDueLine("banana", "TODO", NOW)).toBeNull();
+  });
+});
+
+describe("canEditCardTask (#4512)", () => {
+  it("offers Edit to a tasks:manage holder until the task is confirmed", () => {
+    expect(canEditCardTask({ live: live(), canManage: true })).toBe(true);
+    expect(
+      canEditCardTask({
+        live: live({ status: "COMPLETED", stored_status: "COMPLETED" }),
+        canManage: true,
+      }),
+    ).toBe(true);
+    expect(
+      canEditCardTask({
+        live: live({ points_awarded: true }),
+        canManage: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("offers nothing to anyone else, or before the task is read", () => {
+    expect(canEditCardTask({ live: live(), canManage: false })).toBe(false);
+    expect(canEditCardTask({ live: null, canManage: true })).toBe(false);
+  });
+});
+
+describe("readEditableCardTask", () => {
+  const raw = {
+    id: "task-1",
+    title: "Sweep",
+    description: null,
+    assignee_id: "u1",
+    due_date: "2026-11-14",
+    due_at: "2026-11-14T22:00:00.000Z",
+    point_reward: 5,
+    status: "TODO",
+    stored_status: "TODO",
+    subtasks: [],
+  };
+
+  it("reads what the edit form opens on", () => {
+    expect(readEditableCardTask(raw)).toEqual({
+      id: "task-1",
+      title: "Sweep",
+      description: null,
+      assignee_id: "u1",
+      due_date: "2026-11-14",
+      due_at: "2026-11-14T22:00:00.000Z",
+      point_reward: 5,
+      status: "TODO",
+      stored_status: "TODO",
+      subtasks: [],
+      photos: [],
+      proof_kind: "none",
+      series: null,
+    });
+  });
+
+  it("carries how a copy of a repeating task repeats (#5119)", () => {
+    const series = {
+      recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=UTC",
+      next_due_date: "2026-11-21",
+      ended: false,
+    };
+    expect(readEditableCardTask({ ...raw, series })?.series).toEqual(series);
+    expect(
+      readEditableCardTask({ ...raw, series: { ended: "no" } })?.series,
+    ).toBeNull();
+  });
+
+  it("carries the task's reference photos and its proof kind (#4635)", () => {
+    expect(
+      readEditableCardTask({
+        ...raw,
+        proof_kind: "link",
+        photos: [
+          {
+            id: "p1",
+            kind: "reference",
+            storage_path: "chapters/c/tasks/1/a.jpg",
+          },
+          { id: "p2", kind: "proof", storage_path: "chapters/c/tasks/2/b.jpg" },
+          { id: "p3", kind: "bogus", storage_path: "x" },
+        ],
+      }),
+    ).toMatchObject({
+      // The edit form keeps the reference ones; the board's rows carry the
+      // same `photos`, so both open the form the same way.
+      photos: [
+        {
+          id: "p1",
+          kind: "reference",
+          storage_path: "chapters/c/tasks/1/a.jpg",
+        },
+        { id: "p2", kind: "proof", storage_path: "chapters/c/tasks/2/b.jpg" },
+      ],
+      proof_kind: "link",
+    });
+  });
+
+  it("is null without a field the form needs", () => {
+    expect(readEditableCardTask(undefined)).toBeNull();
+    expect(readEditableCardTask({ ...raw, assignee_id: null })).toBeNull();
+    expect(readEditableCardTask({ ...raw, due_date: "" })).toBeNull();
   });
 });

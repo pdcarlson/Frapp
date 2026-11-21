@@ -46,3 +46,11 @@ export function moduleRefusalFromServerMessage(
   if (moduleKey.length === 0 || moduleKey.includes('"')) return null;
   return { moduleKey };
 }
+
+/**
+ * What a check-in control says in its place while the chapter has Events
+ * turned off: the phone's event card and Event detail, and web's chat event
+ * card (#4136). Addressed to a member, who can't turn it back on.
+ */
+export const CHECK_IN_MODULE_OFF_LINE =
+  "Check-in is turned off for your chapter right now. An officer can turn events back on.";

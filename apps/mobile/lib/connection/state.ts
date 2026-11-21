@@ -24,7 +24,7 @@ export {
   DEGRADED_THRESHOLD,
   deriveConnectionState,
 } from "@repo/validation";
-export type { ConnectionInput, ConnectionState } from "@repo/validation";
+export type { ConnectionState } from "@repo/validation";
 
 /**
  * The pill's copy lives with the rule that picks it: `connectionIndicator` in

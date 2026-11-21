@@ -89,29 +89,62 @@ const leaderboardRead = read([{ user_id: "u-1", total: 42 }]);
 
 const classesRead = read([]);
 
+/** What `useMemberPhoneReach` answers: `null` until a test sets it. */
+const phoneReachRead = vi.hoisted(() => ({
+  value: null as null | {
+    scope: "chapter" | "self";
+    byUserId: Map<string, unknown>;
+  },
+}));
+
+// The live-meeting card has its own spec (#5219).
+vi.mock("@/components/meetings/live-meeting-card", () => ({
+  LiveMeetingCard: () => null,
+}));
+
+const tiersRead = vi.hoisted(() => ({
+  data: [] as Array<{ id: string; position: number }> | undefined,
+  isError: false,
+}));
+
+const groupsRead = vi.hoisted(() => ({
+  data: [
+    { id: "g-house", name: "In house", kind: "manual", member_ids: ["u-1"] },
+    { id: "g-empty", name: "Nobody yet", kind: "manual", member_ids: [] },
+  ] as Array<{ id: string; name: string; kind: string; member_ids: string[] }>,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => {
   // The fraternal-order sort is the real one: it is what this screen promises.
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
-  fraternalOrderComparator: actual.fraternalOrderComparator,
-  usesFraternalOrder: actual.usesFraternalOrder,
-  usePledgeClasses: () => classesRead,
-  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
-  useMembers: () => membersRead,
-  useMemberSearch: (q: string) => (q ? searchRead : membersRead),
-  useRoles: () => rolesRead,
-  useLeaderboard: () => leaderboardRead,
-  // The member view, which every member can read. The config read refuses
-  // every seeded role below President (#2957), so the directory must not
-  // depend on it; it reports that refusal here rather than being left out.
-  useCurrentChapter: () => ({
-    data: {
-      org_archetype: "ifc",
-      vocabulary: { class: "Line", order: "Roll number" },
-    },
-  }),
-  useOrgConfig: () => ({ data: undefined, isError: true }),
-  useUpdateMemberRoles: () => ({ mutateAsync: mutateRoles, isPending: false }),
+    fraternalOrderComparator: actual.fraternalOrderComparator,
+    usesFraternalOrder: actual.usesFraternalOrder,
+    usePledgeClasses: () => classesRead,
+    useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+    // The List/Grid pick is kept per viewer (#4175).
+    useViewerUserId: () => "viewer-1",
+    useMembers: () => membersRead,
+    useMemberSearch: (q: string) => (q ? searchRead : membersRead),
+    useRoles: () => rolesRead,
+    useRoleTiers: () => tiersRead,
+    useGroups: () => groupsRead,
+    useLeaderboard: () => leaderboardRead,
+    useMemberPhoneReach: () => ({ reach: phoneReachRead.value }),
+    // The member view, which every member can read. The config read refuses
+    // every seeded role below President (#2957), so the directory must not
+    // depend on it; it reports that refusal here rather than being left out.
+    useCurrentChapter: () => ({
+      data: {
+        org_archetype: "ifc",
+        vocabulary: { class: "Line", order: "Roll number" },
+      },
+    }),
+    useOrgConfig: () => ({ data: undefined, isError: true }),
+    useUpdateMemberRoles: () => ({
+      mutateAsync: mutateRoles,
+      isPending: false,
+    }),
   };
 });
 
@@ -126,7 +159,9 @@ vi.mock("@/lib/providers/chapter-presence-provider", () => ({
   }),
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 /**
  * Stubbed because it fires six invite hooks this file's `@repo/hooks` mock has
@@ -138,6 +173,41 @@ vi.mock("@/components/members/invite-member-dialog", () => ({
   InviteMemberDialog: ({ trigger }: { trigger: React.ReactNode }) => (
     <div data-testid="invite-trigger">{trigger}</div>
   ),
+}));
+
+// The row opens the member's card (Paul, 2026-11-19), which has its own
+// spec; here it only has to open for the right member and hand on View
+// profile.
+vi.mock("@/components/chat/member-popout", () => ({
+  anchorFor: (element: HTMLElement) => ({
+    contextElement: element,
+    getBoundingClientRect: () => element.getBoundingClientRect(),
+  }),
+  MemberPopout: ({
+    open,
+    userId,
+    identity,
+    onViewProfile,
+    side,
+  }: {
+    open: boolean;
+    userId: string | null;
+    identity: { name: string | null } | null;
+    onViewProfile: (userId: string) => void;
+    side?: string;
+  }) =>
+    open && userId ? (
+      <div
+        data-testid="member-card"
+        data-user-id={userId}
+        data-side={side ?? "right"}
+      >
+        {identity?.name}
+        <button type="button" onClick={() => onViewProfile(userId)}>
+          View profile
+        </button>
+      </div>
+    ) : null,
 }));
 
 vi.mock("@/components/members/member-detail-sheet", () => ({
@@ -170,6 +240,8 @@ beforeEach(() => {
     read([{ id: "r-1", name: "Treasurer", is_system: false, permissions: [] }]),
   );
   Object.assign(leaderboardRead, read([{ user_id: "u-1", total: 42 }]));
+  phoneReachRead.value = null;
+  Object.assign(tiersRead, { data: [], isError: false });
 });
 
 describe("Directory on the greenfield shell", () => {
@@ -222,6 +294,20 @@ describe("Directory on the greenfield shell", () => {
     }
   });
 
+  it("filters by group, offering only groups with someone in them (2026-11-19)", async () => {
+    const user = userEvent.setup();
+    render(<MembersDirectory />);
+    await user.click(screen.getByRole("button", { name: /^Group/ }));
+    expect(
+      (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
+    ).toEqual(["Any group", "In house"]);
+    await user.click(screen.getByRole("menuitem", { name: "In house" }));
+    expect(
+      screen.getByRole("button", { name: /^Ada Lovelace,/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Grace Hopper,/ })).toBeNull();
+  });
+
   it("makes the row itself the control that opens a member", async () => {
     const user = userEvent.setup();
     render(<MembersDirectory />);
@@ -230,7 +316,18 @@ describe("Directory on the greenfield shell", () => {
     // member and everything the row shows.
     expect(screen.queryByRole("button", { name: /view details/i })).toBeNull();
 
+    // A row opens the member's card beside it, not the profile over the
+    // Directory (Paul, 2026-11-19); View profile opens the full record.
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
+    expect(screen.getByTestId("member-card")).toHaveTextContent("Ada Lovelace");
+    // A row is as wide as the Directory, so its card opens below it; beside
+    // it there is no room and the card ran off the window's left edge (#5749).
+    expect(screen.getByTestId("member-card")).toHaveAttribute(
+      "data-side",
+      "bottom",
+    );
+    expect(screen.queryByTestId("detail-sheet")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "View profile" }));
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
       "Ada Lovelace",
     );
@@ -255,6 +352,42 @@ describe("Directory on the greenfield shell", () => {
     const grace = screen.getByRole("button", { name: /^Grace Hopper,/ });
     expect(grace).not.toHaveAccessibleName(/joined/i);
     expect(grace).not.toHaveAccessibleName(/Treasurer/);
+  });
+
+  it("titles a member by their highest-ranked role, tier before list order (2026-11-20)", () => {
+    // Staging's bug: an imported floor role at display_order 0 outranked the
+    // office, so Gabe read "First Floor" and Paul "Web Development".
+    Object.assign(
+      membersRead,
+      read([{ ...MEMBERS[0], role_ids: ["r-floor", "r-1"] }]),
+    );
+    Object.assign(
+      rolesRead,
+      read([
+        {
+          id: "r-floor",
+          name: "First Floor",
+          is_system: false,
+          permissions: [],
+          display_order: 0,
+          tier_id: null,
+        },
+        {
+          id: "r-1",
+          name: "Treasurer",
+          is_system: false,
+          permissions: [],
+          display_order: 3,
+          tier_id: "t-cabinet",
+        },
+      ]),
+    );
+    Object.assign(tiersRead, { data: [{ id: "t-cabinet", position: 1 }] });
+    render(<MembersDirectory />);
+
+    const ada = screen.getByRole("button", { name: /^Ada Lovelace,/ });
+    expect(ada).toHaveAccessibleName(/Treasurer/);
+    expect(ada).not.toHaveAccessibleName(/First Floor/);
   });
 
   it("labels a member whose name is only whitespace with the shared fallback", () => {
@@ -312,6 +445,71 @@ describe("Directory on the greenfield shell", () => {
     // An unset chip is named by its label alone; a set one names its value.
     expect(screen.getByRole("button", { name: "Status" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Role" })).toBeInTheDocument();
+  });
+
+  it("offers the Phone app filter only when the server sends the whole chapter's reach", () => {
+    phoneReachRead.value = {
+      scope: "self",
+      byUserId: new Map([
+        [
+          "u-1",
+          {
+            user_id: "u-1",
+            state: "on",
+            platform: "ios",
+            last_opened_at: null,
+          },
+        ],
+      ]),
+    };
+    const { unmount } = render(<MembersDirectory />);
+    expect(screen.queryByRole("button", { name: "Phone app" })).toBeNull();
+    unmount();
+
+    phoneReachRead.value = { scope: "chapter", byUserId: new Map() };
+    render(<MembersDirectory />);
+    expect(
+      screen.getByRole("button", { name: "Phone app" }),
+    ).toBeInTheDocument();
+  });
+
+  it("narrows to members notifications can't reach, says how many, and names each one's state", async () => {
+    const user = userEvent.setup();
+    phoneReachRead.value = {
+      scope: "chapter",
+      byUserId: new Map([
+        [
+          "u-1",
+          {
+            user_id: "u-1",
+            state: "on",
+            platform: "ios",
+            last_opened_at: "2026-11-18T12:00:00.000Z",
+          },
+        ],
+        [
+          "u-2",
+          {
+            user_id: "u-2",
+            state: "web_only",
+            platform: null,
+            last_opened_at: null,
+          },
+        ],
+      ]),
+    };
+    render(<MembersDirectory />);
+    // No state on the rows until the filter is set.
+    expect(screen.queryByText("Web only")).toBeNull();
+
+    await pick(user, "Phone app", "Not reachable");
+
+    expect(screen.queryByText("Ada Lovelace")).toBeNull();
+    expect(screen.getByText("Grace Hopper")).toBeInTheDocument();
+    expect(screen.getByText("Web only")).toBeInTheDocument();
+    expect(
+      screen.getByText("1 of 2 members can't get notifications"),
+    ).toBeInTheDocument();
   });
 
   // #3941: the options are graduation years, so the chapter's `class` word
@@ -380,7 +578,7 @@ describe("Directory on the greenfield shell", () => {
     // The board's no-results state names what was asked for, rather than
     // reusing the empty state's claim about the roster.
     expect(
-      await screen.findByText(/No actives match “pigg”\./),
+      await screen.findByText(/Nobody matches “pigg”\./),
     ).toBeInTheDocument();
     expect(screen.queryByText("No actives yet.")).toBeNull();
 
@@ -393,6 +591,7 @@ describe("Directory on the greenfield shell", () => {
     const { rerender } = render(<MembersDirectory />);
 
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
+    await user.click(screen.getByRole("button", { name: "View profile" }));
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
       "Ada Lovelace",
     );
@@ -428,7 +627,6 @@ describe("Directory on the greenfield shell", () => {
     expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
     await pick(user, /^Sort:/, "Role Z to A");
     expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
-
   });
 
   describe("pledge class and order number (#3939)", () => {
@@ -455,8 +653,12 @@ describe("Directory on the greenfield shell", () => {
       const user = userEvent.setup();
       render(<MembersDirectory />);
       await user.click(screen.getByRole("button", { name: /^Sort:/ }));
-      expect(screen.queryByRole("menuitem", { name: "Newest first" })).toBeNull();
-      expect(screen.queryByRole("menuitem", { name: "Oldest first" })).toBeNull();
+      expect(
+        screen.queryByRole("menuitem", { name: "Newest first" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("menuitem", { name: "Oldest first" }),
+      ).toBeNull();
     });
 
     it("shows no pledge class or order control to a chapter that uses neither", async () => {
@@ -507,7 +709,9 @@ describe("Directory on the greenfield shell", () => {
       // The mocked chapter calls a class a "Line".
       await user.click(screen.getByRole("button", { name: /^Line/ }));
       expect(
-        (await screen.findAllByRole("menuitem")).map((item) => item.textContent),
+        (await screen.findAllByRole("menuitem")).map(
+          (item) => item.textContent,
+        ),
       ).toEqual(["Any", "Beta", "Alpha"]);
       await user.click(screen.getByRole("menuitem", { name: "Alpha" }));
       expect(names()).toEqual(["Ada Lovelace"]);
@@ -543,7 +747,9 @@ describe("Directory on the greenfield shell", () => {
       render(<MembersDirectory />);
       expect(screen.queryByRole("button", { name: /^Line/ })).toBeNull();
       await user.click(screen.getByRole("button", { name: /^Sort:/ }));
-      expect(screen.queryByRole("menuitem", { name: "Roll number" })).toBeNull();
+      expect(
+        screen.queryByRole("menuitem", { name: "Roll number" }),
+      ).toBeNull();
     });
 
     it("falls back to the default sort and no class filter when the chapter's last class goes", async () => {
@@ -588,7 +794,7 @@ describe("Directory on the greenfield shell", () => {
     Object.assign(membersRead, read([]), { isError: true });
     const { container } = render(<MembersDirectory />);
 
-    expect(screen.getByText("Couldn't load members")).toBeInTheDocument();
+    expect(screen.getByText("Couldn't load the directory")).toBeInTheDocument();
     // `NestedError`, not `ErrorState`: the whole-screen family paints
     // `--card` on its box, which would put back the wrapper this lane just
     // removed. The Retry button inside it may still be Secondary.
@@ -632,6 +838,97 @@ describe("Directory on the greenfield shell", () => {
     await user.click(selectAll());
     expect(screen.queryByText(/selected$/)).toBeNull();
     expect(selectAll()).toBeInTheDocument();
+  });
+});
+
+/**
+ * #4175 — the Grid layout, picked in the Directory's tab row and kept per
+ * viewer. #2146 deleted the old card grid for showing less than the row and
+ * for stranding selection; a tile answers both.
+ */
+describe("Directory as a grid (#4175)", () => {
+  beforeEach(() => {
+    window.localStorage.setItem("frapp.directory.layout.viewer-1", "grid");
+  });
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("lays the members out as tiles, not the divided list", () => {
+    const { container } = render(<MembersDirectory />);
+    const list = container.querySelector("ul");
+    expect(list?.className).toContain("grid");
+    expect(list?.className).not.toContain("divide-y");
+    expect(list?.querySelectorAll("li")).toHaveLength(MEMBERS.length);
+    // A hairline tile on the page surface, not the wrapper card #2146 removed.
+    expect(cardFilledContainers(container)).toHaveLength(0);
+  });
+
+  // #4647: as many tiles as fit at a capped width, not a fixed column count
+  // stretched across a wide page; two at the 375px floor.
+  it("caps a tile's width rather than stretching a fixed count of columns", () => {
+    const { container } = render(<MembersDirectory />);
+    const list = container.querySelector("ul");
+    expect(list?.className).toContain(
+      "@md:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))]",
+    );
+    expect(list?.className).toContain("grid-cols-2");
+    expect(list?.className).not.toMatch(/@\dxl:grid-cols-\d/);
+  });
+
+  it("names a tile for everything the row shows, and opens the member", async () => {
+    const user = userEvent.setup();
+    render(<MembersDirectory />);
+
+    const tile = screen.getByRole("button", { name: /^Ada Lovelace,/ });
+    expect(tile.getAttribute("aria-label")).toContain("Treasurer");
+    expect(tile.getAttribute("aria-label")).toContain("42 points");
+    expect(tile.getAttribute("aria-label")).toContain("ada@example.test");
+
+    await user.click(tile);
+    expect(screen.getByTestId("member-card")).toHaveAttribute(
+      "data-user-id",
+      "u-1",
+    );
+    // A tile is narrow, so its card opens beside it (#5749).
+    expect(screen.getByTestId("member-card")).toHaveAttribute(
+      "data-side",
+      "right",
+    );
+    await user.click(screen.getByRole("button", { name: "View profile" }));
+    expect(screen.getByTestId("detail-sheet")).toHaveAttribute(
+      "data-user-id",
+      "u-1",
+    );
+  });
+
+  // #2146 deleted the old grid for showing less than the row: the tile must
+  // show the facts on screen, not only in its accessible name.
+  it("shows the row's facts on the tile itself", () => {
+    render(<MembersDirectory />);
+    const tile = screen.getByRole("button", { name: /^Ada Lovelace,/ });
+    expect(tile).toHaveTextContent("Ada Lovelace");
+    expect(tile).toHaveTextContent("Treasurer");
+    expect(tile).toHaveTextContent("ada@example.test");
+    expect(tile).toHaveTextContent("42 points");
+    expect(tile).toHaveTextContent(/joined/);
+  });
+
+  it("keeps every tile selectable, and select-all with it", async () => {
+    const user = userEvent.setup();
+    render(<MembersDirectory />);
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "Select Ada Lovelace" }),
+    );
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
   });
 });
 
@@ -720,6 +1017,53 @@ describe("Actives on a chapter with alumni", () => {
     expect(
       await screen.findByRole("menuitem", { name: "Alumni" }),
     ).toBeInTheDocument();
+  });
+
+  it("offers no role holding * to assign, President or legacy, but filters by it (#4164)", async () => {
+    const user = userEvent.setup();
+    Object.assign(membersRead, read(CHAPTER));
+    Object.assign(
+      rolesRead,
+      read([
+        { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+        {
+          id: "r-pres",
+          name: "President",
+          system_key: "PRESIDENT",
+          is_system: true,
+          permissions: ["*"],
+        },
+        // A pre-validation custom role: the API refuses it on bulk assign too.
+        {
+          id: "r-legacy",
+          name: "Old Admin",
+          is_system: false,
+          permissions: ["*", "events:create"],
+        },
+      ]),
+    );
+    render(<MembersDirectory />);
+
+    await user.click(screen.getByRole("button", { name: "Role" }));
+    expect(
+      await screen.findByRole("menuitem", { name: "President" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Old Admin" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Assign role" }));
+    expect(
+      await screen.findByRole("menuitem", { name: "Treasurer" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "President" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Old Admin" })).toBeNull();
   });
 
   it("reads a bulk role as unpicked once that role is deleted, and can un-pick one", async () => {
@@ -848,6 +1192,7 @@ describe("Actives on a chapter with alumni", () => {
     const { rerender } = render(<MembersDirectory />);
 
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
+    await user.click(screen.getByRole("button", { name: "View profile" }));
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
       "Ada Lovelace",
     );

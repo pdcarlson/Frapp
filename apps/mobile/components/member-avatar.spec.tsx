@@ -98,7 +98,7 @@ describe("MemberAvatar tint (#3860)", () => {
       );
     });
     const circle = circleOf(tree);
-    expect(StyleSheet.flatten(circle.props.style).backgroundColor).toBe("#443426");
+    expect(StyleSheet.flatten(circle.props.style).backgroundColor).toBe("#3D2E2A");
     const text = tree.root.find(
       (node) => node.props.children === "SK" && node.props.style !== undefined,
     );

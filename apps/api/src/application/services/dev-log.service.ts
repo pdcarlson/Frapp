@@ -10,6 +10,7 @@ import {
 import {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   RELEASE_NOTES,
+  releaseNoteGroups,
   type ReleaseNote,
 } from '@repo/validation';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
@@ -49,7 +50,7 @@ export const DEV_LOG_ENV = {
 } as const;
 
 /** The one repository posts link to. The caller sends numbers, never URLs. */
-export const DEV_LOG_REPO_URL = 'https://github.com/pdcarlson/Frapp';
+const DEV_LOG_REPO_URL = 'https://github.com/pdcarlson/Frapp';
 
 export const DEV_LOG_EVENTS = [
   'work_started',
@@ -59,14 +60,14 @@ export const DEV_LOG_EVENTS = [
 ] as const;
 export type DevLogEvent = (typeof DEV_LOG_EVENTS)[number];
 
-export interface DevLogItem {
+interface DevLogItem {
   number: number;
   title: string;
   actor?: string;
   areas?: string[];
 }
 
-export interface DevLogMergeCount {
+interface DevLogMergeCount {
   actor: string;
   count: number;
 }
@@ -225,7 +226,10 @@ function whatsNewBlock(note: ReleaseNote | undefined, now: Date): string[] {
   return [
     '',
     `What's new (${note.date}): ${note.title}`,
-    ...note.changes.map((change) => `• ${change}`),
+    ...releaseNoteGroups(note).flatMap((group) => [
+      ...(group.label ? [group.label] : []),
+      ...group.lines.map((change) => `• ${change}`),
+    ]),
   ];
 }
 

@@ -148,13 +148,69 @@ describe('decidePush', () => {
   it('skips presence even if level=all', () => {
     expect(
       decidePush({
+        channel: ch('general'),
+        messageKind: 'text',
+        recipientIsPresent: true,
+        hasMention: false,
+        preferences: [],
+      }),
+    ).toBe('skip-presence');
+  });
+
+  // Presence is client-published, so it never silences an announcement:
+  // forging it must not quiet the chapter's URGENT push. Decided by the
+  // channel, so an ordinary post in #announcements counts too.
+  it('pushes an announcement to a member shown as present', () => {
+    expect(
+      decidePush({
         channel: ch('announcements', { is_read_only: true }),
         messageKind: 'announcement',
         recipientIsPresent: true,
         hasMention: false,
         preferences: [],
       }),
+    ).toBe('send');
+  });
+
+  it('pushes a plain post in #announcements to a member shown as present', () => {
+    expect(
+      decidePush({
+        channel: ch('announcements', { is_read_only: true }),
+        messageKind: 'text',
+        recipientIsPresent: true,
+        hasMention: false,
+        preferences: [],
+      }),
+    ).toBe('send');
+  });
+
+  it('lets presence quiet a thread reply under an announcement', () => {
+    expect(
+      decidePush({
+        channel: ch('announcements', { is_read_only: true }),
+        messageKind: 'text',
+        recipientIsPresent: true,
+        hasMention: false,
+        preferences: [],
+        thread: { followState: 'following' },
+      }),
     ).toBe('skip-presence');
+  });
+
+  it('lets presence quiet an @mention, a DM and a stray announcement kind', () => {
+    for (const input of [
+      { channel: ch('random'), messageKind: 'text', hasMention: true },
+      {
+        channel: ch('dm', { type: 'DM' }),
+        messageKind: 'text',
+        hasMention: true,
+      },
+      { channel: ch('random'), messageKind: 'announcement', hasMention: false },
+    ]) {
+      expect(
+        decidePush({ ...input, recipientIsPresent: true, preferences: [] }),
+      ).toBe('skip-presence');
+    }
   });
 
   it('sends on default announcements level', () => {
@@ -218,37 +274,6 @@ describe('decidePush', () => {
         ],
       }),
     ).toBe('send');
-  });
-
-  it('an audit mirror never pushes, whatever the member opted into', () => {
-    const optIns: ChatNotificationPreferenceRow[] = [
-      {
-        user_id: 'u',
-        chapter_id: 'c',
-        scope: 'channel',
-        scope_id: 'ch-1',
-        scope_kind: null,
-        level: 'all',
-      },
-      {
-        user_id: 'u',
-        chapter_id: 'c',
-        scope: 'kind',
-        scope_id: null,
-        scope_kind: 'system_audit',
-        level: 'all',
-      },
-    ];
-    const input = {
-      channel: ch('chapter-audit'),
-      messageKind: 'system_audit',
-      recipientIsPresent: false,
-      hasMention: false,
-      preferences: optIns,
-    };
-    expect(decidePush({ ...input, isAuditMirror: true })).toBe('skip-level');
-    // The same opt-ins still reach a server notice (no mirror flag).
-    expect(decidePush(input)).toBe('send');
   });
 
   it('channel off pref still pushes on a mention (mute override)', () => {
@@ -379,6 +404,32 @@ describe('officer-set channel defaults and DMs (#2771)', () => {
         'text',
       ),
     ).toBe('all');
+  });
+
+  describe('an Ask Frapp answer posted to the channel (#4713)', () => {
+    // The member who asked chose to put it there; nobody else asked for it.
+    it.each([
+      ['a channel set to all', ch('general'), false],
+      ['a mention', ch('random'), true],
+      ['a DM', ch('dm', { type: 'DM' }), false],
+    ])('never sends, whatever %s would do', (_what, channel, hasMention) => {
+      expect(
+        decidePush({
+          channel,
+          messageKind: 'ask_answer',
+          recipientIsPresent: false,
+          hasMention,
+          preferences: [],
+        }),
+      ).toBe('skip-level');
+    });
+
+    it('reads as off for anything that asks the level directly', () => {
+      expect(defaultLevelFor(ch('general'), 'ask_answer')).toBe('off');
+      expect(defaultLevelFor(ch('dm', { type: 'DM' }), 'ask_answer')).toBe(
+        'off',
+      );
+    });
   });
 
   it('a stored default never lifts audit or imported rows', () => {

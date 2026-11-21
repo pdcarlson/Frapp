@@ -26,6 +26,13 @@ describe('ListChapterAuditLogQueryDto', () => {
     ).toEqual([]);
   });
 
+  it('accepts each Logs kind and refuses any other', async () => {
+    for (const kind of ['roles', 'members', 'settings']) {
+      expect(await valid({ kind })).toEqual([]);
+    }
+    expect(await valid({ kind: 'billing' })).toEqual(['kind']);
+  });
+
   it('accepts an empty query — every filter is optional', async () => {
     expect(await valid({})).toEqual([]);
   });

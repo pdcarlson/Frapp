@@ -5,7 +5,8 @@ import { act } from "react";
 import { AccessibilityInfo, Alert, Keyboard } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { SheetHeader } from "@/components/sheet-scaffold";
+import { SheetHeader, SheetLightScrim } from "@/components/sheet-scaffold";
+import { ForwardGlyph } from "@/components/control-glyphs";
 
 // The report settles in a microtask after the press, so its state update lands
 // inside an async `act`; React only accepts that when told this is a test env.
@@ -36,27 +37,33 @@ vi.mock("@/lib/chat/block-actions", async () => {
   return { ...actual, useBlockActions: () => blockActions };
 });
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#C49A3A",
-    accentPrimary: "#C49A3A",
-    accentOnPrimary: "#2B2009",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-  }),
+const recents = vi.hoisted(() => ({ record: vi.fn() }));
+vi.mock("@/lib/chat/recent-emoji", () => ({
+  recordRecentEmoji: recents.record,
+  useRecentEmoji: () => [],
 }));
+
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, MUTED_GOLD_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(MUTED_GOLD_BRANDING);
+});
 
 import * as Clipboard from "expo-clipboard";
 import {
   COPIED_LABEL,
+  MARK_UNREAD_LABEL,
+  COPY_LINK_LABEL,
+  PIN_LABEL,
+  SAVE_LABEL,
+  UNPIN_LABEL,
+  UNSAVE_LABEL,
   MessageActionsSheet,
-  QUICK_REACTIONS,
   quickReactionLabel,
   type MessageActionsSheetHandle,
   type MessageActionsTarget,
 } from "./message-actions-sheet";
+import { QUICK_REACTIONS } from "@repo/chat-core/emoji-recent";
 import {
   BLOCK_NOT_A_MEMBER_BODY,
   blockConfirmBody,
@@ -89,6 +96,9 @@ function render(
     onEdit?: (messageId: string) => void;
     onDelete?: (messageId: string) => void;
     onMention?: (messageId: string) => void;
+    onMarkUnread?: (messageId: string) => void;
+    onSetPinned?: (messageId: string, pinned: boolean) => void;
+    onSetSaved?: (messageId: string, saved: boolean) => void;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -209,10 +219,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
 
   it("draws no chevron on any menu row, as Discord's menu draws none", () => {
     const chevrons = (tree: ReactTestRenderer) =>
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Text" && node.props.children === "›",
-      ).length;
+      tree.root.findAllByType(ForwardGlyph).length;
     // Reply, Edit and Delete all act here.
     expect(chevrons(render(OWN))).toBe(0);
     // Report opens the form, but a menu row is a verb, not a link.
@@ -255,6 +262,142 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     }
   });
 
+  it("offers Mark unread after Copy text and hands the message to the thread (#3723)", () => {
+    const onMarkUnread = vi.fn();
+    const tree = render(
+      { ...OWN, copyText: "hi", canMarkUnread: true },
+      undefined,
+      { onMarkUnread },
+    );
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(labels.indexOf("Copy text")).toBeLessThan(
+      labels.indexOf(MARK_UNREAD_LABEL),
+    );
+    pressByLabel(tree, MARK_UNREAD_LABEL);
+    expect(onMarkUnread).toHaveBeenCalledWith(OWN.messageId);
+    expect(
+      hasRow(
+        render({ ...OWN, copyText: "hi" }, undefined, { onMarkUnread }),
+        MARK_UNREAD_LABEL,
+      ),
+    ).toBe(false);
+  });
+
+  it("offers Copy message link after Copy text, copies the link, and says Copied on that row only (#3723)", async () => {
+    const link = "https://app.frapp.live/chat?channel=c1&message=m1";
+    const tree = render({ ...OWN, copyText: "hi", link });
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(labels.indexOf("Copy text")).toBeLessThan(
+      labels.indexOf(COPY_LINK_LABEL),
+    );
+
+    pressByLabel(tree, COPY_LINK_LABEL);
+    await flush();
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(link);
+    expect(hasRow(tree, COPIED_LABEL)).toBe(true);
+    // Copy text still says what it does.
+    expect(hasRow(tree, "Copy text")).toBe(true);
+    expect(hasRow(tree, COPY_LINK_LABEL)).toBe(false);
+  });
+
+  it("puts Mark unread between Copy text and Copy message link, Discord's order (#3723)", () => {
+    const tree = render(
+      {
+        ...SOMEONE_ELSES,
+        canMention: true,
+        canMarkUnread: true,
+        messageId: "m1",
+        copyText: "hi",
+        link: "https://app.frapp.live/chat?channel=c1&message=m1",
+        blockUserId: BLOCKED,
+        senderName: "Blake",
+        senderInDirectory: true,
+        senderLabel: "Blake",
+        sentAt: SENT_AT,
+        reactedWith: [],
+      },
+      undefined,
+      { onMention: vi.fn(), onMarkUnread: vi.fn() },
+    );
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableOverDrag === false,
+    );
+    const labels = menu
+      .findAll(
+        (n) =>
+          typeof n.props.accessibilityLabel === "string" &&
+          typeof n.props.onPress === "function",
+      )
+      .map((n) => n.props.accessibilityLabel as string)
+      .filter((label, i, all) => all.indexOf(label) === i);
+    expect(
+      labels.slice(labels.indexOf("Copy text"), labels.indexOf("Mention") + 1),
+    ).toEqual(["Copy text", MARK_UNREAD_LABEL, COPY_LINK_LABEL, "Mention"]);
+  });
+
+  it("puts Copy message link right after Copy text, before Pin, Save and Mention", () => {
+    const tree = render(
+      {
+        ...SOMEONE_ELSES,
+        canMention: true,
+        messageId: "m1",
+        copyText: "hi",
+        link: "https://app.frapp.live/chat?channel=c1&message=m1",
+        blockUserId: BLOCKED,
+        senderName: "Blake",
+        senderInDirectory: true,
+        senderLabel: "Blake",
+        sentAt: SENT_AT,
+        reactedWith: [],
+        pin: { pinned: false },
+        save: { saved: false },
+      },
+      undefined,
+      { onMention: vi.fn(), onSetPinned: vi.fn(), onSetSaved: vi.fn() },
+    );
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableOverDrag === false,
+    );
+    const labels = menu
+      .findAll(
+        (n) =>
+          typeof n.props.accessibilityLabel === "string" &&
+          typeof n.props.onPress === "function",
+      )
+      .map((n) => n.props.accessibilityLabel as string)
+      .filter((label, i, all) => all.indexOf(label) === i);
+    expect(labels.slice(labels.indexOf("Copy text"))).toEqual([
+      "Copy text",
+      COPY_LINK_LABEL,
+      PIN_LABEL,
+      SAVE_LABEL,
+      "Mention",
+      "Report message",
+    ]);
+  });
+
+  it("draws no Copy message link without a link", () => {
+    expect(hasRow(render({ ...OWN, copyText: "hi" }), COPY_LINK_LABEL)).toBe(
+      false,
+    );
+  });
+
   it("draws no Copy text when the message has nothing to copy", () => {
     // `copyableText` (`@repo/chat-core`, its own spec) returns null for a
     // card, a photo-only and a deleted message; the sheet hides the row then.
@@ -269,7 +412,7 @@ describe("MessageActionsSheet — reply, edit and delete (#2775)", () => {
     const modal = tree.root.find(
       (node) =>
         typeof node.props.onDismiss === "function" &&
-        node.props.enableDynamicSizing === true,
+        node.props.enableOverDrag === false,
     );
     act(() => modal.props.onDismiss());
     expect(hasRow(tree, "Copy text")).toBe(true);
@@ -452,8 +595,10 @@ describe("MessageActionsSheet — quick reactions", () => {
     const onUnreact = vi.fn();
     const dismiss = vi.fn();
     const tree = renderWith(TARGET, { onReact, onUnreact }, dismiss);
+    recents.record.mockClear();
     pressByLabel(tree, quickReactionLabel("👍", false));
     expect(onReact).toHaveBeenCalledWith("m4", "👍");
+    expect(recents.record).toHaveBeenCalledWith("👍");
     expect(onUnreact).not.toHaveBeenCalled();
     expect(dismiss).toHaveBeenCalled();
   });
@@ -507,10 +652,14 @@ describe("MessageActionsSheet — quick reactions", () => {
         Array.isArray(node.props.selected),
     );
     expect(picker.props.selected).toEqual(["🔥"]);
+    recents.record.mockClear();
     act(() => picker.props.onPick("🎉", false));
     expect(onReact).toHaveBeenCalledWith("m4", "🎉");
+    expect(recents.record).toHaveBeenCalledWith("🎉");
     act(() => picker.props.onPick("🔥", true));
     expect(onUnreact).toHaveBeenCalledWith("m4", "🔥");
+    // Taking a reaction back off isn't a use.
+    expect(recents.record).toHaveBeenCalledTimes(1);
   });
 
   it("closes the keyboard before it opens, so the menu isn't drawn under it (#4142)", () => {
@@ -557,7 +706,7 @@ describe("MessageActionsSheet — dismissed for a deleted message (#3795)", () =
   };
 
   type ModalProps = Record<string, unknown>;
-  const isMenu = (props: ModalProps) => props.enableDynamicSizing === true;
+  const isMenu = (props: ModalProps) => props.enableOverDrag === false;
   // The report form is the other `replace` sheet; the picker is the tall one.
   const isPicker = (props: ModalProps) =>
     props.stackBehavior === "replace" &&
@@ -827,7 +976,7 @@ describe("MessageActionsSheet — menu", () => {
     const menu = tree.root.find(
       (node) =>
         typeof node.props.onDismiss === "function" &&
-        node.props.enableDynamicSizing === true,
+        node.props.enableOverDrag === false,
     );
     const report = tree.root.find(
       (node) => node.props.snapPoints?.[0] === "85%",
@@ -881,7 +1030,7 @@ describe("MessageActionsSheet — menu", () => {
     const menu = tree.root.find(
       (node) =>
         typeof node.props.onDismiss === "function" &&
-        node.props.enableDynamicSizing === true,
+        node.props.enableOverDrag === false,
     );
     const order = menu
       .findAll(
@@ -898,6 +1047,85 @@ describe("MessageActionsSheet — menu", () => {
       "Report message",
       "Delete message",
     ]);
+  });
+
+  it("puts Pin and Save after Copy text and before Mention, as Discord does (#3723)", () => {
+    const tree = render(
+      {
+        ...SOMEONE_ELSES,
+        canReply: true,
+        canDelete: true,
+        canMention: true,
+        messageId: "m1",
+        copyText: "hi",
+        blockUserId: BLOCKED,
+        senderName: "Blake",
+        senderInDirectory: true,
+        senderLabel: "Blake",
+        sentAt: SENT_AT,
+        reactedWith: [],
+        pin: { pinned: false },
+        save: { saved: false },
+      },
+      undefined,
+      { onMention: vi.fn(), onSetPinned: vi.fn(), onSetSaved: vi.fn() },
+    );
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableOverDrag === false,
+    );
+    const labels = menu
+      .findAll(
+        (n) =>
+          typeof n.props.accessibilityLabel === "string" &&
+          typeof n.props.onPress === "function",
+      )
+      .map((n) => n.props.accessibilityLabel as string)
+      .filter((label, i, all) => all.indexOf(label) === i);
+    expect(labels.slice(labels.indexOf("Copy text"))).toEqual([
+      "Copy text",
+      PIN_LABEL,
+      SAVE_LABEL,
+      "Mention",
+      "Report message",
+      "Delete message",
+    ]);
+  });
+
+  it("flips Pin and Save from their current state, and draws no Pin without the permission", () => {
+    const onSetPinned = vi.fn();
+    const onSetSaved = vi.fn();
+    const base = {
+      ...SOMEONE_ELSES,
+      messageId: "m1",
+      copyText: null,
+      blockUserId: BLOCKED,
+      senderName: "Blake",
+      senderInDirectory: true,
+      senderLabel: "Blake",
+      sentAt: SENT_AT,
+      reactedWith: [],
+    };
+    // No `pin` is a viewer without `channels:manage`.
+    const member = render({ ...base, save: { saved: false } }, undefined, {
+      onSetPinned,
+      onSetSaved,
+    });
+    expect(hasRow(member, PIN_LABEL)).toBe(false);
+    expect(hasRow(member, UNPIN_LABEL)).toBe(false);
+    pressByLabel(member, SAVE_LABEL);
+    expect(onSetSaved).toHaveBeenCalledWith("m1", true);
+
+    const officer = render(
+      { ...base, pin: { pinned: true }, save: { saved: true } },
+      undefined,
+      { onSetPinned, onSetSaved },
+    );
+    pressByLabel(officer, UNPIN_LABEL);
+    expect(onSetPinned).toHaveBeenCalledWith("m1", false);
+    pressByLabel(officer, UNSAVE_LABEL);
+    expect(onSetSaved).toHaveBeenLastCalledWith("m1", false);
   });
 
   it("hands Mention's message to the thread, and offers it only when allowed", () => {
@@ -1192,5 +1420,77 @@ describe("MessageActionsSheet — report", () => {
     });
     expect(text(tree)).not.toContain(REPORT_SENT_BODY);
     expect(sendButton(tree).props.disabled).toBe(true);
+  });
+});
+
+describe("the menu takes the keyboard's place (#5479)", () => {
+  function renderMenu(onDismiss = vi.fn()) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <MessageActionsSheet
+            ref={createRef<MessageActionsSheetHandle>()}
+            target={{
+              ...SOMEONE_ELSES,
+              messageId: "m1",
+              copyText: "hi",
+              flag: { current: null },
+              blockUserId: null,
+              senderName: "Blake",
+              senderInDirectory: true,
+              senderLabel: "Blake",
+              sentAt: SENT_AT,
+              reactedWith: [],
+            }}
+            height={312}
+            onDismiss={onDismiss}
+            onFlag={vi.fn()}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const menu = tree.root.find(
+      (node) =>
+        typeof node.props.onDismiss === "function" &&
+        node.props.enableOverDrag === false,
+    );
+    return { tree, menu, onDismiss };
+  }
+
+  it("opens at the height it is given, with no taller detent", () => {
+    const { menu } = renderMenu();
+    expect(menu.props.snapPoints).toEqual([312]);
+    expect(menu.props.enableDynamicSizing).toBe(false);
+    expect(menu.props.enableOverDrag).toBe(false);
+  });
+
+  it("leaves the message readable behind a light scrim", () => {
+    const { menu } = renderMenu();
+    expect(menu.props.backdropComponent).toBe(SheetLightScrim);
+  });
+
+  it("tells the thread as the close starts, and once it has closed", () => {
+    const { menu, onDismiss } = renderMenu();
+    act(() => menu.props.onAnimate(-1, 0));
+    expect(onDismiss).not.toHaveBeenCalled();
+    act(() => menu.props.onAnimate(0, -1));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    act(() => menu.props.onDismiss());
+    expect(onDismiss).toHaveBeenCalledTimes(2);
+  });
+
+  it("puts the Flag chips after Copy text, so the common rows come first", () => {
+    const { menu } = renderMenu();
+    const order = menu
+      .findAll(
+        (n) =>
+          typeof n.type === "string" &&
+          (n.props.accessibilityLabel === "Copy text" ||
+            n.props.testID === "message-flag-important"),
+      )
+      .map((n) => n.props.testID ?? n.props.accessibilityLabel)
+      .filter((key, i, all) => all.indexOf(key) === i);
+    expect(order).toEqual(["Copy text", "message-flag-important"]);
   });
 });

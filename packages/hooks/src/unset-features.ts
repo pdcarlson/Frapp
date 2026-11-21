@@ -12,7 +12,7 @@ import { useDocuments } from "./use-documents";
  * A chapter with no active study zones has a Study hours page that can only
  * say so, and a chapter with no documents has a Documents page that can only
  * say so. Neither is something a member can fix, so the web nav, the mobile
- * More tab and the web Ask popover leave it out until the first zone or
+ * You tab and the web Ask popover leave it out until the first zone or
  * document exists.
  *
  * Documents stays for whoever can upload, because its page is where the
@@ -46,7 +46,7 @@ interface UnsetFeatureDefinition {
   module: string;
 }
 
-export const UNSET_FEATURES: Readonly<
+const UNSET_FEATURES: Readonly<
   Record<UnsetFeatureKey, UnsetFeatureDefinition>
 > = {
   // Study hours needs an active zone to study in, made in the web zones tool.
@@ -88,7 +88,7 @@ function canSetUp(key: UnsetFeatureKey, permissions: readonly string[]) {
 }
 
 /** Whether a feature's list has to be read to decide: the viewer can't set it up, and its module is on. */
-export function needsUnsetFeatureRead(
+function needsUnsetFeatureRead(
   key: UnsetFeatureKey,
   permissions: UnsetFeatureInput["permissions"],
   isModuleEnabled: UnsetFeatureInput["isModuleEnabled"],
@@ -125,9 +125,7 @@ export function selectHiddenUnsetFeatures({
   const hidden = new Set<UnsetFeatureKey>();
   for (const key of UNSET_FEATURE_KEYS) {
     if (!canHide(key, permissions, isModuleEnabled)) continue;
-    const count = isModuleEnabled(UNSET_FEATURES[key].module)
-      ? counts[key]
-      : 0;
+    const count = isModuleEnabled(UNSET_FEATURES[key].module) ? counts[key] : 0;
     if (count === 0) hidden.add(key);
   }
   return hidden;

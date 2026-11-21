@@ -15,6 +15,7 @@ import {
   isBlockableSender,
   replaceMaskedCopies,
   rowsToRemember,
+  threadPreviewVisible,
   tombstoneCanUnblock,
   visibleReactions,
   visibleTypingUsers,
@@ -343,6 +344,168 @@ describe("classifyMessage", () => {
         "tombstone",
       );
     });
+  });
+});
+
+describe("threadPreviewVisible (#4297)", () => {
+  const preview = (sender: string | null) => ({
+    id: "reply-1",
+    sender_id: sender,
+  });
+  const parent = (raw: RawChatMessage) => one(raw);
+
+  it("shows a cleared replier's preview on a REST parent, even mid-outage", () => {
+    expect(
+      threadPreviewVisible(
+        preview(FRIEND),
+        parent(restRow("p", FRIEND)),
+        unavailable(),
+        VIEWER,
+      ),
+    ).toBe(true);
+  });
+
+  it("hides a replier the viewer blocked, on every path", () => {
+    for (const raw of [restRow("p", FRIEND), echoRow("p", FRIEND)]) {
+      expect(
+        threadPreviewVisible(
+          preview(BLOCKED),
+          parent(raw),
+          ready([BLOCKED]),
+          VIEWER,
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("hides it under a parent whose author the viewer blocked, only for its replier", () => {
+    // The card is gone with its tombstoned parent; this is the rule alone.
+    expect(
+      threadPreviewVisible(
+        preview(FRIEND),
+        parent(restRow("p", BLOCKED, { sender_blocked: true })),
+        ready([BLOCKED]),
+        VIEWER,
+      ),
+    ).toBe(true);
+  });
+
+  it("holds an echoed preview back while the list isn't ready (fail closed)", () => {
+    const echoed = parent(echoRow("p", FRIEND));
+    expect(
+      threadPreviewVisible(preview(FRIEND), echoed, loading(), VIEWER),
+    ).toBe(false);
+    expect(threadPreviewVisible(preview(FRIEND), echoed, ready(), VIEWER)).toBe(
+      true,
+    );
+  });
+
+  it("always shows the viewer's own reply and an imported one", () => {
+    const echoed = parent(echoRow("p", FRIEND));
+    expect(
+      threadPreviewVisible(preview(VIEWER), echoed, loading(), VIEWER),
+    ).toBe(true);
+    expect(threadPreviewVisible(preview(null), echoed, loading(), VIEWER)).toBe(
+      true,
+    );
+  });
+});
+
+describe("a withheld thread preview (#4297)", () => {
+  const P = "parent-1";
+  const withheld = {
+    id: "reply-9",
+    sender_id: BLOCKED,
+    content: "",
+    kind: null,
+    attachment_count: 0,
+    created_at: "2026-09-15T18:01:00.000Z",
+    sender_blocked: true,
+  };
+  const clearPreview = (content: string) => ({
+    id: "reply-9",
+    sender_id: BLOCKED,
+    content,
+    kind: "text",
+    attachment_count: 0,
+    created_at: "2026-09-15T18:01:00.000Z",
+  });
+  const restParent = (preview: Record<string, unknown>) =>
+    restRow(P, FRIEND, { thread_reply_count: 1, thread_last_reply: preview });
+  const cacheOf = (...rows: RawChatMessage[]) =>
+    rows.reduce((c, r) => mergeServerRow(c, r), emptyCache());
+  const parentIn = (cache: ReturnType<typeof emptyCache>) =>
+    selectMessages(cache).find((m) => m.id === P)!;
+
+  it("stays hidden on the parent's next echo, even against a stale ready list", () => {
+    // Blocked on another device: this list predates it.
+    const cache = cacheOf(
+      restParent(withheld),
+      echoRow(P, FRIEND, {
+        thread_reply_count: 1,
+        thread_last_reply: clearPreview("edited words"),
+      }),
+    );
+    const parent = parentIn(cache);
+    expect(parent.thread?.last_reply?.sender_blocked).toBe(true);
+    expect(
+      threadPreviewVisible(parent.thread!.last_reply!, parent, ready(), VIEWER),
+    ).toBe(false);
+    // An unblock this client confirmed lets it through.
+    expect(
+      threadPreviewVisible(
+        parent.thread!.last_reply!,
+        parent,
+        ready([], { unblocked: [BLOCKED] }),
+        VIEWER,
+      ),
+    ).toBe(true);
+  });
+
+  it("is a new question once someone else's reply is the latest", () => {
+    const cache = cacheOf(
+      restParent(withheld),
+      echoRow(P, FRIEND, {
+        thread_reply_count: 2,
+        thread_last_reply: {
+          ...clearPreview("hi"),
+          id: "r10",
+          sender_id: FRIEND,
+        },
+      }),
+    );
+    expect(parentIn(cache).thread?.last_reply?.sender_blocked).toBe(false);
+  });
+
+  it("counts as a masked copy for Unblock, which swaps in the clear preview", () => {
+    const cache = cacheOf(restParent(withheld));
+    expect(hasMaskedCopyFrom(cache, BLOCKED)).toBe(true);
+    expect(hasMaskedCopyFrom(cache, FRIEND)).toBe(false);
+    const fresh = restParent({
+      ...clearPreview("grill is ready"),
+      sender_blocked: false,
+    });
+    const next = replaceMaskedCopies(cache, [fresh], BLOCKED);
+    expect(parentIn(next).thread?.last_reply?.content).toBe("grill is ready");
+    expect(hasMaskedCopyFrom(next, BLOCKED)).toBe(false);
+  });
+
+  it("never swaps a parent an echo has updated since", () => {
+    const cache = cacheOf(
+      restParent(withheld),
+      echoRow(P, FRIEND, {
+        thread_reply_count: 1,
+        thread_last_reply: clearPreview("x"),
+      }),
+    );
+    const fresh = restParent({ ...clearPreview("y"), sender_blocked: false });
+    expect(replaceMaskedCopies(cache, [fresh], BLOCKED)).toBe(cache);
+  });
+
+  it("contradicts a ready list that lacks its replier", () => {
+    const parent = parentIn(cacheOf(restParent(withheld)));
+    expect(contradictingRows([parent], ready())).toEqual([P]);
+    expect(contradictingRows([parent], ready([BLOCKED]))).toEqual([]);
   });
 });
 

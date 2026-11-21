@@ -15,6 +15,7 @@ import {
   SERVICE_DESCRIPTION_MAX_LENGTH,
 } from '@repo/validation';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
+import type { AssertNever } from './drift-guard';
 
 export class CreateServiceEntryDto {
   @ApiProperty({ description: 'Date of service (YYYY-MM-DD)' })
@@ -42,7 +43,8 @@ export class CreateServiceEntryDto {
   description: string;
 
   @ApiPropertyOptional({
-    description: 'Storage path to proof file (e.g. from upload)',
+    description:
+      'The `storage_path` from `POST /v1/service-entries/proof-upload-url`, once the file is uploaded. One file belongs to one entry: when an entry in the chapter already holds this path, a create by the same member answers 201 with that entry as saved (a resend after a lost response), and one by any other member is refused with 400.',
   })
   @IsOptional()
   @IsString()
@@ -58,7 +60,7 @@ export class CreateServiceEntryDto {
 
   @ApiPropertyOptional({
     description:
-      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry.',
+      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key for the entry: a replay without `proof_path` creates a duplicate entry (one with it returns the entry already saved, see `proof_path`). The card itself is deduplicated on it.',
   })
   @IsOptional()
   @IsUUID()
@@ -66,20 +68,18 @@ export class CreateServiceEntryDto {
 }
 
 /**
- * Response contract for `POST /v1/service-entries`.
+ * One service entry as the API returns it: `GET /v1/service-entries` (a list
+ * of these), `GET /v1/service-entries/:id`, and `PATCH …/:id/review`.
  *
- * This route previously declared no response schema, which openapi-typescript
- * renders as `content?: never` — so `data` reached the SDK typed `never` and
- * `/hours` could not read `card_posted` without an unchecked cast (same
- * defect as `/task`, #1717). The entry fields are flattened at the top level
- * exactly as the route already returned them.
+ * These routes declared no response schema, which openapi-typescript renders
+ * as `content?: never`, so clients typed the rows themselves. Declaring it
+ * puts `awarded_points` (#3868) in the contract where they can see it.
  *
- * Drift between this class and the service-entry row is caught the same way
- * as `CreateTaskResponseDto`: `implements ServiceEntry` for type drift, and
- * the `Assert<Exclude<…>>` aliases below for key drift. `card_posted` is the
- * one deliberate extra field.
+ * Drift between this class and the service-entry row is caught by
+ * `implements ServiceEntry` for type drift, and the `AssertNever<Exclude<…>>`
+ * aliases below for key drift.
  */
-export class CreateServiceEntryResponseDto implements ServiceEntry {
+export class ServiceEntryResponseDto implements ServiceEntry {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
@@ -110,12 +110,33 @@ export class CreateServiceEntryResponseDto implements ServiceEntry {
   @ApiProperty({ type: String, nullable: true })
   review_comment: string | null;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Whether the approval wrote a SERVICE ledger row. Prefer `awarded_points` for the number.',
+  })
   points_awarded: boolean;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      "SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then.",
+  })
+  awarded_points: number | null;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+}
 
+/**
+ * Response contract for `POST /v1/service-entries`: the entry, flattened at
+ * the top level exactly as the route already returned it, plus `card_posted`.
+ *
+ * Without a declared schema `data` reached the SDK typed `never` and `/hours`
+ * could not read `card_posted` without an unchecked cast (same defect as
+ * `/task`, #1717).
+ */
+export class CreateServiceEntryResponseDto extends ServiceEntryResponseDto {
   @ApiPropertyOptional({
     description:
       'Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the entry row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch.',
@@ -252,24 +273,34 @@ export class ReviewServiceEntryDto {
 }
 
 /**
- * Compile-time key-drift guards between {@link CreateServiceEntryResponseDto}
- * and the service-entry row it publishes. Each resolves to `never` while the
- * two agree; when they diverge the alias stops satisfying `Assert`'s
- * constraint and the build fails naming the field.
+ * Compile-time key-drift guards between {@link ServiceEntryResponseDto} and
+ * the service-entry row it publishes. Each resolves to `never` while the two
+ * agree; when they diverge the alias stops satisfying `AssertNever`'s constraint
+ * and the build fails naming the field.
  */
-type Assert<T extends never> = T;
-
-/** Entry fields {@link CreateServiceEntryResponseDto} forgot to declare. Must be `never`. */
-export type CreateServiceEntryResponseDtoMissingFields = Assert<
-  Exclude<keyof ServiceEntry, keyof CreateServiceEntryResponseDto>
+/**
+ * Entry fields {@link ServiceEntryResponseDto} forgot to declare. Must be `never`.
+ * @driftguard
+ */
+export type ServiceEntryResponseDtoMissingFields = AssertNever<
+  Exclude<keyof ServiceEntry, keyof ServiceEntryResponseDto>
 >;
 
 /**
- * Fields {@link CreateServiceEntryResponseDto} declares that the entry row
- * does not carry. Must be `never`. `card_posted` is excluded because it is
- * this route's own outcome flag, not a column — the one deliberate addition.
+ * Fields {@link ServiceEntryResponseDto} declares that the entry row does not carry. Must be `never`.
+ * @driftguard
  */
-export type CreateServiceEntryResponseDtoExtraFields = Assert<
+export type ServiceEntryResponseDtoExtraFields = AssertNever<
+  Exclude<keyof ServiceEntryResponseDto, keyof ServiceEntry>
+>;
+
+/**
+ * Fields {@link CreateServiceEntryResponseDto} adds beyond the entry. Must be
+ * `never`: `card_posted` is this route's own outcome flag, the one deliberate
+ * addition.
+ * @driftguard
+ */
+export type CreateServiceEntryResponseDtoExtraFields = AssertNever<
   Exclude<
     keyof CreateServiceEntryResponseDto,
     keyof ServiceEntry | 'card_posted'

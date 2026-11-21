@@ -1,46 +1,61 @@
 import { useEffect, useRef, useState } from "react";
-import { AppState, Linking, StyleSheet, Text, View } from "react-native";
-import { useRouter } from "expo-router";
+import {
+  AppState,
+  Linking,
+  StyleSheet,
+  Text,
+  View,
+  type ScrollView,
+} from "react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  useAiChapterSettings,
   useBlockedUserIds,
-  useChapterChatBackground,
+  useFrappAiChoice,
   useChapterChatLevel,
   useCurrentChapter,
   useDeleteAccount,
-  useGeofences,
+  useActivityNudgeSettings,
   usePermissionList,
   useSetChapterChatLevel,
+  useSetActivityNudgesEnabled,
+  READ_RECEIPTS_COPY,
+  useReadReceiptsSetting,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
-  can,
-  canAll,
-  CHAPTER_PROFILE_PERMISSIONS,
-  CHAT_BACKGROUND_LABELS,
+  AI_SETTINGS_COPY,
+  aiSwitchesInEffect,
+  FRAPP_AI_COPY,
   chatChapterLevelLabel,
-  isModuleEnabled,
   shownNotificationCategories,
 } from "@repo/validation";
 import { BLOCKED_MEMBERS_TITLE } from "@repo/chat-core/block-copy";
 import { chatDensityLabel } from "@repo/chat-core/density";
+import { MeetFrappAiSheet } from "@/components/ai/meet-frapp-ai";
 import { ScreenShell } from "@/components/screen-shell";
-import { BACK_TO_MORE } from "@/components/back-row";
+import { BACK_TO_YOU } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { AccentSheet } from "@/components/settings/accent-sheet";
-import { ChatBackgroundSheet } from "@/components/settings/chat-background-sheet";
 import { BlockedMembersSheet } from "@/components/settings/blocked-members-sheet";
 import { ChatDensitySheet } from "@/components/settings/chat-density-sheet";
 import { ChatLevelSheet } from "@/components/settings/chat-level-sheet";
+import { LinkedAppsSection } from "@/components/settings/linked-apps-section";
 import { QuietHoursSection } from "@/components/settings/quiet-hours-section";
+import {
+  SettingAnchor,
+  SettingJumpProvider,
+  useSettingJumpState,
+} from "@/components/settings/setting-anchor";
+import { useSettingsSearchField } from "@/components/settings/settings-search";
 import { Toggle } from "@/components/toggle";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { useChatDensity } from "@/lib/chat/chat-density";
+import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
 import { shouldShowDonationCta } from "@/lib/more/donation";
-import { LEGAL_LINKS } from "@/lib/more/legal";
+import { LEGAL_LINKS, PRIVACY_LINK } from "@/lib/more/legal";
 import { acceptPrimer } from "@/lib/notifications/primer";
 import {
   PUSH_PROMPT_ANSWERED_EVENT,
@@ -65,7 +80,7 @@ import {
  * s16 — Settings (`canvas-screens.dc.html:527`). The route file keeps the name
  * `preferences.tsx`; the drawn title is "Settings" (`spec/ui/mobile/screens.md`).
  *
- * Four sections: NOTIFICATIONS, CHAT, CHAPTER · ADMIN, ACCOUNT. All but CHAT
+ * Four sections: NOTIFICATIONS, CHAT, AI, ACCOUNT. NOTIFICATIONS and ACCOUNT
  * are drawn.
  *
  * ## Deviations from the drawing, each deliberate
@@ -85,6 +100,25 @@ import {
  *   conversation itself, so a switch that silenced every message at once was
  *   dropped (owner's iOS testing, 2026-11-06). Why in full: the catalog's
  *   docblock in `@repo/validation`.
+ * - **LINKED APPS and SIGN IN are here and are not drawn** (Paul,
+ *   2026-11-17, #5407): Google Calendar, the calendar link, Discord and the
+ *   ways the account signs in, each a row with its state drawn at the end (a
+ *   green check, a grey circle, red once expired), as web's Settings →
+ *   Linked apps. Google Calendar's sign-in comes back here, so the member
+ *   sees the row they tapped turn green.
+ * - **AI is here and is not drawn** (Paul, 2026-11-17: "maybe we just make an
+ *   AI section ... Frap AI, nudges on activity and ... everything else that
+ *   comes along with that"). It holds the member's Frapp AI switch, Nudges on
+ *   Activity, and, for a member who can open Chapter settings, a Chapter AI
+ *   row that opens the president's switches there, where the chapter's side
+ *   of settings lives. No row names an AI company: they are named on Meet
+ *   Frapp AI, which turning Frapp AI on opens, and in the privacy policy,
+ *   which the section's footnote links. Before this the two switches sat
+ *   under ACCOUNT, and Frapp AI's caption named the companies.
+ * - **No CHAPTER · ADMIN.** The drawn group (accent, chat background, study
+ *   zones) moved whole to Chapter settings (`app/(app)/chapter-settings.tsx`,
+ *   #4074), the chapter's side of settings off Chat home's chapter menu, so this screen
+ *   is the member's own, as web keeps the two apart.
  * - **No "Join code" row.** Canvas draws `Join code · TN7-4KQ` under CHAPTER ·
  *   ADMIN. There is no `join_code` anywhere on chapters; joining runs through
  *   invites, whose rows carry an opaque, single-use, role-scoped, expiring
@@ -107,13 +141,11 @@ import {
  *   the member accepts" holds) and otherwise opens the OS settings: an app
  *   cannot revoke its own permission, and iOS never re-prompts once asked.
  *   Before this the row always sent the member to the OS settings, even when
- *   the OS had never asked (More → Settings → Notifications → device
+ *   the OS had never asked (You → Settings → Notifications → device
  *   settings, the owner's 2026-11-04 complaint). Unlike the drawing, a line
  *   under it says so whenever a tap opens the OS settings (`pushRowCaption()`).
  *   In a build that can't push it stays a status row that states why
  *   (`pushUnavailableReason()`).
- * - **Study zones says where zones are changed**, which the drawing doesn't:
- *   the row is read-only on the phone, and nothing else on it says where to go.
  * - **"Blocked members" is here and is not drawn.** `spec/behavior/chat/README.md`
  *   § Block makes a Settings list the one durable place a block is undone
  *   (#2257), and App Store Guideline 1.2 is why the control exists at all. It
@@ -158,7 +190,6 @@ function pushToggleLabel(push: PushState): string {
 export default function PreferencesScreen() {
   const router = useRouter();
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const whatsNewQuiet = useWhatsNewQuiet();
   const { signOut } = useAuthSession();
@@ -205,13 +236,33 @@ export default function PreferencesScreen() {
   // only stated off a confirmed read: "None" from a failed one would claim
   // nobody is blocked.
   const blockedMembersSheetRef = useRef<BottomSheetModal>(null);
-  const accentSheetRef = useRef<BottomSheetModal>(null);
+  // Frapp AI (#4790): on opens Meet Frapp AI, whose Continue is the yes;
+  // off is immediate.
+  const meetAiSheetRef = useRef<BottomSheetModal>(null);
+  const frappAi = useFrappAiChoice();
+  const [aiOffFailed, setAiOffFailed] = useState(false);
+  // The AI footnote's privacy link reports a failed open under itself, not in
+  // the shared slot under Account, which is a screen away.
+  const [aiPrivacyFailed, setAiPrivacyFailed] = useState(false);
+  // The card at the top of Activity: the member's own switch. Offered to
+  // everyone since #5464, because the card shows with or without AI; the
+  // card's own More turns it off, and only here turns it back on.
+  const nudgeSettings = useActivityNudgeSettings();
+  const setNudgesEnabled = useSetActivityNudgesEnabled();
   const chatDensitySheetRef = useRef<BottomSheetModal>(null);
-  const chatBackgroundSheetRef = useRef<BottomSheetModal>(null);
   const chatDensity = useChatDensity();
+  const readReceipts = useReadReceiptsSetting();
   // The chapter-wide chat level (#3840). Unknown until read, so the row
   // states no level rather than claiming "All messages" before it knows.
   const chatLevelSheetRef = useRef<BottomSheetModal>(null);
+  // Search settings (2026-11-19), and the row a `setting` param lights.
+  const scrollRef = useRef<ScrollView>(null);
+  const { setting } = useLocalSearchParams<{ setting?: string }>();
+  const jump = useSettingJumpState(setting);
+  const search = useSettingsSearchField({
+    here: "/preferences",
+    jumpHere: jump.jump,
+  });
   const chatLevel = useChapterChatLevel();
   const setChatLevel = useSetChapterChatLevel();
   const blockList = useBlockedUserIds();
@@ -278,6 +329,7 @@ export default function PreferencesScreen() {
     setQuietHoursEnabled,
     categories,
     setCategory,
+    categoriesEditable,
     quietHoursWindow,
     setQuietHoursWindow,
     isHydrated,
@@ -290,31 +342,18 @@ export default function PreferencesScreen() {
     storedZoneMissing,
   } = useNotificationPreferencesSync();
 
-  // `can`, never a bare `includes` — an owner's grant is the wildcard `*`, so a
-  // membership test would lock out exactly the people this section is for.
   const permissions = usePermissionList();
-  const canSeeChapterAdmin = can("chapter-config:view", permissions);
-  // The guard on `PATCH /v1/chapters/current`, which the accent save calls.
-  const canEditAccent = canAll(CHAPTER_PROFILE_PERMISSIONS, permissions);
-  const chapterBackground = useChapterChatBackground();
-
+  // The Chapter AI row: for a member who sees Chapter settings' AI switches
+  // (`chapter-config:view`, as web's AI tab), and only where the server has
+  // AI (the consent read answers first; with AI off it is null and nothing
+  // here is drawn). Its value counts the features working, so Include
+  // channel messages left on under an Ask that is off doesn't count.
+  const showChapterAi =
+    !!frappAi.consent && chapterSettingsAccess(permissions).chapter;
+  const chapterAi = useAiChapterSettings({ enabled: showChapterAi });
   const chapterQuery = useCurrentChapter();
-  const enabledModules = chapterQuery.data?.enabled_modules;
   const donationUrl = chapterQuery.data?.donation_url;
   const showDonationCta = shouldShowDonationCta(permissions, donationUrl);
-  const geofencesEnabled =
-    canSeeChapterAdmin && isModuleEnabled(enabledModules, "geofences");
-  // Gated, not just hidden: the route requires `members:view` **and** the
-  // `geofences` module, so firing it for a member who will not see the row
-  // spends a request to collect a 403.
-  //
-  // `GET /v1/geofences` has no response schema, so the SDK types the body
-  // `never` — narrowed through `unknown` the way every other read in this
-  // cluster is (`lib/more/narrow.ts`).
-  const geofencesQuery = useGeofences({ enabled: geofencesEnabled });
-  const zones = geofencesQuery.data as unknown;
-  const zoneCount = Array.isArray(zones) ? zones.length : null;
-
   // `null` when there is nothing to report. "Synced with your account." was
   // shown in the steady state, which is the one state that needs no line.
   const notificationsMeta = !isHydrated
@@ -324,7 +363,7 @@ export default function PreferencesScreen() {
       : !isAuthenticated
         ? "Saved on this device only. Sign in to change the settings on your account."
         : !chapterId
-          ? "Category switches sync once you choose a chapter."
+          ? "Category switches turn on once your chapter is confirmed."
           : categorySync === "retry" || quietHoursSync === "retry"
             ? "Couldn't reach the server. Change a setting again to retry."
             : categorySync === "pending" || quietHoursSync === "pending"
@@ -365,254 +404,344 @@ export default function PreferencesScreen() {
   }
 
   return (
-    <ScreenShell back={BACK_TO_MORE} title="Settings">
-      <SectionHeader>Notifications</SectionHeader>
+    <ScreenShell
+      back={BACK_TO_YOU}
+      title="Settings"
+      scrollRef={scrollRef}
+      keyboardShouldPersistTaps="handled"
+    >
+      {search.field}
+      {search.searching ? search.results : null}
+      <SettingJumpProvider
+        anchor={search.searching ? null : jump.anchor}
+        serial={jump.serial}
+        scrollRef={scrollRef}
+      >
+        {search.searching ? null : (
+          <>
+            <SectionHeader>Notifications</SectionHeader>
 
-      <ListSection>
-        {pushReason ? (
-          // A build that can't push: nothing here or in the OS settings can
-          // change that, so the row states why and does nothing on a tap.
-          <ListRow
-            label="Push notifications"
-            value="Unavailable"
-            description={pushReason}
-          />
-        ) : pushState ? (
-          <ListRow
-            label="Push notifications"
-            description={pushRowCaption(pushState)}
-            trailing={
-              <Toggle
-                value={pushIsOn(pushState)}
-                onValueChange={() => void handlePushTap()}
-                accessibilityLabel={pushToggleLabel(pushState)}
+            <SettingAnchor id="push">
+              <ListSection>
+                {pushReason ? (
+                  // A build that can't push: nothing here or in the OS settings can
+                  // change that, so the row states why and does nothing on a tap.
+                  <ListRow
+                    label="Push notifications"
+                    value="Unavailable"
+                    description={pushReason}
+                  />
+                ) : pushState ? (
+                  <ListRow
+                    label="Push notifications"
+                    description={pushRowCaption(pushState)}
+                    trailing={
+                      <Toggle
+                        value={pushIsOn(pushState)}
+                        onValueChange={() => void handlePushTap()}
+                        accessibilityLabel={pushToggleLabel(pushState)}
+                      />
+                    }
+                  />
+                ) : (
+                  // Unread, or the read failed. No switch: drawing it off would tell
+                  // a member who has granted push that they haven't. A tap still
+                  // re-reads and acts on the answer.
+                  <ListRow
+                    label="Push notifications"
+                    value="—"
+                    accessibilityHint="Turns notifications on, or opens your phone's settings for them."
+                    onPress={() => void handlePushTap()}
+                  />
+                )}
+              </ListSection>
+            </SettingAnchor>
+
+            <SettingAnchor id="quiet-hours">
+              <QuietHoursSection
+                enabled={quietHoursEnabled}
+                onEnabledChange={setQuietHoursEnabled}
+                quietHoursWindow={quietHoursWindow}
+                onWindowChange={setQuietHoursWindow}
+                deviceTimeZone={deviceTimeZone()}
+                storedZoneMissing={storedZoneMissing}
+                windowEditable={quietHoursSync !== "loading"}
               />
-            }
-          />
-        ) : (
-          // Unread, or the read failed. No switch: drawing it off would tell
-          // a member who has granted push that they haven't. A tap still
-          // re-reads and acts on the answer.
-          <ListRow
-            label="Push notifications"
-            value="—"
-            accessibilityHint="Turns notifications on, or opens your phone's settings for them."
-            onPress={() => void handlePushTap()}
-          />
-        )}
-      </ListSection>
+            </SettingAnchor>
 
-      <QuietHoursSection
-        enabled={quietHoursEnabled}
-        onEnabledChange={setQuietHoursEnabled}
-        quietHoursWindow={quietHoursWindow}
-        onWindowChange={setQuietHoursWindow}
-        deviceTimeZone={deviceTimeZone()}
-        storedZoneMissing={storedZoneMissing}
-        windowEditable={quietHoursSync !== "loading"}
-      />
+            <SettingAnchor id="chapter-alerts">
+              <ListSection>
+                <SettingAnchor id="chat-messages">
+                  <ListRow
+                    label="Chat messages"
+                    value={
+                      chatLevel.data
+                        ? chatChapterLevelLabel(chatLevel.data)
+                        : "—"
+                    }
+                    accessibilityHint="Choose whether every message or only mentions and DMs notify you."
+                    disabled={!chatLevel.data}
+                    busy={setChatLevel.isPending}
+                    onPress={() => chatLevelSheetRef.current?.present()}
+                  />
+                </SettingAnchor>
+                {shownNotificationCategories(permissions).map((category) => (
+                  // No description. The shared catalog carries one per category for
+                  // web's Profile card, but on the phone five two-line hints pushed
+                  // Account three screens down, and the labels say enough.
+                  <ListRow
+                    key={category.key}
+                    label={category.label}
+                    trailing={
+                      <Toggle
+                        value={categories[category.key]}
+                        onValueChange={(value) =>
+                          setCategory(category.key, value)
+                        }
+                        disabled={!categoriesEditable}
+                        accessibilityLabel={category.label}
+                      />
+                    }
+                  />
+                ))}
+              </ListSection>
+            </SettingAnchor>
 
-      <ListSection>
-        <ListRow
-          label="Chat messages"
-          value={chatLevel.data ? chatChapterLevelLabel(chatLevel.data) : "—"}
-          accessibilityHint="Choose whether every message or only mentions and DMs notify you."
-          disabled={!chatLevel.data}
-          busy={setChatLevel.isPending}
-          onPress={() => chatLevelSheetRef.current?.present()}
-        />
-        {shownNotificationCategories(permissions).map((category) => (
-          // No description. The shared catalog carries one per category for
-          // web's Profile card, but on the phone five two-line hints pushed
-          // Account three screens down, and the labels say enough.
-          <ListRow
-            key={category.key}
-            label={category.label}
-            trailing={
-              <Toggle
-                value={categories[category.key]}
-                onValueChange={(value) => setCategory(category.key, value)}
-                accessibilityLabel={category.label}
-              />
-            }
-          />
-        ))}
-      </ListSection>
-
-      {/* Scoped to this grid, never a delivery promise: a member's channel
+            {/* Scoped to this grid, never a delivery promise: a member's channel
           level for #announcements, or a block, still stops an announcement
           push (`spec/behavior/chat/README.md`). Why there is no switch: the
           docblock's `announcements` bullet. */}
-      {setChatLevel.isError ? (
-        <Text style={styles.footnoteError}>
-          Couldn&apos;t change chat messages. Try again.
-        </Text>
-      ) : null}
-      <Text style={styles.footnote}>
-        Mute a channel or DM from the chat itself. Chapter announcements
-        can&apos;t be switched off here.
-      </Text>
-      {notificationsMeta ? (
-        <Text style={styles.footnote}>{notificationsMeta}</Text>
-      ) : null}
-      {persistenceFailed ? (
-        <Text style={styles.footnoteError}>
-          This device couldn&apos;t save a local copy, so these may not show
-          while you&apos;re offline. Your account is unaffected.
-        </Text>
-      ) : null}
-
-      <SectionHeader>Chat</SectionHeader>
-      <ListSection>
-        {/* One row, a tap from the picker: the sheet draws every density so
-            the choice is made by looking (components.md §11 § Density). */}
-        <ListRow
-          label="Chat density"
-          value={chatDensityLabel(chatDensity)}
-          accessibilityHint="Choose how tightly messages are drawn in chat."
-          onPress={() => chatDensitySheetRef.current?.present()}
-        />
-      </ListSection>
-
-      {canSeeChapterAdmin ? (
-        <>
-          <SectionHeader>Chapter · Admin</SectionHeader>
-          <ListSection>
-            <ListRow
-              label="Chapter accent"
-              // An editor's row is the swatch and a chevron. Anyone else's
-              // can't open, so it says who can change it rather than leaving a
-              // dead row unexplained (design-system README §5).
-              description={
-                canEditAccent
-                  ? null
-                  : "Set by an officer with chapter settings access."
-              }
-              accessibilityHint={
-                canEditAccent
-                  ? "Opens the color picker for the chapter accent."
-                  : undefined
-              }
-              onPress={
-                canEditAccent
-                  ? () => accentSheetRef.current?.present()
-                  : undefined
-              }
-              trailing={
-                <View
-                  accessibilityLabel="Current chapter accent"
-                  style={[styles.swatch, { backgroundColor: accent }]}
-                />
-              }
-            />
-            <ListRow
-              label="Chat background"
-              // The same guard as the accent: the default's route requires
-              // `CHAPTER_PROFILE_PERMISSIONS` (#4031).
-              value={
-                chapterBackground.data
-                  ? CHAT_BACKGROUND_LABELS[chapterBackground.data.background]
-                  : undefined
-              }
-              description={
-                canEditAccent
-                  ? null
-                  : "Set by an officer with chapter settings access."
-              }
-              accessibilityHint={
-                canEditAccent
-                  ? "Choose the background every channel shows unless it has its own."
-                  : undefined
-              }
-              onPress={
-                canEditAccent
-                  ? () => chatBackgroundSheetRef.current?.present()
-                  : undefined
-              }
-            />
-            {geofencesEnabled ? (
-              // Read-only here (the phone has no zone editor), so it says
-              // where zones are changed: the dashboard's Study zones tool.
-              <ListRow
-                label="Study zones"
-                description="Managed on the web dashboard."
-                value={
-                  zoneCount === null
-                    ? "—"
-                    : `${zoneCount} ${zoneCount === 1 ? "zone" : "zones"}`
-                }
-              />
+            {setChatLevel.isError ? (
+              <Text style={styles.footnoteError}>
+                Couldn&apos;t change chat messages. Try again.
+              </Text>
             ) : null}
-          </ListSection>
-        </>
-      ) : null}
+            <Text style={styles.footnote}>
+              Mute a channel or DM from the chat itself. Chapter announcements
+              can&apos;t be switched off here.
+            </Text>
+            {notificationsMeta ? (
+              <Text style={styles.footnote}>{notificationsMeta}</Text>
+            ) : null}
+            {persistenceFailed ? (
+              <Text style={styles.footnoteError}>
+                This device couldn&apos;t save a local copy, so these may not
+                show while you&apos;re offline. Your account is unaffected.
+              </Text>
+            ) : null}
 
-      <SectionHeader>Account</SectionHeader>
-      <ListSection>
-        {/* Static, not a control: Signet is dark-only by design (lib/theme.tsx),
+            <SectionHeader>Chat</SectionHeader>
+            <ListSection>
+              {/* One row, a tap from the picker: the sheet draws every density so
+            the choice is made by looking (components.md §11 § Density). */}
+              <SettingAnchor id="chat-density">
+                <ListRow
+                  label="Chat density"
+                  value={chatDensityLabel(chatDensity)}
+                  accessibilityHint="Choose how tightly messages are drawn in chat."
+                  onPress={() => chatDensitySheetRef.current?.present()}
+                />
+              </SettingAnchor>
+              {/* Read receipts (#5519): two-way, as WhatsApp's switch is. Drawn
+            once settings have answered, so it never shows on and then flips
+            off for a member who turned it off. */}
+              {readReceipts.ready ? (
+                <SettingAnchor id="read-receipts">
+                  <ListRow
+                    label={READ_RECEIPTS_COPY.label}
+                    description={READ_RECEIPTS_COPY.description}
+                    trailing={
+                      <Toggle
+                        value={readReceipts.enabled}
+                        disabled={readReceipts.pending}
+                        onValueChange={readReceipts.setEnabled}
+                        accessibilityLabel={READ_RECEIPTS_COPY.label}
+                      />
+                    }
+                  />
+                </SettingAnchor>
+              ) : null}
+            </ListSection>
+            {readReceipts.failed ? (
+              <Text style={styles.footnoteError}>
+                {READ_RECEIPTS_COPY.saveFailed}
+              </Text>
+            ) : null}
+
+            {/* The card at the top of Activity (#5464), which shows with or
+          without AI, so its switch sits outside the AI section. */}
+            {nudgeSettings.data ? (
+              <SettingAnchor id="nudges">
+                <SectionHeader>Activity</SectionHeader>
+                <ListSection>
+                  <ListRow
+                    label="Nudges on Activity"
+                    description="The card at the top of Activity, about what is waiting on you."
+                    trailing={
+                      <Toggle
+                        value={nudgeSettings.data.enabled}
+                        onValueChange={(value) =>
+                          setNudgesEnabled.mutate(value)
+                        }
+                        accessibilityLabel="Nudges on Activity"
+                      />
+                    }
+                  />
+                </ListSection>
+              </SettingAnchor>
+            ) : null}
+
+            <SettingAnchor id="linked-apps">
+              <LinkedAppsSection />
+            </SettingAnchor>
+
+            {/* Only where the server has AI (`AI_ENABLED`): with it off the
+          section, like every AI entry, isn't drawn. */}
+            {frappAi.consent ? (
+              <SettingAnchor id="ai">
+                <SectionHeader>{FRAPP_AI_COPY.settingsSection}</SectionHeader>
+                <ListSection>
+                  {/* On opens Meet Frapp AI, so the yes is given where the
+                companies are named; off is at once. */}
+                  <ListRow
+                    label={FRAPP_AI_COPY.settingsSwitch}
+                    description={FRAPP_AI_COPY.settingsCaption}
+                    trailing={
+                      <Toggle
+                        value={frappAi.consent.answer === "yes"}
+                        disabled={frappAi.pending}
+                        onValueChange={(next) => {
+                          setAiOffFailed(false);
+                          if (next) {
+                            meetAiSheetRef.current?.present();
+                            return;
+                          }
+                          frappAi.notNow().catch(() => setAiOffFailed(true));
+                        }}
+                        accessibilityLabel={FRAPP_AI_COPY.settingsSwitch}
+                      />
+                    }
+                  />
+
+                  {showChapterAi && chapterAi.data ? (
+                    <ListRow
+                      label={AI_SETTINGS_COPY.chapterRow}
+                      value={AI_SETTINGS_COPY.chapterRowValue(
+                        aiSwitchesInEffect(chapterAi.data),
+                      )}
+                      accessibilityHint="Opens Chapter settings, where the president turns the chapter's AI features on or off."
+                      onPress={() => router.push("/chapter-settings")}
+                    />
+                  ) : null}
+                </ListSection>
+                {aiOffFailed ? (
+                  <Text style={styles.footnoteError}>
+                    {FRAPP_AI_COPY.turnOffFailed}. Try again.
+                  </Text>
+                ) : null}
+                <Text style={styles.footnote}>
+                  {FRAPP_AI_COPY.settingsFootnote}{" "}
+                  <Text
+                    style={styles.footnoteLink}
+                    accessibilityRole="link"
+                    onPress={() => {
+                      setAiPrivacyFailed(false);
+                      WebBrowser.openBrowserAsync(PRIVACY_LINK.url).catch(() =>
+                        setAiPrivacyFailed(true),
+                      );
+                    }}
+                  >
+                    {FRAPP_AI_COPY.privacyLink}
+                  </Text>
+                  .
+                </Text>
+                {aiPrivacyFailed ? (
+                  <Text style={styles.footnoteError}>
+                    {PRIVACY_LINK.label} couldn&apos;t be opened. Try again in a
+                    moment.
+                  </Text>
+                ) : null}
+              </SettingAnchor>
+            ) : null}
+
+            <SectionHeader>Account</SectionHeader>
+            <ListSection>
+              {/* Static, not a control: Signet is dark-only by design (lib/theme.tsx),
             and Canvas draws this row as a value too. */}
-        <ListRow label="Appearance" value="Dark" />
-        <ListRow
-          label="What's new"
-          accessibilityHint="Shows the latest changes to the app."
-          // Another device showed the newest entry first (#4043). Neutral, as
-          // every unread mark is (components.md § Chrome weight), and the
-          // same dot web's account menu draws.
-          trailing={
-            whatsNewQuiet ? <View style={styles.unreadDot} /> : undefined
-          }
-          accessibilityValue={whatsNewQuiet ? "New" : undefined}
-          onPress={() => router.push("/whats-new")}
-        />
-        <ListRow
-          label={BLOCKED_MEMBERS_TITLE}
-          value={blockedMembersValue}
-          accessibilityHint="Shows the members you've blocked in chat, and lets you unblock them."
-          onPress={() => blockedMembersSheetRef.current?.present()}
-        />
-        {showDonationCta ? (
-          <ListRow
-            label="Support the Chapter"
-            accessibilityHint="Opens the chapter's donation page in your browser."
-            onPress={() => openExternalLink("Support the Chapter", donationUrl)}
-          />
-        ) : null}
-        {LEGAL_LINKS.map((link) => (
-          <ListRow
-            key={link.url}
-            label={link.label}
-            accessibilityHint="Opens in your browser."
-            onPress={() => openExternalLink(link.label, link.url)}
-          />
-        ))}
-        <ListRow
-          label="Sign out"
-          action
-          destructive
-          onPress={() => {
-            void handleSignOut();
-          }}
-        />
-        <ListRow
-          label={
-            deleteAccount.isPending ? "Deleting account…" : "Delete account"
-          }
-          action
-          destructive
-          disabled={deleteAccount.isPending}
-          accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
-          onPress={handleDeleteAccount}
-        />
-      </ListSection>
-      {linkFailed ? (
-        <Text style={styles.footnoteError}>
-          {linkFailed} couldn&apos;t be opened. Try again in a moment.
-        </Text>
-      ) : null}
+              <ListRow label="Appearance" value="Dark" />
+              <ListRow
+                label="What's new"
+                accessibilityHint="Shows the latest changes to the app."
+                // Another device showed the newest entry first (#4043). Neutral, as
+                // every unread mark is (components.md § Chrome weight), and the
+                // same dot web's account menu draws.
+                trailing={
+                  whatsNewQuiet ? <View style={styles.unreadDot} /> : undefined
+                }
+                accessibilityValue={whatsNewQuiet ? "New" : undefined}
+                onPress={() => router.push("/whats-new")}
+              />
+              <SettingAnchor id="blocked">
+                <ListRow
+                  label={BLOCKED_MEMBERS_TITLE}
+                  value={blockedMembersValue}
+                  accessibilityHint="Shows the members you've blocked in chat, and lets you unblock them."
+                  onPress={() => blockedMembersSheetRef.current?.present()}
+                />
+              </SettingAnchor>
+              {showDonationCta ? (
+                <ListRow
+                  label="Support the Chapter"
+                  accessibilityHint="Opens the chapter's donation page in your browser."
+                  onPress={() =>
+                    openExternalLink("Support the Chapter", donationUrl)
+                  }
+                />
+              ) : null}
+              {LEGAL_LINKS.map((link) => (
+                <ListRow
+                  key={link.url}
+                  label={link.label}
+                  accessibilityHint="Opens in your browser."
+                  onPress={() => openExternalLink(link.label, link.url)}
+                />
+              ))}
+              <SettingAnchor id="sign-out">
+                <ListRow
+                  label="Sign out"
+                  action
+                  destructive
+                  onPress={() => {
+                    void handleSignOut();
+                  }}
+                />
+              </SettingAnchor>
+              <SettingAnchor id="delete-account">
+                <ListRow
+                  label={
+                    deleteAccount.isPending
+                      ? "Deleting account…"
+                      : "Delete account"
+                  }
+                  action
+                  destructive
+                  disabled={deleteAccount.isPending}
+                  accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
+                  onPress={handleDeleteAccount}
+                />
+              </SettingAnchor>
+            </ListSection>
+            {linkFailed ? (
+              <Text style={styles.footnoteError}>
+                {linkFailed} couldn&apos;t be opened. Try again in a moment.
+              </Text>
+            ) : null}
+          </>
+        )}
+      </SettingJumpProvider>
       <BlockedMembersSheet ref={blockedMembersSheetRef} />
-      <AccentSheet ref={accentSheetRef} />
+      {frappAi.consent ? <MeetFrappAiSheet ref={meetAiSheetRef} /> : null}
       <ChatDensitySheet ref={chatDensitySheetRef} />
-      <ChatBackgroundSheet ref={chatBackgroundSheetRef} />
       <ChatLevelSheet
         ref={chatLevelSheetRef}
         level={chatLevel.data}
@@ -629,6 +758,10 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
       paddingHorizontal: tokens.spacing.xs,
     },
+    footnoteLink: {
+      color: tokens.color.text.foreground,
+      textDecorationLine: "underline",
+    },
     footnoteError: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,
@@ -639,13 +772,6 @@ function createStyles(tokens: SignetTokens) {
       height: 6,
       borderRadius: 3,
       backgroundColor: tokens.color.text.foreground,
-    },
-    swatch: {
-      width: tokens.spacing.xl,
-      height: tokens.spacing.xl,
-      borderRadius: tokens.radius.chipLarge,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
     },
   });
 }

@@ -13,6 +13,9 @@ const calls = vi.hoisted(() => [] as string[]);
 vi.mock("@/lib/chat/use-unread-first-paint-runtime", () => ({
   useUnreadFirstPaintRuntime: () => calls.push("unread-first-paint"),
 }));
+vi.mock("@/lib/launch/use-first-paint-cache-runtime", () => ({
+  useFirstPaintCacheRuntime: () => calls.push("first-paint-cache"),
+}));
 vi.mock("@/lib/chat/use-chat-runtime", () => ({
   useChatRealtimeBinding: () => calls.push("chat"),
 }));
@@ -32,8 +35,20 @@ vi.mock("@/lib/onboarding/use-onboarding-redirect", () => ({
   useOnboardingRedirect: () => calls.push("onboarding"),
 }));
 
+vi.mock("@/lib/onboarding/use-member-invite-handoff", () => ({
+  useMemberInviteHandoff: () => calls.push("member-invite"),
+}));
+
 vi.mock("@/lib/presence/chapter-presence", () => ({
   useChapterPresenceRuntime: () => calls.push("presence"),
+}));
+
+vi.mock("@/lib/minutes/recorder/use-recorder-runtime", () => ({
+  useMeetingRecorderRuntime: () => calls.push("meeting-recorder"),
+}));
+
+vi.mock("@/lib/updates/use-resume-updates", () => ({
+  useResumeUpdates: () => calls.push("resume-updates"),
 }));
 
 const { AppRuntime } = await import("./app-runtime");
@@ -54,11 +69,30 @@ describe("AppRuntime", () => {
     calls.length = 0;
     renderHook(() => AppRuntime());
     expect(calls).toContain("unread-first-paint");
+    expect(calls).toContain("first-paint-cache");
   });
 
   it("runs chapter presence app-wide, so the dots mean online (#3917)", () => {
     calls.length = 0;
     renderHook(() => AppRuntime());
     expect(calls).toContain("presence");
+  });
+
+  it("holds the meeting recorder above every screen, so a recording outlives the one it started on", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("meeting-recorder");
+  });
+
+  it("hands a member's invite link to the web app-wide (#4002)", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("member-invite");
+  });
+
+  it("checks for app updates on every return to the foreground", () => {
+    calls.length = 0;
+    renderHook(() => AppRuntime());
+    expect(calls).toContain("resume-updates");
   });
 });

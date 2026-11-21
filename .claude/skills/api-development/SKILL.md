@@ -45,6 +45,14 @@ Use the `task` feature as the reference, since it follows every convention below
 `application/services/task.service.ts`, `interface/dtos/task.dto.ts`,
 `interface/controllers/task.controller.ts`, `modules/task/task.module.ts`, and the spec beside each.
 
+0. Before writing a helper, guard, constant or validation rule, search for an existing one and
+   reuse or extend it: `apps/api/src/interface/guards/` (request guards such as
+   `permissions.guard.ts`, `chapter.guard.ts`), `apps/api/src/domain/utils/` (rules such as `channel-access.ts`,
+   `card-closing.ts`), `apps/api/src/domain/constants/` (limits, permissions, retention-style
+   values), `packages/validation/src/` (anything the clients also enforce, such as
+   `AI_REPORT_RETENTION_DAYS`), and `packages/formatting/src/` (dates and display). Grep for the
+   concept, not only your name for it. A copy you find is consolidated in this PR when small
+   ([`AGENTS.md` § Tech debt protocol](../../../AGENTS.md#tech-debt-protocol)).
 1. Add the entity, and export it from `domain/entities/index.ts`.
 2. Add the repository interface and its injection token.
 3. Add the Supabase repository and its tenant-scope spec (see the [`testing`](../testing/SKILL.md)
@@ -117,13 +125,16 @@ per controller or per route with `@UseGuards()`, so a route missing one has no p
 that layer. Each guard reads what the previous one set, so keep this order:
 
 ```text
-SupabaseAuthGuard      validates the JWT, sets request.supabaseUser
-→ AuthSyncInterceptor  (only where needed) syncs the users row, sets request.appUser
+SupabaseAuthGuard      validates the JWT with Auth (getUser), sets request.supabaseUser; a
+                       GET/HEAD marked @VerifySessionLocally() on a ChapterGuard route
+                       verifies it locally instead and sets request.locallyVerifiedAuthId
 → ChapterGuard         chapter from the JWT active_chapter_id claim, x-chapter-id only as a
                        fallback (a disagreement is 403 chapter.context.mismatch); checks
-                       membership, sets request.member and request.chapterId; gates writes on
-                       subscription status and @RequireModule
+                       membership, sets request.appUser, request.member and request.chapterId;
+                       gates writes on subscription status and @RequireModule
 → PermissionsGuard     checks @RequirePermissions against the member's roles
+→ AuthSyncInterceptor  (only where needed; Nest runs every guard before any interceptor)
+                       syncs the users row; sets request.appUser where no guard did
 → handler
 ```
 
@@ -135,6 +146,14 @@ separate OR-groups.
 
 Every route that returns or touches chapter data needs a permission decorator, reads included. A
 `@Get()` without one leaks chapter data, and review treats it as a finding.
+
+`@VerifySessionLocally()` (#5043) is a per-method opt-in that trades the session check's round
+trip for a bound: a revoked session can keep making that read until its token expires. Add it
+only to a chapter-scoped `GET` that returns no credentials, signed URLs to private files,
+exports, account data or admin/audit records, and add the route to the roster in
+`session-check.decorator.spec.ts`. Read the caller's Auth id with `authUserIdOf(request)`, never
+`request.supabaseUser` alone, which a locally verified read doesn't have. The bound and the rules:
+[`multi-tenancy.md`](../../../spec/behavior/multi-tenancy.md).
 
 `AuthSyncInterceptor` goes only where the first request must create the `users` row. It is
 class-level on the user, invite, notification and analytics controllers, and per-route on the
@@ -170,15 +189,17 @@ All live in `interface/decorators/`.
 
 ## Database changes
 
-1. `npm run supabase -- migration new my_change_name` creates
-   `supabase/migrations/{14-digit timestamp}_{snake_case}.sql`.
+1. `npm run migration:new -- my_change_name` creates
+   `supabase/migrations/{version}_{snake_case}.sql` and its ledger page, with a version after both
+   the clock and everything on `main`. If `migration-order` or a duplicate version fails after main
+   moves, `npm run migration:renumber` fixes it
+   ([`docs/ops/database/migrations/`](../../../docs/ops/database/migrations/README.md)).
 2. Enable RLS on every new table: `ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;`.
 3. Apply locally with `npm run supabase -- db push --local`.
-4. Add an entry for the migration to both
-   [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) and
-   [`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), in the entry
-   shape each one states. `check:migration-safety` fails on a migration missing from either (see
-   the [`testing`](../testing/SKILL.md) skill for reading its failures).
+4. Fill in the migration's ledger page (`## Promotion` and `## Rollback`). Don't add entries to
+   the shared `promotion-log.md` or `db-rollback-playbook.md`: every PR prepending there conflicted
+   with every other. `check:migration-safety` fails on a migration with no page (see the
+   [`testing`](../testing/SKILL.md) skill for reading its failures).
 5. Update `database.types.ts` by hand, as described next.
 
 More: [`docs/guides/database.md`](../../../docs/guides/database.md).
@@ -196,6 +217,12 @@ A new table needs a row interface in `domain/entities/` (exported from the barre
 `text` parameter the caller may omit is `string | null`, because Postgres function parameters are
 nullable.
 
+Put each new entry, its entity in the `#domain/entities` import, and the entity file's line in the
+`domain/entities/index.ts` barrel in alphabetical position, never at the end: two PRs that each
+append a table always conflict on the same lines, and two that insert in order conflict only when
+they sort into the same gap. `database.types.sorted.spec.ts` fails on anything out of order and
+names the entry it belongs after (plain code-unit order, so `_` sorts before letters).
+
 Constraints to know before you fight the compiler:
 
 - `Row` is written `{ [K in keyof Row]: Row[K] }` on purpose. PostgREST constrains rows to
@@ -211,10 +238,9 @@ Constraints to know before you fight the compiler:
   `DuesConfig` in `domain/entities/chapter-dues-config.entity.ts`).
 - Every `*.repository.ts` under `apps/api/src` follows this.
   `no-as-never.spec.ts` and `tenant-scope-coverage.spec.ts` both find repositories through
-  `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives. Both pin
-  the repository count, so adding one means raising `EXPECTED_REPOSITORY_COUNT` in that helper
-  (and the `covered` count in `tenant-scope-coverage.spec.ts`, unless it lands with a
-  `TENANT_SCOPE_BACKLOG` reason). Direct service-layer writes use the same
+  `#test/helpers/repository-corpus`, so a new one joins both ledgers wherever it lives, and needs
+  a tenant-scope spec or a `TENANT_SCOPE_BACKLOG` reason. The counts there are floors, so adding
+  a repository edits no number. Direct service-layer writes use the same
   `TablesInsert` / `TablesUpdate` types.
 
 ## Rate limiting

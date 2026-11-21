@@ -139,8 +139,14 @@ export function createTableAwareSupabaseMock(options: {
         rows = rows.filter((r) => vals.includes(r[col]));
         return builder;
       }),
+      // A seeded row that omits a nullable column holds null in Postgres, so
+      // `.is(col, null)` matches it (the guards' `deleted_at` filter, #5043).
       is: jest.fn((col: string, val: unknown) => {
-        rows = rows.filter((r) => r[col] === val);
+        rows = rows.filter((r) =>
+          val === null
+            ? r[col] === null || r[col] === undefined
+            : r[col] === val,
+        );
         return builder;
       }),
       // Range/text operators the repositories use for reporting windows. Not

@@ -2,13 +2,13 @@ import { Logger, Inject, Injectable } from '@nestjs/common';
 import {
   canAccessChannel,
   EMPTY_ACCESS_HOLDER,
+  listsNameGroups,
   needsAccessHolder,
 } from '#domain/utils/channel-access';
 import { RbacService } from './rbac.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
-import { isInvited } from './event-role-targeting';
-import { eventLimitsAudience } from '@repo/validation';
+import { filterVisibleEvents } from './event-role-targeting';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { Event } from '#domain/entities/event.entity';
@@ -52,6 +52,8 @@ export interface SearchFilters extends SearchMessageFilters {
 }
 
 const SEARCH_LIMIT = 10;
+/** The most {@link SearchService.searchMessagesIn} returns in one call. */
+const SEARCH_IN_CHANNELS_MAX = 40;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -195,6 +197,35 @@ export class SearchService {
   }
 
   /**
+   * The message half of {@link search} alone, held to `channelIds` (#4900):
+   * Ask's `search_messages` tool searches the chapter channels a member can
+   * open and nothing else. {@link search} cannot serve it: it also runs the
+   * backwork, event and member searches, and its ten newest hits are taken
+   * across direct messages too, so a member whose recent matches are in DMs
+   * would find no channel message at all.
+   *
+   * `channelIds` only narrows. Every id is still decided by
+   * `canAccessChannel` for this member, so an id they cannot read, or one
+   * from another chapter, matches nothing. Blocked senders are masked as in
+   * {@link search}. `limit` is held to {@link SEARCH_IN_CHANNELS_MAX}.
+   */
+  async searchMessagesIn(
+    chapterId: string,
+    userId: string,
+    query: string,
+    channelIds: readonly string[],
+    filters: SearchMessageFilters = {},
+    limit: number = SEARCH_LIMIT,
+  ): Promise<MaskedChatMessage[]> {
+    const q = runnableQuery(query, filters);
+    if (q === null || channelIds.length === 0) return [];
+    return this.searchMessages(chapterId, userId, q, filters, {
+      onlyChannelIds: channelIds,
+      limit: Math.min(Math.max(Math.trunc(limit), 1), SEARCH_IN_CHANNELS_MAX),
+    });
+  }
+
+  /**
    * Runs {@link search} with each source under its own
    * {@link SEARCH_TIMEOUT_MS} budget, so a slow one degrades alone.
    *
@@ -206,9 +237,10 @@ export class SearchService {
    * expose a per-query `statement_timeout` — but every scan is capped at
    * {@link SEARCH_LIMIT} and a message search with text is index-backed rather
    * than a sequential `ILIKE`, so tripping it should be rare rather than
-   * routine. A filter with no text (#3958) is the exception: it has no text
-   * match to narrow by, and its cost is spec/behavior/search.md § Message
-   * filters'.
+   * routine. A filter with no text (#3958) has no text match to narrow by and
+   * is answered per channel through indexes instead (#3965); an attachment
+   * filter over a large archive is the slowest case left
+   * (spec/behavior/search.md § Message filters).
    */
   async searchWithinBudget(
     chapterId: string,
@@ -303,11 +335,16 @@ export class SearchService {
    * member without either permission (Alumni, or VP or Secretary alone) would
    * otherwise read file titles, courses and terms they cannot open. Same
    * any-of rule as `BackworkController`, wildcard included.
+   *
+   * Public for Ask's `find_backwork` (#5209), which reads the catalog through
+   * this gate and ranking rather than a second query. `limit` is capped at 50
+   * by `search_backwork_resources` itself.
    */
-  private async searchBackwork(
+  async searchBackwork(
     chapterId: string,
     userId: string,
     query: string,
+    limit = SEARCH_LIMIT,
   ): Promise<BackworkResource[]> {
     const mayBrowse = await this.rbacService.memberHasAnyPermission(
       chapterId,
@@ -315,49 +352,27 @@ export class SearchService {
       [SystemPermissions.BACKWORK_UPLOAD, SystemPermissions.BACKWORK_ADMIN],
     );
     if (!mayBrowse) return [];
-    return this.repo.searchBackwork(chapterId, query, SEARCH_LIMIT);
+    return this.repo.searchBackwork(chapterId, query, limit);
   }
 
-  /** Event hits in the chapter, filtered to what the caller may see. */
+  /**
+   * Event hits in the chapter, filtered to what the caller may see. Search
+   * must not become a side-channel around `EventService`'s read visibility
+   * (#1463): a role-targeted event is invisible via `GET /v1/events` to a
+   * member without an intersecting role, so it must be invisible here too. It
+   * answers through the list's own gate, `filterVisibleEvents`
+   * (`event-role-targeting.ts`).
+   */
   private async searchEvents(
     chapterId: string,
     userId: string,
     query: string,
   ): Promise<Event[]> {
     const events = await this.repo.searchEvents(chapterId, query, SEARCH_LIMIT);
-    return this.filterVisibleEvents(chapterId, userId, events);
-  }
-
-  /**
-   * Search must not become a side-channel around `EventService`'s read
-   * visibility (#1463): a role-targeted event is invisible via `GET
-   * /v1/events` to a member without an intersecting role, so it must be
-   * invisible here too. The batch form of `isEventVisibleTo`
-   * (`event-role-targeting.ts`), as `EventService.findByChapter` is: same
-   * `isInvited` predicate, same `events:update` (wildcard-inclusive)
-   * management exemption, read once for the whole list. A change to the rule
-   * lands in all three.
-   */
-  private async filterVisibleEvents(
-    chapterId: string,
-    userId: string,
-    events: Event[],
-  ): Promise<Event[]> {
-    const hasTargetedEvents = events.some(eventLimitsAudience);
-    if (!hasTargetedEvents) return events;
-
-    if (
-      await this.rbacService.memberHasAnyPermission(chapterId, userId, [
-        SystemPermissions.EVENTS_UPDATE,
-      ])
-    ) {
-      return events;
-    }
-
-    const member = await this.members.findByUserAndChapter(userId, chapterId);
-    const memberRoleIds = member?.role_ids ?? [];
-
-    return events.filter((event) => isInvited(event, memberRoleIds));
+    return filterVisibleEvents(events, chapterId, userId, {
+      rbac: this.rbacService,
+      memberRepo: this.members,
+    });
   }
 
   /**
@@ -382,8 +397,10 @@ export class SearchService {
     userId: string,
     query: string,
     filters: SearchFilters = {},
+    within: { onlyChannelIds?: readonly string[]; limit?: number } = {},
   ): Promise<MaskedChatMessage[]> {
     const { channelId } = filters;
+    const limit = within.limit ?? SEARCH_LIMIT;
     const messageFilters = messageFiltersOf(filters);
     // `sender_id` is a uuid column, so a malformed id would be a 22P02 and a
     // 500. No message has a sender that is not a uuid: the answer is empty.
@@ -421,9 +438,10 @@ export class SearchService {
     // channel the caller can read — still no privilege escalation, but the
     // wrong answer, returned confidently. Keeping the intersection makes the
     // narrow result true by construction rather than by query shape.
-    const channelIds = channelId
-      ? accessible.filter((id) => id === channelId)
-      : accessible;
+    const only = within.onlyChannelIds ? new Set(within.onlyChannelIds) : null;
+    const channelIds = (
+      channelId ? accessible.filter((id) => id === channelId) : accessible
+    ).filter((id) => only === null || only.has(id));
     if (!channelIds.length) return [];
 
     // The filters (#3958) go to the repository beside `channelIds`, never
@@ -431,13 +449,8 @@ export class SearchService {
     // caller has already been cleared to read, so no filter value can reach a
     // message outside that set.
     const messages = await (messageFilters
-      ? this.repo.searchMessages(
-          channelIds,
-          query,
-          SEARCH_LIMIT,
-          messageFilters,
-        )
-      : this.repo.searchMessages(channelIds, query, SEARCH_LIMIT));
+      ? this.repo.searchMessages(channelIds, query, limit, messageFilters)
+      : this.repo.searchMessages(channelIds, query, limit));
 
     // The caller's block list, applied to what search serves — the same rule
     // `ChatService.getMessages` applies, through the same pure function, so the
@@ -498,7 +511,10 @@ export class SearchService {
     )
       ? await this.rbacService.getChannelAccessHolder(
           chapterId,
-          member.role_ids,
+          member,
+          channels.some((channel) =>
+            listsNameGroups({ ...channel, who_can_post: null }),
+          ),
         )
       : EMPTY_ACCESS_HOLDER;
 

@@ -1,18 +1,21 @@
-import { Suspense } from "react";
-import { DiscordImportPage } from "@/components/discord-import/discord-import-page";
-import Loading from "./loading";
+import { redirect } from "next/navigation";
+import {
+  DISCORD_IMPORT_SETTINGS_PATH,
+  settingsRedirectPath,
+} from "@/components/settings/settings-paths";
 
-export const metadata = { title: "Discord import" };
-
-export default function DiscordImport() {
-  // `DiscordImportPage` reads `useSearchParams()` (the `?discord=` outcome the
-  // OAuth callback redirects back with), which Next requires to sit under a
-  // Suspense boundary — matching `settings`, `directory`, `billing`, `sign-in`,
-  // `sign-up` and `join`. Without it the route bails out of prerendering and
-  // takes the whole web build down with it, and CI does not build apps/web.
-  return (
-    <Suspense fallback={<Loading />}>
-      <DiscordImportPage />
-    </Suspense>
+/**
+ * Discord import moved inside Chapter settings' Chat page (#3837); this route
+ * only redirects old links there. Every param comes along: the API's default
+ * Discord return path is still this route, and it lands with `?discord=` (the
+ * outcome) and `?handshake=` (spent by the page, then stripped).
+ */
+export default async function DiscordImport({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  redirect(
+    settingsRedirectPath(DISCORD_IMPORT_SETTINGS_PATH, await searchParams),
   );
 }

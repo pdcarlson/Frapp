@@ -2,6 +2,7 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { PollController } from './poll.controller';
 import { PollService } from '../../application/services/poll.service';
+import { RbacService } from '../../application/services/rbac.service';
 import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -9,6 +10,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 describe('PollController', () => {
   let controller: PollController;
   let pollService: jest.Mocked<PollService>;
+  let rbacService: { memberHasAnyPermission: jest.Mock };
 
   beforeEach(async () => {
     pollService = {
@@ -19,10 +21,16 @@ describe('PollController', () => {
       getPoll: jest.fn(),
       listPolls: jest.fn(),
     } as any;
+    rbacService = {
+      memberHasAnyPermission: jest.fn().mockResolvedValue(false),
+    };
 
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [PollController],
-      providers: [{ provide: PollService, useValue: pollService }],
+      providers: [
+        { provide: PollService, useValue: pollService },
+        { provide: RbacService, useValue: rbacService },
+      ],
     }).compile();
 
     controller = module.get<PollController>(PollController);
@@ -122,16 +130,34 @@ describe('PollController', () => {
         messageId,
         userId,
         chapterId,
+        expect.any(Function),
       );
       expect(result).toEqual(expectedMessage);
+      // Lazy: nothing is looked up unless the service asks.
+      expect(rbacService.memberHasAnyPermission).not.toHaveBeenCalled();
     });
 
-    it('requires POLLS_CREATE, matching createPoll', () => {
+    it('tells the service whether the caller holds channels:manage (#4046)', async () => {
+      rbacService.memberHasAnyPermission.mockResolvedValue(true);
+      pollService.close.mockResolvedValue({ id: 'msg-123' } as any);
+
+      await controller.close('msg-123', 'chapter-123', 'user-123');
+      const canModerate = pollService.close.mock.calls.at(0)?.[3];
+
+      await expect(canModerate?.()).resolves.toBe(true);
+      expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+        'chapter-123',
+        'user-123',
+        [SystemPermissions.CHANNELS_MANAGE],
+      );
+    });
+
+    it('requires only MEMBERS_VIEW, as voting does: the creator needs no polls:create (#4046)', () => {
       const handlerPermissions = Reflect.getMetadata(
         PERMISSIONS_KEY,
         controller.close,
       );
-      expect(handlerPermissions).toEqual([SystemPermissions.POLLS_CREATE]);
+      expect(handlerPermissions).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
   });
 

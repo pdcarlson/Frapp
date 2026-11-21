@@ -40,7 +40,7 @@ The root has no `test` script and `turbo.json` has no `test` task, so `npm run l
 | Node only | `npm install` | Lint, type-check, `nest build`, every unit suite, API E2E (mocked Supabase), `check:api-contract`, `check:migration-safety`, `check:pglite-migrations` (Postgres in WASM), `test:ci-scripts`, `check:dep-cruiser` (after `packages/*` are built) |
 | + Chromium | `npx playwright install chromium` | `test:floor -w apps/web`, `test:fold -w apps/landing`. Each starts its own app server with stand-in env |
 | + Docker | A running Docker daemon | `docker build -f apps/api/Dockerfile .` |
-| + local Supabase | Docker, then `npm run supabase -- start` and `npm run supabase -- db push --local` | `test:integration -w apps/api` (skips cleanly without a stack, and no CI job runs it), manual API testing, running the apps |
+| + local Supabase | Docker, then `npm run supabase -- start` and `npm run supabase -- db push --local` | `test:integration -w apps/api` (skips cleanly without a stack, and no CI job runs it), `check:role-lock-race` (two real connections; or point `DATABASE_URL` at a bare Postgres and add `-- --apply-migrations`, as CI does), manual API testing, running the apps |
 | Staging | none locally | The [`live-verification`](../live-verification/SKILL.md) skill |
 
 To run the apps, prefer Infisical-injected env: `npm run dev:api` (port 3001) and `npm run dev:web`
@@ -51,7 +51,9 @@ which read `.env.local` (see
 bringup: [`AGENTS.md`](../../../AGENTS.md) § "Starting the dev environment". Check the API with
 `curl http://localhost:3001/health`, which reports `"status":"ok"` when the database and storage
 are connected. It reuses one probe for up to 60 s, so to confirm a fix on a running API use
-`/health/ready`, which probes fresh.
+`/health/ready`, whose database and Storage probe is at most 5 s old (its Stripe `billing:` check
+is reused for up to 5 minutes;
+[Health Check](../../../spec/behavior/observability.md#health-check)).
 
 ## CI parity checklist
 
@@ -75,7 +77,7 @@ in the last row; path-gated jobs are still required.
 | `chapter-directory-seed` | `npm run check:chapter-directory-seed` |
 | `web-responsive-floor` (path-gated) | `npm run test:floor -w apps/web` (every dashboard route at 375px without horizontal scroll) |
 | `landing-fold` (path-gated) | `npm run test:fold -w apps/landing` (fold geometry; the widths each check measures are in [`fold.spec.ts`](../../../apps/landing/tests/visual/fold.spec.ts)'s header) |
-| `pglite-migrations` (path-gated) | `npm run check:pglite-migrations` (every migration from empty, plus the RLS posture), then `npx vitest run lib/realtime/change-topics.spec.ts` in `apps/web` (the change-ping contract against the applied migrations) |
+| `pglite-migrations` (path-gated) | `npm run check:pglite-migrations` (every migration from empty, plus the RLS posture), then `npm run check:role-lock-race` against local Supabase (role delete vs member-roles save on two real connections; CI applies the migrations to a `pgvector/pgvector:pg17` service container with `-- --apply-migrations`), then `npx vitest run lib/realtime/change-topics.spec.ts` in `apps/web` (the change-ping contract against the applied migrations) |
 | `web-production-build` | The Vercel-parity build below |
 | `packages-build` | `npx turbo run build --filter='./packages/*'` |
 | `changes` | Nothing to run locally. It computes the path filter for the path-gated jobs and is required because `web-tests` needs it |
@@ -156,6 +158,11 @@ was applied and no foreign row was read or written. Follow
 `npm run test:e2e -w apps/api` boots `AppModule` with `SUPABASE_CLIENT` overridden and guards
 stubbed, so it needs no live services or secrets.
 
+Pin every clock a spec's code reads: pass a fixed `now`, or `jest.useFakeTimers({ now })`. A spec
+that falls through to `Date.now()` passes the day it merges and reds every PR on some later day.
+`clock-ahead-tests.yml` runs the API suites nightly a week ahead and alerts on one; reproduce
+with `faketime -f +7d npm run test -w apps/api -- <spec>` (`apt-get install faketime`).
+
 ## Contract and migration checks
 
 ### API contract (`check:api-contract`)
@@ -173,11 +180,13 @@ npm run generate -w packages/api-sdk
 ### Migration safety (`check:migration-safety`)
 
 This check validates migration filenames (`{14-digit-timestamp}_{snake_case}.sql`) and unique
-version prefixes. It also checks that every migration has an entry, in the documented shape, in
-both [`promotion-log.md`](../../../docs/ops/database/promotion-log.md) and
-[`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md), across the whole
-tree on every run. With `--base`/`--head` it also requires a migration change to touch one of
-those docs, and refuses a change to the executable SQL of a migration already on the base, or its
+version prefixes. It also checks that every migration has a promotion entry and a rollback
+recipe, across the whole tree on every run: a ledger page in
+[`docs/ops/database/migrations/`](../../../docs/ops/database/migrations/README.md) with both
+`## Promotion` and `## Rollback` (new migrations), or entries in the documented shape in
+[`promotion-log.md`](../../../docs/ops/database/promotion-log.md) and
+[`db-rollback-playbook.md`](../../../docs/ops/db-rollback-playbook.md) (older ones). With
+`--base`/`--head` it also requires a migration change to touch a ledger, and refuses a change to the executable SQL of a migration already on the base, or its
 removal: `supabase db push` skips an applied version, so the change would reach no hosted database
 (#2751). Put the change in a new migration; a comment-only edit passes, and a reviewed exception
 goes in `EDITED_MIGRATION_EXCEPTIONS`. Without a range it skips both and says so, which is why the

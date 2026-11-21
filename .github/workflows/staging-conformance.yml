@@ -16,11 +16,8 @@ name: Staging conformance
 # title, 07:45 UTC. Empty production SMTP fails there as it does here, and so
 # do the burned apex From and a Magic Link template without token_hash. Infisical /
 # smoke stay production-unwatched. Remaining parity moved from #1384 to #2505.
-# Render `frapp-api-staging` `healthCheckPath` `/health`, and auto-deploy OFF
-# while tracking `main`, are asserted here (empty path is TCP-only; since #2505
-# `deploy-staging.yml` deploys staging by commit, and auto-deploy would build every
-# push before CI and race it). Production's copy of the auto-deploy assertion
-# lives in production-guardrails.yml. Doc pointer:
+# The API's host is not checked here: it runs on Cloud Run since #5228, and
+# Deploy staging checks each revision before it takes traffic. Doc pointer:
 # docs/ci-cd/agent-infra.md § Scheduled conformance.
 
 on:
@@ -86,13 +83,6 @@ jobs:
         with:
           install: none
 
-      # From `.github/environments.json`, the one place the ids live (#2806).
-      - name: Read staging's provider ids
-        id: ids
-        env:
-          TARGET_ENVIRONMENT: staging
-        run: node scripts/ci/provider-ids.mjs
-
       # continue-on-error is load-bearing, not laziness. A revoked or rotated
       # machine identity — the #696/#763 incident this workflow exists to catch —
       # makes this action exit non-zero. Failing the job here would kill the run
@@ -133,8 +123,4 @@ jobs:
           # chapter membership; see the script's note on the claimless-token trap.
           STAGING_SMOKE_USER_EMAIL: ${{ secrets.STAGING_SMOKE_USER_EMAIL }}
           STAGING_SMOKE_USER_PASSWORD: ${{ secrets.STAGING_SMOKE_USER_PASSWORD }}
-          # From `.github/environments.json`, the file the staging deploy reads
-          # its service id from too (#2806).
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
         run: node scripts/ci/staging-conformance.mjs

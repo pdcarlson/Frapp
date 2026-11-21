@@ -43,10 +43,12 @@ import {
 describe("the defect this file exists for", () => {
   it("would have caught `hover:bg-accent` on a card-seated row", () => {
     // `--accent` and `--popover` were the same value, so hovering a row inside
-    // a card moved it one neutral step: no feedback a person could see.
-    expect(ratio(SURFACE.popover, SURFACE.card)).toBeLessThan(
-      INDISTINGUISHABLE,
-    );
+    // a card moved it one neutral step: no feedback a person could see. On the
+    // 2026-11-19 ladder that step would be just under the perceptible bound
+    // (1.15:1); the hover keeps
+    // `--card-hover` because a row in a popover-seated table needs a state
+    // above `--popover` too, and one recipe serves both.
+    expect(ratio(SURFACE.popover, SURFACE.card)).toBeCloseTo(1.146, 2);
   });
 });
 

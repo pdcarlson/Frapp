@@ -4,6 +4,8 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { inSheet, skeletonBarFills } from "@/test/sheet-skeleton";
 import { ChannelMemberSheet, MemberRows } from "./channel-member-sheet";
 import { memberAvatarHue, memberAvatarTint } from "@repo/hooks";
 import { MemberAvatar } from "@/components/member-avatar";
@@ -12,6 +14,7 @@ import {
   setChapterPresence,
 } from "@/lib/presence/presence-store";
 import type { PresenceStatus } from "@repo/hooks/presence-status";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 /**
  * The mobile member sheet (#3536): who can read the channel, officers first,
@@ -24,8 +27,10 @@ const state = vi.hoisted(() => ({
     data?: {
       user_id: string;
       role_rank: number | null;
-      role_id?: string | null;
-      role_name?: string | null;
+      title?: string | null;
+      tier_id?: string | null;
+      tier_name?: string | null;
+      tier_rank?: number | null;
     }[];
     isPending?: boolean;
     isError?: boolean;
@@ -108,21 +113,34 @@ beforeEach(() => {
       {
         user_id: "u-member",
         role_rank: 5,
-        role_id: "r-mem",
-        role_name: "Member",
+        title: null,
+        tier_id: "t-bro",
+        tier_name: "Brothers",
+        tier_rank: 4,
       },
       {
         user_id: "u-officer",
         role_rank: 2,
-        role_id: "r-off",
-        role_name: "Treasurer",
+        title: "Treasurer",
+        tier_id: "t-cab",
+        tier_name: "Cabinet",
+        tier_rank: 1,
       },
-      { user_id: "u-blank", role_rank: null, role_id: null, role_name: null },
+      {
+        user_id: "u-blank",
+        role_rank: null,
+        title: null,
+        tier_id: null,
+        tier_name: null,
+        tier_rank: null,
+      },
       {
         user_id: "u-pres",
         role_rank: 0,
-        role_id: "r-pres",
-        role_name: "President",
+        title: "President",
+        tier_id: "t-cab",
+        tier_name: "Cabinet",
+        tier_rank: 1,
       },
     ],
   };
@@ -132,19 +150,21 @@ beforeEach(() => {
 });
 
 describe("MemberRows", () => {
-  it("groups readers under their highest role, a member with no role last", () => {
+  it("groups readers by tier, top tier first, by title inside each, the rest last", () => {
     const tree = render(<MemberRows channelId="chan-1" />);
 
     expect(state.channelIds).toContain("chan-1");
     expect(rowNames(tree)).toEqual([
-      "Zed President",
-      "Amy Officer",
+      "Zed President, President",
+      "Amy Officer, Treasurer",
       "Bob Member",
       // A member who never set a name is listed under the fallback, not dropped.
       expect.stringMatching(/^Member u-bla/),
     ]);
+    expect(text(tree)).toMatch(/Cabinet 2 .*Brothers 1 .*Members 1/);
+    // Each officer's title sits under their name, as on web.
     expect(text(tree)).toMatch(
-      /President 1 .*Treasurer 1 .*Member 1 .*No role 1/,
+      /Zed President \| President .*Amy Officer \| Treasurer/,
     );
     // Four readers need no search field.
     expect(
@@ -160,8 +180,10 @@ describe("MemberRows", () => {
         user_id:
           index === 0 ? "u-pres" : `u-x${String(index).padStart(6, "0")}`,
         role_rank: 5,
-        role_id: "r-mem",
-        role_name: "Member",
+        title: null,
+        tier_id: "t-bro",
+        tier_name: "Brothers",
+        tier_rank: 4,
       })),
     };
     const tree = render(<MemberRows channelId="chan-1" />);
@@ -210,6 +232,19 @@ describe("MemberRows", () => {
     const tree = render(<MemberRows channelId="chan-1" />);
     expect(rowNames(tree)).toEqual(["Loading members"]);
     expect(text(tree)).not.toContain("members");
+  });
+
+  // #4690: the rows sit straight on the sheet's `popover` fill, so bars in
+  // that fill drew a blank area while the members loaded.
+  it("draws its loading bars a step under the sheet, never in its fill", () => {
+    state.roster = { isPending: true };
+    const fills = inSheet(() =>
+      skeletonBarFills(render(<MemberRows channelId="chan-1" />)),
+    );
+    expect(fills.length).toBeGreaterThan(0);
+    expect(new Set(fills)).toEqual(
+      new Set([signetDarkTokens.color.surface.card]),
+    );
   });
 
   it("holds the skeleton without a channel", () => {
@@ -264,7 +299,7 @@ describe("MemberRows, presence (#3917)", () => {
   it("draws no dot, and claims no Offline, before presence has synced", () => {
     const tree = render(<MemberRows channelId="chan-1" />);
     expect(dots(tree)).toEqual([]);
-    expect(rowNames(tree)[0]).toBe("Zed President");
+    expect(rowNames(tree)[0]).toBe("Zed President, President");
   });
 
   it("draws each member's dot and names it, with the custom line under the name", () => {
@@ -277,8 +312,8 @@ describe("MemberRows, presence (#3917)", () => {
       "member-presence-offline",
     ]);
     expect(rowNames(tree)).toEqual([
-      "Zed President, Online",
-      "Amy Officer, Do Not Disturb",
+      "Zed President, President, Online",
+      "Amy Officer, Treasurer, Do Not Disturb",
       "Bob Member, Idle",
       expect.stringMatching(/^Member u-bla.*, Offline$/),
     ]);
@@ -288,7 +323,7 @@ describe("MemberRows, presence (#3917)", () => {
   it("follows presence as it changes, without reordering the rows", () => {
     const tree = render(<MemberRows channelId="chan-1" />);
     act(() => ready());
-    expect(rowNames(tree)[0]).toBe("Zed President, Online");
+    expect(rowNames(tree)[0]).toBe("Zed President, President, Online");
     act(() => setChapterPresence(PRESENCE_NOT_READY));
     expect(dots(tree)).toEqual([]);
   });
@@ -352,5 +387,15 @@ describe("ChannelMemberSheet", () => {
     expect(modal.props.snapPoints).toEqual(["100%"]);
     expect(text(tree)).toContain("Members");
     expect(tree.root.findAllByType(MemberRows)).toHaveLength(1);
+  });
+});
+
+describe("ChannelMemberSheet — dismissed by the thread while closed (#4229)", () => {
+  it("never reaches the modal unless it is up, so Members still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <ChannelMemberSheet ref={ref} channelId="chan-1" />
+      </FrappThemeProvider>
+    ));
   });
 });

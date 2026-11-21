@@ -35,7 +35,9 @@ describe("the archetype card's selected state", () => {
     // `spec/ui/design-system/README.md` §2 — and at 5% it is not even a dim
     // version of the right answer. Measured across all 19 seeds it spans
     // 1.026:1 to 1.094:1 against the surface it sat on (`#FFFFFF` the best), so
-    // the *best* case in the whole corpus is still no visible selection.
+    // the *best* case in the whole corpus is still no visible selection. On the
+    // 2026-11-12 ladder's darker floor the best was 1.088:1, and 1.096:1 on the
+    // 2026-11-19 violet floor.
     let best = 0;
     for (const seed of SEEDS) {
       const washed = applyAlpha(
@@ -46,7 +48,7 @@ describe("the archetype card's selected state", () => {
       best = Math.max(best, ratio(washed, WIZARD_SURFACE));
     }
     expect(best).toBeLessThan(INDISTINGUISHABLE);
-    expect(best).toBeCloseTo(1.094, 2);
+    expect(best).toBeCloseTo(1.096, 2);
   });
 
   it("would have caught `hover:bg-accent/50`, which was a colour over itself", () => {
@@ -56,8 +58,14 @@ describe("the archetype card's selected state", () => {
     // on `--background`, so the failure is different and just as total: a
     // `--popover` wash at 50% over the app floor is a hover nobody sees as a
     // hover, because it is the same step the card already is not.
+    //
+    // (2026-11-12, #3826) The wider ladder makes this particular wash visible,
+    // 1.18:1, so the measurement no longer convicts it on its own: what keeps
+    // it out is that the alias is deleted and `elevation-call-sites.spec.ts`
+    // bans the name. The softer 2026-11-19 ladder brings it back to 1.13:1. It stays pinned so a ladder change that narrows the steps
+    // again shows up here.
     const washed = applyAlpha(SURFACE.popover, 0.5, WIZARD_SURFACE);
-    expect(ratio(washed, WIZARD_SURFACE)).toBeLessThan(INDISTINGUISHABLE);
+    expect(ratio(washed, WIZARD_SURFACE)).toBeCloseTo(1.134, 2);
   });
 
   it("separates selected from resting and from hover, under every seed", () => {
@@ -79,32 +87,39 @@ describe("the archetype card's selected state", () => {
   });
 });
 
-describe("the tutorial's step strip, and the fix that would have been a second defect", () => {
+describe("a fill inside `--popover` (the first-run slideshow's step strip, deleted in #5080), and the fix that would have been a second defect", () => {
   it("would have caught `bg-secondary/60` inside a DialogContent", () => {
     // `--secondary` held `--card`'s value (deleted, #3036) and a dialog is
     // `--popover`, so the strip composited to 1.044:1 against its own
-    // container at today's ladder (1.050:1, `#211E19`, when first measured;
-    // 1.064:1 on the warm greenfield ladder).
+    // container on the 2026-11-05 ladder (1.050:1, `#211E19`, when first
+    // measured; 1.064:1 on the warm greenfield ladder). On the 2026-11-12
+    // ladder it was 1.103:1, and 1.094:1 on the 2026-11-19 one, still under the
+    // perceptible bound.
     const washed = applyAlpha(SURFACE.card, 0.6, SURFACE.popover);
-    expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.044, 2);
-    expect(ratio(washed, SURFACE.popover)).toBeLessThan(1.1);
+    expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.094, 2);
+    expect(ratio(washed, SURFACE.popover)).toBeLessThan(INDISTINGUISHABLE);
   });
 
   it("rules out the accent tint, which is the obvious repair and is worse", () => {
-    // The natural instinct is to recolour rather than to drop the fill. Across
-    // every seed `--accent-subtle` on `--popover` tops out at 1.097:1 — the
-    // same washout in a new place, which is `meter.ts`'s finding met from
-    // another direction. §10's answer is to drop the fill and let the hairline
-    // carry the edge.
-    let best = 0;
+    // The natural instinct is to recolour rather than to drop the fill. On the
+    // 2026-11-05 ladder `--accent-subtle` on `--popover` topped out at 1.097:1
+    // across every seed — the same washout in a new place, which is
+    // `meter.ts`'s finding met from another direction. §10's answer is to drop
+    // the fill and let the hairline carry the edge.
+    //
+    // (2026-11-12, #3826) Engine v3 takes the tint from step 5, so some seeds
+    // now separate on `--popover`, but the neutral seeds' tint *is* `--popover`
+    // (1.000:1): a fix that works for some chapters and vanishes for others is
+    // still not a fix.
+    let worst = Infinity;
     for (const seed of SEEDS) {
-      best = Math.max(
-        best,
+      worst = Math.min(
+        worst,
         ratio(accentRolesFor(seed)["--accent-subtle"]!, SURFACE.popover),
       );
     }
-    expect(best).toBeLessThan(1.1);
-    expect(best).toBeCloseTo(1.097, 2);
+    expect(worst).toBeLessThan(1.1);
+    expect(worst).toBeCloseTo(1.0, 2);
   });
 
   it("shows dropping the fill improves the boundary rather than costing one", () => {
@@ -121,7 +136,7 @@ describe("the step indicator's track", () => {
     // Both step indicators drew their remaining steps in `bg-border`.
     // `components/shared/meter.ts` measured this class of choice already; the
     // numbers for *this* pair are asserted rather than inherited, because the
-    // wizard's indicator sits on `--background` and the tutorial's inside a
+    // wizard's indicator sits on `--background` and the slideshow's sat inside a
     // dialog, neither of which that module's call sites cover.
     let worstOnBorder = Infinity;
     let worstOnBackground = Infinity;
@@ -138,16 +153,21 @@ describe("the step indicator's track", () => {
         ratio(fill, SURFACE.background),
       );
     }
-    // Both worst cases are `#BF0A30`'s `#D83144`. Before the engine's fill
+    // Both worst cases were `#BF0A30`'s `#D83144`. Before the engine's fill
     // floor they were crimson's `#8B0000` at 1.528 and 1.869 (#2541), then
     // `#CC0000`'s lifted `#DA2017` at 3.060 and 3.742 until the floor took in
     // hover too (#2586) and lifted the dark fills further, then `#800000`'s
     // `#F42F22` at 3.844 and 4.701 until the neutral ladder and engine v2
-    // (2026-11-05) lifted `#800000` too. The ranking is the same throughout,
-    // and on `--background` the fill clears the 3:1 non-text floor.
+    // (2026-11-05) lifted `#800000` too, then `#BF0A30`'s `#D83144` at 3.527 and
+    // 4.188 until the 2026-11-12 ladder (#3826) raised every fill's floor, then
+    // `#4B1A7E`'s `#9B70D9` until engine v4 (2026-11-19) re-lifted the corpus
+    // on the violet ladder, whose brighter hairline (12%) also narrows the
+    // border track's figure, as did its lift to 18% on 2026-11-20 (Paul's
+    // "more hairlines", #5739). The ranking is the same throughout, and on
+    // `--background` the fill clears the 3:1 non-text floor.
     expect(worstOnBackground).toBeGreaterThan(worstOnBorder);
-    expect(worstOnBorder).toBeCloseTo(3.527, 2);
-    expect(worstOnBackground).toBeCloseTo(4.188, 2);
+    expect(worstOnBorder).toBeCloseTo(3.049, 2);
+    expect(worstOnBackground).toBeCloseTo(5.015, 2);
   });
 });
 
@@ -158,7 +178,7 @@ describe("the emerald notice `/join` shipped", () => {
     // the tone that actually shipped was the light branch: near-black text on
     // the app floor. The family's last raw-palette colour and last inert `dark:`.
     expect(ratio("#064e3b", SURFACE.background)).toBeLessThan(AA_TEXT);
-    expect(ratio("#064e3b", SURFACE.background)).toBeCloseTo(2.037, 2);
+    expect(ratio("#064e3b", SURFACE.background)).toBeCloseTo(2.032, 2);
   });
 
   it("keeps the danger tone the rebuilt inline error uses above the gate", () => {
@@ -215,8 +235,9 @@ describe("the profile identity header", () => {
   it("keeps the initials legible on the neutral avatar", () => {
     // s15 drew the avatar in the house-gold family, and it took the chapter
     // accent until 2026-11-05 (`foundations.md` §6: people's avatars are
-    // neutral). It is now the chat avatar's recipe at 84px.
-    expect(ratio(TEXT.mutedForeground, SURFACE.popover)).toBeGreaterThanOrEqual(
+    // neutral). Untinted, the initials take `--foreground`, as the phone's
+    // do (#4137); a member tint replaces the colour once your id is known.
+    expect(ratio(TEXT.foreground, SURFACE.popover)).toBeGreaterThanOrEqual(
       AA_TEXT,
     );
   });

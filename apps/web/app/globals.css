@@ -109,24 +109,86 @@
 
 /*
  * The shell's chat panel opening and closing (#3779): a fade with a 16px
- * glide from the nav side. Duration and easing are the Signet motion tokens,
+ * glide from the right edge, the side it docks to (#5575). Duration and easing are the Signet motion tokens,
  * set inline by `dashboard-shell.tsx` (`context` + `entrance` in, `standard` +
  * `exit` out). Instant under reduced motion.
  */
 @keyframes shell-panel-in {
   from {
     opacity: 0;
-    transform: translateX(-16px);
+    transform: translateX(16px);
   }
 }
 @keyframes shell-panel-out {
   to {
     opacity: 0;
-    transform: translateX(-16px);
+    transform: translateX(16px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   [data-chat-panel] {
     animation: none !important;
+  }
+}
+
+/*
+ * The glow behind the crest on Ask's opening (#4904): the phone's gradient
+ * (`apps/mobile/components/ask/ask-opening.tsx`), 55% of the accent at the
+ * centre, 18% at 42% of the radius, clear at 70%, on a circle about 3.2 times
+ * the crest's height, breathing from 94% to 106% every 4.2s.
+ * Still under reduced motion.
+ */
+@keyframes ask-glow {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+.ask-glow {
+  background: radial-gradient(
+    circle closest-side,
+    color-mix(in srgb, var(--primary) 55%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 18%, transparent) 42%,
+    transparent 70%
+  );
+  animation: ask-glow 4.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-glow {
+    animation: none;
+  }
+}
+
+/*
+ * The setting a search opened (`lib/settings/use-setting-jump.ts`): a chapter
+ * accent tint and ring that hold for a moment and fade, the way Vercel's and
+ * GitHub's settings searches light the field they land on. Held without the
+ * fade under reduced motion.
+ */
+@keyframes setting-flash {
+  0%,
+  55% {
+    background-color: var(--accent-subtle);
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.setting-flash {
+  border-radius: 12px;
+  animation: setting-flash 2.6s ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .setting-flash {
+    animation: none;
+    background-color: var(--accent-subtle);
+    box-shadow: 0 0 0 2px var(--primary);
   }
 }

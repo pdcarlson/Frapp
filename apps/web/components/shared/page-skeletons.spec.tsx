@@ -138,7 +138,6 @@ describe("generic loading states", () => {
     "components/events/attendance-panel.tsx",
     "components/points/points-audit-card.tsx",
     "components/profile/blocked-members-card.tsx",
-    "components/profile/discord-history-card.tsx",
   ]);
 
   const users = [

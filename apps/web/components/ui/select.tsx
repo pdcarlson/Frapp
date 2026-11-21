@@ -35,7 +35,7 @@ const SelectTrigger = React.forwardRef<
       // No vertical padding: the row is already centred by `items-center`, and
       // `py-2` only mattered as a floor — which made the control overflow its
       // own border the moment a call site pinned a shorter `h-*`.
-      "flex h-10 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-surface-1 px-3 text-base pointer-coarse:h-11 text-foreground transition-colors data-[placeholder]:text-muted-foreground [&>span]:line-clamp-1",
+      "flex h-10 w-full items-center justify-between whitespace-nowrap rounded-md border border-control-edge bg-surface-1 px-3 text-base pointer-coarse:h-11 text-foreground transition-colors data-[placeholder]:text-muted-foreground [&>span]:line-clamp-1",
       FOCUS_RING,
       // The input's error outline, keyed off `aria-invalid` as the input's is,
       // so a missing pick reads like a missing field beside it (#3983).
@@ -96,7 +96,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
+        "relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-(--radix-select-content-transform-origin)",
         position === "popper" &&
           "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
         className,

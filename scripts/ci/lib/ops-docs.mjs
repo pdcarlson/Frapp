@@ -13,6 +13,14 @@
  */
 export const PROMOTION_LOG = "docs/ops/database/promotion-log.md";
 
+/**
+ * One page per migration, named after it (`<version>_<name>.md`): its promotion
+ * entry and its rollback recipe together. New migrations are ledgered here, not
+ * in PROMOTION_LOG or ROLLBACK_PLAYBOOK, because every migration PR prepending
+ * to those two shared files conflicted with every other open one.
+ */
+export const MIGRATION_LEDGER_DIR = "docs/ops/database/migrations";
+
 /** How a migration reaches staging and production, and the checks around it. */
 export const PROMOTION_RUNBOOK = "docs/ops/database/promotion.md";
 

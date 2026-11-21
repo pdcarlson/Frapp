@@ -3,7 +3,7 @@ description: Claim the next viable unit of tracker work — one GitHub issue, or
 argument-hint: "[123 ...] [--plan-only N]"
 ---
 
-Claim one unit of work (usually one GitHub issue on `pdcarlson/Frapp`, sometimes a small coherent
+Claim one unit of work (usually one GitHub issue on `frapplive/Frapp`, sometimes a small coherent
 batch), ship it as one PR, and leave the tracker cleaner than you found it. Several sessions run
 this at once. The Phase 0 claim protocol keeps them off each other's work, so it runs before
 anything expensive.
@@ -23,10 +23,9 @@ is demanded, the §1.2 verification comment on the issue is the plan. Plan mode 
 §1.3 veto.
 
 **The GitHub MCP is the only tracker path.** If any `mcp__github__*` tracker call fails, stop and
-report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no deferred writes. REST's
-narrow carve-outs
-([`github-pm.md` → How agents reach the tracker](../../docs/ci-cd/github-pm.md#how-agents-reach-the-tracker))
-never cover listing, searching, filing, labeling, closing, or commenting. Load schemas first:
+report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no deferred writes. The
+one exception is read-only search where the session has no MCP `search_*` tool
+([`agent-infra.md` § GitHub access policy](../../docs/ci-cd/agent-infra.md#github-access-policy)). Load schemas first:
 `ToolSearch("select:mcp__github__get_me,mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__search_pull_requests")`.
 
@@ -384,7 +383,10 @@ rest.
 
 ## Phase 2 — implement
 
-Run the second verify (§0.6) before the first file write.
+Run the second verify (§0.6) before the first file write. Then check that no open PR from another
+session or user touches the same screen ([AGENTS.md one-PR-per-screen rule](../../AGENTS.md#autonomous-pr-lifecycle-cloud-sessions)).
+If one does, release the claim (`AGENT-RELEASE` `screen-busy`, naming that PR; see [Exits](#exits)) and return to Phase 0
+rather than build a second PR on it.
 
 Branch from `main` as `claude/<slug>`; in a harness-managed cloud session, the session's assigned
 branch always wins. That branch is the **unit branch**. Make focused commits locally and don't
@@ -510,7 +512,8 @@ for the suffixed branch. Never branch B from A.
   `/diff-review` scopes and records the intended HEAD.
 - Commit WIP before every branch switch, so a babysit fix on PR A never carries B's half-built work
   into a dirty-tree review or lands on the wrong branch.
-- Migrations in both PRs: pick non-colliding version prefixes up front. A PR need not be up to date
+- Migrations in both PRs: create each with `npm run migration:new`, and run
+  `npm run migration:renumber` after merging `origin/main` if the other landed first. A PR need not be up to date
   to merge (2026-11-11), so nothing re-runs the surviving PR's checks after the first merges: merge
   `origin/main` into it yourself once the first lands, so its migration checks run against the
   other's migrations. That merge needs no review of its own, and `/diff-review` reviews only your
@@ -545,6 +548,7 @@ and the run ends only when every still-held member has its exit action.
 | Issue underspecified | `AGENT-RELEASE` `blocked-discovered`, remove `in-progress` **and** add **`triage`** back (keep a priority label), with an explanation |
 | Already shipped | Close as `completed`, `AGENT-RELEASE` `superseded` |
 | Lost the race | `AGENT-RELEASE` `lost-race`, **labels untouched** — a batch shrinks and continues |
+| Another open PR holds the screen | `AGENT-RELEASE` `screen-busy` naming that PR, remove `in-progress` (→ Backlog) |
 | Batch member vetoed / blocked | Release **that member** per its row above (a veto's question travels in the release comment + end-of-run report, never a mid-batch ask); the rest continues |
 | Batch member superseded by a live `AGENT-RECLAIM` | Excise per §0.5's coherence rule — its commits stay out of your push; if the batch no longer coheres, release the rest per their rows |
 | Context nearly exhausted, work exists | `AGENT-HANDOFF` `session-ending`, labels untouched, claim left live |

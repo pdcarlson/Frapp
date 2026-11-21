@@ -26,6 +26,14 @@ const { MessageAttachments } = await import("./message-attachments");
 const { ImageViewer, ImageViewerProvider, useImageViewer } =
   await import("./image-viewer");
 
+// A CSS length compared as a number: how many decimals the DOM keeps when it
+// serialises a length is the engine's choice (jsdom 31 keeps three, Chromium
+// more), not this component's.
+function expectPx(value: string, px: number) {
+  expect(value).toMatch(/^-?[\d.]+px$/);
+  expect(Number.parseFloat(value)).toBeCloseTo(px, 2);
+}
+
 /**
  * Chat attachments on web, and the image viewer they open (#2874).
  *
@@ -539,7 +547,7 @@ describe("photo previews (2026-11-07)", () => {
     );
     expect(image.style.aspectRatio).toBe("2560 / 1920");
     // As wide as the photo at the 256px height cap.
-    expect(image.style.width).toBe(`${(256 * 2560) / 1920}px`);
+    expectPx(image.style.width, (256 * 2560) / 1920);
     expect(image.style.backgroundImage).toBe(
       'url("data:image/png;base64,BLUR")',
     );
@@ -641,7 +649,7 @@ describe("the box before the read returns (#3879)", () => {
     expect(screen.queryByText("Loading attachment…")).toBeNull();
     const box = screen.getByTestId("attachment-photo-box");
     expect(box.style.aspectRatio).toBe("2560 / 1920");
-    expect(box.style.width).toBe(`${(256 * 2560) / 1920}px`);
+    expectPx(box.style.width, (256 * 2560) / 1920);
     expect(box.style.backgroundImage).toBe('url("data:image/png;base64,BLUR")');
     expect(screen.getByRole("list")).toHaveAttribute("aria-busy", "true");
   });

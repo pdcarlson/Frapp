@@ -16,13 +16,14 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 import { InlineNote } from "@/components/shared/inline-note";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage } from "@/lib/utils";
 import { NotificationSettingsSkeleton } from "@/components/personal-settings/personal-settings-skeleton";
+import { ChatLevelControl } from "@/components/personal-settings/chat-level-control";
 
 /**
  * The offline note under the notification switches, referenced by every one of
@@ -58,7 +59,7 @@ export function ChapterAlertsSection() {
    * earlier version of this comment claimed otherwise; the rungs earn their
    * place for a different and more serious reason.
    *
-   * Without them the card falls through every branch to `null` and renders six
+   * Without them the card falls through every branch to `null` and renders its
    * live-looking switches whose clicks `handleCategoryToggle` silently drops at
    * its own `!chapterId` guard — a control that looks operable and does
    * nothing, which is the dead-control failure the shared catalog exists to
@@ -88,8 +89,7 @@ export function ChapterAlertsSection() {
    * background refetch failure, and switches drawn from a still-held cache are
    * better than a card that vanishes when a focus refetch blips.
    */
-  const preferencesPaused =
-    preferencesQuery.isPending && preferencesQuery.fetchStatus === "paused";
+  const preferencesPaused = pausedRead(preferencesQuery);
   let categoriesState: React.ReactNode = null;
   if (!chapterId) {
     categoriesState = (
@@ -147,7 +147,7 @@ export function ChapterAlertsSection() {
      * once and un-moves itself if the PATCH loses. All this owes the member is
      * the sentence explaining why it moved back.
      *
-     * `mutateAsync().catch()`, NOT `mutate(…, { onError })`. All six switches
+     * `mutateAsync().catch()`, NOT `mutate(…, { onError })`. All the switches
      * share one mutation observer, and v5's `MutationObserver.mutate` detaches
      * the observer from the previous mutation and overwrites its stored
      * per-call options — so a superseded mutation's `onError` never fires, and
@@ -181,6 +181,17 @@ export function ChapterAlertsSection() {
       title="Chapter alerts"
       hint="For this chapter, on every device you use."
     >
+      {/* The chapter-wide chat level (#4124) has its own read and its own
+          states, so it is drawn whenever there is a chapter to set it for,
+          even while the switches below are still loading. Keyed by the
+          chapter: a switch made in another tab moves the active chapter in
+          place (`use-claim-chapter-sync.ts`), and a save still in flight for
+          the old chapter must not show, or fail, under the new one. */}
+      {chapterId ? (
+        <div className="mb-4">
+          <ChatLevelControl key={chapterId} />
+        </div>
+      ) : null}
       {categoriesState ?? (
         <div className="space-y-4">
           <ul className={denseListClassName}>
@@ -209,7 +220,7 @@ export function ChapterAlertsSection() {
                     // queueless rule is explicit that it wires to the control
                     // itself. Without this a screen-reader member offline
                     // hears "Points, switch, on, unavailable" and nothing
-                    // about why, with the explanation sitting six rows below
+                    // about why, with the explanation sitting rows below
                     // and the toast arriving only after they activate a
                     // control their AT has just called unavailable.
                     aria-describedby={
@@ -244,12 +255,12 @@ export function ChapterAlertsSection() {
                      * But the real `disabled` attribute cost more than it
                      * bought. `switch.tsx` scopes every state colour to
                      * `enabled:`, and its thumb takes `group-data-[disabled]`
-                     * which outranks the `data-[state]` rules — so all six
+                     * which outranks the `data-[state]` rules — so all the
                      * switches render an identical track and thumb, and the
                      * only surviving on/off cue is the thumb offset at about
                      * 2.24:1, under WCAG 1.4.11's 3:1 for non-text. Reading
                      * which categories are muted is the *more* common offline
-                     * need, and `disabled` also drops all six out of the tab
+                     * need, and `disabled` also drops every one out of the tab
                      * order. `aria-disabled` keeps the colours, the tab order
                      * and the announced state while still refusing the write.
                      */
@@ -310,7 +321,8 @@ export function ChapterAlertsSection() {
           */}
           {/* Chat has no switch here: a channel or DM is muted where it
               is read (the catalog's docblock in @repo/validation says why
-              the coarse Chat switch was dropped, 2026-11-06). */}
+              the coarse Chat switch was dropped, 2026-11-06). Chat messages
+              above lowers every channel at once but never silences chat. */}
           <p className="text-sm text-muted-foreground">
             Mute a channel or DM from the chat itself.
           </p>

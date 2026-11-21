@@ -1,0 +1,624 @@
+import {
+  MEETING_SECTIONS,
+  type MeetingSectionKey,
+  type MeetingType,
+  type MeetingVote,
+} from "./meetings";
+import { ordinal } from "./recurrence";
+
+/**
+ * Words the minutes screens share, on web and on the phone, so the two never
+ * describe the same minutes differently. Dates are written out in full (Paul,
+ * 2026-11-07: never "Tue" or "Nov 11"), with the year only when it isn't
+ * this one.
+ */
+
+export function meetingDayLabel(
+  value: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (!value) return "";
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return "";
+  return at.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+}
+
+/** "Tuesday, November 10 at 11:21 PM": when a meeting started, written out. */
+export function meetingWhenLabel(
+  value: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  const day = meetingDayLabel(value, now);
+  if (!day || !value) return day;
+  const time = new Date(value).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${day} at ${time}`;
+}
+
+/** A due day stored as `YYYY-MM-DD`, read in the reader's own calendar. */
+export function meetingDueLabel(
+  value: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (!value) return "";
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return "";
+  return meetingDayLabel(new Date(year, month - 1, day, 12).toISOString(), now);
+}
+
+/**
+ * Where a tabled matter came from (#5522): "Tabled from Tuesday, November 11
+ * · 2nd time", or nothing when these minutes tabled it first.
+ */
+export function meetingTabledFromLabel(
+  item: { first_start_time: string | null; times: number },
+  now: Date = new Date(),
+): string {
+  const day = meetingDayLabel(item.first_start_time, now);
+  const parts = [
+    day ? `Tabled from ${day}` : "",
+    item.times > 1 ? `${ordinal(item.times)} time` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+export function meetingSectionLabel(key: MeetingSectionKey): string {
+  return MEETING_SECTIONS.find((section) => section.key === key)?.label ?? key;
+}
+
+/** "30 for, 2 against, 1 abstaining", only the counts the meeting recorded. */
+export function meetingVoteLine(vote: MeetingVote | null): string {
+  if (!vote) return "";
+  return `${vote.for} for, ${vote.against} against, ${vote.abstain} abstaining`;
+}
+
+/**
+ * The type an event's name suggests, so "Exec meeting" opens on Exec. Only a
+ * starting point; the officer picks. A name that says no type is Other with
+ * no label, never Chapter: Chapter minutes read the last chapter meeting's
+ * action items, so "Ben Cunningham Meeting" filed as Chapter carried fifteen
+ * of them in (Paul, 2026-11-19).
+ */
+export function guessMeetingType(eventName: string): MeetingType {
+  const name = eventName.toLowerCase();
+  if (/\bexec|executive|e-board|eboard|officer/.test(name)) return "exec";
+  if (/committee|\bchair/.test(name)) return "committee";
+  if (/\bchapters?\b|\bgeneral (body )?meeting\b|\bgb?m\b/.test(name)) {
+    return "chapter";
+  }
+  return "other";
+}
+
+/** `2026-11-09` for the calendar day `value` falls on where the reader is. */
+export function meetingLocalDay(value: string): string {
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** The event's way into its minutes: one row, on the event sheet and screen. */
+export const MEETING_ENTRY_COPY = {
+  label: "Minutes",
+  checking: "Checking",
+  none: "Nobody has written them yet",
+  posted: "Posted",
+  open: "Open minutes",
+  write: "Write minutes",
+  record: "Record minutes",
+  alreadyStartedTitle: "These minutes are already started",
+  alreadyStartedBody:
+    "Someone else started minutes for this meeting. They show here once they are posted.",
+  startFailed: "Couldn't start the minutes",
+} as const;
+
+/**
+ * What minutes started with no meeting are called until they are linked to
+ * one (Paul, 2026-11-20). The row says "No meeting" beside it.
+ */
+export const MINUTES_WITHOUT_MEETING_NAME = "Minutes";
+
+/**
+ * Where a draft stands, in one word on the list row and the event card
+ * (Paul, 2026-11-20: an untouched draft isn't started; "Drafting" only once
+ * something is in it, and say who is recording). Posted minutes have none.
+ */
+export type MinutesDraftState = "recording" | "drafting" | "notStarted";
+
+export function minutesDraftState(minutes: {
+  status: string;
+  started?: boolean;
+  recording_by?: string | null;
+}): MinutesDraftState | null {
+  if (minutes.status !== "draft") return null;
+  if (minutes.recording_by) return "recording";
+  return minutes.started === false ? "notStarted" : "drafting";
+}
+
+/**
+ * The draft's state in words. `who` is the person it is about, named when
+ * it isn't the reader: the recorder while recording, else the author.
+ */
+export function minutesDraftStateLabel(
+  state: MinutesDraftState,
+  who: string | null,
+): string {
+  switch (state) {
+    case "recording":
+      return who ? `${who} is recording` : "Recording";
+    case "drafting":
+      return who ? `${who} is drafting` : "Drafting";
+    case "notStarted":
+      return who ? `Not started · ${who}` : "Not started";
+  }
+}
+
+/**
+ * Whom a draft's state names for this reader: the member recording it, else
+ * its author, and nobody when that is the reader (their own reads "Drafting",
+ * "Recording"). Posted minutes name nobody.
+ */
+export function minutesStateWho(
+  minutes: {
+    status: string;
+    created_by: string | null;
+    recording_by?: string | null;
+  },
+  viewerId: string | null | undefined,
+  nameFor: (userId: string) => string | null | undefined,
+): string | null {
+  if (minutes.status !== "draft") return null;
+  const about = minutes.recording_by ?? minutes.created_by;
+  if (!about || about === viewerId) return null;
+  return nameFor(about) ?? null;
+}
+
+/**
+ * The event row's line for a member who can't open the minutes while
+ * someone records them ("Winston Hewitt is recording"; Paul, 2026-11-20),
+ * from `GET /v1/meetings/live-recordings`, or null when nobody is.
+ */
+export function liveRecordingLine(
+  live: readonly { event_id: string; user_id: string }[] | null | undefined,
+  eventId: string,
+  nameFor: (userId: string) => string | null | undefined,
+): string | null {
+  const row = live?.find((entry) => entry.event_id === eventId);
+  if (!row) return null;
+  return minutesDraftStateLabel("recording", nameFor(row.user_id) ?? null);
+}
+
+/**
+ * New minutes, the same on web and phone (Paul, 2026-11-20: the sheet "says
+ * meeting like 13 times, and it's narrating instead of indicating"): one
+ * list of meetings, each row saying where it stands, and No meeting to
+ * write or record now and link one later.
+ */
+export const MINUTES_START_COPY = {
+  heading: "New minutes",
+  pick: "Which meeting?",
+  onNow: "On now",
+  /** A meeting someone else already has minutes for, shown but not picked. */
+  hasMinutes: "Has minutes",
+  noMeeting: "No meeting",
+  noMeetingDetail: "Link one later",
+} as const;
+
+/**
+ * The minutes page's first meta line: "Chapter meeting, Tuesday, November
+ * 10 at 11:21 PM", or "No meeting, ..." for minutes not yet linked to one.
+ */
+export function minutesMetaHead(
+  minutes: { event_id: string | null; event_start_time: string },
+  typeLabel: string,
+): string {
+  const when = meetingWhenLabel(minutes.event_start_time);
+  return minutes.event_id
+    ? `${typeLabel} meeting, ${when}`
+    : `${MINUTES_START_COPY.noMeeting}, ${when}`;
+}
+
+/** The longest the event card's gist runs before it is cut. */
+const MINUTES_GIST_MAX = 140;
+
+/**
+ * An event's minutes in two lines (the event's Minutes card, web and phone):
+ * where they stand and what they hold, then the TL;DR's first line, which
+ * the list row carries as `gist`.
+ */
+export function eventMinutesLines(
+  minutes: {
+    status: "draft" | "posted";
+    posted_at: string | null;
+    decision_count: number;
+    action_item_count: number;
+    gist?: string | null;
+    started?: boolean;
+    recording_by?: string | null;
+  },
+  /** Whom a draft's state names (`minutesDraftStateLabel`); null for the reader. */
+  who: string | null = null,
+): { status: string; gist: string | null } {
+  const draftState = minutesDraftState(minutes);
+  const stand = draftState
+    ? minutesDraftStateLabel(draftState, who)
+    : minutes.posted_at
+      ? `${MEETING_ENTRY_COPY.posted} ${meetingDayLabel(minutes.posted_at)}`
+      : MEETING_ENTRY_COPY.posted;
+  const status = [
+    stand,
+    minutes.decision_count
+      ? MEETING_LIST_COPY.decisions(minutes.decision_count)
+      : null,
+    minutes.action_item_count
+      ? MEETING_LIST_COPY.actionItems(minutes.action_item_count)
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return { status, gist: minutes.gist ?? null };
+}
+
+/** One tag on a Minutes list row, and which kind of chip draws it. */
+export interface MinutesRowTag {
+  key:
+    | MinutesDraftState
+    | "noMeeting"
+    | "recorded"
+    | "decisions"
+    | "actionItems";
+  label: string;
+}
+
+/**
+ * A Minutes list row's tags, worked out from the minutes and never typed,
+ * in the order both apps draw them (#5680): where a draft stands, in one
+ * tag that names whose it is when it isn't the reader's ("Shawn Klein is
+ * drafting", "Winston Hewitt is recording", "Not started"; Paul,
+ * 2026-11-20, changing "Draft" plus a second "Shawn Klein's draft" tag),
+ * No meeting for minutes not linked to one yet, Recorded, then how many
+ * decisions and action items.
+ */
+export function minutesRowTags(
+  row: {
+    status: string;
+    event_id?: string | null;
+    started?: boolean;
+    recording_by?: string | null;
+    recorded: boolean;
+    decision_count: number;
+    action_item_count: number;
+  },
+  /** Whom the draft's state names; null when it is the reader. */
+  who?: string | null,
+): MinutesRowTag[] {
+  const state = minutesDraftState(row);
+  const tags: (MinutesRowTag | null)[] = [
+    state
+      ? { key: state, label: minutesDraftStateLabel(state, who ?? null) }
+      : null,
+    row.status === "draft" && row.event_id === null
+      ? { key: "noMeeting", label: MEETING_LIST_COPY.noMeeting }
+      : null,
+    row.recorded
+      ? { key: "recorded", label: MEETING_LIST_COPY.recorded }
+      : null,
+    row.decision_count > 0
+      ? {
+          key: "decisions",
+          label: MEETING_LIST_COPY.decisions(row.decision_count),
+        }
+      : null,
+    row.action_item_count > 0
+      ? {
+          key: "actionItems",
+          label: MEETING_LIST_COPY.actionItems(row.action_item_count),
+        }
+      : null,
+  ];
+  return tags.filter((tag): tag is MinutesRowTag => tag !== null);
+}
+
+/** The TL;DR's first line, its bullet taken off and cut to a line or two. */
+export function minutesGist(tldr: string | null | undefined): string | null {
+  const first = (tldr ?? "")
+    .split("\n")
+    .map((line) => line.replace(/^\s*(?:[-*\u2022]\s+)?/, "").trim())
+    .find(Boolean);
+  if (!first) return null;
+  if (first.length <= MINUTES_GIST_MAX) return first;
+  const cut = first.slice(0, MINUTES_GIST_MAX);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > MINUTES_GIST_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}\u2026`;
+}
+
+/** The list of a chapter's minutes. */
+export const MEETING_LIST_COPY = {
+  title: "Minutes",
+  /**
+   * Meetings, tied to their events (Paul, 2026-11-19), as one timeline
+   * (Paul, 2026-11-20; `minutesTimeline`): the next meeting on top, then
+   * every past meeting at its date, a meeting that ended with no minutes
+   * among them. "Write minutes", not "Start": the meeting already happened.
+   */
+  writeMinutes: "Write minutes",
+  /** An officer settles a meeting that had none: it stops asking. */
+  markNoMinutes: "No minutes for this meeting",
+  /** The tag on a meeting marked so. */
+  noMinutes: "No minutes",
+  /** Takes the mark off: the meeting asks for minutes again. */
+  undoNoMinutes: "Ask for minutes again",
+  markedNoMinutes: (name: string) => `${name} marked as no minutes`,
+  noMinutesFailed: "Couldn't save that",
+  undo: "Undo",
+  nextUp: "Next up",
+  openEvent: "Open event",
+  rowActions: (name: string) => `More for ${name}`,
+  none: "Minutes show here once a secretary posts them.",
+  loadFailedTitle: "Couldn't load the minutes",
+  loadFailedBody: "Check your connection and try again.",
+  /** Minutes started with no meeting, until they are linked to one. */
+  noMeeting: "No meeting",
+  /** The list's grouping and finding (#5290). */
+  search: "Search minutes",
+  allTypes: "All",
+  types: "Meeting types",
+  series: "Series",
+  nothingMatches: "No minutes match.",
+  newMinutes: "New minutes",
+  newMinutesHint: "Records a meeting, or starts minutes to type.",
+  recorded: "Recorded",
+  decisions: (count: number) =>
+    count === 1 ? "1 decision" : `${count} decisions`,
+  actionItems: (count: number) =>
+    count === 1 ? "1 action item" : `${count} action items`,
+  minutesCount: (count: number) =>
+    count === 1 ? "1 meeting" : `${count} meetings`,
+  lastOn: (day: string) => `last ${day}`,
+  /** The series screen (#5290). */
+  seriesActions: "Open action items",
+  seriesActionsFrom: (day: string) => `from ${day}`,
+  seriesActionsNone: "Nothing open from these meetings.",
+  noOwner: "Nobody named",
+  /** Present, Late and Excused: who checked in to the meeting's event. */
+  present: "Present",
+  late: "Late",
+  excused: "Excused",
+} as const;
+
+/** Reading and posting minutes. */
+export const MEETING_COPY = {
+  /** The row that opens posted minutes' transcript (#5410). */
+  transcript: "Transcript",
+  /** Its own screen, opened for a transcript that has since gone. */
+  /** Web: opens the transcript in a new tab. */
+  openTranscript: "Open transcript",
+  transcriptHint: "Opens the transcript on its own screen.",
+  transcriptMissing: "There's no transcript for these minutes.",
+  missingTitle: "These minutes aren't here",
+  missingBody: "They were deleted, or they aren't shared with you.",
+  loadFailedTitle: "Couldn't load the minutes",
+  loadFailedBody: "Check your connection and try again.",
+  nothingWritten: "Nothing has been written in these minutes yet.",
+  draftBadge: "Draft",
+  posted: (day: string) => `Posted ${day}`,
+  attendeesGone: "The event is gone, so its check-ins are too.",
+  attendeesNone:
+    "Nobody has checked in yet. Who checked in to the event shows here.",
+  post: "Post minutes",
+  posted_toast: "Minutes posted",
+  postFailed: "Couldn't post the minutes",
+  stale:
+    "Someone else saved these minutes since you opened them. Copy anything you want to keep, then load their version.",
+  loadTheirs: "Load their version",
+  tryAgain: "Try again in a moment.",
+  /**
+   * Where the chapter doesn't draft minutes from notes, the phone's note is
+   * the minutes' Summary (#5288); the line under it opens the section editor
+   * for the rest (#4412).
+   */
+  summaryPlaceholder: "Type what was said and decided.",
+  editAllSections: "Add the TL;DR, decisions and action items",
+  /**
+   * The TL;DR's box (#5523): a draft fills it; without drafting the
+   * minute-taker writes it, as they write the Summary.
+   */
+  tldrPlaceholder:
+    "Two or three short lines for every member: the gist. Dates, decisions and action items have lists of their own.",
+  /** A decision's short outcome, bold over its detail (#5562). */
+  decisionHeadline: "Headline (optional)",
+  decisionHeadlinePlaceholder: "The outcome in a few words",
+  /** Coming up, written by hand (#5562). */
+  dateDay: "Day",
+  dateWhat: "What happens",
+  dateWhatPlaceholder: "What happens that day",
+  /** Under a Coming up row with words and no day: it is not kept without one. */
+  dateNeedsDay: "Pick a day, or this line is not kept.",
+  removeDate: "Remove date",
+  addDate: "Add a date",
+  saveFailed: "Not saved yet. It tries again as you type.",
+  suggestedTasks: "Suggested tasks",
+} as const;
+
+/**
+ * Marking who was at a meeting by hand, when nobody checked in (Paul,
+ * 2026-11-16; `events.md` § Marking attendance by hand).
+ */
+export const MEETING_ATTENDANCE_COPY = {
+  title: "Who was there",
+  body: "This fills in the event's attendance for anyone not marked yet. Officer marks don't add points.",
+  statusLabel: "Mark them as",
+  find: "Find a member",
+  pickEveryone: "Everyone not marked yet",
+  pickShown: (count: number) => `All ${count} shown`,
+  alreadyMarked: "Marked",
+  save: (count: number, status: "PRESENT" | "LATE" | "EXCUSED") => {
+    const as =
+      status === "PRESENT" ? "present" : status === "LATE" ? "late" : "excused";
+    return count === 0 ? `Mark ${as}` : `Mark ${count} ${as}`;
+  },
+  marked: (count: number) =>
+    count === 1 ? "Marked 1 member" : `Marked ${count} members`,
+  notInvited: (count: number) =>
+    count === 1
+      ? "1 wasn't invited to this event, so they weren't marked."
+      : `${count} weren't invited to this event, so they weren't marked.`,
+  failed: "Couldn't mark attendance",
+} as const;
+
+/** Drafting minutes from an officer's notes (`meetings.md` § Drafting from notes). */
+export const MEETING_NOTES_COPY = {
+  heading: "Your notes",
+  placeholder: "Paste or type what you wrote down during the meeting.",
+  draft: "Draft minutes",
+  draftAgain: "Draft again",
+  stop: "Stop",
+  useDraft: "Use the draft",
+  clear: "Clear notes",
+  empty: "Paste or type your notes first.",
+  tooLong: (max: number, length: number) =>
+    `Notes can be up to ${max.toLocaleString("en-US")} characters, and these are ${length.toLocaleString("en-US")}. Shorten them, or draft the meeting in two parts.`,
+  consentCheckFailed: "Couldn't check your AI choice. Try again in a moment.",
+  startFailed:
+    "Couldn't start the draft. Your notes are still in the box, so try again.",
+  stopFailed: "Couldn't stop the draft. Try again.",
+  clearFailed: "Couldn't clear the notes. Try again.",
+  useFailed: "Couldn't use the draft. Try again.",
+  replaceTitle: "Replace what's written?",
+  replaceBodyDraft:
+    "The draft replaces the sections below with what it finds in your notes. Who checked in stays as it is.",
+  replaceBodyUse:
+    "The draft replaces the sections below with what it found in your notes. Who checked in stays as it is.",
+  clearTitle: "Clear your notes?",
+  clearBody:
+    "The notes are removed for good. What is written in the minutes below stays.",
+  /** Web, where clearing the notes also removes an uploaded recording. */
+  clearBodyRecording:
+    "The notes, the recording and its transcript are removed for good. What is written in the minutes below stays.",
+  drafting: "Drafting minutes from your notes",
+  waiting:
+    "The minutes changed while the draft was being written, so it wasn't put in.",
+  idle: "Your notes go to an AI provider to write the draft. Nothing is posted until you post it.",
+  toFillIn: "To fill in",
+  /** Under the questions: what answering them does. */
+  toFillInHint:
+    "Answer what you can and the draft is written again with your answers. Leave the rest blank.",
+  answerPlaceholder: "Your answer",
+  updateDraft: "Update the draft",
+  /** The block a set of answers adds to the officer's notes. */
+  answersHeading:
+    "Answers from the minutes author to the draft's open questions (these correct anything above):",
+  hide: "Hide",
+  leftOut: (count: number) =>
+    count === 1
+      ? "One drafted line was left out because nothing in your notes backed it."
+      : `${count} drafted lines were left out because nothing in your notes backed them.`,
+} as const;
+
+/**
+ * Several members taking notes on one meeting (`meetings.md` § Several
+ * note-takers, #4935). Web and phone say the same words.
+ */
+export const MEETING_NOTE_TAKERS_COPY = {
+  heading: "Notes for this meeting",
+  /** The author's draft button once anyone else's notes or a transcript are in. */
+  draftAll: "Draft from all notes",
+  draftingAll: "Drafting minutes from everyone's notes",
+  saved: "Saved",
+  saving: "Saving…",
+  saveFailed: "Couldn't save your notes. Keep this page open and try again.",
+  read: "Read",
+  hide: "Hide",
+  remove: "Remove",
+  removeTitle: (name: string) => `Remove ${name} as a note-taker?`,
+  removeBody:
+    "Their notes are deleted, and so is a draft written from them. What is in the minutes stays.",
+  add: "Add a note-taker",
+  addLabel: "Member",
+  addPlaceholder: "Pick a member",
+  addHint:
+    "Anyone invited to this meeting can take notes. They're told, and their notes go into the draft.",
+  addFailed: "Couldn't add them. Try again.",
+  notInAudience:
+    "They aren't invited to this meeting, so they can't take notes on it.",
+  author: "Author",
+  you: "You",
+  added: "Added",
+  noNotesYet: "Nothing written yet",
+  lines: (count: number) => (count === 1 ? "1 line" : `${count} lines`),
+  recording: "Recording",
+  /** How the phone sheet names the transcript among what a draft reads. */
+  recordingSource: "the recording",
+  /** The phone's one line saying what else the draft reads. */
+  alsoReads: (sources: readonly string[]) =>
+    `The draft also reads ${sources.length === 1 ? sources[0] : `${sources.slice(0, -1).join(", ")} and ${sources[sources.length - 1]}`}.`,
+  recordingWhat: (speakers: number | null) =>
+    speakers && speakers > 1
+      ? `Transcript, ${speakers} speakers`
+      : "Transcript",
+  heldConsent: "Left out until they turn on Frapp AI",
+  /** A note-taker's own view, on someone else's minutes. */
+  takeNotes: "Take notes",
+  takingNotes: "Taking notes",
+  noteTakerTitle: (event: string) => `Your notes on ${event}`,
+  noteTakerHint: (author: string) =>
+    `Only you and ${author}, who's writing the minutes, can read these. They go into the draft with everyone else's notes.`,
+  noteTakerOthers: (count: number) =>
+    count === 0
+      ? "Nobody else is taking notes yet."
+      : count === 1
+        ? "1 other person is taking notes."
+        : `${count} other people are taking notes.`,
+  noteTakerConsent:
+    "Turn on Frapp AI so your notes go into the draft. Until then they're saved here but left out.",
+  leave: "Stop taking notes",
+  leaveTitle: "Stop taking notes?",
+  leaveBody: "Your notes are deleted, and so is a draft written from them.",
+  posted: "These minutes are posted, so notes are closed.",
+  missing:
+    "These notes aren't here any more, or you can't take notes on this meeting.",
+  /** The Meetings page's list for a note-taker. */
+  listHeading: "Taking notes",
+  listItem: (author: string) => `Minutes by ${author}`,
+  /** Notes disagreed (#4935). */
+  disagreed: "Notes disagreed",
+  settledBy: {
+    recording: "Settled by the recording",
+    authority: "Settled by who wrote it",
+    author: "You picked",
+  },
+  youDecide: "You decide",
+  tieBody:
+    "Neither the recording nor who wrote it settles this, so it isn't in the minutes yet.",
+  takeVersion: (from: string, mine = false) =>
+    mine ? "Use yours instead" : `Use ${from}'s instead`,
+  pickVersion: (from: string, mine = false) =>
+    mine ? "Use yours" : `Use ${from}'s`,
+  inMinutes: "In the minutes",
+  chooseFailed: "Couldn't change it. Reload and try again.",
+  from: (from: string, mine = false) =>
+    mine
+      ? "From your notes"
+      : from === "Recording"
+        ? "From the recording"
+        : `From ${from}'s notes`,
+  /**
+   * Linking a meeting (#4935; Paul, 2026-11-20: minutes can start with no
+   * meeting and be linked later). A state, not an explanation: the minutes
+   * say they have no meeting and offer the link; Post is dimmed until then.
+   */
+  noEvent: "No meeting",
+  linkEvent: "Link a meeting",
+  linkPick: "Which meeting?",
+  linkNone: "No recent meetings without minutes.",
+  linkMake: "Add it to the calendar",
+  linkFailed: "Couldn't link the meeting. Try again.",
+  /** Why Post is dimmed on minutes with no meeting. */
+  postNeedsMeeting: "Link a meeting first",
+} as const;

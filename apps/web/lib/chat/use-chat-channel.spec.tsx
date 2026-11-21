@@ -77,6 +77,7 @@ const mocks = vi.hoisted(() => {
     clearAfterSend,
     noTypingUsers,
     getTypingUsers: vi.fn((): readonly string[] => noTypingUsers),
+    isUnavailable: vi.fn<(channelId: string) => boolean>(() => false),
     subscribeStatus: vi.fn((cb: (status: "live") => void) => {
       statusListeners.add(cb);
       return () => {
@@ -89,7 +90,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
   useFrappClient: () => mocks.apiClient,
 }));
 
@@ -129,6 +131,7 @@ vi.mock("@repo/chat-core/realtime-manager", () => ({
     unsubscribe: vi.fn(),
     subscribeStatus: mocks.subscribeStatus,
     getTypingUsers: mocks.getTypingUsers,
+    isUnavailable: mocks.isUnavailable,
     emitTyping: vi.fn(),
   },
 }));
@@ -954,6 +957,44 @@ describe("useChatChannel — a send the outbox refuses rejects (#1728)", () => {
   });
 });
 
+describe("useChatChannel — a channel Realtime refused (#5765)", () => {
+  beforeEach(() => {
+    mocks.GET.mockReset();
+    mocks.GET.mockResolvedValue({ data: [], error: undefined });
+    mocks.isUnavailable.mockReset();
+    mocks.isUnavailable.mockImplementation(() => false);
+  });
+
+  afterEach(() => {
+    client?.clear();
+  });
+
+  it("reports it once the manager says so, and only for that channel", async () => {
+    // Every render's answer, so one stale render can't hide behind the last.
+    const renders: { id: string; unavailable: boolean }[] = [];
+    const view = renderHook(
+      ({ id }: { id: string }) => {
+        client = useQueryClient();
+        const result = useChatChannel(id);
+        renders.push({ id, unavailable: result.unavailable });
+        return result;
+      },
+      { wrapper, initialProps: { id: CHANNEL_ID } },
+    );
+    expect(view.result.current.unavailable).toBe(false);
+
+    mocks.isUnavailable.mockImplementation((id) => id === CHANNEL_ID);
+    act(() => mocks.pingStatus());
+    expect(view.result.current.unavailable).toBe(true);
+
+    // Never carried to the next channel, not even for a render.
+    view.rerender({ id: "another-channel" });
+    const next = renders.filter((r) => r.id === "another-channel");
+    expect(next.length).toBeGreaterThan(0);
+    expect(next.every((r) => !r.unavailable)).toBe(true);
+  });
+});
+
 describe("useChatChannel — the typing line (#1004)", () => {
   beforeEach(() => {
     mocks.GET.mockReset();
@@ -1017,5 +1058,151 @@ describe("useChatChannel — the typing line (#1004)", () => {
     view.rerender({ channelId: null });
 
     expect(view.result.current.typingUsers).toEqual([]);
+  });
+});
+
+/*
+  #3912: chat-core writes a task, hours entry, points adjustment or event
+  through the API client, so the page the record lands on never hears of it.
+  Chat sits beside those pages (#3779), so the stale page is in view.
+*/
+describe("useChatChannel — a record written from chat refreshes its page (#3912)", () => {
+  const CREATED = {
+    data: { card_posted: true },
+    error: undefined,
+    response: { status: 201 },
+  };
+  const REFUSED = {
+    data: undefined,
+    error: { message: "Forbidden" },
+    response: { status: 403 },
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    onlineManager.setOnline(true);
+    mocks.GET.mockReset();
+    mocks.GET.mockResolvedValue({ data: [], error: undefined });
+    mocks.POST.mockReset();
+  });
+
+  afterEach(() => {
+    // `QueryProvider`'s client is a singleton, so a spy left on it would
+    // carry one test's calls into the next.
+    vi.restoreAllMocks();
+    client?.clear();
+  });
+
+  it("refreshes the Tasks board after a task, and the Service page after a lost hours answer", async () => {
+    const { result } = await mountChannel();
+    const invalidate = vi.spyOn(client!, "invalidateQueries");
+    mocks.POST.mockResolvedValueOnce(CREATED).mockResolvedValueOnce(
+      LOST_RESPONSE,
+    );
+
+    await act(async () => {
+      await result.current.postTask(CHANNEL_ID, {
+        title: "Sweep the porch",
+        assignee_id: "user-2",
+        due_date: "2026-11-12",
+      });
+      // Unconfirmed reads as ok: the entry may exist.
+      await result.current.postHours(CHANNEL_ID, {
+        date: "2026-11-09",
+        duration_minutes: 90,
+        description: "Food bank",
+      });
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["tasks"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["service-entries"] });
+  });
+
+  it("refreshes the Points page after /points, even unconfirmed", async () => {
+    const { result } = await mountChannel();
+    const invalidate = vi.spyOn(client!, "invalidateQueries");
+
+    const outcome = await grantLostResponse(() => result.current);
+
+    expect(outcome).toMatchObject({ ok: true, unconfirmed: true });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
+  });
+
+  it("refreshes the Points page after the + menu's Points form", async () => {
+    const { result } = await mountChannel();
+    const invalidate = vi.spyOn(client!, "invalidateQueries");
+    mocks.POST.mockResolvedValueOnce(CREATED);
+
+    await act(async () => {
+      await result.current.postPointsAdjustment(CHANNEL_ID, {
+        target_user_id: "user-2",
+        amount: 10,
+        category: "MANUAL",
+        reason: "Rush help",
+      });
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
+  });
+
+  it("refreshes the Points page after Retry on an unconfirmed /points", async () => {
+    const { result } = await mountChannel();
+    await grantLostResponse(() => result.current);
+    const row = await parkedRow(() => result.current);
+    const invalidate = vi.spyOn(client!, "invalidateQueries");
+    mocks.POST.mockResolvedValueOnce({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 200 },
+    });
+
+    await act(async () => {
+      await result.current.retryUnconfirmed(row._replay!);
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["points"] });
+  });
+
+  it("refreshes the Tasks board after a typed /task", async () => {
+    const { result } = await mountChannel();
+    const invalidate = vi.spyOn(client!, "invalidateQueries");
+    mocks.POST.mockResolvedValueOnce(CREATED);
+
+    let outcome: Awaited<ReturnType<Channel["dispatchSlash"]>> | undefined;
+    await act(async () => {
+      outcome = await result.current.dispatchSlash(
+        {
+          name: "task",
+          description: "Create a task card and assign it",
+          requiredModule: "tasks",
+          implemented: true,
+        } as SlashCommand,
+        `"Sweep the porch" @bobby 2099-03-15 10`,
+        null,
+        () => ({ user_id: "user-2", display_name: "Bobby Member" }),
+      );
+    });
+
+    expect(outcome).toMatchObject({ ok: true });
+    expect(mocks.POST).toHaveBeenCalledWith("/v1/tasks", expect.anything());
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["tasks"] });
+  });
+
+  it("refreshes nothing after a refusal", async () => {
+    const { result } = await mountChannel();
+    const invalidate = vi.spyOn(client!, "invalidateQueries");
+    mocks.POST.mockResolvedValueOnce(REFUSED);
+
+    let outcome: Awaited<ReturnType<Channel["postTask"]>> | undefined;
+    await act(async () => {
+      outcome = await result.current.postTask(CHANNEL_ID, {
+        title: "Sweep the porch",
+        assignee_id: "user-2",
+        due_date: "2026-11-12",
+      });
+    });
+
+    expect(outcome).toMatchObject({ ok: false });
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["tasks"] });
   });
 });

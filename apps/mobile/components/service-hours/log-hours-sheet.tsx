@@ -7,11 +7,11 @@ import {
 } from "@gorhom/bottom-sheet";
 import { formatBytes } from "@repo/formatting";
 import {
+  formatServiceHours,
   useCreateServiceEntry,
   useRequestServiceProofUploadUrl,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import type { DispatchResult, HoursInput } from "@repo/chat-core/dispatch";
 import { SERVICE_DESCRIPTION_MAX_LENGTH } from "@repo/validation";
 import { FilterChips } from "@/components/filter-chips";
 import { CameraGlyph } from "@/components/service-hours/camera-glyph";
@@ -24,7 +24,7 @@ import {
   SheetScrim,
   sheetFieldStyles,
   useSheetBackgroundStyle,
-  useSheetVisit,
+  useGuardedSheetRef,
   SheetBackToClose,
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
@@ -33,7 +33,7 @@ import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
-import { formatHours } from "@/lib/more/profile";
+import { useKeptSheetDraft, useKeptSheetOpening } from "@/lib/kept-sheet-draft";
 import {
   DEFAULT_DURATION_MINUTES,
   DEFAULT_SERVICE_DATE_CHOICE,
@@ -149,30 +149,35 @@ export interface LogHoursSheetProps {
    */
   onLogged?: () => void;
   /**
-   * Set when the sheet was opened from a chat's + (#3865): the entry goes
-   * through chat-core's `postHours` into that channel, the call web's
-   * `/hours log` makes, with the proof the one-liner can't attach. A refusal
-   * keeps the entry, as a log from elsewhere does; anything else is an entry
-   * that may exist (the route doesn't dedupe), so the sheet closes and hands
-   * the result to `onPosted` to say what it carries.
+   * Keeps the entry past this sheet's host, under this name (#4593): the
+   * Service hours screen's sheet goes when the member goes back, and its
+   * entry is there the next time they log from that screen.
    */
-  postToChannel?: (input: HoursInput) => Promise<DispatchResult>;
-  onPosted?: (result: DispatchResult) => void;
+  keptDraft?: string;
 }
 
+/** What a kept entry holds (`keptDraft`). */
+type KeptEntry = {
+  description: string;
+  minutes: number;
+  dateChoice: ServiceDateChoice;
+  proof: { image: PickedImage; storagePath?: string } | null;
+};
+
 export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
-  function LogHoursSheet({ now, onLogged, postToChannel, onPosted }, ref) {
+  function LogHoursSheet({ now, onLogged, keptDraft }, ref) {
     const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
     const styles = createStyles(tokens, accent);
     const backgroundStyle = useSheetBackgroundStyle();
     const createEntry = useCreateServiceEntry();
-    // `postToChannel` isn't a mutation, so its flight is held here.
-    const [posting, setPosting] = useState(false);
     const requestProofUploadUrl = useRequestServiceProofUploadUrl();
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
 
     /**
      * s20 has **no outbox**. A submit posted with no network is simply lost,
@@ -186,14 +191,20 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
 
     const presets = useMemo(() => serviceDatePresets(now), [now]);
 
-    const [description, setDescription] = useState("");
-    const [minutes, setMinutes] = useState(DEFAULT_DURATION_MINUTES);
+    // The entry kept from the screen's last visit (`keptDraft`), if any.
+    const opening = useKeptSheetOpening<KeptEntry>(keptDraft ?? null);
+    const [description, setDescription] = useState(
+      () => opening?.description ?? "",
+    );
+    const [minutes, setMinutes] = useState(
+      () => opening?.minutes ?? DEFAULT_DURATION_MINUTES,
+    );
     // The chip as the entry holds it, read against `now` below: "Today" and
     // "Yesterday" re-derive from the day the entry is filed, and a weekday
     // chip holds the date it named, shown under whichever chip resolves to it
     // now, or as Today once none does (see the header).
     const [dateChoice, setDateChoice] = useState<ServiceDateChoice>(
-      DEFAULT_SERVICE_DATE_CHOICE,
+      () => opening?.dateChoice ?? DEFAULT_SERVICE_DATE_CHOICE,
     );
     const { date, daysAgo } = resolveServiceDate(dateChoice, now);
     const [descriptionFocused, setDescriptionFocused] = useState(false);
@@ -227,7 +238,13 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
     const [proof, setProof] = useState<{
       image: PickedImage;
       storagePath?: string;
-    } | null>(null);
+    } | null>(() => opening?.proof ?? null);
+    const kept = useKeptSheetDraft<KeptEntry>(
+      keptDraft ?? null,
+      { description, minutes, dateChoice, proof },
+      JSON.stringify([description, minutes, dateChoice, proof?.image.uri]),
+      opening,
+    );
     const [picking, setPicking] = useState(false);
     // Set the moment the row opens the library, so a second tap before the
     // picker draws doesn't launch another (Android rejects the second launch).
@@ -242,7 +259,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
      */
     const [receiptRequired, setReceiptRequired] = useState(false);
 
-    const pending = createEntry.isPending || uploading || posting;
+    const pending = createEntry.isPending || uploading;
     const canSubmit =
       description.trim().length > 0 &&
       writeBlockedReason === null &&
@@ -253,6 +270,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
 
     /** Gives the entry up: Cancel, and a save that filed it. */
     const clearEntry = () => {
+      kept.clear();
       setDescription("");
       setMinutes(DEFAULT_DURATION_MINUTES);
       setDateChoice(DEFAULT_SERVICE_DATE_CHOICE);
@@ -305,6 +323,9 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
     const submit = () => {
       if (!canSubmit || sending.current) return;
       sending.current = true;
+      // Out of the kept store until it lands or fails, so the screen reopened
+      // mid-save can't send it twice.
+      kept.hold();
       setSubmitFailed(false);
       setProofError(null);
       const sentFrom = visit();
@@ -334,6 +355,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       setUploading(false);
       if (put.status === "refused") {
         sending.current = false;
+        kept.release();
         // Told only to the visit it was sent from, like the create's outcome.
         if (!isSameVisit(sentFrom)) return;
         if (put.final) setRefusal(put.reason);
@@ -358,24 +380,24 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       sentFrom: number,
     ) => {
       const handlers = {
-        onSuccess: (posted?: DispatchResult) => {
+        onSuccess: () => {
           sending.current = false;
           // The confirming action (`spec/ui/mobile/README.md` § Native-feel
-          // rules), felt once the entry is filed; not for a lost answer,
-          // whose entry may not exist.
-          if (!posted?.unconfirmed) successHaptic();
+          // rules), felt once the entry is filed.
+          successHaptic();
           clearEntry();
           onLogged?.();
           // A sheet closed and reopened since is the member's new visit,
           // and the save doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
-          if (posted) onPosted?.(posted);
         },
         onError: (error: unknown) => {
           sending.current = false;
-          // The API turned the held path down (another chapter's, or no
-          // object behind it): drop it, so the next Submit uploads the photo
-          // again instead of resending a path that can't win. Whatever visit
+          kept.release();
+          // The API turned the held path down (another chapter's, no object
+          // behind it, or on another member's entry): drop it, so the next
+          // Submit uploads the photo again instead of resending a path that
+          // can't win. Whatever visit
           // is on screen, since the path is wrong in all of them.
           const sentPath = body.proof_path;
           if (sentPath && proofPathRefusedOf(error)) {
@@ -406,31 +428,16 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
           setSubmitFailed(true);
         },
       };
-      if (!postToChannel) {
-        createEntry.mutate(body, {
-          onSuccess: () => handlers.onSuccess(),
-          onError: handlers.onError,
-        });
-        return;
-      }
-      setPosting(true);
-      void postToChannel(body)
-        .catch((cause: unknown): DispatchResult => ({
-          ok: false,
-          error: "Couldn't log hours",
-          cause,
-        }))
-        .then((result) => {
-          setPosting(false);
-          if (!result.ok) {
-            handlers.onError(result.cause ?? new Error(result.error));
-            return;
-          }
-          handlers.onSuccess(result);
-        });
+      // `mutate`'s callbacks don't run once the sheet has unmounted, so an
+      // entry whose save was running when the member left the screen stays
+      // out of the kept store: it is not offered to send twice.
+      createEntry.mutate(body, {
+        onSuccess: () => handlers.onSuccess(),
+        onError: handlers.onError,
+      });
     };
 
-    const hours = formatHours(minutes);
+    const hours = formatServiceHours(minutes);
     const canDecrease = !pending && minutes > DURATION_STEP_MINUTES;
     const canIncrease = !pending && minutes < MAX_DURATION_MINUTES;
     const step = (direction: 1 | -1) =>
@@ -438,7 +445,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
 
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={modalRef}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing
         keyboardBehavior="interactive"

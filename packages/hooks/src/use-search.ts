@@ -8,7 +8,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 export const SEARCH_MIN_QUERY_LENGTH = 3;
 
 /** A source name as it appears in `x-search-timeout-sources` and in the search payload's own keys. */
-export type SearchSource = "backwork" | "events" | "members" | "messages";
+type SearchSource = "backwork" | "events" | "members" | "messages";
 
 /**
  * Search payload plus the per-source timeout signal (spec/behavior/search.md
@@ -112,8 +112,9 @@ export function useSearch(query: string, filters?: SearchFilters) {
       before ?? null,
       has,
     ],
-    queryFn: async (): Promise<SearchResponse<unknown>> => {
+    queryFn: async ({ signal }): Promise<SearchResponse<unknown>> => {
       const { data, error, response } = await client.GET("/v1/search", {
+        signal,
         params: {
           query: {
             q: query,

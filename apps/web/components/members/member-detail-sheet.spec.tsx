@@ -1,9 +1,18 @@
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+  within,
+} from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 // Shared spy so tests can assert the exact mutation payload the sheet sends.
 const updateRolesMutateAsync = vi.fn().mockResolvedValue({});
 const {
+  correctMutateAsync,
   dmMutateAsync,
   memberByUserId,
   memberQueryState,
@@ -12,11 +21,13 @@ const {
   mockCurrentUserId,
   mockCurrentUserLoading,
   mockPermissions,
+  mockPhoneReach,
   mockRoles,
   refetchMember,
   removeMutateAsync,
   rolesState,
 } = vi.hoisted(() => ({
+  correctMutateAsync: vi.fn(),
   // What `useMemberByUserId` answers, per test.
   memberQueryState: {
     data: undefined as Record<string, unknown> | undefined,
@@ -35,11 +46,22 @@ const {
   mockCurrentUserLoading: { current: false },
   mockPermissions: { current: ["*"] as string[] },
   mockRoles: { current: [] as unknown[] | undefined },
+  mockPhoneReach: {
+    current: null as null | {
+      scope: "chapter" | "self";
+      byUserId: Map<string, unknown>;
+    },
+  },
   rolesState: { isError: false, refetch: vi.fn() },
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
+  // The pure reader of the DM response runs for real.
+  dmChannelIdOf: (
+    await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks")
+  ).dmChannelIdOf,
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+  useMemberPhoneReach: () => ({ reach: mockPhoneReach.current }),
   useMemberByUserId: (userId: string) => {
     memberByUserId(userId);
     return {
@@ -56,7 +78,14 @@ vi.mock("@repo/hooks", () => ({
     refetch: rolesState.refetch,
   }),
   useRemoveMember: () => ({ mutateAsync: removeMutateAsync, isPending: false }),
-  useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
+  useUpdateMemberRoles: () => ({
+    mutateAsync: updateRolesMutateAsync,
+    isPending: false,
+  }),
+  useCorrectMemberProfile: () => ({
+    mutateAsync: correctMutateAsync,
+    isPending: false,
+  }),
   useGetOrCreateDm: () => ({ mutateAsync: dmMutateAsync, isPending: false }),
   useMyPermissions: () => ({ data: { permissions: mockPermissions.current } }),
   // The pledge class section (#3939) has its own spec; here it only has to
@@ -89,6 +118,22 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+// Roles and groups have their own spec (`member-assignments.spec.tsx`); here
+// the section only has to sit in the profile's order with the member's ids.
+vi.mock("@/components/members/member-assignments", () => ({
+  MemberAssignments: ({
+    roleIds,
+    editable,
+  }: {
+    roleIds: string[];
+    editable?: boolean;
+  }) => (
+    <section aria-label="Roles and groups" data-editable={String(editable)}>
+      Roles {roleIds.join(",")}
+    </section>
+  ),
+}));
+
 import { MemberDetailSheet } from "./member-detail-sheet";
 
 const baseMember = {
@@ -105,7 +150,10 @@ const baseMember = {
 /** The sheet as chat opens it: a user id, and the profile read answering. */
 function renderProfile(
   member: Record<string, unknown> = baseMember,
-  props: { points?: number | null; onOpenChange?: (open: boolean) => void } = {},
+  props: {
+    points?: number | null;
+    onOpenChange?: (open: boolean) => void;
+  } = {},
 ) {
   memberQueryState.data = member;
   return render(
@@ -118,11 +166,8 @@ function renderProfile(
   );
 }
 
-function openRoleEditor() {
-  fireEvent.click(screen.getByRole("button", { name: "Edit Jane Smith's roles" }));
-}
-
 beforeEach(() => {
+  mockPhoneReach.current = null;
   memberQueryState.data = undefined;
   memberQueryState.isPending = false;
   memberQueryState.isError = false;
@@ -141,7 +186,9 @@ describe("MemberDetailSheet loads by user id (#3726)", () => {
   it("reads the profile by the user id it was opened with", () => {
     renderProfile();
     expect(memberByUserId).toHaveBeenCalledWith("u1");
-    expect(screen.getByRole("heading", { name: "Jane Smith" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Jane Smith" }),
+    ).toBeInTheDocument();
   });
 
   it("draws the directory row it was opened from while the read is in flight", () => {
@@ -154,7 +201,9 @@ describe("MemberDetailSheet loads by user id (#3726)", () => {
         initialMember={baseMember}
       />,
     );
-    expect(screen.getByRole("heading", { name: "Jane Smith" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Jane Smith" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("jane@example.com")).toBeInTheDocument();
   });
 
@@ -168,7 +217,9 @@ describe("MemberDetailSheet loads by user id (#3726)", () => {
         identity={{ name: "Jane Smith", avatarUrl: null }}
       />,
     );
-    expect(screen.getByRole("heading", { name: "Jane Smith" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Jane Smith" }),
+    ).toBeInTheDocument();
   });
 
   it("ignores a seed row that belongs to someone else", () => {
@@ -204,7 +255,7 @@ describe("MemberDetailSheet loads by user id (#3726)", () => {
 });
 
 describe("MemberDetailSheet layout follows mobile's order", () => {
-  it("draws photo, name, class year, Message, roles, email, member since, then custom fields and bio", () => {
+  it("draws photo, name, class year, Message, roles and groups, then phone, email, member since, More details and bio", () => {
     mockRoles.current = [
       { id: "r-member", name: "Member", color: null, display_order: 9 },
       { id: "r-pres", name: "President", color: "#F2994A", display_order: 1 },
@@ -213,10 +264,17 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
       ...baseMember,
       graduation_year: 2027,
       major: "Economics",
+      phone: "(518) 555-0142",
       bio: "Loves a good algorithm.",
       role_ids: ["r-member", "r-pres"],
       custom_fields: [
-        { field_id: "f1", label: "Hometown", type: "text", visibility: "chapter", value: "Boston" },
+        {
+          field_id: "f1",
+          label: "Hometown",
+          type: "text",
+          visibility: "chapter",
+          value: "Boston",
+        },
       ],
     });
 
@@ -224,10 +282,11 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
       screen.getByRole("heading", { name: "Jane Smith" }),
       screen.getByText("Economics · '27"),
       screen.getByRole("button", { name: /Message/ }),
-      screen.getByText("Roles"),
+      screen.getByRole("region", { name: "Roles and groups" }),
+      screen.getByText("(518) 555-0142"),
       screen.getByText("jane@example.com"),
       screen.getByText("Member since"),
-      screen.getByText("Custom fields"),
+      screen.getByRole("button", { name: "More details" }),
       screen.getByText("Loves a good algorithm."),
     ];
     for (let i = 1; i < sequence.length; i += 1) {
@@ -238,48 +297,11 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
     }
   });
 
-  it("draws roles as chips in the chapter's rank, each with its color", () => {
-    mockRoles.current = [
-      { id: "r-member", name: "Member", color: null, display_order: 9 },
-      { id: "r-pres", name: "President", color: "#F2994A", display_order: 1 },
-    ];
-    renderProfile({
-      ...baseMember,
-      role_ids: ["r-member", "r-pres"],
-    });
-
-    const chips = within(
-      screen.getByRole("region", { name: "Roles" }),
-    ).getAllByRole("listitem");
-    expect(chips.map((chip) => chip.textContent)).toEqual([
-      "President",
-      "Member",
-    ]);
-    const dot = chips[0]!.querySelector("span");
-    expect(dot).toHaveStyle({ backgroundColor: "#F2994A" });
-  });
-
-  it("says the roles failed to load, with a retry, rather than claiming none", () => {
-    mockRoles.current = undefined;
-    rolesState.isError = true;
-    renderProfile({ ...baseMember, role_ids: ["r-pres"] });
-    expect(screen.queryByText("No roles yet")).not.toBeInTheDocument();
-    expect(screen.getByText("Couldn't load roles.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(rolesState.refetch).toHaveBeenCalled();
-  });
-
-  it("says so when the member holds no role", () => {
-    renderProfile();
-    expect(screen.getByText("No roles yet")).toBeInTheDocument();
-  });
-
   it("links the email", () => {
     renderProfile();
-    expect(screen.getByRole("link", { name: "jane@example.com" })).toHaveAttribute(
-      "href",
-      "mailto:jane@example.com",
-    );
+    expect(
+      screen.getByRole("link", { name: "jane@example.com" }),
+    ).toHaveAttribute("href", "mailto:jane@example.com");
   });
 
   it("draws points only where the opener has them", () => {
@@ -291,11 +313,39 @@ describe("MemberDetailSheet layout follows mobile's order", () => {
   });
 
   it("flags an unfinished onboarding, and says nothing about a finished one", () => {
-    const { unmount } = renderProfile({ ...baseMember, has_completed_onboarding: false });
+    const { unmount } = renderProfile({
+      ...baseMember,
+      has_completed_onboarding: false,
+    });
     expect(screen.getByText("Pending")).toBeInTheDocument();
     unmount();
     renderProfile();
     expect(screen.queryByText("Onboarding")).not.toBeInTheDocument();
+  });
+
+  it("says whether notifications reach the member's phone, when the server sent it", () => {
+    const { unmount } = renderProfile();
+    expect(screen.queryByText("Phone app")).not.toBeInTheDocument();
+    unmount();
+
+    mockPhoneReach.current = {
+      scope: "chapter",
+      byUserId: new Map([
+        [
+          "u1",
+          {
+            user_id: "u1",
+            state: "off",
+            platform: "ios",
+            last_opened_at: "2026-11-18T15:00:00.000Z",
+          },
+        ],
+      ]),
+    };
+    renderProfile();
+    expect(screen.getByText("Phone app")).toBeInTheDocument();
+    expect(screen.getByText("iPhone, notifications off")).toBeInTheDocument();
+    expect(screen.getByText(/^Last opened November 18/)).toBeInTheDocument();
   });
 });
 
@@ -308,15 +358,23 @@ describe("MemberDetailSheet pledge class (#3939)", () => {
   });
 
   it("shows the member's class and order number under the roles", () => {
-    renderProfile({ ...baseMember, pledge_class_id: "alpha", order_number: 12 });
-    const section = screen.getByRole("region", { name: "Pledge class · Fraternal order" });
+    renderProfile({
+      ...baseMember,
+      pledge_class_id: "alpha",
+      order_number: 12,
+    });
+    const section = screen.getByRole("region", {
+      name: "Pledge class · Fraternal order",
+    });
     expect(within(section).getByText("Alpha")).toBeInTheDocument();
     expect(within(section).getByText("12")).toBeInTheDocument();
   });
 
   it("draws no section for a member with neither", () => {
     renderProfile();
-    expect(screen.queryByRole("region", { name: "Pledge class · Fraternal order" })).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Pledge class · Fraternal order" }),
+    ).toBeNull();
   });
 
   it("gives Edit to a roles:manage holder, and to nobody else", () => {
@@ -350,28 +408,78 @@ describe("MemberDetailSheet custom fields", () => {
     renderProfile({
       ...baseMember,
       custom_fields: [
-        { field_id: "f1", key: "major", label: "Major", type: "text", visibility: "chapter", value: "Computer Science" },
-        { field_id: "f2", key: "hometown", label: "Hometown", type: "text", visibility: "chapter", value: null },
-        { field_id: "f3", key: "dues_paid", label: "Dues Paid", type: "boolean", visibility: "exec", value: "true" },
+        {
+          field_id: "f1",
+          key: "major",
+          label: "Major",
+          type: "text",
+          visibility: "chapter",
+          value: "Computer Science",
+        },
+        {
+          field_id: "f2",
+          key: "hometown",
+          label: "Hometown",
+          type: "text",
+          visibility: "chapter",
+          value: null,
+        },
+        {
+          field_id: "f3",
+          key: "dues_paid",
+          label: "Dues Paid",
+          type: "boolean",
+          visibility: "exec",
+          value: "true",
+        },
       ],
     });
 
-    expect(screen.getByText("Custom fields")).toBeInTheDocument();
+    // Folded until asked for (#3711): logistics aren't why a profile opens.
+    expect(screen.queryByText("Computer Science")).not.toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "More details" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Computer Science")).toBeInTheDocument();
     expect(screen.getByText("Dues Paid")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
-    // An unset value says so in a word, never a lone em dash: board `1t` lists
-    // "em dashes in UI copy" under gone.
-    // Scoped to the row: an officer's unset pledge class reads "Not set" too.
+    // An unset field is left out (#1749).
+    expect(screen.queryByText("Hometown")).not.toBeInTheDocument();
+  });
+
+  it("omits More details when every field the viewer may see is unset (#1749)", () => {
+    renderProfile({
+      ...baseMember,
+      custom_fields: [
+        {
+          field_id: "f1",
+          key: "major",
+          label: "Major",
+          type: "text",
+          visibility: "chapter",
+          value: null,
+        },
+        {
+          field_id: "f2",
+          key: "shirt",
+          label: "T-shirt size",
+          type: "text",
+          visibility: "chapter",
+          value: "  ",
+        },
+      ],
+    });
     expect(
-      within(screen.getByText("Hometown").parentElement!).getByText("Not set"),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("—")).toBeNull();
+      screen.queryByRole("button", { name: "More details" }),
+    ).not.toBeInTheDocument();
   });
 
   it("omits the custom-fields section when the server returns none", () => {
     renderProfile({ ...baseMember, custom_fields: [] });
-    expect(screen.queryByText("Custom fields")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "More details" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -388,174 +496,6 @@ describe("MemberDetailSheet heading", () => {
     expect(
       screen.getByRole("heading", { name: "Member 2f4a1c" }),
     ).toBeInTheDocument();
-  });
-});
-
-describe("MemberDetailSheet role editor", () => {
-  it("offers Edit only to a viewer holding roles:manage", () => {
-    mockPermissions.current = ["members:view"];
-    const { unmount } = renderProfile();
-    expect(
-      screen.queryByRole("button", { name: "Edit Jane Smith's roles" }),
-    ).not.toBeInTheDocument();
-    unmount();
-
-    mockPermissions.current = ["members:view", "roles:manage"];
-    renderProfile();
-    expect(
-      screen.getByRole("button", { name: "Edit Jane Smith's roles" }),
-    ).toBeInTheDocument();
-  });
-
-  it("doesn't offer Edit before the roles list loads (#3670)", () => {
-    mockRoles.current = undefined;
-    renderProfile();
-    expect(
-      screen.queryByRole("button", { name: "Edit Jane Smith's roles" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("opens the checklists with the member's roles pre-checked, and Cancel puts the chips back", () => {
-    mockRoles.current = [
-      { id: "r-member", name: "Member", permissions: ["members:view"] },
-      { id: "r-cabinet", name: "Cabinet", permissions: [] },
-    ];
-    renderProfile({ ...baseMember, role_ids: ["r-member"] });
-    openRoleEditor();
-
-    const checkbox = (name: string) =>
-      screen.getByText(name, { selector: "p" }).closest("label")!.querySelector("input")!;
-    expect(checkbox("Member").checked).toBe(true);
-    expect(checkbox("Cabinet").checked).toBe(false);
-
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Edit Jane Smith's roles" }),
-    ).toBeInTheDocument();
-  });
-
-  it("drops the editor and its unsaved picks when the sheet closes", () => {
-    mockRoles.current = [{ id: "r-member", name: "Member", permissions: [] }];
-    memberQueryState.data = { ...baseMember, role_ids: ["r-member"] };
-    const { rerender } = render(
-      <MemberDetailSheet open onOpenChange={() => {}} userId="u1" />,
-    );
-    openRoleEditor();
-    fireEvent.click(
-      screen.getByText("Member", { selector: "p" }).closest("label")!.querySelector("input")!,
-    );
-
-    rerender(<MemberDetailSheet open={false} onOpenChange={() => {}} userId="u1" />);
-    rerender(<MemberDetailSheet open onOpenChange={() => {}} userId="u1" />);
-
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    openRoleEditor();
-    expect(
-      screen.getByText("Member", { selector: "p" }).closest("label")!.querySelector("input")!.checked,
-    ).toBe(true);
-  });
-
-});
-
-describe("MemberDetailSheet save payload", () => {
-  it("sends the selection as-is, including ids of since-deleted roles", async () => {
-    mockRoles.current = [{ id: "r-cabinet", name: "Cabinet", permissions: [] }];
-    // r-deleted no longer exists in the chapter's roles. It is still sent
-    // (the server exempts held ids): filtering against the possibly-stale
-    // list would silently strip roles the officer never touched.
-    renderProfile({ ...baseMember, role_ids: ["r-deleted"] });
-    openRoleEditor();
-
-    fireEvent.click(
-      screen.getByText("Cabinet", { selector: "p" }).closest("label")!.querySelector("input")!,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
-
-    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
-    // Never custom_role_ids: custom roles are ordinary roles now (#4075).
-    expect(updateRolesMutateAsync).toHaveBeenCalledWith({
-      id: "m1",
-      role_ids: ["r-deleted", "r-cabinet"],
-    });
-  });
-
-
-  it("closes the editor once the save lands", async () => {
-    renderProfile();
-    openRoleEditor();
-    fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Edit Jane Smith's roles" }),
-      ).toBeInTheDocument(),
-    );
-  });
-});
-
-// #3670: taking away the last role with member access locks the member out of
-// chat, the roster and events, so the save asks first.
-describe("MemberDetailSheet member-access warning", () => {
-  beforeEach(() => {
-    mockRoles.current = [
-      { id: "r-member", name: "Member", permissions: ["members:view"] },
-      { id: "r-cabinet", name: "Cabinet", permissions: ["channels:read:cabinet"] },
-    ];
-  });
-
-  afterEach(() => {
-    mockRoles.current = [];
-  });
-
-  function renderHolding(roleIds: string[]) {
-    renderProfile({ ...baseMember, role_ids: roleIds });
-    openRoleEditor();
-  }
-
-  function untick(name: string) {
-    const row = screen.getByText(name, { selector: "p" }).closest("label");
-    fireEvent.click(row!.querySelector("input")!);
-  }
-
-  it("asks before saving away the last role with member access, and saves nothing on Cancel", async () => {
-    renderHolding(["r-member", "r-cabinet"]);
-    untick("Member");
-    fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
-
-    // The confirmation's own Cancel, not the editor's in the sheet footer.
-    const title = await screen.findByText("Take away Jane Smith's access?");
-    const dialog = title.closest<HTMLElement>('[role="dialog"]')!;
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() =>
-      expect(screen.queryByText("Take away Jane Smith's access?")).not.toBeInTheDocument(),
-    );
-    expect(updateRolesMutateAsync).not.toHaveBeenCalled();
-  });
-
-  it("saves once the officer confirms", async () => {
-    renderHolding(["r-member", "r-cabinet"]);
-    untick("Member");
-    fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Take away access" }),
-    );
-
-    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
-    expect(updateRolesMutateAsync).toHaveBeenCalledWith({
-      id: "m1",
-      role_ids: ["r-cabinet"],
-    });
-  });
-
-
-  it("saves without asking when the member keeps access", async () => {
-    renderHolding(["r-member", "r-cabinet"]);
-    untick("Cabinet");
-    fireEvent.click(screen.getByRole("button", { name: "Save roles" }));
-
-    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText("Take away Jane Smith's access?")).not.toBeInTheDocument();
   });
 });
 
@@ -655,29 +595,238 @@ describe("MemberDetailSheet Message action", () => {
   });
 });
 
-// Every member can open this sheet, from the directory and from chat, so its
-// writes mirror the permissions the server checks on them.
-describe("MemberDetailSheet Remove member", () => {
-  it("is absent for a viewer without members:remove", () => {
-    mockPermissions.current = ["members:view", "roles:manage"];
-    renderProfile();
+// Removing a member sits behind the profile's ⋯, never on its face (Paul,
+// 2026-11-11), and only where the API says this viewer may remove this member
+// (`viewer_can_remove`: `members:remove`, not their own profile, and the
+// member ranks below them).
+describe("MemberDetailSheet Remove from chapter", () => {
+  const moreButton = () =>
+    screen.queryByRole("button", { name: "More for Jane Smith" });
+
+  it("draws no Remove button on the profile's face", () => {
+    renderProfile({ ...baseMember, viewer_can_remove: true });
     expect(
-      screen.queryByRole("button", { name: /Remove member/ }),
+      screen.queryByRole("button", { name: /Remove/ }),
     ).not.toBeInTheDocument();
   });
 
-  it("removes after confirming, for a viewer holding members:remove", async () => {
-    mockPermissions.current = ["members:view", "members:remove"];
+  it("draws no ⋯ when the API says this viewer may not remove them", () => {
+    renderProfile({ ...baseMember, viewer_can_remove: false });
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("draws no ⋯ for a profile read that says nothing about removal", () => {
+    renderProfile();
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("never offers it on your own profile", () => {
+    mockCurrentUserId.current = "u1";
+    renderProfile({ ...baseMember, viewer_can_remove: true });
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("removes from the ⋯ menu after confirming", async () => {
+    const user = userEvent.setup();
     removeMutateAsync.mockResolvedValue({});
     const onOpenChange = vi.fn();
-    renderProfile(baseMember, { onOpenChange });
+    renderProfile({ ...baseMember, viewer_can_remove: true }, { onOpenChange });
 
-    fireEvent.click(screen.getByRole("button", { name: /Remove member/ }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Remove from chapter" }),
+    await user.click(moreButton()!);
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Remove from chapter" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Remove Jane Smith from the chapter?",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "Remove from chapter" }),
     );
 
     await waitFor(() => expect(removeMutateAsync).toHaveBeenCalledWith("m1"));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("does nothing when the confirmation is cancelled", async () => {
+    const user = userEvent.setup();
+    removeMutateAsync.mockReset();
+    renderProfile({ ...baseMember, viewer_can_remove: true });
+
+    await user.click(moreButton()!);
+    await user.click(
+      await screen.findByRole("menuitem", { name: "Remove from chapter" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Remove Jane Smith from the chapter?",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(removeMutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+// #3711: the member's own phone, a tap away.
+describe("MemberDetailSheet phone", () => {
+  it("links the phone to a call", () => {
+    renderProfile({ ...baseMember, phone: "+1 (518) 555-0142" });
+    expect(
+      screen.getByRole("link", { name: "+1 (518) 555-0142" }),
+    ).toHaveAttribute("href", "tel:+15185550142");
+  });
+
+  it("offers to text the same number", () => {
+    renderProfile({ ...baseMember, phone: "+1 (518) 555-0142" });
+    expect(
+      screen.getByRole("link", { name: "Text Jane Smith" }),
+    ).toHaveAttribute("href", "sms:+15185550142");
+  });
+
+  it("draws no Phone row when the member hasn't set one", () => {
+    renderProfile({ ...baseMember, phone: null });
+    expect(screen.queryByText("Phone")).not.toBeInTheDocument();
+  });
+});
+
+// #4367: an officer fixes a member's name and graduation year from the ⋯,
+// only where the API says `viewer_can_edit_profile`.
+describe("MemberDetailSheet Edit name and graduation year", () => {
+  const moreButton = () =>
+    screen.queryByRole("button", { name: "More for Jane Smith" });
+
+  it("draws no ⋯ when the API says nothing about it", () => {
+    renderProfile({ ...baseMember, viewer_can_edit_profile: false });
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("never offers it on your own profile", () => {
+    mockCurrentUserId.current = "u1";
+    renderProfile({ ...baseMember, viewer_can_edit_profile: true });
+    expect(moreButton()).not.toBeInTheDocument();
+  });
+
+  it("offers only the edit when removal isn't allowed", async () => {
+    const user = userEvent.setup();
+    renderProfile({ ...baseMember, viewer_can_edit_profile: true });
+    await user.click(moreButton()!);
+    expect(
+      await screen.findByRole("menuitem", {
+        name: "Edit name and graduation year",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: "Remove from chapter" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("saves only what changed", async () => {
+    const user = userEvent.setup();
+    correctMutateAsync.mockReset().mockResolvedValue({});
+    renderProfile({
+      ...baseMember,
+      graduation_year: 2026,
+      viewer_can_edit_profile: true,
+    });
+    await user.click(moreButton()!);
+    await user.click(
+      await screen.findByRole("menuitem", {
+        name: "Edit name and graduation year",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Edit Jane Smith's profile",
+    });
+    const year = within(dialog).getByLabelText("Graduation year");
+    await user.clear(year);
+    await user.type(year, "2027");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(correctMutateAsync).toHaveBeenCalledWith({
+        id: "m1",
+        graduation_year: 2027,
+      }),
+    );
+  });
+
+  it("opens a member with no name on a blank field, not their label", async () => {
+    const user = userEvent.setup();
+    renderProfile({
+      ...baseMember,
+      display_name: "",
+      viewer_can_edit_profile: true,
+    });
+    await user.click(
+      await screen.findByRole("button", { name: /^More for Member / }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", {
+        name: "Edit name and graduation year",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: /^Edit Member .*'s profile$/,
+    });
+    expect(within(dialog).getByLabelText("Name")).toHaveValue("");
+  });
+
+  it("refuses a blank name before sending", async () => {
+    const user = userEvent.setup();
+    correctMutateAsync.mockReset();
+    renderProfile({ ...baseMember, viewer_can_edit_profile: true });
+    await user.click(moreButton()!);
+    await user.click(
+      await screen.findByRole("menuitem", {
+        name: "Edit name and graduation year",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Edit Jane Smith's profile",
+    });
+    await user.clear(within(dialog).getByLabelText("Name"));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Enter their name.",
+    );
+    expect(correctMutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("MemberDetailSheet docked in the Directory (2026-11-12)", () => {
+  it("opens in place of the directory, named by the member, with a back arrow", () => {
+    memberQueryState.data = baseMember;
+    const onOpenChange = vi.fn();
+    render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <button type="button">Trevor row</button>
+        </div>
+        <MemberDetailSheet
+          open
+          onOpenChange={onOpenChange}
+          userId="u1"
+          docked
+          backLabel="Back to directory"
+        />
+      </div>,
+    );
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const region = screen.getByRole("region", { name: "Jane Smith" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+    expect(screen.getAllByRole("heading", { name: "Jane Smith" })).toHaveLength(
+      1,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back to directory" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe("MemberDetailSheet roles and groups", () => {
+  it("hands the member's roles to the section, editable once the profile read answers", () => {
+    renderProfile({ ...baseMember, role_ids: ["r-pres"] });
+    const section = screen.getByRole("region", { name: "Roles and groups" });
+    expect(section).toHaveTextContent("Roles r-pres");
+    expect(section).toHaveAttribute("data-editable", "true");
   });
 });

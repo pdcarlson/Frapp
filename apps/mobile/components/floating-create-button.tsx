@@ -8,6 +8,7 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   FLOATING_TAB_BAR,
   floatingTabBarTop,
+  useAskBarLift,
   useFloatingChrome,
 } from "@/lib/floating-chrome";
 import { useFrappTheme } from "@/lib/theme";
@@ -26,9 +27,10 @@ export type CreateAction = {
  * The screen's one create action, a glass "+" floating bottom right just above
  * the tab bar, where the thumb already is (owner ask 2026-11-05;
  * `spec/ui/mobile/patterns.md` § Create actions). Service hours' Log service
- * hours and Documents' upload sit here, in the same spot, so a member learns
- * it once. It is for pushed screens only: on the four tabs that spot holds the
- * tab bar's quick-actions + (`GlassTabBar`), which took Tasks' New task. It
+ * hours, Documents' upload and the task board's New task (#4610) sit here, in
+ * the same spot, so a member learns it once. It is for pushed screens only: on
+ * the four tabs that spot holds the tab bar's quick-actions + (`GlassTabBar`).
+ * It
  * replaced the accent "+" tile in the title row (`HeaderAddButton`), which sat
  * at the far top corner.
  *
@@ -44,9 +46,11 @@ export function FloatingCreateButton({ label, hint, onPress }: CreateAction) {
   const feedback = usePressFeedback({ onCard: true });
   const styles = createStyles(tokens);
 
-  // Above the floating bar where there is one, else clear of the inset.
+  // Above the floating bar where there is one (and the Ask Frapp bar over
+  // it, for a member who has Ask), else clear of the inset.
+  const askLift = useAskBarLift();
   const offset = tabBar
-    ? floatingTabBarTop(bottom) + FLOATING_TAB_BAR.gap
+    ? floatingTabBarTop(bottom) + askLift + FLOATING_TAB_BAR.gap
     : bottom + tokens.spacing.lg;
 
   return (

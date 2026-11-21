@@ -9,8 +9,21 @@ import {
   AuthSessionMissingError,
   AuthUnknownError,
 } from '@supabase/supabase-js';
+import {
+  GUARDS_METADATA,
+  INTERCEPTORS_METADATA,
+} from '@nestjs/common/constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
+import { ChapterGuard } from './chapter.guard';
+import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import type { AuthService } from '../../application/services/auth.service';
+import type { TimeZoneSyncService } from '../../application/services/time-zone-sync.service';
+import { of } from 'rxjs';
+import {
+  runWithRequestReads,
+  sealRequestReadsForWrites,
+} from '../../infrastructure/supabase/request-reads';
 import { AuthRejectedException } from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
@@ -18,9 +31,28 @@ describe('SupabaseAuthGuard', () => {
   let guard: SupabaseAuthGuard;
   let mockGetUser: jest.Mock;
   let mockGetClaims: jest.Mock;
+  let mockFrom: jest.Mock;
+  let mockRpc: jest.Mock;
+
+  /** A route guarded by this guard alone, as `GET /v1/users/me` is. */
+  class AuthOnlyController {}
+  Reflect.defineMetadata(
+    GUARDS_METADATA,
+    [SupabaseAuthGuard],
+    AuthOnlyController,
+  );
+
+  /** A chapter route with no permission check, as attendance check-in is. */
+  class ChapterController {}
+  Reflect.defineMetadata(
+    GUARDS_METADATA,
+    [SupabaseAuthGuard, ChapterGuard],
+    ChapterController,
+  );
 
   const mockExecutionContext = (
     headers: Record<string, string> = {},
+    controller: new () => unknown = AuthOnlyController,
   ): ExecutionContext => {
     const request = {
       headers,
@@ -31,12 +63,26 @@ describe('SupabaseAuthGuard', () => {
       switchToHttp: () => ({
         getRequest: () => request,
       }),
+      getHandler: () => () => undefined,
+      getClass: () => controller,
     } as unknown as ExecutionContext;
   };
 
   beforeEach(async () => {
     mockGetUser = jest.fn();
     mockGetClaims = jest.fn().mockResolvedValue({ data: null, error: null });
+    // Only the chapter-context prefetch reads tables; it never settles here,
+    // which is all these cases need to see whether it started.
+    mockFrom = jest.fn(() => {
+      const chain: Record<string, unknown> = {};
+      chain.select = () => chain;
+      chain.eq = () => chain;
+      chain.is = () => chain;
+      chain.in = () => chain;
+      chain.maybeSingle = () => new Promise(() => undefined);
+      return chain;
+    });
+    mockRpc = jest.fn(() => new Promise(() => undefined));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -45,6 +91,8 @@ describe('SupabaseAuthGuard', () => {
           provide: SUPABASE_CLIENT,
           useValue: {
             auth: { getUser: mockGetUser, getClaims: mockGetClaims },
+            from: mockFrom,
+            rpc: mockRpc,
           },
         },
       ],
@@ -257,6 +305,562 @@ describe('SupabaseAuthGuard', () => {
       await expect(guard.canActivate(bearer())).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+  });
+  // The session check is the slowest call a request makes; the chapter
+  // guard's reads start while it is in flight, on the sub the throttler
+  // already verified (`request.throttlerVerifiedClaims`).
+  describe('chapter lookups overlap the session check (#3728)', () => {
+    const CHAPTER = '33333333-3333-4333-8333-333333333333';
+    // A fresh sub per case: the user lookup is shared across requests for
+    // `IN_FLIGHT_JOIN_WINDOW_MS` (#3753), and these mocks never settle, so a
+    // reused sub would join the previous case's read instead of starting one.
+    let claims: { sub: string; active_chapter_id: string };
+    let caseNo = 0;
+    beforeEach(() => {
+      caseNo += 1;
+      claims = { sub: `auth-overlap-${caseNo}`, active_chapter_id: CHAPTER };
+    });
+
+    const pendingSession = () => {
+      let release!: (value: unknown) => void;
+      mockGetUser.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      return (user: { id: string } | null) =>
+        release(
+          user
+            ? { data: { user }, error: null }
+            : { data: { user: null }, error: new Error('session revoked') },
+        );
+    };
+
+    /** A context whose request carries what the throttler verified, if anything. */
+    const contextWith = (
+      verified: object | undefined,
+      controller: new () => unknown,
+    ) => {
+      const ctx = mockExecutionContext(
+        { authorization: 'Bearer valid-token' },
+        controller,
+      );
+      const request = ctx.switchToHttp().getRequest<Record<string, unknown>>();
+      request.throttlerVerifiedClaims = verified;
+      return ctx;
+    };
+
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    it('starts them before getUser answers, on a chapter route', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith(claims, ChapterController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        // One call for the user, chapter, membership and roles (#3583).
+        expect(mockRpc).toHaveBeenCalledWith('get_request_context', {
+          p_auth_id: claims.sub,
+          p_chapter_id: CHAPTER,
+        });
+        expect(mockFrom).not.toHaveBeenCalled();
+
+        answer({ id: claims.sub });
+        await expect(verdict).resolves.toBe(true);
+      });
+    });
+
+    it('verifies no token itself: getClaims still runs only after getUser accepted it', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith(claims, ChapterController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(mockGetClaims).not.toHaveBeenCalled();
+        answer({ id: claims.sub });
+        await verdict;
+      });
+      expect(mockGetClaims).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts nothing on a route without ChapterGuard', async () => {
+      const answer = pendingSession();
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(
+          contextWith(claims, AuthOnlyController),
+        );
+        await settle();
+        answer({ id: claims.sub });
+        await verdict;
+      });
+      expect(mockFrom).not.toHaveBeenCalled();
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('starts nothing when the throttler verified nothing', async () => {
+      const answer = pendingSession();
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(
+          contextWith(undefined, ChapterController),
+        );
+        await settle();
+        answer({ id: 'auth-123' });
+        await verdict;
+      });
+      expect(mockFrom).not.toHaveBeenCalled();
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('still refuses a revoked session whose lookups already started', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith(claims, ChapterController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(mockRpc).toHaveBeenCalled();
+        answer(null);
+        await expect(verdict).rejects.toThrow(UnauthorizedException);
+      });
+      expect(ctx.switchToHttp().getRequest().supabaseUser).toBeUndefined();
+      expect(ctx.switchToHttp().getRequest().jwtClaims).toBeUndefined();
+    });
+  });
+
+  describe('the users row lookup overlaps the session check on a sync route (#3583)', () => {
+    /** A route whose interceptor resolves the row, as `GET /v1/users/me`'s does. */
+    class SyncedController {}
+    Reflect.defineMetadata(
+      GUARDS_METADATA,
+      [SupabaseAuthGuard],
+      SyncedController,
+    );
+    Reflect.defineMetadata(
+      INTERCEPTORS_METADATA,
+      [AuthSyncInterceptor],
+      SyncedController,
+    );
+
+    /** A chapter route that also syncs, as `GET /v1/users/me/permissions` is. */
+    class SyncedChapterController {}
+    Reflect.defineMetadata(
+      GUARDS_METADATA,
+      [SupabaseAuthGuard, ChapterGuard],
+      SyncedChapterController,
+    );
+    Reflect.defineMetadata(
+      INTERCEPTORS_METADATA,
+      [AuthSyncInterceptor],
+      SyncedChapterController,
+    );
+
+    // A fresh sub per case: the users lookup is shared across requests for
+    // `IN_FLIGHT_JOIN_WINDOW_MS`.
+    let sub: string;
+    let caseNo = 0;
+    /** `supabase_auth_id` of every users read, in order. */
+    let usersReads: string[];
+    let usersAnswer: () => Promise<unknown>;
+    /**
+     * Has the real interceptor sync a session for `authId`, so its memo holds
+     * it: the guard prefetches only for such a session (`hasSyncedSession`).
+     */
+    const markSynced = async (authId: string) => {
+      const interceptor = new AuthSyncInterceptor(
+        {
+          syncUser: jest.fn().mockResolvedValue({ id: 'row-1' }),
+        } as unknown as AuthService,
+        { record: jest.fn() } as unknown as TimeZoneSyncService,
+      );
+      const request = {
+        supabaseUser: { id: authId, email: 'a@example.com' },
+        headers: {},
+      };
+      await interceptor.intercept(
+        {
+          switchToHttp: () => ({ getRequest: () => request }),
+        } as unknown as ExecutionContext,
+        { handle: () => of(null) },
+      );
+    };
+
+    beforeEach(async () => {
+      caseNo += 1;
+      sub = `auth-sync-${caseNo}`;
+      await markSynced(sub);
+      usersReads = [];
+      usersAnswer = () =>
+        Promise.resolve({ data: { id: 'row-1' }, error: null });
+      mockFrom.mockImplementation((table: string) => {
+        const chain: Record<string, unknown> = {};
+        chain.select = () => chain;
+        chain.eq = (column: string, value: string) => {
+          if (table === 'users' && column === 'supabase_auth_id') {
+            usersReads.push(value);
+          }
+          return chain;
+        };
+        chain.is = () => chain;
+        chain.maybeSingle = () => usersAnswer();
+        return chain;
+      });
+    });
+
+    const pendingSession = () => {
+      let release!: (value: unknown) => void;
+      mockGetUser.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      return (user: { id: string } | null) =>
+        release(
+          user
+            ? { data: { user }, error: null }
+            : { data: { user: null }, error: new Error('session revoked') },
+        );
+    };
+
+    const contextWith = (
+      verified: object | undefined,
+      controller: new () => unknown,
+    ) => {
+      const ctx = mockExecutionContext(
+        { authorization: 'Bearer valid-token' },
+        controller,
+      );
+      const request = ctx.switchToHttp().getRequest<Record<string, unknown>>();
+      request.throttlerVerifiedClaims = verified;
+      return ctx;
+    };
+    const lookupOf = (ctx: ExecutionContext) =>
+      ctx.switchToHttp().getRequest<{
+        appUserLookup?: () => Promise<string | null>;
+      }>().appUserLookup;
+
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    it('starts it before getUser answers, and the lookup reuses it', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, SyncedController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(usersReads).toEqual([sub]);
+        expect(lookupOf(ctx)).toBeUndefined();
+
+        answer({ id: sub });
+        await expect(verdict).resolves.toBe(true);
+        await expect(lookupOf(ctx)!()).resolves.toBe('row-1');
+      });
+      expect(usersReads).toEqual([sub]);
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('reads under the user getUser returned, never the prefetched sub', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, SyncedController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        answer({ id: `${sub}-other` });
+        await verdict;
+        await lookupOf(ctx)!();
+      });
+      expect(usersReads).toEqual([sub, `${sub}-other`]);
+    });
+
+    it('still refuses a revoked session whose lookup already started, and leaves no lookup', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, SyncedController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(usersReads).toEqual([sub]);
+        answer(null);
+        await expect(verdict).rejects.toThrow(UnauthorizedException);
+      });
+      expect(lookupOf(ctx)).toBeUndefined();
+      expect(ctx.switchToHttp().getRequest().supabaseUser).toBeUndefined();
+    });
+
+    it('answers null for a failed, empty or rejected read, so the interceptor syncs', async () => {
+      const answers: Array<() => Promise<unknown>> = [
+        // A row alongside the error: the error still wins.
+        () =>
+          Promise.resolve({
+            data: { id: 'row-1' },
+            error: { code: '57014', message: 'timeout' },
+          }),
+        () => Promise.resolve({ data: null, error: null }),
+        () => Promise.reject(new Error('client threw')),
+      ];
+      for (const answerWith of answers) {
+        caseNo += 1;
+        sub = `auth-sync-${caseNo}`;
+        await markSynced(sub);
+        usersAnswer = answerWith;
+        mockGetUser.mockResolvedValue({
+          data: { user: { id: sub } },
+          error: null,
+        });
+        const ctx = contextWith({ sub }, SyncedController);
+        await runWithRequestReads('GET', async () => {
+          await guard.canActivate(ctx);
+          await expect(lookupOf(ctx)!()).resolves.toBeNull();
+        });
+      }
+    });
+
+    it('starts nothing for a session the interceptor never synced, and reads only when asked', async () => {
+      const fresh = `${sub}-never-synced`;
+      const answer = pendingSession();
+      const ctx = contextWith({ sub: fresh }, SyncedController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(usersReads).toEqual([]);
+        answer({ id: fresh });
+        await verdict;
+        expect(usersReads).toEqual([]);
+        await expect(lookupOf(ctx)!()).resolves.toBe('row-1');
+      });
+      expect(usersReads).toEqual([fresh]);
+    });
+
+    it('hands a write its prefetch although its store is sealed before the interceptor', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, SyncedController);
+
+      await runWithRequestReads('PATCH', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        answer({ id: sub });
+        await verdict;
+        // `RequestReadsInterceptor`, a global interceptor, runs before the
+        // controller's `AuthSyncInterceptor`.
+        sealRequestReadsForWrites();
+        await settle();
+        await expect(lookupOf(ctx)!()).resolves.toBe('row-1');
+      });
+      expect(usersReads).toEqual([sub]);
+    });
+
+    it('sees the interceptor when the route method declares it', async () => {
+      class MethodLevelController {}
+      Reflect.defineMetadata(
+        GUARDS_METADATA,
+        [SupabaseAuthGuard],
+        MethodLevelController,
+      );
+      const handler = () => undefined;
+      Reflect.defineMetadata(
+        INTERCEPTORS_METADATA,
+        [AuthSyncInterceptor],
+        handler,
+      );
+      const answer = pendingSession();
+      const request = {
+        headers: { authorization: 'Bearer valid-token' },
+        throttlerVerifiedClaims: { sub },
+      } as Record<string, unknown>;
+      const ctx = {
+        switchToHttp: () => ({ getRequest: () => request }),
+        getHandler: () => handler,
+        getClass: () => MethodLevelController,
+      } as unknown as ExecutionContext;
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(usersReads).toEqual([sub]);
+        answer({ id: sub });
+        await verdict;
+      });
+      expect(lookupOf(ctx)).toBeDefined();
+    });
+
+    it('leaves a chapter route to ChapterGuard', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith(
+        { sub, active_chapter_id: '33333333-3333-4333-8333-333333333333' },
+        SyncedChapterController,
+      );
+      mockRpc.mockReturnValue(new Promise(() => undefined));
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        answer({ id: sub });
+        await verdict;
+      });
+      expect(mockRpc).toHaveBeenCalled();
+      expect(lookupOf(ctx)).toBeUndefined();
+    });
+
+    it('starts nothing on a route without the interceptor', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, AuthOnlyController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        answer({ id: sub });
+        await verdict;
+      });
+      expect(usersReads).toEqual([]);
+      expect(lookupOf(ctx)).toBeUndefined();
+    });
+
+    it('sets no lookup outside a request store', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+      const ctx = contextWith({ sub }, SyncedController);
+      await guard.canActivate(ctx);
+      expect(usersReads).toEqual([]);
+      expect(lookupOf(ctx)).toBeUndefined();
+    });
+  });
+
+  // An app open sends dozens of requests at once with one token and chapter.
+  // Paul accepted sharing their checks within IN_FLIGHT_JOIN_WINDOW_MS
+  // (#3752, 2026-11-13); these pin what is shared and under which key.
+  describe("shares a burst's checks (#3752)", () => {
+    const CHAPTER_A = '44444444-4444-4444-8444-444444444444';
+    const CHAPTER_B = '55555555-5555-4555-8555-555555555555';
+    let caseNo = 0;
+    let token: string;
+    let sub: string;
+    beforeEach(() => {
+      caseNo += 1;
+      token = `burst-token-${caseNo}`;
+      sub = `auth-burst-${caseNo}`;
+    });
+
+    const inGet = <T>(fn: () => T): T => runWithRequestReads('GET', fn);
+    const request = (
+      bearer: string,
+      controller: new () => unknown = AuthOnlyController,
+      verified?: object,
+    ) => {
+      const ctx = mockExecutionContext(
+        { authorization: `Bearer ${bearer}` },
+        controller,
+      );
+      const req = ctx.switchToHttp().getRequest<Record<string, unknown>>();
+      req.throttlerVerifiedClaims = verified;
+      return ctx;
+    };
+
+    it('makes one session check for requests that arrive together with one token', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+      const first = request(token);
+      const second = request(token);
+
+      await Promise.all([
+        inGet(() => guard.canActivate(first)),
+        inGet(() => guard.canActivate(second)),
+      ]);
+
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+      const a = first.switchToHttp().getRequest().supabaseUser;
+      const b = second.switchToHttp().getRequest().supabaseUser;
+      expect(a).toEqual({ id: sub });
+      expect(b).toEqual({ id: sub });
+      // Each request gets its own copy of the shared answer.
+      expect(a).not.toBe(b);
+    });
+
+    it('checks each token on its own', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+
+      await Promise.all([
+        inGet(() => guard.canActivate(request(token))),
+        inGet(() => guard.canActivate(request(`${token}-other`))),
+      ]);
+
+      expect(mockGetUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('checks the session itself in a request that may write', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+
+      await Promise.all([
+        inGet(() => guard.canActivate(request(token))),
+        runWithRequestReads('POST', () => guard.canActivate(request(token))),
+      ]);
+
+      expect(mockGetUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses every request that joined a rejected session check', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: null },
+        error: new Error('session revoked'),
+      });
+
+      const verdicts = await Promise.allSettled([
+        inGet(() => guard.canActivate(request(token))),
+        inGet(() => guard.canActivate(request(token))),
+      ]);
+
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+      for (const verdict of verdicts) {
+        expect(verdict.status).toBe('rejected');
+      }
+    });
+
+    it('makes one request-context call per user and chapter', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+      const inChapter = (chapter: string, method = 'GET') =>
+        runWithRequestReads(method, () =>
+          guard.canActivate(
+            request(token, ChapterController, {
+              sub,
+              active_chapter_id: chapter,
+            }),
+          ),
+        );
+
+      await Promise.all([
+        inChapter(CHAPTER_A),
+        inChapter(CHAPTER_A),
+        inChapter(CHAPTER_B),
+        // A request that may write makes its own call.
+        inChapter(CHAPTER_B, 'PATCH'),
+      ]);
+
+      const calls = mockRpc.mock.calls.filter(
+        ([name]) => name === 'get_request_context',
+      );
+      expect(calls).toEqual([
+        ['get_request_context', { p_auth_id: sub, p_chapter_id: CHAPTER_A }],
+        ['get_request_context', { p_auth_id: sub, p_chapter_id: CHAPTER_B }],
+        ['get_request_context', { p_auth_id: sub, p_chapter_id: CHAPTER_B }],
+      ]);
     });
   });
 });

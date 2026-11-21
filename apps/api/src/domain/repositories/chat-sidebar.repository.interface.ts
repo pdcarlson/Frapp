@@ -1,11 +1,16 @@
+import type { SidebarSort } from '@repo/validation';
 import type { ChatSidebarPreferences } from '../entities/chat-sidebar.entity';
 
 export const CHAT_SIDEBAR_REPOSITORY = 'CHAT_SIDEBAR_REPOSITORY';
 
-/** The two filters a member can switch; either may be left out of a write. */
+/**
+ * The view settings a member can change in one write: the two filters and the
+ * sort. Any of them may be left out.
+ */
 export interface ChatSidebarFilters {
   unread_only?: boolean;
   hide_muted?: boolean;
+  sort?: SidebarSort;
 }
 
 /**
@@ -25,9 +30,9 @@ export interface IChatSidebarRepository {
     userId: string,
   ): Promise<ChatSidebarPreferences | null>;
   /**
-   * Writes only the filters given, creating the row on first use. A filter left
-   * out keeps its stored value, so two devices switching different filters
-   * both land.
+   * Writes only the settings given, creating the row on first use. A setting
+   * left out keeps its stored value, so two devices changing different
+   * settings both land.
    */
   updateFilters(
     chapterId: string,

@@ -51,6 +51,28 @@ describe("landingChannelId", () => {
   });
 });
 
+describe("landingChannelId with no #general and no default", () => {
+  // 2026-11-19: a chapter imported from Discord opened new members on
+  // #chapter-audit, its oldest channel.
+  it("skips the audit log and channels the member can't post in", () => {
+    expect(
+      landingChannelId([
+        { id: "audit", name: "chapter-audit", is_audit_log: true },
+        { id: "news", name: "announcements", can_post: false },
+        { id: "a", name: "anyone", can_post: true },
+      ]),
+    ).toBe("a");
+  });
+
+  it("still lands on the first row when nothing else is listed", () => {
+    expect(
+      landingChannelId([
+        { id: "audit", name: "chapter-audit", is_audit_log: true },
+      ]),
+    ).toBe("audit");
+  });
+});
+
 describe("landingChannelId and the chapter default", () => {
   const channels = [
     { id: "g", name: "general" },

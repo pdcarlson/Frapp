@@ -54,3 +54,22 @@ export const INT4_MAX = 2_147_483_647;
  * `INT4_MAX` before this bound are not repaired here.
  */
 export const POSITION_MAX = 1_000_000_000;
+
+/** `role_tiers_position_range` (migration `20261111140000`): a chapter has at most this many tiers. */
+export const ROLE_TIER_POSITION_MAX = 1000;
+
+/**
+ * Roles one list on an event may name (`required_role_ids`,
+ * `optional_role_ids`, `excluded_role_ids`, and a new meeting's `role_ids`).
+ * A list names some of the chapter's roles, so this sits well above any real
+ * chapter's role count.
+ */
+export const EVENT_ROLE_IDS_MAX = 200;
+
+/**
+ * One entry of an event's role list. The columns are `text[]`, and an edit
+ * sends back the ids the event already holds, so an entry is bounded by
+ * length rather than checked as a UUID: an id stored in another shape must
+ * not refuse an officer's unrelated edit. A role id is a UUID (36).
+ */
+export const EVENT_ROLE_ID_MAX_LENGTH = 64;

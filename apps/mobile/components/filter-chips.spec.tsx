@@ -20,7 +20,8 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { FilterChips, SearchField } from "./filter-chips";
+import { SearchGlyph } from "@/components/control-glyphs";
+import { Chip, FilterChips, SearchField } from "./filter-chips";
 
 /**
  * The chip row s12 and s13 draw (the owner's design review, 2026-11-04): one
@@ -48,6 +49,66 @@ const FOLDERS = [
   { value: "Minutes", label: "Minutes" },
   { value: "Bylaws", label: "Bylaws" },
 ];
+
+describe("Chip on a card", () => {
+  // #4682: a screen's card is `surface1`, the chip's own idle fill, so a chip
+  // on one (the study session card's switches) takes the step above the card
+  // and lifts one more.
+  it("takes the step above the card, and lifts to the one above that", () => {
+    const tree = render(
+      <Chip
+        onCard
+        label="Focus timer"
+        on={false}
+        onPress={vi.fn()}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: false }}
+      />,
+    );
+    const [chip] = chips(tree);
+    expect(flatten(chip!.props.style({ pressed: false })).backgroundColor).toBe(
+      signetDarkTokens.color.surface.card,
+    );
+    expect(flatten(chip!.props.style({ pressed: true })).backgroundColor).toBe(
+      signetDarkTokens.color.surface.popover,
+    );
+  });
+});
+
+// #5568: a list's filter row lights its chip without the accent, so the
+// rows it filters read louder than it does; a form's chip keeps the accent.
+describe("Quiet chips", () => {
+  const texts = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => (node.type as unknown) === "Text");
+
+  it("lights the selected chip neutral, with foreground text", () => {
+    const tree = render(
+      <FilterChips quiet chips={FOLDERS} selected={null} onSelect={vi.fn()} />,
+    );
+    const [all, minutes] = chips(tree);
+    const on = flatten(all!.props.style({ pressed: false }));
+    expect(on.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(on.borderColor).toBe(signetDarkTokens.color.border.control);
+    expect(on.backgroundColor).not.toBe("#8E4EC6");
+    expect(flatten(texts(tree)[0]!.props.style).color).toBe(
+      signetDarkTokens.color.text.foreground,
+    );
+    // The rest stay idle.
+    expect(
+      flatten(minutes!.props.style({ pressed: false })).backgroundColor,
+    ).toBe(signetDarkTokens.color.surface.surface1);
+  });
+
+  it("keeps the accent on a chip that is not quiet", () => {
+    const tree = render(
+      <FilterChips chips={FOLDERS} selected={null} onSelect={vi.fn()} />,
+    );
+    const [all] = chips(tree);
+    expect(flatten(all!.props.style({ pressed: false })).backgroundColor).toBe(
+      "#8E4EC6",
+    );
+  });
+});
 
 describe("FilterChips", () => {
   it("offers a chip's long press as a named screen-reader action (#3934)", () => {
@@ -102,6 +163,68 @@ describe("FilterChips", () => {
     expect(
       flatten(scroller.props.contentContainerStyle).paddingHorizontal,
     ).toBe(signetDarkTokens.spacing.lg);
+  });
+
+  describe("opening with the lit chip in view (#4402)", () => {
+    const layout = (x: number, width: number) => ({
+      nativeEvent: { layout: { x, y: 0, width, height: 32 } },
+    });
+
+    function drawScrolled(selected: string | null) {
+      const scrollTo = vi.fn();
+      let tree!: ReactTestRenderer;
+      act(() => {
+        tree = create(
+          <FrappThemeProvider>
+            <FilterChips
+              chips={FOLDERS}
+              selected={selected}
+              onSelect={vi.fn()}
+              scroll
+            />
+          </FrappThemeProvider>,
+          {
+            createNodeMock: (element) =>
+              (element.type as unknown) === "ScrollView" ? { scrollTo } : null,
+          },
+        );
+      });
+      const scroller = tree.root.find(
+        (node) => (node.type as unknown) === "ScrollView",
+      );
+      const lit = tree.root.find(
+        (node) =>
+          typeof node.props.onLayout === "function" &&
+          node.props.accessibilityState?.selected === true,
+      );
+      return { scrollTo, scroller, lit };
+    }
+
+    it("scrolls to a lit chip past the row's edge, once", () => {
+      const last = FOLDERS[FOLDERS.length - 1]!.value;
+      const { scrollTo, scroller, lit } = drawScrolled(last);
+      act(() => {
+        lit.props.onLayout(layout(400, 80));
+        scroller.props.onLayout(layout(0, 360));
+      });
+      expect(scrollTo).toHaveBeenCalledWith({
+        x: 400 - signetDarkTokens.spacing.lg,
+        animated: false,
+      });
+      act(() => {
+        scroller.props.onLayout(layout(0, 360));
+      });
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves the row alone when the lit chip is already in view", () => {
+      const { scrollTo, scroller, lit } = drawScrolled(FOLDERS[1]!.value);
+      act(() => {
+        scroller.props.onLayout(layout(0, 360));
+        lit.props.onLayout(layout(60, 80));
+      });
+      expect(scrollTo).not.toHaveBeenCalled();
+    });
   });
 
   // The sheets (s21's folder, the new-task sheet's due date) pass nothing
@@ -250,10 +373,49 @@ describe("SearchField", () => {
         accessibilityLabel="Search"
       />,
     );
-    const field = tree.root.find((node) => (node.type as unknown) === "TextInput");
+    const field = tree.root.find(
+      (node) => (node.type as unknown) === "TextInput",
+    );
     expect(flatten(field.props.style)).not.toHaveProperty("lineHeight");
     expect(flatten(field.props.style).fontSize).toBe(
       signetDarkTokens.typography.role.body.size,
     );
+  });
+
+  it("leads with the search lens when asked, and keeps it off the field's hit area", () => {
+    const tree = render(
+      <SearchField
+        value=""
+        onChangeText={vi.fn()}
+        placeholder="Search members"
+        accessibilityLabel="Search members"
+        searchGlyph
+      />,
+    );
+    const glyph = tree.root.findByType(SearchGlyph);
+    expect(glyph).toBeTruthy();
+    const holder = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.pointerEvents === "none" &&
+        node.findAllByType(SearchGlyph).length > 0,
+    );
+    expect(holder).toBeTruthy();
+    const field = tree.root.find(
+      (node) => (node.type as unknown) === "TextInput",
+    );
+    expect(field.props.placeholder).toBe("Search members");
+  });
+
+  it("draws no lens by default", () => {
+    const tree = render(
+      <SearchField
+        value=""
+        onChangeText={vi.fn()}
+        placeholder="Search"
+        accessibilityLabel="Search"
+      />,
+    );
+    expect(tree.root.findAllByType(SearchGlyph)).toHaveLength(0);
   });
 });

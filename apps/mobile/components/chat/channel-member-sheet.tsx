@@ -1,16 +1,13 @@
 import { forwardRef, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
   MEMBER_SEARCH_THRESHOLD,
+  channelMemberTitle,
   filterChannelMembers,
-  groupChannelMembersByRole,
+  groupChannelMembersByTier,
   memberAvatarHue,
   memberAvatarTint,
   memberLabel,
@@ -26,12 +23,9 @@ import {
   SkeletonRegion,
 } from "@/components/state-block";
 import { NavGlyph } from "@/components/nav-glyph";
-import { StatusDot } from "@/components/account/status-dot";
-import {
-  presenceLabel,
-  type PresenceStatus,
-} from "@repo/hooks/presence-status";
-import { useChapterPresence } from "@/lib/presence/presence-store";
+import { AvatarWithPresence } from "@/components/avatar-with-presence";
+import { presenceLabel } from "@repo/hooks/presence-status";
+import { usePresenceOf } from "@/lib/presence/presence-store";
 import {
   SectionHeader,
   SectionHeaderSkeleton,
@@ -42,17 +36,20 @@ import {
   SheetScrim,
   TallSheetHeader,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
   useTallSheetProps,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Who can read the open channel (#3536), as a tall sheet from the thread
  * header: the mobile face of web's member column
  * (`apps/web/components/chat/channel-member-list.tsx`), from the same read
- * (`GET /v1/channels/{id}/members`), in the same role groups
- * (`groupChannelMembersByRole`) and with the same search past
+ * (`GET /v1/channels/{id}/members`), in the same tier groups with each
+ * officer's title under their name (`groupChannelMembersByTier`) and with
+ * the same search past
  * `MEMBER_SEARCH_THRESHOLD` readers.
  *
  * **Presence** (#3917): each avatar carries web's dot (Online, Idle, Do Not
@@ -82,6 +79,9 @@ export const ChannelMemberSheet = forwardRef<
   ChannelMemberSheetProps
 >(function ChannelMemberSheet({ channelId, onOpenProfile }, ref) {
   const closeSheet = useSheetClose(ref);
+  // The thread dismisses it on every blur and channel switch, up or not
+  // (#4229): the ref it holds only reaches a sheet that is up.
+  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -89,12 +89,14 @@ export const ChannelMemberSheet = forwardRef<
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       {...tallSheet}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
+      onAnimate={onAnimate}
+      onDismiss={markClosed}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
@@ -145,13 +147,13 @@ export interface ChannelMemberSheetRow {
   /** Their profile photo, or `null` for initials. */
   avatarUrl: string | null;
   roleColor: string | null;
+  /** Where their highest-ranked role sits in the chapter's roles; lower first. */
   roleRank: number | null;
-  roleId: string | null;
-  roleName: string | null;
-  /** `null` until presence has resolved: no dot, and no claim of Offline. */
-  status: PresenceStatus | null;
-  /** Their custom status line (#3845), or `null`. */
-  line: string | null;
+  /** Their title, or `null` for none or the Everyone role. */
+  title: string | null;
+  tierId: string | null;
+  tierName: string | null;
+  tierRank: number | null;
 }
 
 export function MemberRows({
@@ -166,7 +168,6 @@ export function MemberRows({
   const membersQuery = useChannelMembers(channelId);
   const roster = useMemberDisplayNames();
   const { byId, avatarFor, roleColorFor } = roster;
-  const presence = useChapterPresence();
 
   const [query, setQuery] = useState("");
 
@@ -180,17 +181,17 @@ export function MemberRows({
         avatarUrl: avatarFor(member.user_id),
         roleColor: roleColorFor(member.user_id),
         roleRank: member.role_rank,
-        roleId: member.role_id ?? null,
-        roleName: member.role_name ?? null,
-        status: presence.isReady ? presence.statusOf(member.user_id) : null,
-        line: presence.isReady ? presence.lineOf(member.user_id) : null,
+        title: member.title ?? null,
+        tierId: member.tier_id ?? null,
+        tierName: member.tier_name ?? null,
+        tierRank: member.tier_rank ?? null,
       })),
-    [membersQuery.data, byId, avatarFor, roleColorFor, presence],
+    [membersQuery.data, byId, avatarFor, roleColorFor],
   );
   const searchable = rows.length > MEMBER_SEARCH_THRESHOLD;
   const trimmed = searchable ? query.trim() : "";
   const groups = useMemo(
-    () => groupChannelMembersByRole(filterChannelMembers(rows, trimmed)),
+    () => groupChannelMembersByTier(filterChannelMembers(rows, trimmed), rows),
     [rows, trimmed],
   );
 
@@ -198,7 +199,7 @@ export function MemberRows({
   // A read fails the sheet only when it has nothing to draw: TanStack keeps
   // the last good data through a failed refetch, and a list the member just
   // saw shouldn't turn into an error on a background blip (the rule
-  // `member-detail-sheet.tsx` follows). Retry reruns only what failed, and is
+  // `member-profile-screen.tsx` follows). Retry reruns only what failed, and is
   // busy while that read is in flight.
   const membersFailed = membersQuery.isError && membersQuery.data === undefined;
   const rosterFailed = roster.isError && !roster.hasData;
@@ -246,79 +247,100 @@ export function MemberRows({
         groups.map((group) => (
           <View key={group.key}>
             <SectionHeader>{`${group.label} ${group.rows.length}`}</SectionHeader>
-            {group.rows.map((row) => {
-              const offline =
-                row.status === "offline" || row.status === "invisible";
-              return (
-                <Pressable
-                  key={row.userId}
-                  testID={`member-row-${row.userId}`}
-                  style={({ pressed }) => [
-                    styles.row,
-                    pressed && onOpenProfile ? styles.rowPressed : null,
-                  ]}
-                  accessibilityRole={onOpenProfile ? "button" : undefined}
-                  accessibilityLabel={
-                    row.status
-                      ? `${row.name}, ${presenceLabel(row.status)}`
-                      : row.name
-                  }
-                  accessibilityHint={
-                    onOpenProfile ? "Opens their profile" : undefined
-                  }
-                  disabled={!onOpenProfile}
-                  onPress={() => onOpenProfile?.(row.userId)}
-                >
-                  <View>
-                    <View style={offline ? styles.dimmed : null}>
-                      <MemberAvatar
-                        uri={row.avatarUrl}
-                        initials={initialsFor(row.name)}
-                        size={AVATAR_SIZE}
-                        tint={memberAvatarTint(
-                          memberAvatarHue(row.userId, row.roleColor),
-                        )}
-                        style={styles.avatar}
-                        textStyle={styles.avatarText}
-                      />
-                    </View>
-                    {row.status ? (
-                      <View pointerEvents="none" style={styles.presenceDot}>
-                        <StatusDot
-                          testID={`member-presence-${row.status}`}
-                          status={row.status}
-                          ring={tokens.color.surface.popover}
-                        />
-                      </View>
-                    ) : null}
-                  </View>
-                  <View style={styles.nameBlock}>
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.name,
-                        row.roleColor
-                          ? { color: row.roleColor }
-                          : offline
-                            ? styles.nameOffline
-                            : null,
-                      ]}
-                    >
-                      {row.name}
-                    </Text>
-                    {row.line ? (
-                      <Text numberOfLines={1} style={styles.statusLine}>
-                        {row.line}
-                      </Text>
-                    ) : null}
-                  </View>
-                </Pressable>
-              );
-            })}
+            {group.rows.map((row) => (
+              <ChannelMemberRow
+                key={row.userId}
+                row={row}
+                title={channelMemberTitle(row, group.label)}
+                styles={styles}
+                ringColor={tokens.color.surface.popover}
+                onOpenProfile={onOpenProfile}
+              />
+            ))}
           </View>
         ))
       )}
     </View>
+  );
+}
+
+/**
+ * One reader in the list (#4633): reads their own presence, so a change to
+ * one member's dot re-renders that row, not the sheet.
+ */
+function ChannelMemberRow({
+  row,
+  title,
+  styles,
+  ringColor,
+  onOpenProfile,
+}: {
+  row: ChannelMemberSheetRow;
+  /** Their title, when it adds to the group heading. */
+  title: string | null;
+  /** The sheet's stylesheet, built once for every row. */
+  styles: ReturnType<typeof createStyles>;
+  ringColor: string;
+  onOpenProfile?: (userId: string) => void;
+}) {
+  const { status, line } = usePresenceOf(row.userId);
+  const offline = status === "offline" || status === "invisible";
+  return (
+    <Pressable
+      testID={`member-row-${row.userId}`}
+      style={({ pressed }) => [
+        styles.row,
+        pressed && onOpenProfile ? styles.rowPressed : null,
+      ]}
+      accessibilityRole={onOpenProfile ? "button" : undefined}
+      accessibilityLabel={[
+        row.name,
+        title,
+        status ? presenceLabel(status) : null,
+      ]
+        .filter(Boolean)
+        .join(", ")}
+      accessibilityHint={onOpenProfile ? "Opens their profile" : undefined}
+      disabled={!onOpenProfile}
+      onPress={() => onOpenProfile?.(row.userId)}
+    >
+      <AvatarWithPresence
+        status={status}
+        avatarSize={AVATAR_SIZE}
+        ring={ringColor}
+      >
+        <View style={offline ? styles.dimmed : null}>
+          <MemberAvatar
+            uri={row.avatarUrl}
+            initials={initialsFor(row.name)}
+            size={AVATAR_SIZE}
+            tint={memberAvatarTint(memberAvatarHue(row.userId, row.roleColor))}
+            style={styles.avatar}
+            textStyle={styles.avatarText}
+          />
+        </View>
+      </AvatarWithPresence>
+      <View style={styles.nameBlock}>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.name,
+            row.roleColor
+              ? { color: row.roleColor }
+              : offline
+                ? styles.nameOffline
+                : null,
+          ]}
+        >
+          {row.name}
+        </Text>
+        {title || line ? (
+          <Text numberOfLines={1} style={styles.statusLine}>
+            {[title, line].filter(Boolean).join(" \u00b7 ")}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
   );
 }
 
@@ -340,7 +362,7 @@ function MemberRowsSkeleton() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    <SkeletonRegion label="Loading members">
+    <SkeletonRegion label="Loading members" flush>
       <SectionHeaderSkeleton />
       {SKELETON_NAME_WIDTHS.map((width, index) => (
         <View key={index} style={styles.row}>
@@ -408,7 +430,7 @@ function createStyles(tokens: SignetTokens) {
     search: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
@@ -424,13 +446,6 @@ function createStyles(tokens: SignetTokens) {
     },
     // Web's `opacity-50` on an offline member's avatar.
     dimmed: { opacity: 0.5 },
-    // On the avatar's bottom-right corner, as web pins it and as the ME
-    // button carries the member's own; the ring is the sheet's fill.
-    presenceDot: {
-      position: "absolute",
-      bottom: -3,
-      right: -3,
-    },
     nameBlock: {
       flexShrink: 1,
       minWidth: 0,

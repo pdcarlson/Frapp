@@ -13,15 +13,15 @@ Database rollback and restore are their own procedures:
 ### Detection signals
 
 - Uptime monitor fails `/health/ready` — **not `/health`**, which stays 2xx while the process is up ([`observability.md` § Health Check](../../spec/behavior/observability.md#health-check)), so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency. `/health`'s body shows it too, but up to 60 s late, because it reuses one probe for that long. In-repo monitor: `.github/workflows/production-uptime.yml` (scheduled every 15 minutes, [far less often in practice](../../spec/architecture/adr/adr-24.md); alert title *Production /health/ready is failing*). A Sentry 60 s check is still the finer-grained human path, planned under #2505
-- Render service marked unhealthy
+- Cloud Run revision failing to start, or restarting (the service's **Revisions** and **Logs** tabs)
 - Elevated 5xx alerts
 
 ### Triage steps
 
 1. Confirm outage scope (`staging` vs `production`).
-2. Check Render deploy/activity timeline.
-3. Hit `/health/ready` directly and read its `message`, which names each degraded dependency. It probes fresh; `/health`'s body can be up to 60 s old.
-4. Inspect Render logs for startup/env errors.
+2. Check what changed: the last **Deploy staging** / **Deploy production** run, and the service's revisions in Cloud Run ([`cloud-run.md`](deployment/cloud-run.md)).
+3. Hit `/health/ready` directly and read its `message`, which names each degraded dependency. Its database and Storage probe is at most 5 s old and its `billing:` check at most 5 minutes old; `/health`'s body can be up to 60 s old ([Health Check](../../spec/behavior/observability.md#health-check)).
+4. Inspect the Cloud Run logs for startup/env errors ([`cloud-run.md` § Observability](deployment/cloud-run.md#observability)).
 5. Inspect Sentry for first error spike and root exception.
 
 ### Common root causes
@@ -33,7 +33,7 @@ Database rollback and restore are their own procedures:
 
 ### Recovery checklist
 
-- [ ] If the latest release caused the outage, roll the API back through **Deploy production**, never the Render dashboard: the previous release's SHA when no migration has shipped since, otherwise a forward revert ([`db-rollback-playbook.md` § 3) Undo one migration](db-rollback-playbook.md#3-undo-one-migration))
+- [ ] If the latest release caused the outage, roll the API back through **Deploy production**, never the Cloud Run console: the previous release's SHA when no migration has shipped since, otherwise a forward revert ([`db-rollback-playbook.md` § 3) Undo one migration](db-rollback-playbook.md#3-undo-one-migration))
 - [ ] Validate required env vars are present
 - [ ] Verify DB connectivity from API
 - [ ] Re-run post-deploy smoke checks

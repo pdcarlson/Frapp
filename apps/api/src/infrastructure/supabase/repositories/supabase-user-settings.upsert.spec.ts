@@ -54,6 +54,16 @@ describe('SupabaseUserSettingsRepository.upsert', () => {
     });
   });
 
+  // #5519: the switch is an allow-listed column like the rest; left off the
+  // list, a PATCH answered 200 and the switch never saved.
+  it('writes the read-receipts switch it is given, false included', async () => {
+    const { repo, written } = harness();
+
+    await repo.upsert({ user_id: 'u-1', read_receipts: false });
+
+    expect(written()).toMatchObject({ user_id: 'u-1', read_receipts: false });
+  });
+
   it('leaves out every column it is not given', async () => {
     const { repo, written } = harness();
 
@@ -69,6 +79,7 @@ describe('SupabaseUserSettingsRepository.upsert', () => {
       'status_expires_at',
       'custom_status',
       'custom_status_expires_at',
+      'read_receipts',
     ]) {
       expect(row).not.toHaveProperty(key);
     }

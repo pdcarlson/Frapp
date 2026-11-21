@@ -17,6 +17,8 @@ export interface ListChapterAuditLogOptions {
   actorUserId?: string;
   /** Exact match on the action verb. */
   action?: string;
+  /** Any of these action verbs: a Logs kind (`CHAPTER_LOG_KINDS`). */
+  actions?: readonly string[];
   /** Inclusive lower bound on `created_at`, as an ISO timestamp. */
   startDate?: string;
   /** Inclusive upper bound on `created_at`, as an ISO timestamp. */

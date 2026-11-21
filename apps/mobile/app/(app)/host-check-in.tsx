@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useScreenBelow } from "@/lib/back-target";
@@ -13,6 +13,7 @@ import {
   useAttendance,
   useEvent,
   useMintCheckInToken,
+  useMyAttendance,
   usePermissionList,
   type DeviceInstant,
 } from "@repo/hooks";
@@ -24,8 +25,19 @@ import {
   SkeletonRegion,
 } from "@/components/state-block";
 import { CHECK_IN_TOKEN_WINDOW_MS } from "@/lib/events/check-in-code";
-import { formatCountdown } from "@/lib/events/format";
-import { selectEventDetail, selectMintedToken } from "@/lib/events/select";
+import {
+  useCheckInScreenReport,
+  type ScreenPresence,
+} from "@/lib/events/check-in-screen-report";
+import { formatCountdown, resolveCheckInWindow } from "@/lib/events/format";
+import {
+  selectEventDetail,
+  selectMintedToken,
+  selectMyAttendance,
+} from "@/lib/events/select";
+import { useOneTapCheckIn } from "@/lib/events/use-one-tap-check-in";
+import { SelfCheckInLink } from "@/components/events/self-check-in-link";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 import {
@@ -36,9 +48,12 @@ import {
 /**
  * s22 — Host check-in, admin (`canvas-screens.dc.html:704`).
  *
- * An officer projects this; members scan it with s18. The code rotates every 30
- * seconds and the server accepts the current and previous window, so a scan
- * racing a rotation still lands (`spec/ui/mobile/patterns.md`).
+ * An officer projects this; members point their phone's own camera at it. The
+ * QR is a link (`@repo/validation` `check-in-link.ts`, 2026-11-13) that opens
+ * s18 already checking in, or the web page on a phone without the app. The
+ * code rotates every 30 seconds and the server accepts a scanned one for three
+ * windows more (a typed one for one more), so a scan that races a rotation, or
+ * waits on a location prompt, still lands.
  *
  * ## The QR is dark-on-white even though the app is dark-only
  *
@@ -107,7 +122,56 @@ import {
  * after the computed rotation, on purpose: it asks half a second later,
  * because the computed rotation is early by the request's trip to the server
  * and asking exactly then could get the old window's code back.
+ *
+ * ## The host checks in here too
+ *
+ * The host can't scan the code their own phone is showing, so under the code
+ * a quiet "Check myself in" checks them in with one tap (2026-11-17,
+ * `useOneTapCheckIn`; the API takes the check-in of the officer whose screen
+ * is live without a code). It is there only while check-in is open and their
+ * own row reads as missing, and turns into "You're checked in" once it lands.
+ *
+ * ## This phone is the check-in zone
+ *
+ * While a code is drawn, the screen tells the server where it is, once a
+ * minute (`useCheckInScreenReport`, #4532), and members check in only within
+ * 100 yards of it. One line under the count says which is happening: that
+ * members are checked against this phone, or that distance isn't checked
+ * because this phone can't tell where it is (location off for Frapp, with a
+ * way to Settings, or no fix within 100 m). It sits in a row that is always
+ * there, so the code doesn't move when the line arrives. An event with a
+ * drawn zone, or a screen opened before check-in opens, says nothing.
  */
+
+/** The officer's line about the distance check (see the header note). */
+function presenceLine(
+  presence: ScreenPresence,
+): { text: string; settings: boolean } | null {
+  switch (presence.kind) {
+    case "screen":
+      return {
+        text: "Members check in within about 100 yards of this phone.",
+        settings: false,
+      };
+    case "elsewhere":
+      return {
+        text: "Members check in near another officer's screen. This phone can't tell where it is.",
+        settings: false,
+      };
+    case "off":
+      return presence.reason === "permission"
+        ? {
+            text: "Distance isn't checked. Allow location for Frapp to check it.",
+            settings: !presence.canAskAgain,
+          }
+        : {
+            text: "Distance isn't checked. This phone can't tell where it is.",
+            settings: false,
+          };
+    case "none":
+      return null;
+  }
+}
 
 /** Until the body has measured itself: the size the screen always drew. */
 const QR_FALLBACK_SIZE = 260;
@@ -115,6 +179,8 @@ const QR_FALLBACK_SIZE = 260;
 const QR_MAX_SIZE = 340;
 /** On a phone narrow enough to go below this, the code still scans. */
 const QR_MIN_SIZE = 180;
+/** The distance line's leading; its row holds two of them (see header). */
+const PRESENCE_LINE_HEIGHT = 20;
 /** The live dot beside the countdown, as drawn. */
 const LIVE_DOT_SIZE = 8;
 
@@ -229,6 +295,28 @@ export default function HostCheckInScreen() {
   const rotated = minted !== null && remaining <= 0;
   const nextFailed = tokenQuery.isError && !tokenQuery.isFetching;
   const checkedIn = countCheckedIn(attendance);
+  const presence = useCheckInScreenReport(
+    eventId,
+    canHost && focused && minted !== null,
+  );
+  const line = presenceLine(presence);
+  const { accent } = useChapterBranding();
+  const mine = useMyAttendance(canHost ? eventId : "");
+  const own = selectMyAttendance(mine.data);
+  // No Scan code from here: this screen's own code is the one in reach.
+  const self = useOneTapCheckIn(eventId);
+  // Only while check-in is open (the screen is up from before it opens) and
+  // once the host's own row has been read as missing, so a host already in
+  // never sees the button flash.
+  const checkInOpen =
+    event !== null &&
+    resolveCheckInWindow(
+      event.start_time,
+      event.end_time,
+      new Date(now.wall),
+      event.check_in_opens_minutes,
+    ).state === "open";
+  const showSelfCheckIn = checkInOpen && mine.isSuccess && !own;
 
   const [bodyWidth, setBodyWidth] = useState<number | null>(null);
   const qrSize =
@@ -239,9 +327,7 @@ export default function HostCheckInScreen() {
           Math.min(
             QR_MAX_SIZE,
             Math.floor(
-              bodyWidth -
-                2 * tokens.spacing["2xl"] -
-                2 * tokens.spacing.lg,
+              bodyWidth - 2 * tokens.spacing["2xl"] - 2 * tokens.spacing.lg,
             ),
           ),
         );
@@ -265,7 +351,7 @@ export default function HostCheckInScreen() {
         */}
         <GlassCloseButton
           accessibilityLabel="End hosting and go back"
-          onPress={() => (below ? below.goBack() : goBackTo(router, "/more"))}
+          onPress={() => (below ? below.goBack() : goBackTo(router, "/you"))}
         />
         <Text
           accessibilityRole="header"
@@ -283,7 +369,9 @@ export default function HostCheckInScreen() {
         </View>
       ) : !canHost ? (
         <View style={styles.stateWrap}>
-          <InlineNote>Hosting check-in is for officers who manage events.</InlineNote>
+          <InlineNote>
+            Hosting check-in is for officers who manage events.
+          </InlineNote>
         </View>
       ) : !minted &&
         (tokenQuery.isError || (!tokenQuery.isPending && !cached)) ? (
@@ -316,9 +404,7 @@ export default function HostCheckInScreen() {
         <>
           <View
             style={styles.body}
-            onLayout={(layout) =>
-              setBodyWidth(layout.nativeEvent.layout.width)
-            }
+            onLayout={(layout) => setBodyWidth(layout.nativeEvent.layout.width)}
           >
             {minted ? (
               <>
@@ -365,12 +451,34 @@ export default function HostCheckInScreen() {
                     <Text style={styles.countLabel}> checked in</Text>
                   </Text>
                 ) : null}
+
+                <View style={styles.presenceRow}>
+                  {line ? (
+                    <Text testID="check-in-presence" style={styles.presence}>
+                      {line.text}
+                      {line.settings ? (
+                        <>
+                          {" "}
+                          <Text
+                            accessibilityRole="link"
+                            onPress={() =>
+                              void Linking.openSettings().catch(() => undefined)
+                            }
+                            style={styles.presenceLink}
+                          >
+                            Open Settings
+                          </Text>
+                        </>
+                      ) : null}
+                    </Text>
+                  ) : null}
+                </View>
               </>
             ) : (
               // Loading: a block the size of the code's white card, so the
               // screen doesn't jump when it lands (components.md §10,
               // content-shaped), pulsing with every other skeleton.
-              <SkeletonRegion label="Loading check-in code">
+              <SkeletonRegion label="Loading check-in code" flush>
                 <SkeletonBlock
                   width={qrSize + 2 * tokens.spacing.lg}
                   height={qrSize + 2 * tokens.spacing.lg}
@@ -381,11 +489,23 @@ export default function HostCheckInScreen() {
           </View>
 
           {minted ? (
-            <View style={styles.footer}>
-              <Text style={styles.manualLabel}>Show code</Text>
-              <Text selectable style={styles.manualCode}>
-                {minted.manualCode}
-              </Text>
+            <View style={styles.footerStack}>
+              <View style={styles.footer}>
+                <Text style={styles.manualLabel}>Show code</Text>
+                <Text selectable style={styles.manualCode}>
+                  {minted.manualCode}
+                </Text>
+              </View>
+              {own?.checkedInAt ? (
+                <Text style={styles.selfDone}>You&apos;re checked in</Text>
+              ) : showSelfCheckIn ? (
+                <SelfCheckInLink
+                  accent={accent}
+                  pending={self.pending}
+                  message={self.message}
+                  onPress={self.checkIn}
+                />
+              ) : null}
             </View>
           ) : null}
         </>
@@ -464,13 +584,39 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.muted,
       ...typeRole(tokens.typography.role.title),
     },
+    // Always laid out, two lines tall, so the code above doesn't move when
+    // the line arrives or changes.
+    presenceRow: {
+      minHeight: 2 * PRESENCE_LINE_HEIGHT,
+      justifyContent: "flex-start",
+    },
+    presence: {
+      textAlign: "center",
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.label),
+      lineHeight: PRESENCE_LINE_HEIGHT,
+    },
+    presenceLink: {
+      color: tokens.color.text.foreground,
+      textDecorationLine: "underline",
+    },
+    footerStack: {
+      alignItems: "center",
+      paddingHorizontal: tokens.spacing["2xl"],
+      paddingBottom: tokens.spacing.xl,
+      gap: tokens.spacing.xs,
+    },
     footer: {
       flexDirection: "row",
       alignItems: "baseline",
       justifyContent: "center",
       gap: tokens.spacing.sm,
-      paddingHorizontal: tokens.spacing["2xl"],
-      paddingBottom: tokens.spacing.xl,
+    },
+    selfDone: {
+      minHeight: tokens.touch.minimum,
+      textAlignVertical: "center",
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.label),
     },
     manualLabel: {
       color: tokens.color.text.muted,

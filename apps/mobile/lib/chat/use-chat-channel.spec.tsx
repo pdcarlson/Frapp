@@ -94,6 +94,7 @@ const mocks = vi.hoisted(() => {
     editMessage: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
     deleteMessage: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
     setMessageFlag: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
+    setMessagePinned: vi.fn<(ctx: unknown, args: unknown) => Promise<void>>(),
     bootChatAdapters: vi.fn((): Promise<void> => Promise.resolve()),
     listForChannel: vi.fn(async () => [] as unknown[]),
     draftLoad: vi.fn(async () => ""),
@@ -104,6 +105,7 @@ const mocks = vi.hoisted(() => {
     emitTyping: vi.fn(),
     noTypingUsers: Object.freeze([]) as readonly string[],
     getTypingUsers: vi.fn((): readonly string[] => []),
+    isUnavailable: vi.fn<(channelId: string) => boolean>(() => false),
     // `.from(...).select(...).in(...)` — the reaction-hydration chain in `queryFn`
     // (its `.order().range()` tail is passed through in the module mock below).
     // Deliberately NOT `null`: mocking the client away skips that branch entirely,
@@ -136,18 +138,19 @@ vi.mock("@repo/chat-core/chat-client", () => ({
   editMessage: mocks.editMessage,
   deleteMessage: mocks.deleteMessage,
   setMessageFlag: mocks.setMessageFlag,
+  setMessagePinned: mocks.setMessagePinned,
 }));
 
-// The + sheet's Task and Service hours posts (#3865): chat-core's own calls,
-// stubbed here so a spec can see what the hook binds and refreshes.
+// The + sheet's Task posts (#3865, #5772): chat-core's own calls, stubbed
+// here so a spec can see what the hook binds and refreshes.
 const dispatchMocks = vi.hoisted(() => ({
   postTask: vi.fn(),
-  postHours: vi.fn(),
+  linkTask: vi.fn(),
 }));
 vi.mock("@repo/chat-core/dispatch", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/chat-core/dispatch")>()),
   postTask: dispatchMocks.postTask,
-  postHours: dispatchMocks.postHours,
+  linkTask: dispatchMocks.linkTask,
 }));
 
 vi.mock("@repo/chat-core/realtime-manager", () => ({
@@ -157,6 +160,7 @@ vi.mock("@repo/chat-core/realtime-manager", () => ({
     unsubscribe: mocks.unsubscribe,
     subscribeStatus: mocks.subscribeStatus,
     getTypingUsers: mocks.getTypingUsers,
+    isUnavailable: mocks.isUnavailable,
     emitTyping: mocks.emitTyping,
   },
 }));
@@ -174,6 +178,9 @@ vi.mock("@/lib/supabase", () => ({
     }),
   }),
 }));
+
+const dismissDeletedMessagePushes = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/notifications/push", () => ({ dismissDeletedMessagePushes }));
 
 vi.mock("./use-chat-runtime", () => ({
   useChatRuntime: () => mocks.runtime,
@@ -252,6 +259,7 @@ beforeEach(() => {
     };
   });
   mocks.getTypingUsers.mockImplementation(() => mocks.noTypingUsers);
+  mocks.isUnavailable.mockImplementation(() => false);
   mocks.listForChannel.mockImplementation(async () => []);
   mocks.supabaseIn.mockImplementation(async () => ({ data: [] }));
 });
@@ -709,6 +717,43 @@ describe("realtime attach", () => {
 });
 
 describe("status subscription", () => {
+  it("reports a channel Realtime refused once the manager says so (#5765)", async () => {
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.unavailable).toBe(false);
+
+    mocks.isUnavailable.mockImplementation((id) => id === CHANNEL);
+    act(() => {
+      mocks.statusListeners.forEach((cb) => cb("live"));
+    });
+    expect(result.current.unavailable).toBe(true);
+  });
+
+  it("never carries a refused channel's state to the next one, not even for a render (#5765)", async () => {
+    const renders: { id: string; unavailable: boolean }[] = [];
+    const view = renderHook(
+      ({ id }: { id: string }) => {
+        const result = useChatChannel(id);
+        renders.push({ id, unavailable: result.unavailable });
+        return result;
+      },
+      {
+        wrapper: createWrapper(createClient(), newQueryClient()),
+        initialProps: { id: CHANNEL },
+      },
+    );
+    mocks.isUnavailable.mockImplementation((id) => id === CHANNEL);
+    act(() => {
+      mocks.statusListeners.forEach((cb) => cb("live"));
+    });
+    expect(view.result.current.unavailable).toBe(true);
+
+    view.rerender({ id: "another-channel" });
+    const next = renders.filter((r) => r.id === "another-channel");
+    expect(next.length).toBeGreaterThan(0);
+    expect(next.every((r) => !r.unavailable)).toBe(true);
+  });
+
   it("hands on the manager's own typing array, re-read on each status ping", async () => {
     // The manager keeps that array's identity while the typists are unchanged
     // (`packages/chat-core/src/realtime-manager.spec.ts`, #1004), so a ping
@@ -854,6 +899,43 @@ describe("initial queryFn", () => {
     // And the reaction actually landed on the message, not just fetched.
     const message = result.current.messages.find((m) => m.id === "server-1");
     expect(message?.reactions["reaction:+1"]).toEqual(["user-9"]);
+  });
+});
+
+describe("a deleted message in a loaded conversation (#4470)", () => {
+  it("takes that message's push out of the tray, and nothing for a conversation without one", async () => {
+    const client = createClient(
+      vi.fn(async () => ({
+        data: [
+          rawRow("kept", "2026-08-27T00:00:00.000Z"),
+          {
+            ...rawRow("gone", "2026-08-27T00:00:01.000Z"),
+            is_deleted: true,
+          },
+        ],
+        error: null,
+      })),
+    );
+    const { result } = renderChannel(client);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() =>
+      expect(dismissDeletedMessagePushes).toHaveBeenCalledWith(
+        new Set(["gone"]),
+      ),
+    );
+    expect(dismissDeletedMessagePushes).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads nothing when no message is deleted", async () => {
+    const client = createClient(
+      vi.fn(async () => ({
+        data: [rawRow("kept", "2026-08-27T00:00:00.000Z")],
+        error: null,
+      })),
+    );
+    const { result } = renderChannel(client);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(dismissDeletedMessagePushes).not.toHaveBeenCalled();
   });
 });
 
@@ -1344,16 +1426,16 @@ describe("reply, edit and delete (#2775)", () => {
       await result.current.flag("m1", "funny");
       await result.current.flag("m1", null);
     });
-    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(
-      1,
-      expect.anything(),
-      { channelId: CHANNEL, messageId: "m1", flag: "funny" },
-    );
-    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(
-      2,
-      expect.anything(),
-      { channelId: CHANNEL, messageId: "m1", flag: null },
-    );
+    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(1, expect.anything(), {
+      channelId: CHANNEL,
+      messageId: "m1",
+      flag: "funny",
+    });
+    expect(mocks.setMessageFlag).toHaveBeenNthCalledWith(2, expect.anything(), {
+      channelId: CHANNEL,
+      messageId: "m1",
+      flag: null,
+    });
   });
 
   it("refuses to edit or delete without a runtime, rather than silently doing nothing", async () => {
@@ -1941,21 +2023,28 @@ describe("sendPoll() (#3701)", () => {
   });
 });
 
-describe("postTask() / postHours() from the + sheet (#3865)", () => {
+describe("postTask() / linkTask() from the + sheet (#3865, #5772)", () => {
   const task = {
     title: "Sweep the porch",
     assignee_id: "user-1",
     due_date: "2026-11-12",
   };
-  const hours = {
-    date: "2026-11-09",
-    duration_minutes: 90,
-    description: "Food bank",
-  };
+  it("links a task into this channel", async () => {
+    dispatchMocks.linkTask.mockResolvedValue({ ok: true });
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    await act(async () => {
+      await result.current.linkTask({ id: "t1", title: "Fix the door" });
+    });
+    expect(dispatchMocks.linkTask).toHaveBeenCalledWith(
+      mocks.runtime.ctx,
+      CHANNEL,
+      { id: "t1", title: "Fix the door" },
+    );
+  });
 
-  it("posts into this channel, and refreshes the board or the Service page", async () => {
-    dispatchMocks.postTask.mockResolvedValue({ ok: true });
-    dispatchMocks.postHours.mockResolvedValue({
+  it("posts into this channel, and refreshes the board", async () => {
+    dispatchMocks.postTask.mockResolvedValue({
       ok: true,
       unconfirmed: true,
       warning: "Couldn't confirm.",
@@ -1966,7 +2055,6 @@ describe("postTask() / postHours() from the + sheet (#3865)", () => {
 
     await act(async () => {
       await result.current.postTask(task);
-      await result.current.postHours(hours);
     });
 
     expect(dispatchMocks.postTask).toHaveBeenCalledWith(
@@ -1974,14 +2062,8 @@ describe("postTask() / postHours() from the + sheet (#3865)", () => {
       CHANNEL,
       task,
     );
-    expect(dispatchMocks.postHours).toHaveBeenCalledWith(
-      mocks.runtime.ctx,
-      CHANNEL,
-      hours,
-    );
     // A lost answer refreshes too: the entry may exist.
     expect(invalidate).toHaveBeenCalledWith({ queryKey: taskKeys.all });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["service-entries"] });
   });
 
   it("refreshes nothing after a refusal", async () => {
@@ -2004,5 +2086,40 @@ describe("postTask() / postHours() from the + sheet (#3865)", () => {
     });
     expect(outcome).toEqual({ ok: false, error: SIGNED_OUT_POST_COPY });
     expect(dispatchMocks.postTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("setPinned() (#3723)", () => {
+  it("pins through chat-core, then refetches the channel's pin list", async () => {
+    mocks.setMessagePinned.mockImplementation(async () => undefined);
+    const { result, queryClient } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+
+    await act(async () => {
+      await result.current.setPinned("msg-1", true);
+    });
+
+    expect(mocks.setMessagePinned).toHaveBeenCalledWith(expect.anything(), {
+      channelId: CHANNEL,
+      messageId: "msg-1",
+      pinned: true,
+    });
+    // `usePinnedMessages`' key.
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ["channels", CHANNEL, "pins"],
+    });
+  });
+
+  it("rejects with unpin wording when an unpin fails", async () => {
+    mocks.setMessagePinned.mockImplementation(async () => {
+      throw new Error("network");
+    });
+    const { result } = renderChannel();
+    await waitFor(() => expect(result.current.canSend).toBe(true));
+
+    await expect(result.current.setPinned("msg-1", false)).rejects.toThrow(
+      /unpin/i,
+    );
   });
 });

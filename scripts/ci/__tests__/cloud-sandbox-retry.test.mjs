@@ -294,6 +294,37 @@ test("every class carries a non-empty, actionable hint", () => {
     /Network = Full|public\.ecr\.aws/,
   );
   assert.match(bash("cs_failure_hint ratelimit").stdout, /DOCKERHUB_TOKEN/);
+  // The rate-limit remedy follows the login's outcome. With credentials set and the login
+  // failed (an expired token, 2026-11-19), "add DOCKERHUB_TOKEN" sends the reader after
+  // something that is already there.
+  const absent = bash("cs_failure_hint ratelimit").stdout;
+  assert.match(absent, /Add DOCKERHUB_USERNAME/);
+  const expired = bash(
+    'CS_DOCKER_LOGIN=failed CS_DOCKER_LOGIN_REASON="unauthorized: personal access token is expired" cs_failure_hint ratelimit',
+  ).stdout;
+  assert.match(
+    expired,
+    /login FAILED[^:]*: unauthorized: personal access token is expired/,
+  );
+  assert.match(expired, /replace DOCKERHUB_TOKEN/);
+  assert.doesNotMatch(expired, /Add DOCKERHUB_USERNAME/);
+  // A login that failed for a reason that is not the credentials must not send the reader
+  // to rotate a working token.
+  const network = bash(
+    'CS_DOCKER_LOGIN=failed CS_DOCKER_LOGIN_REASON="net/http: TLS handshake timeout" cs_failure_hint ratelimit',
+  ).stdout;
+  assert.match(network, /TLS handshake timeout/);
+  assert.match(network, /do not rotate/);
+  assert.doesNotMatch(
+    network,
+    /replace DOCKERHUB_TOKEN|Add DOCKERHUB_USERNAME/,
+  );
+  const ok = bash("CS_DOCKER_LOGIN=ok cs_failure_hint ratelimit").stdout;
+  assert.match(ok, /login succeeded/);
+  assert.doesNotMatch(
+    ok,
+    /replace DOCKERHUB_TOKEN|Add DOCKERHUB_USERNAME|new session/,
+  );
   // `dependencies` gets a second, negative assertion. A bare /npm ci/ match was satisfied by an
   // earlier draft that read "Bringup already tried to repair it with `npm ci` and that failed
   // too" — left over from when the check installed. That sentence would tell a sentinel-only
@@ -826,18 +857,44 @@ test("bringup never writes to node_modules, and checks it only after the stack i
   // Docker work: after it, any `fail` on the way (a rate limit, a blocked host) exited before
   // the build. Located by the invocation itself, not by `turbo run build`, which the quoted
   // re-run hints also contain: with the real call gone, a hint alone must not pass this.
-  const build = upCmds.search(/"\$ROOT\/node_modules\/\.bin\/turbo" run build --filter='\.\/packages\/\*'/);
+  const build = upCmds.search(
+    /"\$ROOT\/node_modules\/\.bin\/turbo" run build --filter='\.\/packages\/\*'/,
+  );
   assert.ok(build !== -1, "bringup must build the workspace packages");
-  assert.ok(build < docker, "the build runs before any Docker/Supabase step, so none of their failures skip it");
-  assert.ok(build < firstCheck, "...and so before the toolchain check, which stays last");
-  const buildBlock = upCmds.slice(upCmds.lastIndexOf("\nif ", build), upCmds.indexOf("\nfi\n", build));
-  assert.match(buildBlock, /turbo" --version/, "the build is skipped, not failed, when turbo does not run");
-  assert.match(buildBlock, /packages_build_failed=1/, "a failed build is recorded");
-  assert.doesNotMatch(buildBlock, /\bfail\b/, "a failed package build must not fail bringup");
+  assert.ok(
+    build < docker,
+    "the build runs before any Docker/Supabase step, so none of their failures skip it",
+  );
+  assert.ok(
+    build < firstCheck,
+    "...and so before the toolchain check, which stays last",
+  );
+  const buildBlock = upCmds.slice(
+    upCmds.lastIndexOf("\nif ", build),
+    upCmds.indexOf("\nfi\n", build),
+  );
+  assert.match(
+    buildBlock,
+    /turbo" --version/,
+    "the build is skipped, not failed, when turbo does not run",
+  );
+  assert.match(
+    buildBlock,
+    /packages_build_failed=1/,
+    "a failed build is recorded",
+  );
+  assert.doesNotMatch(
+    buildBlock,
+    /\bfail\b/,
+    "a failed package build must not fail bringup",
+  );
 
   // Recorded is not reported: the sentinel body is what sessions read, so the WARN has to
   // reach whichever sentinel the run ends with.
-  const failFn = upCmds.slice(upCmds.indexOf("fail() {"), upCmds.indexOf("\n}\n", upCmds.indexOf("fail() {")));
+  const failFn = upCmds.slice(
+    upCmds.indexOf("fail() {"),
+    upCmds.indexOf("\n}\n", upCmds.indexOf("fail() {")),
+  );
   assert.match(
     failFn,
     /\[ -n "\$packages_build_failed" \] && printf '%s\\n' "\$PACKAGES_BUILD_WARN" >>"\$FAILED_SENTINEL"/,
@@ -853,4 +910,38 @@ test("bringup never writes to node_modules, and checks it only after the stack i
     /PACKAGES_BUILD_WARN='[^\n]*npx turbo run build --filter='"'"'\.\/packages\/\*'"'"'/,
     "the WARN names the build, quoted for zsh",
   );
+});
+
+// cs_docker_login_if_creds itself, against a stub `docker` first on PATH: the hint above is only
+// as good as the outcome this records, and the bug it fixes was the outcome being thrown away.
+test("cs_docker_login_if_creds records why the login failed, and the hint uses it", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "cs-docker-"));
+  const stub = path.join(dir, "docker");
+  writeFileSync(
+    stub,
+    "#!/bin/sh\ncat >/dev/null\necho 'Error response from daemon: Get \"https://registry-1.docker.io/v2/\": unauthorized: personal access token is expired' >&2\nexit 1\n",
+    { mode: 0o755 },
+  );
+  try {
+    const env = {
+      PATH: `${dir}:${process.env.PATH}`,
+      DOCKERHUB_USERNAME: "someone",
+      DOCKERHUB_TOKEN: "dckr_pat_not_a_real_token",
+    };
+    const res = bash(
+      'cs_docker_login_if_creds; echo "state=$CS_DOCKER_LOGIN"; cs_failure_hint ratelimit',
+      env,
+    );
+    const out = res.stdout + res.stderr;
+    assert.match(out, /state=failed/);
+    assert.match(
+      out,
+      /Docker Hub login failed \(.*personal access token is expired\)/,
+    );
+    assert.match(out, /replace DOCKERHUB_TOKEN/);
+    // The token never reaches the log or the hint.
+    assert.doesNotMatch(out, /dckr_pat_not_a_real_token/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

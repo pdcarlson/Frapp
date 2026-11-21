@@ -340,7 +340,7 @@ export async function checkCors({ apiBase, origin, admitted, fetchImpl }) {
   return fail(
     check,
     `A preflight from ${origin}, the other environment's dashboard, to ${url} answered ${saw}. ` +
-      `This API admits a dashboard it must not. Check NODE_ENV on the Render service, which picks the CORS list ` +
+      `This API admits a dashboard it must not. Check NODE_ENV on the Cloud Run service (from Infisical, through Secret Manager), which picks the CORS list ` +
       `(apps/api/src/interface/http/deployment-environment.ts).`,
   );
 }

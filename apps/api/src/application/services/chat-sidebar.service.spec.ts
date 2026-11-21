@@ -27,6 +27,7 @@ const stored = (
   chapter_id: CHAPTER,
   unread_only: true,
   hide_muted: false,
+  sort: 'recent',
   collapsed_sections: ['direct'],
   created_at: '2026-09-29T00:00:00.000Z',
   updated_at: '2026-09-29T00:00:00.000Z',
@@ -83,9 +84,18 @@ describe('ChatSidebarService', () => {
       await expect(service.getSidebar(CHAPTER, USER)).resolves.toEqual({
         unread_only: false,
         hide_muted: false,
+        sort: 'chapter',
         collapsed_sections: [],
         pinned_channel_ids: [],
       });
+    });
+
+    it('reads a sort it does not know as the chapter order', async () => {
+      repo.findPreferences.mockResolvedValue(stored({ sort: 'newest' }));
+
+      const view = await service.getSidebar(CHAPTER, USER);
+
+      expect(view.sort).toBe('chapter');
     });
 
     it('returns the stored settings', async () => {
@@ -94,6 +104,7 @@ describe('ChatSidebarService', () => {
       expect(view).toMatchObject({
         unread_only: true,
         hide_muted: false,
+        sort: 'recent',
         collapsed_sections: ['direct'],
       });
     });
@@ -116,6 +127,14 @@ describe('ChatSidebarService', () => {
 
       expect(repo.updateFilters).toHaveBeenCalledWith(CHAPTER, USER, {
         hide_muted: true,
+      });
+    });
+
+    it('writes the sort on its own', async () => {
+      await service.updateFilters(CHAPTER, USER, { sort: 'alpha' });
+
+      expect(repo.updateFilters).toHaveBeenCalledWith(CHAPTER, USER, {
+        sort: 'alpha',
       });
     });
 
@@ -245,6 +264,7 @@ describe('ChatSidebarService', () => {
       await expect(service.pin(CHAPTER, USER, 'ch-a')).resolves.toEqual({
         unread_only: true,
         hide_muted: false,
+        sort: 'recent',
         collapsed_sections: ['direct'],
         pinned_channel_ids: ['ch-a'],
       });

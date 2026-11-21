@@ -38,6 +38,7 @@ import { ROLLBACK_PLAYBOOK } from "./ci/lib/ops-docs.mjs";
 import {
   DEFAULT_BUDGET_MINUTES,
   DEFAULT_RETENTION_DAYS,
+  NEVER_BACKED_UP_BUCKETS,
   REHEARSAL_BUCKET,
   REHEARSAL_CONTENT_TYPE,
   REHEARSAL_PREFIX,
@@ -231,7 +232,9 @@ function expectedDestination(opts, s3Bucket) {
 }
 
 async function collectRemote({ supabaseUrl, serviceKey }) {
-  const buckets = await listBuckets({ supabaseUrl, serviceKey });
+  const buckets = (await listBuckets({ supabaseUrl, serviceKey })).filter(
+    (bucket) => !NEVER_BACKED_UP_BUCKETS.has(bucket),
+  );
   console.log(`Buckets: ${buckets.join(", ") || "(none)"}`);
 
   const remote = [];

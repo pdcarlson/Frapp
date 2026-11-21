@@ -29,7 +29,7 @@ describe("taskDueClause", () => {
       NOW,
     );
     expect(clause?.overdue).toBe(false);
-    expect(clause?.text).toMatch(/^Due Nov 3$/);
+    expect(clause?.text).toMatch(/^Due November 3$/);
   });
 
   it("drops the clause when the date is missing", () => {

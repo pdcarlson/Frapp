@@ -11,6 +11,12 @@ export interface StorageObject {
    * gap, and reports are re-reaped on the next tick anyway.
    */
   createdAt: Date | null;
+  /**
+   * The object's size in bytes, when the backend reported it. Lets a caller
+   * refuse a file it would not open before reading it into memory (the
+   * backwork AI fill, #5233); left out rather than guessed when unknown.
+   */
+  sizeBytes?: number;
 }
 
 /** Options for {@link IStorageProvider.getSignedUploadUrl}. */

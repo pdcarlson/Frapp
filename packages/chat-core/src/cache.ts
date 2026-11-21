@@ -114,11 +114,76 @@ export function mergeServerRow(
   byId[serverKey] = {
     ...incoming,
     ...(carriesMask ? { sender_blocked: true } : {}),
+    ...(carriesPreviewMask(overwritten, incoming)
+      ? {
+          thread: {
+            ...incoming.thread!,
+            last_reply: {
+              ...incoming.thread!.last_reply!,
+              sender_blocked: true,
+            },
+          },
+        }
+      : {}),
+    ...(carriesForwardMask(overwritten, incoming)
+      ? {
+          forwarded_from: {
+            ...incoming.forwarded_from!,
+            sender_blocked: true,
+          },
+        }
+      : {}),
     actions,
     reactions,
   };
   const next: ChannelCache = { ...cache, byId, order };
   return { ...next, order: withOrderedKey(next, serverKey) };
+}
+
+/**
+ * The same carry for a thread parent's latest-reply preview (#4297): the
+ * server withheld it because the viewer blocked its replier, and the parent's
+ * echo now carries that replier's words raw (an edit, or the trigger's
+ * rewrite). Kept while the same replier's reply is still the latest; a newer
+ * reply from someone else is a new question for the client's own list.
+ */
+function carriesPreviewMask(
+  overwritten: ChatMessage | undefined,
+  incoming: ChatMessage,
+): boolean {
+  const before = overwritten?.thread?.last_reply;
+  const after = incoming.thread?.last_reply;
+  return (
+    before?.sender_blocked === true &&
+    !!after &&
+    !after.sender_blocked &&
+    !incoming._blockEvaluated &&
+    after.sender_id === before.sender_id
+  );
+}
+
+/**
+ * The same carry for a forward's copy of its original (#4864): the server
+ * withheld it because the viewer blocked the original's author, and the
+ * row's echo (a pin, an edit of the comment) carries the copy raw. The copy
+ * never changes but to be blanked, so the carry holds while it is still the
+ * same original's. The body is the echo's; `hiddenForwardedText` reads the
+ * verdict, as `threadPreviewVisible` reads a preview's.
+ */
+function carriesForwardMask(
+  overwritten: ChatMessage | undefined,
+  incoming: ChatMessage,
+): boolean {
+  const before = overwritten?.forwarded_from;
+  const after = incoming.forwarded_from;
+  return (
+    before?.sender_blocked === true &&
+    !!after &&
+    !after.sender_blocked &&
+    !after.deleted &&
+    !incoming._blockEvaluated &&
+    after.message_id === before.message_id
+  );
 }
 
 /**

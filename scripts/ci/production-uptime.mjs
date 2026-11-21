@@ -3,7 +3,7 @@
 // Scheduled probe of live production readiness.
 //
 // Deploy smoke already hits `/health/ready` after a ship. Nothing watched it
-// between deploys. `/health` is Render's `healthCheckPath` and is specified to
+// between deploys. `/health` is the liveness check and is specified to
 // always 2xx while the process is up, so an HTTP-status monitor on it only
 // ever catches a dead process — not a degraded database or Storage. This
 // script GETs `/health/ready` and treats anything other than HTTP 200 with
@@ -13,8 +13,9 @@
 // that did would suspend on ADR-19's required-reviewer gate and expire without
 // probing (#1435).
 //
-// This is the in-repo monitor. A Sentry 60s check is finer-grained and still
-// human (quota + dashboard). Do not create that from an agent session.
+// This is the in-repo backup monitor. The Sentry 60s check on the same URL
+// exists since 2026-11-12 (`10936567`, created at the owner's request); it uses
+// the free plan's one uptime monitor. See docs/ops/alert-routing.md § API uptime.
 //
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/production-uptime.test.mjs`.
@@ -145,7 +146,7 @@ function buildAlertIssueBody({ result, url, runUrl }) {
     "",
     `\`${url}\` returned **${result.reason}**.`,
     "",
-    "Watch `/health/ready`, not `/health`. `/health` is Render's `healthCheckPath` and is specified to always 2xx while the process is up, so a 200 there does not clear a degraded dependency.",
+    "Watch `/health/ready`, not `/health`. `/health` is the liveness check and is specified to always 2xx while the process is up, so a 200 there does not clear a degraded dependency.",
     "",
     "See `docs/ops/incident-response.md` § API down.",
     "",

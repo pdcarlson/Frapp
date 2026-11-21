@@ -6,10 +6,52 @@ description: >
   editing frontend code — React Native screens and typed StyleSheet token factories, React
   components, ShadCN/Radix composites, Tailwind styling, theme tokens, TanStack Query data hooks,
   or Zod form validation — anywhere under apps/mobile, apps/web, apps/landing, or
-  packages/{theme,hooks,validation}.
+  packages/{theme,hooks,validation}. Also use before designing, proposing or reviewing any screen:
+  it carries the owner's UI rulebook and the self-review every UI PR passes before it opens.
 ---
 
 # UI Development
+
+## Read this first: the rulebook and the self-review
+
+Paul, 2026-11-19: "I'M SO SO TIRED OF TELLING YOU THE SAME STUFF EVERY FUCKING TIME AND ITERATING ON
+EVERY FUCKING UI CHANGE … it's like a never ending loop of fix one problem and find 4 more that you fix
+to a mediocre level." Every thread builds its screen from its own brief, so a ruling he gave one thread
+never reached the next. These files are where his rulings now live, and every UI change follows them
+without being told:
+
+1. **Before designing, read [`rulebook.md`](rulebook.md) in full** (every ruling Paul has given, by
+   theme) and [`principles.md`](../../../spec/ui/design-system/principles.md) (the P1 to P8 checks). A
+   brief that contradicts a ruling is built only when Paul asked for it, or when Shawn, Winston or Evan
+   is deliberately trying something new as `AGENTS.md` § ADR discipline allows; either way the PR names
+   the ruling it changes and edits its line. A coordinator's brief that contradicts one by accident
+   follows the ruling.
+2. **Build on both apps in one PR**, from the shared components below, never a hand-built copy of one.
+3. **Before the PR opens, run [`review-checklist.md`](review-checklist.md)**: captures as member, chair,
+   exec and empty on web and phone; the sibling sweep (fix the pattern everywhere, never only where Paul
+   saw it); the rulebook walk; using it as a member would. Its evidence goes in the PR body.
+4. **A rule a syntax tree can see becomes lint** in `packages/eslint-config/ui-rules.js`, with the
+   remaining sites grandfathered by file in the app's eslint config (that list only shrinks).
+5. **When Paul gives a new UI ruling,** the PR that acts on it changes the spec that owns the detail and
+   adds its dated one-line entry to `rulebook.md`, so the next thread starts with it.
+
+### Shared components, by job
+
+Reach for these before writing markup. A screen that hand-builds one of these jobs fails P8.
+
+| Job                            | Web (`apps/web/components/`)                                                                           | Phone (`apps/mobile/components/`)                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Page actions in the header     | `layout/page-actions.tsx` `PageActions` (moves into the page header with #5686)                        | `screen-shell.tsx` header, `header-button.tsx` `HeaderButton`                                                  |
+| Create ("New …")               | `ui/new-button.tsx` `NewButton`; other main actions `<Button variant="action">` (both land with #5686) | `ScreenShell` `createAction` (`floating-create-button.tsx`)                                                    |
+| A record or long form          | `shared/panel.tsx` `Panel` (docked)                                                                    | `sheet-scaffold.tsx`                                                                                           |
+| Row and action menu            | `shared/row-menu.tsx` `RowMenu`, `ActionMenuButton` (never `ui/context-menu.tsx` directly)             | `item-actions-menu.tsx`: `useItemMenu` for a row's long-press, `openItemMenu` from any other press             |
+| A pick from options            | `ui/select.tsx`, `ui/dropdown-menu.tsx`, `shared/searchable-picker.tsx`                                | `option-sheet.tsx`                                                                                             |
+| Date and time                  | `ui/date-field.tsx`, `ui/time-field.tsx`                                                               | the platform picker (see `components/tasks/due-date-field.tsx`)                                                |
+| Grouped list                   | `ui/table.tsx`, `shared/section-label.tsx`                                                             | `list-section.tsx`                                                                                             |
+| Loading, empty, error          | `shared/page-skeletons.tsx`, `shared/async-states.tsx`, `shared/nested-states.tsx`                     | `state-block.tsx`, `card-list-skeleton.tsx` (each route's own skeleton, pinned by `screen-skeletons.spec.tsx`) |
+| Destructive confirm            | `shared/confirm-dialog.tsx` `useConfirmDialog`                                                         | `confirmAlert` (`lib/minutes/meetings-on.ts`), the platform alert with Cancel and the verb                     |
+| Kept form drafts               | `useKeptFormDraft` (`@repo/hooks`)                                                                     | `useKeptSheetDraft` (`lib/kept-sheet-draft.ts`)                                                                |
+| Segmented switch, filter chips | `ui/segmented.tsx`, `shared/filter-chip.tsx`                                                           | `segmented.tsx`, `filter-chips.tsx`                                                                            |
 
 Where frontend code lives and the conventions that aren't obvious from reading it. For which
 tokens and typefaces are current, which reference board is visual truth, and how a cutover
@@ -18,13 +60,21 @@ state, and topic teardown, see [`realtime-resilience`](../realtime-resilience/SK
 
 ## Architecture overview
 
-| Layer | Location | Notes |
-|-------|----------|-------|
-| `@repo/theme` | `packages/theme/src/` | Exports `./tailwind` (shared preset), `./signet.css` (both web surfaces), `./signet` (typed tokens, what mobile reads). `src/motion.ts` is the motion scale, served through `./signet` and the preset |
-| ShadCN primitives | `apps/web/components/ui/` | Dashboard primitives and Radix composites. There is no shared web-component package |
-| Web features / pages | `apps/web/components/`, `apps/web/app/` | Next.js App Router |
-| Landing | `apps/landing/app/` | Separate Next.js app with inline Tailwind |
-| Mobile | `apps/mobile/app/` (Expo Router screens), `apps/mobile/components/` | React Native, no Tailwind classes |
+| Layer                | Location                                                            | Notes                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@repo/theme`        | `packages/theme/src/`                                               | Exports `./tailwind` (shared preset), `./signet.css` (both web surfaces), `./signet` (typed tokens, what mobile reads). `src/motion.ts` is the motion scale, served through `./signet` and the preset |
+| ShadCN primitives    | `apps/web/components/ui/`                                           | Dashboard primitives and Radix composites. There is no shared web-component package                                                                                                                   |
+| Web features / pages | `apps/web/components/`, `apps/web/app/`                             | Next.js App Router                                                                                                                                                                                    |
+| Landing              | `apps/landing/app/`                                                 | Separate Next.js app with inline Tailwind                                                                                                                                                             |
+| Mobile               | `apps/mobile/app/` (Expo Router screens), `apps/mobile/components/` | React Native, no Tailwind classes                                                                                                                                                                     |
+
+**Before writing a helper, hook, guard, constant or validation rule,** search for an existing one
+and reuse or extend it. Grep for the concept, not only your name for it, in: `packages/hooks/src/`
+(data hooks), `packages/validation/src/` (schemas, client gates, shared limits),
+`packages/chat-core/src/` (chat state, realtime, outbox), `packages/formatting/src/` (dates, times,
+display strings), `apps/mobile/components/sheet-scaffold.tsx` (bottom-sheet shell and
+`useGuardedSheetRef`), `apps/mobile/lib/` and `apps/web/lib/`. A copy you find is consolidated in
+this PR when small ([`AGENTS.md` § Tech debt protocol](../../../AGENTS.md#tech-debt-protocol)).
 
 ## Web components (`apps/web`)
 
@@ -77,7 +127,7 @@ Rules:
 - Extend the package, don't copy. A Signet product token (anything in `foundations.md`'s locked
   set) duplicated into an app-local file is a defect. A role only one surface may use belongs to
   that surface, which is why the two app-local remainders are deliberate. `gold.*` lives in
-  `apps/web/tailwind.config.ts` for the Ask pill. The landing's three marketing type roles
+  `apps/web/tailwind.config.ts` for Ask's source markers. The landing's three marketing type roles
   (`--text-hero`, `--text-display-lg`, `--text-lead`) are declared in `apps/landing/app/globals.css`
   and bound in `apps/landing/tailwind.config.ts`. They sit above `foundations.md` §7's locked six
   and are landing-only by decision, so using one on a product surface is an off-scale defect.
@@ -126,16 +176,18 @@ constraints web habits most often break:
 - Provider chain in `app/_layout.tsx`, outer to inner: `GestureHandlerRootView` >
   `SafeAreaProvider` > `FrappThemeProvider` > `AuthSessionProvider` > `FrappProvider` >
   `ObservabilityIdentityProvider` > `AnalyticsProvider` > `KeyboardProviderGuarded` >
-  `ClientPolicyGate` > `BottomSheetModalProvider`. The gate is the minimum-version prompt and
-  must stay outside the sheet provider, or an open sheet draws over it. Figtree loads there behind a splash hold.
+  `ClientPolicyGate` > `OverlayLayer` > `BottomSheetModalProvider`. The gate is the minimum-version prompt and
+  must stay outside the sheet provider, or an open sheet draws over it. `OverlayLayer`
+  (`components/overlay-layer.tsx`, mounted by the gate inside what its prompt covers) draws
+  whole-window overlays such as the glass item menu over the app and every sheet; what it draws
+  gets only the providers above it, not a screen's own context or the sheet provider's
+  ([`patterns.md` § Overlays](../../../spec/ui/mobile/patterns.md#overlays)). Figtree loads there behind a splash hold.
 - Expo Go is the local run path (`npm run start -w apps/mobile`, then scan from a device or
   emulator). It can't be verified headless. Native modules that crash Go at launch or break
-  `expo export --platform web` (Stripe React Native, `expo-notifications`,
-  `react-native-keyboard-controller`, `expo-apple-authentication`,
-  `@react-native-google-signin/google-signin`) must be imported through their isolation modules
-  (`@/lib/payments/stripe`, `@/lib/notifications/push`, `@/lib/keyboard`, `@/lib/apple-auth`,
-  `@/lib/google-auth`), which check the runtime and degrade. ESLint `no-restricted-imports` rejects
-  a direct import.
+  `expo export --platform web` must be imported through their isolation modules, which check the
+  runtime and degrade. The list, package by package, is
+  [`spec/ui/mobile/README.md` § Run paths](../../../spec/ui/mobile/README.md#run-paths-expo-go-vs-eas);
+  ESLint `no-restricted-imports` in `apps/mobile/eslint.config.mjs` rejects a direct import.
 - Eight files are frozen: `app/_layout.tsx`, `app/(app)/_layout.tsx`, `app/(app)/(tabs)/_layout.tsx`,
   `lib/theme.tsx`, `components/screen-shell.tsx`, `lib/href.ts`, `package.json`, `app.json`. Every
   planned route is already registered on the stack in `app/(app)/_layout.tsx` with a backing file,
@@ -156,8 +208,14 @@ constraints web habits most often break:
 
 - **Fetching:** use TanStack Query through the shared hooks in `@repo/hooks`, never raw `fetch`.
   Import from the package root. `packages/hooks/src/` (one module per feature domain, re-exported
-  by `index.ts`) is the inventory, so check it before writing a new hook. Reads are `useQuery` with
-  `queryFn` calling `client.GET`. Writes are `useMutation` calling `client.POST/PATCH/DELETE`,
+  by `index.ts`) is the inventory, so check it before writing a new hook. A new module goes in that
+  barrel in its alphabetical place, never appended at the end; `packages/validation/src/index.ts`
+  works the same way and holds re-exports only. Neither needs a `package.json` entry:
+  `@repo/hooks`, `@repo/chat-core` and `@repo/validation` resolve `./<name>` to `src/<name>.ts`
+  through one `"./*"` export rule (a `.tsx` module or a folder still needs its own entry, and a
+  `null` entry keeps a module the barrel deliberately hides out of reach).
+  `scripts/ci/__tests__/package-barrels.test.mjs` fails on an unsorted barrel.
+  Reads are `useQuery` with `queryFn` calling `client.GET`. Writes are `useMutation` calling `client.POST/PATCH/DELETE`,
   with `onSuccess` invalidating queries. Hooks need both `QueryClientProvider` and
   `FrappClientProvider` above them.
 - **API client:** `@repo/api-sdk` is the `openapi-fetch` client generated from

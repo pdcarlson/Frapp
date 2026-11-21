@@ -101,6 +101,11 @@ describe("DocumentActionsSheet (#3934)", () => {
       "Pin for the chapter",
       "Delete document",
     ]);
+    // A copy of a Drive file is removed in Drive (#5157).
+    expect(rowLabels(render({ ...FILE, fromDrive: true }, true).tree)).toEqual([
+      "Star",
+      "Pin for the chapter",
+    ]);
     // A folder is deleted on web, from its Edit controls.
     expect(rowLabels(render(FOLDER, true).tree)).toEqual([
       "Unstar",

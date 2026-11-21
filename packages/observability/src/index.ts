@@ -38,32 +38,28 @@ export {
   parseTracesSampleRate,
   formatSampleRateWarning,
 } from "./sample-rate";
-export type {
-  SampleRateParseReason,
-  SampleRateParseResult,
-} from "./sample-rate";
 
 export {
   REQUEST_ID_HEADER,
   SENTRY_TRACE_HEADER,
   BAGGAGE_HEADER,
-  PSEUDONYM_HEX_RE,
   isPseudonymHex,
 } from "./correlation";
+// spec/behavior/observability.md keeps the correlation types in this barrel,
+// so each is tagged `@public` for knip even while nothing imports it.
 export type {
-  RequestId,
-  SentryTraceId,
-  SentryEventId,
-  PostHogDistinctId,
-  PostHogChapterGroupId,
-  AnalyticsIdentity,
+  /** @public */ RequestId,
+  /** @public */ SentryTraceId,
+  /** @public */ SentryEventId,
+  /** @public */ PostHogDistinctId,
+  /** @public */ PostHogChapterGroupId,
+  /** @public */ AnalyticsIdentity,
 } from "./correlation";
 
 export {
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
   POSTHOG_EXCEPTION_AUTOCAPTURE,
-  POSTHOG_PRODUCTION_REPLAY_ENABLED,
   shouldEnablePostHogReplay,
   SENTRY_ERROR_CORRELATED_EVENT,
   SENTRY_ERROR_CORRELATED_PROPERTY_KEYS,
@@ -80,25 +76,18 @@ export {
 
 export { createNoPseudonymScrubHooks } from "./sentry-scrub-hooks";
 
-export { headerValue, httpStatusClass } from "./sentry-http";
+export { httpStatusClass } from "./sentry-http";
 
 export {
   CLIENT_CONTRACT_ERROR_CODES,
-  isClientContractErrorCode,
   MEMBER_CAUSED_ERROR_CODES,
 } from "./api-error-codes";
-export type { ClientContractErrorCode } from "./api-error-codes";
 export {
   createQueryErrorReporter,
-  DEFAULT_REPORT_INTERVAL_MS,
-  UNKEYED_ROOT,
 } from "./query-errors";
 export { createReportOnce } from "./report-once";
-export type {
-  QueryErrorKind,
-  QueryErrorReport,
-  QueryErrorReporter,
-  QueryErrorReporterOptions,
-  ReportedMutation,
-  ReportedQuery,
-} from "./query-errors";
+export {
+  buildAuthFailureReport,
+  createAuthFailureReporter,
+} from "./auth-failures";
+export type { AuthFailureInput } from "./auth-failures";

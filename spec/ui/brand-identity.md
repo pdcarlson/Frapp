@@ -6,12 +6,12 @@
 
 ## 1. Identity
 
-| Fact        | Value                                                                                                       |
-| ----------- | ----------------------------------------------------------------------------------------------------------- |
-| Name        | **Frapp** ([ADR-25](../architecture/adr/adr-25.md), 2026-09-23). "Signet" is retired as a product name and remains the design system's internal name. |
-| Tagline     | "Ask your chapter anything."                                                                                |
-| Positioning | The AI-first operating system for Greek life — see [../product/positioning.md](../product/positioning.md)   |
-| Lane        | Dark-first, warm, **consumer** (Notion / Cash App), with de-Google guardrails. Not Linear/Vercel technical. Since 2026-11-05 the warmth comes from the gold accent, Figtree and the copy, not from the surfaces: the owner moved the surface ladder to a darker, pure neutral graphite ([foundations.md](design-system/foundations.md) §2). |
+| Fact        | Value                                                                                                                                                                                                                                                                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Name        | **Frapp** ([ADR-25](../architecture/adr/adr-25.md), 2026-09-23). "Signet" is retired as a product name and remains the design system's internal name.                                                                                                                                                                                       |
+| Tagline     | "Ask your chapter anything."                                                                                                                                                                                                                                                                                                                |
+| Positioning | The AI-first operating system for Greek life — see [../product/positioning.md](../product/positioning.md)                                                                                                                                                                                                                                   |
+| Lane        | Dark-first, warm, **consumer** (Notion / Cash App), with de-Google guardrails. Not Linear/Vercel technical. Since 2026-11-05 the warmth comes from the gold accent, Figtree and the copy, not from the surfaces: the owner moved the surface ladder to a darker, pure neutral graphite, and on 2026-11-19 to a faintly violet near-black with softer steps ([foundations.md](design-system/foundations.md) §2). |
 
 **Naming rule (binding).** This is the one canonical statement; other docs link here.
 
@@ -20,6 +20,7 @@
 - **"Legacy Frapp" means the retired pre-Signet visuals and code** (bone, bronze, Geist, `#2563EB`), not the product name.
 - **Transition.** Until ADR-25's rename series lands, some specs still prescribe user-visible strings that say Signet: copy tables, screen and footer descriptions, and legal-page summaries. Each one changes to Frapp in the same series step as the code that renders it. The one list of those specs, per step, is in [ADR-25](../architecture/adr/adr-25.md), with the command that regenerates it. This rule sets the target. Until its step lands, a prescribed Signet string is what ships, not a license to add new Signet strings.
 - **Code identifiers are frapp permanently:** the repo and package names (`@repo/*`); `frapp.live` and its subdomains, including `app.frapp.live` and `api.frapp.live`, the API origin every mobile binary bakes in; the `frapp://` scheme; the Expo slug `frapp`; the Sentry org `frapp-live`; and `live.frapp.mobile` as both the iOS bundle id and the Android package (Google Play fixes the package on the first upload, as App Store Connect fixes the bundle id). When citing code, cite the real current names.
+- **The staging variant has its own three names** (Paul, 2026-11-13, [#2511](https://github.com/pdcarlson/Frapp/issues/2511)): the home-screen name `Frapp Staging`, the scheme `frapp-staging://`, and `live.frapp.mobile.staging` as its iOS bundle id and Android package. It is a second app that installs beside the store app so staging can be tested on a phone, built only by the `staging` profile in `apps/mobile/eas.json`; `apps/mobile/app.config.js` derives it from `app.json` and refuses to point it at production. The names become as permanent as the production ones with the variant's first upload to TestFlight and Play. Everything else is shared: the Expo slug, the EAS project and the Sentry org. Its audience is the people who build Frapp, never a chapter. Changed 2026-11-19 by Paul: his chapter beta-tests on it too, through a TestFlight external group's public link ([`docs/ops/deployment/mobile.md` § 6.8](../../docs/ops/deployment/mobile.md#68-frapp-staging)).
 
 ---
 
@@ -27,14 +28,14 @@
 
 The shipping mark is **locked emblem B**: an abstract crest with a neck break, gold on charcoal. Treat it as a crest, never as a dog, seal, or mascot in marketing copy. Canonical master is the vector in [`assets.md`](assets.md) (`packages/brand-assets/assets/signet-emblem-B.svg`); every raster renders from it. House UI accent stays `#EFB63B`; the mark itself is not that token.
 
-| Fact             | Value                                                                                                                        |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| House gold       | `#EFB63B` — Signet's own accent. Gold/amber, never brown-bronze.                                                             |
-| Accent seed      | The default chapter accent seed — a separate role from the mark gold below, even where the values coincide. Value and rationale: [design-system/accent-engine.md § 3](design-system/accent-engine.md#3-default-seed) |
-| Mark field       | `#1A1A1A` — spec'd **and** measured; the committed rasters are drawn in it                                                     |
-| Mark gold        | `#DDB844` — spec'd **and** measured; the committed rasters are drawn in it                                                    |
-| Shipping mark    | Locked emblem B — abstract crest, neck break, gold on charcoal                                                                |
-| Mascot / extras  | **Not commissioned.** The USPTO searches it waited on are done ([#1901](https://github.com/pdcarlson/Frapp/issues/1901)), and the product is now Frapp (ADR-25), so a mascot is a new owner decision. § The mascot below is revised with the post-beta internals rename. Do not commission mascot art before that decision. |
+| Fact            | Value                                                                                                                                                                                                                                                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| House gold      | `#EFB63B` — Signet's own accent. Gold/amber, never brown-bronze.                                                                                                                                                                                                                                                            |
+| Accent seed     | The default chapter accent seed — a separate role from the mark gold below, even where the values coincide. Value and rationale: [design-system/accent-engine.md § 3](design-system/accent-engine.md#3-default-seed)                                                                                                        |
+| Mark field      | `#1A1A1A` — spec'd **and** measured; the committed rasters are drawn in it                                                                                                                                                                                                                                                  |
+| Mark gold       | `#DDB844` — spec'd **and** measured; the committed rasters are drawn in it                                                                                                                                                                                                                                                  |
+| Shipping mark   | Locked emblem B — abstract crest, neck break, gold on charcoal                                                                                                                                                                                                                                                              |
+| Mascot / extras | **Not commissioned.** The USPTO searches it waited on are done ([#1901](https://github.com/pdcarlson/Frapp/issues/1901)), and the product is now Frapp (ADR-25), so a mascot is a new owner decision. § The mascot below is revised with the post-beta internals rename. Do not commission mascot art before that decision. |
 
 > **These two rows once described only the spec, not the pixels.** Until
 > [#2153](https://github.com/pdcarlson/Frapp/issues/2153) a full census of the committed rasters
@@ -52,6 +53,18 @@ The shipping mark is **locked emblem B**: an abstract crest with a neck break, g
 
 The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming recolors product UI through the accent engine; the brand itself never retints.
 
+> **One exception, Paul's, 2026-11-13: the crest on Ask Frapp's front doors takes the chapter accent.** Changed in #4702 by pdcarlson, 2026-11-13 (Paul's pick on the Ask redesign, default 2 on #4698: "it should show up with the logo"). The crest's outline is drawn as a one-colour glyph in the chapter's accent in three places and nowhere else: the Ask Frapp button in the web chat composer, the Ask Frapp bar above the phone's tab bar, and the header of the conversation each opens. There it is an icon for Ask, always beside the words "Ask Frapp", not the brand's signature: the mark everywhere else (the app icon, sign-in, the landing, the What's new sheet, every raster) stays the fixed gold on charcoal above, and `check:brand-assets` still holds the rasters to it. The glyph's one path is `FRAPP_CREST_PATH` in `packages/theme/src/crest.ts`, held to the brand vector by `crest.spec.ts`.
+>
+> Changed in #4904 by pdcarlson, 2026-11-13: on web the first of those places is now the Ask Frapp row in the Find dialog, since the composer button is gone. The exception itself is unchanged.
+>
+> Changed in #5476 by pdcarlson, 2026-11-18: on web that place is now the floating Ask bar at the bottom of the page, the phone's bar, since Find no longer asks. The exception itself is unchanged.
+>
+> Changed in #5560 by pdcarlson, 2026-11-19 (Paul's pick: Ask "stays in one place"): on web the bar now sits at the foot of the sidebar from `lg` up, and floats at the bottom of the page only below it. In the collapsed sidebar's rail it is the crest alone in a 34px round button, named "Ask Frapp" for a screen reader and in its tooltip, since the rail has no room for words. That is the one place the accent crest stands without the words beside it; it is still only an Ask entry.
+>
+> Changed in #4904 by pdcarlson, 2026-11-17 (Paul's pick: "a big ... glowing logo and the chapter crest" when Ask opens): a fourth place, the opening of the conversation before its first turn, where the crest is drawn large over a glow of the accent ([`design-system/components.md`](design-system/components.md) §11). It is still Ask's icon inside Ask, not the brand's signature, but there the words "Ask Frapp" are on the bar or field that opened it and in the dialog's name rather than beside the crest. Everywhere else the rule above holds.
+>
+> Added in #5476 by pdcarlson, 2026-11-18 (recording what was already drawn, not a new place): the crest also takes the accent as Frapp's own mark inside a channel, where a member asks it there ([`../behavior/ai.md` § Asking from a channel](../behavior/ai.md#asking-from-a-channel)): Frapp's row in a composer's `@` list, on the accent's tint where an avatar goes (#4713; the first row since #5476), and the mark beside an answer drawn in the channel (#4713). The phone's Search screen's "Ask Frapp about …" row is another (#5139). The full list of places is [`design-system/components.md`](design-system/components.md)'s bullet on the crest.
+
 ### Banned logo vocabulary
 
 Binding constraints (research-derived) for any future mark exploration:
@@ -64,7 +77,7 @@ Binding constraints (research-derived) for any future mark exploration:
 
 ### The mascot
 
-Signet's mascot is a **seal (the animal)**. It is not a wax seal, a signet ring, or a stamp — those are banned mark vocabulary above. It is **not commissioned** and MUST NOT ship until the USPTO search that blocks the final mark clears. *(2026-09-23: the searches are done, #1901, and the product is now named Frapp, ADR-25. Whether a seal survives the rename is a new owner decision, and until it is made nothing is commissioned. This section is rewritten with the post-beta internals rename.)* Do not generate or restyle assets toward this mascot piecemeal; the shipping crest is not the mascot ([assets.md](assets.md) §1).
+Signet's mascot is a **seal (the animal)**. It is not a wax seal, a signet ring, or a stamp — those are banned mark vocabulary above. It is **not commissioned** and MUST NOT ship until the USPTO search that blocks the final mark clears. _(2026-09-23: the searches are done, #1901, and the product is now named Frapp, ADR-25. Whether a seal survives the rename is a new owner decision, and until it is made nothing is commissioned. This section is rewritten with the post-beta internals rename.)_ Do not generate or restyle assets toward this mascot piecemeal; the shipping crest is not the mascot ([assets.md](assets.md) §1).
 
 ### Platform requirements when the real mark lands
 
@@ -79,10 +92,10 @@ Asset production, storage, and sync are owned by [assets.md](assets.md).
 
 These were open questions in the research phase. This document closes them; do not reopen without a new decision record.
 
-| Decision          | Ruling                                                                                                                                                          |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decision          | Ruling                                                                                                                                                                                             |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | UI typeface       | **Figtree** — humanist rounded sans, fitting the warm consumer lane. **Geist is explicitly rejected** for Signet. Weights and scale: [design-system/foundations.md](design-system/foundations.md). |
-| Mobile navigation | **4 tabs: Chat (home), Events, Tasks, More.** There is no Home tab. Spec: [mobile/navigation.md](mobile/navigation.md).                                          |
+| Mobile navigation | **4 tabs**, chat as home and no Home tab: [mobile/navigation.md § Tab bar](mobile/navigation.md#tab-bar--4-tabs-locked) owns which.                                                                |
 
 Note: the design-system reference board's panel 4g draws a stale 5-tab bar; the Canvas header and all 23 screens in [design-system/reference/canvas-screens.dc.html](design-system/reference/canvas-screens.dc.html) lock 4 tabs. Four tabs win.
 
@@ -92,20 +105,19 @@ Note: the design-system reference board's panel 4g draws a stale 5-tab bar; the 
 
 Signet's direction is dark-first, warm, and consumer-grade. Every fact below has exactly one canonical doc — link it, never restate it:
 
-| Topic                                                         | Canonical doc                                                          |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Neutral ladder, semantic colors, type scale, radii, spacing, elevation | [design-system/foundations.md](design-system/foundations.md)   |
-| Components and skeleton/empty/error states                    | [design-system/components.md](design-system/components.md)             |
-| Duotone icon recipe                                           | [design-system/iconography.md](design-system/iconography.md)           |
-| Voice and UI writing                                          | [design-system/writing.md](design-system/writing.md)                   |
-| Chapter accent engine (seed → 12-step scale)                  | [design-system/accent-engine.md](design-system/accent-engine.md)       |
-| Mobile screens, navigation, patterns                          | [mobile/README.md](mobile/README.md)                                   |
-| Design-system entry point                                     | [design-system/README.md](design-system/README.md)                     |
+| Topic                                                                  | Canonical doc                                                    |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Neutral ladder, semantic colors, type scale, radii, spacing, elevation | [design-system/foundations.md](design-system/foundations.md)     |
+| Components and skeleton/empty/error states                             | [design-system/components.md](design-system/components.md)       |
+| Duotone icon recipe                                                    | [design-system/iconography.md](design-system/iconography.md)     |
+| Voice and UI writing                                                   | [design-system/writing.md](design-system/writing.md)             |
+| Chapter accent engine (seed → 12-step scale)                           | [design-system/accent-engine.md](design-system/accent-engine.md) |
+| Mobile screens, navigation, patterns                                   | [mobile/README.md](mobile/README.md)                             |
+| Design-system entry point                                              | [design-system/README.md](design-system/README.md)               |
 
 ---
 
 ## 5. What still ships legacy
-
 
 **Nothing on `main` does.** The landing site shipped the legacy Frapp **bone/bronze** look until its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merged; it is now on the Signet tokens, and with it the last legacy surface is gone. Its README records the reskin's decisions — [landing/README.md](landing/README.md). The web dashboard cut over with the #920 shell slice — [web-dashboard/README.md](web-dashboard/README.md). Merged is not live: `www.frapp.live` serves whatever the last Deploy production run shipped ([vercel.md § 4.3](../../docs/ops/deployment/vercel.md#43-domain-configuration)).
 

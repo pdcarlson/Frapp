@@ -42,7 +42,7 @@ Three golds now coexist, and they are not interchangeable:
 
 | Gold | Value | What it is |
 | ---- | ----- | ---------- |
-| House gold | `#EFB63B` | Signet's own brand accent. Paints the Ask and AI surface. Never retints per chapter. Unchanged. |
+| House gold | `#EFB63B` | Signet's own brand accent. Paints the Ask and AI surface. Never retints per chapter. Unchanged. Since #4702 (2026-11-13) what it paints on Ask is what is Frapp's inside the conversation, the source markers and the number on a source chip; Ask's entry and the member's own controls take the chapter accent ([`../design-system/components.md` §11](../design-system/components.md)). |
 | Mark gold | `#DDB844` | The emblem, per [`../brand-identity.md`](../brand-identity.md) §2. Never takes the chapter accent. The committed rasters measured `#DDA220` until #2153 re-exported the mark — see L-08. |
 | Accent seed | `#DDB844` | The default fed to the accent engine. **Changed** to equal the *spec'd* mark gold. |
 
@@ -159,8 +159,10 @@ where the board and the theme package disagree. L-08 is **closed** too, by
 which only restated the spec. **L-05 is closed as of 2026-09-13** by lane 7
 ([#2147](https://github.com/pdcarlson/Frapp/issues/2147)), in the direction that leaves its tokens
 standing. **L-02 is closed as of 2026-09-23** by the stale-palette sweep
-([#1165](https://github.com/pdcarlson/Frapp/issues/1165)), which takes its recompute option. L-03,
-L-06 and L-09 are open. **L-07 is closed as of 2026-09-30** by
+([#1165](https://github.com/pdcarlson/Frapp/issues/1165)), which takes its recompute option. L-03
+and L-09 are open. **L-06 is closed as of 2026-11-12** by the surface ladder
+([#3826](https://github.com/pdcarlson/Frapp/issues/3826)), which moved the endpoints its empty-interval
+proof said must move. **L-07 is closed as of 2026-09-30** by
 [#2398](https://github.com/pdcarlson/Frapp/issues/2398), which moved `FOCUS_RING`'s border to
 `accent-11`. **L-04 is closed as of 2026-10-01** by
 [#2743](https://github.com/pdcarlson/Frapp/issues/2743), which retired the directory it was about.
@@ -195,8 +197,11 @@ sheet is option `3a`.
 
 > **Superseded 2026-11-05.** The owner replaced this warm ladder with a darker, pure neutral one
 > (`#0A0A0A` / `#111111` / `#171717` / `#1E1E1E`, text `#EBEBEB` / `#A3A3A3` / `#737373` /
-> `#525252`; the text ladder was lifted again on 2026-11-09, [#3826](https://github.com/pdcarlson/Frapp/issues/3826)). The table above is the lock as it was settled; the current values and the reasons
-> live in [`../design-system/foundations.md`](../design-system/foundations.md) §2 and §4.
+> `#525252`; the text ladder was lifted again on 2026-11-09, and the surface steps spread apart to
+> `#050505` / `#1A1A1A` / `#262626` / `#313131` on 2026-11-12, [#3826](https://github.com/pdcarlson/Frapp/issues/3826)). The table above is the lock as it was settled; the current values and the reasons
+> live in [`../design-system/foundations.md`](../design-system/foundations.md) §2 and §4. On 2026-11-12 the
+> interactive edge also moved: controls now draw `--control-edge` (`.42`), and `--input` stays `.14` for
+> quiet edges ([#4389](https://github.com/pdcarlson/Frapp/issues/4389), foundations §3).
 
 This closes the lock as stated. The board does **not** close L-06 or L-08, which it was also hoped to
 settle: L-06 is still open, and L-08 was closed separately by
@@ -369,9 +374,23 @@ anything, and that `signetAccentSemanticVars`' key set is disjoint from that fam
 single edit that would retint all of them at once. The lock that test enforces is in
 [`README.md` § Brand and copy locks](README.md#brand-and-copy-locks).
 
+**2026-11-13: the consumer changed, the family stands.** #4702 removed the top-bar pill (Paul,
+2026-11-13). The family now paints what is Frapp's inside the conversation: the source markers
+and the number on a source chip ([`../design-system/components.md` §11](../design-system/components.md)).
+Ask's entry button, the member's bubble, send and Confirm take the chapter accent instead.
+
 ---
 
 ### L-06 — The ladder is pitched unevenly, and its tightest rung got tighter
+
+**Closed 2026-11-12** ([#3826](https://github.com/pdcarlson/Frapp/issues/3826), closing
+[#2399](https://github.com/pdcarlson/Frapp/issues/2399)). The owner chose option 2 of #2399's menu,
+move an endpoint, on 2026-11-09: the ladder is now `#050505` / `#1A1A1A` / `#262626` / `#313131`,
+stepping 1.17 / 1.15 / 1.16, every rung at or over the fixture's 1.15, with `--surface-1` back on the
+mark's field. `apps/web/components/shared/elevation-contrast.spec.ts` now asserts that minimum on every
+adjacent pair, which is the guard this section said was missing. Current values and reasons:
+[`../design-system/foundations.md`](../design-system/foundations.md) §2. The record below is kept as
+written.
 
 **Tracked as [#2399](https://github.com/pdcarlson/Frapp/issues/2399)**, which carries the full
 call-site survey and a proof that the remedy this section proposes is not reachable.

@@ -1,9 +1,10 @@
 /**
  * Narrowing for the `/v1/events` payloads.
  *
- * The generated SDK types for these routes infer as `never` — the same gap
- * `components/chat/up-next-strip.tsx` documents — so the shapes are narrowed at
- * the boundary rather than asserted. That is not just type hygiene here: a row
+ * These routes had no response schema until #4867, so the shapes were narrowed
+ * at the boundary rather than asserted. The SDK now types them
+ * (`EventResponseDto`, `EventDetailResponseDto`); moving these readers onto
+ * those types is #4952. The narrowing still earns its keep: a row
  * missing `id` would otherwise route to a detail screen that can never load,
  * and a missing `start_time` would render "Invalid Date" to a member.
  *
@@ -12,21 +13,22 @@
  * whole screen component into the scanner's bundle.
  */
 import {
-  collapseSeries,
   eventSeriesKey,
   selectOwnAttendance,
-  seriesCadenceLabel,
-  seriesHeadOf,
-  splitByHorizon,
   type AttendanceRowStatus,
   type DeviceInstant,
 } from "@repo/hooks";
 import {
   attendanceFieldsOf,
   checkInOpensMinutes,
+  readEventAgenda,
+  readEventAttachments,
+  type EventAgendaItem,
+  type EventAttachment,
   type EventAttendanceFields,
 } from "@repo/validation";
-import { formatDayHeading, localIsoDate, parseInstant } from "@repo/formatting";
+import { parseInstant } from "@repo/formatting";
+import { isRecord, str } from "@/lib/more/narrow";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
 export interface EventRow {
@@ -43,21 +45,21 @@ export interface EventRow {
   check_in_opens_minutes: number;
   /**
    * Who's coming, by role. Whether it is required of the viewer depends on
-   * their roles, so a screen asks `useRequiredOfViewer` (`viewer-roles.ts`).
+   * their roles, so a screen asks `useRequiredOfViewer` (`@repo/hooks`).
    */
   attendance: EventAttendanceFields;
   /**
    * The series rule (`WEEKLY` / `BIWEEKLY` / `MONTHLY`) on a series head,
-   * `null` on a generated occurrence or a one-off. The list collapses a series
-   * by it (`collapseSeries`), and the edit flow reads it (`seriesRuleOf` in
-   * `edit-event.ts`) to tell a series from a one-off.
+   * `null` on a generated occurrence or a one-off. A series' cadence line
+   * reads it (`seriesCadenceOf`), and the edit flow reads it (`seriesRuleOf`
+   * in `@repo/validation`'s `event-edit.ts`) to tell a series from a one-off.
    */
   recurrence_rule: string | null;
   /**
    * The series head's id on a generated occurrence, `null` on a head or a
-   * one-off. The list groups a series by it; the edit flow reads it to fetch
-   * the series parent and to ask whether a save covers this occurrence or the
-   * series.
+   * one-off. A series' cadence line groups a series by it; the edit flow
+   * reads it to fetch the series parent and to ask whether a save covers this
+   * occurrence or the series.
    */
   parent_event_id: string | null;
 }
@@ -65,14 +67,16 @@ export interface EventRow {
 export interface EventDetail extends EventRow {
   description: string | null;
   /**
-   * Meeting minutes (`spec/behavior/events.md` § Meeting minutes) — editable
-   * by admins with `events:update` after the event. Rendered here on the same
-   * terms as `description`: whatever `GET /v1/events/:id` returns, since
-   * neither field is filtered server-side by the event's `required_role_ids`
-   * targeting — see #1463. Web's `event-detail-sheet.tsx` labels the section
-   * "Internal notes"; mirrored here rather than inventing a second label.
+   * The event's notes (`spec/behavior/events.md` § Meeting minutes), editable
+   * with `events:update` and read by every member the event invites, so the
+   * screen labels them Notes (or Meeting minutes while the meetings module is
+   * off), as web's sheet does, never "internal" (#4934).
    */
   notes: string | null;
+  /** This meeting's agenda, in order (§ Agenda and attachments). */
+  agenda: EventAgendaItem[];
+  /** This meeting's links and Chapter Files documents, in order. */
+  attachments: EventAttachment[];
   check_in_zone_name: string | null;
   /**
    * Whether the event carries a check-in geofence.
@@ -82,20 +86,19 @@ export interface EventDetail extends EventRow {
    * exact boundary to anyone who asked for the event.
    */
   hasCheckInZone: boolean;
+  /**
+   * Whether a check-in from this viewer now needs the officer's code
+   * (`check_in_needs_code`, #4808): an officer's screen is live and it isn't
+   * the viewer's own. False when the read doesn't say.
+   */
+  checkInNeedsCode: boolean;
   /** The chapter's event type it was made as (#3730), or `null`. */
   event_type_id: string | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object";
-}
-
-function str(row: Record<string, unknown>, key: string): string | null {
-  const raw = row[key];
-  // Trim-checked, not just length-checked — matching `lib/more/narrow.ts`'s
-  // `str()`. A whitespace-only value (e.g. notes edited down to nothing) must
-  // read as absent, or a section renders with a label and an invisible body.
-  return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
+  /**
+   * Who made it, or `null`: the event's excuse receiver
+   * (`spec/behavior/events.md` § Excuses), who sees its Excuses list.
+   */
+  created_by: string | null;
 }
 
 function toRow(row: Record<string, unknown>): EventRow | null {
@@ -120,8 +123,8 @@ function toRow(row: Record<string, unknown>): EventRow | null {
 }
 
 /**
- * Rows for More's Host check-in row and the quick-actions host (s06 reads
- * `selectAllEventRows` and `selectEventList`): everything a member can still act on — upcoming, plus anything
+ * Rows for You's Host check-in row and the quick-actions host (s06 reads
+ * `selectAllEventRows`): everything a member can still act on — upcoming, plus anything
  * whose check-in window has not closed — soonest first.
  *
  * Past events are dropped deliberately. Attendance history is a reports
@@ -136,9 +139,9 @@ export function selectEventRows(data: unknown, now: Date): EventRow[] {
 
 /**
  * Every readable event, past ones included, soonest first: what the calendar
- * marks (each occurrence of a series on its own day, #3792), and what the
- * list collapses series from, since a series' rule lives on its head row and
- * the head may already have happened.
+ * marks (each occurrence of a series on its own day, #3792), and what a
+ * series' cadence is read from, since a series' rule lives on its head row
+ * and the head may already have happened.
  */
 export function selectAllEventRows(data: unknown): EventRow[] {
   const rows = (Array.isArray(data) ? data.filter(isRecord) : [])
@@ -147,146 +150,10 @@ export function selectAllEventRows(data: unknown): EventRow[] {
   return sortEventsByStart(rows);
 }
 
-/** One row of the s06 list: an event and, for a series, how often it meets. */
-export interface EventListEntry {
-  event: EventRow;
-  /** "Every Sunday" on a series' row, `null` on a one-time event. */
-  cadence: string | null;
-}
-
-/** The rows of one day under its written-out heading ("Tomorrow"). */
-export interface EventDayGroup {
-  /** The local calendar day, `YYYY-MM-DD`: a stable key. */
-  day: string;
-  heading: string;
-  entries: EventListEntry[];
-}
-
-function groupByDay(entries: EventListEntry[], now: Date): EventDayGroup[] {
-  const groups: EventDayGroup[] = [];
-  for (const entry of entries) {
-    const start = parseInstant(entry.event.start_time);
-    if (!start) continue;
-    const day = localIsoDate(start);
-    const last = groups[groups.length - 1];
-    if (last?.day === day) {
-      last.entries.push(entry);
-    } else {
-      groups.push({
-        day,
-        heading: formatDayHeading(entry.event.start_time, now) ?? day,
-        entries: [entry],
-      });
-    }
-  }
-  return groups;
-}
-
-/**
- * How often `event`'s series meets ("Every Sunday"), or `null` for a one-time
- * event or a series whose head isn't among `rows`. The rule is the head's;
- * the day is the one most of the series' meetings share (`seriesCadenceLabel`,
- * as web's list reads it), never `event`'s own: an occurrence the API clamped
- * to the 30th, or one an officer moved to a Monday, belongs to a series that
- * still meets on the 31st or on Sundays.
- */
-export function selectSeriesCadence(
-  rows: readonly EventRow[],
-  event: Pick<
-    EventRow,
-    "id" | "start_time" | "recurrence_rule" | "parent_event_id"
-  >,
-): string | null {
-  const key = eventSeriesKey(event);
-  if (!key) return null;
-  const rule =
-    key === event.id
-      ? event.recurrence_rule
-      : seriesHeadOf(key, rows)?.recurrence_rule;
-  if (!rule) return null;
-  return seriesCadenceLabel(
-    rule,
-    event.start_time,
-    rows
-      .filter((row) => eventSeriesKey(row) === key)
-      .map((row) => row.start_time),
-  );
-}
-
-/**
- * The name most of a series' meetings carry (a tie goes to the soonest
- * meeting's), or `null` when none of them is among `rows`. s07 tells an
- * occurrence renamed on its own ("This event only") apart from it.
- */
-export function selectSeriesName(
-  rows: readonly EventRow[],
-  key: string,
-): string | null {
-  // Map keeps first-insertion order and `rows` come soonest first, so the
-  // first name to reach the top count is the soonest meeting's.
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    if (eventSeriesKey(row) !== key) continue;
-    counts.set(row.name, (counts.get(row.name) ?? 0) + 1);
-  }
-  let best: string | null = null;
-  for (const [name, count] of counts) {
-    if (best === null || count > (counts.get(best) ?? 0)) best = name;
-  }
-  return best;
-}
-
-/**
- * s06's list (#3707): what a member can still act on, a repeating series once
- * as its next occurrence with "Every Sunday" beside it, grouped under
- * written-out day headings, split at the two-week horizon into `soon` and
- * `later`. Grouping and the horizon are `@repo/hooks`' `event-series.ts`,
- * which web's list reads too.
- *
- * A series meeting that has started and is still open for check-in is the
- * series' row while it runs: it carries the cadence, and next week's
- * occurrence stays off the list until it ends, so the series is never drawn
- * twice.
- *
- * Takes {@link selectAllEventRows}' rows, parsed once per payload, since this
- * reruns on every clock tick.
- */
-export function selectEventList(
-  rows: readonly EventRow[],
-  now: Date,
-): { soon: EventDayGroup[]; later: EventDayGroup[] } {
-  const nowMs = now.getTime();
-  const visible = collapseSeries(rows, nowMs).filter(({ event }) =>
-    isCurrentOrUpcoming(event.start_time, event.end_time, now),
-  );
-
-  // Series with a meeting under way: that meeting is the series' row.
-  const running = new Set<string>();
-  for (const { event, series } of visible) {
-    const key = eventSeriesKey(event);
-    if (key && series === null) running.add(key);
-  }
-
-  const shown = visible.filter(({ event, series }) => {
-    const key = eventSeriesKey(event);
-    return !(key && series !== null && running.has(key));
-  });
-
-  const withCadence = (entries: typeof shown): EventListEntry[] =>
-    entries.map(({ event }) => ({
-      event,
-      cadence: selectSeriesCadence(rows, event),
-    }));
-  const { soon, later } = splitByHorizon(shown, nowMs);
-  return {
-    soon: groupByDay(withCadence(soon), now),
-    later: groupByDay(withCadence(later), now),
-  };
-}
-
 /**
  * The other upcoming occurrences of the series `event` belongs to, soonest
- * first, for s07's "Also on" list (#3707). Empty for a one-time event.
+ * first; s07's Repeat row links the next one after the meeting on screen.
+ * Empty for a one-time event.
  */
 export function selectSeriesOccurrences(
   rows: readonly EventRow[],
@@ -383,6 +250,19 @@ export function selectMyAttendance(data: unknown): MyAttendance | null {
   };
 }
 
+/**
+ * An event read without its agenda and attachments (#4934), which Event
+ * details saves in place: what the edit sheet is keyed on, so a check-off
+ * during the meeting doesn't remount, and close, an open Edit sheet.
+ */
+export function withoutMeetingLists(data: unknown): unknown {
+  if (!isRecord(data)) return data;
+  const rest = { ...data };
+  delete rest.agenda;
+  delete rest.attachments;
+  return rest;
+}
+
 export function selectEventDetail(data: unknown): EventDetail | null {
   if (!isRecord(data)) return null;
   const row = toRow(data);
@@ -392,9 +272,13 @@ export function selectEventDetail(data: unknown): EventDetail | null {
     ...row,
     description: str(data, "description"),
     notes: str(data, "notes"),
+    agenda: readEventAgenda(data.agenda),
+    attachments: readEventAttachments(data.attachments),
     check_in_zone_name: str(data, "check_in_zone_name"),
     hasCheckInZone:
       Array.isArray(data.check_in_zone) && data.check_in_zone.length > 0,
+    checkInNeedsCode: data.check_in_needs_code === true,
     event_type_id: str(data, "event_type_id"),
+    created_by: str(data, "created_by"),
   };
 }

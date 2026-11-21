@@ -22,6 +22,8 @@ import {
 const DOC_A = '0a000000-0000-4000-8000-0000000000a0';
 const DOC_B = '0b000000-0000-4000-8000-0000000000a0';
 const FOLDER = 'Bylaws';
+const DRIVE_A = '0a000000-0000-4000-8000-0000000000a1';
+const DRIVE_B = '0b000000-0000-4000-8000-0000000000a1';
 
 const seed = () => ({
   chapter_documents: [
@@ -59,6 +61,129 @@ describe('SupabaseChapterDocumentRepository — tenant scope', () => {
     repo = new SupabaseChapterDocumentRepository(harness.client);
   });
 
+  it('findDriveCopies returns only the chapter’s Drive copies (#5157)', async () => {
+    harness = createTenantHarness({
+      tables: {
+        chapter_documents: [
+          ...seed().chapter_documents,
+          inA({
+            id: DRIVE_A,
+            title: 'Minutes',
+            folder: null,
+            storage_path: 'a/minutes.pdf',
+            uploaded_by: USER_SHARED,
+            drive_file_id: 'drive-file-1',
+          }),
+          inB({
+            id: DRIVE_B,
+            title: 'Minutes',
+            folder: null,
+            storage_path: 'b/minutes.pdf',
+            uploaded_by: USER_SHARED,
+            drive_file_id: 'drive-file-1',
+          }),
+        ],
+      },
+      collisionExempt: { chapter_documents: ['storage_path'] },
+    });
+    repo = new SupabaseChapterDocumentRepository(harness.client);
+
+    const copies = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findDriveCopies(CHAPTER_A),
+    );
+    expect(copies.map((d) => d.id)).toEqual([DRIVE_A]);
+
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.updateDriveCopy(DRIVE_A, CHAPTER_B, { title: 'Crossed' }),
+    );
+    expect(
+      harness.rows('chapter_documents').find((r) => r.id === DRIVE_A)?.title,
+    ).toBe('Minutes');
+
+    // An upload is never rewritten as a Drive copy.
+    await repo.updateDriveCopy(DOC_A, CHAPTER_A, { title: 'Crossed' });
+    expect(
+      harness.rows('chapter_documents').find((r) => r.id === DOC_A)?.title,
+    ).toBe('Constitution');
+  });
+
+  // #5434: a file added by its own link is the link's, never the folder's.
+  it('tells linked files from folder copies, each read in the caller chapter only', async () => {
+    const LINKED_A = '0a000000-0000-4000-8000-0000000000a2';
+    const LINKED_B = '0b000000-0000-4000-8000-0000000000a2';
+    const row = (over: Record<string, unknown>) => ({
+      title: 'Minutes',
+      folder: null,
+      uploaded_by: USER_SHARED,
+      ...over,
+    });
+    harness = createTenantHarness({
+      tables: {
+        chapter_documents: [
+          ...seed().chapter_documents,
+          inA(
+            row({
+              id: DRIVE_A,
+              storage_path: 'a/m.pdf',
+              drive_file_id: 'folder-file',
+              drive_link_status: null,
+            }),
+          ),
+          inB(
+            row({
+              id: DRIVE_B,
+              storage_path: 'b/m.pdf',
+              drive_file_id: 'folder-file',
+              drive_link_status: null,
+            }),
+          ),
+          inA(
+            row({
+              id: LINKED_A,
+              storage_path: 'a/l.pdf',
+              drive_file_id: 'linked-file',
+              drive_link_status: 'active',
+            }),
+          ),
+          inB(
+            row({
+              id: LINKED_B,
+              storage_path: 'b/l.pdf',
+              drive_file_id: 'linked-file',
+              drive_link_status: 'active',
+            }),
+          ),
+        ],
+      },
+      collisionExempt: { chapter_documents: ['storage_path'] },
+    });
+    repo = new SupabaseChapterDocumentRepository(harness.client);
+
+    const copies = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findDriveCopies(CHAPTER_A),
+    );
+    expect(copies.map((d) => d.id)).toEqual([DRIVE_A]);
+
+    const linked = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findLinkedDriveFileIds(CHAPTER_A),
+    );
+    expect([...linked]).toEqual(['linked-file']);
+
+    const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByDriveFileId(CHAPTER_B, 'linked-file'),
+    );
+    expect(found?.id).toBe(LINKED_B);
+
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.updateDriveCopy(LINKED_A, CHAPTER_A, { title: 'Minutes v2' }),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      repo.updateDriveCopy(LINKED_A, CHAPTER_B, { title: 'Crossed' }),
+    ).resolves.toBe(false);
+  });
+
   it('findByChapter returns only the caller chapter documents', async () => {
     const docs = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findByChapter(CHAPTER_B),
@@ -73,30 +198,6 @@ describe('SupabaseChapterDocumentRepository — tenant scope', () => {
     );
 
     expect(docs.map((d) => d.id)).toEqual([DOC_B]);
-  });
-
-  it('moveToRoot does not unfile an identically-named folder in another chapter', async () => {
-    // Reached from `ChapterDocumentService.deleteFolder`. Same shape as
-    // `renameFolder`: a bulk update matched on a chapter-chosen folder name.
-    await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.moveToRoot(FOLDER, CHAPTER_B),
-    );
-
-    const rows = harness.rows('chapter_documents');
-    expect(rows.find((r) => r.id === DOC_B)?.folder).toBeNull();
-    expect(rows.find((r) => r.id === DOC_A)?.folder).toBe(FOLDER);
-  });
-
-  it('renameFolder does not rename an identically-named folder in another chapter', async () => {
-    await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.renameFolder(FOLDER, 'Governing documents', CHAPTER_B),
-    );
-
-    const rows = harness.rows('chapter_documents');
-    expect(rows.find((r) => r.id === DOC_B)?.folder).toBe(
-      'Governing documents',
-    );
-    expect(rows.find((r) => r.id === DOC_A)?.folder).toBe(FOLDER);
   });
 
   it('delete leaves another chapter document in place', async () => {
@@ -215,5 +316,135 @@ describe('SupabaseChapterDocumentRepository — create when the path is already 
       new SupabaseChapterDocumentRepository(client).create(insert),
     ).rejects.toMatchObject({ code: '23503' });
     expect(filters).toEqual([]);
+  });
+});
+
+// #5585: the library is read in pages, so a chapter past PostgREST's row cap
+// keeps every file; #5563: renames and moves never reach a Drive folder copy.
+describe('SupabaseChapterDocumentRepository — paging and refiling', () => {
+  const id = (chapter: 'a' | 'b', n: number) =>
+    `0${chapter}000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`;
+  type Over = Record<string, unknown>;
+  /** The same files in both chapters, as the harness's twin check wants. */
+  const twins = (files: [number, Over?][]) =>
+    (['a', 'b'] as const).flatMap((chapter) =>
+      files.map(([n, over]) =>
+        (chapter === 'a' ? inA : inB)({
+          id: id(chapter, n),
+          title: `File ${n}`,
+          description: null,
+          folder: n % 2 === 0 ? 'Rush' : null,
+          storage_path: `${chapter}/file-${n}.pdf`,
+          uploaded_by: USER_SHARED,
+          created_at: `2026-11-${String(n).padStart(2, '0')}T00:00:00.000Z`,
+          drive_file_id: null,
+          drive_link_status: null,
+          ...over,
+        }),
+      ),
+    );
+
+  // A cap of 2 makes every page short: a read that stopped on the first short
+  // page would return two files.
+  const harnessWith = (rows: ReturnType<typeof twins>) =>
+    createTenantHarness({
+      tables: { chapter_documents: rows },
+      collisionExempt: { chapter_documents: ['storage_path'] },
+      maxRows: 2,
+    });
+
+  it('reads every file past the row cap, newest first, in the caller chapter only', async () => {
+    const harness = harnessWith(twins([[1], [2], [3], [4], [5], [6], [7]]));
+    const repo = new SupabaseChapterDocumentRepository(harness.client);
+
+    const all = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findByChapter(CHAPTER_A),
+    );
+    expect(all.map((doc) => doc.id)).toEqual(
+      [7, 6, 5, 4, 3, 2, 1].map((n) => id('a', n)),
+    );
+
+    const inRush = await repo.findByChapter(CHAPTER_A, { folder: 'Rush' });
+    expect(inRush.map((doc) => doc.id)).toEqual(
+      [6, 4, 2].map((n) => id('a', n)),
+    );
+  });
+
+  it('orders files added at the same moment by id, across pages', async () => {
+    const sameMoment = { created_at: '2026-11-19T12:00:00.000Z' };
+    const harness = harnessWith(
+      twins([[5, sameMoment], [1, sameMoment], [9], [3, sameMoment]]),
+    );
+    const repo = new SupabaseChapterDocumentRepository(harness.client);
+
+    const all = await repo.findByChapter(CHAPTER_A);
+    expect(all.map((doc) => doc.id)).toEqual(
+      [1, 3, 5, 9].map((n) => id('a', n)),
+    );
+  });
+
+  it('reads every Drive copy and linked file past the row cap', async () => {
+    const harness = harnessWith(
+      twins([
+        ...[1, 2, 3, 4, 5].map((n): [number, Over] => [
+          n,
+          { drive_file_id: `copy-${n}` },
+        ]),
+        ...[6, 7, 8].map((n): [number, Over] => [
+          n,
+          { drive_file_id: `linked-${n}`, drive_link_status: 'active' },
+        ]),
+      ]),
+    );
+    const repo = new SupabaseChapterDocumentRepository(harness.client);
+
+    const copies = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findDriveCopies(CHAPTER_A),
+    );
+    expect(copies.map((doc) => doc.id).sort()).toEqual(
+      [1, 2, 3, 4, 5].map((n) => id('a', n)),
+    );
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.findLinkedDriveFileIds(CHAPTER_A),
+      ),
+    ).resolves.toEqual(new Set(['linked-6', 'linked-7', 'linked-8']));
+  });
+
+  it('renames and moves uploads and linked files, never a folder copy or another chapter’s row', async () => {
+    const harness = harnessWith(
+      twins([
+        [1],
+        [2, { drive_file_id: 'copy-2' }],
+        [3, { drive_file_id: 'linked-3', drive_link_status: 'active' }],
+      ]),
+    );
+    const repo = new SupabaseChapterDocumentRepository(harness.client);
+    const row = (rowId: string) =>
+      harness.rows('chapter_documents').find((r) => r.id === rowId);
+
+    const renamed = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.updateFiling(id('a', 1), CHAPTER_A, { title: 'Bylaws' }),
+    );
+    expect(renamed?.title).toBe('Bylaws');
+    expect(row(id('b', 1))?.title).toBe('File 1');
+
+    await expect(
+      repo.updateFiling(id('a', 2), CHAPTER_A, { folder: 'Exec' }),
+    ).resolves.toBeNull();
+    await expect(
+      repo.updateFiling(id('b', 1), CHAPTER_A, { title: 'Crossed' }),
+    ).resolves.toBeNull();
+
+    const moved = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.moveMany(
+        [id('a', 1), id('a', 2), id('a', 3), id('b', 1)],
+        CHAPTER_A,
+        'Exec',
+      ),
+    );
+    expect(moved.map((doc) => doc.id).sort()).toEqual([id('a', 1), id('a', 3)]);
+    expect(row(id('a', 2))?.folder).toBe('Rush');
+    expect(row(id('b', 1))?.folder).toBeNull();
   });
 });

@@ -15,14 +15,20 @@
  *   a channel as a **text `#`** at 17px/700 and a DM as an initials avatar, not
  *   as icons. The reference wins over a tidier all-icons row.
  *
- * The seven silhouettes chat shares with the shell's nav intents (events, tasks,
- * points, polls, search, service hours, and the directory as the member list toggle)
+ * The six silhouettes chat shares with the shell's nav intents (events, tasks,
+ * points, polls, service hours, and the directory as the member list toggle)
  * are re-exported rather than redrawn — a second
  * copy of the same path data is exactly the drift §1 rule 1 bans.
  */
 
 import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
-import { Svg, detail, fillProps, stroke } from "@/components/ui/duotone";
+import {
+  Svg,
+  detail,
+  fillProps,
+  markFillProps,
+  stroke,
+} from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 
 export {
@@ -30,7 +36,6 @@ export {
   EventsGlyph,
   PointsGlyph,
   PollsGlyph,
-  SearchGlyph,
   ServiceGlyph,
   TasksGlyph,
 } from "@/components/layout/nav-glyphs";
@@ -39,7 +44,9 @@ export type ChatGlyphProps = DuotoneGlyphProps;
 
 /**
  * Pinned message — pin body filled, needle stroke-only. Also a channel pinned
- * to the top of the member's own list (#2877), filled while it is pinned.
+ * to the top of the member's own list (#2877), solid while it is pinned
+ * (`markFillProps`, #4292), as Documents' pin is (#4289). Documents'
+ * `PinGlyph` re-exports this one.
  */
 export function PinGlyph({ className, active }: ChatGlyphProps) {
   return (
@@ -47,7 +54,7 @@ export function PinGlyph({ className, active }: ChatGlyphProps) {
       <path
         d={MARK_GLYPH_PATHS.pin.body}
         {...stroke}
-        {...fillProps(active)}
+        {...markFillProps(active)}
       />
       <path d={MARK_GLYPH_PATHS.pin.detail} {...detail} />
     </Svg>
@@ -64,8 +71,8 @@ export function PinGlyph({ className, active }: ChatGlyphProps) {
  * Two similar silhouettes there would invite a member to elevate a message to
  * the whole chapter while meaning to save it for themselves.
  *
- * Filled when `active`, matching `PinGlyph`'s convention for "this state is on"
- * (§1), so the toggle reads at a glance without relying on the label alone.
+ * Solid when `active`, like `PinGlyph` (§1 rule 1's exception, #4292), so the
+ * toggle reads at a glance without relying on the label or the colour alone.
  */
 export function BookmarkGlyph({ className, active }: ChatGlyphProps) {
   return (
@@ -73,7 +80,7 @@ export function BookmarkGlyph({ className, active }: ChatGlyphProps) {
       <path
         d="M6.5 3.75h11v16.5l-5.5-4.2-5.5 4.2z"
         {...stroke}
-        {...fillProps(active)}
+        {...markFillProps(active)}
       />
     </Svg>
   );
@@ -82,7 +89,7 @@ export function BookmarkGlyph({ className, active }: ChatGlyphProps) {
 /**
  * Attach a file.
  *
- * Stroke-only, like the shell's `MenuGlyph`: a paperclip is an
+ * Stroke-only: a paperclip is an
  * open curve with no silhouette, and SVG closes an open path implicitly when it
  * fills one — an earlier cut spread `fillProps` over `detail` here and painted a
  * lens-shaped wedge across the clip.
@@ -129,14 +136,23 @@ export function PlusGlyph({ className }: ChatGlyphProps) {
  * only and heavier than the family's 1.6, because it is drawn at 16px on a
  * filled accent circle where the thin stroke disappears.
  */
+const SEND_ARROW = (
+  <path d="M12 19.5V5M5.5 11.5L12 5l6.5 6.5" {...detail} strokeWidth={2.4} />
+);
+
 export function SendArrowGlyph({ className }: ChatGlyphProps) {
+  return <Svg className={className}>{SEND_ARROW}</Svg>;
+}
+
+/**
+ * Jump to latest — a down arrow, the web face of mobile's `↓` over the thread
+ * (`jump-to-latest-button.tsx`). `SendArrowGlyph` turned over, at its weight,
+ * since it is drawn at 16px on a small round control too.
+ */
+export function JumpToLatestGlyph({ className }: ChatGlyphProps) {
   return (
     <Svg className={className}>
-      <path
-        d="M12 19.5V5M5.5 11.5L12 5l6.5 6.5"
-        {...detail}
-        strokeWidth={2.4}
-      />
+      <g transform="rotate(180 12 12)">{SEND_ARROW}</g>
     </Svg>
   );
 }
@@ -261,22 +277,12 @@ export function StartThreadGlyph({ className, active }: ChatGlyphProps) {
  * a channel's alert level must not draw the same silhouette.
  */
 export function MuteGlyph({ className, active }: ChatGlyphProps) {
+  const paths = MARK_GLYPH_PATHS.mute;
   return (
     <Svg className={className}>
-      <path
-        d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3a1 1 0 01-1-1v-3a1 1 0 011-1z"
-        {...stroke}
-        {...fillProps(active)}
-      />
-      <path d="M7.5 9.5v5" {...detail} />
-      {active ? (
-        <path d="M15.5 9.5l5 5M20.5 9.5l-5 5" {...detail} />
-      ) : (
-        <path
-          d="M15.5 9.2a4 4 0 010 5.6M18 6.8a7.4 7.4 0 010 10.4"
-          {...detail}
-        />
-      )}
+      <path d={paths.body} {...stroke} {...fillProps(active)} />
+      <path d={paths.split} {...detail} />
+      <path d={active ? paths.muted : paths.waves} {...detail} />
     </Svg>
   );
 }

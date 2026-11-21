@@ -79,6 +79,7 @@ import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
  */
 export const WATCHED_WORKFLOWS = [
   "check-migration-drift.yml",
+  "clock-ahead-tests.yml",
   "db-backup.yml",
   "migration-snapshot.yml",
   "npm-audit-watch.yml",

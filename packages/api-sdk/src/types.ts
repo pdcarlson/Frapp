@@ -173,7 +173,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt. */
+        /** Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter the caller belongs to is in context). Lets the client attribute events without ever holding the salt. */
         get: operations["AnalyticsController_getIdentity_v1"];
         put?: never;
         post?: never;
@@ -404,7 +404,7 @@ export interface paths {
         };
         /**
          * List chapter audit log entries
-         * @description Officer-action history (config changes, role/field changes, member removal, and similar). Callers other than the chapter President see only `member_visible` entries; the President sees every entry, including exec-only ones. Optional filters — `actor_user_id`, `action`, and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).
+         * @description Officer-action history (config changes, role/field changes, member removal, and similar). Callers other than the chapter President see only `member_visible` entries; the President sees every entry, including exec-only ones. Optional filters — `actor_user_id`, `action`, `kind` (a Logs kind: any of its actions), and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).
          */
         get: operations["ChapterAuditLogController_list_v1"];
         put?: never;
@@ -425,7 +425,10 @@ export interface paths {
         /** List chapter roles */
         get: operations["RbacController_list_v1"];
         put?: never;
-        /** Create a custom role */
+        /**
+         * Create a custom role
+         * @description Into a tier ranked below the caller's own, or outside the tiers, holding only permissions the caller holds (#4071).
+         */
         post: operations["RbacController_create_v1"];
         delete?: never;
         options?: never;
@@ -460,12 +463,58 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete a custom role */
+        /**
+         * Delete a custom role
+         * @description Only a role ranked below the caller's own (#4071).
+         */
         delete: operations["RbacController_delete_v1"];
         options?: never;
         head?: never;
-        /** Update a role */
+        /**
+         * Update a role
+         * @description Only a role ranked below the caller's own, and only granting permissions the caller holds (#4071). Send `permissions` (the whole list), or `tier_id` and `permission_overrides`, not both.
+         */
         patch: operations["RbacController_update_v1"];
+        trace?: never;
+    };
+    "/v1/roles/{id}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join a self-assignable role
+         * @description Adds the role to the caller's own roles (#4958). 403 `role.not_self_assignable` unless an officer marked it and it is still safe to pick; 409 when it changed mid-save. Joining a role already held changes nothing.
+         */
+        post: operations["RbacController_join_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/{id}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave a self-assignable role
+         * @description Takes the role off the caller's own roles (#4958). 403 `role.not_self_assignable` unless the role is still marked: a role an officer gave, or has stopped offering, stays until an officer removes it (#5650). Alumni may leave a marked role. Leaving a role not held changes nothing.
+         */
+        post: operations["RbacController_leave_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/roles/transfer-presidency": {
@@ -519,6 +568,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/role-tiers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's role tiers, highest first */
+        get: operations["RoleTierController_list_v1"];
+        put?: never;
+        /**
+         * Add a role tier
+         * @description Added at the bottom, below every other tier, with only permissions the caller holds.
+         */
+        post: operations["RoleTierController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/role-tiers/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reorder the role tiers
+         * @description Every tier, highest first. Tiers from the top down to the caller's own stay where they are; 409 when the tiers changed since the caller read them; 400 when a tier holding the New Member or Alumni role would go above the Everyone role's tier.
+         */
+        put: operations["RoleTierController_reorder_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/role-tiers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete an empty role tier
+         * @description Only a tier ranked below the caller's own; 409 while a role still sits in it.
+         */
+        delete: operations["RoleTierController_delete_v1"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a role tier or set its permissions
+         * @description Only a tier ranked below the caller's own. A new permission list rewrites every role in the tier, each with its own overrides applied.
+         */
+        patch: operations["RoleTierController_update_v1"];
+        trace?: never;
+    };
     "/v1/members": {
         parameters: {
             query?: never;
@@ -562,6 +676,46 @@ export interface paths {
         };
         /** Display roster for the chapter — id, name, avatar and role color only */
         get: operations["MemberController_roster_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/birthdays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Birthdays members share with the chapter
+         * @description Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.
+         */
+        get: operations["MemberController_birthdays_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/phone-reach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether Frapp's notifications reach each member's phone
+         * @description Per member: notifications on, off, not reported yet, or web only (no phone signed in), with the platform and last-opened date. Officers who can invite members or manage roles get every member; anyone else gets only themselves.
+         */
+        get: operations["MemberController_phoneReach_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -622,6 +776,26 @@ export interface paths {
         patch: operations["MemberController_updateRoles_v1"];
         trace?: never;
     };
+    "/v1/members/{id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Fix a member's name or graduation year (officers)
+         * @description Needs roles:manage. Refused (403) for your own profile (use PATCH /v1/users/me), for a member ranked at or above you, and for a member who is also in another chapter. Changes are recorded in the chapter audit log as member_profile_corrected. Answers with the member's profile.
+         */
+        patch: operations["MemberController_correctProfile_v1"];
+        trace?: never;
+    };
     "/v1/members/me/onboarding": {
         parameters: {
             query?: never;
@@ -680,11 +854,38 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List chapter invites, newest first */
+        /**
+         * List chapter invites, newest first
+         * @description Only invites granting a role the caller could invite someone into now (#4546): ranked below them, carrying only permissions they hold. The rest are left out. A `*` holder gets every invite.
+         */
         get: operations["InviteController_list_v1"];
         put?: never;
         /** Generate an invite token */
         post: operations["InviteController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invites/chapter-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The chapter's shareable invite links, one per role (#3353, #5633)
+         * @description Links many people join with, each at the role an officer picked, for 7 days. Turn one off with DELETE /v1/invites/:id.
+         */
+        get: operations["InviteController_getChapterLink_v1"];
+        put?: never;
+        /**
+         * Make a shareable invite link for a role, turning off that role's link before it (#3353, #5633)
+         * @description The role defaults to the chapter default invite role. 403 when the role is above the caller; 409 when another officer made a link for the same role at the same moment.
+         */
+        post: operations["InviteController_createChapterLink_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -742,6 +943,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/ask-for-new-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask a dead invite's sender for a new link
+         * @description Notifies whoever sent the invite, by name, that the caller wants a new link (#5625). 409 when the invite still works or the caller is already in the chapter; 404 for an unknown invite.
+         */
+        post: operations["InviteController_askForNewLink_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites/redeem": {
         parameters: {
             query?: never;
@@ -776,6 +997,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The roles the caller may invite someone into
+         * @description Roles ranked below the caller whose permissions they hold, never one carrying `*` (#4071, #4546, #1830). The Everyone role is always among them for a caller who may invite. The invite dialog offers only these; POST /v1/invites refuses the rest.
+         */
+        get: operations["InviteController_listInvitableRoles_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites/{id}": {
         parameters: {
             query?: never;
@@ -786,8 +1027,45 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Revoke an invite */
+        /**
+         * Revoke an invite
+         * @description Not found (404) for an invite the list leaves out for the caller (#4546).
+         */
         delete: operations["InviteController_revoke_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invites/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** An invite link's chapter, sender, role and whether it still works, with no account needed */
+        post: operations["InviteDetailsController_details_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invites/funnel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a step of the invite card funnel (card viewed, sign-in started, and so on), with no account needed */
+        post: operations["InviteDetailsController_funnelStep_v1"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -853,8 +1131,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark all unread notifications read, or only those pointing at the named screens */
+        /** Mark all unread notifications read, or only those pointing at the named screens, or only the named ids */
         post: operations["NotificationController_markAllRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear (delete) the caller's own notifications by id */
+        post: operations["NotificationController_clearNotifications_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -912,6 +1207,79 @@ export interface paths {
         head?: never;
         /** Update user settings (quiet hours, theme, status) */
         patch: operations["NotificationController_updateSettings_v1"];
+        trace?: never;
+    };
+    "/v1/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter events */
+        get: operations["EventController_list_v1"];
+        put?: never;
+        /** Create an event */
+        post: operations["EventController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get event by id */
+        get: operations["EventController_getOne_v1"];
+        put?: never;
+        post?: never;
+        /** Delete an event, or cancel a recurring series from now forward */
+        delete: operations["EventController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Update an event */
+        patch: operations["EventController_update_v1"];
+        trace?: never;
+    };
+    "/v1/event-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's event types, in its order */
+        get: operations["EventTypeController_list_v1"];
+        put?: never;
+        /** Add an event type at the end of the list */
+        post: operations["EventTypeController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/event-types/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an event type; its events keep their points and attendance and lose the type */
+        delete: operations["EventTypeController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Change an event type's name, points or attendance; events already made keep theirs */
+        patch: operations["EventTypeController_update_v1"];
         trace?: never;
     };
     "/v1/channels": {
@@ -990,7 +1358,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The chapter roles the caller’s @-mention picker offers, with whether the caller may ping each */
+        /** The chapter roles, tiers and groups the caller’s @-mention picker offers, with whether the caller may ping each */
         get: operations["ChatController_getMentionRoles_v1"];
         put?: never;
         post?: never;
@@ -1081,11 +1449,17 @@ export interface paths {
         get: operations["ChatController_getChannel_v1"];
         put?: never;
         post?: never;
-        /** Delete a channel */
+        /**
+         * Delete a channel
+         * @description Refused (400) on a DM, a group DM (#3633) and the audit log channel (#3909); nothing is deleted.
+         */
         delete: operations["ChatController_deleteChannel_v1"];
         options?: never;
         head?: never;
-        /** Update a channel */
+        /**
+         * Update a channel
+         * @description Refused (400) on a DM or group DM, whatever the body: a direct conversation belongs to its members, not the chapter (#3633).
+         */
         patch: operations["ChatController_updateChannel_v1"];
         trace?: never;
     };
@@ -1115,7 +1489,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Get or create a 1-on-1 DM channel */
+        /**
+         * Get or create a 1-on-1 DM channel
+         * @description A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.
+         */
         post: operations["ChatController_getOrCreateDm_v1"];
         delete?: never;
         options?: never;
@@ -1132,7 +1509,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create a group DM channel */
+        /**
+         * Create a group DM channel
+         * @description Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.
+         */
         post: operations["ChatController_createGroupDm_v1"];
         delete?: never;
         options?: never;
@@ -1262,6 +1642,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/messages/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Attachments on several messages, with signed download URLs, keyed by message id */
+        get: operations["ChatController_listMessagesAttachments_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}/messages/{messageId}/attachments": {
         parameters: {
             query?: never;
@@ -1312,6 +1709,40 @@ export interface paths {
         head?: never;
         /** Edit a message (own only) */
         patch: operations["ChatController_editMessage_v1"];
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/forward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Forward a message to a channel or DM, with an optional comment (idempotent on client_message_id) */
+        post: operations["ChatController_forwardMessage_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close a sign-up or form card early (its creator, or channels:manage); answers already made stay */
+        post: operations["ChatController_closeCard_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/channels/{id}/pins": {
@@ -1376,7 +1807,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS) */
+        /** Record a reaction / vote / sign-up claim / card action (hot path; atomic dedup; vote and sign-up claim UPSERT; 409 on a full sign-up slot) */
         post: operations["ChatController_recordMessageAction_v1"];
         delete?: never;
         options?: never;
@@ -1436,6 +1867,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/messages/{messageId}/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a message unread: move the caller’s read cursor to just before it */
+        post: operations["ChatController_markMessageUnread_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}/notification-preference": {
         parameters: {
             query?: never;
@@ -1446,6 +1894,44 @@ export interface paths {
         get?: never;
         /** Set the caller's notification level for a channel */
         put: operations["ChatController_setChannelNotificationLevel_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/form-response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own answers to a form card, or null before they answer */
+        get: operations["ChatFormController_getOwnResponse_v1"];
+        /** Save the caller's answers to a form card, replacing their last ones (until the form closes) */
+        put: operations["ChatFormController_saveResponse_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/form-responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everyone’s answers to a form card, and who hasn’t answered, for the member who posted it
+         * @description Only the form’s sender, who must still be able to read its channel: 403 for anyone else, `channels:manage` holders included. 400 when the message is not a form, 404 when it is deleted. Readable after the form closes.
+         */
+        get: operations["ChatFormController_getResponses_v1"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1498,7 +1984,10 @@ export interface paths {
         /** List chat message reports for this chapter */
         get: operations["ChatReportController_listReports_v1"];
         put?: never;
-        /** Report a chat message (idempotent while a report stays open) */
+        /**
+         * Report a chat message (idempotent while a report stays open)
+         * @description Limited to 10 a minute per member: each report notifies every officer who reviews them.
+         */
         post: operations["ChatReportController_fileReport_v1"];
         delete?: never;
         options?: never;
@@ -1606,7 +2095,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Switch the sidebar filters. A filter left out keeps its stored value. */
+        /** Switch the sidebar filters or sort. A setting left out keeps its stored value. */
         patch: operations["ChatSidebarController_updateSidebar_v1"];
         trace?: never;
     };
@@ -1725,6 +2214,23 @@ export interface paths {
         put?: never;
         /** Mark a thread read through now */
         post: operations["ChatThreadController_markRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every thread the caller follows or muted, across channels, newest activity first, with new-reply counts */
+        get: operations["MemberThreadController_list_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1886,62 +2392,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/events": {
+    "/v1/gifs/availability": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List chapter events */
-        get: operations["EventController_list_v1"];
-        put?: never;
-        /** Create an event */
-        post: operations["EventController_create_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/events/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get event by id */
-        get: operations["EventController_getOne_v1"];
+        /** Whether GIF search is set up, and its provider */
+        get: operations["GifController_availability_v1"];
         put?: never;
         post?: never;
-        /** Delete an event, or cancel a recurring series from now forward */
-        delete: operations["EventController_delete_v1"];
-        options?: never;
-        head?: never;
-        /** Update an event */
-        patch: operations["EventController_update_v1"];
-        trace?: never;
-    };
-    "/v1/event-types": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List the chapter's event types, in its order */
-        get: operations["EventTypeController_list_v1"];
-        put?: never;
-        /** Add an event type at the end of the list */
-        post: operations["EventTypeController_create_v1"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/v1/event-types/{id}": {
+    "/v1/gifs/trending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Trending GIFs, for the picker before a search */
+        get: operations["GifController_trending_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search GIFs (rated PG-13 at most) */
+        get: operations["GifController_search_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The member's favorite GIFs, newest first (#5772) */
+        get: operations["GifController_favorites_v1"];
+        put?: never;
+        /** Star a GIF from the picker (#5772) */
+        post: operations["GifController_addFavorite_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/favorites/{gifId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1951,12 +2471,188 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete an event type; its events keep their points and attendance and lose the type */
-        delete: operations["EventTypeController_remove_v1"];
+        /** Unstar a GIF (#5772) */
+        delete: operations["GifController_removeFavorite_v1"];
         options?: never;
         head?: never;
-        /** Change an event type's name, points or attendance; events already made keep theirs */
-        patch: operations["EventTypeController_update_v1"];
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scheduled-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's scheduled messages in this chapter (pending and failed), soonest first */
+        get: operations["ChatScheduledMessageController_list_v1"];
+        put?: never;
+        /** Schedule a message to post later: text, uploaded files, and a quote or a thread */
+        post: operations["ChatScheduledMessageController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scheduled-messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a scheduled message before it posts */
+        delete: operations["ChatScheduledMessageController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Change a scheduled message’s text or time (a failed one goes back in line) */
+        patch: operations["ChatScheduledMessageController_update_v1"];
+        trace?: never;
+    };
+    "/v1/scheduled-messages/{id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post a scheduled message now */
+        post: operations["ChatScheduledMessageController_sendNow_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Minutes the caller may read, newest meeting first: posted ones whose event invites them, and their own drafts */
+        get: operations["MeetingController_list_v1"];
+        put?: never;
+        /** Start minutes for a meeting’s event, for a meeting not on the calendar (new_event), or with no meeting yet (neither). 409 `meeting.already_started` names the minutes that exist */
+        post: operations["MeetingController_start_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/live-recordings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Meetings a phone is recording right now, whose events the caller can see: who is recording, since when, and the event */
+        get: operations["MeetingController_liveRecordings_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The sections the chapter’s minutes show */
+        get: operations["MeetingController_getTemplate_v1"];
+        /** Choose the sections the chapter’s minutes show */
+        put: operations["MeetingController_setTemplate_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One meeting’s minutes */
+        get: operations["MeetingController_getOne_v1"];
+        put?: never;
+        post?: never;
+        /** Delete minutes: someone who can delete minutes, or the author of an unposted draft */
+        delete: operations["MeetingController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Save minutes: their author, or someone who can edit any minutes. 409 `meeting.stale` when someone saved since */
+        patch: operations["MeetingController_update_v1"];
+        trace?: never;
+    };
+    "/v1/meetings/{id}/post": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post minutes to the members their event invites, who are each told once */
+        post: operations["MeetingController_post_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Link minutes that have no event (started with no meeting, or whose event was deleted) to one, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
+        post: operations["MeetingController_linkEvent_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/live-recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** The caller’s phone is recording these minutes: sent when it starts and every minute while it records, so lists can say who is recording */
+        put: operations["MeetingController_markLiveRecording_v1"];
+        post?: never;
+        /** The caller’s phone stopped recording these minutes */
+        delete: operations["MeetingController_clearLiveRecording_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/events/{eventId}/attendance/check-in": {
@@ -1970,9 +2666,29 @@ export interface paths {
         put?: never;
         /**
          * Self check-in to an event
-         * @description Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.
+         * @description Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. Once an officer's screen has shown the code for the event, a code is required. `lat`/`lng` are required when the event defines a check-in geofence, or when a screen showing the code reported where it is; then the member must be within 100 yards of one such screen, plus both phones' reported accuracy (up to 50 m each).
          */
         post: operations["AttendanceController_checkIn_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/check-in-screen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Report where the host check-in screen (s22) is
+         * @description Sent while an officer's screen shows the rotating code. Marks the code as in use, which makes it required for the rest of the check-in window, and replaces this officer's stored location (kept when precise to 100 m and the event has no drawn zone, cleared otherwise) so members must check in within 100 yards of a located screen, plus both phones' reported accuracy. Stored only inside the check-in window and deleted after it closes. Officer-only, like the mint.
+         */
+        put: operations["AttendanceController_reportCheckInScreen_v1"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2053,6 +2769,26 @@ export interface paths {
         patch: operations["AttendanceController_updateStatus_v1"];
         trace?: never;
     };
+    "/v1/events/{eventId}/attendance/by-hand": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark members who were there, after the fact
+         * @description Fills in attendance for members with no row yet, in one request (the minutes page, for a meeting nobody checked in to). A member who already has a row keeps it; members the event does not invite are left out. Moves no points, like every officer mark.
+         */
+        post: operations["AttendanceController_markByHand_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/{eventId}/attendance/auto-absent": {
         parameters: {
             query?: never;
@@ -2068,6 +2804,72 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/excuses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an event's excuses (its creator, or events:update) */
+        get: operations["EventExcuseController_list_v1"];
+        put?: never;
+        /**
+         * Send an excuse for an event that requires you
+         * @description Any time before the event and up to 48 hours after it ends. 400 when the event does not require the caller or the window has closed; 409 when they already sent one, checked in, or are already excused. The receiver is pushed.
+         */
+        post: operations["EventExcuseController_submit_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/excuses/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own excuse for an event, and who receives it */
+        get: operations["EventExcuseController_mine_v1"];
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw your pending or approved excuse
+         * @description Only until check-in closes. Withdrawing an approved excuse also removes the EXCUSED attendance it wrote, so the member can check in. 409 for a declined excuse or a finished event.
+         */
+        delete: operations["EventExcuseController_withdraw_v1"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit the reason on your own excuse
+         * @description A pending excuse, until 48 hours after the event ends; it stays pending. A declined one, until check-in closes: it goes back to pending and the receiver is pushed again. 409 for an approved excuse (withdraw it and send a new one) or a declined one after check-in closes; 404 when there is none.
+         */
+        patch: operations["EventExcuseController_edit_v1"];
+        trace?: never;
+    };
+    "/v1/events/{eventId}/excuses/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Approve or decline a member's pending excuse
+         * @description The event's creator (not for their own excuse) or an events:update holder. Approving writes the member's attendance EXCUSED with the reason; declining after check-in closes marks them ABSENT while the event still requires them. 409 when it was already decided, the member checked in or left the chapter, or (approving) an officer marked them ABSENT.
+         */
+        patch: operations["EventExcuseController_decide_v1"];
         trace?: never;
     };
     "/v1/points/me": {
@@ -2360,6 +3162,92 @@ export interface paths {
         /** Confirm upload and store resource metadata */
         post: operations["BackworkController_confirmUpload_v1"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's backwork drafts, in upload order */
+        get: operations["BackworkController_listDrafts_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set fields on several of the caller's drafts at once */
+        patch: operations["BackworkController_updateDrafts_v1"];
+        trace?: never;
+    };
+    "/v1/backwork/drafts/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** File the caller's drafts; ones that can't be filed stay drafts */
+        post: operations["BackworkController_publishDrafts_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/drafts/{id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A short-lived link to one of the caller's drafts' file */
+        get: operations["BackworkController_draftFileUrl_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/drafts/{id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark one of the caller's drafts' pages checked, with its file flattened again when a box was added */
+        post: operations["BackworkController_checkDraft_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/drafts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete one of the caller's drafts and its file */
+        delete: operations["BackworkController_deleteDraft_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2673,7 +3561,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List tasks (own or all for admins) */
+        /**
+         * List tasks (own or all for admins)
+         * @description Newest first, by `created_at` then `id`. Send `limit` (and, for the next page, `before` and `before_id` from the last task received) to page; a page shorter than `limit` is the last. With neither, every task is returned, as before paging existed.
+         */
         get: operations["TaskController_list_v1"];
         put?: never;
         /** Create a task */
@@ -2695,12 +3586,69 @@ export interface paths {
         get: operations["TaskController_getOne_v1"];
         put?: never;
         post?: never;
-        /** Delete a task */
+        /** Delete a task; with `scope=series`, stop a repeating task (#5119); with `scope=group`, delete everyone’s copy (#4295 step 3) */
         delete: operations["TaskController_delete_v1"];
         options?: never;
         head?: never;
         /** Edit a task: title, description, assignee, due date and time, points (#4296). Refused once confirmed. */
         patch: operations["TaskController_update_v1"];
+        trace?: never;
+    };
+    "/v1/tasks/photo-upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get a signed upload URL for a task photo: a reference photo or a proof photo (#4565)
+         * @description PUT the photo to `upload_url`, then send `storage_path` in `reference_photo_paths` on create or edit, or in `proof_photo_paths` with Mark done. JPEG, PNG, GIF or WebP, up to 25 MB.
+         */
+        post: operations["TaskController_requestPhotoUploadUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{id}/photos/{photoId}/url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A short-lived link to one of a task's photos (assignee or tasks:manage, #4635; a following group's member gets reference photos only, #5473) */
+        get: operations["TaskController_getPhotoUrl_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post an existing task's card into a chat channel
+         * @description The chat + sheet's Task row (#5772). Any member who can read the task (its assignee, a `tasks:manage` holder, or a follower) may link it; the card is sent as them, and channel access is checked as for any message.
+         */
+        post: operations["TaskController_share_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/tasks/{id}/status": {
@@ -2754,6 +3702,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tasks/{id}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give back a task claimed from Up for grabs
+         * @description Its assignee only (403 otherwise), before it is finished: marked done, paid or carrying proof is a 409. The task is deleted and its posting is open again; answers the posting. 404 for a task not taken from Up for grabs.
+         */
+        post: operations["TaskController_release_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/tasks/{id}/subtasks": {
         parameters: {
             query?: never;
@@ -2787,6 +3755,329 @@ export interface paths {
         head?: never;
         /** Check off or uncheck a subtask (assignee or admin, #4003) */
         patch: operations["TaskController_updateSubtask_v1"];
+        trace?: never;
+    };
+    "/v1/tasks/{id}/group/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take members out of a group task: their copies go, the rest stay (#5492) */
+        post: operations["TaskController_removeFromGroup_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/open-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List tasks up for grabs
+         * @description The open postings the caller may claim now, oldest due first. A `tasks:manage` holder gets every open posting, with `viewer_can_claim` saying which they may claim themselves.
+         */
+        get: operations["OpenTaskController_list_v1"];
+        put?: never;
+        /**
+         * Post a task up for grabs
+         * @description One task that someone in the chapter, a role, a chapter group or a list of people claims. Everyone who may claim it, but the poster, gets a push ("Up for grabs: …") in the Tasks category.
+         */
+        post: operations["OpenTaskController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/open-tasks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a task up for grabs while it is open (409 once claimed) */
+        delete: operations["OpenTaskController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Edit a task up for grabs while it is open (409 once claimed) */
+        patch: operations["OpenTaskController_update_v1"];
+        trace?: never;
+    };
+    "/v1/open-tasks/{id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim a task up for grabs
+         * @description The caller takes it, when they may claim it now (403 otherwise). Answers the new task as `GET /v1/tasks/:id` reads it, with `open_task_id` set. 409 "Someone already claimed this" when another claim got there first. The poster is told, unless they claimed it.
+         */
+        post: operations["OpenTaskController_claim_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/open-tasks/{id}/assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand a task up for grabs to one member
+         * @description Any active member, whether or not they could claim it. They get the usual assignment push. Answers the new task as `GET /v1/tasks/:id` reads it; 409 once someone has claimed it.
+         */
+        post: operations["OpenTaskController_assign_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The Suggested list: waiting suggestions the caller could accept, newest first */
+        get: operations["AiSuggestionController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept a suggestion, with changes when given. Re-checks the caller now, then makes the change as them. */
+        post: operations["AiSuggestionController_accept_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a suggestion */
+        post: operations["AiSuggestionController_dismiss_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/next-agenda": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a suggested task from minutes to the next meeting’s agenda instead of making it a task (#5790). It goes onto the next upcoming meeting with the minutes’ audience and type when the caller may edit it; otherwise that meeting offers it under Suggested; with no such meeting yet, it waits for one to be created (30 days at most). */
+        post: operations["AiSuggestionController_sendToNextAgenda_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/{id}/next-agenda/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Add to next meeting’s agenda: takes the item back off and puts the suggestion back as it was (#5790). */
+        post: operations["AiSuggestionController_undoSendToNextAgenda_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/suggestions/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept or dismiss several suggestions at once (a review screen’s Confirm). Each one is decided on its own and has its own outcome. */
+        post: operations["AiSuggestionController_decide_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/action-item-tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Which action items of posted minutes became tasks, and whether each is done. Empty for a draft */
+        get: operations["MeetingActionItemTasksController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/series/{key}/open-action-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The action items still open across one repeating meeting’s posted minutes, newest first: open until the task each became is done (#5482) */
+        get: operations["MeetingActionItemTasksController_seriesOpen_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what Meet Frapp AI shows and the caller’s answer
+         * @description The current sheet (every provider and every kind of data sent) and the caller’s answer on it. `answer: null` means not answered, which counts as No: show the sheet.
+         */
+        get: operations["AiConsentController_getConsent_v1"];
+        /**
+         * Answer Meet Frapp AI (turn Frapp AI on or off)
+         * @description Records Yes or No on the sheet version the caller was shown, from the sheet or later from Settings. One answer covers every chapter the caller is in, and needs no chapter: someone who has left every chapter can still say No.
+         */
+        put: operations["AiConsentController_answerConsent_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the chapter’s AI switches
+         * @description Which AI features are on for the chapter: Ask, meeting notes, chat as a source, and nudges. All on until the president turns one off; `updated_at` is null until then. `can_change` says whether the caller is the president, who alone may change them.
+         */
+        get: operations["AiChapterSettingsController_getSettings_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Turn the chapter’s AI features on or off
+         * @description President only. Each change is recorded in the audit log and mirrored to #chapter-audit; a switch turned off stops that feature’s next call.
+         */
+        patch: operations["AiChapterSettingsController_updateSettings_v1"];
+        trace?: never;
+    };
+    "/v1/ai/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the caller's AI runs
+         * @description Runs the caller started or that act for them, in the current chapter, newest first. 404 `ai.not_available` while AI is off on this server.
+         */
+        get: operations["AiRunController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one AI run
+         * @description A run's status and outcome. Readable by the member who started it, the member it acts for, and members holding a permission its kind names; anyone else gets 404, as for a run that does not exist.
+         */
+        get: operations["AiRunController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/pledge-classes": {
@@ -2857,6 +4148,77 @@ export interface paths {
         head?: never;
         /** Rename a pledge class */
         patch: operations["PledgeClassController_rename_v1"];
+        trace?: never;
+    };
+    "/v1/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's groups with their members: manual ones, then pledge classes, class years and majors that have members */
+        get: operations["ChapterGroupController_list_v1"];
+        put?: never;
+        /** Make a group and, optionally, pick its members */
+        post: operations["ChapterGroupController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a manual group; channel lists that named it lose the entry */
+        delete: operations["ChapterGroupController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Rename a group, recolor it, or switch whether anyone can ping it. An automatic group's name can't change. */
+        patch: operations["ChapterGroupController_update_v1"];
+        trace?: never;
+    };
+    "/v1/groups/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set a manual group's whole member list */
+        put: operations["ChapterGroupController_setMembers_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/groups/{id}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put one member in a manual group */
+        post: operations["ChapterGroupController_addMember_v1"];
+        /** Take one member out of a manual group */
+        delete: operations["ChapterGroupController_removeMember_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/rush/candidates": {
@@ -3089,6 +4451,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/upload-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get signed upload URLs for up to 25 files (folder import) */
+        post: operations["ChapterDocumentController_requestUploadUrls_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm up to 25 uploads with metadata (folder import); each succeeds or fails on its own */
+        post: operations["ChapterDocumentController_confirmUploads_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents": {
         parameters: {
             query?: never;
@@ -3107,6 +4503,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move up to 200 documents into one folder; if one may not move, none does (not copies from the Google Drive folder) */
+        post: operations["ChapterDocumentController_move_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter's document types in display order */
+        get: operations["ChapterDocumentController_listTypes_v1"];
+        put?: never;
+        /** Add a document type */
+        post: operations["ChapterDocumentController_createType_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/types/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a document type (its documents keep everything else) */
+        delete: operations["ChapterDocumentController_deleteType_v1"];
+        options?: never;
+        head?: never;
+        /** Rename or reorder a document type (a rename renames it on its documents) */
+        patch: operations["ChapterDocumentController_updateType_v1"];
+        trace?: never;
+    };
+    "/v1/documents/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inline preview links for up to 100 documents at once */
+        get: operations["ChapterDocumentController_previewUrls_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/folders": {
         parameters: {
             query?: never;
@@ -3119,6 +4585,23 @@ export interface paths {
         put?: never;
         /** Create a document folder */
         post: operations["ChapterDocumentController_createFolder_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/access-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a who-can-see list may hold, and the tiers the caller's lists always keep */
+        get: operations["ChapterDocumentController_accessOptions_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3156,7 +4639,7 @@ export interface paths {
         delete: operations["ChapterDocumentController_deleteFolder_v1"];
         options?: never;
         head?: never;
-        /** Rename or reorder a document folder */
+        /** Rename or reorder a document folder, or set who can see it */
         patch: operations["ChapterDocumentController_updateFolder_v1"];
         trace?: never;
     };
@@ -3209,6 +4692,24 @@ export interface paths {
         post?: never;
         /** Delete a document */
         delete: operations["ChapterDocumentController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Rename a document or move it to another folder (not a copy from the Google Drive folder) */
+        patch: operations["ChapterDocumentController_update_v1"];
+        trace?: never;
+    };
+    "/v1/documents/{id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set who can see one document */
+        put: operations["ChapterDocumentController_setAccess_v1"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3294,7 +4795,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Manually close a poll early (creator only): a REST poll or a chat-card poll */
+        /** Manually close a poll early (its creator, or channels:manage): a REST poll or a chat-card poll */
         post: operations["PollController_close_v1"];
         delete?: never;
         options?: never;
@@ -3311,7 +4812,7 @@ export interface paths {
         };
         /**
          * List polls across the chapter
-         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
+         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Everyone role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
          */
         get: operations["PollController_listPolls_v1"];
         put?: never;
@@ -3333,6 +4834,143 @@ export interface paths {
         get: operations["PollController_getPoll_v1"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List predictions the caller can see */
+        get: operations["PredictionController_list_v1"];
+        put?: never;
+        /** Ask a prediction in a channel */
+        post: operations["PredictionController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One prediction with its pools and stakers */
+        get: operations["PredictionController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/stakes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stake points on an answer */
+        post: operations["PredictionController_stake_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The member a prediction names agrees to it, or declines and it is removed */
+        post: operations["PredictionController_consent_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/settle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The settler (or predictions:manage with nothing staked) names the winning answer; it pays after 24 hours */
+        post: operations["PredictionController_settle_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A staker questions the result within its 24-hour window */
+        post: operations["PredictionController_question_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pay a settled result now, or settle it again on another answer (reverses a paid round) */
+        post: operations["PredictionController_confirm_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Void a prediction and refund every stake (its settler before payout, predictions:manage any time) */
+        post: operations["PredictionController_void_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3487,9 +5125,89 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned (`task_items` counts a task for everyone once; `tasks` is each copy, for older builds); a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the events on right now for the caller
+         * @description The Now card on Chat, Activity and the event (`spec/behavior/activity.md` § Now). An event is on from when its check-in opens until its end, whether or not the caller checked in. Listed when it invites the caller and requires them, they checked in to it, or they made it, and every event on for a holder of `events:update`; never one the caller is excused from. The one they checked in to first, then the latest start, at most 5. Rows are the shape of `coming_up`. Its own small read, so a screen that shows only Now does not read the whole page. Empty while the chapter has Events off.
+         */
+        get: operations["ActivityController_getNow_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what the caller has finished
+         * @description The Activity Archive (`spec/behavior/activity.md` § Archive): what has left the caller’s Activity because it is over. `events`: events that invited them whose check-in has closed, in the last 30 days. `tasks`: their own tasks marked done in the last 30 days, and the confirmed tasks they assigned while they hold `tasks:manage`. `events` leaves out any that started before they joined. `polls`: closed polls they posted or voted in. Each section reads through its module under that module’s rule for who may see it; a module the chapter has off contributes nothing, and a section that fails is served empty and named in `unavailable`. Its own read, apart from `GET /v1/activity`, made only when the Archive is opened.
+         */
+        get: operations["ActivityController_getArchive_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/standing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get how the caller is doing this semester
+         * @description The standing at the top of the Activity page (`spec/behavior/activity.md` § Standing): the caller’s points this semester and their place on the board, the required events they attended, their approved and pending service hours this semester, and their study time this week. Each part is the caller’s own, read through the module that owns it; a module the chapter has off is served null, and a part that fails is served null and named in `unavailable`.
+         */
+        get: operations["ActivityController_getStanding_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/recap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what the caller did last week
+         * @description The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.
+         */
+        get: operations["ActivityController_getRecap_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3538,6 +5256,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/snoozes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Snooze an item on the caller’s Activity until a time
+         * @description The row leaves the caller’s list and `needs_you_count` until `until`, then comes back, unread unless they open it again after that (`snoozed_until` on its row). Per member; snoozing again replaces the time. Like a read, nothing checks that the caller can see the item: a snooze is theirs alone and changes nothing anyone else sees. `spec/behavior/activity.md` § Snooze.
+         */
+        put: operations["ActivityController_snooze_v1"];
+        post?: never;
+        /**
+         * Bring a snoozed item back on the caller’s Activity now
+         * @description Idempotent. `spec/behavior/activity.md` § Snooze.
+         */
+        delete: operations["ActivityController_unsnooze_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/links/{id}/state": {
         parameters: {
             query?: never;
@@ -3578,6 +5320,268 @@ export interface paths {
         post?: never;
         /** Undo an officer’s remove, so a link shows on Activity again (channels:manage) */
         delete: operations["ActivityController_restoreLink_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reminders/messages/{messageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Remind the caller about a message at a time, or move the reminder
+         * @description One reminder per member per message: setting it again moves it, and one already sent fires again at the new time (Activity’s snooze). Needs read access to the message’s channel.
+         */
+        put: operations["ChatReminderController_setReminder_v1"];
+        post?: never;
+        /**
+         * Clear the caller’s reminder on a message (idempotent)
+         * @description Done on Activity, or cancel. Works after the caller lost the channel, and answers 204 whether or not there was one.
+         */
+        delete: operations["ChatReminderController_clearReminder_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The caller's card for Activity, and its tray
+         * @description The one most useful thing waiting on the caller (an event today or tomorrow they haven't checked in to, an unread @mention, a task of theirs, an open sign-up, an unread announcement, an officer's queue, new minutes, a study goal behind), and up to three more for the tray. A POST because it may raise a new card, which may cost a model call. `line` is null whenever AI is off for the caller or the server: the card shows either way. Times are written in the `X-Time-Zone` zone.
+         */
+        post: operations["ActivityCardController_card_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/card/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record that the card was on screen */
+        post: operations["ActivityCardController_seen_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/card/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wave a card or tray item off
+         * @description The caller does not want this one: it is not raised again. A mention or announcement comes back only when something new is posted in its channel. Answers 204 whether or not there was anything to close.
+         */
+        post: operations["ActivityCardController_dismiss_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/card/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own switch for the card
+         * @description The same switch as `GET /v1/nudges/settings`, without its AI gate: the card shows without AI, so every member can turn it off.
+         */
+        get: operations["ActivityCardController_settings_v1"];
+        /**
+         * Turn the card on or off for the caller
+         * @description Off also closes the card that is showing.
+         */
+        put: operations["ActivityCardController_updateSettings_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's own order of their Activity cards
+         * @description Which cards the caller shows, in order, and which they hid, in this chapter. When they have never saved one, both lists are empty and `saved` is false: show the default for their role.
+         */
+        get: operations["ActivityLayoutController_get_v1"];
+        /**
+         * Save the order of the caller's Activity cards
+         * @description Replaces the whole arrangement: send both lists every time. A card may be named only once, in one list or the other. Any well-formed key is kept, including one this server does not know. Follows the caller to their other devices.
+         */
+        put: operations["ActivityLayoutController_save_v1"];
+        post?: never;
+        /**
+         * Put the caller's Activity cards back to the default
+         * @description Forgets the caller's saved order, so Activity shows the default for their role again. Answers 204 whether or not anything was saved.
+         */
+        delete: operations["ActivityLayoutController_reset_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chapter's goals for points, service hours and study hours */
+        get: operations["GoalsController_getGoals_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own goal on each measure (points, service and study minutes), null where none */
+        get: operations["GoalsController_getMyGoals_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/goals/{metric}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace one measure's goals */
+        put: operations["GoalsController_setGoals_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/nudges/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The caller's card for Activity, if one is due
+         * @description Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.
+         */
+        post: operations["MemberNudgeController_current_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/nudges/{id}/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record that the card was on screen */
+        post: operations["MemberNudgeController_seen_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/nudges/{id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close the card
+         * @description Closes the caller's showing card and deletes its words. The same task is not raised again for the same reason.
+         */
+        post: operations["MemberNudgeController_dismiss_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/nudges/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's own switch for these cards */
+        get: operations["MemberNudgeController_settings_v1"];
+        /**
+         * Turn the cards on or off for the caller
+         * @description Off also closes the card that is showing.
+         */
+        put: operations["MemberNudgeController_updateSettings_v1"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4036,6 +6040,844 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What Ask needs to know before the first question
+         * @description Whether questions and answers are being kept by the beta diagnostics window, which a client must show before it sends a question.
+         */
+        get: operations["AskController_status_v1"];
+        put?: never;
+        /**
+         * Ask a question; the answer is streamed
+         * @description The response is Server-Sent Events. Each `data:` line is one JSON event of the Ask stream format, version 1, defined in `@repo/validation` (`AskStreamEventSchema`): `start`, `status`, `step` (how each read ended, from a server that answers through the tool loop), `text` deltas, then one `done` carrying the checked answer with its citations and sources, or `error`. Text deltas are a preview; the answer is what `done` carries. A request sent with `actions` can end with one `proposal` instead of `done`, carrying the answer `POST /v1/ai/act` gives. Refusals that need the client to act arrive before the stream, as ordinary errors.
+         */
+        post: operations["AskController_ask_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What Ask opens with for this member
+         * @description Up to three questions and one request, each built from a record the caller’s own account holds right now (their next event, their open tasks, what they owe, minutes they can read, their points). No model is called, and the chapter’s Ask switch and the AI sheet are not checked: nothing here leaves the server. Each question is one Ask could answer for this caller. Empty when there is nothing to ask about.
+         */
+        get: operations["AskController_openingSuggestions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/dictation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tidy up words dictated into Ask
+         * @description The words the phone’s own speech recogniser heard, tidied for the member to read, edit and send themselves (#5276, `spec/behavior/ai.md` § Ask Frapp, Dictation): filler words and false starts out, only the last version of a self-correction kept, punctuation and capitalisation in, times and counts as digits. Never answered, and no fact, name or meaning changed. The words go to Frapp AI’s model provider to be tidied; nothing is stored or logged, and nothing is posted or sent as a question. A provider refusal, a reply the model got wrong, a provider failure, a spend cap, or a cleanup that comes back empty or much longer than what was said all answer 200 with the words as sent, trimmed, so nothing the member said is lost.
+         */
+        post: operations["AskController_cleanDictation_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn on the beta diagnostics window (president only)
+         * @description The president’s yes: for 14 days from now, questions asked in Ask and their answers are kept, encrypted, for the Frapp team. Offered to one chapter only. The end date is fixed; the window turns itself off and deletes what it kept. Recorded in the audit log.
+         */
+        post: operations["AskController_startDiagnostics_v1"];
+        /**
+         * Turn off the beta diagnostics window (president only)
+         * @description Ends the window now and deletes everything it kept. Recorded in the audit log.
+         */
+        delete: operations["AskDiagnosticsStopController_stopDiagnostics_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/act": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The actions the caller can ask for
+         * @description The actions whose own route the caller could call now (its permission held, its module on). A client shows one of these as an example of what can be asked for. Whether a turn of the Ask conversation can end in a proposal card does not depend on this read: the client asks for cards for any member who holds `ai:act`, and the server offers what that member may do.
+         */
+        get: operations["ActController_status_v1"];
+        put?: never;
+        /**
+         * Ask for something to be done; the answer is a proposal
+         * @description Reads the request into one action and its details and answers with a proposal to confirm. Nothing is changed. Only the request text is shown to a model when the action is chosen. A new request replaces the caller’s earlier unconfirmed proposal.
+         */
+        post: operations["ActController_act_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/act/event-audience": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pick the event whose attendees a points proposal is for
+         * @description The follow-up to a `needs_event` answer. No model is called. Answers with the proposal, or 404 when the event is not one the caller can see in this chapter.
+         */
+        post: operations["ActController_eventAudience_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/catch-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Summarize a channel's new messages, or one thread
+         * @description Runs only when a member asks, for that member, and is not stored. Reads only messages whose authors agreed to AI reading their messages while the chapter has channel messages turned on as a source; `left_out_messages` counts the rest. Every point names the message it rests on with a quote the server found in it. Never reads a direct message or a group DM.
+         */
+        post: operations["ChatCatchUpController_catchUp_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/{ask_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rate an answer: thumbs up or down
+         * @description Sets the caller’s thumbs on an answer they were given, replacing an earlier one. A `down` may carry one of four reasons. Nothing of the question or the answer is sent or kept: to send those, the member reports the answer (`POST /v1/ai/reports`). Kept with the answer’s trace, for at most 90 days.
+         */
+        put: operations["AskFeedbackController_rate_v1"];
+        post?: never;
+        /**
+         * Take a thumbs back
+         * @description Succeeds whether or not there was one.
+         */
+        delete: operations["AskFeedbackController_clear_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/{ask_id}/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Say what the member did with an answer
+         * @description One tap under an answer the caller was given: Try again, Think harder, a source opened, a proposed card confirmed or dismissed. Counted as an analytics event; nothing is stored.
+         */
+        post: operations["AskFeedbackController_signal_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post an Ask Frapp answer to a channel, or ask what posting would warn about
+         * @description The answer comes from the receipt the server sealed into it for the caller, so only an answer Frapp sent can be posted, and only by the member it was sent to. Before anything is written, everything the answer drew on is checked against everyone who can read the channel; `restricted` lists what not all of them could open. With `confirm` false nothing is written. With `confirm` true the answer is posted, by the Frapp sender, only when `acknowledged` names every entry of `restricted`; otherwise `posted` is false and the current list comes back. A posted answer notifies nobody. Posting the same answer to the same channel twice writes one row; the second call is refused.
+         */
+        post: operations["AskPostController_post_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/drafts/{id}/fill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose fields for one of the caller's drafts from its redacted text
+         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. A file over 25 MB, or a draft already marked `unreadable`, answers `unreadable` without its file being read. One fill at a time per draft: a second while one runs answers 409. 10 requests a minute per member; the AI spend caps bound the model cost.
+         */
+        post: operations["BackworkFillController_fill_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a report keeps, for the sheet to say before it is sent */
+        get: operations["AiReportController_policy_v1"];
+        put?: never;
+        /**
+         * Report something the AI made
+         * @description Keeps that one exchange, encrypted, for 30 days, for the Frapp team; then it is deleted. Without a sealing key on the server, only the reason and note are kept. A second report of the same thing by the same member keeps nothing new (`already_reported`).
+         */
+        post: operations["AiReportController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where the draft from notes stands: none, drafting, ready, applied or failed, with the notes and what to check the draft against */
+        get: operations["MeetingDraftController_get_v1"];
+        put?: never;
+        /** Draft the minutes from every note-taker’s notes and the recording’s transcript, as a background AI run, saving the caller’s `notes` first when sent. Replaces an earlier request. 400 when there is nothing to draft from. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent */
+        post: operations["MeetingDraftController_request_v1"];
+        /** Clear the caller’s own notes and the draft, and stop a draft still being written. Other note-takers’ notes stay. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed */
+        delete: operations["MeetingDraftController_discard_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/draft/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits */
+        post: operations["MeetingDraftController_use_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/draft/choose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put another version of a disagreement between note-takers into the minutes, or settle a tie (#4935). 409 `meeting.stale` when the minutes moved, 409 `meeting.draft_not_waiting` when the disagreement is gone */
+        post: operations["MeetingDraftController_choose_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meeting-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unposted minutes the caller may take notes on and doesn’t edit: an officer’s to join, or ones they were added to */
+        get: operations["MeetingNotesController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller’s own notes on these minutes and who else takes notes; the author and editors read everyone’s */
+        get: operations["MeetingNotesController_get_v1"];
+        /** Save the caller’s own notes, joining as a note-taker if they weren’t. Empty notes clear them, with any draft written from them. 409 `meeting.draft_posted`, 400 `meeting.standards_refused` */
+        put: operations["MeetingNotesController_save_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/note-takers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a member the meeting’s event invites as a note-taker, for the author or an editor. They are told once. 400 `meeting.not_in_audience` */
+        post: operations["MeetingNotesController_add_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/note-takers/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a note-taker with their notes and any draft written from them: the author or an editor removes anyone, a note-taker themselves */
+        delete: operations["MeetingNotesController_remove_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/agenda-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an upcoming event’s suggested agenda items, tabled matters first */
+        get: operations["AgendaSuggestionController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/agenda-suggestions/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask the model for this event’s suggestions again, replacing its open ones */
+        post: operations["AgendaSuggestionController_refresh_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/agenda-suggestions/{suggestionId}/add": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add a suggestion to the end of the agenda
+         * @description 409 `event.agenda_locked` once the meeting has started: its agenda takes check-offs only.
+         */
+        post: operations["AgendaSuggestionController_add_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/agenda-suggestions/{suggestionId}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hide a suggestion for this event */
+        post: operations["AgendaSuggestionController_dismiss_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The caller's calendar subscription link, made on first ask. Asking again returns the same link. */
+        post: operations["CalendarFeedController_ensure_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace the caller's calendar link. Calendars subscribed to the old link show nothing from their next check. */
+        post: operations["CalendarFeedController_reset_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/calendar-feed/feed.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The iCalendar feed behind a calendar subscription link. Called by calendar apps, not by Frapp clients. */
+        get: operations["CalendarFeedFetchController_fetch_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether Google Calendar is offered here, and the caller's connection. */
+        get: operations["GoogleCalendarController_status_v1"];
+        put?: never;
+        post?: never;
+        /** Disconnect Google Calendar: removes Frapp's calendar from the member's Google account and revokes Frapp's access. */
+        delete: operations["GoogleCalendarController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-calendar/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start connecting Google Calendar: a single-use sign-in, and Google’s consent page to send the member to. */
+        post: operations["GoogleCalendarController_connect_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-calendar/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish connecting with the code Google returned. Only the member who started the sign-in, in the same chapter, can finish it. */
+        post: operations["GoogleCalendarController_confirm_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether Google Drive is offered here, and the chapter's connected folder. */
+        get: operations["GoogleDriveController_status_v1"];
+        /** Connect a Google Drive folder shared with Frapp; its files are copied into Documents and kept in sync. */
+        put: operations["GoogleDriveController_connect_v1"];
+        post?: never;
+        /** Disconnect the folder. Its copies leave Documents; the files in Drive are untouched. */
+        delete: operations["GoogleDriveController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive/picked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connect the folder the officer picked in Google's picker: Frapp shares it with itself using their Google sign-in, once, then copies its files into Documents and keeps them in sync. Picking the connected folder again after it was unshared shares it again. */
+        post: operations["GoogleDriveController_connectPicked_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive/copies/{id}/open-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move a Drive copy that sync held back into the folder Drive put it in, which more people may see. */
+        post: operations["GoogleDriveController_openUp_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync the connected folder now. */
+        post: operations["GoogleDriveController_syncNow_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether a Google Drive file can be added by link here, and the address to share one with. */
+        get: operations["GoogleDriveLinkController_info_v1"];
+        put?: never;
+        /** Add one Google Drive file by its link. It is copied into Documents now and kept matching Drive. */
+        post: operations["GoogleDriveLinkController_add_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive-links/{documentId}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check a linked document against Google Drive now. */
+        post: operations["GoogleDriveLinkController_syncNow_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where the recording stands: none, uploading, transcribing, ready (with the transcript) or failed, and what this server takes */
+        get: operations["MeetingRecordingController_get_v1"];
+        put?: never;
+        /** Start an upload: checks the file and signs a resumable upload to private storage. Replaces an earlier recording. 400 `meeting.standards_refused`, `meeting.recording_notice_required`, `meeting.recording_format`, `meeting.recording_too_large`, `meeting.recording_too_short` or `meeting.recording_too_long`; 403 `ai.chapter_off` or `ai.consent.required`; 409 `meeting.draft_posted` or `meeting.recording_unavailable`, each before anything is stored */
+        post: operations["MeetingRecordingController_start_v1"];
+        /** Remove the recording, its transcript and its audio, and stop a transcription still running. The notes and the minutes are not changed. With `upload_id`, only when that upload is still the meeting's recording: what a page giving up on its own upload sends */
+        delete: operations["MeetingRecordingController_remove_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/recording/uploaded": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The file is in storage: transcribe it, as a background AI run, and tell the members who were at the meeting. Safe to call twice. 409 `meeting.recording_incomplete` when the file is not there, 409 `meeting.recording_replaced` when the upload was replaced or removed */
+        post: operations["MeetingRecordingController_uploaded_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meeting-recorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether this server can write a recording out, why the caller can’t send one yet, and its limits, before any minutes exist */
+        get: operations["MeetingRecorderController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/minutes-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The event’s unposted minutes, when the caller may ask for them (one row or none), and whether they have */
+        get: operations["MeetingMinutesRequestController_state_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/minutes-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask for unposted minutes, which reminds whoever can post them (at most once a day per meeting). Asking again changes nothing. 409 `meeting.already_posted`, 409 `meeting.not_over`, 503 `meeting.request_not_sent` (nothing recorded; ask again) */
+        post: operations["MeetingMinutesRequestController_request_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings-no-minutes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The events this officer can see that are marked "No minutes", so the Meetings list stops asking for them */
+        get: operations["MeetingNoMinutesController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{id}/no-minutes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Mark a meeting that ended as having no minutes. Marking it again changes nothing. 409 `meeting.not_over`, 409 `meeting.already_started` */
+        put: operations["MeetingNoMinutesController_mark_v1"];
+        post?: never;
+        /** Take a meeting’s "No minutes" mark off, so it asks for minutes again */
+        delete: operations["MeetingNoMinutesController_unmark_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/date-reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller’s reminders still waiting on these minutes’ Coming up dates, soonest first */
+        get: operations["MeetingDateReminderController_list_v1"];
+        /**
+         * Remind the caller about one of the minutes’ Coming up dates, or move that reminder
+         * @description One reminder per member per date, named by its day and words. 404 when the caller can’t read the minutes, or the date is no longer in them.
+         */
+        put: operations["MeetingDateReminderController_set_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/date-reminders/{reminderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Cancel one of the caller’s date reminders (idempotent) */
+        delete: operations["MeetingDateReminderController_clear_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a client's first screen reads, in one request
+         * @description The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.
+         */
+        get: operations["BootstrapController_getBootstrap_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4077,7 +6919,7 @@ export interface components {
             /** @description Process uptime in seconds */
             uptime: number;
             /**
-             * @description Deployed git SHA when Render set RENDER_GIT_COMMIT. Omitted when unset so local and CI do not invent a SHA.
+             * @description Deployed git SHA from RENDER_GIT_COMMIT: Render sets it on a git-backed service, and the image build stamps it on an image-backed one. Omitted when unset so local and CI do not invent a SHA.
              * @example 0ca478e9105105ff7013834615eee81499813d0e
              */
             commit?: string;
@@ -4109,7 +6951,7 @@ export interface components {
             required: boolean;
         };
         AcceptLegalTermsDto: {
-            /** @description The user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
+            /** @description The user ticked "I'm 17 or older and agree to the Terms of Service and Privacy Policy." Must be true. The timestamp and version are recorded server-side, never from this payload. */
             accept_terms_privacy: boolean;
         };
         WhatsNewSeenDto: {
@@ -4127,13 +6969,33 @@ export interface components {
             seen_version: string;
         };
         UpdateUserDto: {
+            /** @description The member's name as their chapters see it. Trimmed; it may not be blank. */
             display_name?: string;
+            /** @description An empty string clears it. */
             bio?: string;
             graduation_year?: number | null;
             /** @description Free text, like "Mechanical Engineering". An empty string clears it. */
             major?: string;
+            /** @description An empty string clears it. */
             current_city?: string;
+            /** @description An empty string clears it. */
             current_company?: string;
+            /**
+             * @description The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.
+             * @example (518) 555-0142
+             */
+            phone?: string | null;
+            /** @description The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year). */
+            birthday_month?: number | null;
+            /** @description The day of `birthday_month`. It must exist in that month; 29 February is taken. */
+            birthday_day?: number | null;
+            /** @description The birth year, optional. Never shown to anyone but the member. Needs a month and day. */
+            birthday_year?: number | null;
+            /**
+             * @description Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default.
+             * @enum {string}
+             */
+            birthday_visibility?: "chapter" | "nobody";
         };
         RequestAvatarUploadUrlDto: {
             /** @description Original filename for the avatar image */
@@ -4158,7 +7020,7 @@ export interface components {
             distinct_id: string | null;
             /** @description Whether analytics is enabled for this caller. */
             enabled: boolean;
-            /** @description Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`), otherwise null. Same helper as analytics events. Clients must not compute this. */
+            /** @description Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`) and the caller is a member of it, otherwise null. Same helper as analytics events. Clients must not compute this. */
             chapter_group_id: string | null;
         };
         TrackEventDto: {
@@ -4198,9 +7060,9 @@ export interface components {
             colors?: components["schemas"]["BrandingColorsDto"];
         };
         ChapterOnboardingDto: {
-            /** @description Chapter display name (org name) */
+            /** @description Chapter display name (org name). Trimmed; at least 3 characters. */
             name: string;
-            /** @description University / institution name */
+            /** @description University / institution name. Trimmed; at least 2 characters. */
             university: string;
             /** @description Org archetype key (ifc, npc, nphc, mgc, …). Defaults to ifc. */
             org_archetype?: string;
@@ -4247,7 +7109,9 @@ export interface components {
             logo_url: string | null;
         };
         UpdateChapterDto: {
+            /** @description The chapter's name. Trimmed; at least 3 characters. Omit it to leave it as stored. */
             name?: string;
+            /** @description The chapter's university. Trimmed; at least 2 characters. Omit it to leave it as stored. */
             university?: string;
             accent_color?: string;
             donation_url?: string;
@@ -4353,6 +7217,11 @@ export interface components {
              * @example 100
              */
             anomaly_threshold?: number;
+            /**
+             * @description Most one member may stake in total on one prediction (default 25). Must be between 1 and 100000.
+             * @example 25
+             */
+            prediction_max_stake?: number;
         };
         WorkflowConfigDto: {
             /** @description Workflow key from the chapter catalog */
@@ -4379,9 +7248,16 @@ export interface components {
             analytics_opt_out?: boolean;
             /**
              * Format: uuid
-             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise).
+             * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role, the floor every member holds (#5802). Must belong to this chapter (400 otherwise).
              */
             default_invite_role_id?: string | null;
+            /**
+             * Format: uuid
+             * @description The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived or the audit log (400 otherwise).
+             */
+            birthday_channel_id?: string | null;
+            /** @description Whether settled members (finished the welcome screen, or joined over a day ago) may change their own name (#5801). False, the default, locks it: PATCH /v1/users/me refuses a changed display_name unless the member holds roles:manage here. Officers fix names through PATCH /v1/members/{id}/profile; a member of two or more chapters is never locked, since that route refuses them. */
+            members_can_change_name?: boolean;
         };
         CustomRoleDto: {
             id: string;
@@ -4473,7 +7349,7 @@ export interface components {
              * @description The module the permission belongs to: a module catalog key, or `chapter` for a chapter-level permission.
              * @enum {string}
              */
-            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "points" | "hours" | "polls" | "rush" | "backwork" | "documents" | "geofences" | "reports" | "billing";
+            module: "chapter" | "members" | "chat" | "announcements" | "events" | "tasks" | "meetings" | "points" | "hours" | "polls" | "rush" | "backwork" | "documents" | "geofences" | "reports" | "billing";
             /** @description The module's display name. */
             module_label: string;
             /** @description What the permission lets a role do. */
@@ -4487,28 +7363,52 @@ export interface components {
             scope: "chapter";
         };
         CreateRoleDto: {
+            /** @description Must contain something besides whitespace. */
             name: string;
             permissions: string[];
             display_order?: number;
-            /**
-             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
-             * @enum {string|null}
-             */
-            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description A role palette color (`ROLE_COLOR_PALETTE` in `@repo/validation`), or any custom `#RRGGBB` that reads at WCAG AA on every dark surface and is not red or gold (`isPaintableRoleColor`), in any letter case. A palette color is stored as listed, a custom one in uppercase; any other value is refused (`400`). Null clears the color. */
+            color?: string | null;
             /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
             mentionable?: boolean;
+            /**
+             * Format: uuid
+             * @description The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.
+             */
+            tier_id?: string | null;
+            /** @description Create the role already marked for members to join and leave themselves (#4958, #5736). It must be safe to pick, as `PATCH` checks: outside the tiers (`tier_id` null or absent) and holding no permission beyond `channels:read:<slug>` (400 `role.self_assignable_tiered` or `role.self_assignable_permissions`). Defaults to false. */
+            self_assignable?: boolean;
         };
         UpdateRoleDto: {
+            /** @description Must contain something besides whitespace. */
             name?: string;
             permissions?: string[];
             display_order?: number;
-            /**
-             * @description One of the role palette colors (`ROLE_COLOR_PALETTE` in `@repo/validation`), in any letter case; it is stored as listed. Null clears the color.
-             * @enum {string|null}
-             */
-            color?: "#F2994A" | "#F47FA4" | "#B392F0" | "#8FA8FF" | "#5CC8F0" | "#3DD6C4" | "#6FD08C" | "#C5E06A" | "#D9B99B" | "#A9B4C2" | null;
+            /** @description A role palette color (`ROLE_COLOR_PALETTE` in `@repo/validation`), or any custom `#RRGGBB` that reads at WCAG AA on every dark surface and is not red or gold (`isPaintableRoleColor`), in any letter case. A palette color is stored as listed, a custom one in uppercase; any other value is refused (`400`). Null clears the color. */
+            color?: string | null;
             /** @description Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
             mentionable?: boolean;
+            /**
+             * Format: uuid
+             * @description The tier the role sits in (#4071), one ranked below the caller's own; null puts it outside the tiers. A role takes its tier's permissions, with its own overrides applied.
+             */
+            tier_id?: string | null;
+            /**
+             * @description Overrides to change, merged into what the role has (#4071): true switches a permission on for this role whatever its tier says, false switches it off, null clears the override so the tier decides. Keys left out are kept. Not with `permissions`.
+             * @example {
+             *       "service:approve": true,
+             *       "polls:create": null
+             *     }
+             */
+            permission_overrides?: {
+                [key: string]: boolean | null;
+            };
+            /** @description Members may join and leave this role themselves (#4958). Only a role with no system key, outside the tiers, and holding no permission beyond `channels:read:<slug>` may be marked (400 `role.self_assignable_keyed`, `role.self_assignable_tiered` or `role.self_assignable_permissions`), and marking needs the caller to hold what it carries. A save that would leave a marked role unsafe is refused the same way unless it also sends false. */
+            self_assignable?: boolean;
+        };
+        SelfAssignRoleResultDto: {
+            /** @description The caller's role ids after the change, the role added (join) or taken off (leave). */
+            role_ids: string[];
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -4521,6 +7421,38 @@ export interface components {
             eligible: boolean;
             /** @description Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case). */
             next_role_name: string | null;
+        };
+        RoleTierDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** @description Order within the chapter; 1 is highest. */
+            position: number;
+            /** @description The chapter's own name for the tier. */
+            name: string;
+            /** @description What every role in the tier gets before its own overrides. */
+            permissions: string[];
+            /** @description Whether any member may `@` the tier (#4076). On by default; while false, only a member holding `channels:manage` or `roles:manage` can ping it. */
+            mentionable: boolean;
+            created_at: string;
+            updated_at: string;
+        };
+        CreateRoleTierDto: {
+            name: string;
+            /** @description What every role in the tier gets. Only permissions the caller holds; never `*`. Defaults to none. */
+            permissions?: string[];
+        };
+        ReorderRoleTiersDto: {
+            /** @description Every one of the chapter's tiers, highest first. Tiers ranked at or above the caller's own must stay where they are. */
+            tier_ids: string[];
+        };
+        UpdateRoleTierDto: {
+            name?: string;
+            /** @description Whether any member may `@` the tier, which reaches everyone holding a role in it (#4076). While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it. */
+            mentionable?: boolean;
+            /** @description The tier's whole list; every role in it is rewritten to match, with its own overrides applied. Never `*`. */
+            permissions?: string[];
         };
         MemberCustomFieldValueDto: {
             field_id: string;
@@ -4553,6 +7485,12 @@ export interface components {
             current_city: string | null;
             current_company: string | null;
             email: string;
+            /** @description The member's own phone number (#3711), as they typed it, or null. Only they set it. */
+            phone: string | null;
+            /** @description The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none. */
+            birthday_month: number | null;
+            /** @description The day of `birthday_month`, under the same rule. The year is never sent. */
+            birthday_day: number | null;
             /**
              * Format: uuid
              * @description The member's pledge class, one of `GET /v1/pledge-classes`, or null.
@@ -4564,6 +7502,10 @@ export interface components {
             is_alumni: boolean;
             /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
             custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
+            /** @description Whether the requesting viewer may remove this member from the chapter (DELETE /v1/members/{id}): they hold members:remove, it is not their own profile, and the member ranks below them. Present only on single-member reads. */
+            viewer_can_remove?: boolean;
+            /** @description Whether the requesting viewer may fix this member's name and graduation year (PATCH /v1/members/{id}/profile): they hold roles:manage, it is not their own profile, the member ranks below them, and the member is in no other chapter. Present only on single-member reads. */
+            viewer_can_edit_profile?: boolean;
         };
         MemberRosterEntryDto: {
             /** @description users.id — the id chat carries as sender_id */
@@ -4571,8 +7513,44 @@ export interface components {
             /** @description May be an empty string: the column is NOT NULL DEFAULT '', so clients treat empty as unresolved rather than rendering a blank name. */
             display_name: string;
             avatar_url: string | null;
-            /** @description Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
+            /** @description Color (palette or readable custom, `isPaintableRoleColor`) of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
             role_color: string | null;
+        };
+        MemberBirthdayDto: {
+            /** @description users.id */
+            id: string;
+            display_name: string;
+            avatar_url: string | null;
+            birthday_month: number;
+            /** @description The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`). */
+            birthday_day: number;
+        };
+        MemberPhoneReachDto: {
+            /** Format: uuid */
+            user_id: string;
+            /**
+             * @description From the member's current phones (the one opened last, and any opened within 30 days of it). `on`: a current phone shows Frapp notifications. `off`: none does, and the phone opened last says off. `unknown`: none does, and the phone opened last is on a build that has not said yet. `web_only`: no phone signed in.
+             * @enum {string}
+             */
+            state: "on" | "off" | "unknown" | "web_only";
+            /**
+             * @description Platform of the phone opened last, when its label says.
+             * @enum {string|null}
+             */
+            platform: "ios" | "android" | null;
+            /**
+             * Format: date-time
+             * @description When the member last opened the app on any phone.
+             */
+            last_opened_at: string | null;
+        };
+        MemberPhoneReachListDto: {
+            /**
+             * @description `chapter` for officers who can invite members or manage roles; anyone else gets `self`, only their own entry.
+             * @enum {string}
+             */
+            scope: "chapter" | "self";
+            members: components["schemas"]["MemberPhoneReachDto"][];
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
@@ -4582,7 +7560,14 @@ export interface components {
              */
             custom_role_ids?: string[];
         };
+        CorrectMemberProfileDto: {
+            /** @description The member's name as the chapter knows them. Trimmed; it may not be blank. */
+            display_name?: string;
+            /** @description The member's graduation year, or null to clear it. */
+            graduation_year?: number | null;
+        };
         UpdateOnboardingDto: {
+            /** @description true marks onboarding done; the first time it does, the inviter and the officers are told who joined. Finishing is one-way: false is accepted and changes nothing (#5627). */
             has_completed_onboarding: boolean;
         };
         DismissOpsNudgeDto: {
@@ -4593,7 +7578,7 @@ export interface components {
             module_key: "dues" | "events" | "tasks" | "points" | "setup-checklist";
         };
         CreateInviteDto: {
-            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
             role?: string;
         };
         /**
@@ -4616,15 +7601,29 @@ export interface components {
             used_at: string | null;
             revoked_at: string | null;
             created_at: string;
+            /** @description True for the chapter link (#3353): anyone with it joins until it expires or an officer turns it off, so it never reads joined. */
+            reusable: boolean;
+        };
+        ChapterLinkResponseDto: {
+            /** @description For builds from before #5633, which showed one link and replaced it with a body-less POST: the link that POST turns off, the default role's (`default_role`). Null when that role has none. */
+            link: components["schemas"]["InviteListItemDto"] | null;
+            /** @description The role a POST with no role makes a link for: the chapter default invite role, or the caller's own rank's member role when the default is above them. The role picker starts on it. Null when the caller can invite into neither. */
+            default_role: string | null;
+            /** @description The chapter's links that no officer has turned off, expired or not (status says which), at most one per role, newest first. Only those granting a role the caller could invite someone into. */
+            links: components["schemas"]["InviteListItemDto"][];
+        };
+        CreateChapterLinkDto: {
+            /** @description The role the link grants. Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. Making a link for a role turns off that role's old link only. */
+            role?: string;
         };
         BatchCreateInvitesDto: {
-            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
             role?: string;
             /** @description Number of invites to generate */
             count: number;
         };
         BulkEmailInviteDto: {
-            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
             role?: string;
             /** @description Email addresses to invite, one invite token per address */
             emails: string[];
@@ -4646,13 +7645,13 @@ export interface components {
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */
             invited_by: string | null;
-            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
             role: string | null;
             expires_at: string;
         };
         RedeemInviteDto: {
             token: string;
-            /** @description True when the user ticked "I'm 18 or older and agree to the Terms of Service and Privacy Policy." Needed only if they haven't accepted the current version. */
+            /** @description True when the user agreed to the current Terms of Service and Privacy Policy: the join screens send it on every join, under their one-line Terms notice. Needed only if they have not accepted the current version. */
             accept_terms_privacy?: boolean;
         };
         PendingInviteDto: {
@@ -4663,17 +7662,83 @@ export interface components {
             accent_color: string | null;
             /** @description The inviter's display name, or null when it can't be read. */
             invited_by: string | null;
-            /** @description The role name joining grants, or null when it would grant none (the invite role is gone and the chapter has no Member role) */
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
             role: string | null;
             expires_at: string;
             /** @description The single-use token, for redeem. Returned only because the invite was emailed to the address Auth verified for the caller. */
             token: string;
         };
+        InvitableRolesDto: {
+            /** @description Ids of the roles the caller may invite someone into. Match them against GET /v1/roles for names. */
+            role_ids: string[];
+        };
+        InviteDetailsResponseDto: {
+            chapter_name: string;
+            university: string;
+            /** @description The chapter's text mark: its short name, else its Greek letters if it shows them, else null. Never letters the chapter hides, nor those of an organization that never displays them (such as Phi Gamma Delta), whatever the chapter's stored switch says (#3421). */
+            mark_text: string | null;
+            accent_color: string | null;
+            /** @description The inviter's display name, or null when it can't be read. */
+            invited_by: string | null;
+            /** @description The role name joining grants, or null when it names none: the invite grants only the Everyone role every member holds (#4191), or the invite role is gone and the chapter has no Everyone role to fall back to */
+            role: string | null;
+            expires_at: string;
+            /**
+             * @description Whether the link still works: `live`; `expired`; `used` (a personal invite someone already joined with); `off` (revoked, or its sender can no longer grant its role); `locked` (a working link into a chapter whose subscription is inactive, so it can't take new members until it's restored). Only `live` can be joined.
+             * @enum {string}
+             */
+            state: "live" | "expired" | "used" | "off" | "locked";
+            /**
+             * Format: uuid
+             * @description The invite's chapter, so a signed-in visitor already in it is told so instead of offered Join.
+             */
+            chapter_id: string;
+            /**
+             * @description How many members the chapter has now. 0 when the link does not work: only a live link earns the count.
+             * @example 41
+             */
+            member_count: number;
+            /**
+             * Format: date-time
+             * @description When the invite was made, for a dead card ("sent it on Friday, November 14").
+             */
+            sent_at: string;
+        };
+        InviteFunnelStepDto: {
+            /** @description The invite token, as the join link carries it */
+            token: string;
+            /**
+             * Format: uuid
+             * @description A random id the card mints once per visit, so the steps of one visit form one funnel.
+             */
+            visit_id: string;
+            /** @enum {string} */
+            step: "card-viewed" | "sign-in-started" | "email-code-sent" | "email-code-verified" | "joined" | "join-failed" | "new-link-asked";
+            /**
+             * @description The way in tapped, for `sign-in-started`.
+             * @enum {string}
+             */
+            method?: "apple" | "google" | "email" | "password";
+            /**
+             * @description The state the card showed, for `card-viewed`.
+             * @enum {string}
+             */
+            state?: "live" | "expired" | "used" | "off" | "locked";
+            /** @description Whether the visitor was already signed in, for `card-viewed`. */
+            signed_in?: boolean;
+            /**
+             * @description Why the join failed, for `join-failed`.
+             * @enum {string}
+             */
+            reason?: "gone" | "forbidden" | "rate_limited" | "offline" | "server" | "other";
+        };
         RegisterPushTokenDto: {
             /** @description Expo push token */
             token: string;
-            /** @description Device name for display */
+            /** @description The device's platform, OS version and model, such as `ios 26.1 · iPhone 16`. Never the name the member gave the device. A re-register with a different value replaces the stored one. */
             device_name?: string;
+            /** @description Whether the phone lets Frapp's notifications show right now (the OS permission, and on Android the app's notification channel). Sent on every register so officers can see who a push reaches. Omitted by older builds, which leaves the stored value as it was. */
+            notifications_enabled?: boolean;
         };
         MarkNotificationsReadDto: {
             /**
@@ -4683,6 +7748,8 @@ export interface components {
              *     ]
              */
             screens?: string[];
+            /** @description Mark read only these notifications (the caller's own, in the active chapter): the rows one inbox entry stands for. Combined with `screens`, a row must match both. */
+            ids?: string[];
         };
         MarkNotificationsReadResultDto: {
             /**
@@ -4692,6 +7759,28 @@ export interface components {
             read_at: string;
             /** @description How many notifications this call marked read */
             updated: number;
+        };
+        NotificationConversationDto: {
+            /**
+             * Format: uuid
+             * @description The chat channel (`data.target.channelId`)
+             */
+            channelId: string;
+            /**
+             * Format: uuid
+             * @description A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.
+             */
+            threadRootId?: string;
+        };
+        ClearNotificationsDto: {
+            /** @description The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped. */
+            ids: string[];
+            /** @description Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid. */
+            conversation?: components["schemas"]["NotificationConversationDto"];
+        };
+        ClearNotificationsResultDto: {
+            /** @description How many notifications this call cleared */
+            cleared: number;
         };
         UpdateNotificationPreferenceDto: {
             /** @description Chapter ID */
@@ -4742,6 +7831,8 @@ export interface components {
              * @description When the custom status line clears. Null: until the member clears it.
              */
             custom_status_expires_at: string | null;
+            /** @description Read receipts on direct messages (#5519). `true` until the member turns them off. */
+            read_receipts: boolean;
         };
         UpdateUserSettingsDto: {
             /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear. */
@@ -4772,6 +7863,300 @@ export interface components {
              * @description When the custom status line clears, as an ISO 8601 instant in the future. Accepted only together with `custom_status`; null, blank or absent means no end time (and alone is ignored).
              */
             custom_status_expires_at?: string | null;
+            /** @description Read receipts on direct messages (#5519). Off is two-way: the member's reads are not reported to anyone, and they are told about no one's. Null or absent leaves it as it is. */
+            read_receipts?: boolean;
+        };
+        EventAgendaTabledFromDto: {
+            /** @description The posted minutes that first tabled this matter. */
+            meeting_id: string;
+            /** @description That meeting’s start (ISO 8601). */
+            start_time: string;
+            /** @description How many meetings have tabled it so far. */
+            times: number;
+        };
+        EventAgendaItemDto: {
+            /** @description The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event. */
+            id: string;
+            text: string;
+            /** @description Checked off during the meeting. */
+            done: boolean;
+            /** @description Set on an item added from an earlier meeting’s Tabled list (#5534): the agenda shows "Tabled from {day}". Read-only: a save keeps the stored value for the same item id and ignores this field. */
+            tabled_from?: components["schemas"]["EventAgendaTabledFromDto"] | null;
+        };
+        EventAttachmentDto: {
+            /** @description The client's id for the attachment. Unique within the event. */
+            id: string;
+            /** @enum {string} */
+            kind: "link" | "document";
+            /** @description A `link` attachment's address: http or https only. */
+            url?: string;
+            /**
+             * Format: uuid
+             * @description A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400.
+             */
+            document_id?: string;
+            /** @description What the list shows. For a document, its name when it was attached. */
+            title: string;
+        };
+        GeofenceCoordinateDto: {
+            lat: number;
+            lng: number;
+        };
+        EventResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
+            notes: string | null;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments: components["schemas"]["EventAttachmentDto"][];
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        EventDetailResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
+            notes: string | null;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments: components["schemas"]["EventAttachmentDto"][];
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority. */
+            check_in_needs_code: boolean;
+        };
+        CreateEventDto: {
+            name: string;
+            description?: string;
+            location?: string;
+            start_time: string;
+            end_time: string;
+            /**
+             * @description Points for attending. On create, kept only when the caller holds `events:update`; anyone else's event is stored with 0, whatever is sent (#3709).
+             * @default 10
+             */
+            point_value: number;
+            /**
+             * @description Whether everyone the event invites must attend. On create, kept only when the caller holds `events:update`; anyone else's event is stored as optional, with each role in `required_role_ids` moved to `optional_role_ids` (#3709).
+             * @default false
+             */
+            is_mandatory: boolean;
+            /** @description Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps). */
+            recurrence_rule?: string;
+            /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
+            required_role_ids?: string[];
+            /** @description Roles invited but not required. */
+            optional_role_ids?: string[];
+            /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
+            excluded_role_ids?: string[];
+            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older "only these roles" meaning, for a caller that predates this field. Omitted on update, it is left as stored. */
+            others_invited?: boolean;
+            notes?: string;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda?: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments?: components["schemas"]["EventAttachmentDto"][];
+            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
+            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
+            check_in_zone_name?: string;
+            /** @description Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time. */
+            check_in_opens_minutes?: number;
+            /**
+             * Format: uuid
+             * @description One of the chapter's event types (`GET /v1/event-types`), or null for none. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400.
+             */
+            event_type_id?: string | null;
+            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.) */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field. */
+            client_message_id?: string;
+        };
+        CreateEventResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
+            notes: string | null;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments: components["schemas"]["EventAttachmentDto"][];
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
+            card_posted?: boolean;
+        };
+        UpdateEventDto: {
+            name?: string;
+            description?: string;
+            location?: string;
+            start_time?: string;
+            end_time?: string;
+            point_value?: number;
+            is_mandatory?: boolean;
+            /** @description Repeat rule. Either a legacy token (WEEKLY, BIWEEKLY, MONTHLY: a fixed run of 12, 6 or 6 meetings after the first, still accepted from older phone builds) or an iCalendar RRULE subset such as `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=America/New_York`: FREQ DAILY|WEEKLY|MONTHLY, INTERVAL 1-30, BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), exactly one of COUNT (2-120 meetings, the first included) or UNTIL (YYYYMMDD, inclusive), and TZID (the zone whose wall clock the series keeps). */
+            recurrence_rule?: string;
+            /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
+            required_role_ids?: string[];
+            /** @description Roles invited but not required. */
+            optional_role_ids?: string[];
+            /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
+            excluded_role_ids?: string[];
+            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older "only these roles" meaning. */
+            others_invited?: boolean;
+            notes?: string;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. Once the meeting has started only check-offs (`done`) change: adding, removing, moving or rewording an item is a 409 `event.agenda_locked`. */
+            agenda?: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments?: components["schemas"]["EventAttachmentDto"][];
+            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
+            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
+            check_in_zone_name?: string;
+            /** @description Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused. */
+            check_in_opens_minutes?: number;
+            /**
+             * Format: uuid
+             * @description One of the chapter's event types (`GET /v1/event-types`), or null to clear it; omitted leaves it. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400.
+             */
+            event_type_id?: string | null;
+            /**
+             * @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.
+             * @enum {string}
+             */
+            scope?: "instance" | "series";
+        };
+        EventTypeDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            /** @description Points for attending, copied onto an event made as this type. */
+            point_value: number;
+            /** @description Whether everyone must attend, copied onto an event made as this type. */
+            is_mandatory: boolean;
+            /** @description The type's place in the chapter's list, lowest first. */
+            position: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateEventTypeDto: {
+            /** @description The type as the chapter calls it ("Chapter meeting", "Work party"). Stored trimmed; unique within the chapter, ignoring case. */
+            name: string;
+            /** @default 0 */
+            point_value: number;
+            /** @default false */
+            is_mandatory: boolean;
+        };
+        UpdateEventTypeDto: {
+            name?: string;
+            point_value?: number;
+            is_mandatory?: boolean;
         };
         ChannelUnreadCountDto: {
             /** Format: uuid */
@@ -4780,6 +8165,44 @@ export interface components {
             unread_count: number;
             /** @description Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time. */
             mention_count: number;
+        };
+        ForwardedGifDto: {
+            provider: string;
+            id: string;
+            title: string;
+            url: string;
+            width: number;
+            height: number;
+        };
+        ForwardedMessageDto: {
+            /**
+             * Format: uuid
+             * @description The original message.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Where the original lives. Never named in the copy: a reader shows the channel’s name only when its own channel list has it, so a private channel’s name never leaks.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description The original’s author; null for an imported archive message, and once the original is deleted.
+             */
+            sender_id: string | null;
+            /** @description The author’s name when it was forwarded (“Deleted User” after account deletion). Null once the original is deleted, or when masked. */
+            author_name: string | null;
+            /** @description The original’s text. Empty for a GIF or files only, once deleted, and when masked. Cut to 500 characters on Chat home’s preview. */
+            content: string;
+            gif: components["schemas"]["ForwardedGifDto"] | null;
+            /** @description How many files the original had. They are not copied; the card says “1 attachment” or “N attachments”. */
+            attachment_count: number;
+            /** @description When the original was sent. */
+            created_at: string;
+            /** @description True once the original was deleted: the copy keeps only where and when it was, and reads “Original message was deleted”. Absent or false otherwise. */
+            deleted?: boolean;
+            /** @description Set by a read that masks: true when the viewer blocked the original’s author, with the content, GIF, name and count withheld; false when cleared. Absent on the Realtime echo, which carries the copy raw: a client applies its own list. */
+            sender_blocked?: boolean;
         };
         ChannelLatestMessageDto: {
             /** Format: uuid */
@@ -4803,19 +8226,28 @@ export interface components {
             attachment_count: number;
             /** Format: date-time */
             created_at: string;
+            /** @description When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise. */
+            forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”. */
+            has_gif: boolean;
+            /**
+             * @description Read receipts (#5519). On a DM or group DM whose latest message is the caller’s: `read` once every other member has read past it, `sent` until then. A member who turned read receipts off never counts as having read it, and a caller who turned them off always gets `sent`. Null on any other row.
+             * @enum {string|null}
+             */
+            read_status: "sent" | "read" | null;
         };
         ChannelAccessOptionDto: {
-            /** @description The entry as a list stores it: `tier:<id>` or `role:<id>`. Send it back in `who_can_see` or `who_can_post`. */
+            /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */
             entry: string;
             /**
-             * @description What the entry names. More kinds may come (groups, #4076); an editor groups by kind and should show an unknown one under its own heading.
+             * @description What the entry names: a tier, a role or a group (#4076). More kinds may come; an editor groups by kind and should show an unknown one under its own heading.
              * @enum {string}
              */
-            kind: "tier" | "role";
+            kind: "tier" | "role" | "group";
             /** Format: uuid */
             id: string;
             name: string;
-            /** @description A role's palette color; null for a tier or an uncolored role. */
+            /** @description A role's color (palette or readable custom, `isPaintableRoleColor`); null for a tier or an uncolored role. */
             color: string | null;
             /**
              * Format: uuid
@@ -4824,15 +8256,25 @@ export interface components {
             tier_id: string | null;
             /** @description The `users.id` of every member it names, so the editor can count who a list reaches without counting anyone twice. */
             user_ids: string[];
+            /** @description True for the Everyone role (#4191): an editor shows it on a list that already names it but does not offer to add it, since it names only the members holding it. False for every other option. */
+            hidden: boolean;
         };
         MentionRoleDto: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The role's id, or the tier's or group's (`kind`). A class year's standing (`@Seniors`, #5786) has its own id, fixed for that group and standing, so no two rows share one.
+             */
             role_id: string;
-            /** @description The role name; the picker inserts it folded. */
+            /**
+             * @description What it is (#4076): a role, a tier (reaching everyone holding a role in it) or a group. A picker labels its row by it, so a tier and a role sharing a name read apart; a mention of a name several share reaches all of them.
+             * @enum {string}
+             */
+            kind: "role" | "tier" | "group";
+            /** @description The name; the picker inserts it folded. */
             name: string;
-            /** @description The role’s palette color, or null. */
+            /** @description The role’s color (a palette color or a readable custom `#RRGGBB`, `isPaintableRoleColor`), or null. */
             color: string | null;
-            /** @description Whether the caller may `@` this role: its own switch (`mentionable` on the role, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming a role the sender may not ping reaches nobody. */
+            /** @description Whether the caller may `@` it: its own switch (`mentionable` on the role, tier or group, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming one the sender may not ping reaches nobody. */
             mentionable: boolean;
         };
         ChannelNotificationPreferenceDto: {
@@ -4848,7 +8290,7 @@ export interface components {
              * @description A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement" | "signup" | "form" | "role_picker";
             /**
              * @description The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (the channel's own default: officer-set, else `all` in the announcements channel, #general and DMs, `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.
              * @enum {string|null}
@@ -4867,7 +8309,7 @@ export interface components {
              * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | "role_picker";
             /**
              * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
              * @enum {string|null}
@@ -4893,9 +8335,9 @@ export interface components {
              * @enum {string}
              */
             type: "PUBLIC" | "PRIVATE" | "ROLE_GATED";
-            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
             who_can_see?: string[] | null;
-            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
             who_can_post?: string[] | null;
             /**
              * @deprecated
@@ -4914,9 +8356,9 @@ export interface components {
         UpdateChannelDto: {
             name?: string;
             description?: string;
-            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers and roles named, each as `tier:<id>` or `role:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
+            /** @description Who can see the channel (#3722): null for everyone in the chapter, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>` from GET /v1/channels/access-options. Not empty. Left out, a new channel copies its category's list (everyone with no category). */
             who_can_see?: string[] | null;
-            /** @description Who can post (#3722): null for everyone who can see it, or the tiers and roles named, each as `tier:<id>` or `role:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
+            /** @description Who can post (#3722): null for everyone who can see it, or the tiers, roles and groups named, each as `tier:<id>`, `role:<id>` or `group:<id>`. Not empty. Someone on this list who cannot see the channel still cannot post. Left out, a new channel copies its category's list. */
             who_can_post?: string[] | null;
             /** @description Copy both lists from the channel's category (the one it ends up in, when `category_id` moves it in the same request), so it matches the category again and follows its later changes. Refused with `who_can_see` or `who_can_post`, and on a channel with no category. */
             match_category_access?: boolean;
@@ -4933,13 +8375,13 @@ export interface components {
              */
             is_read_only?: boolean;
             /**
-             * @description The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. Refused on a DM or group DM, which always default to `all`.
+             * @description The channel's default push level for members who have set none of their own (#2771). Null clears it back to the built-in default: `all` for #general and the announcements channel, `off` for #chapter-audit, `mentions` for the rest. A member's own channel or kind level always wins. A DM or group DM always defaults to `all`.
              * @enum {string|null}
              */
             default_notification_level?: "all" | "mentions" | "off" | null;
-            /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. Refused as `true` on a DM or group DM. */
+            /** @description Make this the chapter's default channel, where Chat opens for a member whose device has no last channel (ahead of #general). Setting it moves the default off any other channel; `false` on the current default leaves the chapter with none. */
             is_default?: boolean;
-            /** @description Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. Refused as `true` on a DM or group DM. */
+            /** @description Leave out of Activity (#3897): sign-up links posted here never reach anyone's Activity page, for channels like #advertising whose links aren't chapter business. */
             activity_excluded?: boolean;
         };
         SetChannelDisplayLockDto: {
@@ -4951,6 +8393,7 @@ export interface components {
             member_id: string;
         };
         CreateGroupDmDto: {
+            /** @description The other members of the chapter to add, at most 9: a group DM holds up to 10 people, you included. */
             member_ids: string[];
             name?: string;
         };
@@ -4960,15 +8403,26 @@ export interface components {
              * @description The member's `users.id`.
              */
             user_id: string;
-            /** @description The `display_order` of the member's highest role (lower ranks higher), or null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`. */
+            /** @description Where the member's highest-ranked role sits among the chapter's roles in rank order (the President's role first, then by tier, then each role's order in its tier), 0 for the top; lower ranks higher, null when they hold no role. For sorting the list; names, avatars and role colors come from `GET /v1/members/roster`. */
             role_rank: number | null;
             /**
              * Format: uuid
              * @description The id of that highest role, which the list groups readers under, or null when they hold no role.
              */
             role_id: string | null;
-            /** @description That role's name, the group's heading, or null when they hold no role. */
+            /** @description That role's name, "Members" for the chapter's Everyone role, or null when they hold no role. Older app builds group by it; current ones group by tier. */
             role_name: string | null;
+            /** @description The member's title: their highest-ranked role's name, or null for the chapter's Everyone role or no role. */
+            title: string | null;
+            /**
+             * Format: uuid
+             * @description The highest tier any of their roles is in, the group the list files them under, or null when none of their roles is in a tier.
+             */
+            tier_id: string | null;
+            /** @description That tier's name, the group's heading; null with tier_id. */
+            tier_name: string | null;
+            /** @description That tier's position, 1 for the top tier; null with tier_id. */
+            tier_rank: number | null;
         };
         AddChannelMemberDto: {
             /** @description The `users.id` to add. Must be a member of the channel's chapter. */
@@ -4978,18 +8432,32 @@ export interface components {
             name: string;
             /** @default 0 */
             display_order: number;
-            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. A new channel in the category starts with it. */
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. A new channel in the category starts with it. */
             who_can_see?: string[] | null;
-            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries. */
             who_can_post?: string[] | null;
         };
         UpdateCategoryDto: {
             name?: string;
             display_order?: number;
-            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` entries. Changing it changes every channel in the category that matched it, and only those. */
+            /** @description Who can see the channels that match this category (#3722): null for everyone in the chapter, or `tier:<id>` / `role:<id>` / `group:<id>` entries. Changing it changes every channel in the category that matched it, and only those. */
             who_can_see?: string[] | null;
-            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` entries. */
+            /** @description Who can post in the channels that match this category: null for everyone who can see them, or `tier:<id>` / `role:<id>` / `group:<id>` entries. */
             who_can_post?: string[] | null;
+        };
+        ChatThreadLastReplyDto: {
+            id: string;
+            sender_id: string | null;
+            /** @description The reply’s text, cut to 500 characters. */
+            content: string;
+            kind: string | null;
+            /** @description The reply’s `metadata.attachment_count`, or 0 when it has none. */
+            attachment_count: number;
+            /** @description The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies. */
+            has_gif?: boolean;
+            created_at: string;
+            /** @description Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list. */
+            sender_blocked?: boolean;
         };
         ChatMessageDto: {
             /** Format: uuid */
@@ -5012,8 +8480,8 @@ export interface components {
              * @description Null on rows written before the column existed; read as 'text'.
              * @enum {string|null}
              */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | null;
-            /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text. */
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | "role_picker" | null;
+            /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
             payload?: Record<string, never> | null;
             client_message_id?: string | null;
             /** Format: uuid */
@@ -5047,6 +8515,10 @@ export interface components {
             thread_last_reply_at?: string | null;
             /** @description On a thread parent: up to three recent repliers, newest first. */
             thread_recent_sender_ids?: string[];
+            /** @description On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`). */
+            thread_last_reply?: components["schemas"]["ChatThreadLastReplyDto"] | null;
+            /** @description Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it). */
+            forwarded_from?: components["schemas"]["ForwardedMessageDto"] | null;
             created_at: string;
             /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
             sender_blocked: boolean;
@@ -5065,18 +8537,36 @@ export interface components {
             /** @description The `preview_storage_path` the upload-url call returned, once the preview copy is uploaded. */
             preview_storage_path?: string;
         };
+        MessageGifDto: {
+            id: string;
+            title?: string;
+            url: string;
+            width: number;
+            height: number;
+            /** @description The `token` the result carried in `/v1/gifs/*`; a GIF without a matching one is refused. */
+            token: string;
+        };
+        MentionPickDto: {
+            /** Format: uuid */
+            user_id: string;
+            label: string;
+        };
         SendMessageDto: {
             /** Format: uuid */
             client_message_id: string;
             content: string;
             attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement";
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | "role_picker";
+            gif?: components["schemas"]["MessageGifDto"];
+            /** @description A rich card's data. Once checked, at most 16384 characters as JSON, or 65536 for a form. */
             payload?: Record<string, never>;
             reply_to_id?: string;
             /** Format: uuid */
             thread_root_id?: string;
+            /** @description Client annotations, at most 16384 characters as JSON. */
             metadata?: Record<string, never>;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
         };
         ResolveAuthorAvatarsDto: {
             /** @description IDs of already-fetched messages in this channel to resolve avatar paths for. The server derives the avatar path set itself (`chat_messages.author_avatar_path` for rows matching both this channel and this id list) rather than trusting a caller-supplied storage path — the `chat-archive` bucket has no storage RLS, and an avatar path is otherwise indistinguishable from another message's attachment path. */
@@ -5084,6 +8574,88 @@ export interface components {
         };
         EditMessageDto: {
             content: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        ForwardMessageDto: {
+            /**
+             * Format: uuid
+             * @description The channel or DM to forward to. It may be the channel the message is in.
+             */
+            channel_id: string;
+            /** @description The forwarder’s own comment, posted as the new message’s text. May be empty or left out. Its @mentions reach people as a message’s do. */
+            content?: string;
+            /**
+             * Format: uuid
+             * @description Client-generated idempotency key, as on a send: a retry with the same key in the same destination answers the forward already made.
+             */
+            client_message_id?: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        ForwardResultDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Null for an imported archive message, which names its author in author_name instead. Kept on a masked row: the blocker chose the block, so reading their own list back is not a disclosure — and without it a client cannot reconcile a server-masked row against the list it applies itself.
+             */
+            sender_id: string | null;
+            author_name?: string | null;
+            author_avatar_path?: string | null;
+            author_external_id?: string | null;
+            /** @description Reads the masking sentinel when `sender_blocked` is true, and “[message deleted]” once the message is deleted. **Never pattern-match either string** — the machine-readable signals are `sender_blocked` and `is_deleted`. */
+            content: string;
+            /** @enum {string} */
+            type: "TEXT" | "POLL";
+            /**
+             * @description Null on rows written before the column existed; read as 'text'.
+             * @enum {string|null}
+             */
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | "role_picker" | null;
+            /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
+            payload?: Record<string, never> | null;
+            client_message_id?: string | null;
+            /** Format: uuid */
+            reply_to_id: string | null;
+            /** @description Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
+            metadata: Record<string, never>;
+            is_pinned: boolean;
+            pinned_at: string | null;
+            /**
+             * @description The flag a member added after the message was sent (#3921), or null. Null on a masked row: a tombstone draws no flag.
+             * @enum {string|null}
+             */
+            flag?: "important" | "funny" | "interesting" | "question" | "hype" | "fyi" | null;
+            /**
+             * Format: uuid
+             * @description Who added the flag. Null when there is no flag, and also when the viewer blocked the member who added it: the flag stays, the name is withheld.
+             */
+            flagged_by?: string | null;
+            flagged_at?: string | null;
+            edited_at: string | null;
+            is_deleted: boolean;
+            /** @description `users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
+            mentions?: string[] | null;
+            /**
+             * Format: uuid
+             * @description The parent message when this row is a reply inside a message thread (#3785). Thread replies never appear in the channel timeline; a client that receives one over Realtime must keep it out of the timeline.
+             */
+            thread_root_id?: string | null;
+            /** @description On a thread parent: its reply count, kept by a trigger so the parent’s Realtime UPDATE echo carries it. 0 on every other row. */
+            thread_reply_count?: number;
+            thread_last_reply_at?: string | null;
+            /** @description On a thread parent: up to three recent repliers, newest first. */
+            thread_recent_sender_ids?: string[];
+            /** @description On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`). */
+            thread_last_reply?: components["schemas"]["ChatThreadLastReplyDto"] | null;
+            /** @description Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it). */
+            forwarded_from?: components["schemas"]["ForwardedMessageDto"] | null;
+            created_at: string;
+            /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
+            sender_blocked: boolean;
+            /** @description True when a retry on the same `client_message_id` answered the forward already made, rather than making a new one. */
+            deduplicated: boolean;
         };
         SetMessageFlagDto: {
             /**
@@ -5093,8 +8665,9 @@ export interface components {
             flag: "important" | "funny" | "interesting" | "question" | "hype" | "fyi";
         };
         ChatMessageActionDto: {
-            /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions. */
+            /** @description Action discriminator: `reaction:<emoji>` for an emoji reaction, `vote` for a poll vote (UPSERT), or `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full). Anything else is a 400. */
             action_type: string;
+            /** @description The vote or claim (`{ option_id }` or `{ slot_ids, note? }`), at most 4096 characters as JSON. A reaction carries none and any sent is not stored. */
             payload?: Record<string, never>;
         };
         ReactionDto: {
@@ -5132,6 +8705,45 @@ export interface components {
              */
             level: "all" | "mentions" | "off";
         };
+        FormResponseDto: {
+            answers: {
+                [key: string]: string | string[];
+            };
+            /** Format: date-time */
+            updated_at: string;
+        };
+        OwnFormResponseDto: {
+            response?: components["schemas"]["FormResponseDto"] | null;
+        };
+        FormResponseEntryDto: {
+            /** Format: uuid */
+            user_id: string;
+            answers: {
+                [key: string]: string | string[];
+            };
+            /**
+             * Format: date-time
+             * @description When they first answered.
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When they last changed their answers.
+             */
+            updated_at: string;
+        };
+        FormResponsesDto: {
+            /** @description Every saved response, first answered first. Names are joined from the roster; a member no longer on it has left. */
+            responses: components["schemas"]["FormResponseEntryDto"][];
+            /** @description Members who can read the form’s channel now and haven’t answered, the creator left out. */
+            not_responded: string[];
+        };
+        SaveFormResponseDto: {
+            /** @description Answers keyed by question id: text for a short-answer or paragraph question, the option id for multiple choice or a dropdown, a list of option ids for checkboxes, and `yes` or `no`. Leave a question out to leave it blank. 400 when a required question is blank, an answer does not fit its question, or the form is closed. */
+            answers: {
+                [key: string]: string | string[];
+            };
+        };
         BookmarkedMessageDto: {
             /** Format: uuid */
             id: string;
@@ -5146,6 +8758,15 @@ export interface components {
             content: string;
             is_deleted: boolean;
             created_at: string;
+            /**
+             * Format: uuid
+             * @description The thread this message is a reply in (#3785), or null for a channel message. A client opens a saved reply in its thread (#3723). Null on a redacted row.
+             */
+            thread_root_id: string | null;
+            /** @description Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author. */
+            forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked. */
+            has_gif: boolean;
             /** @description Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows. */
             sender_blocked: boolean;
         };
@@ -5293,11 +8914,18 @@ export interface components {
             blocked_user_id: string;
             created_at: string;
         };
+        /**
+         * @description How channels sort inside each section: chapter (the chapter's own order, then A to Z; the default), recent (newest latest message first) or alpha (A to Z by the name the row shows).
+         * @enum {string}
+         */
+        ChatSidebarSort: "chapter" | "recent" | "alpha";
         ChatSidebarDto: {
             /** @description Show only channels with something unread, a mention included. Pinned channels and the open channel still show. */
             unread_only: boolean;
             /** @description Leave out channels whose notification level is off. A muted channel with an unread @-mention still shows. */
             hide_muted: boolean;
+            /** @description How channels sort inside each section: chapter (the chapter's own order, then A to Z; the default), recent (newest latest message first) or alpha (A to Z by the name the row shows). */
+            sort: components["schemas"]["ChatSidebarSort"];
             /** @description Section keys the member folded: pinned, channels, direct, system, or category:<uuid>. */
             collapsed_sections: string[];
             /** @description Channels the member pinned to the top, limited to channels they can still read. Carries no order: the sidebar sorts the Pinned section like any other. */
@@ -5306,6 +8934,7 @@ export interface components {
         UpdateChatSidebarDto: {
             unread_only?: boolean;
             hide_muted?: boolean;
+            sort?: components["schemas"]["ChatSidebarSort"];
         };
         FollowedThreadDto: {
             /** Format: uuid */
@@ -5338,6 +8967,23 @@ export interface components {
         };
         ThreadReadDto: {
             last_read_at: string;
+        };
+        MemberThreadDto: {
+            /** Format: uuid */
+            thread_root_id: string;
+            /** @enum {string} */
+            state: "following" | "muted";
+            last_read_at: string | null;
+            /** @description Replies new to the caller; always 0 when muted. */
+            unread_count: number;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description When the newest reply landed; null before any reply. */
+            last_reply_at: string | null;
+            /** @description Replies in the thread, deleted ones included. */
+            reply_count: number;
+            /** @description The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier. */
+            root: components["schemas"]["ChatMessageDto"];
         };
         ChatBackgroundResponseDto: {
             /**
@@ -5431,155 +9077,344 @@ export interface components {
             /** @description Messages the caller jumped to or scrolled onto their screen. Ids the strip does not count are ignored. */
             message_ids: string[];
         };
-        GeofenceCoordinateDto: {
-            lat: number;
-            lng: number;
+        GifAvailabilityDto: {
+            /** @description Whether GIF search is set up on this server. Clients hide the GIF button when it is not. */
+            available: boolean;
+            /** @description The provider's name, shown in the picker's search field as its attribution. */
+            provider: string;
         };
-        CreateEventDto: {
-            name: string;
-            description?: string;
-            location?: string;
-            start_time: string;
-            end_time: string;
-            /** @default 10 */
-            point_value: number;
-            /** @default false */
-            is_mandatory: boolean;
-            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
-            recurrence_rule?: string;
-            /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
-            required_role_ids?: string[];
-            /** @description Roles invited but not required. */
-            optional_role_ids?: string[];
-            /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
-            excluded_role_ids?: string[];
-            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older "only these roles" meaning, for a caller that predates this field. Omitted on update, it is left as stored. */
-            others_invited?: boolean;
-            notes?: string;
-            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
-            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
-            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
-            check_in_zone_name?: string;
-            /** @description Minutes before start_time that check-in opens. Omitted on create, it is 10; the window closes 15 minutes after end_time. */
-            check_in_opens_minutes?: number;
-            /**
-             * Format: uuid
-             * @description One of the chapter's event types (`GET /v1/event-types`), or null for none. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400.
-             */
-            event_type_id?: string | null;
-            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. Rejected with a 400 when the event keeps anyone out (`others_invited` false, including its default when `required_role_ids` is non-empty, or a non-empty `excluded_role_ids`), on this key or `client_message_id` alone — the card is broadcast to every reader of the channel, so a create cannot both limit its audience and post one. (`PATCH` can still limit the audience of an event whose card already posted; that card is left as-is.) */
-            channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when the event keeps anyone out, even without `channel_id` — see that field. */
-            client_message_id?: string;
+        GifRenditionDto: {
+            url: string;
+            width: number;
+            height: number;
         };
-        CreateEventResponseDto: {
+        GifResultDto: {
+            /** @description The provider's id for this GIF. */
+            id: string;
+            /** @description Short words for screen readers; may be empty. */
+            title: string;
+            /** @description Small, for a grid tile. */
+            preview: components["schemas"]["GifRenditionDto"];
+            /** @description What a message shows; send this one. */
+            full: components["schemas"]["GifRenditionDto"];
+            /** @description Send it back with this GIF (`gif.token` on a message): it proves the GIF came from this server's search. */
+            token: string;
+        };
+        GifPageDto: {
+            results: components["schemas"]["GifResultDto"][];
+            next_page: number | null;
+        };
+        GifFavoriteRenditionDto: {
+            url: string;
+            width: number;
+            height: number;
+        };
+        AddGifFavoriteDto: {
+            id: string;
+            title?: string;
+            preview: components["schemas"]["GifFavoriteRenditionDto"];
+            full: components["schemas"]["GifFavoriteRenditionDto"];
+            token: string;
+        };
+        ScheduledAttachmentDto: {
+            filename: string;
+            content_type: string;
+        };
+        ScheduledMessageDto: {
             /** Format: uuid */
             id: string;
             /** Format: uuid */
-            chapter_id: string;
-            name: string;
-            description: string | null;
-            location: string | null;
-            /** Format: date-time */
-            start_time: string;
-            /** Format: date-time */
-            end_time: string;
-            point_value: number;
-            is_mandatory: boolean;
-            recurrence_rule: string | null;
-            /** Format: uuid */
-            parent_event_id: string | null;
-            required_role_ids: string[] | null;
-            optional_role_ids: string[] | null;
-            excluded_role_ids: string[] | null;
-            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
-            others_invited: boolean | null;
-            notes: string | null;
-            /** @description Optional check-in geofence. `null` means the event has no zone. */
-            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
-            check_in_zone_name: string | null;
-            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
-            check_in_opens_minutes: number;
+            channel_id: string;
+            content: string;
+            mention_picks: components["schemas"]["MentionPickDto"][] | null;
+            /** @description The files it carries; empty for a text message. */
+            attachments: components["schemas"]["ScheduledAttachmentDto"][];
             /**
              * Format: uuid
-             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             * @description The message it quotes.
              */
-            event_type_id: string | null;
+            reply_to_id: string | null;
             /**
              * Format: uuid
-             * @description Who made the event. Null for events made before it was recorded.
+             * @description The thread it posts into.
              */
-            created_by: string | null;
+            thread_root_id: string | null;
             /** Format: date-time */
-            created_at: string;
-            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
-            card_posted?: boolean;
-        };
-        UpdateEventDto: {
-            name?: string;
-            description?: string;
-            location?: string;
-            start_time?: string;
-            end_time?: string;
-            point_value?: number;
-            is_mandatory?: boolean;
-            /** @description Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY) */
-            recurrence_rule?: string;
-            /** @description Roles that must attend. See `others_invited` for members holding none of the listed roles. */
-            required_role_ids?: string[];
-            /** @description Roles invited but not required. */
-            optional_role_ids?: string[];
-            /** @description Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional. */
-            excluded_role_ids?: string[];
-            /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older "only these roles" meaning. */
-            others_invited?: boolean;
-            notes?: string;
-            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
-            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
-            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
-            check_in_zone_name?: string;
-            /** @description Minutes before start_time that check-in opens; the window closes 15 minutes after end_time. Omitted leaves it unchanged; null is refused. */
-            check_in_opens_minutes?: number;
+            send_at: string;
             /**
-             * Format: uuid
-             * @description One of the chapter's event types (`GET /v1/event-types`), or null to clear it; omitted leaves it. The type only fills the form: the event's own `point_value` and `is_mandatory` are what count. An id that isn't the chapter's is a 400.
-             */
-            event_type_id?: string | null;
-            /**
-             * @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.
+             * @description `failed`: it did not post at its time. Edit it to try again, or delete it.
              * @enum {string}
              */
-            scope?: "instance" | "series";
-        };
-        EventTypeDto: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            chapter_id: string;
-            name: string;
-            /** @description Points for attending, copied onto an event made as this type. */
-            point_value: number;
-            /** @description Whether everyone must attend, copied onto an event made as this type. */
-            is_mandatory: boolean;
-            /** @description The type's place in the chapter's list, lowest first. */
-            position: number;
+            status: "pending" | "failed";
+            /**
+             * @description Why a failed message did not post: `no_access` the author can no longer post there; `chapter_locked` the chapter is read-only for billing; `not_sendable` the channel refused the message; `send_failed` it kept failing.
+             * @enum {string|null}
+             */
+            failure_reason: "no_access" | "chapter_locked" | "not_sendable" | "send_failed" | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
         };
-        CreateEventTypeDto: {
-            /** @description The type as the chapter calls it ("Chapter meeting", "Work party"). Stored trimmed; unique within the chapter, ignoring case. */
-            name: string;
-            /** @default 0 */
-            point_value: number;
-            /** @default false */
-            is_mandatory: boolean;
+        CreateScheduledMessageDto: {
+            /**
+             * Format: uuid
+             * @description The channel or DM to post in.
+             */
+            channel_id: string;
+            /** @description May be empty only when `attachments` is not, as on a send. */
+            content: string;
+            /** @description Files uploaded through `POST /v1/channels/{id}/upload-url`, as `SendMessageDto.attachments`. Deleted from storage if the scheduled message is deleted before it posts. */
+            attachments?: components["schemas"]["MessageAttachmentDto"][];
+            /**
+             * Format: uuid
+             * @description Quote this message, as `SendMessageDto.reply_to_id`. If it is gone when this posts, it posts without the quote.
+             */
+            reply_to_id?: string;
+            /**
+             * Format: uuid
+             * @description Post inside this message’s thread, as `SendMessageDto.thread_root_id`. Not with `reply_to_id`.
+             */
+            thread_root_id?: string;
+            /**
+             * Format: date-time
+             * @description When to post it: a date-time with its offset (`Z` or `±hh:mm`), at most 120 days ahead. The client picks it on the member’s own clock.
+             */
+            send_at: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
         };
-        UpdateEventTypeDto: {
-            name?: string;
-            point_value?: number;
-            is_mandatory?: boolean;
+        UpdateScheduledMessageDto: {
+            /** @description May be empty only on a message with files. Files, the quote and the thread can’t be changed. */
+            content?: string;
+            /** Format: date-time */
+            send_at?: string;
+            /** @description The `@` picks for the new `content`; read only with it. */
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        MeetingListItemDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string | null;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            other_label: string | null;
+            /** @enum {string} */
+            status: "draft" | "posted";
+            /** Format: uuid */
+            created_by: string | null;
+            /** Format: date-time */
+            posted_at: string | null;
+            /** Format: date-time */
+            updated_at: string;
+            /**
+             * Format: uuid
+             * @description The repeating series the meeting's event belongs to: its first event's id. Null for a one-time event, a deleted one, or one the caller can't see.
+             */
+            series_key: string | null;
+            /** @description The series' repeat rule, as the event stores it, for the app to describe in the reader's time zone. Null without a series. */
+            series_rule: string | null;
+            decision_count: number;
+            action_item_count: number;
+            /** @description A recording was used for these minutes. */
+            recorded: boolean;
+            /** @description The TL;DR's first line, its bullet taken off and cut at 140 characters: what happened, for the list row. Null without a TL;DR. */
+            gist: string | null;
+            /** @description Anything is in the minutes yet: a written section, someone’s notes, or a recording. Always true once posted. */
+            started: boolean;
+            /**
+             * Format: uuid
+             * @description Who is recording the meeting on their phone right now (heard from in the last few minutes). Null when nobody is.
+             */
+            recording_by: string | null;
+        };
+        MeetingLiveRecordingDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /**
+             * Format: uuid
+             * @description Who is recording.
+             */
+            user_id: string;
+            /** Format: date-time */
+            started_at: string;
+        };
+        MeetingTemplateDto: {
+            /** @description The sections the chapter’s minutes show, in order. */
+            sections: ("tldr" | "summary" | "dates" | "decisions" | "action_items" | "tabled" | "announcements" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+        };
+        MeetingVoteDto: {
+            for: number;
+            against: number;
+            abstain: number;
+        };
+        MeetingDecisionDto: {
+            text: string;
+            /** @description The count, when the meeting recorded one. Never a guess. */
+            vote: components["schemas"]["MeetingVoteDto"] | null;
+            /** @description The outcome in a few words, shown bold over the text. Absent on decisions from before it. */
+            headline?: string | null;
+        };
+        MeetingActionItemDto: {
+            text: string;
+            /**
+             * Format: uuid
+             * @description Only when someone was named for it.
+             */
+            owner_user_id: string | null;
+            /**
+             * Format: date
+             * @description A calendar day, YYYY-MM-DD.
+             */
+            due_date: string | null;
+        };
+        MeetingTabledItemDto: {
+            text: string;
+            /**
+             * Format: uuid
+             * @description The minutes that first tabled it; null when these minutes did.
+             */
+            first_meeting_id: string | null;
+            /**
+             * Format: date-time
+             * @description That meeting's start; null with first_meeting_id.
+             */
+            first_start_time: string | null;
+            /** @description How many meetings have tabled it, this one included. */
+            times: number;
+        };
+        MeetingDateItemDto: {
+            /**
+             * Format: date
+             * @example 2026-11-28
+             */
+            date: string;
+            text: string;
+        };
+        MeetingContentDto: {
+            /** @description The TL;DR: a few "- " bullets, what an ordinary member most needs to know or do, beyond the dates, decisions and action items listed after it. Empty on minutes from before it. */
+            tldr: string;
+            summary: string;
+            announcements: string;
+            decisions: components["schemas"]["MeetingDecisionDto"][];
+            action_items: components["schemas"]["MeetingActionItemDto"][];
+            /** @description What the meeting tabled. Empty on minutes from before it. */
+            tabled: components["schemas"]["MeetingTabledItemDto"][];
+            /** @description The dates the meeting named, soonest first. Empty on minutes from before it. */
+            dates: components["schemas"]["MeetingDateItemDto"][];
+            officer_reports: string;
+            old_business: string;
+            new_business: string;
+            discussion_log: string;
+        };
+        MeetingAttendeesDto: {
+            present: string[];
+            late: string[];
+            excused: string[];
+        };
+        MeetingDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string | null;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            other_label: string | null;
+            /** @enum {string} */
+            status: "draft" | "posted";
+            /** Format: uuid */
+            created_by: string | null;
+            /** Format: date-time */
+            posted_at: string | null;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            event_end_time: string | null;
+            content: components["schemas"]["MeetingContentDto"];
+            /** @description The chapter’s template, in order. */
+            sections: ("tldr" | "summary" | "dates" | "decisions" | "action_items" | "tabled" | "announcements" | "discussion_log" | "attendees" | "officer_reports" | "old_business" | "new_business")[];
+            /** @description The event’s check-ins; null when the event is gone. */
+            attendees: components["schemas"]["MeetingAttendeesDto"] | null;
+            /** Format: uuid */
+            updated_by: string | null;
+            /** Format: uuid */
+            posted_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording. */
+            transcript: string | null;
+            can_edit: boolean;
+            can_delete: boolean;
+        };
+        NewMeetingEventDto: {
+            name: string;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            /** @description Only members holding one of these roles are invited, and so read the minutes. Empty or omitted: everyone. */
+            role_ids?: string[];
+        };
+        StartMeetingDto: {
+            /**
+             * @description The meeting type. `standards` is refused with a 400: a Standards meeting is never kept in Frapp.
+             * @enum {string}
+             */
+            meeting_type: "chapter" | "exec" | "committee" | "other" | "standards";
+            /** @description A name for an Other meeting. */
+            other_label?: string | null;
+            /**
+             * Format: uuid
+             * @description The meeting’s event. Send this, new_event, or neither: with neither the minutes start with no meeting, readable by their author alone, and are linked to one (POST /v1/meetings/{id}/event) before they can be posted.
+             */
+            event_id?: string;
+            /** @description Make an event for a meeting that has none: nobody required, no points, and no new-event push. */
+            new_event?: components["schemas"]["NewMeetingEventDto"];
+        };
+        MeetingContentPatchDto: {
+            tldr?: string;
+            summary?: string;
+            announcements?: string;
+            decisions?: components["schemas"]["MeetingDecisionDto"][];
+            action_items?: components["schemas"]["MeetingActionItemDto"][];
+            tabled?: components["schemas"]["MeetingTabledItemDto"][];
+            dates?: components["schemas"]["MeetingDateItemDto"][];
+            officer_reports?: string;
+            old_business?: string;
+            new_business?: string;
+            discussion_log?: string;
+        };
+        UpdateMeetingDto: {
+            /**
+             * Format: date-time
+             * @description The `updated_at` the editor loaded. A save over newer minutes answers 409 `meeting.stale`.
+             */
+            expected_updated_at: string;
+            /** @enum {string} */
+            meeting_type?: "chapter" | "exec" | "committee" | "other" | "standards";
+            other_label?: string | null;
+            content?: components["schemas"]["MeetingContentPatchDto"];
+        };
+        PostMeetingDto: {
+            /** Format: date-time */
+            expected_updated_at: string;
+        };
+        LinkMeetingEventDto: {
+            /**
+             * Format: uuid
+             * @description An event with no minutes of its own. Send this or new_event.
+             */
+            event_id?: string;
+            /** @description Make an event for the minutes after the fact: nobody required, no points, and no new-event push. */
+            new_event?: components["schemas"]["NewMeetingEventDto"];
         };
         CheckInDto: {
             /** @description Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it. */
@@ -5589,10 +9424,27 @@ export interface components {
              * @example 4KQ-88
              */
             manualCode?: string;
-            /** @description Scanner latitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            /** @description Scanner latitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise. */
             lat?: number;
-            /** @description Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            /** @description Scanner longitude. Required when the event defines a check-in geofence, or when an officer's screen showing the code reported where it is; ignored otherwise. */
             lng?: number;
+            /** @description The scanner's reported location accuracy in meters. Widens the distance allowed from the officer's screen, up to 50 m. Omit when the phone reports none. */
+            accuracy_meters?: number;
+        };
+        CheckInScreenDto: {
+            /** @description The screen's latitude. */
+            lat?: number;
+            /** @description The screen's longitude. */
+            lng?: number;
+            /** @description The screen's reported accuracy in meters. A fix less precise than 100 m isn't stored, and distance isn't checked. */
+            accuracy_meters?: number;
+        };
+        CheckInScreenResultDto: {
+            /**
+             * @description How presence is checked for this event: `zone` (its drawn zone), `screen` (this screen knows where it is; members must be within 100 yards of it or of another located screen, plus both phones' accuracy up to 50 m each), `other_screen` (this screen can't tell where it is, but another officer's can, so members must be near that one), `no_location` (no screen could tell where it is, so the code is required but distance isn't checked), or `not_open` / `closed` (outside the check-in window; nothing was stored).
+             * @enum {string}
+             */
+            check: "zone" | "screen" | "other_screen" | "no_location" | "not_open" | "closed";
         };
         EventAttendanceDto: {
             /** Format: uuid */
@@ -5620,9 +9472,85 @@ export interface components {
             status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
             excuse_reason?: string;
         };
+        MarkAttendanceByHandDto: {
+            user_ids: string[];
+            /** @enum {string} */
+            status: "PRESENT" | "LATE" | "EXCUSED";
+        };
+        MarkAttendanceByHandResultDto: {
+            /** @description The members given a row now. */
+            marked: string[];
+            /** @description Picked members who already had a row (a check-in, an excuse, an earlier mark), kept as they were. */
+            already_marked: number;
+            /** @description Picked members the event doesn't invite (its roles, alumni the event doesn't name, or not in the chapter), left unmarked. */
+            not_invited: number;
+        };
         AutoAbsentResultDto: {
             /** @description Number of members newly recorded ABSENT. 0 when the event is not mandatory and targets no roles, or when everyone required already has an attendance record. */
             marked: number;
+        };
+        SubmitEventExcuseDto: {
+            /** @description One line on why the member can't attend, 1 to 500 characters after trimming. */
+            reason: string;
+        };
+        EventExcuseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            user_id: string;
+            reason: string;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "DECLINED";
+            /** Format: uuid */
+            decided_by: string | null;
+            /** Format: date-time */
+            decided_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ExcuseReceiverDto: {
+            /** Format: uuid */
+            user_id: string;
+            display_name: string;
+        };
+        MyEventExcuseDto: {
+            /** @description The caller's excuse, or null when they sent none. */
+            excuse: components["schemas"]["EventExcuseDto"] | null;
+            /** @description The event's creator, who receives it ("Excuse sent to Jake"). Null when the event has no creator in the chapter, or the caller made it: it then goes to the officers who can edit events. */
+            receiver: components["schemas"]["ExcuseReceiverDto"] | null;
+        };
+        EventExcuseWithMemberDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            user_id: string;
+            reason: string;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "DECLINED";
+            /** Format: uuid */
+            decided_by: string | null;
+            /** Format: date-time */
+            decided_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description The sender's display name; empty when they set none. */
+            display_name: string;
+        };
+        DecideEventExcuseDto: {
+            /** @enum {string} */
+            decision: "APPROVED" | "DECLINED";
         };
         AdjustPointsDto: {
             /** Format: uuid */
@@ -5720,30 +9648,84 @@ export interface components {
             resource_id: string;
         };
         ConfirmBackworkUploadDto: {
+            title?: string | null;
+            /** @description Department code (e.g. "CS") */
+            department_code?: string | null;
+            /** @description Course number (e.g. "101") */
+            course_number?: string | null;
+            /** @description The course's name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course. */
+            course_name?: string | null;
+            /** @description Professor name */
+            professor_name?: string | null;
+            year?: number | null;
+            /** @enum {string|null} */
+            semester?: "Spring" | "Summer" | "Fall" | "Winter" | null;
+            /** @enum {string|null} */
+            assignment_type?: "Exam" | "Midterm" | "Final Exam" | "Quiz" | "Homework" | "Lab" | "Project" | "Study Guide" | "Notes" | "Other" | null;
+            assignment_number?: number | null;
+            /** @enum {string|null} */
+            document_variant?: "Student Copy" | "Blank Copy" | "Answer Key" | null;
+            tags?: string[] | null;
             /** @description Storage path returned from upload-url */
             storage_path: string;
-            /** @description SHA-256 hash of the uploaded file */
+            /** @description SHA-256 hash of the uploaded file, as 64 lowercase hex characters */
             file_hash: string;
-            title?: string;
-            /** @description Department code (e.g. "CS") */
-            department_code?: string;
-            /** @description Course number (e.g. "101") */
-            course_number?: string;
-            /** @description The course's name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course. */
-            course_name?: string;
-            /** @description Professor name */
-            professor_name?: string;
-            year?: number;
-            /** @enum {string} */
-            semester?: "Spring" | "Summer" | "Fall" | "Winter";
-            /** @enum {string} */
-            assignment_type?: "Exam" | "Midterm" | "Final Exam" | "Quiz" | "Homework" | "Lab" | "Project" | "Study Guide" | "Notes" | "Other";
-            assignment_number?: number;
-            /** @enum {string} */
-            document_variant?: "Student Copy" | "Blank Copy" | "Answer Key";
-            tags?: string[];
             /** @default false */
             is_redacted: boolean;
+            /** @description Save as a draft: the fields are kept as sent, not filed, and only the uploader sees the file until it is published (POST /v1/backwork/drafts/publish). */
+            draft?: boolean;
+            /** @description For a draft: false when it was saved without anyone looking at its pages (bulk upload's "Save the rest"). Such a draft is not read by the AI fill and can't be published until POST /v1/backwork/drafts/{id}/check. Left out, the draft counts as checked. */
+            pages_checked?: boolean;
+        };
+        BackworkFieldsDto: {
+            title?: string | null;
+            /** @description Department code (e.g. "CS") */
+            department_code?: string | null;
+            /** @description Course number (e.g. "101") */
+            course_number?: string | null;
+            /** @description The course's name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course. */
+            course_name?: string | null;
+            /** @description Professor name */
+            professor_name?: string | null;
+            year?: number | null;
+            /** @enum {string|null} */
+            semester?: "Spring" | "Summer" | "Fall" | "Winter" | null;
+            /** @enum {string|null} */
+            assignment_type?: "Exam" | "Midterm" | "Final Exam" | "Quiz" | "Homework" | "Lab" | "Project" | "Study Guide" | "Notes" | "Other" | null;
+            assignment_number?: number | null;
+            /** @enum {string|null} */
+            document_variant?: "Student Copy" | "Blank Copy" | "Answer Key" | null;
+            tags?: string[] | null;
+        };
+        UpdateBackworkDraftsDto: {
+            /** @description The caller's drafts. Other ids are left out. */
+            ids: string[];
+            /** @description Fields to set on every listed draft. Fields left out keep their value; a field sent as null clears it. */
+            fields: components["schemas"]["BackworkFieldsDto"];
+        };
+        PublishBackworkDraftsDto: {
+            /** @description The caller's drafts. Other ids are left out. */
+            ids: string[];
+        };
+        BackworkDraftFailureDto: {
+            id: string;
+            /** @description Why it stayed a draft, in words to show. */
+            message: string;
+        };
+        PublishBackworkDraftsResponseDto: {
+            /** @description The filed resources. */
+            published: Record<string, never>[];
+            failed: components["schemas"]["BackworkDraftFailureDto"][];
+        };
+        BackworkDraftFileUrlDto: {
+            /** @description A link to the draft's stored file, good for five minutes, for the uploader's browser to show its pages. */
+            url: string;
+        };
+        CheckBackworkDraftDto: {
+            /** @description Storage path from upload-url of the file flattened again with the boxes added during the check. Leave out when no box was added. */
+            storage_path?: string;
+            /** @description SHA-256 hash of that file. Required with storage_path. */
+            file_hash?: string;
         };
         BackworkDownloadUrlDto: {
             /** Format: uuid */
@@ -5806,6 +9788,30 @@ export interface components {
             /** @description Professor name */
             name?: string;
         };
+        ServiceEntryResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** Format: date */
+            date: string;
+            duration_minutes: number;
+            description: string;
+            proof_path: string | null;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REJECTED";
+            /** Format: uuid */
+            reviewed_by: string | null;
+            review_comment: string | null;
+            /** @description Whether the approval wrote a SERVICE ledger row. Prefer `awarded_points` for the number. */
+            points_awarded: boolean;
+            /** @description SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then. */
+            awarded_points: number | null;
+            /** Format: date-time */
+            created_at: string;
+        };
         ServicePointsRateResponseDto: {
             /**
              * @description Minutes of approved service per SERVICE point, as the approve path reads it now (default 60). Approving awards floor(duration_minutes / minutes_per_point).
@@ -5839,11 +9845,11 @@ export interface components {
             duration_minutes: number;
             /** @description Description of the service performed */
             description: string;
-            /** @description Storage path to proof file (e.g. from upload) */
+            /** @description The `storage_path` from `POST /v1/service-entries/proof-upload-url`, once the file is uploaded. One file belongs to one entry: when an entry in the chapter already holds this path, a create by the same member answers 201 with that entry as saved (a resend after a lost response), and one by any other member is refused with 400. */
             proof_path?: string;
             /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
             channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry. */
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key for the entry: a replay without `proof_path` creates a duplicate entry (one with it returns the entry already saved, see `proof_path`). The card itself is deduplicated on it. */
             client_message_id?: string;
         };
         CreateServiceEntryResponseDto: {
@@ -5863,7 +9869,10 @@ export interface components {
             /** Format: uuid */
             reviewed_by: string | null;
             review_comment: string | null;
+            /** @description Whether the approval wrote a SERVICE ledger row. Prefer `awarded_points` for the number. */
             points_awarded: boolean;
+            /** @description SERVICE points this entry's approval awarded, from the rate read at approval (never recomputed): 0 for a sub-rate duration, null until approved. An entry approved before this field existed whose ledger row is gone also reads null; fall back to `points_awarded` then. */
+            awarded_points: number | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the entry row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -5875,11 +9884,86 @@ export interface components {
             /** @description Optional comment for the member (especially on rejection) */
             review_comment?: string;
         };
+        TaskSeriesSummaryDto: {
+            /** @description The series’ rule, as on create. */
+            recurrence_rule: string;
+            /**
+             * Format: date
+             * @description The day of the next copy still to be made: "Every Monday · next Nov 24". Meaningless once `ended`.
+             */
+            next_due_date: string;
+            /** @description Whether the series has stopped making copies: its rule ran out, an officer ended it, or its assignee left. */
+            ended: boolean;
+        };
+        TaskGroupSummaryDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders), `group` (a chapter group’s members) or `tier` (everyone holding a role in a tier, #5473). Each got their own copy.
+             * @enum {string}
+             */
+            audience: "everyone" | "people" | "role" | "group" | "tier";
+            /**
+             * Format: uuid
+             * @description The role, chapter group or tier it went to, for `role`, `group` and `tier`; null otherwise.
+             */
+            target_id: string | null;
+            /** @description That role’s, group’s or tier’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee". */
+            target_name: string | null;
+            /** @description How many copies the group has. */
+            total: number;
+            /** @description How many copies are marked done, waiting on an officer or confirmed. */
+            done: number;
+            /** @description How many copies are confirmed, or needed no sign-off when marked done. */
+            confirmed: number;
+        };
+        RequestTaskPhotoUploadUrlDto: {
+            /** @description Original filename (a JPEG, PNG, GIF or WebP) */
+            filename: string;
+            /** @description MIME content type (e.g. image/jpeg) */
+            content_type: string;
+            /** @description File size in bytes, if known. Rejected against the upload size ceiling when present. */
+            size_bytes?: number;
+        };
+        TaskPhotoUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send in `reference_photo_paths` (create, edit) or `proof_photo_paths` (Mark done). */
+            storage_path: string;
+        };
+        TaskPhotoUrlResponseDto: {
+            /** @description Short-lived signed URL to view the photo. */
+            url: string;
+        };
         CreateTaskDto: {
             title: string;
             description?: string;
-            /** @description User ID of the assignee */
-            assignee_id: string;
+            /** @description User ID of the assignee. Send exactly one of this, `assignee_ids` and `audience`. */
+            assignee_id?: string;
+            /** @description Several people picked one by one (2026-11-18), in place of `assignee_id` and `audience`: each gets their own copy, as with `audience`, and reads carry `group` with `audience: "people"`. Each must be an active member of the chapter (alumni refused); duplicates count once, and a list of one makes that person’s task. The same limits as `audience` apply. */
+            assignee_ids?: string[];
+            /**
+             * @description A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Narrow it with `audience_role_id` or `audience_group_id`. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first.
+             * @enum {string}
+             */
+            audience?: "everyone";
+            /**
+             * Format: uuid
+             * @description With `audience: "everyone"` only (2026-11-18): just the active members holding this role get a copy. The chapter’s Everyone role means everyone; the Alumni role is refused, and a role nobody holds is a 400 ("Nobody holds that role yet"). Not with `audience_group_id`.
+             */
+            audience_role_id?: string;
+            /**
+             * Format: uuid
+             * @description With `audience: "everyone"` only (2026-11-18): just the active members of this chapter group (manual, pledge class, class year or major) get a copy. An empty group is a 400. Not with `audience_role_id`.
+             */
+            audience_group_id?: string;
+            /**
+             * Format: uuid
+             * @description With `audience: "everyone"` only (#5473): just the active members holding a role in this tier get a copy ("Exec board"). A tier holding the chapter’s Everyone role means everyone; a tier nobody holds a role in is a 400. Not with `audience_role_id` or `audience_group_id`.
+             */
+            audience_tier_id?: string;
+            /** @description The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task. */
+            followed_by?: string;
             /** @description Due date (YYYY-MM-DD) */
             due_date: string;
             /**
@@ -5891,10 +9975,37 @@ export interface components {
             subtasks?: string[];
             /** @description Points to award on completion */
             point_reward?: number;
+            /** @description Reference photos, in order: each a `storage_path` from `POST /v1/tasks/photo-upload-url`, after the bytes were uploaded (#4635). At most 6. */
+            reference_photo_paths?: string[];
+            /**
+             * @description What Mark done needs (#4635): `none` (default), `photo` (one or more proof photos) or `link`.
+             * @enum {string}
+             */
+            proof_kind?: "none" | "photo" | "link";
+            /** @description Repeat on a schedule (#5119): the event rule format (`packages/validation/src/recurrence.ts`), `FREQ` DAILY, WEEKLY or MONTHLY, `INTERVAL` 1 to 30, `BYDAY` or `BYMONTHDAY`, a required `TZID` (the officer's zone), and `COUNT` (2 to 120), `UNTIL` (YYYYMMDD) or no end. Example: `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York`. The task is the first copy; the next is made once it is due, on the same time of day in that zone. */
+            recurrence_rule?: string;
             /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
             client_message_id?: string;
+        };
+        TaskPhotoDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            task_id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** @enum {string} */
+            kind: "reference" | "proof";
+            /** @description Storage key in the private `tasks` bucket. Read it through `GET /v1/tasks/:id/photos/:photoId/url`. */
+            storage_path: string;
+            /** @description Order within its kind, 0 first. */
+            position: number;
+            /** Format: uuid */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
         };
         CreateTaskResponseDto: {
             /** Format: uuid */
@@ -5924,10 +10035,68 @@ export interface components {
              * @description When an officer last sent the completion back to the assignee; null if never. The assignee taking back their own completion doesn’t set it.
              */
             sent_back_at: string | null;
+            /**
+             * @description What Mark done needs: nothing, a proof photo, or a link.
+             * @enum {string}
+             */
+            proof_kind: "none" | "photo" | "link";
+            /** @description The assignee's link proof sent with Mark done, or null. Shown as its domain; never fetched by the server. */
+            proof_link: string | null;
+            /** @description Why an officer last sent the completion back, or null. Kept through the next Mark done; cleared when the task is handed to someone else. */
+            sent_back_reason: string | null;
+            /** @description The assignee's reply sent with Mark done, or null. Cleared with the completion. */
+            completion_note: string | null;
+            /**
+             * Format: uuid
+             * @description Who marked it done (#5732): the assignee, or an officer marking it done for them. Null while it is open, and on a completion from before this was kept.
+             */
+            completed_by: string | null;
+            /**
+             * Format: uuid
+             * @description The repeating series this task is a copy of (#5119), or null for a task that doesn’t repeat.
+             */
+            series_id: string | null;
+            /**
+             * Format: date
+             * @description A copy’s day in its series’ pattern; null otherwise.
+             */
+            occurrence_date: string | null;
+            /**
+             * Format: uuid
+             * @description The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person.
+             */
+            group_id: string | null;
+            /**
+             * Format: uuid
+             * @description The minutes this task was suggested from (#5562), or null. Read the meeting for its name, so a renamed meeting shows its new one; the reader may not be allowed to.
+             */
+            meeting_id: string | null;
+            /** @description The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task. */
+            followed_by: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
+            /** @description The reference photos added with the task, in order. Task reads and status writes carry `photos` too. */
+            photos: components["schemas"]["TaskPhotoDto"][];
+            /** @description On a task for everyone: its group, as task reads carry it (#4295 step 3). */
+            group?: components["schemas"]["TaskGroupSummaryDto"];
+        };
+        ShareTaskToChatDto: {
+            /**
+             * Format: uuid
+             * @description The channel to post the card in.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Client-generated idempotency key, reconciling the optimistic placeholder.
+             */
+            client_message_id: string;
+        };
+        ShareTaskToChatResponseDto: {
+            /** @description True once the card is in the channel. The route answers 4xx instead of `false` when it could not post. */
+            card_posted: boolean;
         };
         UpdateTaskDto: {
             title?: string;
@@ -5942,14 +10111,95 @@ export interface components {
              */
             due_at?: string | null;
             point_reward?: number | null;
+            /** @description The task's reference photos as they should stand, in order (#4635): paths it already holds stay, new `storage_path`s from `POST /v1/tasks/photo-upload-url` are added, and any it held that aren't listed are removed. `[]` removes them all. At most 6. */
+            reference_photo_paths?: string[];
+            /**
+             * @description What Mark done needs (#4635). Changing it doesn't touch a completion already waiting on an officer.
+             * @enum {string}
+             */
+            proof_kind?: "none" | "photo" | "link";
+            /** @description The tier, role or group the task is from (#5473): `tier:<id>`, `role:<id>` or `group:<id>`, as channel access lists spell an entry, or null. Its active members, read when they ask, can read the task and its progress (list and get), without its proof photos or link, and get its finished and overdue pushes. It grants nothing else: Confirm and Send back stay with `tasks:manage`. On create the creator must be in it; not on a repeating task. Null takes it off. A new one must name a tier, role or group the editor is in; the one the task has stays whoever edits. With `scope: group` it changes every copy, confirmed ones too. Not with `scope: series`. */
+            followed_by?: string | null;
+            /**
+             * @description On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`). On a copy of a group task (#4295 step 3): `group` ("Everyone’s copy") makes the edit to every copy not yet confirmed; `assignee_id` and `reference_photo_paths` change one copy only, so they are a 400 with it.
+             * @enum {string}
+             */
+            scope?: "instance" | "series" | "group";
+            /** @description With `scope: series` only: a new rule, counted from the open copy, or null to stop repeating after it. Repeat on a schedule (#5119): the event rule format (`packages/validation/src/recurrence.ts`), `FREQ` DAILY, WEEKLY or MONTHLY, `INTERVAL` 1 to 30, `BYDAY` or `BYMONTHDAY`, a required `TZID` (the officer's zone), and `COUNT` (2 to 120), `UNTIL` (YYYYMMDD) or no end. Example: `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York`. The task is the first copy; the next is made once it is due, on the same time of day in that zone. */
+            recurrence_rule?: string | null;
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */
             status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+            /** @description With `status: COMPLETED` only: proof photos, each a `storage_path` from `POST /v1/tasks/photo-upload-url` (#4635), 1 to 6. Required when the task's `proof_kind` is `photo`; a completion without it is a 400 with the code `task.proof_required`. */
+            proof_photo_paths?: string[];
+            /** @description With `status: COMPLETED` only: a link proof, http or https (#4635). Required when the task's `proof_kind` is `link` (400 `task.proof_required` without it). */
+            proof_link?: string;
+            /** @description With `status: COMPLETED` only: a reply to the officer (#4635). On a task an officer sent back, a completion with neither new proof nor this is a 400 with the code `task.resubmit_needs_change`. */
+            completion_note?: string;
         };
         RejectTaskCompletionDto: {
-            /** @description Optional comment for rejection */
+            /** @description Why it goes back, in one line (#4635). Required: a send-back without it is a 400. Stored on the task as `sent_back_reason` and shown to the assignee until they mark it done again. */
             comment?: string;
+            /** @description "Ask for a photo next time": raises the task's `proof_kind` to `photo`, so the next Mark done needs one. */
+            require_photo?: boolean;
+        };
+        OpenTaskDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /**
+             * Format: uuid
+             * @description The officer who posted it. The claimed task names them as its creator, so they review it.
+             */
+            created_by: string;
+            title: string;
+            description: string | null;
+            /** Format: date */
+            due_date: string;
+            /** Format: date-time */
+            due_at: string | null;
+            point_reward: number | null;
+            /** @enum {string} */
+            proof_kind: "none" | "photo" | "link";
+            /** @description The checklist the claimed task starts with, in order. */
+            subtask_titles: string[];
+            /**
+             * @description Who may claim it: `chapter` (anyone), `role` (its holders), `group` (its members), `tier` (everyone holding a role in it, #5473) or `people` (`scope_user_ids`). Alumni never may.
+             * @enum {string}
+             */
+            scope: "chapter" | "role" | "group" | "people" | "tier";
+            /**
+             * Format: uuid
+             * @description The role or group, for `role` and `group`.
+             */
+            scope_id: string | null;
+            /** @description That role’s or group’s name as it reads now, or as it was when posted once it’s deleted. "Someone in Philanthropy Chair". */
+            scope_name: string | null;
+            /** @description The people who may claim it, for `people`. */
+            scope_user_ids: string[] | null;
+            /** @enum {string} */
+            status: "open" | "claimed";
+            /** Format: uuid */
+            claimed_task_id: string | null;
+            /** Format: uuid */
+            claimed_by: string | null;
+            /** Format: date-time */
+            claimed_at: string | null;
+            /**
+             * Format: uuid
+             * @description The minutes it was suggested from (#5562), or null. Read the meeting for its name, which the reader may not be allowed to.
+             */
+            meeting_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description How many active members may claim it now. */
+            eligible_count: number;
+            /** @description Whether the reader may claim it now. */
+            viewer_can_claim: boolean;
         };
         CreateTaskSubtaskDto: {
             title: string;
@@ -5975,6 +10225,497 @@ export interface components {
         UpdateTaskSubtaskDto: {
             /** @description True to check it off, false to uncheck it. */
             done: boolean;
+        };
+        RemoveFromTaskGroupDto: {
+            /** @description The members whose copy goes, 1 to 1000. A member with no copy is skipped; a confirmed copy, or every copy, is a 400. */
+            assignee_ids: string[];
+        };
+        RemoveFromTaskGroupResponseDto: {
+            /** @description The members whose copy was deleted. */
+            removed: string[];
+            group: components["schemas"]["TaskGroupSummaryDto"];
+        };
+        CreateOpenTaskDto: {
+            title: string;
+            description?: string;
+            /** @description Due date (YYYY-MM-DD) */
+            due_date: string;
+            /**
+             * Format: date-time
+             * @description The moment it is due, when it has a time of day (ISO 8601 with an offset), on `due_date` as the creator sees it.
+             */
+            due_at?: string;
+            /** @description Points the claimed task awards when an officer confirms it. */
+            point_reward?: number;
+            /**
+             * @description What Mark done needs on the claimed task. Default `none`.
+             * @enum {string}
+             */
+            proof_kind?: "none" | "photo" | "link";
+            /** @description The checklist the claimed task starts with, in order. Blank lines are dropped. */
+            subtasks?: string[];
+            /**
+             * Format: uuid
+             * @description Only this role’s active holders may claim it. The chapter’s Everyone role means anyone; the Alumni role is refused; a role nobody holds is a 400 ("Nobody holds that role yet").
+             */
+            role_id?: string;
+            /**
+             * Format: uuid
+             * @description Only this chapter group’s active members (manual, pledge class, class year or major) may claim it. An empty group is a 400.
+             */
+            group_id?: string;
+            /**
+             * Format: uuid
+             * @description Only the active members holding a role in this tier may claim it (#5473). A tier holding the chapter’s Everyone role means anyone; a tier nobody holds a role in is a 400.
+             */
+            tier_id?: string;
+            /** @description Only these people may claim it. Each must be an active member of the chapter (alumni refused). */
+            user_ids?: string[];
+        };
+        UpdateOpenTaskDto: {
+            title?: string;
+            description?: string | null;
+            /** @description Due date (YYYY-MM-DD) */
+            due_date?: string;
+            /**
+             * Format: date-time
+             * @description The moment it is due, or null to take its time off. Send it with `due_date`: the pair must agree.
+             */
+            due_at?: string | null;
+            point_reward?: number | null;
+            /** @enum {string} */
+            proof_kind?: "none" | "photo" | "link";
+            /** @description The whole checklist as it should stand, in order. */
+            subtasks?: string[];
+        };
+        AssignOpenTaskDto: {
+            /**
+             * Format: uuid
+             * @description Who gets it: any active member of the chapter, eligible to claim it or not.
+             */
+            assignee_id: string;
+        };
+        AiSuggestionSourceDto: {
+            /** @enum {string} */
+            type: "meeting" | "event" | "channel" | "task" | "request";
+            /** Format: uuid */
+            id: string;
+        };
+        TaskSuggestionDto: {
+            title: string;
+            description: string | null;
+            /**
+             * Format: uuid
+             * @description Null when no name or role was said for it, or when it is for a group or several people: the screen shows "Who?" or who it is for.
+             */
+            assignee_id: string | null;
+            /** @description Several people (2026-11-18): a copy each, or with `audience: "someone"` one task that one of them claims. */
+            assignee_ids: string[] | null;
+            /**
+             * @description `everyone`: accepting gives each member of the group their own copy (#4295 step 3). `someone`: accepting posts one task up for grabs (2026-11-18). The group is the chapter unless `audience_role_id`, `audience_group_id` or (for `someone`) `assignee_ids` narrows it.
+             * @enum {string|null}
+             */
+            audience: "everyone" | "someone" | null;
+            /** Format: uuid */
+            audience_role_id: string | null;
+            /** Format: uuid */
+            audience_group_id: string | null;
+            /** Format: date */
+            due_date: string | null;
+            /** Format: date-time */
+            due_at: string | null;
+            subtasks: string[];
+            /**
+             * Format: date
+             * @description Present on a "this time last year" suggestion: the day last year's task, its source, was due.
+             */
+            last_year_on?: string;
+        };
+        EventSuggestionDto: {
+            name: string;
+            /**
+             * Format: date-time
+             * @description When the source event started, last year.
+             */
+            last_year_at: string | null;
+            /** @description How many times it was held around then (a weekly series). */
+            times: number;
+        };
+        PointsSuggestionDto: {
+            /** @description Points for each member. Negative takes away. */
+            amount: number;
+            reason: string;
+            /** @description The members it is for. */
+            target_user_ids: string[];
+            /**
+             * Format: uuid
+             * @description The event whose attendance the members were read from, when it was.
+             */
+            event_id: string | null;
+            /** @description That event's name, for the card to say whose attendance it is. */
+            event_name: string | null;
+            /**
+             * Format: date-time
+             * @description When that event started.
+             */
+            event_start_time: string | null;
+        };
+        NewEventPointsFromDto: {
+            /**
+             * @description `type`: the chapter event type of that name. `event`: its latest event of that name.
+             * @enum {string}
+             */
+            kind: "type" | "event";
+            name: string;
+        };
+        NewEventSuggestionDto: {
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            /** @description Points for coming. Null when the caller did not say and nothing could be copied: accepting then needs `new_event.point_value`. */
+            point_value: number | null;
+            /** @description Where points the caller did not say were copied from. Null when they were said, typed, or are missing. */
+            points_from: components["schemas"]["NewEventPointsFromDto"] | null;
+            /**
+             * Format: uuid
+             * @description The chapter event type the event is one of, when one matched.
+             */
+            event_type_id: string | null;
+            is_mandatory: boolean;
+            /** @description The repeat the series is made with (the `recurrence_rule` format of `POST /v1/events`), or null for one event. */
+            recurrence_rule: string | null;
+        };
+        AiSuggestionDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "task" | "event" | "points" | "new_event";
+            /** @enum {string} */
+            status: "pending" | "accepting" | "accepted" | "dismissed" | "expired";
+            source: components["schemas"]["AiSuggestionSourceDto"];
+            /**
+             * Format: uuid
+             * @description Suggestions made together (one push) share it.
+             */
+            batch_id: string;
+            /** @description The suggested task, while it waits. Null for another kind, and once decided or expired (a decided suggestion keeps no text). */
+            task: components["schemas"]["TaskSuggestionDto"] | null;
+            /** @description The suggested event, while it waits. Null for another kind, and once decided or expired. */
+            event?: components["schemas"]["EventSuggestionDto"] | null;
+            /** @description The proposed points change, while it waits. Null for another kind, and once decided or expired. */
+            points: components["schemas"]["PointsSuggestionDto"] | null;
+            /** @description The event the acting agent proposes to create, while it waits. Null for another kind, and once decided or expired. */
+            new_event: components["schemas"]["NewEventSuggestionDto"] | null;
+            /** @description The words it came from, exactly as they appear in the source. Null when there are none to show. */
+            quote: string | null;
+            /** @description Accepted with changes. */
+            edited: boolean;
+            /**
+             * Format: uuid
+             * @description What accepting made (a task id), once accepted.
+             */
+            result_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        AiSuggestionListDto: {
+            items: components["schemas"]["AiSuggestionDto"][];
+            /** @description More waiting suggestions exist than one list returns. */
+            has_more: boolean;
+        };
+        TaskSuggestionEditsDto: {
+            title?: string;
+            description?: string | null;
+            /**
+             * Format: uuid
+             * @description Who the task is for. Required to accept when none was suggested, unless `assignee_ids` or `audience` is set. "Who" is one answer: an edit that sends any of `assignee_id`, `assignee_ids`, `audience`, `audience_role_id` and `audience_group_id` replaces it with what those say, so setting this alone clears the rest.
+             */
+            assignee_id?: string | null;
+            /** @description Several people (2026-11-18): with no `audience`, accepting gives each their own copy; with `audience: "someone"`, it posts one task up for grabs that one of them claims. A list of one is that person. */
+            assignee_ids?: string[] | null;
+            /**
+             * @description A task for a group instead of one person: `everyone` gives each member of it their own copy (#4295 step 3); `someone` (2026-11-18) posts one task up for grabs that one of them claims, and the accept’s result id is then the posting’s. The group is the chapter, narrowed by `audience_role_id` or `audience_group_id`, or for `someone` by `assignee_ids`.
+             * @enum {string|null}
+             */
+            audience?: "everyone" | "someone" | null;
+            /**
+             * Format: uuid
+             * @description With `audience`: only this role’s holders (2026-11-18).
+             */
+            audience_role_id?: string | null;
+            /**
+             * Format: uuid
+             * @description With `audience`: only this chapter group’s members (2026-11-18).
+             */
+            audience_group_id?: string | null;
+            /** @description Due date (YYYY-MM-DD). Required to accept when none was suggested. */
+            due_date?: string | null;
+            /**
+             * Format: date-time
+             * @description The moment it is due, or null for no time. A new `due_date` sent without it clears the time.
+             */
+            due_at?: string | null;
+            subtasks?: string[];
+            /**
+             * Format: uuid
+             * @description A task the chapter already has that this suggestion is (#5562, "Already a task"). When set, nothing is made and every other field is ignored: the accept records that task as the suggestion's, so the action item it came from follows that task. It must be a task in the chapter.
+             */
+            existing_task_id?: string;
+        };
+        PointsSuggestionEditsDto: {
+            /** @description Points for each member. Negative takes points away. Not 0. */
+            amount?: number;
+            reason?: string;
+            /** @description The whole list of members it is for, replacing the proposed one. Each must be in the chapter when it is confirmed; one who is not is left out and counted. */
+            target_user_ids?: string[];
+        };
+        EventSuggestionAcceptDto: {
+            /**
+             * Format: uuid
+             * @description The event the caller added from this suggestion. It must be in the chapter and made by the caller.
+             */
+            event_id: string;
+        };
+        NewEventSuggestionAcceptDto: {
+            /**
+             * Format: uuid
+             * @description The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller. When set, nothing else is read.
+             */
+            event_id?: string;
+            /** @description Points for coming, typed on the card: needed when the proposal has none. */
+            point_value?: number;
+        };
+        AcceptAiSuggestionDto: {
+            /** @description Changes to a suggested task, for edit-then-accept. */
+            task?: components["schemas"]["TaskSuggestionEditsDto"];
+            /** @description Changes to a proposed points change, for edit-then-accept. */
+            points?: components["schemas"]["PointsSuggestionEditsDto"];
+            /** @description Required to accept a suggested event. */
+            event?: components["schemas"]["EventSuggestionAcceptDto"];
+            /** @description For a proposed event the caller already added in the event form: records it instead of making one. */
+            new_event?: components["schemas"]["NewEventSuggestionAcceptDto"];
+        };
+        AiSuggestionOutcomeDto: {
+            /** @description A points change: how many members’ points were changed. */
+            adjusted?: number;
+            /** @description A points change: how many members were left out (no longer in the chapter). */
+            skipped?: number;
+        };
+        AiSuggestionResultDto: {
+            /** @enum {string} */
+            kind: "task" | "event" | "points" | "new_event";
+            /**
+             * Format: uuid
+             * @description What was made (the first one, when it made several).
+             */
+            id: string;
+            /** @description Counts, when accepting made more than one change. */
+            outcome?: components["schemas"]["AiSuggestionOutcomeDto"];
+        };
+        AiSuggestionDecisionDto: {
+            suggestion: components["schemas"]["AiSuggestionDto"];
+            /** @description What accepting made. Null for a dismissal. */
+            result: components["schemas"]["AiSuggestionResultDto"] | null;
+        };
+        DismissAiSuggestionDto: {
+            /**
+             * @description `already_doing`: the chapter is already doing what was suggested. Left out for a plain dismissal.
+             * @enum {string}
+             */
+            reason?: "already_doing";
+        };
+        NextAgendaMeetingDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            start_time: string;
+        };
+        SendToNextAgendaResponseDto: {
+            /**
+             * @description `placed`: on `meeting`’s agenda. `offered`: under Suggested on `meeting` (the caller can’t edit it, or its agenda is full). `waiting`: no such meeting yet; it goes onto the next one created, for 30 days.
+             * @enum {string}
+             */
+            outcome: "placed" | "offered" | "waiting";
+            /** @description Where it went; null while it waits. */
+            meeting: components["schemas"]["NextAgendaMeetingDto"] | null;
+            /** @description The name of the minutes’ own meeting, for “the next Chapter Meeting”. */
+            source_name: string;
+            /** @description The words, as the agenda holds them. */
+            text: string;
+        };
+        AiSuggestionDecideItemDto: {
+            /** @description Changes to a suggested task, for edit-then-accept. */
+            task?: components["schemas"]["TaskSuggestionEditsDto"];
+            /** @description Changes to a proposed points change, for edit-then-accept. */
+            points?: components["schemas"]["PointsSuggestionEditsDto"];
+            /** @description Required to accept a suggested event. */
+            event?: components["schemas"]["EventSuggestionAcceptDto"];
+            /** @description For a proposed event the caller already added in the event form: records it instead of making one. */
+            new_event?: components["schemas"]["NewEventSuggestionAcceptDto"];
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            action: "accept" | "dismiss";
+        };
+        DecideAiSuggestionsDto: {
+            items: components["schemas"]["AiSuggestionDecideItemDto"][];
+        };
+        AiSuggestionDecideOutcomeDto: {
+            /** Format: uuid */
+            id: string;
+            ok: boolean;
+            decision?: components["schemas"]["AiSuggestionDecisionDto"];
+            /** @description The HTTP status the single-item route would have answered. */
+            status?: number;
+            /** @description Why it was refused, e.g. ai.suggestion.decided. */
+            code?: string;
+            message?: string;
+        };
+        AiSuggestionDecideResponseDto: {
+            outcomes: components["schemas"]["AiSuggestionDecideOutcomeDto"][];
+        };
+        ActionItemTaskGroupDto: {
+            done: number;
+            total: number;
+        };
+        MeetingActionItemTaskDto: {
+            /** @description The action item’s place in the minutes’ list, from 0. */
+            index: number;
+            /** @description Marked done: by its member, or by every copy of a task for everyone. */
+            done: boolean;
+            /** @description A task for everyone: how many of its copies are done. */
+            group: components["schemas"]["ActionItemTaskGroupDto"] | null;
+        };
+        OpenActionItemDto: {
+            /** @description The action item’s place in its minutes’ list, from 0. */
+            index: number;
+            text: string;
+            /** Format: uuid */
+            owner_user_id: string | null;
+            /** @description A calendar day, `YYYY-MM-DD`. */
+            due_date: string | null;
+            /** @description A task for everyone: how many of its copies are done. */
+            group: components["schemas"]["ActionItemTaskGroupDto"] | null;
+        };
+        SeriesOpenActionItemsDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: date-time */
+            event_start_time: string;
+            items: components["schemas"]["OpenActionItemDto"][];
+        };
+        AiConsentSheetProviderDto: {
+            /** @enum {string} */
+            key: "anthropic" | "google" | "assemblyai";
+            /**
+             * @description The company's own name, shown as is.
+             * @example Anthropic
+             */
+            name: string;
+        };
+        AiConsentSheetDataKindDto: {
+            /** @enum {string} */
+            key: "questions" | "chapter_records" | "roster" | "channel_messages" | "meetings";
+            /**
+             * @description What is sent, in words a client shows as is.
+             * @example Questions you ask
+             */
+            label: string;
+        };
+        AiConsentSheetDto: {
+            /**
+             * @description The sheet version. Send it back with the answer; a new version asks everyone again.
+             * @example 1
+             */
+            version: number;
+            /** @description Every provider member data is sent to. */
+            providers: components["schemas"]["AiConsentSheetProviderDto"][];
+            /** @description Every kind of data that is sent. */
+            data: components["schemas"]["AiConsentSheetDataKindDto"][];
+        };
+        AiConsentStateDto: {
+            sheet: components["schemas"]["AiConsentSheetDto"];
+            /**
+             * @description The answer on the current version. Null when not answered, which counts as No.
+             * @enum {string|null}
+             */
+            answer: "yes" | "no" | null;
+            /** Format: date-time */
+            answered_at: string | null;
+            /** @description True when the caller answered an earlier version but not this one, so the sheet changed since. */
+            sheet_changed: boolean;
+        };
+        AnswerAiConsentDto: {
+            /**
+             * @description The version of the sheet the member was shown. 409 `ai.consent.stale_sheet` when it is no longer current.
+             * @example 1
+             */
+            sheet_version: number;
+            /** @enum {string} */
+            answer: "yes" | "no";
+        };
+        AiChapterSettingsDto: {
+            /** @description Ask Frapp is on for the chapter. */
+            ask: boolean;
+            /** @description Drafting minutes, and tasks suggested from them, is on. */
+            meeting_notes: boolean;
+            /** @description Messages in chapter channels, from members who said yes, are a source. */
+            chat_source: boolean;
+            /** @description Nudge cards on members' Activity. On unless the president turned them off; a member still gets one only after their own yes. */
+            nudges: boolean;
+            /**
+             * Format: date-time
+             * @description When a switch last changed. Null when none ever has.
+             */
+            updated_at: string | null;
+            /** @description Whether the caller may change the switches: they hold the chapter's President role. A hint for drawing the page; PATCH checks again. */
+            can_change: boolean;
+        };
+        UpdateAiChapterSettingsDto: {
+            ask?: boolean;
+            meeting_notes?: boolean;
+            chat_source?: boolean;
+            nudges?: boolean;
+        };
+        AiRunDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description The run kind, `snake_case`.
+             * @example minutes_draft
+             */
+            kind: string;
+            /**
+             * @description What the run does, to show beside its status ("Drafting minutes"). The kind itself when this server has no handler for it.
+             * @example Drafting minutes
+             */
+            label: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+            /** @description Tries so far, the one in progress included. */
+            attempt_count: number;
+            max_attempts: number;
+            /** @enum {string|null} */
+            failure_reason: "unknown_kind" | "ai_unavailable" | "not_permitted" | "source_gone" | "spend_limit" | "invalid_result" | "handler_failed" | "attempts_exhausted" | null;
+            /** @description The failure in plain words, for the screen. Null unless `status` is `failed`. */
+            failure_message: string | null;
+            /** @description What the run produced, by reference: ids and counts (`{ "draft_id": "…" }`). Never text. Null until it succeeds, and for kinds that produce nothing to point at. */
+            result_ref: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
         };
         PledgeClassDto: {
             /** Format: uuid */
@@ -6025,6 +10766,60 @@ export interface components {
             pledge_class_id: string | null;
             order_number: number | null;
         };
+        ChapterGroupDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /**
+             * @description `manual`: an officer picks its members. `pledge_class`, `class_year` and `major`: Frapp keeps one per pledge class, per graduation year and per major (matched ignoring case and spacing), and its members follow the members’ own data; only its color and ping switch can change. A `class_year` or `major` group can’t go on a channel list or be what a task is from: members set their own.
+             * @enum {string}
+             */
+            kind: "manual" | "pledge_class" | "class_year" | "major";
+            /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, "Class of" and the year, or the major as most of its members write it. */
+            name: string;
+            /** @description A palette color, or a custom `#RRGGBB` that reads on every surface (`isPaintableRoleColor` in `@repo/validation`), or null. */
+            color: string | null;
+            /** @description Whether any member may `@` the group. While false, only a member holding `channels:manage` or `roles:manage` can ping it. */
+            mentionable: boolean;
+            /**
+             * Format: uuid
+             * @description The pledge class a `pledge_class` group follows.
+             */
+            pledge_class_id: string | null;
+            /** @description The graduation year a `class_year` group follows. */
+            class_year: number | null;
+            /** @description The major a `major` group follows, folded: trimmed, spacing collapsed, lower case. */
+            major_key: string | null;
+            /** @description The `users.id` of every member in it now, any kind. An automatic group nobody is in has none, and is left out of pickers. */
+            member_ids: string[];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateChapterGroupDto: {
+            /** @description The name, as the chapter writes it ("Third floor", "Live-ins"). Stored trimmed. No other role, tier or group of the chapter may be called the same, ignoring case and punctuation, and it may not read as @everyone or @here. */
+            name: string;
+            /** @description A role palette color (`ROLE_COLOR_PALETTE` in `@repo/validation`), or any custom `#RRGGBB` that reads at WCAG AA on every dark surface and is not red or gold (`isPaintableRoleColor`), in any letter case. A palette color is stored as listed, a custom one in uppercase; any other value is refused (`400`). Null clears the color. */
+            color?: string | null;
+            /** @description Whether any member may `@` it. Defaults to true. */
+            mentionable?: boolean;
+            /** @description Its first members, as `users.id`s of members of the chapter. Defaults to none. */
+            member_ids?: string[];
+        };
+        UpdateChapterGroupDto: {
+            /** @description A manual group's new name, under the same rules as a new one. An automatic group's name follows its class, year or major and is refused here. */
+            name?: string;
+            /** @description A role palette color (`ROLE_COLOR_PALETTE` in `@repo/validation`), or any custom `#RRGGBB` that reads at WCAG AA on every dark surface and is not red or gold (`isPaintableRoleColor`), in any letter case. A palette color is stored as listed, a custom one in uppercase; any other value is refused (`400`). Null clears the color. */
+            color?: string | null;
+            /** @description Whether any member may `@` it. */
+            mentionable?: boolean;
+        };
+        SetChapterGroupMembersDto: {
+            /** @description The group's whole member list, as `users.id`s of members of the chapter. Replaces the list, all or none. */
+            member_ids: string[];
+        };
         RushCandidateViewDto: {
             /** Format: uuid */
             id: string;
@@ -6074,9 +10869,18 @@ export interface components {
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the candidate row committed and the card did not. Absent means no card was attempted. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
         };
+        GeofenceCircleDto: {
+            lat: number;
+            lng: number;
+            /** @description Radius in meters. */
+            radius_m: number;
+        };
         CreateGeofenceDto: {
             name: string;
-            coordinates: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description An outline's corners. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
+            coordinates?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description A circle zone. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
+            circle?: components["schemas"]["GeofenceCircleDto"];
             /** @default true */
             is_active: boolean;
             /** @default 30 */
@@ -6093,7 +10897,10 @@ export interface components {
         };
         UpdateGeofenceDto: {
             name?: string;
+            /** @description An outline's corners. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
             coordinates?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description A circle zone. Send exactly one of `circle` or `coordinates`. A circle is stored with the polygon the API derives from it; an outline clears any circle. */
+            circle?: components["schemas"]["GeofenceCircleDto"];
             is_active?: boolean;
             minutes_per_point?: number;
             points_per_interval?: number;
@@ -6133,6 +10940,14 @@ export interface components {
             /** @description Server-allocated document id embedded in storage_path. */
             document_id: string;
         };
+        RequestDocumentUploadUrlsDto: {
+            /** @description One to 25 files, each checked as the single upload-url route checks it */
+            files: components["schemas"]["RequestDocumentUploadUrlDto"][];
+        };
+        DocumentUploadUrlsResponseDto: {
+            /** @description One ticket per file, in the order sent */
+            tickets: components["schemas"]["DocumentUploadUrlResponseDto"][];
+        };
         ConfirmDocumentUploadDto: {
             /** @description Storage path returned from upload-url */
             storage_path: string;
@@ -6146,10 +10961,16 @@ export interface components {
             content_type?: string;
             /** @description File size in bytes */
             byte_size?: number;
-            /** @description Free-text document category (bylaws, budget, minutes, ...) */
+            /** @description One of the chapter's document types, matched ignoring case and stored in the list's spelling. A name the chapter doesn't have yet is added to its list. */
             document_type?: string;
             /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
             effective_date?: string;
+            /** @description Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
+        };
+        ConfirmDocumentUploadsDto: {
+            /** @description One to 25 uploads to file, each as the single confirm route takes it */
+            documents: components["schemas"]["ConfirmDocumentUploadDto"][];
         };
         ChapterDocumentDto: {
             id: string;
@@ -6166,6 +10987,67 @@ export interface components {
             effective_date: string | null;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+            /** @description The Google Drive file this is a copy of, or null for an upload. Drive owns a copy: it cannot be deleted in Frapp (#5157) */
+            drive_file_id: string | null;
+            /** @description The Drive file's modified time when it was last copied */
+            drive_modified_at: string | null;
+            /** @description The file's page in Google Drive */
+            drive_url: string | null;
+            /** @description Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`). */
+            drive_held_folder_id: string | null;
+            /**
+             * @description Set on a Google Drive file added by its link (#5434), which Frapp keeps matching Drive: `active`, or `no_access` once Google answers that Frapp can't see it any more (the copy stays as it was). Null on an upload or a folder copy.
+             * @enum {string|null}
+             */
+            drive_link_status: "active" | "no_access" | null;
+            /**
+             * Format: date-time
+             * @description When a linked document last matched its Google Drive file. Null unless `drive_link_status` is set.
+             */
+            drive_synced_at: string | null;
+            /** @description Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's */
+            who_can_see: string[] | null;
+        };
+        DocumentConfirmResultDto: {
+            /** @description The storage path this result is for */
+            storage_path: string;
+            /** @description The filed document, when it was filed */
+            document?: components["schemas"]["ChapterDocumentDto"];
+            /** @description Why it was not filed, when it was not */
+            error?: string;
+        };
+        DocumentConfirmResultsDto: {
+            /** @description One result per upload, in the order sent */
+            results: components["schemas"]["DocumentConfirmResultDto"][];
+        };
+        MoveDocumentsDto: {
+            document_ids: string[];
+            /** @description Folder name to move them into; null for no folder. */
+            folder: string | null;
+        };
+        DocumentTypeDto: {
+            id: string;
+            chapter_id: string;
+            name: string;
+            sort_order: number;
+            created_at: string;
+        };
+        CreateDocumentTypeDto: {
+            /** @description Type name (unique within the chapter, ignoring case) */
+            name: string;
+            /** @description Display position. Defaults to the end of the list. */
+            sort_order?: number;
+        };
+        UpdateDocumentTypeDto: {
+            /** @description New type name. Renaming renames the type on every document of that type. */
+            name?: string;
+            /** @description New display position */
+            sort_order?: number;
+        };
+        DocumentPreviewUrlDto: {
+            id: string;
+            /** @description Inline signed URL, valid for an hour */
+            url: string;
         };
         DocumentFolderDto: {
             id: string;
@@ -6175,6 +11057,15 @@ export interface components {
             created_at: string;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+            /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents */
+            who_can_see: string[] | null;
+            /** @description The Google Drive folder it mirrors, or null (#5220). Its name follows Drive, so it is renamed and deleted there, not here. */
+            drive_folder_id: string | null;
+        };
+        DocumentAccessOptionsDto: {
+            options: components["schemas"]["ChannelAccessOptionDto"][];
+            /** @description The tiers every list the caller sets keeps (their own and those above), shown fixed; empty for the President, null when the caller ranks outside the tiers and can't set a list */
+            always: string[] | null;
         };
         DocumentStarsDto: {
             /** @description Ids of the folders the caller starred, oldest star first */
@@ -6187,12 +11078,26 @@ export interface components {
             name: string;
             /** @description Display position. Defaults to the end of the list. */
             sort_order?: number;
+            /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         UpdateDocumentFolderDto: {
             /** @description New folder name. Renaming re-files every document in the folder. */
             name?: string;
             /** @description New display position */
             sort_order?: number;
+            /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept. Left out, it stays as it is; null opens it to everyone. */
+            who_can_see?: string[] | null;
+        };
+        UpdateDocumentDto: {
+            /** @description New title. Refused for a file added by its Google Drive link, which keeps Drive's name. */
+            title?: string;
+            /** @description Folder name to move it into; null for no folder. A name the chapter has no folder for makes one, as an upload does. */
+            folder?: string | null;
+        };
+        SetDocumentAccessDto: {
+            /** @description Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         CreatePollDto: {
             /** @description Poll question */
@@ -6222,6 +11127,150 @@ export interface components {
              */
             option_indexes: number[];
         };
+        PredictionMarketDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** Format: uuid */
+            message_id: string | null;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: uuid */
+            settler_id: string;
+            /** Format: uuid */
+            named_member_id: string | null;
+            question: string;
+            settle_rule: string;
+            closes_at: string;
+            /** @enum {string} */
+            status: "awaiting_consent" | "open" | "settled" | "questioned" | "paid" | "voided";
+            /** Format: uuid */
+            winning_answer_id: string | null;
+            known_at: string | null;
+            settle_note: string | null;
+            /** Format: uuid */
+            settled_by: string | null;
+            settled_at: string | null;
+            question_window_ends_at: string | null;
+            payout_round: number;
+            paid_at: string | null;
+            /** Format: uuid */
+            voided_by: string | null;
+            voided_at: string | null;
+            /** Format: uuid */
+            client_message_id: string | null;
+            created_at: string;
+            updated_at: string;
+        };
+        PredictionAnswerViewDto: {
+            /** Format: uuid */
+            id: string;
+            label: string;
+            /** @description Points staked on this answer */
+            pool: number;
+            /** @description Whole-percent share of all points staked; null before any */
+            chance: number | null;
+        };
+        PredictionStakerViewDto: {
+            /** Format: uuid */
+            user_id: string;
+            /** Format: uuid */
+            answer_id: string;
+            amount: number;
+        };
+        PredictionQuestionViewDto: {
+            /** Format: uuid */
+            user_id: string;
+            note: string;
+            created_at: string;
+        };
+        PredictionMarketViewDto: {
+            market: components["schemas"]["PredictionMarketDto"];
+            answers: components["schemas"]["PredictionAnswerViewDto"][];
+            total_staked: number;
+            stakers: components["schemas"]["PredictionStakerViewDto"][];
+            my_stakes: components["schemas"]["PredictionStakerViewDto"][];
+            /** @description Why the viewer can't stake right now; null when they can */
+            stake_blocked_reason: string | null;
+            /** @description Unresolved questions about the result */
+            open_questions: components["schemas"]["PredictionQuestionViewDto"][];
+        };
+        CreatePredictionDto: {
+            /**
+             * Format: uuid
+             * @description The channel its card goes in
+             */
+            channel_id: string;
+            question: string;
+            /** @description How the answer will be decided, shown on the card */
+            settle_rule: string;
+            /**
+             * @description Answers (2-10), in order
+             * @example [
+             *       "Yes",
+             *       "No"
+             *     ]
+             */
+            answers: string[];
+            /** @description When staking stops (ISO 8601 with a zone) */
+            closes_at: string;
+            /**
+             * Format: uuid
+             * @description Who settles it; the creator when omitted
+             */
+            settler_id?: string;
+            /**
+             * Format: uuid
+             * @description A member the question is about; it waits for their OK before it opens
+             */
+            named_member_id?: string;
+            /**
+             * Format: uuid
+             * @description Replay key: a retry with the same key returns the same question
+             */
+            client_message_id?: string;
+        };
+        PlacePredictionStakeDto: {
+            /** Format: uuid */
+            answer_id: string;
+            amount: number;
+            /**
+             * Format: uuid
+             * @description Replay key: a retry with the same key places nothing more and returns the same result
+             */
+            client_message_id: string;
+        };
+        PredictionConsentDto: {
+            /** @description true opens the question; false withdraws it */
+            agree: boolean;
+        };
+        PredictionConsentResultDto: {
+            /** @description The opened question, or null once a decline removed it */
+            prediction: components["schemas"]["PredictionMarketViewDto"] | null;
+        };
+        SettlePredictionDto: {
+            /**
+             * Format: uuid
+             * @description The answer that won
+             */
+            answer_id: string;
+            note?: string;
+            /** @description When the answer became known, if before now; stakes after it are refunded */
+            known_at?: string;
+        };
+        QuestionPredictionDto: {
+            note: string;
+        };
+        ConfirmPredictionDto: {
+            /**
+             * Format: uuid
+             * @description Settle on this answer instead; omitted confirms the result as settled
+             */
+            answer_id?: string;
+        };
         RolloverDto: {
             /** @description Semester label (e.g. "Fall 2025") */
             label: string;
@@ -6236,7 +11285,7 @@ export interface components {
              */
             end_date: string;
             /**
-             * @description Also bulk-promote every New Member in the chapter to Member, in the same transaction as the archive. Members keep all their other roles. Defaults to false.
+             * @description Also bulk-promote every New Member in the chapter to the Actives role, in the same transaction as the archive. Members keep all their other roles. Defaults to false.
              * @default false
              */
             promote_new_members: boolean;
@@ -6368,10 +11417,90 @@ export interface components {
              * @description When an officer last sent the completion back to the assignee; null if never.
              */
             sent_back_at: string | null;
+            /**
+             * @description What Mark done needs (#4635). A completed task with no `point_reward` and `none` needed no sign-off: it reads Done.
+             * @enum {string}
+             */
+            proof_kind: "none" | "photo" | "link";
+            /** @description On a task for everyone, its group (#5492), as every task read carries it: each member’s copy has the same `id`, and the counts say how far the group is. Null for a one-person task. */
+            group: components["schemas"]["TaskGroupSummaryDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
+        };
+        ActivityTaskItemTaskDto: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "task";
+            task: components["schemas"]["ActivityTaskDto"];
+        };
+        ActivityTaskGroupDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Who it went to: `everyone` (the chapter), `people` (several picked one by one), `role` (a role’s holders), `group` (a chapter group’s members) or `tier` (everyone holding a role in a tier, #5473). Each got their own copy.
+             * @enum {string}
+             */
+            audience: "everyone" | "people" | "role" | "group" | "tier";
+            /**
+             * Format: uuid
+             * @description The role, chapter group or tier it went to, for `role`, `group` and `tier`; null otherwise.
+             */
+            target_id: string | null;
+            /** @description That role’s, group’s or tier’s name: as it reads now, or as it was when the task was made once it’s deleted. Null for `everyone` and `people`. "Everyone in Recruitment Committee". */
+            target_name: string | null;
+            /** @description How many copies the group has. */
+            total: number;
+            /** @description How many copies are marked done, waiting on an officer or confirmed. */
+            done: number;
+            /** @description How many copies are confirmed, or needed no sign-off when marked done. */
+            confirmed: number;
+            /**
+             * Format: uuid
+             * @description A copy to open the group by (`GET /v1/tasks/{id}`, which carries the group): the caller’s own when they hold one, else an overdue copy, else one still open, else any.
+             */
+            task_id: string;
+            /** @description What the copies share, read from one not yet confirmed: a group edit leaves a confirmed copy as it was. */
+            title: string;
+            description: string | null;
+            /**
+             * Format: date
+             * @example 2026-11-20
+             */
+            due_date: string;
+            /**
+             * Format: date-time
+             * @description The moment it is due, when it has a time of day.
+             */
+            due_at: string | null;
+            point_reward: number | null;
+            /** @enum {string} */
+            proof_kind: "none" | "photo" | "link";
+            /** @description Whether any copy is overdue. */
+            overdue: boolean;
+            /** @description Up to 5 of the members it went to, for faces: those overdue first, then those still open, then the rest. `total` says how many there are in all. */
+            preview_assignee_ids: string[];
+            /**
+             * Format: date-time
+             * @description When the group was made.
+             */
+            created_at: string;
+        };
+        ActivityTaskItemGroupDto: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "group";
+            group: components["schemas"]["ActivityTaskGroupDto"];
         };
         ActivityHoursEntryDto: {
             /** Format: uuid */
@@ -6391,11 +11520,22 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
+        };
+        ActivityProgressDto: {
+            /** @description How many have answered: voted, or checked in. */
+            done: number;
+            /** @description Of how many can answer. Never 0 (a row with nobody to answer has no progress) and never less than `done`. */
+            total: number;
         };
         ActivityPollDto: {
             /**
              * Format: uuid
-             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.
+             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies by option. Its one count is `progress`, on an open poll the caller posted.
              */
             message_id: string;
             /** Format: uuid */
@@ -6415,17 +11555,61 @@ export interface components {
             closes_at: string | null;
             /**
              * Format: date-time
-             * @description Set when its creator closed it early.
+             * @description Set when it was closed early, by its creator or a channels:manage holder.
              */
             closed_at: string | null;
             is_closed: boolean;
             has_voted: boolean;
+            /** @description In `made_by_you`, on an open poll: how many of the other members who can read its channel have voted (#4792). Null everywhere else, when nobody else can read it, and when the count could not be read. */
+            progress: components["schemas"]["ActivityProgressDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
             /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
             message: components["schemas"]["ChatMessageDto"];
+        };
+        ActivityCardDto: {
+            /**
+             * @description `signup` for a sign-up sheet of slots, `headcount` for a Going / Can’t make it sign-up, `form` for a form card. Its read is recorded as `signup` for the first two and `form` for a form.
+             * @enum {string}
+             */
+            kind: "signup" | "headcount" | "form";
+            /**
+             * Format: uuid
+             * @description The chat message that is the card. A client opens it in chat, where it is answered.
+             */
+            message_id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description The channel’s name. A direct message’s is server-generated, so label those from `channel_type`. */
+            channel_name: string;
+            /** @enum {string} */
+            channel_type: "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM";
+            /** Format: uuid */
+            sender_id: string | null;
+            title: string;
+            /** @description How many slots a sign-up sheet has, or questions a form asks; 2 for a headcount. */
+            item_count: number;
+            /**
+             * Format: date-time
+             * @description When it stops taking answers. Null for a card with no end time.
+             */
+            closes_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
+            unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityNeedsYouDto: {
             /** @description Open tasks assigned to the caller, soonest due first. */
@@ -6436,6 +11620,8 @@ export interface components {
             hours_approvals: components["schemas"]["ActivityHoursEntryDto"][];
             /** @description Open polls from other members, in channels the caller can read, that the caller hasn’t voted on. Soonest closing first. */
             polls: components["schemas"]["ActivityPollDto"][];
+            /** @description Open sign-up sheets, headcounts and forms from other members, in channels the caller can read, that the caller hasn’t answered: no slot held on a sheet, neither answer on a headcount, no saved form response. Soonest closing first, then newest; one with no end time last. */
+            cards: components["schemas"]["ActivityCardDto"][];
         };
         ActivityEventDto: {
             /** Format: uuid */
@@ -6455,17 +11641,33 @@ export interface components {
             check_in_opens_minutes: number;
             /** @description Whether the caller can check in right now: the window is open and check-in would not refuse them. */
             check_in_open: boolean;
+            /** @description Whether checking in needs the caller’s location: the event has a check-in zone. A surface that can’t supply one says to use the phone app instead of offering a check-in the server refuses. */
+            check_in_needs_location: boolean;
+            /** @description Whether checking in needs the code on an officer’s check-in screen: one has shown it and check-in is still open. A surface that can’t scan says to point the phone’s camera at the code instead of offering a check-in the server refuses. Read only while check-in is open; false otherwise. */
+            check_in_needs_code: boolean;
             /** @description Whether the caller has an attendance row for it. Read only while check-in is open; null otherwise, and when that read failed. */
             checked_in: boolean | null;
+            /**
+             * Format: date-time
+             * @description When the caller checked in, read with `checked_in`. Null when they have not, when it was not read, and when the attendance row has no time.
+             */
+            checked_in_at: string | null;
             /**
              * Format: uuid
              * @description Who made it. Null for an event made before makers were recorded (2026-11-11).
              */
             created_by: string | null;
+            /** @description In `made_by_you`, once check-in has opened: how many of the other members the event invites, and who can check in, have checked in (#4792). Excused members are left out. Null before check-in opens, everywhere else, when it invites nobody else who can check in, and when the count could not be read. */
+            progress: components["schemas"]["ActivityProgressDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityLinkDto: {
             /** Format: uuid */
@@ -6477,6 +11679,11 @@ export interface components {
              * @example docs.google.com
              */
             host: string;
+            /**
+             * @description The linked page’s own name (a form’s or sheet’s title), read in the background after the link was posted. Null when the page had none worth showing (a private file’s sign-in page, or a page that names only the product) or has not been read yet: title the row by its kind instead.
+             * @example 5K volunteer shifts
+             */
+            title: string | null;
             /**
              * Format: uuid
              * @description The chat message it was posted in, for “Open in chat”.
@@ -6504,6 +11711,51 @@ export interface components {
             posted_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
+        };
+        ActivityReminderDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description The message it is about: opening the row opens chat at this message, and `PUT`/`DELETE /v1/reminders/messages/{message_id}` snooze and clear it.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Set when the message is a thread reply, which the channel’s timeline doesn’t show: opening the row opens this thread.
+             */
+            thread_root_id: string | null;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description The channel’s name; null when the caller can no longer read the channel. A direct message’s is server-generated, so label those from `channel_type`. */
+            channel_name: string | null;
+            /**
+             * @description Null when the caller can no longer read the channel.
+             * @enum {string|null}
+             */
+            channel_type: "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM" | null;
+            /** @description Who wrote the message. Empty when they can’t be named: unresolved, blocked by the caller, or in a channel the caller can no longer read. */
+            author_name: string;
+            /** @description What the message says, cut as a push quotes it. The blocked-member tombstone for a member the caller blocked, `[message deleted]` for a deleted message, and an unavailable line when the caller can no longer read the channel. */
+            preview: string;
+            /** Format: date-time */
+            message_created_at: string;
+            /** @description False when the caller can no longer read the channel: the row can’t be opened, only cleared. */
+            message_available: boolean;
+            /** Format: date-time */
+            remind_at: string;
+            /**
+             * Format: date-time
+             * @description When the reminder’s push went out; null while it is still waiting.
+             */
+            fired_at: string | null;
+            /** @description Whether `remind_at` has passed. A due reminder waits on the caller and is counted in `needs_you_count` until they clear it. */
+            due: boolean;
         };
         ActivityFileDto: {
             /** Format: uuid */
@@ -6515,10 +11767,12 @@ export interface components {
             created_at: string;
         };
         ActivityMadeByYouDto: {
-            /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258). */
+            /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out of the read. A current client lists the open ones and finds the closed in `GET /v1/activity/archive` (#5127); the closed ones are served for phone builds from before it, which draw them as Archived polls (#4258). */
             polls: components["schemas"]["ActivityPollDto"][];
-            /** @description Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`. */
+            /** @description Tasks the caller assigned, newest first, at most 25, each copy of a task for everyone its own row. A current client reads `task_items` instead, where a task for everyone is one row; this list is served unchanged for builds from before it, which list those not yet confirmed and find a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`. */
             tasks: components["schemas"]["ActivityTaskDto"][];
+            /** @description What the caller assigned that isn’t finished, newest first, at most 25, a task for everyone counted once (#5492): `kind: task`, a one-person task not yet confirmed; `kind: group`, a task for everyone with a copy not yet confirmed, as one row. A confirmed one is in `GET /v1/activity/archive`. Empty unless the caller still holds `tasks:manage`. */
+            task_items: (components["schemas"]["ActivityTaskItemTaskDto"] | components["schemas"]["ActivityTaskItemGroupDto"])[];
             /**
              * @deprecated
              * @description Always empty: uploads left Activity (#4291). Served only so a client built before that does not fail on its absence; to be removed.
@@ -6527,29 +11781,145 @@ export interface components {
             /** @description Events the caller made that invite them and whose check-in has not closed, soonest first; a recurring series is one row, its next meeting. Events made before creators were recorded (#3897) are never here. */
             events: components["schemas"]["ActivityEventDto"][];
         };
+        ActivityWeekCountDto: {
+            /** @description How many the caller has done this week. */
+            done: number;
+            /** @description `done` plus what is still open; never less than `done`. */
+            total: number;
+        };
+        ActivityWeekDto: {
+            /**
+             * Format: date-time
+             * @description Where the week begins: the `week_start` the client named, or last Sunday at midnight UTC when it named none or one out of range.
+             */
+            start: string;
+            /**
+             * Format: date-time
+             * @description Seven days after `start`.
+             */
+            end: string;
+            /** @description Events that start this week and invite the caller. Done: marked present or late. Still open: a required event not attended (ahead or missed), and an optional one whose check-in has not closed. An excused event, and an optional one the caller skipped, is left out. Null when Events is off or couldn’t be read. */
+            events: components["schemas"]["ActivityWeekCountDto"] | null;
+            /** @description The caller’s own tasks. Done: marked done since the week began, confirmed or not. Still open: not done and due before the week ends, overdue ones included. Null when Tasks is off or couldn’t be read. */
+            tasks: components["schemas"]["ActivityWeekCountDto"] | null;
+            /** @description Other members’ polls the caller can read. Done: first voted on since the week began. Still open: every `needs_you.polls` row, counted before its cap. Null when Polls is off or couldn’t be read. */
+            polls: components["schemas"]["ActivityWeekCountDto"] | null;
+            /** @description Other members’ sign-up sheets, headcounts and forms. Done: first answered since the week began. Still open: every `needs_you.cards` row, counted before its cap. Null when the read failed. */
+            cards: components["schemas"]["ActivityWeekCountDto"] | null;
+            /** @description Parts that could not be read this time. Each is served null, as a part whose module is off is; this list tells the two apart. */
+            unavailable: ("events" | "tasks" | "polls" | "cards")[];
+        };
         ActivityDto: {
             needs_you: components["schemas"]["ActivityNeedsYouDto"];
             /** @description Events that invite the caller and start within 14 days, or whose check-in is still open, soonest first. At most 10. */
             coming_up: components["schemas"]["ActivityEventDto"][];
             /** @description Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`. */
             links: components["schemas"]["ActivityLinkDto"][];
+            /** @description Reminders the caller set on chat messages (#4957): those due that they haven’t cleared, newest first, then those still waiting, soonest first; at most 50 of each. Private to the caller. Due ones are counted in `needs_you_count` (so at most 50). */
+            reminders: components["schemas"]["ActivityReminderDto"][];
             made_by_you: components["schemas"]["ActivityMadeByYouDto"];
-            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
+            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`, less what the caller snoozed (`snoozed_until`). */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "coming_up" | "made_events" | "links")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links" | "reminders")[];
+            /** @description How the caller’s week is going, for the ring at the top of the page (`spec/behavior/activity.md` § Week): what they finished since the week began and what is still theirs to do in it, by kind. Their own things only; what waits on their review is not counted. */
+            week: components["schemas"]["ActivityWeekDto"];
             /**
              * Format: date-time
              * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
              */
             unread_since: string | null;
         };
+        ActivityNowDto: {
+            /** @description Events on right now (from when check-in opens until the end, whether or not the caller checked in) that are the caller’s to see as on: invited and required of them, checked in to, or made by them, and every event on for a holder of `events:update`; never one the caller is excused from. `checked_in` and `checked_in_at` come from their attendance row: present or late counts as checked in. The one they checked in to first, then the latest start, at most 5. Empty while the chapter has Events off. */
+            events: components["schemas"]["ActivityEventDto"][];
+        };
+        ActivityArchiveDto: {
+            /** @description Events that invited the caller whose check-in has closed (15 minutes after the end), ending in the last 30 days and starting after the caller joined, newest first, at most 25. Each meeting of a series is its own row. `checked_in` says whether the caller was marked present or late; `check_in_open` is always false. */
+            events: components["schemas"]["ActivityEventDto"][];
+            /** @description The caller’s own tasks marked done in the last 30 days, confirmed or still waiting on an officer, and, while the caller holds `tasks:manage`, the tasks they assigned that are confirmed. Most recently finished (confirmed or marked done) first, at most 25, from the 100 most recently made of each kind. */
+            tasks: components["schemas"]["ActivityTaskDto"][];
+            /** @description Closed polls the caller posted, and closed polls from other members they voted in, from the chapter’s 100 newest poll cards and the caller’s own 100, in channels they can read. Most recently closed first, at most 25. */
+            polls: components["schemas"]["ActivityPollDto"][];
+            /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
+            unavailable: ("events" | "tasks" | "polls")[];
+        };
+        StandingPointsDto: {
+            /** @description Points earned this semester. */
+            total: number;
+            /** @description Place on this semester’s board, equal totals sharing a place. Null when the caller is not on the board. */
+            rank: number | null;
+            /** @description How many members the board ranks. */
+            ranked: number;
+            /** @description The caller’s points goal this semester (#1062), or null when the chapter sets none for them. */
+            goal: number | null;
+        };
+        StandingRequiredEventsDto: {
+            /** @description Required events since the semester began (or the caller joined), excused ones left out. An event counts once its check-in closes, or as soon as the caller checks in. */
+            required: number;
+            /** @description Of `required`, those marked present or late. */
+            attended: number;
+            /** @description Required events the caller was excused from. */
+            excused: number;
+        };
+        StandingServiceDto: {
+            /** @description Approved service minutes this semester. */
+            approved_minutes: number;
+            /** @description Service minutes waiting for approval. */
+            pending_minutes: number;
+            /** @description The caller’s service goal this semester in minutes (#1062), or null for none. */
+            goal_minutes: number | null;
+        };
+        StandingStudyDto: {
+            /** @description Minutes from study sessions that started this week and have ended. */
+            minutes: number;
+            /** Format: date-time */
+            week_start: string;
+            /** @description The caller’s study goal for the week in minutes (#1062), or null for none. */
+            goal_minutes: number | null;
+        };
+        ActivityStandingDto: {
+            /** @description Null when Points is off or couldn’t be read. */
+            points: components["schemas"]["StandingPointsDto"] | null;
+            /** @description Null when Events is off or couldn’t be read. */
+            required_events: components["schemas"]["StandingRequiredEventsDto"] | null;
+            /** @description Null when Hours is off or couldn’t be read. */
+            service: components["schemas"]["StandingServiceDto"] | null;
+            /** @description Null when Hours is off or couldn’t be read. */
+            study: components["schemas"]["StandingStudyDto"] | null;
+            /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
+            unavailable: ("points" | "required_events" | "service" | "study")[];
+        };
+        ActivityRecapDto: {
+            /**
+             * Format: date-time
+             * @description Where last week began: seven days before the `week_start` sent (the start of the caller’s current week).
+             */
+            start: string;
+            /**
+             * Format: date-time
+             * @description Where last week ended: the `week_start` sent.
+             */
+            end: string;
+            /** @description Events that started last week, among those the caller can see, where they were marked present or late. Null when Events is off or couldn’t be read. */
+            events_attended: number | null;
+            /** @description The caller’s own tasks they marked done last week, confirmed or not; one sent back since is not counted. Null when Tasks is off or couldn’t be read. */
+            tasks_done: number | null;
+            /** @description Points awarded to the caller last week less points taken, from the ledger. Null when Points is off or couldn’t be read. */
+            points: number | null;
+            /** @description Service minutes the caller logged for last week’s days, approved or waiting. Null when Hours is off or couldn’t be read. */
+            service_minutes: number | null;
+            /** @description Minutes from the caller’s study sessions that started last week and have ended. Null when Hours is off or couldn’t be read. */
+            study_minutes: number | null;
+            /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
+            unavailable: ("events" | "tasks" | "points" | "service" | "study")[];
+        };
         ActivityItemRefDto: {
             /**
-             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`.
+             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
              * @enum {string}
              */
-            kind: "task" | "hours_entry" | "poll" | "event" | "link";
+            kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
             /** Format: uuid */
             item_id: string;
         };
@@ -6557,12 +11927,231 @@ export interface components {
             /** @description The items the caller opened. At most 100. */
             items: components["schemas"]["ActivityItemRefDto"][];
         };
+        SnoozeActivityItemDto: {
+            /**
+             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
+             * @enum {string}
+             */
+            kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+            /** Format: uuid */
+            item_id: string;
+            /**
+             * Format: date-time
+             * @description When the row comes back. In the future and at most 90 days away.
+             */
+            until: string;
+        };
         SetActivityLinkStateDto: {
             /**
              * @description `done`: the caller filled it in. `hidden`: not chapter business for them. Either takes it off their own list only.
              * @enum {string}
              */
             state: "done" | "hidden";
+        };
+        SetChatReminderDto: {
+            /**
+             * Format: date-time
+             * @description When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting a reminder again moves it, and one already sent fires again at the new time.
+             */
+            remind_at: string;
+        };
+        ChatReminderRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** Format: date-time */
+            remind_at: string;
+            /**
+             * Format: date-time
+             * @description Always null after a set: a new time is a new reminder.
+             */
+            fired_at: string | null;
+        };
+        ActivityNudgeItemDto: {
+            /**
+             * Format: uuid
+             * @description The showing card's id, for `seen`; null for a tray item, which is only drawn.
+             */
+            id: string | null;
+            /**
+             * @description Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise, event_soon, mention_unread, announcement_unread, signup_open, officer_queue, minutes_new, study_behind today; a client draws a kind it does not know with a neutral icon.
+             * @example event_soon
+             */
+            kind: string;
+            /** @description What the card is about, opaque to the client. Sent back with `kind` to dismiss it. */
+            subject_key: string;
+            /**
+             * @description The thing's own name: an event, a channel, a sign-up's title.
+             * @example Chapter Meeting
+             */
+            headline: string;
+            /**
+             * @description When, where or how many, written out in the caller's time zone (`X-Time-Zone`).
+             * @example Tonight 7:00 PM · Chapter House · Required
+             */
+            meta: string;
+            /** @description Whether the time or count is pressing enough to draw in colour. */
+            urgent: boolean;
+            /**
+             * @description The tray chip's few characters: a count, Tonight, Due Fri.
+             * @example Tonight
+             */
+            chip: string;
+            /**
+             * @description The button's label.
+             * @example Open event
+             */
+            action: string;
+            /**
+             * @description What the button opens: a task, an event, a chat message (a sign-up), a channel, the review queue, minutes, or study.
+             * @enum {string}
+             */
+            target_type: "task" | "event" | "message" | "channel" | "review" | "meeting" | "study";
+            /** @description The id of what it opens: a task, event, message, channel, meeting, or the oldest item in the review queue; null for study. */
+            target_id: string | null;
+            /**
+             * Format: uuid
+             * @description The channel a message or channel target is in.
+             */
+            channel_id: string | null;
+            /**
+             * Format: uuid
+             * @description The task a task card is about.
+             */
+            task_id: string | null;
+            /** @description One sentence Frapp AI wrote for the card, or null: a plain card, because AI is off for the caller or the server, or the kind is never written. */
+            line: string | null;
+            /** @description A task card's suggested place to start, when AI wrote one. */
+            start_here: string | null;
+            /** @description False until the caller has had the card on screen. */
+            seen: boolean;
+        };
+        ActivityNudgeCardDto: {
+            /** @description The one most useful thing waiting on the caller, or null when nothing is, or they turned these cards off. */
+            card: components["schemas"]["ActivityNudgeItemDto"] | null;
+            /** @description Up to three more, in order, for the tray under the card. */
+            tray: components["schemas"]["ActivityNudgeItemDto"][];
+        };
+        ActivityNudgeSeenDto: {
+            /** Format: uuid */
+            id: string;
+        };
+        ActivityNudgeDismissDto: {
+            /** @enum {string} */
+            kind: "task_due_soon" | "task_overdue" | "task_sent_back" | "task_praise" | "event_soon" | "mention_unread" | "announcement_unread" | "signup_open" | "officer_queue" | "minutes_new" | "study_behind";
+            /** @description The `subject_key` the card or tray item carried. */
+            subject_key: string;
+        };
+        MemberNudgeSettingsDto: {
+            /** @description The member's own switch for these cards. */
+            enabled: boolean;
+        };
+        UpdateMemberNudgeSettingsDto: {
+            enabled: boolean;
+        };
+        ActivityLayoutDto: {
+            /**
+             * @description The cards the member shows, top to bottom. Empty when nothing is saved.
+             * @example [
+             *       "todo",
+             *       "calendar",
+             *       "recap"
+             *     ]
+             */
+            card_order: string[];
+            /**
+             * @description The cards the member hid. Empty when nothing is saved.
+             * @example [
+             *       "links"
+             *     ]
+             */
+            hidden_cards: string[];
+            /** @description Whether the member has saved an arrangement. False means show the default for the member's role. A card the app knows that neither list names is placed as that default places it; a key the app doesn't know is skipped. */
+            saved: boolean;
+        };
+        UpdateActivityLayoutDto: {
+            /**
+             * @description The cards to show, top to bottom. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.
+             * @example [
+             *       "todo",
+             *       "calendar",
+             *       "recap"
+             *     ]
+             */
+            card_order: string[];
+            /**
+             * @description The cards to hide. Lower-case words joined by hyphens, at most 32 characters (^[a-z][a-z0-9-]{0,31}$). Any such key is stored, not only the cards this server knows, so a newer app can save a card the server was built before.
+             * @example [
+             *       "links"
+             *     ]
+             */
+            hidden_cards: string[];
+        };
+        RoleGoalDto: {
+            /** Format: uuid */
+            role_id: string;
+            /** @description Points for a points goal; minutes for a service or study goal. Null holds the role to no goal. */
+            target: number | null;
+        };
+        GoalSetDto: {
+            /** @description Every member's goal (points, or minutes for hours), or null for none. */
+            everyone: number | null;
+            /** @description Roles held to a different goal. A member with several is held to the one on their highest-ranked role. */
+            roles: components["schemas"]["RoleGoalDto"][];
+        };
+        ChapterGoalsDto: {
+            /** @description Points this semester. */
+            points: components["schemas"]["GoalSetDto"];
+            /** @description Approved service minutes this semester. */
+            service: components["schemas"]["GoalSetDto"];
+            /** @description Study minutes this week (Sunday to Saturday). */
+            study: components["schemas"]["GoalSetDto"];
+        };
+        MyGoalsDto: {
+            /** @description The caller's points goal this semester, or null. */
+            points: number | null;
+            /** @description The caller's approved service minutes goal this semester, or null. */
+            service: number | null;
+            /** @description The caller's study minutes goal this week, or null. */
+            study: number | null;
+        };
+        MemberNudgeDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Why the card exists. One of task_due_soon, task_overdue, task_sent_back, task_praise, event_soon, mention_unread, announcement_unread, signup_open, officer_queue, minutes_new, study_behind today; a client shows a kind it does not know as a plain card.
+             * @example task_due_soon
+             */
+            kind: string;
+            /** @description A few words, plain text. */
+            title: string;
+            /** @description One or two sentences, plain text. */
+            body: string;
+            /** @description A suggested place to start: one sentence, or null when the card has none. */
+            start_here: string | null;
+            /**
+             * Format: uuid
+             * @description The task the card is about.
+             */
+            task_id: string;
+            /** @description The task's own title. */
+            task_title: string;
+            /** @description False until the member has had the card on screen. */
+            seen: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        MemberNudgeCurrentDto: {
+            /** @description The one card to show, or null: nothing is worth a card right now, the member turned cards off, or AI is off for them. */
+            nudge: components["schemas"]["MemberNudgeDto"] | null;
+        };
+        DismissMemberNudgeDto: {
+            /**
+             * @description `not_now` closes the card. `fewer` also keeps new cards away for two weeks. `thanks` closes a word of thanks.
+             * @enum {string}
+             */
+            reason: "not_now" | "fewer" | "thanks";
         };
         CreateDiscordImportDto: {
             /** @description The admin confirms they have posted an in-channel notice in their Discord server telling members the history is being archived into Frapp. Required — the API refuses without it, and the column is NOT NULL, so no import can exist that was not preceded by this. */
@@ -6832,6 +12421,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;
@@ -6851,6 +12442,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;
@@ -6920,6 +12513,931 @@ export interface components {
              * @enum {string}
              */
             status: "posted" | "duplicate";
+        };
+        AskDiagnosticsDto: {
+            /** @description Whether this chapter is the one the beta diagnostics window may be turned on for. */
+            offered: boolean;
+            /** @description Whether the caller may turn it on or off: the chapter’s president. */
+            can_change: boolean;
+            /**
+             * Format: date-time
+             * @description When the open window ends, or null when nothing is being kept.
+             */
+            ends_at: string | null;
+        };
+        AskStatusDto: {
+            /**
+             * Format: date-time
+             * @description While the beta diagnostics window is on for this chapter: questions and answers in Ask are kept until this time, and the client must say so before a question is sent. Null when nothing is kept.
+             */
+            saved_until: string | null;
+            diagnostics: components["schemas"]["AskDiagnosticsDto"];
+        };
+        AskSuggestionDto: {
+            /**
+             * @description What the suggestion is about. A client shows the text and does not need to know every kind.
+             * @example event
+             */
+            kind: string;
+            /**
+             * @description The words to show, and to send when the member taps it.
+             * @example When and where is Chapter meeting on Sunday?
+             */
+            text: string;
+            /** @description False for a question: send it with `actions` false and mark its turn `suggested` in later history. True for the one request, which holds nothing from a record but weekday names and is sent like words the member typed. */
+            request: boolean;
+        };
+        AskSuggestionsDto: {
+            /** @description At most three questions, then at most one request. Empty when the member’s account holds nothing to ask about. */
+            suggestions: components["schemas"]["AskSuggestionDto"][];
+        };
+        AskHistoryTurnDto: {
+            /** @description What the member typed in that turn. */
+            question: string;
+            /** @description What Ask answered, or empty when the turn had no answer to carry (a proposal, nothing found, or an answer that drew on channel messages). */
+            answer: string;
+            /** @description True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done. */
+            suggested?: boolean;
+            /** @description How many cards that turn came with. A count only: the server writes the line that stands for them, so a follow-up is read knowing cards are already in front of the member. */
+            cards?: number;
+        };
+        AskFromDto: {
+            /**
+             * Format: uuid
+             * @description The channel the member had open.
+             */
+            channel_id?: string;
+            /**
+             * Format: uuid
+             * @description The event the member had open.
+             */
+            event_id?: string;
+            /**
+             * Format: uuid
+             * @description The task the member had open.
+             */
+            task_id?: string;
+        };
+        AskRequestDto: {
+            /**
+             * @description The question, in the member’s own words.
+             * @example What do the bylaws say about quorum?
+             */
+            question: string;
+            /** @description True when the client showed the "answers are being saved" line before sending. An exchange is kept by the beta diagnostics window only when this is true. */
+            saved_notice_shown?: boolean;
+            /** @description The conversation before this question, oldest first, so a follow-up is understood. The server keeps nothing between questions; the client holds the conversation and sends it. */
+            history?: components["schemas"]["AskHistoryTurnDto"][];
+            /** @description True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`. */
+            actions?: boolean;
+            /** @description True when the client draws the cards an answer comes with (`answer.proposals` on `done`). Read only with `actions`, by a server that answers through the tool loop: a turn can then be an answer with cards under it, or up to five cards. Without it a turn comes with at most one card, sent as a `proposal` event in place of the answer. */
+            answer_cards?: boolean;
+            /**
+             * @description Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.
+             * @enum {string}
+             */
+            door?: "ask" | "chat_private";
+            /** @description What the member had open when they asked, so "this channel" or "this event" means something. Each id is looked up as the caller, and one they cannot open is dropped. Accepted from any client; read only by a server that answers through the tool loop, and not yet by that one. */
+            from?: components["schemas"]["AskFromDto"] | null;
+            /**
+             * @description How hard to work on the question: `default`, or `more` when the member asked Frapp to think harder. Accepted from any client; not read yet.
+             * @enum {string}
+             */
+            effort?: "default" | "more";
+        };
+        AskDictationRequestDto: {
+            /**
+             * @description What the phone’s speech recogniser heard, as it heard it. Treated as words to tidy, never as instructions.
+             * @example um so when is the uh chapter meeting thursday no friday
+             */
+            text: string;
+        };
+        AskDictationResponseDto: {
+            /**
+             * @description The words tidied: fillers and false starts out, the last version of a self-correction kept, punctuation in. The words as sent, trimmed, when they could not be cleaned up.
+             * @example When is the chapter meeting Friday?
+             */
+            text: string;
+        };
+        ActStatusDto: {
+            /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
+            actions: string[];
+        };
+        ActRequestDto: {
+            /**
+             * @description What to do, in the member’s own words.
+             * @example Give 5 points to everyone who came to chapter tonight
+             */
+            request: string;
+        };
+        ActNoteDto: {
+            /** @description What the card says beside the proposal: `matched_name`, `unmatched_name`, `ambiguous_name`, `role_members`, `self_left_out`. Open. */
+            type: string;
+            /** @description The name as the member typed it. */
+            name?: string;
+            /** @description The members a name was matched to, or could be. */
+            user_ids?: string[];
+            count?: number;
+        };
+        ActEventChoiceDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            start_time: string;
+        };
+        ActEventChoiceSetDto: {
+            amount: number;
+            /** @description Empty when no reason was said. */
+            reason: string;
+            events: components["schemas"]["ActEventChoiceDto"][];
+        };
+        ActResponseDto: {
+            /** @description `proposed` (a card waits in `suggestion`), `needs_event`, `unclear`, `no_action`, `refused` or `unavailable`. Open. */
+            status: string;
+            /** @description The action the request was read as, when one was. */
+            action: string | null;
+            /** @description The proposal, when `proposed`. Nothing has changed: confirm it with `POST /v1/ai/suggestions/{id}/accept`, or cancel it with `.../dismiss`. */
+            suggestion: components["schemas"]["AiSuggestionDto"] | null;
+            notes: components["schemas"]["ActNoteDto"][];
+            /** @description When `needs_event`: the events to pick from. Send the pick to `POST /v1/ai/act/event-audience`. */
+            event_choice: components["schemas"]["ActEventChoiceSetDto"] | null;
+            /** @description When `unclear`: what was not said. Open. */
+            missing: string | null;
+            /** @description When `unavailable`: why. Open. */
+            reason: string | null;
+            /** @description When `no_action`: what the caller could ask for instead. */
+            available_actions: string[];
+        };
+        ActEventAudienceDto: {
+            /**
+             * Format: uuid
+             * @description The event whose attendees the points are for.
+             */
+            event_id: string;
+            /** @description As the `needs_event` answer carried it. */
+            amount: number;
+            /** @description As the `needs_event` answer carried it. Empty names the event instead. */
+            reason?: string;
+            /** @description True from a client that shows a conversation, where each proposal stays on screen as its own card: the caller’s earlier unconfirmed proposals are left waiting. Otherwise this proposal replaces them. */
+            keep_earlier?: boolean;
+        };
+        ChatCatchUpUnreadDto: {
+            /** @description How many messages were new to the member when they opened the channel, as its unread badge counted them. */
+            count: number;
+            /**
+             * Format: date-time
+             * @description When the member opened the channel.
+             */
+            as_of: string;
+        };
+        ChatCatchUpRequestDto: {
+            /**
+             * Format: uuid
+             * @description The channel to summarize in.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Summarize one thread: its first message and every reply. Exactly one of `thread_root_id`, `since` and `unread` is given.
+             */
+            thread_root_id?: string;
+            /**
+             * Format: date-time
+             * @description Summarize the channel's messages from this moment on. No further back than 30 days.
+             */
+            since?: string;
+            /** @description Summarize what was new when the member opened the channel. Opening a channel marks it read, so the client says how many messages were new and when it opened; the server finds where that stretch starts. */
+            unread?: components["schemas"]["ChatCatchUpUnreadDto"];
+        };
+        ChatCatchUpPointDto: {
+            /**
+             * @description What the point is. One of for_you, decision, date, topic today; a client shows a kind it does not know with the last group.
+             * @example decision
+             */
+            kind: string;
+            /** @description One sentence, plain text. */
+            text: string;
+            /**
+             * Format: uuid
+             * @description The message the point rests on, which the point opens.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Set when that message is a thread reply: the thread to open.
+             */
+            thread_root_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who wrote the message.
+             */
+            author_id: string | null;
+            /** Format: date-time */
+            sent_at: string;
+            /** @description The words of that message the point rests on. The server found them in the message, word for word. */
+            quote: string;
+        };
+        ChatCatchUpDto: {
+            /**
+             * @description How the request ended: summarized, nothing_new, too_little, not_found, refused, unavailable. `summarized` carries points; every other status carries none.
+             * @example summarized
+             */
+            status: string;
+            /** @description Why nothing was attempted, when `status` is `unavailable`: consent_required, chapter_off, chat_off, chapter_limit, member_limit, not_available. */
+            reason: string | null;
+            points: components["schemas"]["ChatCatchUpPointDto"][];
+            /** @description Messages the summary read. */
+            messages_read: number;
+            /** @description Messages in the stretch the summary could have read. More than `messages_read` when the stretch was longer than one summary reads; the newest were read. */
+            messages_total: number;
+            /** @description Messages left out because their author has not agreed to AI reading their messages. A count, never who. */
+            left_out_messages: number;
+            /** @description Points dropped because their quote was not in the message they named. */
+            unverified_points: number;
+            /** Format: date-time */
+            covers_from: string | null;
+            /** Format: date-time */
+            covers_to: string | null;
+            /**
+             * Format: uuid
+             * @description This summary’s id, for `POST /v1/ai/reports` (subject `chat_summary`). Set only when `status` is `summarized`. Nothing is stored under it unless the member reports the summary.
+             */
+            summary_id?: string | null;
+            /** @description The exchange, sealed by the server and opaque to clients, to hand back unchanged with a report. Null when the server cannot keep reported text. */
+            report_receipt?: string | null;
+        };
+        SetAskFeedbackDto: {
+            /** @enum {string} */
+            rating: "up" | "down";
+            /**
+             * @description With `down` only. A down can be sent first and sent again with its reason; each call replaces the one before.
+             * @enum {string|null}
+             */
+            reason?: "wrong" | "missed" | "too_long" | "other" | null;
+        };
+        AskFeedbackDto: {
+            /** Format: uuid */
+            ask_id: string;
+            /** @enum {string} */
+            rating: "up" | "down";
+            /** @enum {string|null} */
+            reason: "wrong" | "missed" | "too_long" | "other" | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AskSignalDto: {
+            /**
+             * @description What the member did: `retried` (Try again), `think_harder`, `source_opened`, `card_confirmed` or `card_dismissed`.
+             * @enum {string}
+             */
+            signal: "retried" | "think_harder" | "source_opened" | "card_confirmed" | "card_dismissed";
+        };
+        AskPostDto: {
+            /**
+             * Format: uuid
+             * @description The channel to post in. The caller must be able to post there.
+             */
+            channel_id: string;
+            /** @description The answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. What is posted is the answer inside it, never text from this request. */
+            receipt: string;
+            /** @description False only asks what posting would warn about and writes nothing. True posts, when `acknowledged` names every warning. */
+            confirm: boolean;
+            /** @description The `key` of each warning the asker was shown and accepted. A post whose warnings are not all named here is not made, and the current list is returned. */
+            acknowledged?: string[];
+        };
+        AskPostRestrictedDto: {
+            /** @description Stable for the same source, for `acknowledged`. */
+            key: string;
+            /** @description The kind of source, as an answer names it. */
+            kind: string;
+            /** @description The source’s name, or the records’ ("Your tasks"). */
+            title: string;
+        };
+        AskPostOutcomeDto: {
+            /** @description Whether the answer is now in the channel. */
+            posted: boolean;
+            /** @description What the answer drew on that not everyone who can read the channel could open, as of this call. */
+            restricted: components["schemas"]["AskPostRestrictedDto"][];
+        };
+        BackworkDraftFillResponseDto: {
+            /**
+             * @description `filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `not_checked` (saved without its pages being looked at, so it waits for the uploader to check it), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).
+             * @enum {string}
+             */
+            status: "filled" | "nothing_found" | "unreadable" | "not_redacted" | "not_checked" | "refused" | "unavailable" | "invalid_output";
+            /** @description The fields this fill set. Absent when the draft is unchanged. */
+            filled?: string[];
+            /** @description The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since. */
+            draft?: {
+                [key: string]: unknown;
+            };
+            reason?: string;
+        };
+        AiReportPolicyDto: {
+            /** @description Whether a report made now keeps the text (the server holds a sealing key). When false, only the reason and note are kept, and the sheet must say so. */
+            keeps_text: boolean;
+            /**
+             * @description How many days a report is kept.
+             * @example 30
+             */
+            retention_days: number;
+        };
+        CreateAiReportDto: {
+            /**
+             * @description What is reported: an Ask answer, the draft of a meeting’s minutes, a suggestion, or a channel summary.
+             * @enum {string}
+             */
+            subject: "ask_answer" | "meeting_draft" | "ai_suggestion" | "chat_summary";
+            /**
+             * Format: uuid
+             * @description The ask’s id (from the stream’s `start` event), the meeting’s id (for its draft), the suggestion’s id, or the summary’s `summary_id`.
+             */
+            subject_id: string;
+            /** @enum {string} */
+            reason: "wrong" | "harmful" | "private" | "other";
+            /** @description The member’s own words, if they add any. */
+            note?: string;
+            /** @description An Ask answer or a channel summary: its `report_receipt`, exactly as the server sent it. Opaque to clients. */
+            receipt?: string;
+        };
+        AiReportOutcomeDto: {
+            /** @description This member had already reported this; nothing new was kept. */
+            already_reported: boolean;
+            /** @description Whether the text itself was kept, sealed, or only the reason and note. */
+            kept_text: boolean;
+            /**
+             * Format: date-time
+             * @description When what was kept is deleted.
+             */
+            expires_at: string;
+        };
+        MeetingDraftSourceDto: {
+            /** @enum {string} */
+            kind: "decision" | "action_item";
+            /** @description The drafted text, as it went into the minutes. */
+            text: string;
+            /** @description The line of the notes it came from, word for word. */
+            quote: string;
+            /** @description Whose line it is: a note-taker’s name, or "Recording". Absent on a draft from before several note-takers. */
+            from?: string;
+        };
+        MeetingDraftVersionDto: {
+            /** @description A note-taker’s name, or "Recording". */
+            from: string;
+            quote: string;
+            text: string;
+            vote: components["schemas"]["MeetingVoteDto"] | null;
+            /** Format: uuid */
+            owner_user_id: string | null;
+            /** @example 2026-11-20 */
+            due_date: string | null;
+        };
+        MeetingDraftConflictDto: {
+            /** @enum {string} */
+            kind: "decision" | "action_item";
+            /** @description What the sources disagree about. */
+            about: string;
+            versions: components["schemas"]["MeetingDraftVersionDto"][];
+            /** @description The version in the minutes, or null when nothing settled it and the author must pick. */
+            chosen: number | null;
+            /** @enum {string|null} */
+            settled_by: "recording" | "authority" | "author" | null;
+        };
+        MeetingDraftFollowUpDto: {
+            /** @enum {string} */
+            kind: "action_item" | "report";
+            /** @description The action item, or the office that reports, as earlier minutes wrote it. Never from tonight. */
+            text: string;
+            /** Format: uuid */
+            owner_user_id: string | null;
+            /**
+             * Format: date-time
+             * @description When the meeting whose minutes it comes from started. Show its day in the reader’s own time.
+             */
+            from_meeting_start_time: string;
+            /**
+             * @description Where it stands tonight. Anything but not_mentioned comes with the line of tonight’s notes that says so.
+             * @enum {string}
+             */
+            status: "done" | "carried" | "given" | "not_mentioned";
+            /** @description Tonight’s line about it, word for word; null when nothing tonight mentions it. */
+            quote: string | null;
+            /** @description Whose line it is: a note-taker’s name, or "Recording". */
+            from: string | null;
+        };
+        MeetingDraftReviewDto: {
+            /** @description What the notes leave unsaid, for the officer to fill in. */
+            gaps: string[];
+            sources: components["schemas"]["MeetingDraftSourceDto"][];
+            /** @description Drafted lines left out because the line they named is not in the notes. */
+            left_out: number;
+            /** @description Where note-takers’ notes or the recording disagreed, and how each was settled (#4935). */
+            conflicts: components["schemas"]["MeetingDraftConflictDto"][];
+            /** @description Last meeting’s action items and the standing reports the draft carried from earlier minutes, and where each stands tonight (#5477). This build always sends it, empty when there were none; optional so a client reads an older server the same way. */
+            follow_ups?: components["schemas"]["MeetingDraftFollowUpDto"][];
+        };
+        MeetingDraftDto: {
+            /** @enum {string} */
+            status: "none" | "drafting" | "ready" | "applied" | "failed";
+            /** @description The notes the draft was asked from, or "". */
+            notes: string;
+            /** @enum {string|null} */
+            failure: "chapter_off" | "consent_required" | "spend_limit" | "unavailable" | "refused" | "not_permitted" | "stopped" | "failed" | null;
+            failure_message: string | null;
+            /** @description The drafted sections, only while `ready`: the minutes changed while the draft was written, so the officer chooses to use it. */
+            content: components["schemas"]["MeetingContentPatchDto"] | null;
+            review: components["schemas"]["MeetingDraftReviewDto"];
+            /** Format: date-time */
+            requested_at: string | null;
+            /**
+             * @description Why the caller can’t ask for a draft now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+        };
+        RequestMeetingDraftDto: {
+            /** @description The officer’s own notes, saved as theirs before the draft is asked for. Optional since several note-takers (#4935): the draft reads every note-taker’s saved notes and the recording’s transcript, sent to the AI provider the catalog names for the task, and kept only while the minutes are a draft. */
+            notes?: string;
+            /**
+             * Format: date-time
+             * @description The minutes’ `updated_at` the editor has. The draft is put into the minutes only while they are still at this version.
+             */
+            expected_updated_at: string;
+            /**
+             * @description The meeting’s calendar day where the officer is, so "by Friday" in the notes becomes the right date.
+             * @example 2026-11-09
+             */
+            meeting_date?: string;
+        };
+        UseMeetingDraftDto: {
+            /**
+             * Format: date-time
+             * @description The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.
+             */
+            expected_updated_at: string;
+        };
+        ChooseMeetingDraftVersionDto: {
+            /** @description The disagreement, by its place in the list. */
+            conflict: number;
+            /** @description The version to put in, by its place. */
+            version: number;
+            /** Format: date-time */
+            expected_updated_at: string;
+        };
+        MeetingNoteTakingDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            author_name: string;
+            /** @description The caller already takes notes here. */
+            joined: boolean;
+            /** @description The author or an editor added the caller. */
+            added: boolean;
+        };
+        MeetingNotesMeetingDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string | null;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            author_name: string;
+        };
+        MeetingOwnNotesDto: {
+            notes: string;
+            /** Format: date-time */
+            updated_at: string | null;
+            /**
+             * @description Why these notes would be left out of a draft now: their writer has not turned Frapp AI on.
+             * @enum {string|null}
+             */
+            held: "consent_required" | null;
+        };
+        MeetingNoteTakerDto: {
+            notes: string;
+            /** Format: date-time */
+            updated_at: string | null;
+            /**
+             * @description Why these notes would be left out of a draft now: their writer has not turned Frapp AI on.
+             * @enum {string|null}
+             */
+            held: "consent_required" | null;
+            /** Format: uuid */
+            user_id: string;
+            display_name: string;
+            is_author: boolean;
+            /** @description Added by the author or an editor, not joined by themselves. */
+            added: boolean;
+        };
+        MeetingNotesDto: {
+            meeting: components["schemas"]["MeetingNotesMeetingDto"];
+            /**
+             * @description `editor`: the minutes’ author or someone who can edit any minutes, who reads every note-taker’s notes and asks for the draft.
+             * @enum {string}
+             */
+            role: "editor" | "note_taker";
+            mine: components["schemas"]["MeetingOwnNotesDto"];
+            /** @description Everyone else taking notes, for an editor; empty otherwise. */
+            takers: components["schemas"]["MeetingNoteTakerDto"][];
+            others_count: number;
+            can_add: boolean;
+            joined: boolean;
+        };
+        SaveMeetingNotesDto: {
+            /** @description The caller’s own notes, as typed. Empty clears them. Kept only while the minutes are a draft, and 30 days at most. */
+            notes: string;
+        };
+        AddMeetingNoteTakerDto: {
+            /**
+             * Format: uuid
+             * @description A member the meeting’s event invites.
+             */
+            user_id: string;
+        };
+        AgendaSuggestionFromMinutesDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /**
+             * Format: date-time
+             * @description When that meeting started.
+             */
+            start_time: string;
+        };
+        AgendaSuggestionDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `tabled`: a matter earlier minutes of a meeting with the same audience tabled. `minutes`: an action item those minutes sent to the next meeting’s agenda instead of making it a task. `ai`: an item the model suggested.
+             * @enum {string}
+             */
+            kind: "tabled" | "minutes" | "ai";
+            /** @description The item as it would go on the agenda. */
+            text: string;
+            /** @description Where a tabled matter was first tabled; null for any other kind. */
+            tabled_from: components["schemas"]["EventAgendaTabledFromDto"] | null;
+            /** @description The minutes a `minutes` item was sent from, for “From the minutes of {day}”; null for any other kind. */
+            from_minutes: components["schemas"]["AgendaSuggestionFromMinutesDto"] | null;
+            /**
+             * Format: uuid
+             * @description The posted minutes it was drawn from (for a tabled matter, the minutes that tabled it most recently), for the link under it.
+             */
+            source_meeting_id: string | null;
+            /** @description Why the model suggested it, in a few words; null for `tabled`. */
+            reason: string | null;
+        };
+        AgendaSuggestionListDto: {
+            /** @description Open suggestions, tabled matters first. */
+            suggestions: components["schemas"]["AgendaSuggestionDto"][];
+            /**
+             * Format: date-time
+             * @description When the model last wrote suggestions for this event; null when it never has, so a client asks for them once (`POST …/refresh`).
+             */
+            generated_at: string | null;
+            /** @description Whether the model can write suggestions for this member: AI on, the chapter’s meeting-notes switch on and the member’s own yes. Tabled matters are listed either way. */
+            ai_available: boolean;
+        };
+        AddAgendaSuggestionResponseDto: {
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+        };
+        CalendarFeedLinkDto: {
+            /**
+             * @description The private link, as https. Google Calendar and Outlook subscribe to it by URL; anyone holding it can read the calendar it serves, so it is shown only to its member.
+             * @example https://api.frapp.live/v1/calendar-feed/feed.ics?token=your-private-token
+             */
+            url: string;
+            /**
+             * @description The same link as webcal://, which Apple Calendar (and most desktop calendar apps) open as a new subscription.
+             * @example webcal://api.frapp.live/v1/calendar-feed/feed.ics?token=your-private-token
+             */
+            webcal_url: string;
+        };
+        GoogleCalendarStatusDto: {
+            /** @description Whether this server offers Google Calendar. False until its Google settings are set; clients then hide the option. */
+            available: boolean;
+            /** @description Whether the caller has connected Google. */
+            connected: boolean;
+            /**
+             * @description `needs_reconnect` once Google refused the sign-in (access removed in Google, or a password change); nothing syncs until the member connects again. Null when not connected.
+             * @enum {string|null}
+             */
+            status: "active" | "needs_reconnect" | null;
+            /**
+             * @description The Google account connected, when Google shared it.
+             * @example member@gmail.com
+             */
+            google_email: string | null;
+            /**
+             * Format: date-time
+             * @description When the calendar last finished syncing. Null before the first.
+             */
+            last_synced_at: string | null;
+        };
+        StartGoogleCalendarConnectDto: {
+            /**
+             * @description Where the sign-in finishes: the web Events page, or the phone app at `return_url`.
+             * @enum {string}
+             */
+            client: "web" | "mobile";
+            /**
+             * @description For `mobile`: the app address Google sends the member back to, in the app’s own `frapp://` scheme.
+             * @example frapp://google-calendar
+             */
+            return_url?: string;
+            /**
+             * @description For `web`: the screen the sign-in started on and comes back to. Events (the default), or Settings → Linked apps or Settings → Calendar.
+             * @enum {string}
+             */
+            web_return?: "events" | "linked_apps" | "calendar";
+        };
+        GoogleCalendarConnectDto: {
+            /** @description Google’s consent page for this sign-in. Good for ten minutes. */
+            authorize_url: string;
+        };
+        ConfirmGoogleCalendarConnectDto: {
+            /** @description The `gcal_state` the sign-in returned with. */
+            state: string;
+            /** @description The `gcal_code` the sign-in returned with. */
+            code: string;
+        };
+        GoogleDrivePickerDto: {
+            /** @description The Web OAuth client the picker's Google sign-in uses (this environment's Google Calendar client) */
+            client_id: string;
+            /** @description The browser API key the picker loads with: public, restricted to the Picker API and the web app */
+            api_key: string;
+            /** @description The Google Cloud project's number, the picker's app id */
+            app_id: string;
+        };
+        GoogleDriveConnectionDto: {
+            folder_id: string;
+            /** @description The folder's name in Drive */
+            folder_name: string;
+            /** @description The folder's page in Google Drive */
+            folder_url: string;
+            /**
+             * @description `no_access` once Google answered that Frapp can no longer see the folder (unshared or deleted); copies stay as they were until it is shared again
+             * @enum {string}
+             */
+            status: "active" | "no_access";
+            /**
+             * Format: date-time
+             * @description When the last sync finished. Null before the first.
+             */
+            last_synced_at: string | null;
+            /** @description Files the last sync left in Documents */
+            synced_count: number;
+            /** @description Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files */
+            skipped_count: number;
+            /** @description The top-most folders the last sync did not read, because they sit more than nine levels below the connected folder or past its first 300 folders. They and any folders inside them, and their files, are not in Documents; folders inside them are not counted. */
+            folders_left_out: number;
+            /** @description Whether a sync is due or running now */
+            syncing: boolean;
+            /** @description Who sees what it brings in (#5220): the list its top folder in Documents started with. Null for everyone who can open Documents. The folder's own list counts from then on. */
+            who_can_see: string[] | null;
+        };
+        GoogleDriveStatusDto: {
+            /** @description Whether this server offers Google Drive. False until its service account is set; clients then hide the option. */
+            available: boolean;
+            /** @description The address a chapter shares its folder with */
+            service_account_email: string | null;
+            /** @description Google's folder picker, when this server offers it: the officer signs in with Google and picks the folder, and Frapp shares it with itself. Null, the folder is connected by its link. */
+            picker: components["schemas"]["GoogleDrivePickerDto"] | null;
+            connection: components["schemas"]["GoogleDriveConnectionDto"] | null;
+        };
+        ConnectGoogleDriveDto: {
+            /**
+             * @description The Drive folder link (or its id)
+             * @example https://drive.google.com/drive/folders/1AbC...
+             */
+            folder_link: string;
+            /** @description Who sees what the folder brings in (#5220): null or left out for everyone who can open Documents, or the tiers, roles and groups named. Its top folder in Documents starts with this list and each new subfolder with its parent's. Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
+        };
+        ConnectPickedGoogleDriveDto: {
+            /**
+             * @description The picked folder's Drive id
+             * @example 1AbCdEfGhIjKlMnOp
+             */
+            folder_id: string;
+            /** @description The access token the officer's Google sign-in gave the picker (drive.file). Used once to share the folder with Frapp, never stored. */
+            access_token: string;
+            /** @description Who sees what the folder brings in (#5220), as when connecting by link. Ignored when the folder is the one already connected, picked again to share it with Frapp again. */
+            who_can_see?: string[] | null;
+        };
+        GoogleDriveLinkInfoDto: {
+            /** @description Whether this server offers Google Drive. False until its service account is set; clients then hide the link field. */
+            available: boolean;
+            /** @description The address a file that not anyone with the link can open is shared with */
+            service_account_email: string | null;
+        };
+        AddGoogleDriveLinkDto: {
+            /**
+             * @description A Google Docs, Sheets, Slides or Drive file link (or the file id)
+             * @example https://docs.google.com/document/d/1AbC.../edit
+             */
+            link: string;
+            /** @description Folder to file it in; left out for the top level */
+            folder?: Record<string, never>;
+            /** @description Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
+        };
+        MeetingRecordingUploadDto: {
+            /** Format: uuid */
+            upload_id: string;
+            /** @description The private bucket the file goes to. */
+            bucket: string;
+            /** @description Where in the bucket the file goes. */
+            path: string;
+            /** @description Signs this one resumable upload (`x-signature`). Good for two hours. */
+            token: string;
+            /** @description The type to store the file under. */
+            content_type: string;
+        };
+        MeetingRecordingDto: {
+            /** @enum {string} */
+            status: "none" | "uploading" | "transcribing" | "ready" | "failed";
+            /** Format: uuid */
+            upload_id: string | null;
+            file_name: string | null;
+            size_bytes: number | null;
+            /** @description Seconds: what the browser read while uploading and transcribing, what the provider measured once `ready`. */
+            duration_seconds: number | null;
+            /** @enum {string|null} */
+            failure: "chapter_off" | "consent_required" | "spend_limit" | "unavailable" | "not_permitted" | "upload_incomplete" | "unreadable" | "too_long" | "no_speech" | "failed" | null;
+            failure_message: string | null;
+            /** @description The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes. */
+            transcript: string | null;
+            /** @description A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted. */
+            audio_url: string | null;
+            speaker_count: number | null;
+            /** Format: date-time */
+            uploaded_at: string | null;
+            /** @description False when this server has no transcription provider set up: the upload step is not offered. */
+            available: boolean;
+            /**
+             * @description Why the caller can’t upload now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+            /** @description The largest file this server takes, in bytes. */
+            max_bytes: number;
+            /** @description The longest recording this server takes, in seconds. */
+            max_seconds: number;
+            /** @description Only in the answer to starting an upload. */
+            upload: components["schemas"]["MeetingRecordingUploadDto"] | null;
+        };
+        StartMeetingRecordingDto: {
+            /** @description The file’s own name, shown back to the officer. */
+            file_name: string;
+            /** @description The browser’s name for the file’s type. May be empty; the file’s extension decides then. */
+            mime_type?: string | null;
+            /** @description The file’s size in bytes. */
+            size_bytes: number;
+            /** @description The recording’s length in seconds, as the browser read it. */
+            duration_seconds: number;
+            /** @description The officer confirmed everyone in the room was told the meeting was being recorded. An upload without it is refused. */
+            notice_confirmed: boolean;
+        };
+        ConfirmMeetingRecordingDto: {
+            /**
+             * Format: uuid
+             * @description The upload that finished.
+             */
+            upload_id: string;
+        };
+        MeetingRecorderAvailabilityDto: {
+            /** @description False when this server has no transcription provider set up, so a recording can’t be written out. */
+            available: boolean;
+            /**
+             * @description Why the caller can’t send a recording now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+            /** @description The largest file this server takes, in bytes. */
+            max_bytes: number;
+            /** @description The longest recording this server takes, in seconds. */
+            max_seconds: number;
+        };
+        MinutesRequestStateDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** @description The caller has asked for these minutes. */
+            requested: boolean;
+        };
+        MinutesRequestSentDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** @description The caller has asked for these minutes. */
+            requested: boolean;
+            /** @description This ask sent a reminder. False when the daily guard held it back: whoever is writing them was already reminded within the day. */
+            pinged: boolean;
+        };
+        MeetingNoMinutesListDto: {
+            /** @description Events this officer can see that an officer marked "No minutes", so the Meetings list stops asking for them. */
+            event_ids: string[];
+        };
+        MeetingDateReminderDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `YYYY-MM-DD`.
+             * @example 2026-12-04
+             */
+            date: string;
+            text: string;
+            /** Format: date-time */
+            remind_at: string;
+        };
+        SetMeetingDateReminderDto: {
+            /**
+             * @description The date’s day, as the minutes give it (`YYYY-MM-DD`).
+             * @example 2026-12-04
+             */
+            date: string;
+            /** @description The date’s words, as the minutes give them. Together with the day they name the date, which has to be in the minutes as they read now. */
+            text: string;
+            /**
+             * Format: date-time
+             * @description When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting it again for the same date moves it.
+             */
+            remind_at: string;
+        };
+        BootstrapDto: {
+            /** @description As `GET /v1/users/me`. */
+            user?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description As `GET /v1/users/me/permissions`. */
+            permissions?: components["schemas"]["MyPermissionsDto"] | null;
+            /** @description As `GET /v1/users/me/legal-acceptance`. */
+            legal_acceptance?: components["schemas"]["LegalAcceptanceDto"] | null;
+            /** @description As `GET /v1/users/me/whats-new`. */
+            whats_new?: components["schemas"]["WhatsNewSeenDto"] | null;
+            /** @description As `GET /v1/chapters`. */
+            chapters?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/chapters/current`. */
+            current_chapter?: components["schemas"]["CurrentChapterResponseDto"] | null;
+            /** @description As `GET /v1/settings`. */
+            settings?: components["schemas"]["UserSettingsDto"] | null;
+            /** @description As `GET /v1/channels`. */
+            channels?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/unread`. */
+            channel_unread?: components["schemas"]["ChannelUnreadCountDto"][] | null;
+            /** @description As `GET /v1/channels/categories/list`. */
+            channel_categories?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/notification-preferences`. */
+            channel_notification_preferences?: components["schemas"]["ChannelNotificationPreferenceDto"][] | null;
+            /** @description As `GET /v1/channels/mention-roles`. */
+            mention_roles?: components["schemas"]["MentionRoleDto"][] | null;
+            /** @description As `GET /v1/chat-sidebar`. */
+            chat_sidebar?: components["schemas"]["ChatSidebarDto"] | null;
+            /** @description As `GET /v1/chat/blocks`. */
+            chat_blocks?: components["schemas"]["ChatBlockListDto"] | null;
+            /** @description As `GET /v1/chat-backgrounds/default`. */
+            chat_background_default?: components["schemas"]["ChapterChatBackgroundResponseDto"] | null;
+            /** @description As `GET /v1/gifs/availability`. */
+            gif_availability?: components["schemas"]["GifAvailabilityDto"] | null;
+            /** @description As `GET /v1/bookmarks`. */
+            bookmarks?: components["schemas"]["BookmarkDto"][] | null;
+            /** @description As `GET /v1/roles`. */
+            roles?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/events`. */
+            events?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/geofences`. */
+            geofences?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/documents` with no folder or search. */
+            documents?: components["schemas"]["ChapterDocumentDto"][] | null;
+            /** @description As `GET /v1/members/roster`. */
+            member_roster?: components["schemas"]["MemberRosterEntryDto"][] | null;
+            /** @description As `GET /v1/notifications?limit=50`. */
+            notifications?: {
+                [key: string]: unknown;
+            }[] | null;
         };
     };
     responses: never;
@@ -7857,6 +14375,8 @@ export interface operations {
                 actor_user_id?: string;
                 /** @description Filter to a single action verb, e.g. `member_removed`. Matched exactly; an unknown verb returns an empty list. */
                 action?: string;
+                /** @description Filter to one Logs kind: any of the actions it holds (`CHAPTER_LOG_KINDS` in `@repo/validation`). */
+                kind?: "roles" | "members" | "settings";
                 /** @description Inclusive lower bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — a bare date is rejected rather than read as midnight. Filters the range; pair with `before` to page within it. */
                 start_date?: string;
                 /** @description Inclusive upper bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — send `…T23:59:59.999Z` for a whole final day rather than a bare date. Unlike `before`, this bounds the range rather than moving with pagination. */
@@ -8035,6 +14555,66 @@ export interface operations {
             };
         };
     };
+    RbacController_join_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfAssignRoleResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RbacController_leave_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfAssignRoleResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     RbacController_transferPresidency_v1: {
         parameters: {
             query?: never;
@@ -8107,6 +14687,160 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleTierDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_reorder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReorderRoleTiersDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RoleTierController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoleTierDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleTierDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -8193,6 +14927,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberRosterEntryDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_birthdays_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberBirthdayDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_phoneReach_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberPhoneReachListDto"];
                 };
             };
             /** @description Error */
@@ -8314,6 +15104,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_correctProfile_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CorrectMemberProfileDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -8479,6 +15303,66 @@ export interface operations {
             };
         };
     };
+    InviteController_getChapterLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterLinkResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteController_createChapterLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateChapterLinkDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteListItemDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     InviteController_createBatch_v1: {
         parameters: {
             query?: never;
@@ -8573,6 +15457,36 @@ export interface operations {
             };
         };
     };
+    InviteController_askForNewLink_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewInviteDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     InviteController_redeem_v1: {
         parameters: {
             query?: never;
@@ -8631,6 +15545,34 @@ export interface operations {
             };
         };
     };
+    InviteController_listInvitableRoles_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitableRolesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     InviteController_revoke_v1: {
         parameters: {
             query?: never;
@@ -8643,6 +15585,75 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteDetailsController_details_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewInviteDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteDetailsResponseDto"];
+                };
+            };
+            /** @description No such invite, or its chapter is gone */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    InviteDetailsController_funnelStep_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteFunnelStepDto"];
+            };
+        };
+        responses: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8765,6 +15776,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarkNotificationsReadResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    NotificationController_clearNotifications_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClearNotificationsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearNotificationsResultDto"];
                 };
             };
             /** @description Error */
@@ -8912,6 +15955,281 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserSettingsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventResponseDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEventDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateEventResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventController_getOne_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDetailResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventController_delete_v1: {
+        parameters: {
+            query?: {
+                /** @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved. */
+                scope?: "instance" | "series";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEventDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventTypeController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventTypeDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventTypeController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEventTypeDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventTypeDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventTypeController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventTypeController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEventTypeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventTypeDto"];
                 };
             };
             /** @description Error */
@@ -9757,6 +17075,37 @@ export interface operations {
             };
         };
     };
+    ChatController_listMessagesAttachments_v1: {
+        parameters: {
+            query: {
+                /** @description Comma-separated IDs of messages in this channel whose attachments to list, at most 50. Each id is a key of the answer; a message that is deleted, outside this channel, or from a sender the caller has blocked maps to an empty list. */
+                message_ids: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChatController_listMessageAttachments_v1: {
         parameters: {
             query?: never;
@@ -9866,6 +17215,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_forwardMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForwardMessageDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForwardResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_closeCard_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -10182,6 +17595,34 @@ export interface operations {
             };
         };
     };
+    ChatController_markMessageUnread_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChatController_setChannelNotificationLevel_v1: {
         parameters: {
             query?: never;
@@ -10203,6 +17644,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelNotificationPreferenceDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_getOwnResponse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnFormResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_saveResponse_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveFormResponseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatFormController_getResponses_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormResponsesDto"];
                 };
             };
             /** @description Error */
@@ -10894,6 +18429,34 @@ export interface operations {
             };
         };
     };
+    MemberThreadController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberThreadDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChatBackgroundController_getForChannel_v1: {
         parameters: {
             query?: never;
@@ -11240,7 +18803,7 @@ export interface operations {
             };
         };
     };
-    EventController_list_v1: {
+    GifController_availability_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -11253,38 +18816,8 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
                 content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    EventController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateEventDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreateEventResponseDto"];
+                    "application/json": components["schemas"]["GifAvailabilityDto"];
                 };
             };
             /** @description Error */
@@ -11298,49 +18831,109 @@ export interface operations {
             };
         };
     };
-    EventController_getOne_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiErrorResponseDto"];
-                };
-            };
-        };
-    };
-    EventController_delete_v1: {
+    GifController_trending_v1: {
         parameters: {
             query?: {
-                /** @description Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved. */
-                scope?: "instance" | "series";
+                page?: number;
             };
             header?: never;
-            path: {
-                id: string;
-            };
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifPageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_search_v1: {
+        parameters: {
+            query: {
+                page?: number;
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifPageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_favorites_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifPageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_addFavorite_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddGifFavoriteDto"];
+            };
+        };
+        responses: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11357,22 +18950,18 @@ export interface operations {
             };
         };
     };
-    EventController_update_v1: {
+    GifController_removeFavorite_v1: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                id: string;
+                gifId: string;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateEventDto"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11389,9 +18978,12 @@ export interface operations {
             };
         };
     };
-    EventTypeController_list_v1: {
+    ChatScheduledMessageController_list_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Only this channel’s; every channel’s when left out. */
+                channel_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -11403,7 +18995,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EventTypeDto"][];
+                    "application/json": components["schemas"]["ScheduledMessageDto"][];
                 };
             };
             /** @description Error */
@@ -11417,7 +19009,7 @@ export interface operations {
             };
         };
     };
-    EventTypeController_create_v1: {
+    ChatScheduledMessageController_create_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -11426,7 +19018,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateEventTypeDto"];
+                "application/json": components["schemas"]["CreateScheduledMessageDto"];
             };
         };
         responses: {
@@ -11435,7 +19027,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EventTypeDto"];
+                    "application/json": components["schemas"]["ScheduledMessageDto"];
                 };
             };
             /** @description Error */
@@ -11449,7 +19041,7 @@ export interface operations {
             };
         };
     };
-    EventTypeController_remove_v1: {
+    ChatScheduledMessageController_remove_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -11460,7 +19052,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11477,7 +19069,7 @@ export interface operations {
             };
         };
     };
-    EventTypeController_update_v1: {
+    ChatScheduledMessageController_update_v1: {
         parameters: {
             query?: never;
             header?: never;
@@ -11488,7 +19080,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateEventTypeDto"];
+                "application/json": components["schemas"]["UpdateScheduledMessageDto"];
             };
         };
         responses: {
@@ -11497,8 +19089,405 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EventTypeDto"];
+                    "application/json": components["schemas"]["ScheduledMessageDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_sendNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only the minutes of this event. */
+                event_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingListItemDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_start_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartMeetingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_liveRecordings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingLiveRecordingDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_getTemplate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingTemplateDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_setTemplate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingTemplateDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingTemplateDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_getOne_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMeetingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_post_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostMeetingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_linkEvent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkMeetingEventDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_markLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_clearLiveRecording_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -11531,6 +19520,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AttendanceController_reportCheckInScreen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckInScreenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckInScreenResultDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -11662,6 +19685,40 @@ export interface operations {
             };
         };
     };
+    AttendanceController_markByHand_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkAttendanceByHandDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkAttendanceByHandResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     AttendanceController_markAutoAbsent_v1: {
         parameters: {
             query?: never;
@@ -11679,6 +19736,197 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutoAbsentResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseWithMemberDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_submit_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitEventExcuseDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_mine_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyEventExcuseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_withdraw_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_edit_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitEventExcuseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_decide_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideEventExcuseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseDto"];
                 };
             };
             /** @description Error */
@@ -11757,7 +20005,7 @@ export interface operations {
             query?: {
                 /** @description Filter to a single member */
                 user_id?: string;
-                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY" | "PREDICTION";
                 /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`. */
                 flagged?: "true" | "false" | "1" | "0";
                 /** @description ISO8601 cursor — return transactions created before this timestamp */
@@ -12296,6 +20544,184 @@ export interface operations {
             };
         };
     };
+    BackworkController_listDrafts_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_updateDrafts_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBackworkDraftsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_publishDrafts_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishBackworkDraftsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishBackworkDraftsResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_draftFileUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkDraftFileUrlDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_checkDraft_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckBackworkDraftDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_deleteDraft_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     BackworkController_downloadUrls_v1: {
         parameters: {
             query: {
@@ -12733,7 +21159,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ServiceEntryResponseDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -12759,6 +21187,7 @@ export interface operations {
             };
         };
         responses: {
+            /** @description The entry, as created. A resend by the same member with a `proof_path` their entry already holds answers with that entry as saved, not a second one. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -12766,6 +21195,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CreateServiceEntryResponseDto"];
                 };
+            };
+            /** @description A field is invalid; the chapter requires proof and none was sent (code `service_entry.receipt_required`); or `proof_path` is outside the chapter's service-proof folder, names no uploaded file, or is already on another member's entry. A client holding a refused `proof_path` drops it and uploads the file again. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -12852,7 +21288,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ServiceEntryResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -12972,7 +21410,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ServiceEntryResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -12987,7 +21427,14 @@ export interface operations {
     };
     TaskController_list_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Page size. Integers outside 1–200 are rejected. Sending `limit` or `before` pages the list (default 50); sending neither returns every task. */
+                limit?: number;
+                /** @description Cursor: the `created_at` of the last task of the previous page, fed back exactly as received. Tasks come newest first, by `created_at` then `id`. Requires `before_id`. */
+                before?: string;
+                /** @description Cursor: the `id` of the last task of the previous page. Requires `before`. */
+                before_id?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13073,7 +21520,10 @@ export interface operations {
     };
     TaskController_delete_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. On a copy of a group task: `group` deletes every member’s copy and the group (#4295 step 3). */
+                scope?: "instance" | "series" | "group";
+            };
             header?: never;
             path: {
                 id: string;
@@ -13119,6 +21569,103 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_requestPhotoUploadUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestTaskPhotoUploadUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskPhotoUploadUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_getPhotoUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                photoId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskPhotoUrlResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_share_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareTaskToChatDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareTaskToChatResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -13223,6 +21770,36 @@ export interface operations {
             };
         };
     };
+    TaskController_release_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenTaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     TaskController_addSubtask_v1: {
         parameters: {
             query?: never;
@@ -13309,6 +21886,711 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TaskSubtaskDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    TaskController_removeFromGroup_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RemoveFromTaskGroupDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveFromTaskGroupResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenTaskDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOpenTaskDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenTaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateOpenTaskDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenTaskDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_claim_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    OpenTaskController_assign_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignOpenTaskDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only suggestions drawn from this source. Send with `source_id`. */
+                source_type?: "meeting" | "event" | "channel" | "task" | "request";
+                source_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_accept_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptAiSuggestionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionDecisionDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_dismiss_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissAiSuggestionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionDecisionDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_sendToNextAgenda_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendToNextAgendaResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_undoSendToNextAgenda_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiSuggestionController_decide_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecideAiSuggestionsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiSuggestionDecideResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingActionItemTasksController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingActionItemTaskDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingActionItemTasksController_seriesOpen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeriesOpenActionItemsDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiConsentController_getConsent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConsentStateDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiConsentController_answerConsent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerAiConsentDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiConsentStateDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The sheet changed since it was shown (`ai.consent.stale_sheet`): read it again. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiChapterSettingsController_getSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChapterSettingsDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiChapterSettingsController_updateSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAiChapterSettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiChapterSettingsDto"];
+                };
+            };
+            /** @description The caller is not the chapter’s president (`ai.settings.president_only`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only runs of this kind (`minutes_draft`). */
+                kind?: string;
+                /** @description How many runs to return, newest first. 1 to 50; 20 when omitted. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"][];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiRunController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRunDto"];
+                };
+            };
+            /** @description No such run in this chapter, not readable by the caller, or AI is off (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -13494,6 +22776,224 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PledgeClassDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChapterGroupDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateChapterGroupDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_setMembers_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChapterGroupMembersDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_addMember_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterGroupController_removeMember_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGroupDto"];
                 };
             };
             /** @description Error */
@@ -13976,6 +23476,70 @@ export interface operations {
             };
         };
     };
+    ChapterDocumentController_requestUploadUrls_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestDocumentUploadUrlsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentUploadUrlsResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_confirmUploads_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmDocumentUploadsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentConfirmResultsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChapterDocumentController_list_v1: {
         parameters: {
             query?: {
@@ -14038,6 +23602,191 @@ export interface operations {
             };
         };
     };
+    ChapterDocumentController_move_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveDocumentsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_listTypes_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_createType_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDocumentTypeDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_deleteType_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_updateType_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentTypeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_previewUrls_v1: {
+        parameters: {
+            query: {
+                /** @description Document ids, at most 100: the parameter repeated, or one comma-separated value */
+                ids: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentPreviewUrlDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChapterDocumentController_listFolders_v1: {
         parameters: {
             query?: never;
@@ -14084,6 +23833,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_accessOptions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentAccessOptionsDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -14344,6 +24121,74 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_setAccess_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDocumentAccessDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -14655,6 +24500,298 @@ export interface operations {
             };
         };
     };
+    PredictionController_list_v1: {
+        parameters: {
+            query?: {
+                filter?: "open" | "mine" | "settled" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_stake_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlacePredictionStakeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_consent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PredictionConsentDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionConsentResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_settle_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettlePredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_question_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionPredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_confirm_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmPredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_void_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     SemesterRolloverController_rollover_v1: {
         parameters: {
             query?: never;
@@ -14923,7 +25060,10 @@ export interface operations {
     };
     ActivityController_getActivity_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -14937,6 +25077,149 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ActivityDto"];
                 };
+            };
+            /** @description `week_start` is not a date-time. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityNowDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getArchive_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityArchiveDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getStanding_v1: {
+        parameters: {
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityStandingDto"];
+                };
+            };
+            /** @description `week_start` is more than eight days back or a day ahead. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getRecap_v1: {
+        parameters: {
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+                /** @description Where the caller’s last week began, in their own time zone (the Sunday before `week_start`, at midnight). Used when it is within three hours of seven days before `week_start` (a clock change moves it by an hour); otherwise, or omitted, seven days before `week_start`. */
+                last_week_start?: string;
+                /** @description The calendar date of the last week’s first day in the caller’s time zone, for service entries, which are dated by day. Used when it is within a day of the day the server works out; otherwise, or omitted, the server’s day. */
+                first_day?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityRecapDto"];
+                };
+            };
+            /** @description `week_start` is more than eight days back or a day ahead. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -14987,6 +25270,73 @@ export interface operations {
                 "application/json": components["schemas"]["MarkActivityReadDto"];
             };
         };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_snooze_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnoozeActivityItemDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `until` is not in the future, or is more than 90 days away. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_unsnooze_v1: {
+        parameters: {
+            query: {
+                /** @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`). */
+                kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+                item_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             204: {
                 headers: {
@@ -15109,6 +25459,561 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatReminderController_setReminder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChatReminderDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReminderRefDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatReminderController_clearReminder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityCardController_card_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityNudgeCardDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityCardController_seen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivityNudgeSeenDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityCardController_dismiss_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivityNudgeDismissDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityCardController_settings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityCardController_updateSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemberNudgeSettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityLayoutController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityLayoutDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityLayoutController_save_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateActivityLayoutDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityLayoutDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityLayoutController_reset_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoalsController_getGoals_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterGoalsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoalsController_getMyGoals_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyGoalsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoalsController_setGoals_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                metric: "points" | "service" | "study";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoalSetDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoalSetDto"];
+                };
+            };
+            /** @description A target out of range, a role named twice, or a role not in this chapter. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_current_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeCurrentDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_seen_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_dismiss_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissMemberNudgeDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such card is showing for the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_settings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberNudgeController_updateSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemberNudgeSettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberNudgeSettingsDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -15980,6 +26885,2086 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskStatusDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_ask_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskRequestDto"];
+            };
+        };
+        responses: {
+            /** @description The event stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_openingSuggestions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskSuggestionsDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_cleanDictation_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskDictationRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskDictationResponseDto"];
+                };
+            };
+            /** @description The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). The phone keeps the recogniser’s words. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskController_startDiagnostics_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskDiagnosticsDto"];
+                };
+            };
+            /** @description The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or the window is not offered to this chapter (`ai.ask.diagnostics.not_offered`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A window is already on (`ai.ask.diagnostics.already_on`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskDiagnosticsStopController_stopDiagnostics_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskDiagnosticsDto"];
+                };
+            };
+            /** @description The caller is not the chapter’s president (`ai.ask.diagnostics.president_only`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No window is open and none is offered to this chapter (`ai.ask.diagnostics.not_offered`). Answers the same whether or not AI is on. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActStatusDto"];
+                };
+            };
+            /** @description The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActController_act_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActResponseDto"];
+                };
+            };
+            /** @description The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActController_eventAudience_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActEventAudienceDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActResponseDto"];
+                };
+            };
+            /** @description The caller does not hold `ai:use` and `ai:act`, has not said yes on the AI sheet (`ai.consent.required`), or the president has Ask turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or the event was not found for this caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatCatchUpController_catchUp_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatCatchUpRequestDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatCatchUpDto"];
+                };
+            };
+            /** @description Not exactly one of `thread_root_id`, `since` and `unread`, or the channel is a direct message (`ai.catch_up.not_a_channel`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The caller cannot open the channel, has not said yes on the AI sheet (`ai.consent.required`), or the president has summaries turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or the channel or thread does not exist in this chapter. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskFeedbackController_rate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ask_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAskFeedbackDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskFeedbackDto"];
+                };
+            };
+            /** @description A reason sent with a thumbs up (`ai.ask.feedback.reason_needs_down`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskFeedbackController_clear_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ask_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskFeedbackController_signal_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ask_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskSignalDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskPostController_post_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskPostDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskPostOutcomeDto"];
+                };
+            };
+            /** @description The receipt was not issued to the caller for an answer (`ai.ask.post.receipt_invalid`), is older than a day or from before answers could be posted (`ai.ask.post.too_old`), is not an answer (`ai.ask.post.not_an_answer`), the answer read chat messages (`ai.ask.post.read_chat`) or followed earlier questions (`ai.ask.post.follow_up`), or it is already in this channel (`ai.ask.post.already_posted`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The caller cannot post in this channel, Ask is off for the chapter (`ai.chapter_off`), or the caller has not turned Frapp AI on (`ai.consent.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or the channel does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkFillController_fill_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkDraftFillResponseDto"];
+                };
+            };
+            /** @description The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Frapp AI turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or the draft is not the caller's or is gone. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Another fill of this draft is still running. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiReportController_policy_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiReportPolicyDto"];
+                };
+            };
+            /** @description AI is off on this server (`ai.not_available`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AiReportController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAiReportDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiReportOutcomeDto"];
+                };
+            };
+            /** @description A receipt (an Ask answer's or a summary's) that is too old (`ai.report.too_old`) or was not issued to the caller for this answer or summary (`ai.report.receipt_invalid`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off (`ai.not_available`), or there is nothing the caller can see to report (`ai.report.not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_request_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestMeetingDraftDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_discard_v1: {
+        parameters: {
+            query?: {
+                keep_notes?: boolean;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_use_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UseMeetingDraftDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDraftController_choose_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChooseMeetingDraftVersionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only this event. */
+                event_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNoteTakingDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNotesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_save_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveMeetingNotesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNotesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_add_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddMeetingNoteTakerDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNotesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AgendaSuggestionController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgendaSuggestionListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AgendaSuggestionController_refresh_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgendaSuggestionListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AgendaSuggestionController_add_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                suggestionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AddAgendaSuggestionResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AgendaSuggestionController_dismiss_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                suggestionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedController_ensure_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedLinkDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedController_reset_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarFeedLinkDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    CalendarFeedFetchController_fetch_v1: {
+        parameters: {
+            query: {
+                token: unknown;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No link has this token. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleCalendarStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_disconnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_connect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartGoogleCalendarConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleCalendarConnectDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleCalendarController_confirm_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmGoogleCalendarConnectDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleCalendarStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_connect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectGoogleDriveDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_disconnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_connectPicked_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectPickedGoogleDriveDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_openUp_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_syncNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveLinkController_info_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveLinkInfoDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveLinkController_add_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddGoogleDriveLinkDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveLinkController_syncNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_start_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartMeetingRecordingDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_remove_v1: {
+        parameters: {
+            query?: {
+                upload_id?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecordingController_uploaded_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmMeetingRecordingDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecorderController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecorderAvailabilityDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingMinutesRequestController_state_v1: {
+        parameters: {
+            query: {
+                /** @description The meeting’s event. */
+                event_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinutesRequestStateDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingMinutesRequestController_request_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MinutesRequestSentDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNoMinutesController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNoMinutesListDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNoMinutesController_mark_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNoMinutesController_unmark_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDateReminderController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDateReminderDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDateReminderController_set_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMeetingDateReminderDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDateReminderDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingDateReminderController_clear_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                reminderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BootstrapController_getBootstrap_v1: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. A name the API does not know is ignored, so a section a later API drops costs an older client only that section. */
+                include?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BootstrapDto"];
+                };
             };
             /** @description Error */
             default: {

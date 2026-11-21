@@ -1,0 +1,510 @@
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
+import {
+  CalendarFeedService,
+  calendarFeedTokenHash,
+} from './calendar-feed.service';
+import {
+  openAiText,
+  parseAiTextKeyRing,
+  sealAiText,
+} from '#domain/utils/ai-text-cipher';
+import type { ICalendarFeedRepository } from '#domain/repositories/calendar-feed.repository.interface';
+import type { CalendarFeed } from '#domain/entities/calendar-feed.entity';
+import type { Event } from '#domain/entities/event.entity';
+import { TaskStatus, type TaskView } from '#domain/entities/task.entity';
+import type { EventService } from '../event.service';
+import type { TaskService } from '../task.service';
+import type { RbacService } from '../rbac.service';
+
+const CHAPTER = 'chapter-1';
+const USER = 'user-1';
+const TOKEN = 'a'.repeat(43);
+const NOW = new Date('2026-11-12T19:00:00.000Z');
+const KEY = `k1:${Buffer.alloc(32, 7).toString('base64')}`;
+const PARSED_RING = parseAiTextKeyRing(KEY, 'CALENDAR_FEED_TOKEN_KEY');
+if (!PARSED_RING) throw new Error('test key ring did not parse');
+const RING = PARSED_RING;
+const CONTEXT = `calendar-feed:${CHAPTER}:${USER}`;
+
+/** A link made before tokens were sealed: its token stored in plain text. */
+function feedRow(overrides: Partial<CalendarFeed> = {}): CalendarFeed {
+  const token = overrides.token ?? TOKEN;
+  return {
+    id: 'feed-1',
+    user_id: USER,
+    chapter_id: CHAPTER,
+    token,
+    token_hash: calendarFeedTokenHash(token),
+    token_sealed: null,
+    created_at: '2026-11-12T00:00:00.000Z',
+    revoked_at: null,
+    ...overrides,
+  };
+}
+
+/** A link as it is stored now: hashed, and sealed so the menu can show it. */
+function sealedRow(token = TOKEN, overrides: Partial<CalendarFeed> = {}) {
+  return feedRow({
+    token: null,
+    token_hash: calendarFeedTokenHash(token),
+    token_sealed: sealAiText(RING, token, CONTEXT),
+    ...overrides,
+  });
+}
+
+function event(overrides: Partial<Event> = {}): Event {
+  return {
+    id: 'event-1',
+    chapter_id: CHAPTER,
+    name: 'Chapter meeting',
+    description: 'Bring your dues form',
+    location: 'House',
+    start_time: '2026-11-14T00:00:00.000Z',
+    end_time: '2026-11-14T01:00:00.000Z',
+    point_value: 10,
+    is_mandatory: true,
+    recurrence_rule: null,
+    parent_event_id: null,
+    required_role_ids: null,
+    optional_role_ids: null,
+    excluded_role_ids: null,
+    others_invited: null,
+    notes: 'Officer-only notes',
+    check_in_zone: null,
+    check_in_zone_name: null,
+    check_in_opens_minutes: 15,
+    event_type_id: null,
+    agenda: [],
+    attachments: [],
+    created_by: USER,
+    created_at: '2026-11-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function task(overrides: Partial<TaskView> = {}): TaskView {
+  return {
+    id: 'task-1',
+    chapter_id: CHAPTER,
+    title: 'Clean the kitchen',
+    description: null,
+    assignee_id: USER,
+    created_by: 'officer',
+    due_date: '2026-11-30',
+    due_at: null,
+    status: TaskStatus.TODO,
+    stored_status: TaskStatus.TODO,
+    point_reward: 5,
+    points_awarded: false,
+    completed_at: null,
+    completed_by: null,
+    confirmed_at: null,
+    sent_back_at: null,
+    proof_kind: 'none',
+    proof_link: null,
+    sent_back_reason: null,
+    completion_note: null,
+    series_id: null,
+    occurrence_date: null,
+    group_id: null,
+    meeting_id: null,
+    followed_by: null,
+    created_at: '2026-11-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+interface SetupOptions {
+  apiUrl?: string;
+  key?: string;
+  feed?: CalendarFeed | null;
+  member?: { role_ids: string[] } | null;
+  canRead?: boolean;
+  enabledModules?: Record<string, boolean> | null;
+  events?: Event[];
+  tasks?: TaskView[];
+}
+
+function setup({
+  apiUrl = 'https://api.frapp.live',
+  key = KEY,
+  feed = sealedRow(),
+  member = { role_ids: ['brothers'] },
+  canRead = true,
+  enabledModules = null,
+  events = [event()],
+  tasks = [task()],
+}: SetupOptions = {}) {
+  const feeds: jest.Mocked<ICalendarFeedRepository> = {
+    findByTokenHash: jest.fn().mockResolvedValue(feed),
+    findLive: jest.fn().mockResolvedValue(null),
+    create: jest
+      .fn()
+      .mockImplementation(async (data) =>
+        feedRow({ ...data, token: null, id: 'new' }),
+      ),
+    revokeLive: jest.fn().mockResolvedValue(undefined),
+    sealLegacy: jest.fn().mockResolvedValue(undefined),
+    findLegacy: jest.fn().mockResolvedValue([]),
+  };
+  const chapters = {
+    findById: jest.fn().mockResolvedValue({
+      id: CHAPTER,
+      name: 'Phi Gamma Delta',
+      enabled_modules: enabledModules,
+    }),
+  };
+  const members = {
+    findByUserAndChapter: jest.fn().mockResolvedValue(member),
+  };
+  const rbac = {
+    memberHasAnyPermission: jest.fn().mockResolvedValue(canRead),
+    getAlumniRoleId: jest.fn().mockResolvedValue('alumni'),
+  };
+  const eventService = {
+    findByChapter: jest.fn().mockResolvedValue(events),
+  };
+  const taskService = { list: jest.fn().mockResolvedValue(tasks) };
+  const config = {
+    get: (name: string) =>
+      ({
+        API_URL: apiUrl,
+        APP_URL: 'https://app.frapp.live',
+        CALENDAR_FEED_TOKEN_KEY: key,
+      })[name],
+  } as unknown as ConfigService;
+
+  const service = new CalendarFeedService(
+    feeds,
+    chapters as never,
+    members as never,
+    rbac as unknown as RbacService,
+    eventService as unknown as EventService,
+    taskService as unknown as TaskService,
+    config,
+  );
+  return { service, feeds, eventService, taskService, rbac };
+}
+
+describe('CalendarFeedService.ensure / reset', () => {
+  it('returns the live link, opened from its sealed copy, without making another', async () => {
+    const { service, feeds } = setup();
+    feeds.findLive.mockResolvedValue(sealedRow());
+    const link = await service.ensure(CHAPTER, USER);
+    expect(link).toEqual({
+      url: `https://api.frapp.live/v1/calendar-feed/feed.ics?token=${TOKEN}`,
+      webcal_url: `webcal://api.frapp.live/v1/calendar-feed/feed.ics?token=${TOKEN}`,
+    });
+    expect(feeds.create).not.toHaveBeenCalled();
+    expect(feeds.sealLegacy).not.toHaveBeenCalled();
+  });
+
+  it('makes a link with a 256-bit url-safe token, stored only hashed and sealed', async () => {
+    const { service, feeds } = setup();
+    const link = await service.ensure(CHAPTER, USER);
+    const token = new URL(link.url).searchParams.get('token') ?? '';
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const stored = feeds.create.mock.calls[0][0];
+    expect(Object.keys(stored).sort()).toEqual([
+      'chapter_id',
+      'token_hash',
+      'token_sealed',
+      'user_id',
+    ]);
+    expect(stored.token_hash).toBe(calendarFeedTokenHash(token));
+    expect(stored.token_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.token_sealed).not.toContain(token);
+    expect(openAiText(RING, stored.token_sealed, CONTEXT)).toBe(token);
+  });
+
+  it('seals a legacy link when it is shown, and still shows it', async () => {
+    const { service, feeds } = setup();
+    feeds.findLive.mockResolvedValue(feedRow());
+    const link = await service.ensure(CHAPTER, USER);
+    expect(link.url).toContain(`token=${TOKEN}`);
+    const [id, sealed] = feeds.sealLegacy.mock.calls[0];
+    expect(id).toBe('feed-1');
+    expect(openAiText(RING, sealed, CONTEXT)).toBe(TOKEN);
+  });
+
+  it("won't open a sealed copy moved onto another member's link, and reissues it", async () => {
+    const { service, feeds } = setup();
+    feeds.findLive.mockResolvedValueOnce(
+      sealedRow(TOKEN, { user_id: 'someone-else' }),
+    );
+    const link = await service.ensure(CHAPTER, 'someone-else');
+    expect(link.url).not.toContain(`token=${TOKEN}`);
+    expect(feeds.revokeLive).toHaveBeenCalledWith(CHAPTER, 'someone-else');
+    expect(feeds.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('reissues a link sealed under a key that was dropped, instead of failing every time', async () => {
+    const { service, feeds } = setup({
+      key: `k2:${Buffer.alloc(32, 9).toString('base64')}`,
+    });
+    feeds.findLive.mockResolvedValueOnce(sealedRow());
+    const link = await service.ensure(CHAPTER, USER);
+    expect(link.url).not.toContain(`token=${TOKEN}`);
+    expect(feeds.revokeLive.mock.invocationCallOrder[0]).toBeLessThan(
+      feeds.create.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('without CALENDAR_FEED_TOKEN_KEY, makes no new link and shows no sealed one', async () => {
+    const { service, feeds } = setup({ key: '' });
+    await expect(service.ensure(CHAPTER, USER)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    feeds.findLive.mockResolvedValue(sealedRow());
+    await expect(service.ensure(CHAPTER, USER)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(feeds.create).not.toHaveBeenCalled();
+  });
+
+  it('without CALENDAR_FEED_TOKEN_KEY, still shows a link from before sealing', async () => {
+    const { service, feeds } = setup({ key: '' });
+    feeds.findLive.mockResolvedValue(feedRow());
+    const link = await service.ensure(CHAPTER, USER);
+    expect(link.url).toContain(`token=${TOKEN}`);
+    expect(feeds.sealLegacy).not.toHaveBeenCalled();
+  });
+
+  it('without CALENDAR_FEED_TOKEN_KEY, reset still cuts the old link off', async () => {
+    const { service, feeds } = setup({ key: '' });
+    await expect(service.reset(CHAPTER, USER)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(feeds.revokeLive).toHaveBeenCalledWith(CHAPTER, USER);
+    expect(feeds.create).not.toHaveBeenCalled();
+  });
+
+  it('hands back the link a racing request made, opened from its sealed copy', async () => {
+    const { service, feeds } = setup();
+    feeds.create.mockRejectedValue(new Error('duplicate key'));
+    feeds.findLive
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(sealedRow('b'.repeat(43)));
+    const link = await service.ensure(CHAPTER, USER);
+    expect(link.url).toContain(`token=${'b'.repeat(43)}`);
+  });
+
+  it('drops a stray /v1 from API_URL', async () => {
+    const { service } = setup({ apiUrl: 'https://api.frapp.live/v1/' });
+    const link = await service.ensure(CHAPTER, USER);
+    expect(
+      link.url.startsWith('https://api.frapp.live/v1/calendar-feed/'),
+    ).toBe(true);
+  });
+
+  it('refuses without API_URL rather than hand out a dead link', async () => {
+    const { service, feeds } = setup({ apiUrl: '' });
+    await expect(service.ensure(CHAPTER, USER)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(feeds.create).not.toHaveBeenCalled();
+  });
+
+  it('reset hands back the link a racing request made', async () => {
+    const { service, feeds } = setup();
+    feeds.create.mockRejectedValue(new Error('duplicate key'));
+    feeds.findLive
+      .mockResolvedValueOnce(sealedRow())
+      .mockResolvedValueOnce(sealedRow('b'.repeat(43)));
+    const link = await service.reset(CHAPTER, USER);
+    expect(link.url).toContain(`token=${'b'.repeat(43)}`);
+  });
+
+  it('reset revokes the live link before making a new one', async () => {
+    const { service, feeds } = setup();
+    await service.reset(CHAPTER, USER);
+    expect(feeds.revokeLive).toHaveBeenCalledWith(CHAPTER, USER);
+    expect(feeds.revokeLive.mock.invocationCallOrder[0]).toBeLessThan(
+      feeds.create.mock.invocationCallOrder[0],
+    );
+  });
+});
+
+describe('CalendarFeedService.fetch', () => {
+  it('404s an unknown token', async () => {
+    const { service } = setup({ feed: null });
+    await expect(service.fetch(TOKEN, NOW)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('looks a link up by the hash of its token', async () => {
+    const { service, feeds } = setup();
+    await service.fetch(TOKEN, NOW);
+    expect(feeds.findByTokenHash).toHaveBeenCalledWith(
+      calendarFeedTokenHash(TOKEN),
+    );
+    expect(feeds.sealLegacy).not.toHaveBeenCalled();
+  });
+
+  it('seals a legacy link on fetch and serves it', async () => {
+    const { service, feeds } = setup({ feed: feedRow() });
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).toContain('BEGIN:VEVENT');
+    const [, sealed] = feeds.sealLegacy.mock.calls[0];
+    expect(openAiText(RING, sealed, CONTEXT)).toBe(TOKEN);
+  });
+
+  it('still serves a legacy link when sealing it fails', async () => {
+    const { service, feeds } = setup({ feed: feedRow() });
+    feeds.sealLegacy.mockRejectedValue(new Error('db down'));
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).toContain('BEGIN:VEVENT');
+  });
+
+  it('serves links already handed out without CALENDAR_FEED_TOKEN_KEY', async () => {
+    const { service, feeds } = setup({ key: '', feed: feedRow() });
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).toContain('BEGIN:VEVENT');
+    expect(feeds.sealLegacy).not.toHaveBeenCalled();
+  });
+
+  it('serves the member-visible events and open tasks, linked back', async () => {
+    const { service, eventService, taskService } = setup({
+      tasks: [
+        task(),
+        task({ id: 'done', status: TaskStatus.COMPLETED, title: 'Done one' }),
+        task({
+          id: 'timed',
+          title: 'Turn in the form',
+          due_at: '2026-11-20T22:00:00.000Z',
+        }),
+      ],
+    });
+    const ics = await service.fetch(TOKEN, NOW);
+
+    // The app's own read rules, as this member.
+    expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, USER, {
+      endsAfter: '2026-09-13T19:00:00.000Z',
+      startsBefore: '2027-11-13T19:00:00.000Z',
+    });
+    expect(taskService.list).toHaveBeenCalledWith(CHAPTER, USER, false, {
+      confirmed: false,
+      limit: 500,
+    });
+
+    expect(ics).toContain('X-WR-CALNAME:Phi Gamma Delta (Frapp)');
+    expect(ics).toContain('UID:event-event-1@frapp.live');
+    expect(ics).toContain('URL:https://app.frapp.live/events?event=event-1');
+    const unfolded = ics.replace(/\r\n /g, '');
+    expect(unfolded).toContain(
+      'DESCRIPTION:Open in Frapp: https://app.frapp.live/events?event=event-1\\n\\nRequired\\n\\nBring your dues form',
+    );
+    expect(ics).toContain('SUMMARY:Due: Clean the kitchen');
+    expect(ics).toContain('DTSTART;VALUE=DATE:20261130');
+    expect(ics).toContain('DTSTART:20261120T220000Z');
+    // A moment with no length has no DTEND, which must follow DTSTART.
+    expect(ics).not.toContain('DTEND:20261120T220000Z');
+    expect(ics).not.toContain('Done one');
+  });
+
+  it('keeps points and meeting notes in Frapp', async () => {
+    const { service } = setup();
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).not.toContain('Officer-only notes');
+    expect(ics).not.toMatch(/points?/i);
+  });
+
+  it('does not mark an optional event Required', async () => {
+    const { service } = setup({ events: [event({ is_mandatory: false })] });
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).not.toContain('Required');
+  });
+
+  it.each([
+    [
+      'the link was reset',
+      { feed: sealedRow(TOKEN, { revoked_at: NOW.toISOString() }) },
+    ],
+    ['the member left the chapter', { member: null }],
+    ['the member lost members:view', { canRead: false }],
+  ])('serves an empty calendar when %s', async (_why, options) => {
+    const { service, eventService, taskService } = setup(options);
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).toContain('BEGIN:VCALENDAR');
+    expect(ics).not.toContain('BEGIN:VEVENT');
+    expect(eventService.findByChapter).not.toHaveBeenCalled();
+    expect(taskService.list).not.toHaveBeenCalled();
+  });
+
+  it('leaves out events when the chapter switched them off', async () => {
+    const { service, eventService, taskService } = setup({
+      enabledModules: { events: false },
+    });
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(eventService.findByChapter).not.toHaveBeenCalled();
+    expect(taskService.list).toHaveBeenCalled();
+    expect(ics).not.toContain('UID:event-');
+  });
+
+  it('renders a link once per window, however often it is fetched', async () => {
+    const { service, feeds } = setup();
+    await service.fetch(TOKEN, NOW);
+    await service.fetch(TOKEN, new Date(NOW.getTime() + 60_000));
+    expect(feeds.findByTokenHash).toHaveBeenCalledTimes(1);
+    await service.fetch(TOKEN, new Date(NOW.getTime() + 6 * 60_000));
+    expect(feeds.findByTokenHash).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops serving the old render once the link is reset', async () => {
+    const { service, feeds } = setup();
+    await service.fetch(TOKEN, NOW);
+    feeds.findLive.mockResolvedValue(sealedRow());
+    await service.reset(CHAPTER, USER);
+    feeds.findByTokenHash.mockResolvedValue(
+      sealedRow(TOKEN, { revoked_at: NOW.toISOString() }),
+    );
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(ics).not.toContain('BEGIN:VEVENT');
+  });
+
+  it('leaves out a module the chapter switched off', async () => {
+    const { service, eventService, taskService } = setup({
+      enabledModules: { tasks: false },
+    });
+    const ics = await service.fetch(TOKEN, NOW);
+    expect(eventService.findByChapter).toHaveBeenCalled();
+    expect(taskService.list).not.toHaveBeenCalled();
+    expect(ics).not.toContain('Due:');
+  });
+});
+
+describe('CalendarFeedService boot pass', () => {
+  it('seals every link from before sealing, batch by batch', async () => {
+    const { service, feeds } = setup();
+    const legacy = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        feedRow({ id: `legacy-${i}`, token: `${i}`.padStart(43, 'x') }),
+      );
+    feeds.findLegacy
+      .mockResolvedValueOnce(legacy(100))
+      .mockResolvedValueOnce(legacy(3));
+    const sealed = await service.sealAllLegacy(RING);
+    expect(sealed).toBe(103);
+    expect(feeds.findLegacy).toHaveBeenCalledTimes(2);
+    const [id, envelope] = feeds.sealLegacy.mock.calls[0];
+    expect(id).toBe('legacy-0');
+    expect(openAiText(RING, envelope, CONTEXT)).toBe('0'.padStart(43, 'x'));
+  });
+
+  it('does nothing at boot without CALENDAR_FEED_TOKEN_KEY', () => {
+    const { service, feeds } = setup({ key: '' });
+    service.onApplicationBootstrap();
+    expect(feeds.findLegacy).not.toHaveBeenCalled();
+  });
+
+  it('stops reading after a bounded number of batches', async () => {
+    const { service, feeds } = setup();
+    feeds.findLegacy.mockResolvedValue(
+      Array.from({ length: 100 }, (_, i) => feedRow({ id: `stuck-${i}` })),
+    );
+    await service.sealAllLegacy(RING);
+    expect(feeds.findLegacy).toHaveBeenCalledTimes(500);
+  });
+});

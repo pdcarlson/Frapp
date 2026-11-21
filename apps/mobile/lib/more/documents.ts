@@ -8,6 +8,8 @@
  */
 import { formatDay } from "@repo/formatting";
 import {
+  effectiveLine,
+  isDriveCopy,
   uploadedLine,
   type LibraryDocument,
 } from "@repo/hooks/document-library";
@@ -23,6 +25,8 @@ export interface MobileDocument {
   description: string | null;
   folder: string | null;
   document_type: string | null;
+  /** The day it takes effect, when an officer set one (#5207). */
+  effective_date: string | null;
   uploaded_by: string | null;
   created_at: string;
   /** For the File type filter (`fileKind`); null on older rows. */
@@ -30,6 +34,17 @@ export interface MobileDocument {
   storage_path: string | null;
   /** When an officer pinned it for the whole chapter, or null (#3934). */
   pinned_at: string | null;
+  /**
+   * The Google Drive file this is a copy of, or null for an upload (#5157).
+   * Drive owns a copy: the row says so and offers no Delete.
+   */
+  drive_file_id: string | null;
+  /**
+   * The file's own who-can-see list (#5216), left out when it follows its
+   * folder. The API only sends what this member may see, so it is only
+   * ever drawn as a lock.
+   */
+  who_can_see?: string[];
 }
 
 export interface DocumentFolder {
@@ -37,6 +52,16 @@ export interface DocumentFolder {
   name: string;
   /** When an officer pinned it for the whole chapter, or null (#3934). */
   pinned_at?: string | null;
+  /** Who can see it (#5216), left out when everyone can. */
+  who_can_see?: string[];
+}
+
+/** A list on a row, or `undefined` for none (everyone, or Same as folder). */
+function accessList(row: Record<string, unknown>): string[] | undefined {
+  const list = row.who_can_see;
+  return Array.isArray(list)
+    ? list.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
 }
 
 /**
@@ -56,11 +81,14 @@ export function selectDocuments(data: unknown): MobileDocument[] {
         description: str(row, "description"),
         folder: str(row, "folder"),
         document_type: str(row, "document_type"),
+        effective_date: str(row, "effective_date"),
         uploaded_by: str(row, "uploaded_by"),
         created_at: str(row, "created_at") ?? "",
         content_type: str(row, "content_type"),
         storage_path: str(row, "storage_path"),
         pinned_at: str(row, "pinned_at"),
+        drive_file_id: str(row, "drive_file_id"),
+        ...(accessList(row) ? { who_can_see: accessList(row) } : {}),
       };
     })
     .filter((row): row is MobileDocument => !!row);
@@ -68,8 +96,9 @@ export function selectDocuments(data: unknown): MobileDocument[] {
 
 /**
  * The row's second line, web's order without its free-text tail:
- * `"Uploaded Aug 12 by Jane Doe · Governance · Bylaws"`, dropping whatever is
- * unknown. An unparseable date is left off rather than drawn as "Invalid Date".
+ * `"Uploaded August 12 by Jane Doe · Governance · Bylaws · Effective September 1"`,
+ * dropping whatever is unknown (the effective day since 2026-11-19, as web's
+ * row says it). An unparseable date is left off rather than drawn as "Invalid Date".
  * The description is searched but not drawn: a phone row has no room to
  * truncate it the way web's single line does.
  */
@@ -77,10 +106,12 @@ export function documentMeta(
   row: LibraryDocument<MobileDocument>,
   now: Date = new Date(),
 ): string | null {
+  const uploadedDay = formatDay(row.doc.created_at || null, now);
   return metaLine([
-    uploadedLine(formatDay(row.doc.created_at || null, now), row.uploader),
+    uploadedLine(uploadedDay, row.uploader, isDriveCopy(row.doc)),
     row.doc.folder,
     row.doc.document_type,
+    effectiveLine(formatDay(row.doc.effective_date, now), uploadedDay),
   ]);
 }
 
@@ -102,11 +133,17 @@ export function selectDocumentFolders(data: unknown): DocumentFolder[] {
         name,
         pinned_at: str(row, "pinned_at"),
         sort: num(row, "sort_order") ?? 0,
+        who_can_see: accessList(row),
       };
     })
     .filter((row): row is NonNullable<typeof row> => !!row)
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
-    .map(({ id, name, pinned_at }) => ({ id, name, pinned_at }));
+    .map(({ id, name, pinned_at, who_can_see }) => ({
+      id,
+      name,
+      pinned_at,
+      ...(who_can_see ? { who_can_see } : {}),
+    }));
 }
 
 /**

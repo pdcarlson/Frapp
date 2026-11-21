@@ -1,7 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import React from "react";
 
 const putSignedUpload = vi.hoisted(() => vi.fn());
 vi.mock("./put-signed-upload", async (importActual) => ({
@@ -18,7 +16,7 @@ import {
   useSetChannelBackground,
   useSetChapterChatBackground,
 } from "./use-chat-background";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const ok = (data: unknown) => ({
   data,
@@ -27,20 +25,8 @@ const ok = (data: unknown) => ({
 });
 
 function wrapper(client: unknown) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        client as ReturnType<typeof import("@repo/api-sdk").createFrappClient>
-      }
-      chapterId="chapter-1"
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  return Wrapper;
+  const queryClient = createTestQueryClient();
+  return createHookWrapper({ client, queryClient, chapterId: "chapter-1" });
 }
 
 /**
@@ -264,12 +250,12 @@ describe("chat background hooks", () => {
           .mockResolvedValue(
             failed(
               400,
-              "There is no channel you can post in to announce a photo background in",
+              "A photo background is announced in a channel every member can post in. Mark one as the default channel first.",
             ),
           ),
       };
       expect(await failureOf(client, { background: "photo", photo })).toMatch(
-        /no channel your role can post in/,
+        /Mark one as the default channel first/,
       );
     });
 

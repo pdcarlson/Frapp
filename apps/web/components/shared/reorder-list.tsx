@@ -5,23 +5,7 @@ import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
 import { IconButton } from "@/components/ui/icon-button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
-
-/** `items` with the entry at `from` moved to `to`; the input is not changed. */
-export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
-  const next = [...items];
-  if (
-    from === to ||
-    from < 0 ||
-    to < 0 ||
-    from >= next.length ||
-    to >= next.length
-  ) {
-    return next;
-  }
-  const [moved] = next.splice(from, 1);
-  next.splice(to, 0, moved as T);
-  return next;
-}
+import { reorderEventEntry } from "@repo/validation";
 
 type ReorderListProps<T> = {
   items: readonly T[];
@@ -101,7 +85,7 @@ export function ReorderList<T>({
     const item = items[from];
     if (item === undefined) return;
     if (control) refocus.current = { id: getId(item), control };
-    onReorder(moveItem(items, from, to));
+    onReorder(reorderEventEntry(items, from, to));
     setAnnouncement(`${getLabel(item)}, ${to + 1} of ${items.length}`);
   }
 

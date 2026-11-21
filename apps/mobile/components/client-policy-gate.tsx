@@ -12,7 +12,9 @@ import * as Linking from "expo-linking";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { useClientPolicy } from "@/lib/client-policy";
+import { launchGate } from "@/lib/launch/launch-gate";
 import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
+import { OverlayLayer } from "@/components/overlay-layer";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** `spec/ui/design-system/writing.md` § Update required (mobile, global). */
@@ -36,6 +38,10 @@ export const UPDATE_REQUIRED_COPY = {
  * open sheet over it; `app/_layout.tsx` mounts it just outside that provider.
  * While it blocks, the app underneath stays mounted (so push and auth keep
  * their state) but takes no touches and is hidden from screen readers.
+ *
+ * The app's overlay layer (`overlay-layer.tsx`) is mounted here, inside what
+ * the prompt covers, so no overlay drawn there can paint over the prompt or
+ * take a touch it blocks (patterns.md § Overlays).
  */
 export function ClientPolicyGate({ children }: { children: ReactNode }) {
   const { updateRequired, updateUrl } = useClientPolicy();
@@ -53,7 +59,7 @@ export function ClientPolicyGate({ children }: { children: ReactNode }) {
           updateRequired ? "no-hide-descendants" : "auto"
         }
       >
-        {children}
+        <OverlayLayer>{children}</OverlayLayer>
       </View>
       {updateRequired ? <UpdateRequiredScreen updateUrl={updateUrl} /> : null}
     </View>
@@ -67,6 +73,9 @@ function UpdateRequiredScreen({ updateUrl }: { updateUrl: string | null }) {
   const [linkFailed, setLinkFailed] = useState(false);
 
   useEffect(() => {
+    // The prompt is what the member must see, so a launch logo still up
+    // waiting on the screen behind it gives way at once (#5449).
+    launchGate.lift("now");
     // A keyboard open underneath would otherwise stay up over the prompt.
     Keyboard.dismiss();
     AccessibilityInfo.announceForAccessibility(UPDATE_REQUIRED_COPY.title);
@@ -88,7 +97,9 @@ function UpdateRequiredScreen({ updateUrl }: { updateUrl: string | null }) {
       // The line below speaks through its live region on Android. VoiceOver
       // has no live regions and focus stays on the button, so say it on iOS.
       if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility(UPDATE_REQUIRED_COPY.linkFailed);
+        AccessibilityInfo.announceForAccessibility(
+          UPDATE_REQUIRED_COPY.linkFailed,
+        );
       }
     }
   }

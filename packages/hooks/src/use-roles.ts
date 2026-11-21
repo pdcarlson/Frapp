@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { withHereMention } from "@repo/validation";
 
 /**
  * Role write bodies, read from the contract rather than restated: `color` is a
@@ -12,18 +13,18 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 export type CreateRoleBody = components["schemas"]["CreateRoleDto"];
 export type UpdateRoleBody = components["schemas"]["UpdateRoleDto"];
 
-export function useRoles() {
+export function useRoles(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/roles");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/roles", { signal });
       if (error) throw error;
       return data;
     },
     staleTime: 60_000,
-    enabled: !!chapterId,
+    enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }
 
@@ -32,8 +33,11 @@ export function usePermissionsCatalog() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId, "permissions-catalog"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/roles/permissions-catalog");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET(
+        "/v1/roles/permissions-catalog",
+        { signal },
+      );
       if (error) throw error;
       return data;
     },
@@ -48,14 +52,21 @@ export function useCreateRole() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["roles", "create-role"],
-    mutationFn: async (body: CreateRoleBody) => {
+    // Answers the new role's id, so a caller can open its page (#5736). The
+    // contract leaves `POST /v1/roles`' body untyped, so it is read here once.
+    mutationFn: async (
+      body: CreateRoleBody,
+    ): Promise<{ id: string | null }> => {
       const { data, error } = await client.POST("/v1/roles", { body });
       if (error) throw error;
-      return data;
+      const id = (data as { id?: unknown } | undefined)?.id;
+      return { id: typeof id === "string" ? id : null };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
-    },
+    // Returned, so `mutateAsync` resolves once the list holds the new role:
+    // a caller that opens its page straight after would otherwise find it
+    // missing and read "This role is gone" (#5736).
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["roles", chapterId] }),
   });
 }
 
@@ -105,17 +116,13 @@ export function useDeleteRole() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
-      // The roster's `role_color` is computed from role colors and order
-      // (#3485), so a role edit or delete repaints chat names now, not after
-      // the roster's 60s staleTime.
-      queryClient.invalidateQueries({
-        queryKey: ["members", chapterId, "roster"],
-      });
-      // A role's permissions decide who reads a ROLE_GATED channel, and its
-      // order ranks the channel member list (#3536).
-      queryClient.invalidateQueries({
-        queryKey: ["members", chapterId, "channel"],
-      });
+      // Every members query (#4547): the delete takes the role off its
+      // holders' `role_ids` and may give them Everyone, so the Members list
+      // must not keep sending the deleted id back (the API refuses an id that
+      // names no role and the member no longer holds). The prefix also covers
+      // the roster, whose `role_color` comes from role colors and order
+      // (#3485), and the channel member list a role's permissions gate (#3536).
+      queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
       // Deleting a role can clear `chapters.default_invite_role_id` server-side
       // via `on delete set null` (#422). The config query has a 5-minute
       // staleTime, so without this the Settings card keeps showing the deleted
@@ -162,9 +169,10 @@ export function usePresidencyClaimStatus(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId, "presidency-claim-status"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/roles/presidency-claim-status",
+        { signal },
       );
       if (error) throw error;
       return data;
@@ -198,15 +206,16 @@ export function useClaimPresidency() {
   });
 }
 
-/** A role as the caller's `@`-mention picker offers it. */
-export type ChatMentionRole = components["schemas"]["MentionRoleDto"];
-
 /**
  * The chapter roles the caller may `@`, for both composers' mention pickers
  * (2026-11-06, `GET /v1/channels/mention-roles`). Each says whether the caller
  * may ping it: the server decides, and the same rule decides who a sent
  * `@Role` reaches, so the picker never offers a ping that would land on
  * nobody. Membership is not sent; the server expands the role on send.
+ *
+ * `@here` rides after `@everyone` (`withHereMention`, 2026-11-12): it is no
+ * role, so the API leaves it out, and it follows `@everyone`'s switch, which
+ * is the rule the server applies when the message lands.
  *
  * Keyed under `["roles", chapterId, …]` so the role mutations, which
  * invalidate `["roles", chapterId]`, refresh it. A member's role changing
@@ -217,10 +226,12 @@ export function useMentionRoles() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId, "mention-roles"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/mention-roles");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/mention-roles", {
+        signal,
+      });
       if (error) throw error;
-      return data;
+      return withHereMention(data);
     },
     staleTime: 60_000,
     enabled: !!chapterId,

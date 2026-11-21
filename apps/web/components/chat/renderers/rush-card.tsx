@@ -136,7 +136,7 @@ export function RushCard({ message, isConfirmed }: RushCardProps) {
         <span className="font-semibold">{payload.added_by_name}</span>
       </div>
       {tally ? (
-        <div className="mt-1 text-caption text-muted-foreground">{tally}</div>
+        <div className="mt-2 text-caption text-muted-foreground">{tally}</div>
       ) : null}
       {controls.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-2">

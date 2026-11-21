@@ -19,7 +19,8 @@ import { createQueryErrorReporter } from "@repo/observability";
  * is what an API outage, or a build pointed at the wrong API, looks like from
  * the device. So:
  * - a fetch that fails before the monitor reads offline is reported as a
- *   `network` failure, once per root per interval. That covers the failures
+ *   `network` failure, once per root per interval, all of them in one
+ *   Sentry issue per kind (#3746). That covers the failures
  *   at launch, before the first probes have answered;
  * - once it reads offline, status-less failures are not reported until it
  *   reads online again, even when the device's link is up. The API's own

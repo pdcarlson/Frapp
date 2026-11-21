@@ -47,6 +47,45 @@ export interface BackworkProfessor {
   created_at: string;
 }
 
+/**
+ * A draft's unpublished metadata (#5208), in the confirm body's shape. Names,
+ * not ids: a department or professor is created only when the draft is
+ * published, so a half-typed name never shows up in another member's filters.
+ */
+export interface BackworkDraftFields {
+  title?: string | null;
+  department_code?: string | null;
+  course_number?: string | null;
+  course_name?: string | null;
+  professor_name?: string | null;
+  year?: number | null;
+  semester?: Semester | null;
+  assignment_type?: AssignmentType | null;
+  assignment_number?: number | null;
+  document_variant?: DocumentVariant | null;
+  tags?: string[] | null;
+  /**
+   * The fields the upload-time AI fill set (#5233) and nobody has edited
+   * since, so the review table can mark them for checking.
+   */
+  ai_filled?: string[];
+  /** How the last AI fill ended, when one ran. */
+  ai_fill?: BackworkAiFillOutcome;
+  /**
+   * Saved with its suggested boxes without anyone looking at its pages (bulk
+   * upload's "Save the rest", #5252). Until the uploader checks them, the AI
+   * fill doesn't read the draft and it can't be published.
+   */
+  pages_unchecked?: true;
+}
+
+/**
+ * - `filled`: at least one field was set.
+ * - `nothing_found`: the file was read and nothing new could be told.
+ * - `unreadable`: the file has too little text to read, likely a scan.
+ */
+export type BackworkAiFillOutcome = 'filled' | 'nothing_found' | 'unreadable';
+
 export interface BackworkResource {
   id: string;
   chapter_id: string;
@@ -65,4 +104,17 @@ export interface BackworkResource {
   is_redacted: boolean;
   tags: string[];
   created_at: string;
+  /**
+   * Not null while the row is a draft (#5208): visible only to its uploader,
+   * left out of every chapter-wide read. Null once published.
+   */
+  draft_fields: BackworkDraftFields | null;
+  /**
+   * Set while an AI fill is reading this draft's file (#5233), so a second
+   * fill of the same draft waits its turn; null otherwise. Optional in the
+   * type, but `20261117214944` must be pushed before the API that uses it:
+   * fills claim it, and backwork search selects it by name
+   * (`BACKWORK_SEARCH_COLUMNS`), so both fail against a database without it.
+   */
+  ai_fill_started_at?: string | null;
 }

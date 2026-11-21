@@ -67,6 +67,7 @@ function fakeModule() {
       .mockResolvedValue([]),
     setNotificationHandler: vi.fn(),
     setBadgeCountAsync: vi.fn().mockResolvedValue(true),
+    setNotificationCategoryAsync: vi.fn().mockResolvedValue({}),
   };
 }
 
@@ -307,6 +308,44 @@ describe("push isolation module", () => {
     expect(mod.clearLastNotificationResponse).not.toHaveBeenCalled();
   });
 
+  // #4686: the excuse push's Approve and Decline, both opening the app.
+  it("registers the excuse push's actions, needing no EAS project id", async () => {
+    constantsState.projectId = undefined;
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+
+    await push.registerPushActionCategories();
+
+    expect(mod.setNotificationCategoryAsync).toHaveBeenCalledWith(
+      "event-excuse",
+      [
+        {
+          identifier: "excuse-approve",
+          buttonTitle: "Approve",
+          options: { opensAppToForeground: true },
+        },
+        {
+          identifier: "excuse-decline",
+          buttonTitle: "Decline",
+          options: { opensAppToForeground: true, isDestructive: true },
+        },
+      ],
+    );
+  });
+
+  it("keeps going when a category fails to register", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const push = await importPush();
+    const mod = fakeModule();
+    mod.setNotificationCategoryAsync.mockRejectedValue(new Error("nope"));
+    push.setPushLoaderForTests(() => mod);
+
+    await expect(push.registerPushActionCategories()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("sets the badge count, needing no EAS project id", async () => {
     // No projectId configured — mirrors `has no token to register` above.
     // Badge setting must still work, since it never leaves the device.
@@ -333,6 +372,58 @@ describe("push isolation module", () => {
     push.setPushLoaderForTests(() => null);
 
     await expect(push.setBadgeCount(3)).resolves.toBeUndefined();
+  });
+
+  describe("setBadgeCount on Android (#4011)", () => {
+    async function onAndroid<T>(run: () => Promise<T>): Promise<T> {
+      const { Platform } = await import("react-native");
+      const platform = Platform as { OS: string };
+      const original = platform.OS;
+      platform.OS = "android";
+      try {
+        return await run();
+      } finally {
+        platform.OS = original;
+      }
+    }
+
+    it("makes no native call for a zero badge, which would cancel the whole tray", async () => {
+      // expo-notifications' Android BadgeHelper answers 0 with
+      // NotificationManager.cancelAll(): unread pushes would vanish on launch.
+      const push = await importPush();
+      const mod = fakeModule();
+      push.setPushLoaderForTests(() => mod);
+
+      await onAndroid(() => push.setBadgeCount(0));
+      await onAndroid(() => push.setBadgeCount(-2));
+      expect(mod.setBadgeCountAsync).not.toHaveBeenCalled();
+    });
+
+    it("still sets a non-zero badge", async () => {
+      const push = await importPush();
+      const mod = fakeModule();
+      push.setPushLoaderForTests(() => mod);
+
+      await onAndroid(() => push.setBadgeCount(3));
+      expect(mod.setBadgeCountAsync).toHaveBeenCalledWith(3);
+    });
+
+    it("still zeroes the badge on iOS, where it only sets the number", async () => {
+      const { Platform } = await import("react-native");
+      const platform = Platform as { OS: string };
+      const original = platform.OS;
+      platform.OS = "ios";
+      try {
+        const push = await importPush();
+        const mod = fakeModule();
+        push.setPushLoaderForTests(() => mod);
+
+        await push.setBadgeCount(0);
+        expect(mod.setBadgeCountAsync).toHaveBeenCalledWith(0);
+      } finally {
+        platform.OS = original;
+      }
+    });
   });
 
   it("push.ts never imports the package statically, and never reaches for the device token", () => {
@@ -475,6 +566,58 @@ describe("clearReadChatNotifications", () => {
     );
     await expect(
       push.clearReadChatNotifications(new Set(["read"])),
+    ).resolves.toBeUndefined();
+    expect(mod.dismissNotificationAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("clearReadNonChatNotifications", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    constantsState.executionEnvironment = "bare";
+    constantsState.projectId = "00000000-0000-4000-8000-000000000000";
+  });
+
+  it("dismisses only non-chat pushes whose in-app row is read (#4011)", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+    mod.getPresentedNotificationsAsync.mockResolvedValue([
+      presented("event-read", {
+        target: { screen: "events", eventId: "e1" },
+        notificationId: "n-read",
+      }),
+      presented("event-unread", {
+        target: { screen: "events", eventId: "e2" },
+        notificationId: "n-unread",
+      }),
+      // A chat push is the channel counts' to clear, even with its row read.
+      presented("chat-read-row", {
+        target: { screen: "chat", channelId: "busy" },
+        notificationId: "n-chat",
+      }),
+      // A local notification (study pause) has no row.
+      presented("local", null),
+    ]);
+
+    await push.clearReadNonChatNotifications(new Set(["n-read", "n-chat"]));
+
+    expect(mod.dismissNotificationAsync.mock.calls).toEqual([["event-read"]]);
+  });
+
+  it("does nothing with no read rows, or when the tray can't be read", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+
+    await push.clearReadNonChatNotifications(new Set());
+    expect(mod.getPresentedNotificationsAsync).not.toHaveBeenCalled();
+
+    mod.getPresentedNotificationsAsync.mockRejectedValue(
+      new Error("old build"),
+    );
+    await expect(
+      push.clearReadNonChatNotifications(new Set(["n"])),
     ).resolves.toBeUndefined();
     expect(mod.dismissNotificationAsync).not.toHaveBeenCalled();
   });

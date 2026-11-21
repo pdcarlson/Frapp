@@ -10,16 +10,14 @@ import { flatStyle } from "@/test/flat-style";
 
 /**
  * s03 is what comes right after joining a chapter, for a new member and for an
- * App Reviewer alike, in up to three beats: the profile beat (no photo or no
- * real name), the chat display pick (always, #3787), then "Turn on
- * notifications" when this build can push and push is off. In a build that
- * cannot push (#2299; `isPushAvailable()` false, `spec/ui/mobile/patterns.md`
- * § Push notifications lists the causes) there is no notifications beat at
- * all, rather than a dead "Turn on" and an apology. After the last beat, s03
- * goes to chat, where the first-run tour takes over
- * (`lib/onboarding/tour.ts`); the static "You're in." card is gone.
- * `lib/notifications/primer.spec.ts` covers the rules; this covers the screen
- * wiring them.
+ * App Reviewer alike, in two screens (#5627): "How the chapter sees you"
+ * (always: the name, pre-filled when sign-in carried a real one, and an
+ * optional photo), then "Turn on notifications" when this build can push and
+ * push is off. In a build that cannot push (#2299; `isPushAvailable()` false,
+ * `spec/ui/mobile/patterns.md` § Push notifications lists the causes) there is
+ * no notifications screen at all, rather than a dead "Turn on" and an apology.
+ * Then chat. `lib/notifications/primer.spec.ts` covers the rules; this covers
+ * the screen wiring them.
  *
  * It renders `app/(auth)/welcome.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
@@ -55,12 +53,12 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("@/lib/auth-session", () => ({
-  useAuthSession: () => ({ status: "authenticated", chapterId: null }),
+  useAuthSession: () => ({ status: "authenticated", chapterId: "ch-1" }),
 }));
 
 const completeOnboarding = vi.fn().mockResolvedValue(undefined);
 const updateUser = vi.fn().mockResolvedValue({});
-/** `/v1/users/me`. A full profile by default, so the profile beat is skipped. */
+/** `/v1/users/me`. A real name and a photo by default. */
 const COMPLETE_USER = {
   id: "u-1",
   display_name: "Ada Lovelace",
@@ -91,10 +89,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     ],
   }),
   useChannels: () => ({ isPending: false, isError: false, data: [] }),
-  // The display beat's cards paint in the chapter accent (`useChapterBranding`).
   useCurrentChapter: () => ({ data: undefined }),
   useUpdateOnboarding: () => ({ mutateAsync: completeOnboarding }),
-  useCurrentUser: () => ({ data: currentUser, dataUpdatedAt: 1 }),
+  useCurrentUser: () => ({
+    data: currentUser,
+    dataUpdatedAt: 1,
+    refetch: () => Promise.resolve({ data: currentUser }),
+  }),
   useUpdateUser: () => ({ mutateAsync: updateUser }),
 }));
 
@@ -106,19 +107,17 @@ import {
   PUSH_PRIMER_DECLINED_AT_KEY,
   PUSH_PRIMER_STORAGE_KEY,
 } from "@/lib/notifications/primer";
-import { TOUR_DUE_STORAGE_KEY } from "@/lib/onboarding/tour";
-import { DISPLAY_STEP_TITLE } from "@/lib/onboarding/display-step";
-import { CHAT_DENSITY_STORAGE_KEY } from "@repo/chat-core/density";
+import { WELCOME_DUE_STORAGE_KEY } from "@/lib/onboarding/welcome-due";
 
 type Node = ReactTestRenderer["root"];
 
 /**
- * Renders s03. By default it also answers the display beat (#3787) when that
- * is the first beat, so a spec about the notifications beat starts on it.
+ * Renders s03. By default it also answers the name screen, keeping the name,
+ * so a spec about the notifications screen starts on it.
  */
 async function render({
-  passDisplay = true,
-}: { passDisplay?: boolean } = {}): Promise<ReactTestRenderer> {
+  passYou = true,
+}: { passYou?: boolean } = {}): Promise<ReactTestRenderer> {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -139,18 +138,18 @@ async function render({
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
   }
-  if (passDisplay) await answerDisplay(tree.root);
+  if (passYou) await answerYou(tree.root);
   return tree;
 }
 
-const onDisplayBeat = (root: Node) =>
+const onYouScreen = (root: Node) =>
   root
     .findAllByType("Text" as never, { deep: true })
-    .some((text) => text.props.children === DISPLAY_STEP_TITLE);
+    .some((text) => text.props.children === "How the chapter sees you");
 
-/** Moves on from the display beat, keeping the preselected display. */
-async function answerDisplay(root: Node) {
-  if (!onDisplayBeat(root)) return;
+/** Moves on from the name screen, keeping the name. */
+async function answerYou(root: Node) {
+  if (!onYouScreen(root)) return;
   const next =
     button(root, "Continue") ?? button(root, "Go to chat") ?? undefined;
   await press(next);
@@ -216,12 +215,12 @@ describe("s03 welcome, notifications step", () => {
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
-  it("opens on the notifications beat when it's the only thing to ask", async () => {
+  it("follows the name screen when there is push to ask about", async () => {
     pushAvailable = true;
     permission = OFF;
     const { root } = await render();
 
-    // No "You're in." card first: the tour over chat says that now.
+    // No "You're in." card first: the welcome card in the channel says it.
     expect(texts(root).some((t) => t.includes("in."))).toBe(false);
     // Its own title, both answers pinned under the scroll.
     expect(texts(root).some((t) => t.includes("Turn on notifications"))).toBe(
@@ -328,89 +327,34 @@ describe("s03 welcome, notifications step", () => {
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
-  it("leaves Android back alone on the first beat, and walks back to it from notifications", async () => {
+  it("leaves Android back alone on the name, and walks back to it from notifications", async () => {
     const { BackHandler } = await import("react-native");
     const listen = vi.mocked(BackHandler.addEventListener);
     listen.mockClear();
     pushAvailable = true;
     permission = OFF;
-    const { root } = await render({ passDisplay: false });
+    const { root } = await render({ passYou: false });
 
-    expect(onDisplayBeat(root)).toBe(true);
+    expect(onYouScreen(root)).toBe(true);
     expect(
       listen.mock.calls.filter(([event]) => event === "hardwareBackPress"),
     ).toHaveLength(0);
 
-    await answerDisplay(root);
+    await answerYou(root);
     expect(button(root, "Not now")).toBeDefined();
     const calls = listen.mock.calls as unknown as [string, () => boolean][];
     const handler = calls.filter(([e]) => e === "hardwareBackPress").at(-1);
     act(() => {
       handler![1]();
     });
-    expect(onDisplayBeat(root)).toBe(true);
+    expect(onYouScreen(root)).toBe(true);
   });
 });
 
 /**
- * A member with a name, a photo and push on is asked only for their chat
- * display (#3787), then handed over to chat, marking the first-run tour due
- * for that member on the way out.
- */
-describe("s03 welcome, only the display to pick", () => {
-  beforeEach(() => {
-    pushAvailable = false;
-    permission = null;
-    currentUser = COMPLETE_USER;
-    completeOnboarding.mockClear();
-    vi.mocked(AsyncStorage.setItem).mockClear();
-    vi.mocked(vi.mocked(useRouter)().replace).mockClear();
-  });
-
-  it("asks for the display, with Cozy picked, then goes to chat and marks the tour due", async () => {
-    const { root } = await render({ passDisplay: false });
-
-    expect(onDisplayBeat(root)).toBe(true);
-    const cozy = pressables(root).find(
-      (p) => p.props.accessibilityLabel === "Cozy",
-    );
-    expect(cozy?.props.accessibilityState).toEqual({ checked: true });
-    expect(completeOnboarding).not.toHaveBeenCalled();
-
-    await press(button(root, "Go to chat"));
-    expect(completeOnboarding).toHaveBeenCalledWith({
-      has_completed_onboarding: true,
-    });
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      TOUR_DUE_STORAGE_KEY,
-      "u-1",
-    );
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
-  });
-
-  it("saves a picked display on this phone", async () => {
-    const { root } = await render({ passDisplay: false });
-    vi.mocked(AsyncStorage.setItem).mockClear();
-
-    await press(
-      pressables(root).find((p) => p.props.accessibilityLabel === "Bubbles"),
-    );
-
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      CHAT_DENSITY_STORAGE_KEY,
-      "bubbles",
-    );
-    expect(
-      pressables(root).find((p) => p.props.accessibilityLabel === "Bubbles")
-        ?.props.accessibilityState,
-    ).toEqual({ checked: true });
-  });
-});
-
-/**
- * One gold button on each beat of s03: Continue or Go to chat on the profile
- * beat, Turn on notifications on the notifications beat, with Not now as a
- * quiet line.
+ * One gold button on each screen of s03: Continue or Go to chat on the name,
+ * Turn on notifications on the notifications screen, with Not now as a quiet
+ * line.
  */
 describe("s03 welcome, one gold button", () => {
   const goToChat = (root: Node) =>
@@ -429,19 +373,17 @@ describe("s03 welcome, one gold button", () => {
   beforeEach(() => {
     pushAvailable = false;
     permission = null;
-    // No photo, so there is a profile beat to hold the button.
-    currentUser = { ...COMPLETE_USER, avatar_url: null };
+    currentUser = COMPLETE_USER;
   });
 
   it("makes Turn on notifications the gold button on the second beat", async () => {
     pushAvailable = true;
     permission = OFF;
-    const { root } = await render();
+    const { root } = await render({ passYou: false });
     expect(fill(button(root, "Continue"))).toBe(
       signetDarkTokens.color.gold.house,
     );
     await press(button(root, "Continue"));
-    await answerDisplay(root);
 
     expect(fill(button(root, "Turn on notifications"))).toBe(
       signetDarkTokens.color.gold.house,
@@ -452,16 +394,14 @@ describe("s03 welcome, one gold button", () => {
   });
 
   it("makes Go to chat the gold button when there is no primer", async () => {
-    const { root } = await render();
-    await press(button(root, "Continue"));
+    const { root } = await render({ passYou: false });
 
     expect(fill(goToChat(root))).toBe(signetDarkTokens.color.gold.house);
   });
 
   it("spins under the same label while it leaves, rather than renaming itself", async () => {
     completeOnboarding.mockReturnValueOnce(new Promise(() => {}));
-    const { root } = await render();
-    await press(button(root, "Continue"));
+    const { root } = await render({ passYou: false });
     act(() => {
       void goToChat(root)?.props.onPress();
     });
@@ -478,11 +418,11 @@ describe("s03 welcome, one gold button", () => {
 });
 
 /**
- * The profile beat: shown when the member has no photo or no real name, before
- * the notifications beat. The name is checked on Continue and
+ * The name screen: always the first screen of s03, before notifications. The
+ * name is pre-filled when sign-in carried a real one, checked on Continue and
  * saved only when it changed; the photo is optional.
  */
-describe("s03 welcome, profile beat", () => {
+describe("s03 welcome, the name screen", () => {
   const field = (root: Node) =>
     root
       .findAllByType("TextInput" as never, { deep: true })
@@ -503,40 +443,60 @@ describe("s03 welcome, profile beat", () => {
       ([event]) => event === "onboarding-profile-answered",
     );
 
-  it("is skipped for a member with a name and a photo", async () => {
-    const { root } = await render();
+  it("always asks, with a real name pre-filled, and doesn't resend it", async () => {
+    const { root } = await render({ passYou: false });
 
-    expect(
-      texts(root).some((t) => t.includes("How the chapter sees you")),
-    ).toBe(false);
-    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
-  });
-
-  it("asks for a photo with the name filled in, and doesn't resend the name", async () => {
-    currentUser = { ...COMPLETE_USER, avatar_url: null };
-    const { root } = await render();
-
-    expect(
-      texts(root).some((t) => t.includes("How the chapter sees you")),
-    ).toBe(true);
+    expect(onYouScreen(root)).toBe(true);
     expect(root.findAllByType("ProfilePhoto" as never)).toHaveLength(1);
     expect(field(root)?.props.value).toBe("Ada Lovelace");
 
-    await press(button(root, "Continue"));
+    await press(button(root, "Go to chat"));
     expect(updateUser).not.toHaveBeenCalled();
-    await answerDisplay(root);
+    expect(completeOnboarding).toHaveBeenCalledWith({
+      has_completed_onboarding: true,
+    });
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      WELCOME_DUE_STORAGE_KEY,
+      expect.stringMatching(/^u-1:ch-1:\d+$/),
+    );
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+    expect(profileEvents()).toEqual([
+      ["onboarding-profile-answered", { photo: "had", name_step: "kept" }],
+    ]);
+  });
+
+  it("says when there was no photo before", async () => {
+    currentUser = { ...COMPLETE_USER, avatar_url: null };
+    const { root } = await render({ passYou: false });
+
+    await press(button(root, "Go to chat"));
     expect(profileEvents()).toEqual([
       ["onboarding-profile-answered", { photo: "none", name_step: "kept" }],
     ]);
   });
 
-  it("never pre-fills the Member stand-in, and needs a name before moving on", async () => {
-    currentUser = { ...COMPLETE_USER, display_name: "Member" };
-    const { root } = await render();
+  it("starts empty when the name is only the email before the @", async () => {
+    currentUser = {
+      ...COMPLETE_USER,
+      display_name: "newbie.one",
+      email: "newbie.one@example.com",
+    };
+    const { root } = await render({ passYou: false });
 
     expect(field(root)?.props.value).toBe("");
-    await press(button(root, "Continue"));
+    await press(button(root, "Go to chat"));
+    expect(
+      texts(root).some((t) => t.includes("so the chapter knows who")),
+    ).toBe(true);
+    expect(completeOnboarding).not.toHaveBeenCalled();
+  });
+
+  it("never pre-fills the Member stand-in, and needs a name before moving on", async () => {
+    currentUser = { ...COMPLETE_USER, display_name: "Member" };
+    const { root } = await render({ passYou: false });
+
+    expect(field(root)?.props.value).toBe("");
+    await press(button(root, "Go to chat"));
     expect(
       texts(root).some((t) => t.includes("so the chapter knows who")),
     ).toBe(true);
@@ -547,24 +507,44 @@ describe("s03 welcome, profile beat", () => {
     expect(
       texts(root).some((t) => t.includes("so the chapter knows who")),
     ).toBe(false);
-    await press(button(root, "Continue"));
+    await press(button(root, "Go to chat"));
 
     expect(updateUser).toHaveBeenCalledWith({ display_name: "Grace Hopper" });
     // Shape only: never the name itself.
     expect(profileEvents()).toEqual([
       ["onboarding-profile-answered", { photo: "had", name_step: "added" }],
     ]);
-    await answerDisplay(root);
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("shows a locked name read-only and moves on without sending it (#5801)", async () => {
+    currentUser = {
+      ...COMPLETE_USER,
+      display_name: "Member",
+      display_name_locked: true,
+    };
+    const { root } = await render({ passYou: false });
+
+    expect(field(root)?.props.value).toBe("Member");
+    expect(field(root)?.props.editable).toBe(false);
+    expect(
+      texts(root).some((t) => t.includes("Your chapter's officers set names.")),
+    ).toBe(true);
+    await press(button(root, "Go to chat"));
+
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(completeOnboarding).toHaveBeenCalledWith({
+      has_completed_onboarding: true,
+    });
   });
 
   it("stays, with the reason, when the name can't be saved", async () => {
     currentUser = { ...COMPLETE_USER, display_name: "" };
     updateUser.mockRejectedValueOnce(new Error("offline"));
-    const { root } = await render();
+    const { root } = await render({ passYou: false });
     act(() => field(root)?.props.onChangeText("Grace Hopper"));
 
-    await press(button(root, "Continue"));
+    await press(button(root, "Go to chat"));
 
     expect(texts(root).some((t) => t.includes("Couldn't save your name"))).toBe(
       true,
@@ -574,32 +554,24 @@ describe("s03 welcome, profile beat", () => {
     expect(profileEvents()).toEqual([]);
   });
 
-  it("comes before the notifications beat, and Android back walks back through it", async () => {
+  it("keeps an edited name when Android back returns to it from notifications", async () => {
     const { BackHandler } = await import("react-native");
     const listen = vi.mocked(BackHandler.addEventListener);
     listen.mockClear();
     pushAvailable = true;
     permission = OFF;
-    currentUser = { ...COMPLETE_USER, avatar_url: null };
-    const { root } = await render();
+    const { root } = await render({ passYou: false });
 
-    expect(field(root)).toBeDefined();
+    act(() => field(root)?.props.onChangeText("Ada King"));
     await press(button(root, "Continue"));
-    expect(onDisplayBeat(root)).toBe(true);
-    await answerDisplay(root);
+    expect(updateUser).toHaveBeenCalledWith({ display_name: "Ada King" });
     expect(button(root, "Not now")).toBeDefined();
 
-    const back = () => {
-      const calls = listen.mock.calls as unknown as [string, () => boolean][];
-      const handler = calls.filter(([e]) => e === "hardwareBackPress").at(-1);
-      act(() => {
-        handler![1]();
-      });
-    };
-    back();
-    expect(onDisplayBeat(root)).toBe(true);
-    expect(button(root, "Not now")).toBeUndefined();
-    back();
-    expect(field(root)).toBeDefined();
+    const calls = listen.mock.calls as unknown as [string, () => boolean][];
+    const handler = calls.filter(([e]) => e === "hardwareBackPress").at(-1);
+    act(() => {
+      handler![1]();
+    });
+    expect(field(root)?.props.value).toBe("Ada King");
   });
 });

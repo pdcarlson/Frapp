@@ -58,6 +58,11 @@
  * message extension, not the presence payload — so presence stays advisory
  * (`authorization-model.md`). Changing the prefix here without a matching
  * policy branch turns the Directory silently empty; grep the migrations first.
+ *
+ * **The API reads it too** (2026-11-12): `ChapterPresenceReader` in
+ * `apps/api` joins this topic by service role to learn who `@here` reaches,
+ * and spells the prefix itself, since the API can't import this package. Its
+ * spec pins it against this file, so re-keying here fails there; move both.
  */
 export function chapterPresenceTopic(chapterId: string): string {
   return `presence:chapter:${chapterId}`;

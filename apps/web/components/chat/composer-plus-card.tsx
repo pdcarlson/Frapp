@@ -8,7 +8,11 @@ import {
   type ReactNode,
 } from "react";
 import { ArrowLeft, X } from "lucide-react";
-import type { PlusMenuCommand, PlusMenuModel } from "@repo/chat-core/plus-menu";
+import {
+  plusMenuShortcut,
+  type PlusMenuCommand,
+  type PlusMenuModel,
+} from "@repo/chat-core/plus-menu";
 import {
   Popover,
   PopoverContent,
@@ -21,6 +25,7 @@ import {
   MENU_SEPARATOR_CLASS,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { GifGlyph } from "./gif-picker";
 import {
   AttachGlyph,
   EventsGlyph,
@@ -34,7 +39,7 @@ import {
 
 /**
  * The composer's **+** (#3865, layout A) as one card (#3983): its first view
- * is the menu, Attach a file and then one row per command that has a visual
+ * is the menu, Attach a file, GIF and then one row per command that has a visual
  * form, each teaching its slash shortcut. Picking a row turns the card into
  * that form, in place above the +, with the chat still readable and live
  * behind it: no dialog and no scrim (Paul, 2026-11-10). The comparable apps
@@ -60,10 +65,11 @@ const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<ChatGlyphProps>> = {
 };
 
 /** The form's title in the card's header. */
-export const PLUS_FORM_TITLE: Record<PlusMenuCommand, string> = {
+const PLUS_FORM_TITLE: Record<PlusMenuCommand, string> = {
   poll: "New poll",
   event: "New event",
-  task: "New task",
+  // Link one the member can see, or make a new one (#5772).
+  task: "Add a task",
   hours: "Log service hours",
   points: "Adjust points",
 };
@@ -77,6 +83,11 @@ export interface ComposerPlusCardProps {
   /** The form on show, or `null` for the menu. */
   view: PlusMenuCommand | null;
   onAttach: () => void;
+  /**
+   * Opens the GIF picker (#5772, the phone's + sheet's GIF row); omitted
+   * when the server has no GIF search set up, which leaves the row out.
+   */
+  onGif?: () => void;
   /** A row was picked. The host decides whether its form opens. */
   onPick: (command: PlusMenuCommand) => void;
   onBack: () => void;
@@ -87,7 +98,7 @@ export interface ComposerPlusCardProps {
 }
 
 /**
- * Always opens, even when Attach a file is all it holds, so the footer can say
+ * Always opens, even when Attach a file (and GIF) is all it holds, so the footer can say
  * why nothing else is there (#3865).
  */
 export function ComposerPlusCard({
@@ -97,6 +108,7 @@ export function ComposerPlusCard({
   onOpenChange,
   view,
   onAttach,
+  onGif,
   onPick,
   onBack,
   form,
@@ -105,6 +117,10 @@ export function ComposerPlusCard({
   const cardRef = useRef<HTMLDivElement>(null);
   // The row a form was opened from, so Back lands on it.
   const lastPicked = useRef<PlusMenuCommand | null>(null);
+  // Set when the GIF row hands off to the GIF picker: returning focus to the
+  // + button as this card closes would read as a click outside that picker
+  // and close it as it opens.
+  const handingOff = useRef(false);
 
   // Focus follows the view: a form's first field, or the menu's row the
   // member came back from (its first row on open). Radix's own open focus is
@@ -115,9 +131,7 @@ export function ComposerPlusCard({
       const card = cardRef.current;
       if (!card) return;
       if (view) {
-        card
-          .querySelector<HTMLElement>("[data-plus-autofocus]")
-          ?.focus();
+        card.querySelector<HTMLElement>("[data-plus-autofocus]")?.focus();
         return;
       }
       const back = lastPicked.current
@@ -152,6 +166,11 @@ export function ComposerPlusCard({
         // ten-option poll on a short window scrolls rather than clip.
         className="flex max-h-[var(--radix-popover-content-available-height)] w-[22.5rem] max-w-[calc(100vw-2rem)] flex-col overflow-y-auto p-0"
         onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => {
+          if (!handingOff.current) return;
+          handingOff.current = false;
+          event.preventDefault();
+        }}
         onEscapeKeyDown={(event) => {
           if (!view) return;
           event.preventDefault();
@@ -186,6 +205,15 @@ export function ComposerPlusCard({
               onOpenChange(false);
               onAttach();
             }}
+            onGif={
+              onGif
+                ? () => {
+                    handingOff.current = true;
+                    onOpenChange(false);
+                    onGif();
+                  }
+                : undefined
+            }
             onPick={(command) => {
               lastPicked.current = command;
               onPick(command);
@@ -226,11 +254,13 @@ function PlusMenu({
   model,
   drafts,
   onAttach,
+  onGif,
   onPick,
 }: {
   model: PlusMenuModel;
   drafts?: ReadonlySet<PlusMenuCommand>;
   onAttach: () => void;
+  onGif?: () => void;
   onPick: (command: PlusMenuCommand) => void;
 }) {
   return (
@@ -246,12 +276,19 @@ function PlusMenu({
             <span className="text-xs">{model.attachDisabledReason}</span>
           ) : null}
         </MenuRow>
+        {onGif ? (
+          <MenuRow disabledReason={null} onSelect={onGif}>
+            <GifGlyph />
+            <span className="flex-1">GIF</span>
+          </MenuRow>
+        ) : null}
         {model.rows.length > 0 ? (
           <div role="separator" className={MENU_SEPARATOR_CLASS} />
         ) : null}
         {model.rows.map((row) => {
           const Glyph = ROW_GLYPH[row.command];
-          const hasDraft = row.disabledReason === null && drafts?.has(row.command);
+          const hasDraft =
+            row.disabledReason === null && drafts?.has(row.command);
           return (
             <MenuRow
               key={row.command}
@@ -269,9 +306,11 @@ function PlusMenu({
                   Draft
                 </span>
               ) : null}
-              <span className="font-mono text-xs text-muted-foreground">
-                /{row.command}
-              </span>
+              {plusMenuShortcut(row.command) ? (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {plusMenuShortcut(row.command)}
+                </span>
+              ) : null}
             </MenuRow>
           );
         })}

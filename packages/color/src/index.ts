@@ -179,6 +179,98 @@ export function applyAlpha(hex: string, alpha: number, background: string): stri
   });
 }
 
+// ── OKLCH ────────────────────────────────────────────────────────────────────
+
+/**
+ * A color in OKLCH: perceptual lightness `l` (0–1), chroma `c` (0 to about
+ * 0.37) and hue `h` in degrees (0–360). Hue is the one people mean by "a
+ * color": a role color picker moves along it while lightness is set for
+ * contrast (#5784).
+ */
+export type Oklch = { l: number; c: number; h: number };
+
+// sRGB's own transfer curve (IEC 61966-2-1), for the OKLab round trip.
+// `linearize` above keeps WCAG 2's 0.03928 knee, which contrast is defined
+// with; the two differ only for channel values below 11/255.
+function srgbToLinear(channel: number): number {
+  const value = channel / 255;
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+}
+
+function linearToSrgb(value: number): number {
+  const encoded =
+    value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055;
+  return encoded * 255;
+}
+
+/** `null` when the input is not a hex color. Achromatic colors report hue 0. */
+export function hexToOklch(input: string): Oklch | null {
+  const rgb = parseHex(input);
+  if (!rgb) return null;
+  const r = srgbToLinear(rgb.r);
+  const g = srgbToLinear(rgb.g);
+  const b = srgbToLinear(rgb.b);
+  // Björn Ottosson's OKLab matrices (linear sRGB → LMS → OKLab).
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const lightness = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bAxis = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  const chroma = Math.hypot(a, bAxis);
+  const hue =
+    chroma < 1e-6 ? 0 : ((Math.atan2(bAxis, a) * 180) / Math.PI + 360) % 360;
+  return { l: lightness, c: chroma, h: hue };
+}
+
+/** Linear sRGB channels for an OKLCH color, unclamped (out of gamut reads < 0 or > 1). */
+function oklchToLinear({ l, c, h }: Oklch): [number, number, number] {
+  const radians = (h * Math.PI) / 180;
+  const a = c * Math.cos(radians);
+  const b = c * Math.sin(radians);
+  const lPrime = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const mPrime = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const sPrime = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [
+    4.0767416621 * lPrime - 3.3077115913 * mPrime + 0.2309699292 * sPrime,
+    -1.2684380046 * lPrime + 2.6097574011 * mPrime - 0.3413193965 * sPrime,
+    -0.0041960863 * lPrime - 0.7034186147 * mPrime + 1.707614701 * sPrime,
+  ];
+}
+
+function inGamut(channels: readonly number[]): boolean {
+  const EPSILON = 1e-4;
+  return channels.every((value) => value >= -EPSILON && value <= 1 + EPSILON);
+}
+
+/**
+ * The `#RRGGBB` for an OKLCH color. A color sRGB can't show keeps its
+ * lightness and hue and loses chroma until it fits (the CSS Color 4 approach,
+ * without its perceptual tolerance), so the result is always the nearest
+ * displayable color of that lightness and hue.
+ */
+export function oklchToHex(color: Oklch): string {
+  const l = Math.max(0, Math.min(1, Number.isFinite(color.l) ? color.l : 0));
+  const h = Number.isFinite(color.h) ? ((color.h % 360) + 360) % 360 : 0;
+  let c = Math.max(0, Number.isFinite(color.c) ? color.c : 0);
+  if (!inGamut(oklchToLinear({ l, c, h }))) {
+    let low = 0;
+    let high = c;
+    for (let step = 0; step < 24; step += 1) {
+      const mid = (low + high) / 2;
+      if (inGamut(oklchToLinear({ l, c: mid, h }))) low = mid;
+      else high = mid;
+    }
+    c = low;
+  }
+  const [r, g, b] = oklchToLinear({ l, c, h });
+  return toHex({
+    r: linearToSrgb(Math.max(0, Math.min(1, r))),
+    g: linearToSrgb(Math.max(0, Math.min(1, g))),
+    b: linearToSrgb(Math.max(0, Math.min(1, b))),
+  });
+}
+
 function toHex({ r, g, b }: Rgb): string {
   const channel = (value: number) => {
     // Clamping alone is not enough: `Math.min(255, NaN)` is `NaN`, whose

@@ -23,9 +23,9 @@
  * - **First launch.** No marker, and the phone held no chat state when this
  *   process started: a fresh install, or a fresh install signed into an
  *   existing account. Old news to them.
- * - **A new member.** The first-run tour is due (`lib/onboarding/tour.ts`),
- *   so this launch belongs to the tour, and what changed before they joined
- *   is not news.
+ * - **A new member.** The welcome card is due
+ *   (`lib/onboarding/welcome-due.ts`), so this launch belongs to the
+ *   chapter, and what changed before they joined is not news.
  *
  * And one case shows without a marker: **an install from before this
  * existed.** No marker, but chat state on the phone at launch. Without it the
@@ -69,7 +69,7 @@ export const WHATS_NEW_QUIET_STORAGE_KEY = "frapp.mobile.whats-new-quiet";
  * before this feature already wrote to disk, whatever shape that helper takes
  * later. Once a phone has a marker, these prefixes are never read again.
  */
-export const EXISTING_INSTALL_KEY_PREFIXES: readonly string[] = [
+const EXISTING_INSTALL_KEY_PREFIXES: readonly string[] = [
   CHAT_KV_PREFIX,
   "frapp.chat.last-channel.",
 ];

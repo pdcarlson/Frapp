@@ -1,24 +1,48 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { TASK_ACTION_LABELS, taskStatusLabel } from "@repo/hooks";
+import {
+  TASK_ACTION_LABELS,
+  TASK_NEEDS_CHANGES_LABEL,
+  taskStatusLabel,
+} from "@repo/hooks";
+import {
+  TASK_AUDIENCE_COPY,
+  TASK_FOLLOWER_COPY,
+  taskRowFacts,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
-import { gutterBleed, PressableRow } from "@/components/list-section";
-import { AccentChip } from "@/components/status-chip";
-import { SkeletonBlock, SkeletonText } from "@/components/state-block";
+import {
+  gutterBleed,
+  PressableRow,
+  SectionHeaderSkeleton,
+} from "@/components/list-section";
+import {
+  SkeletonBlock,
+  SkeletonRegion,
+  SkeletonText,
+} from "@/components/state-block";
+import {
+  itemMenuAccessibility,
+  longPressOf,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
 import {
   formatDueSubtitle,
   formatPointsChip,
   isDueUrgent,
 } from "@/lib/tasks/format";
-import type { TaskRowModel } from "@/lib/tasks/board";
+import { rowIsSentBack, type TaskRowModel } from "@/lib/tasks/board";
+import { markDoneLabel } from "@/lib/tasks/task-photos";
+import { rowGroupLabel } from "@/lib/tasks/task-screen";
 
 /**
  * One row of the s08 board — `canvas-screens.dc.html:282-324`.
  *
  * A flush row on the screen background, split from the one above by a
  * hairline, with a leading checkbox, a title, a due/done subtitle, and an
- * optional trailing points chip.
+ * optional trailing points, in muted text (#5570).
  * The finished row is drawn at `opacity:.62` with a line-through title and a
  * box in the raised neutral fill with a muted check. Canvas draws that box
  * gold; foundations.md §6 ("Where the accent goes", 2026-11-05) overrides it:
@@ -28,8 +52,10 @@ import type { TaskRowModel } from "@/lib/tasks/board";
  * ## Two targets: the box completes, the row opens
  *
  * Only the checkbox changes the task; a tap anywhere else on the row opens the
- * task's detail sheet (owner audit 2026-11-06, P6.1). The whole row used to be
- * the checkbox, so a stray tap while scrolling marked a task done. The box
+ * task's own screen (owner audit 2026-11-06, P6.1; a sheet until #5492). The
+ * whole row used to be the checkbox, so a stray tap while scrolling marked a
+ * task done. A long press opens the task's menu (`useTaskMenu`, #5492). The
+ * box
  * unchecks too, while no officer has confirmed it, so a mis-tap is one tap to
  * take back, as a checked reminder is.
  *
@@ -61,7 +87,7 @@ export interface TaskRowProps {
    * box then draws inert, never a no-op handler.
    */
   onToggle?: () => void;
-  /** Opens the task's detail sheet. Any tap on the row outside the box. */
+  /** Opens the task's screen (#5492). Any tap on the row outside the box. */
   onOpen?: () => void;
   /**
    * True while this row's own PATCH sequence is in flight. The Tasks screen
@@ -70,48 +96,109 @@ export interface TaskRowProps {
   isPending?: boolean;
   /** The first row of its group draws no hairline above it. */
   isFirst?: boolean;
+  /**
+   * The task's long-press menu (#5492), whose actions a screen reader is
+   * offered by name too. Omitted, the row has no long press.
+   */
+  menu?: ItemMenuHandle | null;
 }
 
 /** The checkbox's hit area past its drawn 24pt, to a 44pt target. */
 const CHECKBOX_SLOP = 10;
 
-export function TaskRow({
-  row,
-  now,
-  onToggle,
-  onOpen,
-  isPending = false,
-  isFirst = false,
-}: TaskRowProps) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+/**
+ * What a task says, read once for its row and its Grid card alike (#4175), so
+ * the two layouts can't drift on a status word, the red, or the points.
+ */
+function taskFacts(row: TaskRowModel, now: Date) {
   const chip = formatPointsChip(row.pointReward, row.pointsAwarded);
   const started = row.storedStatus === "IN_PROGRESS";
   const confirmed = row.isDone && row.pointsAwarded;
 
+  // The shared words with every field they read (#4635): "Done" for a
+  // completion that needed no sign-off, "Needs changes" ahead of the due
+  // line while an officer's send-back waits on the member.
+  const sentBack = rowIsSentBack(row);
   const statusLine = row.isDone
     ? taskStatusLabel({
         status: "COMPLETED",
         points_awarded: row.pointsAwarded,
+        point_reward: row.pointReward,
+        proof_kind: row.proofKind,
       })
     : formatDueSubtitle(row.dueDate, now);
-  // How far through its checklist it is, beside the due: "Due today · 2 of
-  // 5" (#4003). A finished task drops it; its status says enough.
-  const progress =
-    !row.isDone && row.subtasks.length > 0
-      ? `${row.subtasks.filter((subtask) => subtask.done).length} of ${row.subtasks.length}`
-      : null;
-  const subtitle = [statusLine, progress].filter(Boolean).join(" · ") || null;
+  // How it repeats, how far through its checklist it is and its reference
+  // photos (#4003, #4635, #5119), read once with web's row (`taskRowFacts`):
+  // "Due Monday · ↻ Weekly · 2 of 5 · 1 photo". The glyph is for the eye; a
+  // screen reader hears "repeats weekly". A finished task drops them.
+  const facts = taskRowFacts({
+    done: row.isDone,
+    subtasksDone: row.subtasks.filter((subtask) => subtask.done).length,
+    subtasksTotal: row.subtasks.length,
+    photos: row.photos,
+    series: row.series,
+  });
+  // The tier, role or group it is from, last (#5473): "Due Friday · From
+  // Exec board".
+  const from = row.followedBy
+    ? TASK_FOLLOWER_COPY.chip(row.followedByName)
+    : null;
+  // A copy of a group task still says who got it, and how far they are
+  // (#5699): "Due Friday · Everyone · 14 of 20 done". Its checkbox is only
+  // this member's part, as web's My tasks row says.
+  const audience = row.group
+    ? TASK_AUDIENCE_COPY.groupLine(
+        rowGroupLabel(row),
+        row.group.done,
+        row.group.total,
+      )
+    : null;
+  const lineOf = (extra: string | null) =>
+    [
+      sentBack ? TASK_NEEDS_CHANGES_LABEL : null,
+      statusLine,
+      audience,
+      extra,
+      from,
+    ]
+      .filter(Boolean)
+      .join(" · ") || null;
+  const subtitle = lineOf(facts.shown);
+  const spoken = lineOf(facts.spoken);
 
   // `semantic.destructive`, never `semantic.mention` — `foundations.md:67`
   // reserves the mention red for direct address, and an overdue task is not
   // someone speaking to you.
-  const urgent = !row.isDone && !!row.dueDate && isDueUrgent(row.dueDate, now);
+  // Red once overdue (#4133): past the local due day, or already OVERDUE by
+  // the server's clock, which the task screen and web also read.
+  const urgent =
+    !row.isDone &&
+    (row.isOverdue || (!!row.dueDate && isDueUrgent(row.dueDate, now)));
 
   const toggleLabel = row.isDone
     ? TASK_ACTION_LABELS.reopen
-    : TASK_ACTION_LABELS.complete;
+    : markDoneLabel(TASK_ACTION_LABELS.complete, row.proofKind);
+  const label = `${row.title}${spoken ? `, ${spoken}` : ""}`;
 
+  return { chip, started, confirmed, subtitle, urgent, toggleLabel, label };
+}
+
+type TaskStyles = ReturnType<typeof createStyles>;
+
+/** The checkbox, pressable when the task can be toggled. */
+function TaskCheckbox({
+  row,
+  started,
+  onToggle,
+  styles,
+  tokens,
+}: {
+  row: TaskRowModel;
+  started: boolean;
+  onToggle?: () => void;
+  styles: TaskStyles;
+  tokens: SignetTokens;
+}) {
   const box = (
     <View
       style={[
@@ -128,25 +215,82 @@ export function TaskRow({
       ) : null}
     </View>
   );
+  if (!onToggle) return box;
+  // Hidden from screen readers: the row carries the same move as a named
+  // action, so VoiceOver and TalkBack reach it without a second focus stop
+  // nested inside the row's.
+  return (
+    <Pressable
+      testID={`task-checkbox-${row.id}`}
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      hitSlop={CHECKBOX_SLOP}
+      onPress={onToggle}
+    >
+      {box}
+    </Pressable>
+  );
+}
+
+/**
+ * The trailing points, as muted text: "+5 pts", and "+5 pts ✓" once awarded.
+ * An accent pill until #5570 (Paul, 2026-11-19): a yellow pill on every row
+ * was brighter than the task's title, and the title is what a member reads
+ * a list for. Things 3 and Todoist draw a to-do's extras in the quiet grey
+ * under or beside its title; colour on a row is kept for its due and overdue.
+ */
+function PointsChip({
+  chip,
+  styles,
+}: {
+  chip: ReturnType<typeof formatPointsChip>;
+  styles: TaskStyles;
+}) {
+  if (!chip) return null;
+  return <Text style={styles.points}>{chip.label}</Text>;
+}
+
+/**
+ * The row's named actions: the box's move, then the menu's (one Mark done,
+ * not two), and its long press.
+ */
+function rowActions(
+  menu: ItemMenuHandle | null | undefined,
+  onToggle: (() => void) | undefined,
+  toggleLabel: string,
+) {
+  return {
+    onLongPress: longPressOf(menu),
+    ...itemMenuAccessibility(
+      menu,
+      onToggle ? [{ name: "toggle", label: toggleLabel, run: onToggle }] : [],
+    ),
+  };
+}
+
+export function TaskRow({
+  row,
+  now,
+  onToggle,
+  onOpen,
+  isPending = false,
+  isFirst = false,
+  menu,
+}: TaskRowProps) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const facts = taskFacts(row, now);
+  const { subtitle, urgent, confirmed } = facts;
 
   const body = (
     <>
-      {onToggle ? (
-        // Hidden from screen readers: the row carries the same move as a
-        // named action, so VoiceOver and TalkBack reach it without a second
-        // focus stop nested inside the row's.
-        <Pressable
-          testID={`task-checkbox-${row.id}`}
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          hitSlop={CHECKBOX_SLOP}
-          onPress={onToggle}
-        >
-          {box}
-        </Pressable>
-      ) : (
-        box
-      )}
+      <TaskCheckbox
+        row={row}
+        started={facts.started}
+        onToggle={onToggle}
+        styles={styles}
+        tokens={tokens}
+      />
 
       <View style={styles.body}>
         <Text
@@ -168,13 +312,7 @@ export function TaskRow({
         ) : null}
       </View>
 
-      {chip ? (
-        chip.tone === "awarded" ? (
-          <Text style={styles.awardedChip}>{chip.label}</Text>
-        ) : (
-          <AccentChip label={chip.label} />
-        )
-      ) : null}
+      <PointsChip chip={facts.chip} styles={styles} />
     </>
   );
 
@@ -186,7 +324,6 @@ export function TaskRow({
     isPending ? styles.rowPending : null,
     confirmed ? styles.rowDone : null,
   ];
-  const label = `${row.title}${subtitle ? `, ${subtitle}` : ""}`;
 
   if (!onOpen) {
     return (
@@ -197,9 +334,11 @@ export function TaskRow({
           disabled: !onToggle,
           busy: isPending,
         }}
-        accessibilityLabel={label}
+        accessibilityLabel={facts.label}
         accessibilityActions={
-          onToggle ? [{ name: "activate", label: toggleLabel }] : undefined
+          onToggle
+            ? [{ name: "activate", label: facts.toggleLabel }]
+            : undefined
         }
         onAccessibilityAction={onToggle}
         style={rowStyle}
@@ -213,21 +352,84 @@ export function TaskRow({
     <PressableRow
       accessibilityRole="button"
       accessibilityState={{ checked: row.isDone, busy: isPending }}
-      accessibilityLabel={label}
+      accessibilityLabel={facts.label}
       accessibilityHint="Opens the task."
       // The box's move as a named action, so it is one swipe-up away on
       // VoiceOver and in TalkBack's actions menu, rather than the row's
-      // default tap, which opens the task.
-      accessibilityActions={
-        onToggle ? [{ name: "toggle", label: toggleLabel }] : undefined
-      }
-      onAccessibilityAction={(event) => {
-        if (event.nativeEvent.actionName === "toggle") onToggle?.();
-      }}
+      // default tap, which opens the task; then the menu's.
+      {...rowActions(menu, onToggle, facts.toggleLabel)}
       onPress={onOpen}
       style={rowStyle}
     >
       {body}
+    </PressableRow>
+  );
+}
+
+/**
+ * s08's Grid layout (#4175): one task as a card, two to a line
+ * (`components/grid-line.tsx` lays the lines out). The card is the row stood
+ * on end, the box and points over the title and its due line, and it
+ * takes the row's two targets: the box completes or takes back, anywhere else
+ * opens the task's screen, where Edit sits for an officer. Linear's and
+ * Asana's board cards carry the same facts as their list rows.
+ */
+export function TaskTile({
+  row,
+  now,
+  onToggle,
+  onOpen,
+  isPending = false,
+  menu,
+}: Omit<TaskRowProps, "isFirst" | "onOpen"> & { onOpen: () => void }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const facts = taskFacts(row, now);
+  const { subtitle, urgent, confirmed } = facts;
+
+  return (
+    <PressableRow
+      onCard
+      accessibilityRole="button"
+      accessibilityState={{ checked: row.isDone, busy: isPending }}
+      accessibilityLabel={facts.label}
+      accessibilityHint="Opens the task."
+      {...rowActions(menu, onToggle, facts.toggleLabel)}
+      onPress={onOpen}
+      style={[
+        styles.tile,
+        isPending ? styles.rowPending : null,
+        confirmed ? styles.rowDone : null,
+      ]}
+    >
+      <View style={styles.tileHead}>
+        <TaskCheckbox
+          row={row}
+          started={facts.started}
+          onToggle={onToggle}
+          styles={styles}
+          tokens={tokens}
+        />
+        <PointsChip chip={facts.chip} styles={styles} />
+      </View>
+      <Text
+        numberOfLines={3}
+        style={[styles.title, row.isDone ? styles.titleDone : null]}
+      >
+        {row.title}
+      </Text>
+      {subtitle ? (
+        <Text
+          numberOfLines={2}
+          style={[
+            styles.subtitle,
+            urgent ? styles.subtitleUrgent : null,
+            confirmed ? styles.subtitleDone : null,
+          ]}
+        >
+          {subtitle}
+        </Text>
+      ) : null}
     </PressableRow>
   );
 }
@@ -261,8 +463,35 @@ export function TaskRowSkeleton({ index = 0 }: { index?: number }) {
   );
 }
 
+/**
+ * The Tasks tab while the board loads: a section caption over task-shaped
+ * rows, so the real board lands in place. The caption is a bar, since which
+ * section comes first (TODAY, THIS WEEK or LATER) depends on the tasks. The
+ * rows sit flush on the page, so the region is `flush` and its bars take
+ * `--surface-1`, one step up (#5606).
+ */
+export function TaskListSkeleton() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <SkeletonRegion label="Loading chapter tasks" flush style={styles.skeleton}>
+      <SectionHeaderSkeleton width="30%" />
+      <View>
+        {Array.from({ length: 3 }, (_, index) => (
+          <TaskRowSkeleton key={index} index={index} />
+        ))}
+      </View>
+    </SkeletonRegion>
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
+    // `ScreenShell`'s gap, between the caption and its rows.
+    skeleton: {
+      gap: tokens.spacing.md,
+    },
     row: {
       flexDirection: "row",
       alignItems: "center",
@@ -275,6 +504,24 @@ function createStyles(tokens: SignetTokens) {
       // bleeds the same way: content on the gutter line, press feedback clear
       // of it.
       ...gutterBleed(tokens, { rounded: false }),
+    },
+    // Documents' tile shape (`documents/document-tiles.tsx`): a screen's card
+    // fill, card radius, a hairline. Its own padding, since it doesn't bleed.
+    tile: {
+      flex: 1,
+      gap: tokens.spacing.xs,
+      padding: tokens.spacing.md,
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: surfaces.card,
+    },
+    tileHead: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.sm,
+      marginBottom: tokens.spacing.xs,
     },
     rowDivider: {
       borderTopWidth: StyleSheet.hairlineWidth,
@@ -305,7 +552,7 @@ function createStyles(tokens: SignetTokens) {
     },
     checkboxDone: {
       borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.popover,
+      backgroundColor: surfaces.raised,
     },
     body: {
       flex: 1,
@@ -334,12 +581,9 @@ function createStyles(tokens: SignetTokens) {
     subtitleDone: {
       color: tokens.color.text.muted,
     },
-    awardedChip: {
+    points: {
       ...typeRole(tokens.typography.role.caption),
-      // TODO-DESIGN: Canvas draws `#4BC262` here, which is not the Signet
-      // success token (`#3FB950`) and has no token of its own. Using the
-      // semantic role rather than a second green.
-      color: tokens.color.semantic.success,
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

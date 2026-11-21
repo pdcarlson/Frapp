@@ -1,0 +1,418 @@
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { AccessibilityInfo, Alert } from "react-native";
+import { useRouter } from "expo-router";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import {
+  TASK_ACTION_LABELS,
+  useDeleteTask,
+  usePermissionList,
+  useTasks,
+  useViewerUserId,
+} from "@repo/hooks";
+import type { CalendarTask } from "@repo/hooks/calendar-tasks";
+import { can } from "@repo/validation";
+import {
+  CheckGlyph,
+  CopyGlyph,
+  MinusGlyph,
+  PencilGlyph,
+  PersonGlyph,
+  PlayGlyph,
+  TrashGlyph,
+  UndoGlyph,
+} from "@/components/control-glyphs";
+import {
+  useItemMenu,
+  type ItemMenuAction,
+  type ItemMenuHandle,
+} from "@/components/item-actions-menu";
+import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
+import { UndoBar } from "@/components/tasks/undo-bar";
+import { alertFailure } from "@/lib/failure-alert";
+import type { TaskRowModel } from "@/lib/tasks/board";
+import { useStartTask } from "@/lib/tasks/use-start-task";
+import { useTaskReview } from "@/lib/tasks/use-task-review";
+import { useTaskRowById } from "@/lib/tasks/use-task-row-by-id";
+import {
+  taskCreatedLine,
+  taskDuplicateOf,
+  type TaskPrefill,
+} from "@/lib/tasks/create-task";
+import {
+  confirmTaskDelete,
+  taskDeleteTarget,
+  type TaskDeleteScope,
+  groupCopies,
+  taskMenuKeys,
+  taskScreenControls,
+  type TaskMenuKey,
+} from "@/lib/tasks/task-screen";
+import { markDoneLabel } from "@/lib/tasks/task-photos";
+import {
+  MarkDoneHost,
+  useTaskToggle,
+  type TaskToggle,
+} from "@/lib/tasks/use-task-toggle";
+
+/**
+ * A task row's long-press menu (#5492; Paul, 2026-11-18): Mark done, Confirm
+ * and Send back, Edit, Reassign, Remove people, Duplicate and Delete, each to
+ * the viewer the API
+ * lets use it. The rows are `taskMenuKeys`' over the task screen's own
+ * `taskScreenControls`, so the menu and the screen can't disagree; what each
+ * row does is the screen's too:
+ *
+ * - Mark done and Mark not done are the screen's `useTaskToggle`, the board's
+ *   checkbox, so a task that asks for proof opens Mark done's sheet and a
+ *   completion offers the same Undo. A screen with no checkbox of its own
+ *   (the Calendar) takes `useCalendarTaskMenu`, which brings its own.
+ * - Confirm and Send back, on a completion waiting on the viewer's sign-off
+ *   (#5513), are the task screen's (`useTaskReview`): Send back opens its
+ *   sheet for the reason. Confirm only where no proof needs seeing first
+ *   (`confirmInMenu`); a refusal is the platform's alert.
+ * - Start is the assignee's To do → In progress (`useStartTask`), as chat's
+ *   task card and the task screen's More offer it.
+ * - Edit and Reassign push the task's screen in its edit mode (`edit=1`,
+ *   #5514), Reassign with Assign to's picker open over it (`who=1`).
+ * - Remove people opens the task's screen in its select mode (`select=1`).
+ * - Duplicate opens New task filled in from the task (`taskDuplicateOf`).
+ * - Delete asks the task screen's question (`confirmTaskDelete`) and sends
+ *   one copy's delete, or every copy's for Delete for everyone, or on a
+ *   repeating copy stops the repeat for All upcoming tasks (#5119).
+ *
+ * Render `host` once in the screen.
+ */
+export function useTaskMenu({
+  toggles: toggle,
+  onCreated,
+}: {
+  /** The screen's Mark done (`useTaskToggle`), whose sheet it hosts. */
+  toggles: TaskToggle;
+  /** Said where the screen says a create landed (the board's line). */
+  onCreated?: (line: string) => void;
+}): {
+  menuFor: (row: TaskRowModel) => ItemMenuHandle | null;
+  /** A Calendar row: one task, or every copy of a group task the viewer gave. */
+  menuForCalendarTask: (item: CalendarTask) => ItemMenuHandle | null;
+  /**
+   * A task by id, read off the viewer's tasks: one copy, or (`group`) every
+   * copy of the group it belongs to, as Activity's one row for a task for
+   * everyone. `null` when the read doesn't hold it.
+   */
+  menuForTask: TaskMenuForTask;
+  host: ReactNode;
+} {
+  const router = useRouter();
+  const viewerId = useViewerUserId();
+  const canManage = can("tasks:manage", usePermissionList());
+  const { data: tasksData } = useTasks();
+  const deleteTask = useDeleteTask();
+  const menu = useItemMenu();
+
+  const rowById = useTaskRowById();
+
+  // Duplicate: New task, one sheet per press.
+  const duplicateRef = useRef<BottomSheetModal>(null);
+  const [duplicating, setDuplicating] = useState<{
+    key: number;
+    prefill: TaskPrefill;
+    at: Date;
+  } | null>(null);
+  useEffect(() => {
+    if (duplicating) duplicateRef.current?.present();
+  }, [duplicating]);
+
+  const runDelete = useCallback(
+    (row: TaskRowModel, scope: TaskDeleteScope) => {
+      // One copy's Delete never names the group: only Delete for everyone
+      // sends `scope=group`; All upcoming tasks on a repeating copy sends
+      // `scope=series` (#5119).
+      deleteTask
+        .mutateAsync(taskDeleteTarget(row.id, scope))
+        .catch((error: unknown) =>
+          alertFailure({
+            title: "Couldn't delete the task",
+            error,
+            fallback: "Try again.",
+          }),
+        );
+    },
+    [deleteTask],
+  );
+
+  const startTask = useStartTask();
+  // Confirm and Send back (#5513). The menu has no line to carry a refused
+  // Confirm, so it is the platform's alert; Send back's sheet says its own.
+  const review = useTaskReview();
+  const reviewRefusal = review.refusal;
+  const confirmRefusal = review.confirmRefusal;
+  useEffect(() => {
+    if (confirmRefusal) Alert.alert(confirmRefusal.text);
+  }, [confirmRefusal]);
+  const { confirm: confirmTask, sendBack } = review;
+
+  const actionFor = useCallback(
+    (key: TaskMenuKey, row: TaskRowModel): ItemMenuAction => {
+      switch (key) {
+        case "markDone":
+          return {
+            key,
+            label: markDoneLabel(TASK_ACTION_LABELS.complete, row.proofKind),
+            glyph: (color) => <CheckGlyph color={color} />,
+            run: () => void toggle.toggle(row),
+          };
+        case "confirm":
+          return {
+            key,
+            label: TASK_ACTION_LABELS.confirm,
+            glyph: (color) => <CheckGlyph color={color} />,
+            run: () => confirmTask(row),
+          };
+        case "sendBack":
+          return {
+            key,
+            label: TASK_ACTION_LABELS.reject,
+            glyph: (color) => <UndoGlyph color={color} />,
+            run: () => sendBack(row),
+          };
+        case "start":
+          return {
+            key,
+            label: TASK_ACTION_LABELS.start,
+            glyph: (color) => <PlayGlyph color={color} />,
+            run: () => startTask(row.id),
+          };
+        case "reopen":
+          return {
+            key,
+            label: TASK_ACTION_LABELS.reopen,
+            glyph: (color) => <UndoGlyph color={color} />,
+            run: () => void toggle.toggle(row),
+          };
+        case "edit":
+        case "reassign":
+          return {
+            key,
+            label: key === "edit" ? "Edit" : "Reassign",
+            glyph: (color) =>
+              key === "edit" ? (
+                <PencilGlyph color={color} />
+              ) : (
+                <PersonGlyph color={color} />
+              ),
+            // The task's screen, edited in place there (#5514).
+            run: () =>
+              router.push({
+                pathname: "/task-details",
+                params:
+                  key === "edit"
+                    ? { id: row.id, edit: "1" }
+                    : { id: row.id, who: "1" },
+              }),
+          };
+        case "removePeople":
+          return {
+            key,
+            label: "Remove people",
+            glyph: (color) => <MinusGlyph color={color} />,
+            run: () =>
+              router.push({
+                pathname: "/task-details",
+                params: { id: row.id, select: "1" },
+              }),
+          };
+        case "duplicate":
+          return {
+            key,
+            label: "Duplicate",
+            glyph: (color) => <CopyGlyph color={color} />,
+            run: () => {
+              const at = new Date();
+              setDuplicating((previous) => ({
+                key: (previous?.key ?? 0) + 1,
+                prefill: taskDuplicateOf(
+                  row,
+                  groupCopies(tasksData, row.groupId),
+                  at,
+                ),
+                at,
+              }));
+            },
+          };
+        case "delete":
+        case "deleteForEveryone": {
+          const everyone = key === "deleteForEveryone";
+          return {
+            key,
+            label: everyone ? "Delete for everyone" : "Delete",
+            destructive: true,
+            glyph: (color) => <TrashGlyph color={color} />,
+            run: () =>
+              confirmTaskDelete(row, everyone, (scope) =>
+                runDelete(row, scope),
+              ),
+          };
+        }
+      }
+    },
+    [toggle, router, tasksData, runDelete, startTask, confirmTask, sendBack],
+  );
+
+  const reviewRefused = reviewRefusal?.gate === true;
+  const reviewHeld = review.disabled;
+  const build = useCallback(
+    (
+      row: TaskRowModel,
+      title: string,
+      scope: "copy" | "group",
+    ): ItemMenuHandle | null => {
+      const controls = taskScreenControls({
+        row,
+        viewerId,
+        canManage,
+        toggleRefused: toggle.refusal !== null || reviewRefused,
+      });
+      const keys = taskMenuKeys(controls, scope).filter(
+        // Mid-write, the box is held; so are the menu's status moves, and
+        // Confirm and Send back while one is sending or would be lost.
+        (key) =>
+          key === "confirm" || key === "sendBack"
+            ? !reviewHeld
+            : (key !== "markDone" && key !== "start" && key !== "reopen") ||
+              toggle.canToggle(row),
+      );
+      return menu.handleFor({
+        title,
+        actions: keys.map((key) => actionFor(key, row)),
+      });
+    },
+    [viewerId, canManage, toggle, menu, actionFor, reviewRefused, reviewHeld],
+  );
+
+  const menuFor = useCallback(
+    (row: TaskRowModel) => build(row, row.title, "copy"),
+    [build],
+  );
+
+  const menuForTask = useCallback<TaskMenuForTask>(
+    (id, title, scope = "copy") => {
+      const row = rowById(id);
+      if (!row) return null;
+      // A copy with no group can't stand for one.
+      return build(row, title, row.groupId === null ? "copy" : scope);
+    },
+    [rowById, build],
+  );
+
+  const menuForCalendarTask = useCallback(
+    (item: CalendarTask): ItemMenuHandle | null => {
+      if (item.kind === "mine") {
+        const row = rowById(item.taskId);
+        return row ? build(row, item.title, "copy") : null;
+      }
+      const rows = item.assignees
+        .map((assignee) => rowById(assignee.taskId))
+        .filter((row): row is TaskRowModel => row !== null);
+      const first = rows[0];
+      if (!first) return null;
+      if (item.assignees.length === 1) return build(first, item.title, "copy");
+      // Several copies on one row act together only as a group task's;
+      // separate tasks that share a title and day can't be acted on at once.
+      const oneGroup =
+        first.groupId !== null &&
+        rows.length === item.assignees.length &&
+        rows.every((row) => row.groupId === first.groupId);
+      return oneGroup ? build(first, item.title, "group") : null;
+    },
+    [rowById, build],
+  );
+
+  const host = (
+    <>
+      {menu.element}
+      {review.host}
+      {duplicating ? (
+        <NewTaskSheet
+          key={`duplicate-${duplicating.key}`}
+          ref={duplicateRef}
+          now={duplicating.at}
+          prefill={duplicating.prefill}
+          offerGroups
+          onCreated={(assigneeName, wasSelf, upForGrabs) => {
+            const line = taskCreatedLine(assigneeName, wasSelf, upForGrabs);
+            onCreated?.(line);
+            AccessibilityInfo.announceForAccessibility(line);
+          }}
+          onClosed={() => setDuplicating(null)}
+        />
+      ) : null}
+    </>
+  );
+
+  return { menuFor, menuForCalendarTask, menuForTask, host };
+}
+
+/** `useTaskMenu`'s menu for a task by id (`menuForTask`). */
+export type TaskMenuForTask = (
+  id: string,
+  title: string,
+  scope?: "copy" | "group",
+) => ItemMenuHandle | null;
+
+/**
+ * The task menu for a screen with no checkbox (the Calendar, its Day screen
+ * and Activity): its own Mark done, with Mark done's sheet and Undo, and a failed
+ * one said in the platform alert, since the screen has no line for it.
+ *
+ * `host` holds the menu and the sheets, which draw over everything, so it
+ * can sit anywhere in the screen. `undoBar` floats over the screen's bottom
+ * edge, so it goes outside the screen's scroll (beside `ScreenShell`, as the
+ * board places its own), or it would sit against the scrolling content.
+ */
+export function useCalendarTaskMenu({
+  aboveCreate = false,
+}: {
+  /** The screen draws a floating + (the Calendar's New event, #5570), so
+   * the bar sits over it rather than on it (`UndoBar`'s `aboveCreate`). */
+  aboveCreate?: boolean;
+} = {}): {
+  menuForCalendarTask: (item: CalendarTask) => ItemMenuHandle | null;
+  menuForTask: TaskMenuForTask;
+  host: ReactNode;
+  undoBar: ReactNode;
+  /** Which offer the bar holds, new with each completion; `null` with none. */
+  undoKey: number | null;
+} {
+  const viewerId = useViewerUserId();
+  const toggles = useTaskToggle(useTaskRowById(), { viewerId });
+  const { menuForCalendarTask, menuForTask, host } = useTaskMenu({ toggles });
+  const line = toggles.refusal ?? toggles.notice;
+  useEffect(() => {
+    if (line) Alert.alert(line);
+  }, [line]);
+  return {
+    menuForCalendarTask,
+    menuForTask,
+    host: (
+      <>
+        {host}
+        <MarkDoneHost toggle={toggles} />
+      </>
+    ),
+    undoBar: toggles.undo ? (
+      <UndoBar
+        key={toggles.undo.key}
+        message={toggles.undo.message}
+        onUndo={() => void toggles.takeBack(toggles.undo!.id)}
+        aboveCreate={aboveCreate}
+      />
+    ) : null,
+    undoKey: toggles.undo?.key ?? null,
+  };
+}

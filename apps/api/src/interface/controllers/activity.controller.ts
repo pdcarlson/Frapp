@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -8,18 +9,32 @@ import {
   ParseUUIDPipe,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiExtraModels,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiBadRequestResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
-import type { ActivityView } from '../../application/services/activity.service';
+import type {
+  ActivityArchive,
+  ActivityNow,
+  ActivityView,
+} from '../../application/services/activity.service';
+import {
+  ActivityStandingService,
+  acceptableWeekStart,
+} from '../../application/services/activity-standing.service';
+import type { ActivityStanding } from '../../application/services/activity-standing.service';
+import { ActivityRecapService } from '../../application/services/activity-recap.service';
+import type { ActivityRecap } from '../../application/services/activity-recap.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -31,10 +46,35 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
+  ActivityArchiveDto,
   ActivityDto,
+  ActivityItemRefDto,
+  ActivityNowDto,
+  ActivityRecapDto,
+  ActivityRecapQueryDto,
+  ActivityStandingDto,
+  ActivityTaskItemGroupDto,
+  ActivityTaskItemTaskDto,
+  ActivityWeekQueryDto,
   MarkActivityReadDto,
   SetActivityLinkStateDto,
+  SnoozeActivityItemDto,
 } from '../dtos/activity.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
+
+/**
+ * The week a client named for the standing, refused when it names anything
+ * but this week. The page's own read does not refuse it (`getActivity`).
+ */
+function weekStartOf(query: ActivityWeekQueryDto, now: Date): Date | undefined {
+  const weekStart = query.week_start ? new Date(query.week_start) : undefined;
+  if (weekStart && !acceptableWeekStart(weekStart, now)) {
+    throw new BadRequestException(
+      'week_start must be between eight days ago and a day from now',
+    );
+  }
+  return weekStart;
+}
 
 // No `@RequireModule`: the page spans modules, so no one key gates it. Each
 // section checks its own module and its own permission in the service, and a
@@ -42,6 +82,8 @@ import {
 // gate; a section whose module asks for more (Backwork) checks that too.
 @ApiTags('Activity')
 @ApiBearerAuth()
+// `made_by_you.task_items` refers to these by `$ref` (#5492).
+@ApiExtraModels(ActivityTaskItemTaskDto, ActivityTaskItemGroupDto)
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('activity')
@@ -49,21 +91,121 @@ export class ActivityController {
   constructor(
     private readonly activityService: ActivityService,
     private readonly linkService: ActivityLinkService,
+    private readonly standingService: ActivityStandingService,
+    private readonly recapService: ActivityRecapService,
   ) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'Get what needs the caller and what they made',
     description:
-      'The Activity page’s read (`spec/behavior/activity.md`). `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, and open polls they can read and haven’t voted on. `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.',
+      'The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned (`task_items` counts a task for everyone once; `tasks` is each copy, for older builds); a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.',
   })
   @ApiOkResponse({ type: ActivityDto })
+  @ApiBadRequestResponse({
+    description: '`week_start` is not a date-time.',
+  })
   async getActivity(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Query() query: ActivityWeekQueryDto,
   ): Promise<ActivityView> {
-    return this.activityService.getActivity(chapterId, userId, enabledModules);
+    // A week the standing would refuse is not refused here: the service
+    // counts the default week instead. This read is the whole page and the
+    // tab's badge, and the client sends its own clock's week on every one, so
+    // a phone with a wrong clock would otherwise lose everything it has to do
+    // over a number at the top.
+    return this.activityService.getActivity(chapterId, userId, enabledModules, {
+      weekStart: query.week_start ? new Date(query.week_start) : undefined,
+      now: new Date(),
+    });
+  }
+
+  @Get('now')
+  @VerifySessionLocally()
+  @ApiOperation({
+    summary: 'Get the events on right now for the caller',
+    description:
+      'The Now card on Chat, Activity and the event (`spec/behavior/activity.md` § Now). An event is on from when its check-in opens until its end, whether or not the caller checked in. Listed when it invites the caller and requires them, they checked in to it, or they made it, and every event on for a holder of `events:update`; never one the caller is excused from. The one they checked in to first, then the latest start, at most 5. Rows are the shape of `coming_up`. Its own small read, so a screen that shows only Now does not read the whole page. Empty while the chapter has Events off.',
+  })
+  @ApiOkResponse({ type: ActivityNowDto })
+  async getNow(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+  ): Promise<ActivityNow> {
+    return this.activityService.getNow(chapterId, userId, enabledModules, {
+      now: new Date(),
+    });
+  }
+
+  @Get('archive')
+  @ApiOperation({
+    summary: 'Get what the caller has finished',
+    description:
+      'The Activity Archive (`spec/behavior/activity.md` § Archive): what has left the caller’s Activity because it is over. `events`: events that invited them whose check-in has closed, in the last 30 days. `tasks`: their own tasks marked done in the last 30 days, and the confirmed tasks they assigned while they hold `tasks:manage`. `events` leaves out any that started before they joined. `polls`: closed polls they posted or voted in. Each section reads through its module under that module’s rule for who may see it; a module the chapter has off contributes nothing, and a section that fails is served empty and named in `unavailable`. Its own read, apart from `GET /v1/activity`, made only when the Archive is opened.',
+  })
+  @ApiOkResponse({ type: ActivityArchiveDto })
+  async getArchive(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+  ): Promise<ActivityArchive> {
+    return this.activityService.getArchive(chapterId, userId, enabledModules, {
+      now: new Date(),
+    });
+  }
+
+  @Get('standing')
+  @ApiOperation({
+    summary: 'Get how the caller is doing this semester',
+    description:
+      'The standing at the top of the Activity page (`spec/behavior/activity.md` § Standing): the caller’s points this semester and their place on the board, the required events they attended, their approved and pending service hours this semester, and their study time this week. Each part is the caller’s own, read through the module that owns it; a module the chapter has off is served null, and a part that fails is served null and named in `unavailable`.',
+  })
+  @ApiOkResponse({ type: ActivityStandingDto })
+  @ApiBadRequestResponse({
+    description: '`week_start` is more than eight days back or a day ahead.',
+  })
+  async getStanding(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Query() query: ActivityWeekQueryDto,
+  ): Promise<ActivityStanding> {
+    const now = new Date();
+    return this.standingService.getStanding(chapterId, userId, enabledModules, {
+      weekStart: weekStartOf(query, now),
+      now,
+    });
+  }
+
+  @Get('recap')
+  @ApiOperation({
+    summary: 'Get what the caller did last week',
+    description:
+      'The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.',
+  })
+  @ApiOkResponse({ type: ActivityRecapDto })
+  @ApiBadRequestResponse({
+    description: '`week_start` is more than eight days back or a day ahead.',
+  })
+  async getRecap(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Query() query: ActivityRecapQueryDto,
+  ): Promise<ActivityRecap> {
+    const now = new Date();
+    return this.recapService.getRecap(chapterId, userId, enabledModules, {
+      weekStart: weekStartOf(query, now),
+      lastWeekStart: query.last_week_start
+        ? new Date(query.last_week_start)
+        : undefined,
+      firstDay: query.first_day,
+      now,
+    });
   }
 
   @Put('unread-since')
@@ -96,6 +238,48 @@ export class ActivityController {
     @Body() dto: MarkActivityReadDto,
   ): Promise<void> {
     await this.activityService.markRead(chapterId, userId, dto.items);
+  }
+
+  @Put('snoozes')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Snooze an item on the caller’s Activity until a time',
+    description:
+      'The row leaves the caller’s list and `needs_you_count` until `until`, then comes back, unread unless they open it again after that (`snoozed_until` on its row). Per member; snoozing again replaces the time. Like a read, nothing checks that the caller can see the item: a snooze is theirs alone and changes nothing anyone else sees. `spec/behavior/activity.md` § Snooze.',
+  })
+  @ApiNoContentResponse()
+  @ApiBadRequestResponse({
+    description: '`until` is not in the future, or is more than 90 days away.',
+  })
+  async snooze(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: SnoozeActivityItemDto,
+  ): Promise<void> {
+    await this.activityService.snooze(
+      chapterId,
+      userId,
+      { kind: dto.kind, item_id: dto.item_id },
+      new Date(dto.until),
+    );
+  }
+
+  @Delete('snoozes')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Bring a snoozed item back on the caller’s Activity now',
+    description: 'Idempotent. `spec/behavior/activity.md` § Snooze.',
+  })
+  @ApiNoContentResponse()
+  async unsnooze(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Query() item: ActivityItemRefDto,
+  ): Promise<void> {
+    await this.activityService.unsnooze(chapterId, userId, {
+      kind: item.kind,
+      item_id: item.item_id,
+    });
   }
 
   @Put('links/:id/state')

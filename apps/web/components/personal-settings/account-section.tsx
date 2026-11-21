@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useUpdateOnboarding } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
@@ -15,12 +14,11 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
 import { getErrorMessage } from "@/lib/utils";
 
 /**
- * Settings → Account: replay the tutorial, sign out, delete the account.
+ * Settings → Account: sign out, delete the account.
  * Moved here from `/profile` (#3856), which keeps the profile itself.
  */
 export function AccountSection() {
   const { toast } = useToast();
-  const updateOnboarding = useUpdateOnboarding();
   const deleteFlow = useDeleteAccountFlow({
     onFailed: () => toast({ ...DELETE_ACCOUNT_FAILED, variant: "destructive" }),
   });
@@ -53,49 +51,12 @@ export function AccountSection() {
   return (
     <>
       {/*
-        Tutorial, session and deletion were three cards with a paragraph each.
+        Session and deletion were cards with a paragraph each.
         They are one list of rows now: what the row does on the left, its one
         control on the right, the way the notification switches above read.
       */}
       <ProfileSection id="account" title="Account">
         <ul className={denseListClassName}>
-          <li className="flex items-center justify-between gap-4 py-3">
-            <div className="grid min-w-0 gap-1">
-              <p className="text-sm font-semibold">Tutorial</p>
-              <p className="text-sm text-muted-foreground">
-                The onboarding tour reopens on your next dashboard visit.
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="toolbar"
-              className="shrink-0"
-              disabled={updateOnboarding.isPending}
-              onClick={async () => {
-                try {
-                  await updateOnboarding.mutateAsync({
-                    has_completed_onboarding: false,
-                  });
-                  toast({
-                    title: "Tutorial queued",
-                    description:
-                      "The onboarding tour will reappear the next time you open the dashboard.",
-                  });
-                } catch (error) {
-                  toast({
-                    title: "Couldn't reset onboarding",
-                    description: getErrorMessage(
-                      error,
-                      "Retry in a moment. Your permissions may need refreshing.",
-                    ),
-                    variant: "destructive",
-                  });
-                }
-              }}
-            >
-              Replay tutorial
-            </Button>
-          </li>
           <li className="flex items-center justify-between gap-4 py-3">
             <div className="grid min-w-0 gap-1">
               <p className="text-sm font-semibold">Session</p>

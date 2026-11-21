@@ -3,7 +3,9 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -31,6 +33,7 @@ import {
   TransferPresidencyDto,
   PresidencyClaimStatusDto,
   PermissionCatalogEntryDto,
+  SelfAssignRoleResultDto,
 } from '../dtos/rbac.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 
@@ -57,37 +60,94 @@ export class RbacController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a custom role' })
+  @ApiOperation({
+    summary: 'Create a custom role',
+    description:
+      "Into a tier ranked below the caller's own, or outside the tiers, holding only permissions the caller holds (#4071).",
+  })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: CreateRoleDto,
   ) {
-    return this.rbacService.create(chapterId, userId, dto);
+    return this.rbacService.createAsMember(chapterId, userId, dto);
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update a role' })
+  @ApiOperation({
+    summary: 'Update a role',
+    description:
+      "Only a role ranked below the caller's own, and only granting permissions the caller holds (#4071). Send `permissions` (the whole list), or `tier_id` and `permission_overrides`, not both.",
+  })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: UpdateRoleDto,
   ) {
-    return this.rbacService.update(id, chapterId, userId, dto);
+    return this.rbacService.updateAsMember(id, chapterId, userId, dto);
+  }
+
+  // Behind the controller's `members:view` only: any member joins and leaves
+  // a role an officer marked self-assignable (#4958), and only while it is
+  // marked (#5650). The service refuses every other role, whatever the
+  // caller holds.
+  @Post(':id/join')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Join a self-assignable role',
+    description:
+      "Adds the role to the caller's own roles (#4958). 403 `role.not_self_assignable` unless an officer marked it and it is still safe to pick; 409 when it changed mid-save. Joining a role already held changes nothing.",
+  })
+  @ApiOkResponse({ type: SelfAssignRoleResultDto })
+  async join(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<SelfAssignRoleResultDto> {
+    return this.rbacService.setOwnSelfAssignableRole(
+      chapterId,
+      userId,
+      id,
+      true,
+    );
+  }
+
+  @Post(':id/leave')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Leave a self-assignable role',
+    description:
+      "Takes the role off the caller's own roles (#4958). 403 `role.not_self_assignable` unless the role is still marked: a role an officer gave, or has stopped offering, stays until an officer removes it (#5650). Alumni may leave a marked role. Leaving a role not held changes nothing.",
+  })
+  @ApiOkResponse({ type: SelfAssignRoleResultDto })
+  async leave(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<SelfAssignRoleResultDto> {
+    return this.rbacService.setOwnSelfAssignableRole(
+      chapterId,
+      userId,
+      id,
+      false,
+    );
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete a custom role' })
+  @ApiOperation({
+    summary: 'Delete a custom role',
+    description: "Only a role ranked below the caller's own (#4071).",
+  })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async delete(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    await this.rbacService.delete(id, chapterId, userId);
+    await this.rbacService.deleteAsMember(id, chapterId, userId);
     return { success: true };
   }
 

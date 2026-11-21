@@ -19,7 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { CrestTile } from "@/components/layout/crest-tile";
 import { inspectLogoFile } from "@/lib/chapter-logo";
 
-export type ChapterMarkBrandingDraft = {
+type ChapterMarkBrandingDraft = {
   short_name?: string;
   greek_letters?: string;
   show_greek_letters?: boolean;

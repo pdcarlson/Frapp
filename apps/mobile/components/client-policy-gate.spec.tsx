@@ -23,6 +23,7 @@ vi.mock("@/lib/client-policy", () => ({
   useClientPolicy: () => policy.current,
 }));
 
+import { launchGate } from "@/lib/launch/launch-gate";
 import { ClientPolicyGate, UPDATE_REQUIRED_COPY } from "./client-policy-gate";
 import { OnboardingPrimaryButton } from "./onboarding/onboarding-primary-button";
 
@@ -59,9 +60,15 @@ function texts(renderer: ReactTestRenderer): string[] {
     .map((node) => [node.props.children].flat().join(""));
 }
 
-/** The View wrapping the app, found through the app's own Text. */
+/**
+ * The gate's View wrapping the app: the first host View above the app's own
+ * Text that the gate blocks, past the overlay layer's own wrapper inside it
+ * (`overlay-layer.tsx`).
+ */
 function appWrapper(renderer: ReactTestRenderer) {
-  return renderer.root.findByProps({ testID: "app" }).parent!;
+  let node = renderer.root.findByProps({ testID: "app" }).parent!;
+  while (node.props.pointerEvents === undefined) node = node.parent!;
+  return node;
 }
 
 describe("ClientPolicyGate", () => {
@@ -171,5 +178,23 @@ describe("ClientPolicyGate", () => {
     const renderer = render();
     expect(renderer.root.findAllByType(Pressable)).toHaveLength(0);
     expect(texts(renderer)).toContain(UPDATE_REQUIRED_COPY.noLink);
+  });
+});
+
+describe("ClientPolicyGate and the launch logo (#5449)", () => {
+  it("lifts the logo at once when the update prompt shows, and not before", () => {
+    const lift = vi.spyOn(launchGate, "lift").mockImplementation(() => {});
+    onTestFinished(() => lift.mockRestore());
+
+    policy.current = { updateRequired: false, updateUrl: null };
+    render();
+    expect(lift).not.toHaveBeenCalled();
+
+    policy.current = { updateRequired: true, updateUrl: null };
+    onTestFinished(() => {
+      policy.current = { updateRequired: false, updateUrl: null };
+    });
+    render();
+    expect(lift).toHaveBeenCalledWith("now");
   });
 });

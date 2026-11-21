@@ -15,12 +15,14 @@ import { FloatingField } from "@/components/auth/floating-field";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { SkeletonText } from "@/components/shared/async-states";
-import { CheckEmail, confirmationRedirectUrl } from "@/components/auth/check-email";
+import { CheckEmail } from "@/components/auth/check-email";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useToast } from "@/lib/hooks/use-toast";
+import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 import {
   EMAIL_CONFIRMED_AUTH_ERROR,
   describeAuthError,
+  magicLinkRedirectUrl,
   resolveRedirectPath,
 } from "@/lib/auth/redirect";
 import {
@@ -29,7 +31,7 @@ import {
   describePasswordSignInError,
   emailCooldownSeconds,
   isEmailNotConfirmed,
-} from "@/lib/auth/email-auth-errors";
+} from "@repo/hooks/auth-error-copy";
 import {
   describeOAuthKickoffError,
   startWebOAuth,
@@ -70,7 +72,7 @@ import {
  * failed link back here with `authError` set; the toast below is the only
  * place that code is read.
  *
- * **Refusals are told by GoTrue's code** (`lib/auth/email-auth-errors.ts`),
+ * **Refusals are told by GoTrue's code** (`@repo/hooks/auth-error-copy`),
  * never through the API's error map, which knows none of them and printed
  * "Something went wrong" for a wrong password and an unconfirmed address
  * alike until 2026-11-09. An unconfirmed address swaps the form for "Confirm
@@ -98,6 +100,7 @@ function SignInPageContent() {
   // Shown once, on arrival; the parameter is not carried into the next hop.
   useEffect(() => {
     if (!authError) return;
+    // Reported by `/auth/callback` itself, with GoTrue's own error (#3832).
     if (authError === EMAIL_CONFIRMED_AUTH_ERROR) {
       toast({ title: "Email confirmed", description: describeAuthError(authError) });
       return;
@@ -142,6 +145,7 @@ function SignInPageContent() {
       router.replace(redirectTo);
       router.refresh();
     } catch (error) {
+      reportAuthFailure({ flow: "password_sign_in", screen: "/sign-in", error });
       if (isEmailNotConfirmed(error)) {
         setPassword("");
         setUnconfirmedEmail(email);
@@ -173,10 +177,10 @@ function SignInPageContent() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          // `intent=confirm`: for an address that isn't confirmed yet, GoTrue
-          // answers this with the Confirm signup email, whose `?code=` link is
-          // the one that can confirm and still fail to sign this browser in.
-          emailRedirectTo: confirmationRedirectUrl(window.location.origin, redirectTo),
+          // `intent=sign-in-link` carries the Confirm-signup good-news path for an address that isn't confirmed yet, whose
+          // `?code=` link can confirm and still fail to sign this browser in
+          // ({@link isEmailLinkIntent}).
+          emailRedirectTo: magicLinkRedirectUrl(window.location.origin, redirectTo),
         },
       });
       if (error) throw error;
@@ -186,6 +190,7 @@ function SignInPageContent() {
         description: "Check your inbox to continue signing in.",
       });
     } catch (error) {
+      reportAuthFailure({ flow: "magic_link_send", screen: "/sign-in", error });
       const cooldown = emailCooldownSeconds(error);
       if (cooldown !== undefined) {
         // An email went out under a minute ago (the confirmation, or the
@@ -217,6 +222,7 @@ function SignInPageContent() {
       );
       if (error) throw error;
     } catch (error) {
+      reportAuthFailure({ flow: "oauth_start", screen: "/sign-in", error });
       toast({
         title: "Unable to sign in",
         description: describeOAuthKickoffError(error),
@@ -383,9 +389,8 @@ export function SignInScreen() {
       fallback={
         <AuthScreen
           title={SIGN_IN_TITLE}
-          toggle={
-            <AuthModeToggle current="sign-in" redirectTo={resolveRedirectPath(null)} />
-          }
+          // Inert until the search params are known (#3797).
+          toggle={<AuthModeToggle current="sign-in" redirectTo={null} />}
           footer={<SignInFooterPending />}
         >
           <div role="status" aria-busy="true" aria-live="polite">

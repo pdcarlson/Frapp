@@ -4,13 +4,14 @@ import Link from "next/link";
 import { can, canAny } from "@repo/validation";
 import type { UnsetFeatureKey } from "@repo/hooks";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import type { NavItem } from "@/components/layout/nav-config";
 
 type Props = {
   item: NavItem;
   /**
-   * `"page"` when this row's own route is open; `"true"` when a route listed in
-   * the row's `activeFor` is open (a Settings tool, for the Settings row).
+   * `"page"` when this row's own route is open; `"true"` when the row stands
+   * for something open in place (the Chat row while the chat panel is open).
    * Both paint the active fill; only the first claims to be the current page.
    */
   current?: "page" | "true";
@@ -50,6 +51,13 @@ type Props = {
    * the dot sits on the glyph.
    */
   highlight?: string;
+  /**
+   * A number to show in mention red (#3774): the Direct messages row's count
+   * of conversations with anything unread, as the phone's Messages tab badges
+   * it. A direct message addresses the member, so it takes the fixed mention
+   * red and never the chapter accent (foundations.md §5).
+   */
+  count?: { value: number; label: string };
 };
 
 function isGranted(
@@ -75,8 +83,8 @@ function isGranted(
  * something the viewer can open sits under it.
  *
  * The permission gate fails CLOSED while `permissions` is `undefined` (the
- * read in flight, or failed online): a row that declares `requirePermission`,
- * `requireAnyOf` or `showWhen` stays hidden until the viewer's grants are known
+ * read in flight, or failed online): a row that declares `requirePermission`
+ * or `requireAnyOf` stays hidden until the viewer's grants are known
  * (#3854). It used to fail open, so on
  * every reload a member saw officer doors (Chapter settings, Billing before
  * #3827) appear, take a click, and vanish, which read as broken and as "I can
@@ -107,9 +115,7 @@ export function isNavItemVisible(
 ): boolean {
   const resolved = permissions !== undefined && permissions !== null;
   const gated =
-    item.requirePermission !== undefined ||
-    item.requireAnyOf !== undefined ||
-    item.showWhen !== undefined;
+    item.requirePermission !== undefined || item.requireAnyOf !== undefined;
   if (permissions === undefined) {
     // Fail closed (#3854): never draw a door before we know it opens.
     if (gated) return false;
@@ -120,13 +126,6 @@ export function isNavItemVisible(
     return false;
   }
   if (item.hiddenUntilSetUp && hiddenFeatures?.has(item.hiddenUntilSetUp)) {
-    return false;
-  }
-  if (
-    resolved &&
-    item.showWhen &&
-    !item.showWhen(permissions, isModuleEnabled)
-  ) {
     return false;
   }
   return true;
@@ -156,6 +155,7 @@ export function ProtectedNavItem({
   pressed,
   selectLabel,
   highlight,
+  count,
 }: Props) {
   if (!isNavItemVisible(item, permissions, isModuleEnabled, hiddenFeatures)) {
     return null;
@@ -197,7 +197,8 @@ export function ProtectedNavItem({
   );
   // The rail's `aria-label` replaces the row's content, the sr-only words
   // included, so it carries them itself.
-  const railLabel = highlight ? `${item.label}, ${highlight}` : item.label;
+  const spoken = count ? count.label : highlight;
+  const railLabel = spoken ? `${item.label}, ${spoken}` : item.label;
   const dot = highlight ? (
     <span
       aria-hidden="true"
@@ -209,18 +210,36 @@ export function ProtectedNavItem({
       )}
     />
   ) : null;
+  // The count's badge: the rail row's 18px pill on the glyph's corner, the
+  // channel list's 24px one at the end of a full row.
+  const badge = count ? (
+    <Badge
+      variant="mention"
+      aria-hidden="true"
+      data-nav-count=""
+      className={cn(
+        "justify-center tabular-nums",
+        collapsed
+          ? "absolute -right-1 -top-1 h-[18px] min-w-[18px] px-1"
+          : "h-6 min-w-6 px-2",
+      )}
+    >
+      {count.value > 99 ? "99+" : count.value}
+    </Badge>
+  ) : null;
+  const trailing = badge ?? dot;
   const content = (
     <>
       <item.icon className={iconClassName} active={isActive} />
       {collapsed ? null : <span className="truncate">{item.label}</span>}
-      {collapsed ? dot : null}
-      {collapsed || !dot ? null : (
+      {collapsed ? trailing : null}
+      {collapsed || !trailing ? null : (
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {dot}
+          {trailing}
         </span>
       )}
-      {highlight && !collapsed ? (
-        <span className="sr-only">, {highlight}</span>
+      {spoken && !collapsed ? (
+        <span className="sr-only">, {spoken}</span>
       ) : null}
     </>
   );

@@ -15,6 +15,7 @@ import {
   FeatureEvent,
   type FeatureEventInput,
 } from '../decorators/feature-event.decorator';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Semesters')
 @ApiBearerAuth()
@@ -51,6 +52,7 @@ export class SemesterRolloverController {
   }
 
   @Get('semesters')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'List archived semesters' })
   async listSemesters(@CurrentChapterId() chapterId: string) {
     return this.semesterRolloverService.listSemesters(chapterId);

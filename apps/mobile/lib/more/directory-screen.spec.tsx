@@ -3,11 +3,15 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { useRouter } from "expo-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getSignetTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, typeRole } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
+import {
+  PRESENCE_NOT_READY,
+  setChapterPresence,
+} from "@/lib/presence/presence-store";
 import type { DirectoryRow } from "@/lib/more/directory";
 
 /**
@@ -76,6 +80,7 @@ function read(data: unknown, refetch = vi.fn()) {
 }
 
 const state = vi.hoisted(() => ({
+  chapterId: "c-1" as string | null,
   search: [] as unknown[],
   pending: false,
   permissions: [] as string[],
@@ -91,6 +96,15 @@ const state = vi.hoisted(() => ({
   // `GET /v1/roles`, for the Actives filters (#3971).
   roles: [] as unknown[],
   rolesError: false,
+  // `GET /v1/members` failing with nothing cached (#4135).
+  membersError: false,
+  // The Non-chapter business roles the viewer can pick (#4958).
+  pickable: [] as { id: string; name: string; held: boolean }[],
+  // `GET /v1/members/phone-reach`; `null` is a read not answered yet.
+  phoneReach: null as null | {
+    scope: "chapter" | "self";
+    byUserId: Map<string, unknown>;
+  },
 }));
 
 // One refetch per read, so a pull can be checked against each of them.
@@ -105,7 +119,9 @@ const refetches = vi.hoisted(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
-  useActiveChapterId: () => "c-1",
+  useMemberPhoneReach: () => ({ reach: state.phoneReach }),
+  useActiveChapterId: () => state.chapterId,
+  usePickableRoles: () => ({ roles: state.pickable, isLoading: false }),
   usePermissionList: () => state.permissions,
   useRoles: () =>
     state.rolesError
@@ -118,7 +134,19 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
           refetch: refetches.roles,
         }
       : read(state.roles, refetches.roles),
-  useMembers: () => read(state.members ?? MEMBERS, refetches.members),
+  useGroups: () => ({ data: [] }),
+  useMembers: () =>
+    state.membersError
+      ? {
+          data: undefined,
+          error: new Error("boom"),
+          isPending: false,
+          isError: true,
+          isSuccess: false,
+          isFetching: false,
+          refetch: refetches.members,
+        }
+      : read(state.members ?? MEMBERS, refetches.members),
   usePledgeClasses: () =>
     state.classesPending
       ? {
@@ -164,8 +192,8 @@ vi.mock("@/components/filter-chips", () => ({
   SearchField: () => null,
 }));
 
-vi.mock("@/components/directory/member-detail-sheet", () => ({
-  MemberDetailSheet: () => null,
+vi.mock("@/components/roles/pick-roles-sheet", () => ({
+  PickRolesSheet: () => null,
 }));
 
 // A props-only stand-in: the spec drives the filter it hands the screen.
@@ -174,9 +202,11 @@ vi.mock("@/components/directory/actives-filter-sheet", () => ({
 }));
 
 import DirectoryScreen, {
+  memberPressLabel,
   MemberListSkeleton,
   MemberRow,
 } from "@/app/(app)/directory";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { InlineNote } from "@/components/inline-note";
 import { ActivesFilterSheet as ActivesFilterSheetStandIn } from "@/components/directory/actives-filter-sheet";
@@ -196,6 +226,19 @@ function render(): ReactTestRenderer {
     );
   });
   return tree;
+}
+
+/** What the list draws in place of its rows, rendered on its own. */
+function emptyText(tree: ReactTestRenderer): string {
+  let body!: ReactTestRenderer;
+  act(() => {
+    body = create(
+      <FrappThemeProvider>
+        {list(tree).props.ListEmptyComponent as React.ReactElement}
+      </FrappThemeProvider>,
+    );
+  });
+  return screenText(body);
 }
 
 function list(tree: ReactTestRenderer) {
@@ -246,6 +289,7 @@ function chips(tree: ReactTestRenderer) {
     trailing: React.ReactElement<{
       label: string;
       on: boolean;
+      quiet?: boolean;
       accessibilityState: { expanded: boolean };
       onPress: () => void;
     }> | null;
@@ -255,6 +299,7 @@ function chips(tree: ReactTestRenderer) {
 type TrailingChip = React.ReactElement<{
   label: string;
   on: boolean;
+  quiet?: boolean;
   accessibilityLabel?: string;
   accessibilityState: Record<string, boolean>;
   onPress: () => void;
@@ -303,7 +348,11 @@ function countOf(tree: ReactTestRenderer, value: string) {
 }
 
 beforeEach(() => {
+  state.phoneReach = null;
+  state.pickable = [];
+  state.chapterId = "c-1";
   state.search = [];
+  state.membersError = false;
   state.pending = false;
   state.permissions = [];
   state.members = null;
@@ -449,6 +498,24 @@ describe("s13 Directory on a chapter with alumni (#2484)", () => {
     expect(refetches.search).toHaveBeenCalledWith({ cancelRefetch: true });
   });
 
+  it("says web's words for a search that matches nobody (#4135)", () => {
+    state.search = [];
+    const tree = render();
+    const field = inHeader(
+      tree,
+      (element) =>
+        (element.type as unknown) === SearchFieldStandIn &&
+        element.props.accessibilityLabel === "Search the directory",
+    ) as { onChangeText: (text: string) => void };
+    act(() => field.onChangeText("zz"));
+    expect(emptyText(tree)).toContain("Nobody matches “zz”.");
+  });
+
+  it("says web's title when the roster fails to load (#4135)", () => {
+    state.membersError = true;
+    expect(emptyText(render())).toContain("Couldn't load the directory");
+  });
+
   it("searches across both lists", () => {
     state.search = [CHARLES, MARCUS];
     const tree = render();
@@ -565,6 +632,58 @@ describe("s13's Actives filters (#3971)", () => {
     expect(activesFiltersChip(tree).props.label).toBe("Filters");
   });
 
+  it("offers the Phone app filter only with the chapter's reach, and narrows to who a push can't reach", () => {
+    const tree = render();
+    expect(
+      (sheet(tree) as unknown as { showPhoneReach?: boolean }).showPhoneReach,
+    ).toBe(false);
+    act(() => tree.unmount());
+
+    state.phoneReach = {
+      scope: "chapter",
+      byUserId: new Map([
+        [
+          "u-1",
+          {
+            user_id: "u-1",
+            state: "on",
+            platform: "ios",
+            last_opened_at: null,
+          },
+        ],
+        [
+          "u-2",
+          {
+            user_id: "u-2",
+            state: "web_only",
+            platform: null,
+            last_opened_at: null,
+          },
+        ],
+      ]),
+    };
+    const officer = render();
+    expect(
+      (sheet(officer) as unknown as { showPhoneReach?: boolean })
+        .showPhoneReach,
+    ).toBe(true);
+    pick(officer, { phoneReach: "unreachable" });
+    expect(listed(officer)).toEqual(["Andre Silva"]);
+    // The count line rides in the list's header, which the FlatList stand-in
+    // doesn't draw, so it is rendered on its own.
+    let header!: ReactTestRenderer;
+    act(() => {
+      header = create(
+        <FrappThemeProvider>
+          {list(officer).props.ListHeaderComponent as React.ReactElement}
+        </FrappThemeProvider>,
+      );
+    });
+    expect(screenText(header)).toContain(
+      "1 of 2 members can't get notifications",
+    );
+  });
+
   it("drops a pick whose role no longer exists rather than empty the list", () => {
     const tree = render();
     pick(tree, { roleId: "r-deleted" });
@@ -677,6 +796,14 @@ describe("s13's pledge classes and fraternal order (#3939)", () => {
 
     expect(metaOf(tree, "Marcus Reid")).toBe("Alpha");
     expect(metaOf(tree, "Andre Silva")).toBe("Beta");
+  });
+
+  // #5568: the sort lights quietly, as the chips beside it do.
+  it("draws the sort chip quiet", () => {
+    state.classes = CLASSES;
+    state.members = WITH_CLASSES;
+    const tree = render();
+    expect(orderChip(tree)!.props.quiet).toBe(true);
   });
 
   it("offers the sort under the chapter's own word, as typed, and lists by it", () => {
@@ -845,7 +972,7 @@ describe("s13's member rows", () => {
 
     expect(row.props.android_ripple?.color).toMatch(/^rgba\(/);
     // The suite's react-native stub runs as iOS.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
+    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.surface1);
     expect(held).not.toHaveProperty("opacity");
   });
 
@@ -940,6 +1067,25 @@ describe("s13's loading label", () => {
       }>
     ).props.label;
 
+  it("marks the Directory fully shown for Sentry once the members answer (#4342)", () => {
+    state.pending = true;
+    const loading = render();
+    expect(loading.root.findByType(ScreenReady).props.ready).toBe(false);
+    act(() => loading.unmount());
+
+    state.pending = false;
+    const loaded = render();
+    expect(loaded.root.findByType(ScreenReady).props.ready).toBe(true);
+    act(() => loaded.unmount());
+
+    // No chapter: its reads never go out, so the query stays pending for good.
+    state.pending = true;
+    state.chapterId = null;
+    const noChapter = render();
+    expect(noChapter.root.findByType(ScreenReady).props.ready).toBe(true);
+    act(() => noChapter.unmount());
+  });
+
   it("names the tab's list, or the search", () => {
     state.pending = true;
     const tree = render();
@@ -990,14 +1136,14 @@ describe("s13's frame (#2485)", () => {
   });
 });
 
-/** #3022. s13 draws its own header, so it draws the board's `‹ More` itself. */
+/** #3022. s13 draws its own header, so it draws the board's `‹ You` itself. */
 describe("s13's back row (#3022)", () => {
-  it("pins ‹ More above the title, outside the scrolling list", () => {
+  it("pins ‹ You above the title, outside the scrolling list", () => {
     const tree = render();
     // Pinned like every screen's capsule, so it never scrolls away: it sits
     // before the list in the tree, and the list's header starts at the title.
-    expectBackRow(tree, "More", "/more");
-    expect(screenText(tree).startsWith("More")).toBe(true);
+    expectBackRow(tree, "You", "/you");
+    expect(screenText(tree).startsWith("You")).toBe(true);
     let header!: ReactTestRenderer;
     act(() => {
       header = create(
@@ -1058,5 +1204,287 @@ describe("s13's Invite members button", () => {
     const withButton = render();
     expect(bottom(withButton)).toBeGreaterThan(plain);
     withButton.unmount();
+  });
+});
+
+/**
+ * #5568 (Paul, 2026-11-19): one layout, rows, as iOS Contacts and Slack's
+ * member directory list people; the List | Grid round of #4175 came out under
+ * the ban on view switchers. A row pushes the member's profile screen, and
+ * the chips above the list light quietly, so the rows read louder.
+ */
+describe("s13's rows, profile and quiet chips (#5568)", () => {
+  const row = (n: number): DirectoryRow => ({
+    memberId: `m-${n}`,
+    userId: `u-${n}`,
+    displayName: `Member ${n}`,
+    initials: "M",
+    meta: n === 1 ? "Treasurer · CS '27" : null,
+    avatarUrl: null,
+    pledgeClassId: null,
+    orderNumber: null,
+  });
+
+  function renderNode(node: React.ReactElement): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<FrappThemeProvider>{node}</FrappThemeProvider>);
+    });
+    return tree;
+  }
+
+  const pressables = (tree: ReactTestRenderer) =>
+    tree.root.findAll((node) => (node.type as unknown) === "Pressable");
+
+  it("draws no List | Grid control, and hands the list rows, not lines", () => {
+    const tree = render();
+    expect(() =>
+      inHeader(tree, (element) => element.props.screen === "directory"),
+    ).toThrow("not in the list header");
+    expect(list(tree).props.numColumns).toBeUndefined();
+    expect(listed(tree).length).toBeGreaterThan(0);
+  });
+
+  it("pushes the member's profile screen when a row is tapped", () => {
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    const tree = render();
+    const renderItem = list(tree).props.renderItem as (info: {
+      item: DirectoryRow;
+      index: number;
+    }) => React.ReactElement;
+    const first = (list(tree).props.data as DirectoryRow[])[0]!;
+    const item = renderNode(renderItem({ item: first, index: 0 }));
+    act(() => pressables(item)[0]!.props.onPress());
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/member",
+      params: { userId: first.userId },
+    });
+  });
+
+  it("lights the chips quietly, the tabs and the chips beside them", () => {
+    const tree = render();
+    expect(chips(tree)).toMatchObject({ quiet: true });
+    const beside = trailingChips(tree);
+    expect(beside.length).toBeGreaterThan(0);
+    for (const chip of beside) expect(chip.props.quiet).toBe(true);
+  });
+
+  it("draws the Alumni tab's Filters chip quiet too", () => {
+    const tree = render();
+    act(() => chips(tree).onSelect("alumni"));
+    expect(chips(tree).trailing!.props).toMatchObject({
+      label: "Filters",
+      quiet: true,
+    });
+  });
+
+  it("draws Add roles quiet", () => {
+    state.pickable = [{ id: "r-im", name: "Intramurals" }] as never;
+    const tree = render();
+    expect(
+      inHeader(tree, (element) => element.props.label === "Add roles"),
+    ).toMatchObject({ quiet: true });
+  });
+
+  it("names a row with its member's words", () => {
+    const rowTree = renderNode(<MemberRow row={row(1)} onPress={vi.fn()} />);
+    expect(pressables(rowTree)[0]!.props.accessibilityLabel).toBe(
+      memberPressLabel(row(1)),
+    );
+  });
+  /**
+   * #4137: the row carries the member's custom status line under the name and
+   * their presence dot on the avatar, as web's Directory row and the member
+   * sheet do (`components.md` § Chat member list: "The Directory row carries the
+   * same line under the name"). Nothing until presence has synced: no dot, no
+   * claim of Offline.
+   */
+  describe("Directory row presence and status line (#4137)", () => {
+    const AWAY = { status: "idle" as const, line: "At practice till 6" };
+
+    /** Chapter presence synced, with every member Idle on AWAY's line. */
+    function syncAway() {
+      act(() =>
+        setChapterPresence({
+          statusOf: () => AWAY.status,
+          lineOf: () => AWAY.line,
+          isReady: true,
+        }),
+      );
+    }
+
+    afterEach(() => {
+      act(() => setChapterPresence(PRESENCE_NOT_READY));
+    });
+
+    it("draws the status line under the name and the dot on the avatar", () => {
+      syncAway();
+      const tree = renderNode(<MemberRow row={row(1)} onPress={vi.fn()} />);
+      const text = screenText(tree);
+      expect(text).toContain("At practice till 6");
+      expect(text.indexOf("Member 1")).toBeLessThan(
+        text.indexOf("At practice till 6"),
+      );
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "member-presence-idle",
+        ),
+      ).not.toHaveLength(0);
+      expect(pressables(tree)[0]!.props.accessibilityLabel).toBe(
+        memberPressLabel(row(1), AWAY),
+      );
+    });
+
+    it("speaks presence and the status line before the meta line", () => {
+      expect(memberPressLabel(row(1), AWAY)).toBe(
+        "View Member 1's profile, Idle, At practice till 6, Treasurer · CS '27",
+      );
+    });
+
+    it("draws neither before presence has synced", () => {
+      const tree = renderNode(<MemberRow row={row(1)} onPress={vi.fn()} />);
+      expect(screenText(tree)).not.toContain("At practice");
+      expect(
+        tree.root.findAll((node) =>
+          String(node.props.testID ?? "").startsWith("member-presence-"),
+        ),
+      ).toHaveLength(0);
+    });
+
+    it("asks to search members, led by the lens, as web's search does", () => {
+      const field = inHeader(
+        render(),
+        (element) =>
+          (element.type as unknown) === SearchFieldStandIn &&
+          element.props.accessibilityLabel === "Search the directory",
+      ) as { placeholder: string; searchGlyph?: boolean };
+      expect(field.placeholder).toBe("Search members");
+      expect(field.searchGlyph).toBe(true);
+    });
+
+    describe("from the screen's chapter presence", () => {
+      afterEach(() => {
+        act(() => setChapterPresence(PRESENCE_NOT_READY));
+      });
+
+      function renderedItem(tree: ReturnType<typeof render>) {
+        const renderItem = list(tree).props.renderItem as (info: {
+          item: unknown;
+          index: number;
+        }) => React.ReactElement;
+        const item = (list(tree).props.data as unknown[])[0];
+        return renderNode(renderItem({ item, index: 0 }));
+      }
+
+      function presenceDots(tree: ReturnType<typeof renderNode>) {
+        return tree.root.findAll((node) =>
+          String(node.props.testID ?? "").startsWith("member-presence-"),
+        );
+      }
+
+      it("hands each row its member's dot and status line once synced", () => {
+        act(() =>
+          setChapterPresence({
+            statusOf: () => "idle",
+            lineOf: () => "At practice till 6",
+            isReady: true,
+          }),
+        );
+        const item = renderedItem(render());
+        expect(screenText(item)).toContain("At practice till 6");
+        expect(presenceDots(item)).not.toHaveLength(0);
+      });
+
+      it("draws no Offline dot before the first sync", () => {
+        // Unsynced, the store answers "offline" for everyone; the screen must
+        // not pass that on as a fact.
+        act(() => setChapterPresence(PRESENCE_NOT_READY));
+        expect(presenceDots(renderedItem(render()))).toHaveLength(0);
+      });
+    });
+
+    /**
+     * #4633: a row reads its own member's presence, so a heartbeat, or
+     * another member's change, re-renders no row but that member's.
+     */
+    it("re-renders a row only when its own member's presence changes", () => {
+      const status: Record<string, "online" | "idle"> = {
+        "u-1": "online",
+        "u-2": "online",
+      };
+      const lines: Record<string, string> = {};
+      const publish = () =>
+        act(() =>
+          setChapterPresence({
+            statusOf: (id) => status[id] ?? "offline",
+            lineOf: (id) => lines[id] ?? null,
+            isReady: true,
+          }),
+        );
+      publish();
+      const commits = vi.fn();
+      const profiled = renderNode(
+        <React.Profiler id="row" onRender={commits}>
+          <MemberRow row={row(1)} onPress={vi.fn()} />
+        </React.Profiler>,
+      );
+      const mounted = commits.mock.calls.length;
+
+      // A heartbeat re-publish with nothing changed, then another member's.
+      publish();
+      status["u-2"] = "idle";
+      publish();
+      expect(commits).toHaveBeenCalledTimes(mounted);
+
+      // This member's own change does reach the row: its status, then its
+      // line alone.
+      status["u-1"] = "idle";
+      publish();
+      expect(commits).toHaveBeenCalledTimes(mounted + 1);
+      expect(screenText(profiled)).not.toContain("At practice");
+      lines["u-1"] = "At practice till 6";
+      publish();
+      expect(commits).toHaveBeenCalledTimes(mounted + 2);
+      expect(screenText(profiled)).toContain("At practice till 6");
+    });
+
+    it("re-renders nothing above the rows on a presence change", () => {
+      const commits = vi.fn();
+      renderNode(
+        <React.Profiler id="screen" onRender={commits}>
+          <DirectoryScreen />
+        </React.Profiler>,
+      );
+      const mounted = commits.mock.calls.length;
+      // A heartbeat and a member's change: the screen root reads no presence,
+      // so neither commits it (each row reads its own, #4633).
+      for (const status of ["online", "idle"] as const) {
+        act(() =>
+          setChapterPresence({
+            statusOf: () => status,
+            lineOf: () => null,
+            isReady: true,
+          }),
+        );
+      }
+      expect(commits).toHaveBeenCalledTimes(mounted);
+    });
+  });
+});
+
+describe("Add roles on the Directory (#4958, placement provisional)", () => {
+  const addRoles = (tree: ReactTestRenderer) =>
+    inHeader(tree, (element) => element.props.label === "Add roles");
+
+  it("offers Add roles when the chapter has roles members pick", () => {
+    state.pickable = [{ id: "im", name: "Intramurals", held: false }];
+    const tree = render();
+    expect(addRoles(tree).accessibilityRole).toBe("button");
+  });
+
+  it("offers nothing in a chapter with none", () => {
+    const tree = render();
+    expect(() => addRoles(tree)).toThrow("not in the list header");
   });
 });

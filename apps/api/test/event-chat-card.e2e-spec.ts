@@ -53,6 +53,8 @@ describe('Event chat card — create endpoint wiring (e2e)', () => {
   let app: INestApplication;
 
   const eventServiceMock = {
+    // Add to next meeting's agenda listens for created events (#5790).
+    onCreated: jest.fn(),
     findByChapter: jest.fn(),
     findById: jest.fn(),
     create: jest.fn().mockResolvedValue(createdEvent),
@@ -94,6 +96,8 @@ describe('Event chat card — create endpoint wiring (e2e)', () => {
       .post(`${V1}/events`)
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
+      // The device's zone, for a legacy repeat token (#4746).
+      .set('x-time-zone', 'America/New_York')
       .send({
         name: 'Chapter Meeting',
         start_time: createdEvent.start_time,
@@ -111,6 +115,7 @@ describe('Event chat card — create endpoint wiring (e2e)', () => {
         channel_id: CHANNEL_ID,
         client_message_id: CLIENT_MESSAGE_ID,
       }),
+      'America/New_York',
     );
   });
 

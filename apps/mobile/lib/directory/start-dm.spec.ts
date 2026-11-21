@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
 import {
-  dmChannelIdOf,
   MESSAGE_CHECKING_BLOCK_LIST,
   messageRowDescription,
   messageRowState,
@@ -57,7 +56,10 @@ describe("messageRowState", () => {
     "is hidden for a member the viewer blocked, with the list %s",
     (status) => {
       expect(
-        messageRowState({ memberId: MEMBER, blockList: list(status, [MEMBER]) }),
+        messageRowState({
+          memberId: MEMBER,
+          blockList: list(status, [MEMBER]),
+        }),
       ).toEqual({ kind: "hidden" });
     },
   );
@@ -113,21 +115,5 @@ describe("messageRowDescription", () => {
     expect(messageRowDescription({ kind: "retry" })).toBe(
       "Couldn't check your block list first. Tap to try again.",
     );
-  });
-});
-
-describe("dmChannelIdOf", () => {
-  it("reads the channel id from the DM response", () => {
-    expect(dmChannelIdOf({ id: "chan-1", type: "DM" })).toBe("chan-1");
-  });
-
-  it.each([
-    ["undefined", undefined],
-    ["null", null],
-    ["a body with no id", { type: "DM" }],
-    ["an empty id", { id: "" }],
-    ["a non-string id", { id: 42 }],
-  ])("returns null for %s, so the caller reports a failure", (_, body) => {
-    expect(dmChannelIdOf(body)).toBeNull();
   });
 });

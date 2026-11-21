@@ -66,6 +66,13 @@ function makeSupabase(pages: Page[]) {
     return Promise.resolve(pages[pageIndex++] ?? { error: null });
   });
 
+  // `claimDispatch` is insert-or-ignore: `upsert(..., { ignoreDuplicates })`
+  // then `select`, resolved through `then` below.
+  builder.upsert = jest.fn((payload: Record<string, unknown>) => {
+    insertPayload = payload;
+    return builder;
+  });
+
   builder.delete = jest.fn(() => {
     deleting = true;
     return builder;
@@ -250,6 +257,32 @@ describe('SupabaseScheduledJobsRepository', () => {
       } finally {
         error.mockRestore();
       }
+    });
+  });
+
+  describe('findIncompleteTimedTasksDueBetween', () => {
+    // The timed reminders' only "done means no reminder" guard (#5279): a
+    // task completed before its hour-before push is never read.
+    it('reads open tasks only, inside the due_at window', async () => {
+      const { repo, supabase } = await buildRepo([{ data: [], error: null }]);
+      const from = new Date('2026-08-05T12:00:00.000Z');
+      const to = new Date('2026-08-05T13:00:00.000Z');
+
+      await repo.findIncompleteTimedTasksDueBetween(from, to);
+
+      expect(supabase.builder.in).toHaveBeenCalledWith('status', [
+        'TODO',
+        'IN_PROGRESS',
+        'OVERDUE',
+      ]);
+      expect(supabase.builder.gte).toHaveBeenCalledWith(
+        'due_at',
+        from.toISOString(),
+      );
+      expect(supabase.builder.lte).toHaveBeenCalledWith(
+        'due_at',
+        to.toISOString(),
+      );
     });
   });
 
@@ -520,7 +553,9 @@ describe('SupabaseScheduledJobsRepository', () => {
 
   describe('claimDispatch', () => {
     it('claims the reminder and records the due date in the key', async () => {
-      const { repo, supabase } = await buildRepo([{ data: null, error: null }]);
+      const { repo, supabase } = await buildRepo([
+        { data: [{ entity_id: 'inv-1' }], error: null },
+      ]);
 
       const claimed = await repo.claimDispatch(
         'chap-1',
@@ -538,6 +573,21 @@ describe('SupabaseScheduledJobsRepository', () => {
         threshold: 'DUE_SOON',
         due_date: '2026-08-06',
       });
+      expect(supabase.builder.upsert).toHaveBeenCalledWith(expect.anything(), {
+        onConflict: 'entity_type,entity_id,threshold,due_date',
+        ignoreDuplicates: true,
+      });
+    });
+
+    // The ordinary case on every sweep after the first: `on conflict do
+    // nothing` returns no row, so Postgres logs no unique-violation error.
+    it('loses the claim when the insert returns no row', async () => {
+      const { repo } = await buildRepo([{ data: [], error: null }]);
+
+      await expect(
+        repo.claimDispatch('chap-1', 'TASK', 'task-1', 'OVERDUE', '2026-08-04'),
+      ).resolves.toBe(false);
+      expect(reportedFingerprints()).toEqual([]);
     });
 
     it('loses the claim on a unique violation without treating it as an error', async () => {
@@ -856,6 +906,9 @@ describe('SupabaseScheduledJobsRepository — tenant scope', () => {
     expect(rows.map((r) => r.id).sort()).toEqual([INVOICE_A, INVOICE_B].sort());
     const [op] = harness.ops;
     expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
+    // Invoices have no `due_at`; the filter that once sat here is the task
+    // query's (#4788), and on this table PostgREST rejects it.
+    expect(op.filters.some((f) => f.column === 'due_at')).toBe(false);
   });
 
   it('findIncompleteTasksDueBetween is a cross-chapter sweep (characterised)', async () => {
@@ -867,6 +920,10 @@ describe('SupabaseScheduledJobsRepository — tenant scope', () => {
     expect(rows.map((r) => r.id).sort()).toEqual([TASK_A, TASK_B].sort());
     const [op] = harness.ops;
     expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
+    // A timed task is the five-minute sweep's, not the daily one's (#4788).
+    expect(op.filters).toContainEqual(
+      expect.objectContaining({ column: 'due_at' }),
+    );
   });
 
   it('findExpiredPollsPendingNotice is a cross-chapter sweep (characterised)', async () => {

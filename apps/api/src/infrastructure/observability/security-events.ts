@@ -8,7 +8,7 @@
  * These records are emitted at `warn` so a level filter alone isolates them.
  */
 
-export const SECURITY_EVENT = 'security_event' as const;
+const SECURITY_EVENT = 'security_event' as const;
 
 export type SecurityEventKind =
   'auth_failure' | 'authorization_denied' | 'rate_limit_rejected';
@@ -19,12 +19,11 @@ export type SecurityEventKind =
  * Keyed by status because that is what the exception filter has in hand at the
  * one point every denial passes through, whichever guard raised it.
  */
-export const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> =
-  {
-    401: 'auth_failure',
-    403: 'authorization_denied',
-    429: 'rate_limit_rejected',
-  };
+const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> = {
+  401: 'auth_failure',
+  403: 'authorization_denied',
+  429: 'rate_limit_rejected',
+};
 
 /**
  * Which of the auth guard's 401s a failure was (#3907). An auth-failure spike
@@ -34,10 +33,17 @@ export const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> =
  *    calling a guarded route signed out, or something that isn't our client.
  *  - `token_rejected`: a bearer token Supabase Auth refused, usually one that
  *    expired while a client kept using it.
+ *  - `claims_rejected`: a bearer token the guard refused itself, on a read
+ *    it verifies locally (#5043): `getClaims` refused it, or its `iss`,
+ *    `aud`, `role`, `sub` or `exp` did not check out (`failedClaimCheck`).
+ *    Also the throttler's 401 (`authErrorCode` `unverified_limit`), for a
+ *    token it found invalid itself on a request a rate limit refused
+ *    (`custom-throttler.guard.ts`).
  *
  * Any other 401 (the Stripe webhook's signature check) carries no reason.
  */
-export type AuthFailureReason = 'no_bearer' | 'token_rejected';
+export type AuthFailureReason =
+  'no_bearer' | 'token_rejected' | 'claims_rejected';
 
 /**
  * What the guard knew about a refused credential. Never the token, and never
@@ -48,6 +54,8 @@ export interface AuthFailureDetail {
   /**
    * Supabase Auth's error code for a `token_rejected` (`bad_jwt`,
    * `session_not_found`, `user_not_found`, …), when it sent a well-formed one.
+   * For a `claims_rejected`, what refused it on the local check:
+   * spec/behavior/observability.md lists the codes.
    */
   authErrorCode?: string;
   /**

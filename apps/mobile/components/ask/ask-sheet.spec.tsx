@@ -1,0 +1,1258 @@
+/** @vitest-environment jsdom */
+import React from "react";
+import { act } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useRouter } from "expo-router";
+import { useReducedMotion, withRepeat } from "react-native-reanimated";
+import * as WebBrowser from "expo-web-browser";
+import type { AskExchange } from "@repo/hooks";
+import {
+  ACT_COPY,
+  AI_REPORT_COPY,
+  ASK_COPY,
+  ASK_STARTER,
+  askSavedLine,
+  askStepsOn,
+  askUnavailableLine,
+  type AskAnswer,
+} from "@repo/validation";
+import { FrappThemeProvider } from "@/lib/theme";
+import { flatStyle } from "@/test/flat-style";
+import { screenText } from "@/test/screen-text";
+
+/**
+ * Ask Frapp's sheet on the phone (#450, #451, #718): one conversation in one
+ * field, what a member sees for each way a turn can end, and what is sent
+ * with a question. A turn's own states are in `ask-turn.spec.tsx`, a card's
+ * in `ask-proposal.spec.tsx`.
+ */
+
+const hooks = vi.hoisted(() => ({
+  exchanges: [] as unknown[],
+  ask: vi.fn(),
+  retry: vi.fn(),
+  setProposal: vi.fn(),
+  resolveProposal: vi.fn(),
+  stop: vi.fn(),
+  reset: vi.fn(),
+  statusEnabled: [] as boolean[],
+  savedUntil: null as string | null,
+  download: vi.fn(),
+  backwork: vi.fn(),
+  signal: vi.fn(),
+  actions: [] as string[],
+  actEnabled: [] as boolean[],
+  mayAct: false,
+  suggestions: [] as Array<{ kind: string; text: string; request: boolean }>,
+  suggestionsEnabled: [] as boolean[],
+  starter: false,
+  starterShown: vi.fn(),
+}));
+// When the starter is due is `useAskStarter`'s own spec, in `@repo/hooks`.
+vi.mock("@/lib/ai/availability", () => ({
+  useMayAct: () => hooks.mayAct,
+  useActActions: (options: { enabled: boolean }) => {
+    hooks.actEnabled.push(options.enabled);
+    return hooks.actions;
+  },
+}));
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useAsk: () => ({
+    exchanges: hooks.exchanges,
+    working: (hooks.exchanges as { phase: string }[]).some(
+      (exchange) => exchange.phase === "working",
+    ),
+    ask: hooks.ask,
+    retry: hooks.retry,
+    setProposal: hooks.setProposal,
+    resolveProposal: hooks.resolveProposal,
+    stop: hooks.stop,
+    reset: hooks.reset,
+  }),
+  useAskStatus: (options: { enabled: boolean }) => {
+    hooks.statusEnabled.push(options.enabled);
+    return {
+      data: options.enabled ? { saved_until: hooks.savedUntil } : undefined,
+    };
+  },
+  useDocumentDownloadUrl: () => ({ mutateAsync: hooks.download }),
+  useFetchBackworkResource: () => hooks.backwork,
+  useAskSignal: () => hooks.signal,
+  // The thumbs have their own specs (`ask-turn.spec.tsx`).
+  useAskThumbs: () => ({
+    state: { rating: null, reason: null },
+    failed: false,
+    rate: vi.fn(),
+    giveReason: vi.fn(),
+  }),
+  useAskSuggestions: (options: { enabled: boolean }) => {
+    hooks.suggestionsEnabled.push(options.enabled);
+    return { suggestions: options.enabled ? hooks.suggestions : [] };
+  },
+  useActEventAudience: () => ({ mutateAsync: vi.fn() }),
+  useAcceptAiSuggestion: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDismissAiSuggestion: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useChapterRoster: () => ({
+    data: [{ user_id: "u1", display_name: "Ana Ruiz" }],
+    isSuccess: true,
+    isPending: false,
+  }),
+  useCurrentUser: () => ({ data: { id: "me" } }),
+  useViewerUserId: () => "me",
+  useViewerDisplayName: () => "Marcus Ellison",
+  useCleanDictation: () => dictating.clean,
+  useAskStarter: () => ({
+    mode: hooks.starter ? "starter" : "greeting",
+    starterShown: hooks.starterShown,
+  }),
+}));
+
+// Dictation (#5276): the phone's recogniser and the cleanup call, faked.
+const dictating = vi.hoisted(() => ({
+  available: false,
+  granted: true,
+  handlers: null as null | {
+    onWords: (text: string) => void;
+    onLevel: (level: number) => void;
+    onEnd: (text: string) => void;
+    onFailure: (failure: string) => void;
+  },
+  finish: vi.fn(),
+  cancel: vi.fn(),
+  clean: vi.fn(async (text: string): Promise<string | null> => text),
+}));
+vi.mock("@/lib/dictation/speech", () => ({
+  isDictationAvailable: () => dictating.available,
+  requestDictationPermission: async () => dictating.granted,
+  startDictation: (handlers: typeof dictating.handlers) => {
+    dictating.handlers = handlers;
+    return { finish: dictating.finish, cancel: dictating.cancel };
+  },
+}));
+
+const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
+vi.mock("@/components/ai/meet-frapp-ai", () => ({
+  useAiConsentGate: () => ({
+    ensureConsent: gate.ensureConsent,
+    consentSheet: null,
+  }),
+}));
+
+const reporting = vi.hoisted(() => ({
+  offered: true,
+  reported: false,
+  report: vi.fn(),
+}));
+vi.mock("@/components/ai/report-ai-sheet", () => ({
+  useAiReport: () => ({
+    offered: reporting.offered,
+    isReported: () => reporting.reported,
+    report: reporting.report,
+    reportSheet: null,
+  }),
+}));
+
+// A purple chapter. The header's crest, the member's bubble and the send
+// button take it (#4702); Frapp's source markers keep Ask's fixed gold.
+vi.mock("@/lib/chapter-branding", () => ({
+  useChapterBranding: () => ({
+    accent: "#8B5CF6",
+    accentPrimary: "#7C3AED",
+    accentOnPrimary: "#FFFFFF",
+  }),
+}));
+
+import { FrappCrest } from "@/components/frapp-crest";
+import { AskSheet } from "./ask-sheet";
+import {
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
+
+afterEach(() => {
+  dismissItemMenu();
+});
+
+const modal = { present: vi.fn(), dismiss: vi.fn() };
+
+const sheetElement = (onClosed?: () => void) => (
+  <FrappThemeProvider>
+    <AskSheet ref={React.createRef<never>()} onClosed={onClosed} />
+  </FrappThemeProvider>
+);
+/** `scroller` stands in for the thread's native scroll view, made per mount. */
+function render(
+  onClosed?: () => void,
+  scroller?: () => unknown,
+): ReactTestRenderer {
+  let tree!: ReactTestRenderer;
+  act(() => {
+    tree = create(sheetElement(onClosed), {
+      createNodeMock: (element) => {
+        const type = element.type as unknown;
+        if (type === "BottomSheetModal") return modal;
+        if (type === "BottomSheetScrollView" && scroller) return scroller();
+        return null;
+      },
+    });
+  });
+  return tree;
+}
+
+const sheet = (tree: ReactTestRenderer) =>
+  tree.root.findAll((node) => (node.type as unknown) === "BottomSheetModal")[0];
+const byLabel = (tree: ReactTestRenderer, label: string) =>
+  tree.root.findAll(
+    (node) =>
+      typeof node.type === "string" && node.props.accessibilityLabel === label,
+  );
+const open = (tree: ReactTestRenderer) =>
+  act(() => sheet(tree).props.onAnimate(-1, 0));
+/** What the server built from this member's account (#4700). */
+const EVENT = {
+  kind: "event",
+  text: "When and where is Formal on Friday?",
+  request: false,
+};
+const REQUEST = {
+  kind: "request",
+  text: "Make a task for me to get ready for Sunday's event, due Saturday",
+  request: true,
+};
+async function askSuggested(tree: ReactTestRenderer, suggestion = EVENT) {
+  await act(async () => byLabel(tree, suggestion.text)[0].props.onPress());
+}
+
+const DOCUMENT = {
+  id: "s1",
+  kind: "document",
+  title: "Bylaws",
+  detail: null,
+  date: null,
+  target: { type: "document", document_id: "d1", page: null },
+};
+const MINUTES = {
+  id: "s2",
+  kind: "meeting",
+  title: "Chapter meeting",
+  detail: null,
+  date: "2026-11-09T12:00:00Z",
+  target: { type: "meeting", meeting_id: "m1" },
+};
+function answered(): AskExchange {
+  const answer: AskAnswer = {
+    status: "answered",
+    reason: null,
+    text: "Quorum is half. It was voted.",
+    citations: [
+      { source: 0, at: 15, quote: "half" },
+      { source: 1, at: 29, quote: "voted" },
+    ],
+    sources: [DOCUMENT, MINUTES],
+    left_out_messages: 0,
+    unverified_citations: 0,
+    truncated: false,
+    saved: false,
+  };
+  return {
+    id: "turn-1",
+    question: "What is quorum?",
+    phase: "done",
+    step: null,
+    preview: "",
+    answer,
+    proposal: null,
+    resolution: null,
+    failure: null,
+  };
+}
+const working = (): AskExchange => ({
+  ...answered(),
+  id: "turn-2",
+  question: "And for elections?",
+  phase: "working",
+  answer: null,
+});
+const POINTS_CARD = {
+  status: "proposed",
+  action: "give_points",
+  suggestion: {
+    id: "sg-1",
+    kind: "points",
+    points: {
+      amount: 5,
+      reason: "Came to chapter",
+      target_user_ids: ["u1"],
+      event_name: null,
+      event_start_time: null,
+    },
+    task: null,
+    new_event: null,
+  },
+  notes: [],
+  event_choice: null,
+  missing: null,
+  reason: null,
+  available_actions: [],
+};
+const proposed = (): AskExchange => ({
+  ...answered(),
+  id: "turn-3",
+  question: "Give Ana 5 points",
+  answer: null,
+  proposal: POINTS_CARD as never,
+});
+const field = (tree: ReactTestRenderer) =>
+  tree.root.findAll(
+    (node) => (node.type as unknown) === "BottomSheetTextInput",
+  )[0]!;
+/** What a question is sent with, for a member who can only ask. */
+const ASKING = {
+  savedNoticeShown: false,
+  actions: false,
+  gate: expect.any(Function),
+};
+const sourceRow = (tree: ReactTestRenderer, number: number) =>
+  tree.root.findAll(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      String(node.props.accessibilityLabel).startsWith(`Source ${number}:`),
+  )[0];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  hooks.exchanges = [];
+  hooks.statusEnabled = [];
+  hooks.savedUntil = null;
+  hooks.actions = [];
+  hooks.actEnabled = [];
+  hooks.mayAct = false;
+  hooks.suggestions = [EVENT];
+  hooks.suggestionsEnabled = [];
+  hooks.starter = false;
+  hooks.starterShown.mockClear();
+  reporting.offered = true;
+  reporting.reported = false;
+  gate.ensureConsent.mockResolvedValue(true);
+  vi.mocked(WebBrowser.openBrowserAsync).mockResolvedValue({
+    type: "dismiss",
+  } as never);
+});
+
+describe("AskSheet", () => {
+  it("opens on the crest, the day and a greeting, with what this member could ask as arrow rows and no word about how Ask works (#4904)", () => {
+    const tree = render();
+    open(tree);
+    const text = screenText(tree);
+    expect(text).toMatch(/Good (morning|afternoon|evening), Marcus\./);
+    expect(text).not.toContain("Ask about your chapter");
+    expect(text).not.toContain(ASK_STARTER.answer);
+    expect(text).toContain(EVENT.text);
+    expect(text).not.toContain("answered on its own");
+    // Read to a screen reader as Ask's header, with the greeting.
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityRole === "header" &&
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith(`${ASK_COPY.name}. Good `),
+      ).length,
+    ).toBeGreaterThan(0);
+    // The rows fade in at the bottom, where nothing sits below them.
+    const list = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Animated.View" &&
+        node.props.entering !== undefined,
+    );
+    expect(list).toHaveLength(1);
+    expect(list[0].props.entering).toMatchObject({ animation: "FadeIn" });
+    expect(field(tree).props.placeholder).toBe(ASK_COPY.placeholder);
+    // Nothing to clear yet.
+    expect(byLabel(tree, ASK_COPY.new_conversation)).toHaveLength(0);
+  });
+
+  it("opens plain for a member with nothing to ask about: no preset stands in", () => {
+    hooks.suggestions = [];
+    const tree = render();
+    open(tree);
+    expect(screenText(tree)).toMatch(
+      /Good (morning|afternoon|evening), Marcus\./,
+    );
+    expect(
+      tree.root.findAll(
+        (node) => node.props.accessibilityHint === "Sends this.",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("opens a member's first time on the exchange that says what Frapp can do, in place of the greeting", () => {
+    hooks.starter = true;
+    const tree = render();
+    open(tree);
+    const text = screenText(tree);
+    expect(text).toContain("Hey Marcus, I'm Frapp.");
+    expect(text).toContain(ASK_STARTER.question);
+    expect(text).toContain(ASK_STARTER.answer);
+    expect(text).not.toContain(ASK_STARTER.answer_act);
+    expect(text).toContain(EVENT.text);
+    // The starter is never sent, and is recorded once it is drawn.
+    expect(hooks.ask).not.toHaveBeenCalled();
+    expect(hooks.starterShown).toHaveBeenCalled();
+  });
+
+  it("sends a tapped question as a suggestion, and the one request like typed words", async () => {
+    hooks.mayAct = true;
+    hooks.suggestions = [EVENT, REQUEST];
+    const tree = render();
+    open(tree);
+    await askSuggested(tree);
+    expect(hooks.ask).toHaveBeenLastCalledWith(EVENT.text, {
+      ...ASKING,
+      actions: true,
+      suggested: true,
+    });
+    await askSuggested(tree, REQUEST);
+    expect(hooks.ask).toHaveBeenLastCalledWith(REQUEST.text, {
+      ...ASKING,
+      actions: true,
+      suggested: false,
+    });
+  });
+
+  it("asks nothing of the server until the sheet is actually open", () => {
+    const tree = render();
+    expect(hooks.statusEnabled.every((enabled) => !enabled)).toBe(true);
+    expect(hooks.actEnabled.every((enabled) => !enabled)).toBe(true);
+    expect(hooks.suggestionsEnabled.every((enabled) => !enabled)).toBe(true);
+    open(tree);
+    expect(hooks.suggestionsEnabled.at(-1)).toBe(true);
+    expect(hooks.statusEnabled.at(-1)).toBe(true);
+    expect(hooks.actEnabled.at(-1)).toBe(true);
+  });
+
+  it("sends what was typed with the consent gate, and clears the field", () => {
+    const tree = render();
+    act(() => field(tree).props.onChangeText("What is quorum?"));
+    act(() => byLabel(tree, ASK_COPY.send)[0].props.onPress());
+    expect(hooks.ask).toHaveBeenCalledWith("What is quorum?", ASKING);
+    // The gate is the AI sheet's: the hook runs it once the turn is on screen.
+    expect(hooks.ask.mock.calls[0]![1].gate).toBe(gate.ensureConsent);
+    expect(field(tree).props.value).toBe("");
+  });
+
+  it("says questions are saved, and only then tells the server it said so", async () => {
+    hooks.savedUntil = "2026-11-26T12:00:00Z";
+    const tree = render();
+    expect(screenText(tree)).not.toContain(askSavedLine("November 26, 2026"));
+    open(tree);
+    expect(screenText(tree)).toContain(askSavedLine("November 26, 2026"));
+    await askSuggested(tree);
+    expect(hooks.ask).toHaveBeenCalledWith(EVENT.text, {
+      ...ASKING,
+      savedNoticeShown: true,
+      suggested: true,
+    });
+  });
+
+  it("holds the crest's glow still with Reduce Motion on, and lets it breathe otherwise", () => {
+    vi.mocked(withRepeat).mockClear();
+    open(render());
+    expect(withRepeat).toHaveBeenCalled();
+
+    vi.mocked(withRepeat).mockClear();
+    vi.mocked(useReducedMotion).mockReturnValue(true);
+    try {
+      open(render());
+      expect(withRepeat).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(useReducedMotion).mockReturnValue(false);
+    }
+  });
+
+  it("keeps every turn of the conversation on screen, oldest first", () => {
+    hooks.exchanges = [answered(), working()];
+    const text = screenText(render());
+    expect(text).toContain("What is quorum?");
+    expect(text).toContain("Quorum is half.");
+    expect(text).toContain("And for elections?");
+    expect(text.indexOf("What is quorum?")).toBeLessThan(
+      text.indexOf("And for elections?"),
+    );
+    expect(text).not.toContain(ASK_STARTER.answer);
+    expect(text).not.toMatch(/Good (morning|afternoon|evening), Marcus/);
+  });
+
+  it("starts a new conversation from the header", () => {
+    hooks.exchanges = [answered()];
+    const tree = render();
+    act(() => byLabel(tree, ASK_COPY.new_conversation)[0].props.onPress());
+    expect(hooks.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks a refused or failed turn again in its place", () => {
+    hooks.exchanges = [
+      {
+        ...answered(),
+        answer: {
+          ...answered().answer!,
+          status: "unavailable",
+          reason: "consent_required",
+        },
+      },
+      {
+        ...working(),
+        phase: "failed",
+        failure: { message: "Couldn't reach Frapp.", retryable: true },
+      },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain(askUnavailableLine("consent_required"));
+    act(() => byLabel(tree, ASK_COPY.consent_action)[0].props.onPress());
+    expect(hooks.retry).toHaveBeenLastCalledWith("turn-1", ASKING);
+    act(() => byLabel(tree, ASK_COPY.try_again)[0].props.onPress());
+    expect(hooks.retry).toHaveBeenLastCalledWith("turn-2", ASKING);
+  });
+
+  it("opens a document over the sheet, so the thread is still there", async () => {
+    hooks.exchanges = [answered()];
+    hooks.download.mockResolvedValue({
+      downloadUrl: "https://files.example/d1",
+    });
+    const tree = render();
+    await act(async () => sourceRow(tree, 1).props.onPress());
+    expect(hooks.download).toHaveBeenCalledWith("d1");
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      "https://files.example/d1",
+    );
+    expect(modal.dismiss).not.toHaveBeenCalled();
+    // No kept trace on this answer, so the open is counted against nothing.
+    expect(hooks.signal).toHaveBeenLastCalledWith(undefined, "source_opened");
+  });
+
+  it("counts a source opened against the answer's kept trace (#4904)", async () => {
+    const turn = answered();
+    hooks.exchanges = [
+      { ...turn, answer: { ...turn.answer!, ask_id: "trace-1" } },
+    ];
+    hooks.download.mockResolvedValue({
+      downloadUrl: "https://files.example/d1",
+    });
+    const tree = render();
+    await act(async () => sourceRow(tree, 1).props.onPress());
+    expect(hooks.signal).toHaveBeenLastCalledWith("trace-1", "source_opened");
+  });
+
+  it("downloads a backwork file Frapp found, fetching its link only then (#5209)", async () => {
+    const turn = answered();
+    hooks.exchanges = [
+      {
+        ...turn,
+        answer: {
+          ...turn.answer!,
+          sources: [
+            {
+              id: "backwork:bw1",
+              kind: "backwork",
+              title: "Midterm 2 · CSCI 1200",
+              detail: "CSCI 1200 · Fall 2025",
+              date: null,
+              target: { type: "backwork", backwork_id: "bw1" },
+            },
+            turn.answer!.sources[1]!,
+          ],
+        },
+      },
+    ];
+    hooks.backwork.mockResolvedValue({
+      downloadUrl: "https://files.example/bw1",
+    });
+    const tree = render();
+    expect(hooks.backwork).not.toHaveBeenCalled();
+    await act(async () => sourceRow(tree, 1).props.onPress());
+    expect(hooks.backwork).toHaveBeenCalledWith("bw1");
+    expect(hooks.download).not.toHaveBeenCalled();
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      "https://files.example/bw1",
+    );
+  });
+
+  it("says a document didn't open rather than doing nothing", async () => {
+    hooks.exchanges = [answered()];
+    hooks.download.mockRejectedValue(new Error("gone"));
+    const tree = render();
+    await act(async () => sourceRow(tree, 1).props.onPress());
+    expect(WebBrowser.openBrowserAsync).not.toHaveBeenCalled();
+    expect(screenText(tree)).toContain("That source didn't open. Try again.");
+  });
+
+  it("closes and opens the minutes screen for a minutes source", async () => {
+    hooks.exchanges = [answered()];
+    const tree = render();
+    await act(async () => sourceRow(tree, 2).props.onPress());
+    expect(modal.dismiss).toHaveBeenCalled();
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
+      "/minutes-details?id=m1",
+    );
+  });
+
+  // #5139: search left the field for its own screen; typing lists nothing.
+  it("only asks: typing lists no places, and the field reads Ask Frapp anything", () => {
+    const tree = render();
+    open(tree);
+    act(() => field(tree).props.onChangeText("rush"));
+    expect(
+      tree.root.findAll((node) => node.props.testID === "ask-find"),
+    ).toHaveLength(0);
+    expect(field(tree).props.placeholder).toBe(ASK_COPY.placeholder);
+  });
+
+  it("tells its host when it closed for a source, and only that once", async () => {
+    const onClosed = vi.fn();
+    hooks.exchanges = [answered()];
+    const tree = render(onClosed);
+    await act(async () => sourceRow(tree, 2).props.onPress());
+    act(() => sheet(tree).props.onDismiss());
+    expect(onClosed).toHaveBeenLastCalledWith(true);
+    act(() => sheet(tree).props.onDismiss());
+    expect(onClosed).toHaveBeenLastCalledWith(false);
+  });
+
+  it("drops a question still being answered when the sheet closes, and keeps the thread", () => {
+    const onClosed = vi.fn();
+    hooks.exchanges = [answered(), working()];
+    const busy = render(onClosed);
+    act(() => sheet(busy).props.onDismiss());
+    expect(hooks.stop).toHaveBeenCalledTimes(1);
+    expect(hooks.reset).not.toHaveBeenCalled();
+    expect(onClosed).toHaveBeenCalledWith(false);
+
+    hooks.stop.mockClear();
+    hooks.exchanges = [answered()];
+    const done = render();
+    act(() => sheet(done).props.onDismiss());
+    expect(hooks.stop).not.toHaveBeenCalled();
+  });
+
+  it("leaves a question asked from a channel to finish when the sheet closes (#4713)", () => {
+    // Its answer is drawn in the channel, which closing the sheet does not
+    // take away, so the question goes on being answered.
+    hooks.exchanges = [
+      answered(),
+      {
+        ...working(),
+        origin: { channelId: "chan-1", at: "2026-11-13T16:00:00.000Z" },
+      },
+    ];
+    const tree = render();
+    act(() => sheet(tree).props.onDismiss());
+    expect(hooks.stop).not.toHaveBeenCalled();
+  });
+
+  it("reports an answer by the ask's id, with the receipt exactly as it came", () => {
+    hooks.exchanges = [
+      {
+        ...answered(),
+        askId: "ask-1",
+        answer: { ...answered().answer!, report_receipt: "sealed" },
+      },
+    ];
+    const tree = render();
+    act(() =>
+      byLabel(tree, AI_REPORT_COPY.titles.ask_answer)[0]!.props.onPress(),
+    );
+    expect(reporting.report).toHaveBeenCalledWith({
+      subject: "ask_answer",
+      subjectId: "ask-1",
+      receipt: "sealed",
+    });
+  });
+
+  it("offers no report to a member who can't send one, or before the ask has an id", () => {
+    hooks.exchanges = [answered()];
+    expect(byLabel(render(), AI_REPORT_COPY.titles.ask_answer)).toHaveLength(0);
+    hooks.exchanges = [{ ...answered(), askId: "ask-1" }];
+    reporting.offered = false;
+    expect(byLabel(render(), AI_REPORT_COPY.titles.ask_answer)).toHaveLength(0);
+  });
+
+  it("can't send an empty question or a second one while the first is answered", () => {
+    const empty = render();
+    expect(byLabel(empty, ASK_COPY.send)[0].props.disabled).toBe(true);
+
+    hooks.exchanges = [working()];
+    const busy = render();
+    act(() => field(busy).props.onChangeText("Another?"));
+    expect(byLabel(busy, ASK_COPY.send)[0].props.disabled).toBe(true);
+    act(() => field(busy).props.onSubmitEditing());
+    expect(hooks.ask).not.toHaveBeenCalled();
+  });
+
+  describe("asking for something to be done (#718)", () => {
+    it("is one field for everyone: no switch, and no word about acting for a member who can't", () => {
+      const tree = render();
+      const text = screenText(tree);
+      expect(text).not.toContain(ASK_STARTER.answer_act);
+      expect(
+        tree.root.findAll((node) => node.props.accessibilityRole === "radio"),
+      ).toHaveLength(0);
+    });
+
+    it("asks for a card on the permission alone: a request typed before the list of actions has loaded is still read as one", () => {
+      hooks.mayAct = true;
+      const tree = render();
+      // The list only words the opening.
+      expect(screenText(tree)).not.toContain(ASK_STARTER.answer_act);
+      act(() => field(tree).props.onChangeText("Give Ana 5 points"));
+      act(() => field(tree).props.onSubmitEditing());
+      expect(hooks.ask).toHaveBeenCalledWith("Give Ana 5 points", {
+        ...ASKING,
+        actions: true,
+      });
+    });
+
+    it("holds Try again on an earlier turn while another is being answered: asking again would drop it", () => {
+      hooks.exchanges = [
+        {
+          ...working(),
+          id: "turn-1",
+          phase: "failed",
+          failure: { message: "Couldn't reach Frapp.", retryable: true },
+        },
+        working(),
+      ];
+      const tree = render();
+      expect(byLabel(tree, ASK_COPY.try_again)[0].props.disabled).toBe(true);
+    });
+
+    it("tells a member Frapp can act for, and says so with what they type", () => {
+      hooks.mayAct = true;
+      hooks.actions = ["give_points", "create_task"];
+      hooks.starter = true;
+      const tree = render();
+      expect(screenText(tree)).toContain(ASK_STARTER.answer_act);
+      expect(
+        tree.root.findAll((node) => node.props.accessibilityRole === "radio"),
+      ).toHaveLength(0);
+      act(() => field(tree).props.onChangeText("Give Ana 5 points"));
+      act(() => field(tree).props.onSubmitEditing());
+      expect(hooks.ask).toHaveBeenCalledWith("Give Ana 5 points", {
+        ...ASKING,
+        actions: true,
+      });
+    });
+
+    it("shows a proposal as a card in the thread, and records how it ended on its turn", async () => {
+      hooks.mayAct = true;
+      hooks.actions = ["give_points"];
+      hooks.exchanges = [answered(), proposed()];
+      const tree = render();
+      const text = screenText(tree);
+      expect(text).toContain("Quorum is half.");
+      expect(text).toContain("Give Ana 5 points");
+      expect(text).toContain("Came to chapter");
+      expect(text).toContain("Ana Ruiz");
+      // Dismiss lives in the card's ··· menu (#5148).
+      const more = tree.root.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          String(node.props.accessibilityLabel ?? "").startsWith("More: "),
+      )[0]!;
+      act(() => more.props.onPress());
+      await act(async () => pickItemMenuAction(ACT_COPY.dismiss));
+      expect(hooks.resolveProposal).toHaveBeenCalledWith(
+        "turn-3",
+        expect.objectContaining({ kind: "cancelled" }),
+      );
+    });
+
+    it("leaves for the screen a confirmed change shows on", () => {
+      hooks.exchanges = [
+        {
+          ...proposed(),
+          resolution: { kind: "done", line: ACT_COPY.done_task, page: "tasks" },
+        },
+      ];
+      const onClosed = vi.fn();
+      const tree = render(onClosed);
+      expect(screenText(tree)).toContain(ACT_COPY.done_task);
+      act(() => byLabel(tree, ACT_COPY.open_tasks)[0].props.onPress());
+      expect(modal.dismiss).toHaveBeenCalled();
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/tasks");
+      act(() => sheet(tree).props.onDismiss());
+      expect(onClosed).toHaveBeenLastCalledWith(true);
+    });
+  });
+});
+
+/**
+ * The conversation is the app's tall sheet since #4702 (it was 78%): the bar
+ * a member taps is drawn as this sheet's own field, so the tap lands in a
+ * conversation, not a drawer over the tab.
+ */
+describe("the sheet itself (#4702)", () => {
+  const flat = flatStyle;
+
+  it("opens at full height, with dynamic sizing off so a short thread does not open it short", () => {
+    const props = sheet(render()).props;
+    expect(props.snapPoints).toEqual(["100%"]);
+    expect(props.enableDynamicSizing).toBe(false);
+    // Stops under the status bar, so the screen behind still shows.
+    expect(props.topInset).toBeGreaterThan(0);
+  });
+
+  it("carries a close in its header, because at full height no scrim is left to tap", () => {
+    modal.dismiss.mockClear();
+    const tree = render();
+    const close = byLabel(tree, ASK_COPY.close);
+    expect(close).toHaveLength(1);
+    act(() => close[0].props.onPress());
+    expect(modal.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the close beside New conversation once there is a thread", () => {
+    hooks.exchanges = [
+      { id: "e1", question: "Who is treasurer?", phase: "done", answer: null },
+    ];
+    const tree = render();
+    expect(byLabel(tree, ASK_COPY.new_conversation)).toHaveLength(1);
+    expect(byLabel(tree, ASK_COPY.close)).toHaveLength(1);
+    hooks.exchanges = [];
+  });
+
+  it("draws the crest and the send button in the chapter's colour", () => {
+    const tree = render();
+    expect(tree.root.findByType(FrappCrest).props.color).toBe("#8B5CF6");
+    const send = byLabel(tree, ASK_COPY.send)[0];
+    const style = flat(
+      typeof send.props.style === "function"
+        ? send.props.style({ pressed: false })
+        : send.props.style,
+    );
+    // The solid accent pair, as web's send button always was.
+    expect(style.backgroundColor).toBe("#7C3AED");
+  });
+
+  it("is drawn on the page's background, not the sheet grey", () => {
+    const tree = render();
+    const background = flat(sheet(tree)!.props.backgroundStyle);
+    // `surface.background`; a sheet's own fill is `surface.popover`.
+    expect(String(background.backgroundColor)).toBe("#0B0A0D");
+    // Still a sheet's shape.
+    expect(background.borderTopLeftRadius).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * What was sent shows at once with the keyboard up, and the thread keeps the
+ * newest words above the field as the keyboard opens and closes (#5426; Paul,
+ * 2026-11-17: "I type a message and tap Send, and it vanishes").
+ *
+ * The scroller here stands in for a UIScrollView as React Native drives it on
+ * iOS, which is where the turn vanished:
+ *
+ * - A scroller keeps its offset when its content shrinks
+ *   (`RCTScrollViewComponentView`'s `updateState` sets the content size and
+ *   leaves the offset alone).
+ * - `scrollToEnd` measures the content the native view holds when it runs.
+ *   It is asked for from JavaScript as the new layout is committed, and that
+ *   can be before the new content is mounted, so it measures the old content.
+ * - A new scroller starts at offset zero, holding its first content.
+ * - The next frame comes after the mount, so a scroll asked for then
+ *   measures the new content.
+ *
+ * Sizes are points on a 393x852 iPhone with the keyboard down and up. The
+ * opening is drawn taller than the room above the field with the keyboard up,
+ * so the keyboard opening scrolls it, as it did on Paul's phone.
+ */
+describe("sending with the keyboard up (#5426)", () => {
+  const ROOM = { keyboardDown: 640, keyboardUp: 280 };
+  const NATURAL = { opening: 520, turn: 100, longThread: 900 };
+
+  type Native = {
+    room: number;
+    content: number;
+    offset: number;
+    scrollToEnd: () => void;
+  };
+  let scrollers: Native[] = [];
+  let frames: Array<() => void> = [];
+  let room = ROOM.keyboardDown;
+  let natural = NATURAL.opening;
+
+  const flat = flatStyle;
+  const host = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) => (node.type as unknown) === "BottomSheetScrollView",
+    )[0]!;
+  /** How tall the content lays out in the room it has. */
+  const contentHeight = (tree: ReactTestRenderer) =>
+    Number(flat(host(tree).props.contentContainerStyle).flexGrow ?? 0) > 0
+      ? Math.max(room, natural)
+      : natural;
+  const native = () => scrollers.at(-1)!;
+
+  function makeScroller(): Native {
+    const scroller: Native = {
+      room,
+      content: -1,
+      offset: 0,
+      scrollToEnd: vi.fn(() => {
+        scroller.offset = Math.max(0, scroller.content - scroller.room);
+      }),
+    };
+    scrollers.push(scroller);
+    return scroller;
+  }
+
+  /** Lays out what was committed: JavaScript hears of it before the mount. */
+  function layout(tree: ReactTestRenderer) {
+    const scroller = native();
+    const content = contentHeight(tree);
+    if (scroller.content === -1) {
+      // A new scroller is mounted with its content.
+      scroller.content = content;
+      return;
+    }
+    if (scroller.room !== room) {
+      scroller.room = room;
+      act(() =>
+        host(tree).props.onLayout?.({
+          nativeEvent: { layout: { x: 0, y: 0, width: 393, height: room } },
+        }),
+      );
+    }
+    if (scroller.content !== content) {
+      act(() => host(tree).props.onContentSizeChange?.(393, content));
+      scroller.content = content;
+    }
+    // The mount is done: the next frame runs.
+    const due = frames;
+    frames = [];
+    act(() => due.forEach((frame) => frame()));
+  }
+
+  function mount() {
+    const tree = render(undefined, makeScroller);
+    layout(tree);
+    return {
+      tree,
+      rerender: () => act(() => tree.update(sheetElement())),
+    };
+  }
+
+  /** Where the newest turn is drawn in the content. */
+  function turnTop(tree: ReactTestRenderer) {
+    const style = flat(host(tree).props.contentContainerStyle);
+    return style.justifyContent === "flex-end"
+      ? native().content - NATURAL.turn
+      : 0;
+  }
+  function onScreen(tree: ReactTestRenderer) {
+    const top = turnTop(tree);
+    const { offset, room: shown } = native();
+    return top >= offset && top + NATURAL.turn <= offset + shown;
+  }
+
+  const sent = (question: string): AskExchange => ({
+    ...answered(),
+    id: "turn-sent",
+    question,
+    phase: "working",
+    step: "searching",
+    // The search, working: the first step of the turn's list (#5427).
+    steps: askStepsOn([], { v: 1, type: "status", step: "searching" }),
+    answer: null,
+  });
+
+  beforeEach(() => {
+    scrollers = [];
+    frames = [];
+    room = ROOM.keyboardDown;
+    natural = NATURAL.opening;
+    vi.stubGlobal("requestAnimationFrame", (frame: () => void) => {
+      frames.push(frame);
+      return frames.length;
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    hooks.ask.mockReset();
+  });
+
+  it("shows the question at once, on the field, without the keyboard moving", () => {
+    const { tree, rerender } = mount();
+    open(tree);
+    // The member taps the field: the keyboard takes the room's bottom, and
+    // the opening, now taller than the room, scrolls to keep its rows above
+    // the field.
+    room = ROOM.keyboardUp;
+    layout(tree);
+
+    hooks.ask.mockImplementation((question: string) => {
+      hooks.exchanges = [sent(question)];
+    });
+    act(() => field(tree).props.onChangeText("When is formal?"));
+    act(() => byLabel(tree, ASK_COPY.send)[0].props.onPress());
+    natural = NATURAL.turn;
+    rerender();
+    layout(tree);
+
+    const text = screenText(tree);
+    expect(text).toContain("When is formal?");
+    expect(text).toContain(ASK_COPY.steps.searching);
+    // Drawn where the window is, with the keyboard still up.
+    expect(native().room).toBe(ROOM.keyboardUp);
+    expect(onScreen(tree)).toBe(true);
+    // At the bottom of the room, just above the field.
+    expect(turnTop(tree) + NATURAL.turn).toBe(native().offset + room);
+  });
+
+  it("streams the answer in under the question and keeps its last line above the field", () => {
+    const { tree, rerender } = mount();
+    open(tree);
+    room = ROOM.keyboardUp;
+    layout(tree);
+    hooks.ask.mockImplementation((question: string) => {
+      hooks.exchanges = [sent(question)];
+    });
+    act(() => field(tree).props.onChangeText("When is formal?"));
+    act(() => byLabel(tree, ASK_COPY.send)[0].props.onPress());
+    natural = NATURAL.turn;
+    rerender();
+    layout(tree);
+
+    // The answer grows past the room, a few lines at a time, with the
+    // keyboard up and nothing touched.
+    for (const height of [200, 320, 400, 460]) {
+      hooks.exchanges = [
+        {
+          ...sent("When is formal?"),
+          preview: "Formal is Friday. ".repeat(height / 20),
+        },
+      ];
+      natural = height;
+      rerender();
+      layout(tree);
+      expect(native().offset).toBe(native().content - native().room);
+    }
+    expect(native().room).toBe(ROOM.keyboardUp);
+  });
+
+  it("keeps the newest words above the field as the keyboard opens and closes", () => {
+    hooks.exchanges = [answered()];
+    natural = NATURAL.longThread;
+    const { tree } = mount();
+    open(tree);
+    act(() => native().scrollToEnd());
+    const atEnd = () => native().offset === native().content - native().room;
+    expect(atEnd()).toBe(true);
+
+    room = ROOM.keyboardUp;
+    layout(tree);
+    expect(atEnd()).toBe(true);
+
+    room = ROOM.keyboardDown;
+    layout(tree);
+    expect(atEnd()).toBe(true);
+  });
+
+  it("puts the keyboard away when the member drags the thread (#5429)", () => {
+    const { tree } = mount();
+    // Not "interactive": that moves the keyboard under the finger without
+    // telling the sheet, and the field floated over an empty band.
+    expect(host(tree).props.keyboardDismissMode).toBe("on-drag");
+  });
+
+  it("leaves a member reading higher up where they are when the keyboard moves", () => {
+    hooks.exchanges = [answered()];
+    natural = NATURAL.longThread;
+    const { tree } = mount();
+    open(tree);
+    // They drag up to the top of the thread.
+    act(() => host(tree).props.onScrollBeginDrag());
+    native().offset = 0;
+    act(() =>
+      host(tree).props.onScroll({
+        nativeEvent: {
+          contentOffset: { y: 0 },
+          contentSize: { height: NATURAL.longThread },
+          layoutMeasurement: { height: room },
+        },
+      }),
+    );
+    room = ROOM.keyboardUp;
+    layout(tree);
+    expect(native().offset).toBe(0);
+  });
+});
+
+describe("dictation (#5276)", () => {
+  beforeEach(() => {
+    dictating.available = true;
+    dictating.granted = true;
+    dictating.handlers = null;
+    dictating.finish.mockReset();
+    dictating.cancel.mockReset();
+    dictating.clean.mockReset();
+    dictating.clean.mockImplementation(
+      async (text: string) =>
+        text.replace(/^so um /, "").replace(/^./, (c) => c.toUpperCase()) + "?",
+    );
+  });
+  afterEach(() => {
+    dictating.available = false;
+  });
+
+  const mic = (tree: ReactTestRenderer) => byLabel(tree, "Dictate");
+
+  async function dictate(tree: ReactTestRenderer, heard: string) {
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => dictating.handlers!.onWords(heard));
+    act(() => byLabel(tree, "Done")[0]!.props.onPress());
+    await act(async () => dictating.handlers!.onEnd(heard));
+  }
+
+  it("draws no mic where the phone can't dictate", () => {
+    dictating.available = false;
+    const tree = render();
+    expect(mic(tree)).toHaveLength(0);
+  });
+
+  it("listens in the field, with cancel and Done in send's place, then lands the tidied words without sending", async () => {
+    const tree = render();
+    expect(mic(tree)).toHaveLength(1);
+
+    await act(async () => mic(tree)[0]!.props.onPress());
+    expect(byLabel(tree, "Listening")).toHaveLength(1);
+    expect(byLabel(tree, "Cancel dictation")).toHaveLength(1);
+    expect(byLabel(tree, ASK_COPY.send)).toHaveLength(0);
+    act(() => dictating.handlers!.onWords("so um can you remind"));
+    expect(screenText(tree)).toContain("so um can you remind");
+
+    act(() => byLabel(tree, "Done")[0]!.props.onPress());
+    expect(dictating.finish).toHaveBeenCalled();
+    await act(async () =>
+      dictating.handlers!.onEnd("so um can you remind the rush chairs"),
+    );
+
+    expect(dictating.clean).toHaveBeenCalledWith(
+      "so um can you remind the rush chairs",
+      expect.anything(),
+    );
+    expect(field(tree).props.value).toBe("Can you remind the rush chairs?");
+    expect(hooks.ask).not.toHaveBeenCalled();
+    expect(byLabel(tree, ASK_COPY.send)[0]!.props.accessibilityState).toEqual({
+      disabled: false,
+    });
+  });
+
+  it("adds dictation after words already typed", async () => {
+    const tree = render();
+    act(() => field(tree).props.onChangeText("Quick one:"));
+    await dictate(tree, "so um who has the keys");
+    expect(field(tree).props.value).toBe("Quick one: Who has the keys?");
+  });
+
+  it("puts back the words as spoken from the Original chip, until the member types", async () => {
+    const tree = render();
+    await dictate(tree, "so um who has the keys");
+    act(() => byLabel(tree, "Original")[0]!.props.onPress());
+    expect(field(tree).props.value).toBe("so um who has the keys");
+    expect(byLabel(tree, "Original")).toHaveLength(0);
+
+    await dictate(tree, "so um and the van");
+    expect(byLabel(tree, "Original")).toHaveLength(1);
+    act(() => field(tree).props.onChangeText(field(tree).props.value + "!"));
+    expect(byLabel(tree, "Original")).toHaveLength(0);
+  });
+
+  it("keeps the words as heard when the cleanup gives nothing back", async () => {
+    dictating.clean.mockResolvedValue(null);
+    const tree = render();
+    await dictate(tree, "move it to friday");
+    expect(field(tree).props.value).toBe("move it to friday");
+    expect(byLabel(tree, "Original")).toHaveLength(0);
+  });
+
+  it("drops what was heard on cancel", async () => {
+    const tree = render();
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => dictating.handlers!.onWords("never mind"));
+    act(() => byLabel(tree, "Cancel dictation")[0]!.props.onPress());
+    expect(dictating.cancel).toHaveBeenCalled();
+    expect(field(tree).props.value).toBe("");
+    expect(byLabel(tree, ASK_COPY.send)).toHaveLength(1);
+  });
+
+  it("says why when the microphone is refused, with a way to Settings", async () => {
+    dictating.granted = false;
+    const tree = render();
+    await act(async () => mic(tree)[0]!.props.onPress());
+    expect(screenText(tree)).toContain(
+      "Frapp can't use the microphone or speech recognition.",
+    );
+    expect(screenText(tree)).toContain("Open Settings");
+  });
+
+  it("holds send while the words are being tidied, so typed words never go alone", async () => {
+    let finishCleaning!: (text: string) => void;
+    dictating.clean.mockImplementation(
+      () =>
+        new Promise<string | null>((resolve) => {
+          finishCleaning = resolve;
+        }),
+    );
+    const tree = render();
+    act(() => field(tree).props.onChangeText("Quick one:"));
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => byLabel(tree, "Done")[0]!.props.onPress());
+    await act(async () => dictating.handlers!.onEnd("who has the keys"));
+    expect(byLabel(tree, "Tidying your words")).toHaveLength(1);
+    expect(byLabel(tree, ASK_COPY.send)[0]!.props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    await act(async () => finishCleaning("Who has the keys?"));
+    expect(field(tree).props.value).toBe("Quick one: Who has the keys?");
+  });
+
+  it("takes the Original chip away once the question is sent", async () => {
+    const tree = render();
+    await dictate(tree, "so um who has the keys");
+    expect(byLabel(tree, "Original")).toHaveLength(1);
+    act(() => byLabel(tree, ASK_COPY.send)[0]!.props.onPress());
+    expect(hooks.ask).toHaveBeenCalledWith("Who has the keys?", ASKING);
+    expect(byLabel(tree, "Original")).toHaveLength(0);
+  });
+
+  it("stops at what fits in one question and says so", async () => {
+    dictating.clean.mockImplementation(async (text: string) => text);
+    const tree = render();
+    act(() => field(tree).props.onChangeText("x".repeat(990)));
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => dictating.handlers!.onWords("one two three four five"));
+    expect(dictating.finish).toHaveBeenCalled();
+    await act(async () => dictating.handlers!.onEnd("one two three four five"));
+    expect(field(tree).props.value).toBe(`${"x".repeat(990)} one two`);
+    expect(screenText(tree)).toContain("That's all that fits in one question.");
+  });
+
+  it("stops listening when the sheet closes", async () => {
+    const tree = render();
+    open(tree);
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => sheet(tree).props.onDismiss());
+    expect(dictating.cancel).toHaveBeenCalled();
+  });
+
+  it("drops a notice when the sheet closes", async () => {
+    const tree = render();
+    open(tree);
+    await act(async () => mic(tree)[0]!.props.onPress());
+    await act(async () => dictating.handlers!.onEnd(""));
+    expect(screenText(tree)).toContain("Didn't catch anything.");
+    act(() => sheet(tree).props.onDismiss());
+    expect(screenText(tree)).not.toContain("Didn't catch anything.");
+  });
+});

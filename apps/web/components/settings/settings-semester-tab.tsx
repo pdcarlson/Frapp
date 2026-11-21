@@ -7,6 +7,7 @@ import { formatDayRange } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
@@ -98,15 +99,25 @@ export function SettingsSemesterTab({
   // override with no plural-form guarantee (see settings-org-tab.tsx's
   // vocab editor) — naively appending "s" breaks for a term already plural
   // or ending in s/x/z/ch/sh.
-  const promoteToggleLabel = `Also promote every ${pledgeTerm} to Member`;
+  const promoteToggleLabel = `Also make every ${pledgeTerm} a full member`;
 
   async function startRollover(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!semesterLabel || !semesterStart || !semesterEnd) return;
+    if (!semesterLabel) return;
+    // The date fields hold "" while their text is not a date (`DateField`),
+    // and `required` on a text input lets any text through.
+    if (!semesterStart || !semesterEnd) {
+      toast({
+        title: "Pick a start and end date",
+        description: "Try a date like January 12 or May 8.",
+        variant: "destructive",
+      });
+      return;
+    }
     const confirmed = await confirm({
       title: `Start a new semester labelled "${semesterLabel}"?`,
       description: promoteNewMembers
-        ? `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves. Every ${pledgeTerm} is also promoted to Member; they keep any other roles they hold, and this cannot be undone in one step.`
+        ? `The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves. Every ${pledgeTerm} also becomes a full member; they keep any other roles they hold, and this cannot be undone in one step.`
         : "The current leaderboard period is archived and a new one begins. Points already awarded are kept — only the leaderboard's default window moves.",
       confirmLabel: "Start new semester",
       // Not destructive: a rollover archives rather than deletes, and
@@ -127,7 +138,7 @@ export function SettingsSemesterTab({
       toast({
         title: "Semester archived",
         description: promoteNewMembers
-          ? `${semesterLabel} is now the active period, and every ${pledgeTerm} was promoted to Member.`
+          ? `${semesterLabel} is now the active period, and every ${pledgeTerm} is now a full member.`
           : `${semesterLabel} is now the active period.`,
       });
       form.reset();
@@ -185,21 +196,23 @@ export function SettingsSemesterTab({
               </div>
               <div className="grid gap-1">
                 <Label htmlFor="semester-start">Start date</Label>
-                <Input
+                <DateField
                   id="semester-start"
-                  type="date"
+                  lean="nearest"
+                  placeholder="e.g. January 12"
                   value={semesterStart}
-                  onChange={(event) => form.setStart(event.target.value)}
+                  onChange={form.setStart}
                   required
                 />
               </div>
               <div className="grid gap-1">
                 <Label htmlFor="semester-end">End date</Label>
-                <Input
+                <DateField
                   id="semester-end"
-                  type="date"
+                  lean="nearest"
+                  placeholder="e.g. May 8"
                   value={semesterEnd}
-                  onChange={(event) => form.setEnd(event.target.value)}
+                  onChange={form.setEnd}
                   required
                 />
               </div>

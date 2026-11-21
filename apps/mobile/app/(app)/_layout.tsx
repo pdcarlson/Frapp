@@ -1,3 +1,4 @@
+import { useTrackCurrentPathname } from "@/lib/current-pathname";
 import { Redirect, Stack, type ErrorBoundaryProps } from "expo-router";
 import { AppErrorScreen, stackScreenLayout } from "@/components/route-error";
 import { SCREEN_TITLES } from "@/lib/back-target";
@@ -36,6 +37,8 @@ export const unstable_settings = {
  * sign-in like one who opens the app.
  */
 export default function AppLayout() {
+  // What `openHref` compares a link against outside a component (#3723).
+  useTrackCurrentPathname();
   const { status, chapterId, isChapterResolving } = useAuthSession();
   const { tokens } = useFrappTheme();
 
@@ -85,13 +88,23 @@ export default function AppLayout() {
         name="notifications"
         options={{ title: SCREEN_TITLES.notifications }}
       />
+      {/* The task board left the tab bar for Activity and Calendar
+          (#4610); it opens from Activity, a task on Calendar and Up next. */}
+      <Stack.Screen name="tasks" options={{ title: SCREEN_TITLES.tasks }} />
+      {/* One task, pushed from a task row anywhere (#5492): the screen that
+          replaces the task sheets. */}
       <Stack.Screen
-        name="activity"
-        options={{ title: SCREEN_TITLES.activity }}
+        name="task-details"
+        options={{ title: SCREEN_TITLES["task-details"] }}
       />
+      {/* Calendar left the tab bar for Messages (#5310, Paul's direction
+          B): the month, pushed from Activity's Calendar row. The route
+          stays `events` so links and notification targets keep working. */}
+      <Stack.Screen name="events" options={{ title: SCREEN_TITLES.events }} />
+      {/* One day's hour grid, pushed from the month's day heading (#5310). */}
       <Stack.Screen
-        name="messages"
-        options={{ title: SCREEN_TITLES.messages }}
+        name="calendar-day"
+        options={{ title: SCREEN_TITLES["calendar-day"] }}
       />
       {/* s16's drawn title is "Settings"; the route filename stays
           `preferences.tsx` per spec/ui/mobile/screens.md § Notes. */}
@@ -99,7 +112,6 @@ export default function AppLayout() {
         name="preferences"
         options={{ title: SCREEN_TITLES.preferences }}
       />
-      <Stack.Screen name="profile" options={{ title: SCREEN_TITLES.profile }} />
       <Stack.Screen
         name="service-hours"
         options={{ title: SCREEN_TITLES["service-hours"] }}
@@ -110,13 +122,39 @@ export default function AppLayout() {
         name="documents"
         options={{ title: SCREEN_TITLES.documents }}
       />
+      {/* Pushed from Chat home's Search round (#5139). */}
+      <Stack.Screen name="search" options={{ title: SCREEN_TITLES.search }} />
       <Stack.Screen
         name="directory"
         options={{ title: SCREEN_TITLES.directory }}
       />
+      {/* A member's profile, pushed from the Directory and from chat
+          (#5568): the screen that replaced the member sheet. */}
+      <Stack.Screen name="member" options={{ title: SCREEN_TITLES.member }} />
       <Stack.Screen name="invite" options={{ title: SCREEN_TITLES.invite }} />
-      {/* A redirect to Chat home, kept for old `frapp://ask` links. */}
+      {/* Presents the Ask sheet for a `frapp://ask` link, or pops to Chat
+          home for a member without Ask. */}
       <Stack.Screen name="ask" options={{ title: "Ask" }} />
+      {/* A message's link, `app.frapp.live/chat?channel=…&message=…`
+          (#3723): hands off to the thread and draws nothing itself. */}
+      <Stack.Screen name="chat" options={{ title: "Chat" }} />
+      <Stack.Screen name="minutes" options={{ title: SCREEN_TITLES.minutes }} />
+      <Stack.Screen
+        name="minutes-details"
+        options={{ title: SCREEN_TITLES["minutes-details"] }}
+      />
+      <Stack.Screen
+        name="minutes-transcript"
+        options={{ title: SCREEN_TITLES["minutes-transcript"] }}
+      />
+      <Stack.Screen
+        name="minutes-series"
+        options={{ title: SCREEN_TITLES["minutes-series"] }}
+      />
+      <Stack.Screen
+        name="suggested-tasks"
+        options={{ title: SCREEN_TITLES["suggested-tasks"] }}
+      />
       <Stack.Screen
         name="check-in"
         options={{ title: SCREEN_TITLES["check-in"] }}
@@ -129,6 +167,34 @@ export default function AppLayout() {
         name="whats-new"
         options={{ title: SCREEN_TITLES["whats-new"] }}
       />
+      {/* From the welcome card in a new member's first channel (#5627). */}
+      <Stack.Screen
+        name="finish-profile"
+        options={{ title: SCREEN_TITLES["finish-profile"] }}
+      />
+      <Stack.Screen
+        name="arrange-channels"
+        options={{ title: SCREEN_TITLES["arrange-channels"] }}
+      />
+      {/* Chapter settings and its Roles screens (#4074), from Chat home's chapter menu. */}
+      <Stack.Screen
+        name="chapter-settings"
+        options={{ title: SCREEN_TITLES["chapter-settings"] }}
+      />
+      {/* The record of officer changes (Paul, 2026-11-21), from Chapter settings. */}
+      <Stack.Screen
+        name="chapter-logs"
+        options={{ title: SCREEN_TITLES["chapter-logs"] }}
+      />
+      <Stack.Screen
+        name="chapter-roles"
+        options={{ title: SCREEN_TITLES["chapter-roles"] }}
+      />
+      <Stack.Screen
+        name="role-tier"
+        options={{ title: SCREEN_TITLES["role-tier"] }}
+      />
+      <Stack.Screen name="role" options={{ title: SCREEN_TITLES.role }} />
     </Stack>
   );
 }

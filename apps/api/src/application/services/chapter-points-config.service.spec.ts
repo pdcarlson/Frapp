@@ -54,13 +54,18 @@ describe('ChapterPointsConfigService', () => {
 
   it('returns the configured limits when a row exists', async () => {
     const { service, configRepo } = await build({
-      data: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
+      data: {
+        adjustment_rate_limit_per_hour: 10,
+        anomaly_threshold: 250,
+        prediction_max_stake: 40,
+      },
       error: null,
     });
 
     await expect(service.getConfig('ch-1')).resolves.toEqual({
       adjustment_rate_limit_per_hour: 10,
       anomaly_threshold: 250,
+      prediction_max_stake: 40,
     });
     expect(configRepo.findPointsConfig).toHaveBeenCalledWith('ch-1');
     expect(warn).not.toHaveBeenCalled();
@@ -87,6 +92,7 @@ describe('ChapterPointsConfigService', () => {
       adjustment_rate_limit_per_hour:
         POINTS_CONFIG_DEFAULTS.adjustment_rate_limit_per_hour,
       anomaly_threshold: 250,
+      prediction_max_stake: POINTS_CONFIG_DEFAULTS.prediction_max_stake,
     });
   });
 
@@ -154,6 +160,7 @@ describe('ChapterPointsConfigService', () => {
       await expect(service.getConfigOrThrow('ch-1')).resolves.toEqual({
         adjustment_rate_limit_per_hour: 10,
         anomaly_threshold: 250,
+        prediction_max_stake: POINTS_CONFIG_DEFAULTS.prediction_max_stake,
       });
     });
 
@@ -198,6 +205,8 @@ describe('ChapterPointsConfigService', () => {
     expect(POINTS_CONFIG_DEFAULTS).toEqual({
       adjustment_rate_limit_per_hour: 50,
       anomaly_threshold: 100,
+      // The column default in `20261116135639_predictions.sql` (#5133).
+      prediction_max_stake: 25,
     });
   });
 });

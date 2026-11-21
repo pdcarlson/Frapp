@@ -19,10 +19,17 @@ baseline story actually supports.
 | oasdiff against the PR base | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | `apps/web` regenerates from this repo and deploys with the change |
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | A large undecorated-route backlog (count it, see below) and no ESLint baseline mechanism |
 | jscpd duplication | `npm run check:duplication` | `duplicate-detection` | **Advisory** | No clone-level baseline exists; a repo-wide % is too coarse to block on |
-| Migration corpus + RLS posture, and the change-ping contract | `npm run check:pglite-migrations`, then `npx vitest run lib/realtime/change-topics.spec.ts` in `apps/web` | `pglite-migrations` | **Required** | Nothing to grandfather: it applies every migration from empty and asserts security invariants (RLS on every `public` table, `pg_temp` pinned last in `SECURITY DEFINER` functions, an append-only audit log), which either hold or do not. Advisory until #2538, with no recorded reason |
+| knip dead code | `npm run check:knip` | none | **Advisory**, local only | Reports unused files, exports and dependencies; [`knip.jsonc`](../../knip.jsonc) says why each exception exists. Not in CI until its backlog is cleared or given reasoned exceptions (#4544). What remains is the Ask agent's unused exports and types, held while #4898's slices are open; an export kept on purpose carries a `@public` (or, for a deliberate second name, `@alias`) JSDoc tag with its reason |
+| Migration corpus + RLS posture, the role-delete vs member-roles-save overlap, and the change-ping contract | `npm run check:pglite-migrations`, then `npm run check:role-lock-race` (two real connections; CI runs it with `-- --apply-migrations` on a Postgres service container, #4862), then `npx vitest run lib/realtime/change-topics.spec.ts` in `apps/web` | `pglite-migrations` | **Required** | Nothing to grandfather: it applies every migration from empty and asserts security invariants (RLS on every `public` table, `pg_temp` pinned last in `SECURITY DEFINER` functions, an append-only audit log), which either hold or do not. Advisory until #2538, with no recorded reason |
 | Applied migrations are never edited | `npm run check:migration-safety -- --base <base> --head <head>` | step in `migration-safety` | **Required** | `supabase db push` skips a version a hosted database already applied, so an edit to the SQL of a migration already on `main` reaches no hosted database while every replay in CI runs it (#2751). Nothing to grandfather: it judges only the migrations a PR changes, paired by version so a rename counts. Executable SQL is compared with comments and whitespace outside literals stripped, so a comment fix passes; a removed version fails. A reviewed exception is an `EDITED_MIGRATION_EXCEPTIONS` entry in the script carrying its reason, pinned to the edited content's hash or marked `removed` |
 | 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
 | Vercel-parity production build | `npm ci --omit=dev` + `turbo run build --filter=web --filter=landing` | `web-production-build` | **Required** | Nothing to grandfather: the build either succeeds on a pruned tree or it does not, and it was already succeeding when the job landed. Advisory was never on the table — the two failures it catches (#1331, #1372) both reached production precisely because nothing blocked on them |
+
+**Every required gate also runs in the merge queue** (#4795), on the commit the queue builds from `main` plus the PRs ahead of it. The path filters that skip `api-tests`, `mobile-validate` and the other gated jobs on a PR apply there too (#5195, Paul 2026-11-16), and they and the diff-based gates measure against the queue's base commit, `merge_group.base_sha`: the entry ahead, or `main`. So each entry is filtered on its own PR's files, and a gated job it skips was run by whichever entry or `main` commit last touched that job's paths, on a tree this entry builds on. A filter step that fails in the queue runs its jobs rather than skipping them. A docs-only change skips nearly everything, below. A gate added to the roster in a workflow without a `merge_group` trigger fails [`merge-queue-triggers.test.mjs`](../../scripts/ci/__tests__/merge-queue-triggers.test.mjs). Where the queue lives and how it is turned on: [`github-branch-protection-runbook.md` § Merge queue](../ops/github-branch-protection-runbook.md#merge-queue).
+
+**A push to `main` the queue already passed skips the gates** (#5084). The queue fast-forwards `main` to the commit it tested, so the push run that follows would repeat the queue run. `ci.yml`'s `changes` job asks the Actions API for a successful `merge_group` run of CI on that exact commit ([`queue-tested.mjs`](../../scripts/ci/queue-tested.mjs)); when there is one, every other job except `packages-build` (which keeps seeding `main`'s caches) skips. The run still concludes green, so Deploy staging fires on it, and Deploy production's [`validate-deploy-sha.mjs`](../../scripts/ci/validate-deploy-sha.mjs) judges the commit on the newest check runs that actually ran, which are the queue run's, rather than on the skips. A path-gated job that the queue entry's own files didn't reach skipped in the queue run too (#5195, above), and is accepted as `skipped`: its last real run is the one on the entry or `main` commit that touched what it reads. The queue run counts once it concluded green, or once every required CI job in it has, since the queue merges before its advisory jobs finish. A commit that reaches `main` any other way, a re-run of the push run, and a lookup that fails all get the full suite. The skipped jobs used to write `main`'s tool caches (oasdiff, gitleaks, Playwright's browser and OS packages), which every PR and queue ref restores, so `main-caches` writes any new key in their place.
+
+**A docs-only change skips the gates too, on its PR and in the merge queue** (#5141, Paul 2026-11-16). When every file a PR or queue entry changes is under `docs/` or `spec/` (the queue's diff is from `merge_group.base_sha`), `ci.yml`'s `changes` job sets `skip_suite` and every gate skips except three that read docs: `ci-scripts-tests` (its tests pin doc text), `secret-scan` (a secret can land in a doc) and `migration-safety` (it reads the migration ledgers). A doc that one of the skipping jobs reads (an API, landing or theme spec reading a `spec/` page) is listed in `changes`' `docs_reads`, and changing it runs the suite; [`docs-only-skip.test.mjs`](../../scripts/ci/__tests__/docs-only-skip.test.mjs) fails when an app or package source reads a doc that list leaves out. A PR past GitHub's 3000-file listing, and a queue filter that fails, run the suite. The docs checks in `docs.yml` are a separate workflow and run as before.
 
 **The dashboard visual snapshot gate used to sit in this table and is gone.** `web-visual-regression`
 shot each dashboard route at 1440×960 and compared it to one of sixteen committed PNGs. It was
@@ -67,7 +74,7 @@ only: it lives in the pre-auth spec, and nothing guards that spec. Deleting or r
 
 ## dependency-cruiser — architectural boundaries
 
-Enforces three things the codebase already asserted in prose and nothing checked:
+Enforces four things the codebase already asserted in prose and nothing checked:
 
 - **The API's layer direction.** Interface → Application → Infrastructure → Domain; outer may import
   inner, never the reverse ([`api-development` skill](../../.claude/skills/api-development/SKILL.md)).
@@ -77,6 +84,11 @@ Enforces three things the codebase already asserted in prose and nothing checked
   a `*.module.ts` (or its spec) fails `api-modules-wiring-only`, in one of three forms, because the
   gate judges edges rather than files: the base rule through the file's own imports, `-target` through an
   import of it, `-orphan` when it has neither (#3219). Workers go in `application/workers/`.
+- **A model provider's SDK stays in its adapter.** `@anthropic-ai/sdk` and `@google/genai` may be
+  imported only under `apps/api/src/infrastructure/ai/`, type-only imports included
+  (`ai-provider-sdks-only-in-adapters`, ADR-28 decision 1). Everything else calls the AI gateway,
+  which is where consent, the spend caps, the citation check and the usage record happen. The rule
+  runs in every workspace's cruise, and `check:dep-cruiser:rules` proves it fires.
 - **Monorepo separation.** A package must not import an app; apps share code through `packages/`,
   never directly.
 
@@ -288,8 +300,9 @@ blocks a PR over the advisory base comparison, which carries it too. That compar
 can't run (a `::warning::` that it was skipped), and its `!cancelled()` condition keeps it running
 after the blocking step fails, since it alone reports breaks to routes no shipped build had. It can't turn the blocking check
 green: `--shipped` fails on a missing oasdiff whenever a build is listed, and needs none when no build
-is. The blocking step also runs on push to `main`, so a break that reaches `main` anyway turns `main`
-red. [`check-api-breaking-changes.test.mjs`](../../scripts/ci/__tests__/check-api-breaking-changes.test.mjs)
+is. The blocking step also runs on a push to `main` the merge queue didn't test (a queue-tested push
+skips it, since the queue ran it on the same commit), so a break that reaches `main` anyway turns
+`main` red. [`check-api-breaking-changes.test.mjs`](../../scripts/ci/__tests__/check-api-breaking-changes.test.mjs)
 fails if that step gains a `continue-on-error` or an `if:`.
 
 ---
@@ -334,15 +347,23 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 4.25%** duplicated lines (1,244 clones, 15,479 duplicated lines, across
-  1,552 files analysed; 15,479 / 363,931 = 4.253%) — measured 2026-09-27 with
-  `npm run check:duplication` on jscpd **5.3.2**. That release changed the unit, not the code:
-  it fixed an off-by-one that counted every clone one line short (`end - start` instead of an
-  inclusive range). The same tree on 5.3.1 measures 14,235 lines, 3.91%, and 15,479 − 14,235 is
-  exactly the 1,244 clones. **Every figure below dated before 2026-09-27 is in 5.3.1's unit** and
-  reads about one line per clone low against a current run.
-- **Threshold: 4.4%.** Re-based from 4.1% on 2026-09-27 for that unit change (#2726), which is
-  not a loosening: 4.1% in the old unit is 14,921 lines on today's tree, which 5.3.2 counts as
+- **Current measurement: 3.19%** duplicated lines (3,047 clones, 35,468 duplicated lines across
+  4,152 files analysed; 35,468 / 1,112,467 = 3.188%), measured 2026-11-17 at `62c3bcf` with
+  `npm run check:duplication` on jscpd **5.4.3**, after the hygiene sweep's consolidations (#5204).
+  The sweep's baseline was 3.39% (36,487 duplicated lines, 3,086 clones, 4,020 files) at
+  `d69a2e874d9d2c3fc601b29566309c8acbbd979c`, recorded on #5204. The datum before that was 4.25%
+  (1,244 clones, 15,479 duplicated lines across 1,552 files; 15,479 / 363,931 = 4.253%),
+  measured 2026-09-27 on jscpd **5.3.2**. That release changed the unit, not
+  the code: it fixed an off-by-one that counted every clone one line short (`end - start` instead
+  of an inclusive range). The same tree on 5.3.1 measures 14,235 lines, 3.91%, and 15,479 − 14,235
+  is exactly the 1,244 clones. **Every figure below dated before 2026-09-27 is in 5.3.1's unit**
+  and reads about one line per clone low against a current run.
+- **Threshold: 3.5%.** Ratcheted from 4.4% on 2026-11-17 against the 3.19% measurement above
+  (#5204), leaving 0.31 points of headroom. That is more than the 2026-09-17 ratchet kept (0.22
+  points, 4.1% over 3.88%) because the measurement once swung 0.35 points in a week (below), and
+  the sweep's figure has not yet been watched across ordinary feature work.
+- **Previously 4.4%.** Re-based from 4.1% on 2026-09-27 for that unit change (#2726), which is
+  not a loosening: 4.1% in the old unit is 14,921 lines on the 2026-09-27 tree, which 5.3.2 counts as
   16,165, or 4.44%, and 4.4% is that figure rounded down. Before that it was ratcheted from 4.3%
   to 4.1% on 2026-09-17 against a 3.88% measurement (1,030 clones, 12,393 lines, 1,428 files,
   old unit) after folding the three inline `chapter_audit_log` writers into
@@ -352,7 +373,7 @@ that fails when exceeded. So the ratchet is:
 - The **2026-09-10 figure** was 4.16% (977 clones, 11,833 duplicated lines, 1,294 files;
   11,833 / 284,707 = 4.156%), measured after combining the identity-query / named-event extract
   with first-party Sentry trace origins and the shared `/task` `/event` `/hours` `card_posted`
-  cases. Kept as the previous datum, not as a baseline to compare a current run against — the
+  cases. Kept as an older datum, not as a baseline to compare a current run against — the
   denominator has grown since.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green. The one exception is a jscpd release that changes how lines are counted,

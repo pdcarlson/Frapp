@@ -48,7 +48,12 @@ const dm: ChatChannel = {
 function setup({
   reorder = true,
   channels = [general, random, alumni, exec, rush, dm],
-}: { reorder?: boolean; channels?: ChatChannel[] } = {}) {
+  sort,
+}: {
+  reorder?: boolean;
+  channels?: ChatChannel[];
+  sort?: "chapter" | "recent" | "alpha";
+} = {}) {
   const controls: ChannelReorderControls = {
     onReorderChannels: vi.fn(),
     onReorderCategories: vi.fn(),
@@ -63,6 +68,23 @@ function setup({
       memberNames={{ me: "Me", them: "Them" }}
       onPick={onPick}
       reorder={reorder ? controls : undefined}
+      sidebar={
+        sort
+          ? {
+              preferences: {
+                pinnedIds: new Set(),
+                collapsed: new Set(),
+                filters: { unreadOnly: false, hideMuted: false },
+                sort,
+              },
+              mutedChannelIds: new Set(),
+              onSetPinned: vi.fn(),
+              onSetCollapsed: vi.fn(),
+              onSetFilters: vi.fn(),
+              onClearFilters: vi.fn(),
+            }
+          : undefined
+      }
     />,
   );
   return { ...utils, controls, onPick };
@@ -351,5 +373,26 @@ describe("ChannelList reorder", () => {
     } finally {
       restore();
     }
+  });
+});
+
+// The member's own sort (#2877): under Recent or A–Z the rows aren't drawn in
+// the chapter's order, so they stop dragging; categories still are, so they
+// keep dragging, and an empty one keeps its heading.
+describe("drag under the member's sort (#2877)", () => {
+  it("keeps rows still and categories draggable under A–Z", () => {
+    const { container } = setup({ sort: "alpha" });
+
+    expect(rowOf(container, "c-gen")).toBeNull();
+    expect(
+      container.querySelector('[data-reorder-category="cat-exec"]'),
+    ).not.toBeNull();
+    expect(screen.getByText("Archive")).toBeInTheDocument();
+  });
+
+  it("drags rows again under Chapter order", () => {
+    const { container } = setup({ sort: "chapter" });
+
+    expect(rowOf(container, "c-gen")).not.toBeNull();
   });
 });

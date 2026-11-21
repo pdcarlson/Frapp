@@ -1,3 +1,4 @@
+import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
@@ -11,6 +12,10 @@ import { NotificationService } from '../../src/application/services/notification
 import { ChatService } from '../../src/application/services/chat.service';
 import { RbacService } from '../../src/application/services/rbac.service';
 import { EventTypeService } from '../../src/application/services/event-type.service';
+import {
+  EVENT_CHECK_IN_SCREEN_REPOSITORY,
+  type IEventCheckInScreenRepository,
+} from '#domain/repositories/event-check-in-screen.repository.interface';
 import { EVENT_TYPE_REPOSITORY } from '#domain/repositories/event-type.repository.interface';
 import type { IEventTypeRepository } from '#domain/repositories/event-type.repository.interface';
 
@@ -44,6 +49,8 @@ export const baseEvent: Event = {
   check_in_zone_name: null,
   check_in_opens_minutes: 10,
   event_type_id: null,
+  agenda: [],
+  attachments: [],
   created_by: null,
   created_at: '2026-02-26T00:00:00.000Z',
 };
@@ -52,6 +59,7 @@ export async function createEventServiceFixture() {
   const mockEventRepo: jest.Mocked<IEventRepository> = {
     findById: jest.fn(),
     findByChapter: jest.fn(),
+    findByIds: jest.fn(),
     findCreatedBy: jest.fn(),
     findChildren: jest.fn().mockResolvedValue([]),
     create: jest.fn(),
@@ -63,6 +71,8 @@ export async function createEventServiceFixture() {
     updateMany: jest.fn().mockResolvedValue([]),
     delete: jest.fn(),
     deleteMany: jest.fn().mockResolvedValue(undefined),
+    // No excuse left behind by default (#4620).
+    deleteReplacedOccurrences: jest.fn().mockResolvedValue([]),
   };
 
   const mockNotificationService: jest.Mocked<
@@ -116,6 +126,21 @@ export async function createEventServiceFixture() {
     delete: jest.fn(),
   };
 
+  // No officer's screen is live unless a test says so (#4808).
+  const mockScreenRepo: jest.Mocked<IEventCheckInScreenRepository> = {
+    findLive: jest.fn().mockResolvedValue([]),
+    recordShown: jest.fn(),
+    deleteExpired: jest.fn(),
+  };
+
+  // Every document id a test attaches is the chapter's unless it says not
+  // (#4934).
+  const mockDocumentRepo: { findByIds: jest.Mock } = {
+    findByIds: jest.fn(async (ids: string[], chapterId: string) =>
+      ids.map((id) => ({ id, chapter_id: chapterId })),
+    ),
+  };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       EventService,
@@ -129,6 +154,8 @@ export async function createEventServiceFixture() {
       { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
       { provide: ChatService, useValue: mockChatService },
       { provide: RbacService, useValue: mockRbacService },
+      { provide: EVENT_CHECK_IN_SCREEN_REPOSITORY, useValue: mockScreenRepo },
+      { provide: CHAPTER_DOCUMENT_REPOSITORY, useValue: mockDocumentRepo },
     ],
   }).compile();
 
@@ -141,6 +168,8 @@ export async function createEventServiceFixture() {
     mockChatService,
     mockRbacService,
     mockEventTypeRepo,
+    mockScreenRepo,
+    mockDocumentRepo,
   };
 }
 

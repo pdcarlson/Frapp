@@ -16,6 +16,7 @@ import {
   Hash,
   MessageSquareText,
   Search,
+  Settings,
   User,
   type LucideIcon,
 } from "lucide-react";
@@ -30,6 +31,7 @@ import {
 import { canAny } from "@repo/validation";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
+import { useSettingsSearch } from "@/lib/settings/use-settings-search";
 import { asArray, cn } from "@/lib/utils";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -44,8 +46,8 @@ import {
 } from "@/components/layout/find-results";
 
 /**
- * The Find dialog: a centered search over channels, members, messages, events
- * and backwork, opened by Cmd/Ctrl+F or the top-bar field (`find-bar.tsx`).
+ * The Find dialog: a centered search over channels, settings, members,
+ * messages, events and backwork, opened by Cmd/Ctrl+F or the top-bar field (`find-bar.tsx`).
  *
  * **Why a dialog again.** #2141 replaced the ⌘K palette with a field that
  * dropped its results under itself, 520px wide. Paul picked a centered dialog
@@ -54,14 +56,13 @@ import {
  * chips narrow it without retyping. The top-bar field stays as the visible way
  * in, so the shortcut is still a convenience rather than the only door.
  *
- * **Find is not Ask.** Find lists places to go, from everything the member
- * can read, chat included. Ask (the ✦ pill) answers a question from the
- * chapter's official sources only (`spec/behavior/ai.md`) and paints in house
- * gold. This dialog never uses the `gold-ask-*` tokens and never mentions Ask
- * until Ask can answer on web. Per foundations §6 the highlighted result is
- * a neutral `--card-hover` fill, like every menu highlight; only the active
- * filter chip takes the chapter accent, because it is a filter the member
- * switched on.
+ * **It only finds** (#5476, Paul, 2026-11-18). From #4904 (2026-11-13) its
+ * first row asked Frapp what was typed, for a member with Ask; Shawn and Paul
+ * didn't want Ask in the search bar, so Ask has its own bar now
+ * (`ask/ask-bar.tsx`) and this dialog lists places to go, from everything the
+ * member can read. Per foundations §6 the highlighted row is a neutral
+ * `--card-hover` fill, like every menu highlight; only the active filter chip
+ * takes the chapter accent.
  *
  * Focus never leaves the input while arrowing: the list is an
  * `aria-activedescendant` listbox, as the field's dropdown was.
@@ -71,6 +72,7 @@ export const FIND_PLACEHOLDER = "Find channels, members, messages and more";
 
 const GROUP_ICON: Record<FindGroup, LucideIcon> = {
   Channels: Hash,
+  Settings: Settings,
   Members: User,
   Messages: MessageSquareText,
   Events: CalendarDays,
@@ -156,8 +158,8 @@ export function FindDialog({
             Find
           </DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            Search channels, members, messages, events and backwork. Use the
-            arrow keys to move through results and Enter to open one.
+            Search channels, settings, members, messages, events and backwork.
+            Use the arrow keys to move through results and Enter to open one.
           </DialogPrimitive.Description>
           <FindPanel
             query={query}
@@ -192,7 +194,10 @@ function FindPanel({
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<FindFilter>("All");
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Null until the member moves the highlight, which otherwise sits on the
+  // first result.
+  const [movedTo, setMovedTo] = useState<number | null>(null);
+  const placeholder = FIND_PLACEHOLDER;
 
   // The server search is debounced; the channel match is not, in effect,
   // because it reads the same debounced query and the channel list is cached.
@@ -211,6 +216,8 @@ function FindPanel({
   const channels = useChannels();
   const isModuleEnabled = useChapterModuleGate();
   const permissions = usePermissionList();
+  // Settings the member can change, found by name or synonym (2026-11-19).
+  const findSettings = useSettingsSearch();
   // `null` outside `AnalyticsProvider` (tests, or an opted-out member).
   const track = useContext(AnalyticsContext);
   // Set by the member typing in this mount; see the telemetry effect.
@@ -255,6 +262,7 @@ function FindPanel({
             payload: search.data?.payload,
             departments: departments.data,
             hiddenGroups,
+            settings: findSettings(debouncedQuery),
           })
         : [],
     [
@@ -265,6 +273,7 @@ function FindPanel({
       search.data,
       departments.data,
       hiddenGroups,
+      findSettings,
     ],
   );
 
@@ -276,7 +285,7 @@ function FindPanel({
   const [keyForIndex, setKeyForIndex] = useState(listKey);
   if (keyForIndex !== listKey) {
     setKeyForIndex(listKey);
-    setActiveIndex(0);
+    setMovedTo(null);
   }
 
   /*
@@ -360,16 +369,27 @@ function FindPanel({
     [router, onDone, onQueryChange],
   );
 
+  // "Searching..." only for text that will actually be searched.
+  const showResults =
+    hasMinQuery ||
+    (isDebouncing && query.trim().length >= SEARCH_MIN_QUERY_LENGTH);
+  const isLoading = search.isFetching || isDebouncing;
+
+  // The highlight starts on the first result, which may not be there yet:
+  // then no row is lit, and Enter waits for it.
+  const rowCount = results.length;
+  const activeIndex = movedTo !== null && movedTo < rowCount ? movedTo : 0;
+
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     // An IME's Enter commits a candidate, and its arrows move between them.
     if (event.nativeEvent.isComposing) return;
-    if (results.length === 0) return;
+    if (rowCount === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((i) => (i + 1) % results.length);
+      setMovedTo((activeIndex + 1) % rowCount);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((i) => (i - 1 + results.length) % results.length);
+      setMovedTo((activeIndex - 1 + rowCount) % rowCount);
     } else if (event.key === "Enter") {
       event.preventDefault();
       // The list still belongs to the previous text; see `hasMinQuery`.
@@ -378,11 +398,6 @@ function FindPanel({
     }
   }
 
-  // "Searching..." only for text that will actually be searched.
-  const showResults =
-    hasMinQuery ||
-    (isDebouncing && query.trim().length >= SEARCH_MIN_QUERY_LENGTH);
-  const isLoading = search.isFetching || isDebouncing;
   /*
    * Only a timeout in a group the member is looking at counts. Channels are
    * matched here and never time out, so under the Channels chip a slow message
@@ -397,10 +412,14 @@ function FindPanel({
     const group = GROUP_FOR_SOURCE[source];
     return group ? shownGroup(group) : true;
   });
+  // Channels and Settings are matched on this device, so the server's
+  // timeout or failure says nothing about them.
+  const matchedHere =
+    effectiveFilter === "Channels" || effectiveFilter === "Settings";
   const timedOut =
     allTimedOutSources.length > 0
       ? timedOutSources.length > 0
-      : (search.data?.timedOut ?? false) && effectiveFilter !== "Channels";
+      : (search.data?.timedOut ?? false) && !matchedHere;
 
   /*
    * "We stopped looking here" must read differently from "we found nothing"
@@ -414,7 +433,7 @@ function FindPanel({
     statusMessage = null;
   } else if (isLoading) {
     statusMessage = "Searching...";
-  } else if (search.isError) {
+  } else if (search.isError && !matchedHere) {
     statusMessage = "Search is unavailable right now. Try again in a moment.";
   } else if (results.length === 0) {
     statusMessage = timedOut
@@ -442,8 +461,8 @@ function FindPanel({
           aria-controls="find-results"
           aria-autocomplete="list"
           aria-activedescendant={activeId}
-          aria-label={FIND_PLACEHOLDER}
-          placeholder={FIND_PLACEHOLDER}
+          aria-label={placeholder}
+          placeholder={placeholder}
           value={query}
           onChange={(e) => {
             typedRef.current = true;
@@ -495,7 +514,7 @@ function FindPanel({
       <div
         id="find-results"
         role="listbox"
-        aria-label={FIND_PLACEHOLDER}
+        aria-label={placeholder}
         className="min-h-0 flex-1 overflow-y-auto p-2"
       >
         {!showResults ? (
@@ -548,7 +567,7 @@ function FindPanel({
                 aria-selected={active}
                 // Focus stays in the input, so options are not tab stops.
                 tabIndex={-1}
-                onPointerEnter={() => setActiveIndex(index)}
+                onPointerEnter={() => setMovedTo(index)}
                 onClick={() => openResult(result)}
                 className={cn(
                   // The Row step (foundations.md §9, #3515): 32 with a 14px

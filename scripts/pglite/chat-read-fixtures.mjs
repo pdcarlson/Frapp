@@ -1,4 +1,4 @@
-// The rows `tiers/chat-read-enforcement.mjs` seeds, and the scenarios it and
+// The rows `chat-read-enforcement.mjs` seeds, and the scenarios it and
 // `tiers/chat-black-box.mjs` read them back with.
 
 export const F = {
@@ -23,10 +23,23 @@ export const F = {
   // reachable through a normal PATCH of member roles.
   userFId: "ffff1111-0000-0000-0000-000000000001",
   userFAuth: "ffff2222-0000-0000-0000-000000000001",
-  roleSecret: "0e0e0e0e-0000-0000-0000-000000000001", // chapter A, permission chat:secret
-  roleBasic: "0b0b0b0b-0000-0000-0000-000000000001", // chapter A, no permissions
+  // Chapter A member whose only role lacks members:view, which every chat route
+  // requires, so the read rule denies them every channel, PUBLIC included.
+  userGId: "99991111-0000-0000-0000-000000000001",
+  userGAuth: "99992222-0000-0000-0000-000000000001",
+  // Chapter A member whose only stored role id is chapter B's members:view
+  // role: a foreign id grants nothing here, so members:view must come from a
+  // role of the channel's own chapter.
+  userHId: "77771111-0000-0000-0000-000000000001",
+  userHAuth: "77772222-0000-0000-0000-000000000001",
+  // Every role but roleNoView carries members:view, as a real chapter's member
+  // roles do: the chat read rule requires it, as the chat routes do.
+  roleSecret: "0e0e0e0e-0000-0000-0000-000000000001", // chapter A, chat:secret + members:view
+  roleBasic: "0b0b0b0b-0000-0000-0000-000000000001", // chapter A, members:view only
   roleWildcard: "0a0a0a0a-0000-0000-0000-000000000001", // chapter A, permission '*'
-  roleSecretChapB: "0c0c0c0c-0000-0000-0000-000000000001", // chapter B, permission chat:secret
+  roleSecretChapB: "0c0c0c0c-0000-0000-0000-000000000001", // chapter B, chat:secret + members:view
+  roleMemberChapB: "0d0d0d0d-0000-0000-0000-000000000001", // chapter B, members:view only
+  roleNoView: "0f0f0f0f-0000-0000-0000-000000000001", // chapter A, no permissions
   chPublic: "c0000001-0000-0000-0000-000000000001",
   chPrivate: "c0000002-0000-0000-0000-000000000001",
   chDM: "c0000003-0000-0000-0000-000000000001",
@@ -76,4 +89,7 @@ export const READ_SCENARIOS = [
   { name: "ROLE_GATED denies a chapter-B role id held by a chapter-A member (roles re-scoped by chapter)", uid: F.userEAuth, msg: F.msgRoleGated, expect: false },
   { name: "ROLE_GATED matches an UPPERCASE stored role id (uuid compare, not text)", uid: F.userFAuth, msg: F.msgRoleGated, expect: true },
   { name: "NULL auth.uid() (anon / no JWT) is denied", uid: null, msg: F.msgPublic, expect: false },
+  // The chat routes all require members:view; the read rule matches them.
+  { name: "a member without members:view is denied even a PUBLIC channel", uid: F.userGAuth, msg: F.msgPublic, expect: false },
+  { name: "members:view from another chapter's role does not open a PUBLIC channel", uid: F.userHAuth, msg: F.msgPublic, expect: false },
 ];

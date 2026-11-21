@@ -7,7 +7,7 @@
 > § Precedence, rule 1). Drift between them and the page,
 > [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) and the sections and frames it
 > composes from [`apps/landing/components/home/`](../../../../apps/landing/components/home/), is a filable bug now rather
-> than an expected gap, with eight standing exceptions, none of them drift:
+> than an expected gap, with nine standing exceptions, none of them drift:
 >
 > - the two decisions below that supersede what the boards draw (D8 and D9);
 > - the signature moment, which is **cut** from the shipped page until brand sign-off clears
@@ -32,6 +32,11 @@
 >   ([#3817](https://github.com/pdcarlson/Frapp/issues/3817)), so the shipped nav and footer carry
 >   both links as well. The as-built header and footer, and where their anchors resolve, are
 >   [`../README.md`](../README.md) § Section inventory and § Route facts.
+> - the event frame's check-in action (2026-11-17, #4768). The boards draw a gold "Scan QR to
+>   check in" button the app's open check-in card no longer has (#4762); the app says "Scan the
+>   code on the officer's screen, here or with your phone's camera." over a quieter "Scan code"
+>   text action (`CheckInCard` in `apps/mobile/app/(app)/event-details.tsx`), so the frame draws
+>   that.
 > - the 2026-11-09 refresh ([#3869](https://github.com/pdcarlson/Frapp/issues/3869)), where the
 >   boards draw something the product no longer does or a wording the owner replaced:
 >   - **the hero's words.** The boards draw the eyebrow "Chapter operations, chat first", the H1
