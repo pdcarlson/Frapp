@@ -1,23 +1,12 @@
 "use client";
 
-import {
-  CalendarDays,
-  ExternalLink,
-  MoreHorizontal,
-  RotateCcw,
-  Unlink,
-} from "lucide-react";
+import { CalendarDays, ExternalLink, RotateCcw, Unlink } from "lucide-react";
 import {
   googleCalendarLinkedState,
   type GoogleCalendarWebReturn,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ActionMenuButton } from "@/components/shared/row-menu";
 import { LinkedAppRow } from "@/components/linked-apps/linked-app-row";
 import {
   GOOGLE_CALENDAR_WEB,
@@ -81,36 +70,27 @@ export function GoogleCalendarRow({
           </Button>
         ) : null}
         {state.tone !== "off" ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Google Calendar options"
-              >
-                <MoreHorizontal aria-hidden="true" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <a
-                  href={GOOGLE_CALENDAR_WEB}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ExternalLink aria-hidden="true" />
-                  Open Google Calendar
-                </a>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={google.disconnecting}
-                onSelect={() => void google.disconnect()}
-              >
-                <Unlink aria-hidden="true" />
-                Disconnect
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ActionMenuButton
+            label="More for Google Calendar"
+            entries={[
+              {
+                type: "item",
+                key: "open",
+                label: "Open Google Calendar",
+                icon: ExternalLink,
+                href: GOOGLE_CALENDAR_WEB,
+                external: true,
+              },
+              {
+                type: "item",
+                key: "disconnect",
+                label: "Disconnect",
+                icon: Unlink,
+                disabled: google.disconnecting,
+                onSelect: () => void google.disconnect(),
+              },
+            ]}
+          />
         ) : null}
       </LinkedAppRow>
       {google.confirmDialog}

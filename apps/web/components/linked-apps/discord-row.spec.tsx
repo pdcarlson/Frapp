@@ -169,7 +169,7 @@ describe("DiscordRow (#2878, #5407)", () => {
 
     expect(screen.getByText("jkslayer")).toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: "Discord options" }),
+      screen.getByRole("button", { name: "More for Discord" }),
     );
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Unlink" }),
@@ -200,7 +200,7 @@ describe("DiscordRow (#2878, #5407)", () => {
     renderCard(client);
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Discord options" }),
+      screen.getByRole("button", { name: "More for Discord" }),
     );
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Unlink" }),
