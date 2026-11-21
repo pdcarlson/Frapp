@@ -325,6 +325,34 @@ describe("MemberProfile groups (#4076)", () => {
     expect(texts(tree)).not.toContain("Groups");
     act(() => tree.unmount());
   });
+
+  it("folds a long Groups row behind +N more, as the roles row does (#5783)", () => {
+    const names = ["G1", "G2", "G3", "G4", "G5", "G6"];
+    state.groups = names.map((name) => ({
+      id: `g-${name}`,
+      name,
+      kind: "manual",
+      color: null,
+      member_ids: [ADA],
+    }));
+    const tree = render(ADA);
+    const shown = () =>
+      texts(tree).filter(
+        (child) => typeof child === "string" && names.includes(child),
+      );
+    expect(shown()).toEqual(["G1", "G2", "G3"]);
+    const toggle = (label: string) =>
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === label &&
+          typeof node.props.onPress === "function",
+      )[0];
+    act(() => toggle("+3 more groups").props.onPress());
+    expect(shown()).toEqual(names);
+    act(() => toggle("Show less groups").props.onPress());
+    expect(shown()).toHaveLength(3);
+    act(() => tree.unmount());
+  });
 });
 
 describe("MemberProfile Message action (#2773)", () => {
@@ -1123,6 +1151,36 @@ describe("MemberProfile roles", () => {
       .map((node) => node.props.children)
       .filter((child) => child === "President" || child === "Brothers");
     expect(text).toEqual(["President", "Brothers"]);
+    act(() => tree.unmount());
+    PROFILES[ADA] = profile(ADA, "Ada");
+  });
+
+  it("shows the top three roles, then +N more that opens the rest in place (#5783)", () => {
+    const names = ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"];
+    state.roles = names.map((name, i) => ({
+      id: `r-${name}`,
+      name,
+      color: null,
+      // Listed in reverse, so the chips must sort.
+      display_order: names.length - i,
+    }));
+    PROFILES[ADA] = {
+      ...profile(ADA, "Ada"),
+      role_ids: names.map((name) => `r-${name}`) as never[],
+    };
+    const tree = render(ADA);
+    const shown = () =>
+      tree.root
+        .findAllByType("Text" as never)
+        .map((node) => node.props.children)
+        .filter((child) => typeof child === "string" && names.includes(child));
+    expect(shown()).toEqual(["A8", "A7", "A6"]);
+    const more = editButton(tree, "+5 more roles");
+    expect(more.props.accessibilityState).toEqual({ expanded: false });
+    act(() => more.props.onPress());
+    expect(shown()).toEqual(["A8", "A7", "A6", "A5", "A4", "A3", "A2", "A1"]);
+    act(() => editButton(tree, "Show less roles").props.onPress());
+    expect(shown()).toHaveLength(3);
     act(() => tree.unmount());
     PROFILES[ADA] = profile(ADA, "Ada");
   });
