@@ -59,6 +59,7 @@ import {
   Chip,
   ChipRow,
   FilterChips,
+  MenuChip,
   SearchField,
   type FilterChip,
 } from "@/components/filter-chips";
@@ -1135,45 +1136,6 @@ export default function DocumentsScreen() {
         />
       ) : null}
     </ScreenShell>
-  );
-}
-
-/**
- * A filter chip that opens its choices in a sheet (#5278): its name at rest,
- * the pick once set, lit while set, with a down chevron, as Google Drive's
- * Type, People and Modified chips read on a phone.
- */
-function MenuChip({
-  name,
-  value,
-  hint,
-  onPress,
-}: {
-  name: string;
-  value: string | undefined;
-  hint: string;
-  onPress: () => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const { accentOnPrimary } = useChapterBranding();
-  const set = value !== undefined;
-  return (
-    <Chip
-      accessibilityRole="button"
-      accessibilityState={{ selected: set }}
-      accessibilityLabel={set ? `${name}: ${value}` : name}
-      accessibilityHint={hint}
-      label={value ?? name}
-      on={set}
-      trailing={
-        <DisclosureGlyph
-          color={set ? accentOnPrimary : tokens.color.text.muted}
-          size={14}
-          direction="down"
-        />
-      }
-      onPress={onPress}
-    />
   );
 }
 

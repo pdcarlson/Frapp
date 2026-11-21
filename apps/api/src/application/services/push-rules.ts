@@ -47,12 +47,6 @@ export interface PushDecisionInput {
   /** Pref rows for the (user, chapter). Empty means "no preference set". */
   preferences: ChatNotificationPreferenceRow[];
   /**
-   * The row is an audit-log mirror in `#chapter-audit` (`isAuditMirrorRow`),
-   * not one of the server's own `system_audit` notices. Mirrors are delivered
-   * silently: no preference turns them back on.
-   */
-  isAuditMirror?: boolean;
-  /**
    * Set when the row is a reply inside a message thread (#3785): the
    * recipient's follow state for that thread, `null` when they do not follow
    * it. Absent for a timeline message.
@@ -207,18 +201,9 @@ export type PushOutcome =
  * for a plainer reason: the member who asked chose to put it in the channel,
  * and nobody else asked for it (`spec/behavior/ai.md` § Posting an answer to the channel). A
  * name in the answer is not a mention; the row is written with none.
- *
- * An audit mirror is refused the same way (owner decision 2026-11-06: audit
- * entries arrive silently). A member's `all` on `#chapter-audit`, or the
- * `system_audit` kind opt-in, would otherwise page them for every settings
- * save. The kind opt-in still reaches the server's own `system_audit` notices.
  */
 export function decidePush(input: PushDecisionInput): PushOutcome {
-  if (
-    input.messageKind === 'imported' ||
-    input.messageKind === 'ask_answer' ||
-    input.isAuditMirror
-  ) {
+  if (input.messageKind === 'imported' || input.messageKind === 'ask_answer') {
     return 'skip-level';
   }
   // Presence is published by the readers' own clients on a topic any reader

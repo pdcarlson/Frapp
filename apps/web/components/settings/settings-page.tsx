@@ -91,6 +91,7 @@ import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsBirthdayPosts } from "@/components/settings/settings-birthday-posts";
 import { SettingsMemberNames } from "@/components/settings/settings-member-names";
+import { SettingsLogsTab } from "@/components/settings/settings-logs-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsAiTab } from "@/components/settings/settings-ai-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
@@ -891,6 +892,14 @@ function SettingsPageContent() {
               </TabsContent>
             );
           })}
+          {/*
+            Logs (Paul, 2026-11-21): no config gate, since it reads the audit
+            log, not chapter config; the rail shows it only to a viewer the
+            route admits (`isSettingsTabVisible`).
+          */}
+          <TabsContent value="logs" className="mt-0">
+            <SettingsLogsTab />
+          </TabsContent>
           <TabsContent value="ai" className="mt-0">
             <SettingsAiTab />
           </TabsContent>

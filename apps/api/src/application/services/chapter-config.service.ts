@@ -822,10 +822,8 @@ export class ChapterConfigService {
       diff,
     });
 
-    // ADR-08 (Chunk 05): `#chapter-audit` mirroring is now owned by the
-    // ChatBridgeWorker which subscribes to `chapter_audit_log` INSERTs and
-    // posts the `system_audit` message itself. Each audit-writing service no
-    // longer needs to call into chat.
+    // Officers read the row on the Logs page in Chapter settings; nothing is
+    // posted to chat (`#chapter-audit` was removed 2026-11-21).
 
     // Funnel step 5 (#267), now that the update and its audit row have landed.
     // A patch can enable several paid modules at once; the milestone is "the

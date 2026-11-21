@@ -10,8 +10,8 @@ import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from "./field-limits";
 
 /**
  * `users.id` of the system actor behind server-originated chat messages — the
- * chapter welcome post, the `#chapter-audit` bridge, invite-accept DMs and the
- * poll-expiry notice. A real seeded `users` row
+ * chapter welcome post and the poll-expiry notice (the `#chapter-audit` bridge
+ * and invite-accept DMs used to post as it too). A real seeded `users` row
  * (`supabase/migrations/20260524120000_chapter_directory_requests.sql`).
  *
  * Canonical here rather than in the API so clients read the same value the
@@ -24,8 +24,7 @@ export const SYSTEM_SENDER_ID = "00000000-0000-0000-0000-000000000000";
 
 /**
  * The author name for a message the server posts as the system actor
- * (`SYSTEM_SENDER_ID`): the chapter welcome post, the `#chapter-audit` bridge,
- * poll-expiry notices and invite-accept DMs.
+ * (`SYSTEM_SENDER_ID`): the chapter welcome post and poll-expiry notices.
  *
  * The system actor is a real `users` row but never a chapter member, so the
  * roster can't name it, and before this the clients' author line fell through

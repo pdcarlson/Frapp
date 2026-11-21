@@ -181,6 +181,11 @@ export default function AppLayout() {
         name="chapter-settings"
         options={{ title: SCREEN_TITLES["chapter-settings"] }}
       />
+      {/* The record of officer changes (Paul, 2026-11-21), from Chapter settings. */}
+      <Stack.Screen
+        name="chapter-logs"
+        options={{ title: SCREEN_TITLES["chapter-logs"] }}
+      />
       <Stack.Screen
         name="chapter-roles"
         options={{ title: SCREEN_TITLES["chapter-roles"] }}

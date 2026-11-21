@@ -61,7 +61,6 @@ import {
   WORKER_SUBSCRIPTION_DOWN_AFTER_MS,
   WorkerSubscription,
 } from './worker-subscription';
-import { isAuditMirrorRow } from './chat-bridge-worker.service';
 
 interface ChatMessageRow {
   id: string;
@@ -84,8 +83,6 @@ interface ChatMessageRow {
    * which is how a file-only message, whose `content` is empty, is told apart.
    */
   metadata?: Record<string, unknown> | null;
-  /** `audit:<id>` on an audit mirror (`isAuditMirrorRow`); a UUID or null otherwise. */
-  client_message_id?: string | null;
   /** The parent when this row is a thread reply (#3785); pushes only its followers. */
   thread_root_id?: string | null;
   /**
@@ -161,9 +158,10 @@ function readableChannelName(
  * Most presence channels one process keeps open (#2507).
  *
  * Every Realtime channel a process opens rides its one Supabase client, and
- * Supabase refuses a join past 100 channels per client. Two of them are the
- * workers' own subscriptions (`chat-push-worker:messages` here,
- * `chat-bridge-worker:audit-log`). The rest were one presence channel per chat
+ * Supabase refuses a join past 100 channels per client. One was a
+ * worker's own subscription (`chat-push-worker:messages` here; the audit
+ * mirror's `chat-bridge-worker:audit-log` was the other until the Logs page
+ * replaced `#chapter-audit`, 2026-11-21). The rest were one presence channel per chat
  * channel ever messaged, opened for the life of the process, so somewhere near
  * 98 active chat channels (roughly 8 to 12 chapters) every further join was
  * refused. `subscribe()` had no status callback, so nothing said so, and people
@@ -604,7 +602,6 @@ export class ChatPushWorkerService
     // messages in a `mentions` channel push nobody.
     let senderName: Promise<string | null> | null = null;
 
-    const isAuditMirror = isAuditMirrorRow(row);
     for (const recipientId of recipientIds) {
       const prefs = prefsByUser.get(recipientId) ?? [];
       const mentioned = mentions.includes(recipientId);
@@ -614,7 +611,6 @@ export class ChatPushWorkerService
         recipientIsPresent: presenceMap.has(recipientId),
         hasMention: mentioned,
         preferences: prefs,
-        isAuditMirror,
         ...(followStates
           ? {
               thread: {

@@ -1,4 +1,10 @@
-import { can, canAny, isBetaOffModule } from "@repo/validation";
+import {
+  CHAPTER_LOGS_PERMISSIONS,
+  can,
+  canAll,
+  canAny,
+  isBetaOffModule,
+} from "@repo/validation";
 import { isModuleSettingsTab } from "@/components/settings/settings-modules";
 import {
   CHAT_SETTINGS_PATH,
@@ -163,6 +169,13 @@ export function isSettingsTabVisible(
         (tool) => tool.page === tab,
       )
     );
+  }
+  /*
+    Logs (Paul, 2026-11-21) reads `GET /v1/audit-log`, which takes both
+    `chapter-config:view` and `members:view`: entries name who removed whom.
+  */
+  if (tab === "logs") {
+    return canAll(CHAPTER_LOGS_PERMISSIONS, permissions);
   }
   const only = TAB_ONLY_PERMISSIONS[tab];
   if (only) return canAny(only, permissions);

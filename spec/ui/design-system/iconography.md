@@ -275,7 +275,7 @@ except the audit card's).
 | Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the You tab's row shape) | `components/chat/card-glyphs.tsx` |
 | Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
-| `#chapter-audit` audit line, at 14 in `--muted` in the avatar gutter (a card's eyebrow until 2026-11-06); also the audit channel's row on chat home, in the sigil's slot (#4134) | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
+| `#chapter-audit` audit line, at 14 in `--muted` in the avatar gutter (a card's eyebrow until 2026-11-06); also the audit channel's row on chat home, in the sigil's slot (#4134). The channel was removed on 2026-11-21, so nothing draws it now; the glyph stays until its removal (#5808) | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
 | A private or role-gated channel's row on chat home, in the `#` sigil's slot, size (18) and colours, and its channel start's tile (32, accent), as web draws both (#4134; the rule is `channelMarkFor` in `@repo/hooks/channel-start`) | `LockGlyph` (body filled, shackle stroke-only; web's `LockGlyph`) | `components/chat/card-glyphs.tsx` |
 | A muted channel's row on chat home, straight after the name, at 14 in `text.muted`, as web's rail draws it (#4738; a crossed-out bell until then, which drew the inbox's silhouette) | `MuteGlyph` (web's speaker, box filled, split and × stroke-only; `active` draws the × in place of the waves) | `components/chat/card-glyphs.tsx` |
 
@@ -414,7 +414,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
 | Jump to latest, on the round control over the thread's bottom-right corner: a down arrow, `SendArrowGlyph` turned over, the web face of mobile's `↓` (2026-11-12) | `JumpToLatestGlyph` |
 | Announcement | `AnnouncementGlyph` |
-| `#chapter-audit` / audit row | `AuditGlyph` |
+| `#chapter-audit` / audit row (channel removed 2026-11-21) | `AuditGlyph` |
 | Private / role-gated channel | `LockGlyph` |
 | Show or hide the channel member list (#3536), filled while shown | `MembersGlyph` (the nav set's `DirectoryGlyph`, re-exported); mobile's thread header draws the same shape, `NAV_GLYPHS.directory`, through `NavGlyph` |
 | Direct or group message | `DirectMessageGlyph` |

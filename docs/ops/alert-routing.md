@@ -263,7 +263,7 @@ conformance run both leave an open alert open. Mechanics and rationale:
 - sustained 5xx error-rate threshold breaches ([§ API error spike](#api-error-spike) counts every error-level event, 5xx and caught failures alike; Google's *5xx burst* counts responses, [§ Google Cloud alerts](#google-cloud-alerts))
 - webhook delivery failure spikes
 - push notification delivery failure spikes
-- a chat worker's Realtime subscription down for a minute or more (no chat pushes, or no `#chapter-audit` mirror)
+- the chat push worker's Realtime subscription down for a minute or more (no chat pushes)
 - database latency saturation impacting request SLAs
 - API median or p95 latency regressing for an hour ([§ API latency](#api-latency))
 
@@ -365,7 +365,7 @@ Source: the `error`-level Sentry event a chat worker sends when its Realtime sub
 | ------------------------------ | ------------------------------------------------------------------------------------------- | ------------ |
 | Chat worker subscription down | fingerprint `worker-subscription-down`, Sentry `environment: production` | critical |
 
-While it fires, `worker: chat-push` means no chat pushes go out and `worker: chat-bridge` means `#chapter-audit` stops mirroring, and inserts made in the gap are never delivered later. `/health/ready` stays green through it by decision ([`observability.md` § Health Check](../../spec/behavior/observability.md#health-check)), so this event is the only signal.
+While it fires, `worker: chat-push` means no chat pushes go out, and inserts made in the gap are never delivered later. `chat-push` is the only worker that sends it now: `worker: chat-bridge`, the `#chapter-audit` mirror, was removed with that channel on 2026-11-21, so an old Sentry issue under that tag will not fire again. `/health/ready` stays green through it by decision ([`observability.md` § Health Check](../../spec/behavior/observability.md#health-check)), so this event is the only signal.
 
 The fingerprint is fixed per worker, so every outage of one worker lands in one Sentry issue: the first creates it, and a later outage is a new event on it or a regression if it was resolved. The row is `frapp-api` rule `6297124`, *Frapp prod alert: chat worker subscription down* (2026-11-05, [#863](https://github.com/pdcarlson/Frapp/issues/863)): every production event whose message contains `realtime subscription is down` emails the owner, at most once per 30 minutes. It matches the message because no rule condition can filter on a fingerprint. Because it fires on every event rather than on a new or escalating issue, a later outage on an existing issue pages too.
 

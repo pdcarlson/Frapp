@@ -7,7 +7,7 @@ The mobile app opens directly into chat.
 
 - **Chat is non-optional.
   It cannot be disabled.**
-  Every chapter always has, at minimum: `#general` (everyone, the landing channel when a device has no last channel and the chapter has set no default), `#announcements` (exec-write, member-read, push by default), `#chapter-audit` (system-write only, member-read — the audit feed), and DMs / group DMs (always on).
+  Every chapter always has, at minimum: `#general` (everyone, the landing channel when a device has no last channel and the chapter has set no default), `#announcements` (exec-write, member-read, push by default), and DMs / group DMs (always on). The record of officer changes is not a channel: officers read it on the Logs page in Chapter settings ([`../settings/README.md` § Audit Rules](../settings/README.md#audit-rules)); `#chapter-audit` was removed on 2026-11-21.
 - **Modules-as-integrations.**
   When an ops module is enabled it does not get a top-level nav tab first.
   It gets: (1) one or more **slash commands** in chat, (2) a **rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit), and (3) _optionally_ a secondary dashboard page for the longer-form view.
@@ -146,11 +146,10 @@ Paul, 2026-11-10 (#3722, under #4068): each channel answers two questions, and o
   Categories are display-only grouping with a sort order.
   Channels not assigned to a category appear in a default "Channels" group.
 - **Default channels** created on chapter setup (`DEFAULT_CHANNELS` in `apps/api/src/domain/constants/permissions.ts`): `#general` (everyone sees and posts), `#announcements` (everyone sees;
-  the top two starting tiers post), `#chapter-audit` (everyone sees, nobody posts, `is_audit_log` — system-write audit feed;
-  § [The audit log is system-write only](#the-audit-log-is-system-write-only)), `#alumni` (seen and posted in by the four starting tiers and the Alumni role, which makes it the one seeded channel alumni may write in).
+  the top two starting tiers post), `#alumni` (seen and posted in by the four starting tiers and the Alumni role, which makes it the one seeded channel alumni may write in).
 - **Seeding happens at chapter creation (applies to all tiers)** — the onboarding submit `POST /v1/chapters/onboard`, the one way to create a chapter, seeds channels.
   It is **not** gated on billing/subscription.
-  `#chapter-audit` is required so the audit bridge has a destination.
+  `#chapter-audit` was seeded here until 2026-11-21, when the Logs page replaced it (§ [The audit log is system-write only](#the-audit-log-is-system-write-only)).
 - **Welcome message on onboarding submit.**
   A chapter created through the onboarding wizard gets a one-time welcome `system_audit` message, the first message it sees.
   Its channel and text, and where each client lands after submit, are owned by [`../onboarding.md` § First-Officer Onboarding Wizard](../onboarding.md#first-officer-onboarding-wizard).
@@ -177,7 +176,7 @@ Added 2026-11-05, owner direction ("Mobile opens up to the last channel you were
   A member who can't see it falls through to `#general`.
   Mobile does not use it: with no remembered channel, launch stays on chat home.
 - **Fallback:** a remembered channel that is deleted, no longer visible to the member, or a DM they hid is skipped.
-  Web then opens the chapter default, else `#general`, else the first channel the member can post in that isn't `#chapter-audit` (2026-11-19), else the first channel.
+  Web then opens the chapter default, else `#general`, else the first channel the member can post in (2026-11-19; it skipped `#chapter-audit` until that channel was removed on 2026-11-21), else the first channel.
   The same applies in the middle of a visit: the open channel disappearing lands there.
 - **Web's two lists** (since [#3774](https://github.com/pdcarlson/Frapp/issues/3774), Shawn, 2026-11-12).
   Web's chat panel shows the chapter's channels or the member's direct messages, and each remembers its own last conversation.
@@ -378,9 +377,9 @@ Each member arranges their own channel list (#2877, owner decision 2026-09-29).
 The arrangement belongs to the member and the chapter together: it follows the member between web and mobile, it differs per chapter, and nobody else can read or change it, an officer included.
 The categories themselves stay the chapter's (§ Channels).
 
-- **Sections, top to bottom:** Pinned, the default Channels group, one section per category in the chapter's order, Direct messages, then System on web (`#chapter-audit`).
+- **Sections, top to bottom:** Pinned, the default Channels group, one section per category in the chapter's order, then Direct messages. Web drew a System section after them for `#chapter-audit` until the channel was removed on 2026-11-21.
   On web since [#3774](https://github.com/pdcarlson/Frapp/issues/3774) (Shawn, 2026-11-12) the Direct messages section is its own list behind the nav's Direct messages row: Pinned (its pinned DMs), its rows, then Hidden conversations;
-  the channel list is Pinned (pinned channels), the channel groups, then System.
+  the channel list is Pinned (pinned channels), then the channel groups.
   Hidden conversations stays at the end, as § Direct Messages describes.
   An empty section is not drawn.
 - **Pin.**
@@ -434,7 +433,7 @@ The categories themselves stay the chapter's (§ Channels).
   Pinned, Direct messages, System and Hidden conversations carry none, and the + is gone while a row or heading is held.
   On mobile the + sits at the right of the Channels heading and each category heading on s04, always drawn (a phone has no hover), and opens a New channel sheet: name, description, category, a Private switch, and who can see and post, started with the category's answers and following a change of category until the officer changes one (§ [Who can see and post](#who-can-see-and-post)).
   - **Where it lives.**
-    `chat_channels.display_order` (`20261111190000`), null until the channel's section is first arranged, and never set on a DM, a group DM or `#chapter-audit`; categories keep `chat_channel_categories.display_order`.
+    `chat_channels.display_order` (`20261111190000`), null until the channel's section is first arranged, and never set on a DM or a group DM; categories keep `chat_channel_categories.display_order`.
     `PUT /v1/channels/order` takes a section (`category_id`, null for the default group) and its channels top to bottom, moving any listed channel into it; `PUT /v1/channels/categories/order` takes the categories top to bottom.
     Both need `channels:manage`.
     Each writes in one transaction under a per-chapter lock (`reorder_chat_channels`, `reorder_chat_categories`), and a row the officer couldn't see (a private channel they're not in, a category created mid-drag) keeps its relative place after the listed ones.
@@ -490,10 +489,10 @@ The categories themselves stay the chapter's (§ Channels).
 - **Row menu** (owner, 2026-11-06).
   Each channel row opens that channel's actions: on web a right-click on a rail row (or a long press, the menu key, or Shift+F10 with the row focused), and the row itself draws no hover controls; on mobile a long press on an s04 row, hidden conversations included, which taps and opens the app's own glass menu rather than a system alert.
   Which actions a row offers is `channelRowActions` in `@repo/hooks`, one rule for both clients, scoped to the member's permissions so nobody sees an action the server would refuse.
-  Leaving Edit and Delete off DMs and `#chapter-audit` (below) matches the server, which enforces it: it refuses `#chapter-audit`'s delete and rename (§ [The audit log is system-write only](#the-audit-log-is-system-write-only)), and refuses any edit or delete of a DM or group DM (§ [Direct Messages](#direct-messages)).
+  Leaving Edit and Delete off DMs (below) matches the server, which enforces it: it refuses any edit or delete of a DM or group DM (§ [Direct Messages](#direct-messages)). Until 2026-11-21 the same held for `#chapter-audit` (§ [The audit log is system-write only](#the-audit-log-is-system-write-only)).
   In order: Mark as read (an unread row only), Pin to top or Unpin from top, Notifications (the three levels, the current one checked; locked while the level is unknown, and on mobile while offline), Display (mobile; this channel's display on this phone, § [Chat density](#chat-density), outside `channelRowActions` because it writes nothing to the server; web keeps it in the open channel's `⋯` menu), Copy link (web), and Hide conversation (a 1:1 DM); then, after a divider and only with `channels:manage`, Edit channel (on web it opens Chat settings on that channel; on mobile an Edit channel sheet with its name, description, category and who can see and post, #3838, #3702), Arrange channels (mobile; opens the Arrange channels screen above) and Delete channel (asks first, and Delete stays disabled until the channel's name is typed exactly, case and all: Paul, #3838, "deleting a channel should be harder"; Chat settings' Delete asks the same way).
   Mobile leaves out Copy link, since a phone has no address bar; it asks for the typed name in a sheet, since an Android alert can't hold a text field.
-  Edit and Delete are never offered on a DM, a group DM or `#chapter-audit`.
+  Edit and Delete are never offered on a DM or a group DM.
   On web every action is also reachable without the menu: the open channel's `⋯` menu, opening the channel, the address bar, or Chat settings.
 - **Rows carry no read-only mark.**
   Web used to draw a lock at the end of every read-only row, the same glyph that marks a private channel at the start of a row.
@@ -1534,7 +1533,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
   It never opens a channel read, a thread, a pin list or the channel row: `assertChannelAccess` and every list surface take no report, and the route returns the resolved report, never the message.
   What an officer knows about the message is the evidence snapshot the report already carried.
   The response does carry the message's `channel_id` — an id, which every channel route still refuses — so the client can blank that one cached timeline instead of refetching every timeline it holds.
-- **Not one of Frapp's entries in the audit log** (2026-11-17): a report on an entry Frapp wrote in `#chapter-audit` can't remove it (403), as no delete can (§ [The audit log is system-write only](#the-audit-log-is-system-write-only)), and web's queue offers no Remove on one; the officer marks it reviewed or dismisses it.
+- **Not one of Frapp's entries in the audit log** (2026-11-17; the channel was removed on 2026-11-21, so this now has nothing to apply to): a report on an entry Frapp wrote in `#chapter-audit` can't remove it (403), as no delete can (§ [The audit log is system-write only](#the-audit-log-is-system-write-only)), and web's queue offers no Remove on one; the officer marks it reviewed or dismisses it.
   A report on a member's post there, from before the channel was read-only, removes it as anywhere else.
 - **In a 1:1 DM the removal can reveal the reporter to the sender** — the one inference § Report accepts.
   The sender sees their message removed, and the DM's other member is the only person who could have reported it.
@@ -1593,7 +1592,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
   Nothing they send reaches the blocker.
 
 - **A member cannot block themselves, nor the system actor.**
-  Blocking the system sender would silently mask the chapter welcome post, the `#chapter-audit` bridge and the poll-expiry notice, with nothing rendering as "blocked" to explain why — chapter features would simply appear broken.
+  Blocking the system sender would silently mask the chapter welcome post and the poll-expiry notice, with nothing rendering as "blocked" to explain why — chapter features would simply appear broken.
   (A poll and its tally are _not_ in that set: `poll` is not a server-only kind, so they are authored by the member who created the poll.)
 - **Blocking is reversible, and the unblock affordance is durable.**
   The blocked-members list is the one place a block can always be undone (mobile: Settings → Blocked members; web: Settings → Blocked members, the personal page on the account menu, `/preferences?section=blocked`); a tombstone in a thread the member may never reopen is not sufficient.
@@ -1715,7 +1714,6 @@ The App Review note states this answer ([`apps/mobile/store/README.md`](../../..
     Changed in #3722 by Claude for pdcarlson, 2026-11-11; pending Paul.
 - **Message threads are allowed under announcements** (#3785, Winston's pick 2026-11-10).
   Any member who can read the channel may start a thread on an announcement or reply in one; only officers still post top-level, and quote replies follow posting, as above.
-  `#chapter-audit` takes no threads.
   Discord's announcement threads and Telegram's channel comments work the same way.
   Paul's recorded rule was that no member threads an announcement.
   - Overridden in #4027 by whewitt-frapp, 2026-11-10; pending Paul.
@@ -1723,6 +1721,8 @@ The App Review note states this answer ([`apps/mobile/store/README.md`](../../..
   A cross-channel `reply_to_id` is still a 400 (above).
 
 ### The audit log is system-write only
+
+**Removed 2026-11-21.** `#chapter-audit` no longer exists: migration `20261121001755` deleted every channel flagged `is_audit_log` and dropped the `chat_channels_flag_audit_log` trigger, new chapters are not seeded one, and the audit mirror (`ChatBridgeWorkerService`) is gone. Officers read `chapter_audit_log` on the Logs page in Chapter settings instead ([`../settings/README.md` § Audit Rules](../settings/README.md#audit-rules)). The `is_audit_log` column and the code that reads it are still in place, unreachable, until #5808 removes them (along with the name-keyed `chapter-audit` checks: `builtInChannelDefault` and `isSystemChannel` still treat a channel by that name as the old one); the rules below describe that code and are kept as history.
 
 `#chapter-audit` is the chapter's record of officer changes, so only Frapp posts in it (#3909).
 Until 2026-11-09 it was gated like any read-only channel, and a member holding `announcements:post` or the President's `*` could post there; a beta chapter reported a member's message in it.
@@ -1751,7 +1751,7 @@ Until 2026-11-09 it was gated like any read-only channel, and a member holding `
 ## Slash Commands and Integrations
 
 Slash commands turn chat into the dispatcher for the ops modules that have a message-shaped action.
-The full command catalog, slash-command dispatch path (simple vs heavy commands), announcement gating, vote-change semantics, the rich-message renderer registry, and the audit bridge are specified in [integrations.md](./integrations.md).
+The full command catalog, slash-command dispatch path (simple vs heavy commands), announcement gating, vote-change semantics, and the rich-message renderer registry are specified in [integrations.md](./integrations.md).
 Push-notification behavior for chat lives in [../notifications.md](../notifications.md).
 
 ## Message Persistence
@@ -1792,9 +1792,8 @@ A member with no receipt for a channel has never opened it, so **every** message
   An archive is history the chapter imported, not messages anyone sent them, and the rule above would otherwise hand every member a badge the size of the import that no amount of reading could clear.
   This is stated explicitly in `get_channel_unread_counts` rather than left to fall out of the nullable-sender comparison, which excluded it only as an artefact of `NULL <> uuid` being NULL.
 
-- **`#chapter-audit` entries never count** (owner decision, 2026-11-06: audit entries arrive silently).
+- **`#chapter-audit` entries never count** (owner decision, 2026-11-06: audit entries arrive silently). The channel and its mirror were removed on 2026-11-21 (§ [The audit log is system-write only](#the-audit-log-is-system-write-only)), so no new mirror row is written; this bullet describes the rule while its code remains.
   A `system_audit` row the audit mirror wrote, keyed `client_message_id = 'audit:<id>'` (`auditMirrorClientId`), is a log line, not a message to anyone.
-  It never pushes either, whatever level the member set: `decidePush` refuses a mirror row ahead of every preference ([`../notifications.md`](../notifications.md#chat-notification-preferences)).
   The server's other `system_audit` notices (a poll closing, the chapter welcome) are addressed to members and still count.
 
 Mention count is the subset of that same set which mentions the viewer, plus every message-thread reply in the channel that mentions them and is newer than both the channel's cursor and their read of that thread (§ Messages → Message threads).
@@ -2570,7 +2569,7 @@ These are the user-observable guarantees of the chat client (web and mobile), in
   Mobile caches each photo on disk by its storage path rather than its signed URL, so the API re-signing a photo doesn't download it again; a new photo is a new path, so it is never served stale.
   A 1:1 DM shows the other participant; a group DM keeps a chapter-supplied title and otherwise summarises participants.
   A sender that cannot be resolved — a deleted account, whose membership row `anonymize_user` purges — degrades to a truncated id rather than a blank name, and an empty stored `display_name` counts as unresolved because the column is `NOT NULL DEFAULT ''`.
-  The system actor (`SYSTEM_SENDER_ID`: the welcome, the audit bridge, a poll's closing notice) is on no roster, so it is named before any lookup: it reads "Frapp" (`SYSTEM_AUTHOR_LABEL` in `@repo/validation`, which `@repo/hooks`' `resolveAuthorName` and the activity feed's announcement actor both use) on every surface that names an author, including web's new-message announcement, and on both clients its avatar is the Frapp crest on the crest's own field, never initials, even before the image loads (#3347).
+  The system actor (`SYSTEM_SENDER_ID`: the welcome, a poll's closing notice) is on no roster, so it is named before any lookup: it reads "Frapp" (`SYSTEM_AUTHOR_LABEL` in `@repo/validation`, which `@repo/hooks`' `resolveAuthorName` and the activity feed's announcement actor both use) on every surface that names an author, including web's new-message announcement, and on both clients its avatar is the Frapp crest on the crest's own field, never initials, even before the image loads (#3347).
   Before that it fell through to the truncated id and read "Member 000000".
 - **The name is deliberately not joined onto the message.**
   Messages reach the cache four ways, and the live one is a `postgres_changes` echo of the `chat_messages` row, which cannot carry a join.

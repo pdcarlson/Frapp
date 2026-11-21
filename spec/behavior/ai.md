@@ -209,7 +209,7 @@ How the first two gates are kept (#4308, #4790):
   Chat as a source is not a call's switch: it decides which messages the corpus reads and whether a summary may read a channel ([Catch me up](#catch-me-up), 2026-11-12), and with it off no member's messages are read.
 - **Only the president turns the switches on or off.**
   That is the member holding the chapter's President role.
-  Each change is recorded in the audit log and shows in `#chapter-audit`.
+  Each change is recorded in the audit log, which officers read on the Logs page in Chapter settings ([`settings/README.md` § Audit Rules](settings/README.md#audit-rules)).
   Every member can see which switches are on.
 - **The answer is one per person, not per chapter.**
   It names the same providers wherever the person is a member, so one Yes covers every chapter they are in, and one No turns AI off for them in all of them.

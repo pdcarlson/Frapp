@@ -72,11 +72,11 @@ console.log(
     await db.exec(sql);
     check(
       "each line the migration writes is the one DEFAULT_CHANNELS seeds",
-      [GENERAL, ANNOUNCEMENTS, AUDIT, ALUMNI].every((line) =>
-        seeder.includes(line),
-      ),
+      // #chapter-audit is no longer seeded (20261121001755), so only the
+      // other three lines must still match DEFAULT_CHANNELS.
+      [GENERAL, ANNOUNCEMENTS, ALUMNI].every((line) => seeder.includes(line)),
       {
-        missingFromSeeder: [GENERAL, ANNOUNCEMENTS, AUDIT, ALUMNI].filter(
+        missingFromSeeder: [GENERAL, ANNOUNCEMENTS, ALUMNI].filter(
           (line) => !seeder.includes(line),
         ),
       },
