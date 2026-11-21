@@ -15,6 +15,7 @@ import {
 import { ChapterAuditLog } from '#domain/entities/chapter-audit-log.entity';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { clampListLimit } from '#domain/constants/list-query-limits';
+import { chapterLogKindActions } from '@repo/validation';
 import { instantOrThrow } from './instant-bound';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
@@ -45,7 +46,7 @@ export interface RecordAuditEntryInput {
   targetId?: string | null;
   /** Before/after payload for the change. Defaults to `{}`. */
   diff?: Record<string, unknown>;
-  /** Whether the entry is mirrored to `#chapter-audit`, or exec-only. Defaults to `true`. */
+  /** Whether every Logs reader sees the entry, or only the President. Defaults to `true`. */
   memberVisible?: boolean;
 }
 
@@ -54,6 +55,8 @@ export interface ListChapterAuditLogInput {
   before?: string;
   actorUserId?: string;
   action?: string;
+  /** A Logs kind (`CHAPTER_LOG_KINDS`): any of its actions. */
+  kind?: string;
   startDate?: string;
   endDate?: string;
   limit?: number;
@@ -77,9 +80,8 @@ export interface AuditLogViewer {
  * directly, and the three that once did (`chapter-config`, `custom-role`,
  * `custom-field`) were moved onto it in #2167. A new writer injects this
  * service rather than repeating the insert shape.
- * `ChatBridgeWorkerService` mirrors every member-visible row into
- * `#chapter-audit` on its own via a Realtime subscription, so a writer here
- * needs no separate chat call.
+ * Officers read the rows on the Logs page in Chapter settings
+ * (`GET /v1/audit-log`); nothing is posted to chat.
  */
 @Injectable()
 export class ChapterAuditLogService {
@@ -127,8 +129,8 @@ export class ChapterAuditLogService {
    * This is the filter `20260523130000_audit_log.sql` says the API applies in
    * place of a SELECT policy (#1773), and it is what makes the president-only
    * `member_visible` toggle in `spec/behavior/settings/README.md` § Audit Rules
-   * mean something: toggling a row off retracts its `#chapter-audit` mirror for
-   * non-presidents, and it must retract the row from this read too, or a
+   * mean something: toggling a row off must retract it from this read (the
+   * Logs page in Chapter settings), or a
    * custom role holding `chapter-config:view` + `members:view` could ask
    * `?action=member_removed` for exactly what was just hidden.
    *
@@ -163,12 +165,20 @@ export class ChapterAuditLogService {
       throw new BadRequestException('start_date must not be after end_date');
     }
 
+    let kindActions: readonly string[] | undefined;
+    if (options.kind !== undefined) {
+      const actions = chapterLogKindActions(options.kind);
+      if (!actions) throw new BadRequestException('kind is not a Logs kind');
+      kindActions = actions;
+    }
+
     const memberVisibleOnly = !(await this.isPresident(chapterId, viewer));
 
     return this.auditLogRepo.findByChapter(chapterId, {
       before: options.before,
       actorUserId: options.actorUserId,
       action: options.action,
+      actions: kindActions,
       startDate: options.startDate,
       endDate: options.endDate,
       memberVisibleOnly,

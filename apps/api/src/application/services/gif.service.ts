@@ -4,6 +4,10 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import {
+  GIF_FAVORITE_REPOSITORY,
+  type IGifFavoriteRepository,
+} from '#domain/repositories/gif-favorite.repository.interface';
 import { timingSafeEqual } from 'node:crypto';
 import {
   GIF_PAGE_MAX,
@@ -38,6 +42,18 @@ export interface MessageGifInput {
   width: number;
   height: number;
   /** The `token` the result carried when this server handed it out. */
+  token: string;
+}
+
+/** How many GIFs a member may star; Favorites lists them all, unpaged. */
+export const GIF_FAVORITES_MAX = 200;
+
+/** What a star sends: a picker result as the client got it. */
+export interface GifFavoriteRequest {
+  id: string;
+  title?: string;
+  preview: { url: string; width: number; height: number };
+  full: { url: string; width: number; height: number };
   token: string;
 }
 
@@ -80,7 +96,95 @@ interface CacheEntry {
 export class GifService {
   private readonly cache = new Map<string, CacheEntry>();
 
-  constructor(@Inject(GIF_SEARCH) private readonly gifs: IGifSearch) {}
+  constructor(
+    @Inject(GIF_SEARCH) private readonly gifs: IGifSearch,
+    @Inject(GIF_FAVORITE_REPOSITORY)
+    private readonly favorites: IGifFavoriteRepository,
+  ) {}
+
+  /**
+   * The member's favorites (#5772), newest first, each signed as a search
+   * result is, so a send from Favorites passes the same check. Only this
+   * server's provider: another's token could never match, and its rows
+   * don't count toward the cap either.
+   */
+  async listFavorites(userId: string): Promise<SignedGifPage> {
+    if (!this.gifs.isConfigured()) {
+      throw new ServiceUnavailableException("GIFs aren't set up yet");
+    }
+    const provider = this.gifs.provider.toLowerCase();
+    const rows = await this.favorites.listByUser(userId, provider);
+    return this.signed({
+      results: rows.map((row) => ({
+        id: row.gif_id,
+        title: row.title,
+        preview: {
+          url: row.preview_url,
+          width: row.preview_width,
+          height: row.preview_height,
+        },
+        full: {
+          url: row.full_url,
+          width: row.full_width,
+          height: row.full_height,
+        },
+      })),
+      next_page: null,
+    });
+  }
+
+  /**
+   * Stars a GIF (#5772). Only a result this server handed out: the full
+   * rendition must carry its token, as a send must, and the preview must be
+   * the provider's own media too. Starring one already starred is a no-op;
+   * past {@link GIF_FAVORITES_MAX} the star is refused with a reason.
+   */
+  async addFavorite(userId: string, input: GifFavoriteRequest): Promise<void> {
+    const gif = this.messageGif({
+      id: input.id,
+      title: input.title,
+      url: input.full.url,
+      width: input.full.width,
+      height: input.full.height,
+      token: input.token,
+    });
+    const { url, width, height } = input.preview;
+    if (!this.gifs.isMediaUrl(url) || !isEdge(width) || !isEdge(height)) {
+      throw new BadRequestException(
+        "gif.preview must be the GIF provider's own https media",
+      );
+    }
+    // A re-star (a stale list on another device) is a no-op even at the cap.
+    // Two stars racing at 199 can both land; the cap is a soft bound.
+    if (await this.favorites.has(userId, gif.provider, gif.id)) return;
+    if (
+      (await this.favorites.countByUser(userId, gif.provider)) >=
+      GIF_FAVORITES_MAX
+    ) {
+      throw new BadRequestException(
+        `You can keep up to ${GIF_FAVORITES_MAX} favorite GIFs. Remove one to add another.`,
+      );
+    }
+    await this.favorites.add(userId, {
+      provider: gif.provider,
+      gif_id: gif.id,
+      title: gif.title,
+      full_url: gif.url,
+      full_width: gif.width,
+      full_height: gif.height,
+      preview_url: url,
+      preview_width: width,
+      preview_height: height,
+    });
+  }
+
+  removeFavorite(userId: string, gifId: string): Promise<void> {
+    return this.favorites.remove(
+      userId,
+      this.gifs.provider.toLowerCase(),
+      gifId,
+    );
+  }
 
   availability(): { available: boolean; provider: string } {
     return {

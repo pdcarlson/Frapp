@@ -72,6 +72,8 @@ export const SCREEN_TITLES = {
   "arrange-channels": "Arrange channels",
   "chapter-settings": "Chapter settings",
   "chapter-roles": "Roles and groups",
+  // Pushed from Chapter settings (Paul, 2026-11-21).
+  "chapter-logs": "Logs",
   // A tier's and a role's pages are titled by their own name, which a
   // capsule has no room for, so both read as the list they belong to.
   "role-tier": "Roles",

@@ -175,6 +175,18 @@ export const CHAPTER_PROFILE_PERMISSIONS = [
 ] as const;
 
 /**
+ * What it takes to read the chapter's Logs: `GET /v1/audit-log` carries
+ * `chapter-config:view` and `members:view` (both required). **The one
+ * spelling** for the clients' gates: web's Logs tab (`settings-access.ts`),
+ * the phone's Logs row (`chapterSettingsAccess`) and the settings search
+ * entry (`settings-search.ts`).
+ */
+export const CHAPTER_LOGS_PERMISSIONS = [
+  "chapter-config:view",
+  "members:view",
+] as const;
+
+/**
  * What it takes to create an event: `POST /v1/events` carries `events:create`,
  * and `EventController` adds `members:view` at class level, which
  * `PermissionsGuard` requires alongside it (AND, not override). Offering a

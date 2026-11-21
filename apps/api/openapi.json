@@ -1233,7 +1233,7 @@
     },
     "/v1/audit-log": {
       "get": {
-        "description": "Officer-action history (config changes, role/field changes, member removal, and similar). Callers other than the chapter President see only `member_visible` entries; the President sees every entry, including exec-only ones. Optional filters — `actor_user_id`, `action`, and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).",
+        "description": "Officer-action history (config changes, role/field changes, member removal, and similar). Callers other than the chapter President see only `member_visible` entries; the President sees every entry, including exec-only ones. Optional filters — `actor_user_id`, `action`, `kind` (a Logs kind: any of its actions), and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).",
         "operationId": "ChapterAuditLogController_list_v1",
         "parameters": [
           {
@@ -1254,6 +1254,20 @@
             "schema": {
               "example": "member_removed",
               "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Filter to one Logs kind: any of the actions it holds (`CHAPTER_LOG_KINDS` in `@repo/validation`).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "roles",
+                "members",
+                "settings"
+              ]
             }
           },
           {
@@ -7980,6 +7994,120 @@
           }
         ],
         "summary": "Search GIFs (rated PG-13 at most)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/favorites": {
+      "get": {
+        "operationId": "GifController_favorites_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GifPageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The member's favorite GIFs, newest first (#5772)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "GifController_addFavorite_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddGifFavoriteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Star a GIF from the picker (#5772)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/gifs/favorites/{gifId}": {
+      "delete": {
+        "operationId": "GifController_removeFavorite_v1",
+        "parameters": [
+          {
+            "name": "gifId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unstar a GIF (#5772)",
         "tags": [
           "Chat"
         ]
@@ -21333,6 +21461,7 @@
     },
     "/v1/events/{id}/agenda-suggestions/{suggestionId}/add": {
       "post": {
+        "description": "409 `event.agenda_locked` once the meeting has started: its agenda takes check-offs only.",
         "operationId": "AgendaSuggestionController_add_v1",
         "parameters": [
           {
@@ -26100,7 +26229,7 @@
             "maxLength": 20000
           },
           "agenda": {
-            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. Once the meeting has started only check-offs (`done`) change: adding, removing, moving or rewording an item is a 409 `event.agenda_locked`.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EventAgendaItemDto"
@@ -28989,6 +29118,60 @@
         "required": [
           "results",
           "next_page"
+        ]
+      },
+      "GifFavoriteRenditionDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "width": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          },
+          "height": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4096
+          }
+        },
+        "required": [
+          "url",
+          "width",
+          "height"
+        ]
+      },
+      "AddGifFavoriteDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "preview": {
+            "$ref": "#/components/schemas/GifFavoriteRenditionDto"
+          },
+          "full": {
+            "$ref": "#/components/schemas/GifFavoriteRenditionDto"
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "id",
+          "preview",
+          "full",
+          "token"
         ]
       },
       "ScheduledAttachmentDto": {

@@ -404,7 +404,7 @@ export interface paths {
         };
         /**
          * List chapter audit log entries
-         * @description Officer-action history (config changes, role/field changes, member removal, and similar). Callers other than the chapter President see only `member_visible` entries; the President sees every entry, including exec-only ones. Optional filters — `actor_user_id`, `action`, and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).
+         * @description Officer-action history (config changes, role/field changes, member removal, and similar). Callers other than the chapter President see only `member_visible` entries; the President sees every entry, including exec-only ones. Optional filters — `actor_user_id`, `action`, `kind` (a Logs kind: any of its actions), and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).
          */
         get: operations["ChapterAuditLogController_list_v1"];
         put?: never;
@@ -2438,6 +2438,41 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The member's favorite GIFs, newest first (#5772) */
+        get: operations["GifController_favorites_v1"];
+        put?: never;
+        /** Star a GIF from the picker (#5772) */
+        post: operations["GifController_addFavorite_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/gifs/favorites/{gifId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unstar a GIF (#5772) */
+        delete: operations["GifController_removeFavorite_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -6427,7 +6462,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Add a suggestion to the end of the agenda */
+        /**
+         * Add a suggestion to the end of the agenda
+         * @description 409 `event.agenda_locked` once the meeting has started: its agenda takes check-offs only.
+         */
         post: operations["AgendaSuggestionController_add_v1"];
         delete?: never;
         options?: never;
@@ -8069,7 +8107,7 @@ export interface components {
             /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older "only these roles" meaning. */
             others_invited?: boolean;
             notes?: string;
-            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. Once the meeting has started only check-offs (`done`) change: adding, removing, moving or rewording an item is a 409 `event.agenda_locked`. */
             agenda?: components["schemas"]["EventAgendaItemDto"][];
             /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
             attachments?: components["schemas"]["EventAttachmentDto"][];
@@ -9065,6 +9103,18 @@ export interface components {
         GifPageDto: {
             results: components["schemas"]["GifResultDto"][];
             next_page: number | null;
+        };
+        GifFavoriteRenditionDto: {
+            url: string;
+            width: number;
+            height: number;
+        };
+        AddGifFavoriteDto: {
+            id: string;
+            title?: string;
+            preview: components["schemas"]["GifFavoriteRenditionDto"];
+            full: components["schemas"]["GifFavoriteRenditionDto"];
+            token: string;
         };
         ScheduledAttachmentDto: {
             filename: string;
@@ -14325,6 +14375,8 @@ export interface operations {
                 actor_user_id?: string;
                 /** @description Filter to a single action verb, e.g. `member_removed`. Matched exactly; an unknown verb returns an empty list. */
                 action?: string;
+                /** @description Filter to one Logs kind: any of the actions it holds (`CHAPTER_LOG_KINDS` in `@repo/validation`). */
+                kind?: "roles" | "members" | "settings";
                 /** @description Inclusive lower bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — a bare date is rejected rather than read as midnight. Filters the range; pair with `before` to page within it. */
                 start_date?: string;
                 /** @description Inclusive upper bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — send `…T23:59:59.999Z` for a whole final day rather than a bare date. Unlike `before`, this bounds the range rather than moving with pagination. */
@@ -18828,6 +18880,92 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GifPageDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_favorites_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GifPageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_addFavorite_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddGifFavoriteDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GifController_removeFavorite_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                gifId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

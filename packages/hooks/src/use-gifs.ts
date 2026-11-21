@@ -2,7 +2,9 @@ import { throwUnlessOk, type components } from "@repo/api-sdk";
 import {
   keepPreviousData,
   useInfiniteQuery,
+  useMutation,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useDebouncedValue } from "./use-debounced-value";
@@ -129,4 +131,91 @@ export function useGifSearch(query: string, enabled = true) {
     fetchNextPage: result.fetchNextPage,
     refetch: result.refetch,
   };
+}
+
+/**
+ * The member's favorite GIFs (#5772), newest first: the picker's Favorites
+ * tab, and the star on every tile. Per member, so the same list in every
+ * chapter; each comes back signed, so it sends as a search result does.
+ */
+export function useGifFavorites(enabled = true) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const query = useQuery({
+    queryKey: gifKeys.detail(chapterId!, "favorites"),
+    queryFn: async ({ signal }) => {
+      const result = await client.GET("/v1/gifs/favorites", { signal });
+      throwUnlessOk(result);
+      return result.data!.results;
+    },
+    staleTime: 5 * 60_000,
+    enabled: enabled && !!chapterId,
+  });
+  const favorites = query.data ?? [];
+  return {
+    favorites,
+    isStarred: (id: string) => favorites.some((gif) => gif.id === id),
+    isLoading: query.isLoading,
+    isError: query.isError,
+    refetch: query.refetch,
+  };
+}
+
+/**
+ * Stars or unstars a GIF (#5772). The star turns at once and turns back if
+ * the server refuses; a refusal's reason (the limit) is the error's message.
+ */
+export function useToggleGifFavorite() {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const queryClient = useQueryClient();
+  const key = gifKeys.detail(chapterId!, "favorites");
+  return useMutation<
+    void,
+    Error,
+    { gif: GifResult; starred: boolean },
+    { previous: GifResult[] | undefined }
+  >({
+    mutationKey: ["gifs", "favorite"],
+    // One at a time: a quick star then unstar must reach the server in that
+    // order, or the slower POST lands last and the undo is lost.
+    scope: { id: "gif-favorite" },
+    onMutate: async ({ gif, starred }) => {
+      await queryClient.cancelQueries({ queryKey: key, exact: true });
+      const previous = queryClient.getQueryData<GifResult[]>(key);
+      const rest = (previous ?? []).filter((item) => item.id !== gif.id);
+      queryClient.setQueryData<GifResult[]>(
+        key,
+        starred ? [gif, ...rest] : rest,
+      );
+      return { previous };
+    },
+    mutationFn: async ({ gif, starred }) => {
+      const result = starred
+        ? await client.POST("/v1/gifs/favorites", {
+            body: {
+              id: gif.id,
+              title: gif.title,
+              preview: gif.preview,
+              full: gif.full,
+              token: gif.token,
+            },
+          })
+        : await client.DELETE("/v1/gifs/favorites/{gifId}", {
+            params: { path: { gifId: gif.id } },
+          });
+      throwUnlessOk(result);
+    },
+    onError: (_error, _input, context) => {
+      // Starred before the list ever loaded: there is nothing to put back,
+      // and setQueryData ignores undefined, so drop the guess instead.
+      if (context?.previous === undefined) {
+        queryClient.removeQueries({ queryKey: key, exact: true });
+      } else {
+        queryClient.setQueryData(key, context.previous);
+      }
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: key, exact: true }),
+  });
 }

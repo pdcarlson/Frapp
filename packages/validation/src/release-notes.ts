@@ -129,9 +129,16 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A suggested task from minutes can go straight onto the next meeting's agenda instead, or wait for that meeting to be scheduled.",
       "An event that's happening right now shows at the top of Chat and Activity, with when it ends and whether you've checked in.",
       "Officers can make a new event type right from the Type menu while creating an event, and on your phone that menu no longer covers the whole form.",
+      "A meeting's agenda is set once the meeting starts: items can still be checked off, but not added, moved or removed. On the phone, an event's details, agenda, attachments and notes now sit on raised panels.",
+      "You can @Freshmen, @Sophomores, @Juniors or @Seniors to ping a whole class, worked out from graduation year and moving up each June, so your chapter no longer needs a role per class.",
+      "The GIF picker has a Favorites tab: star a GIF to keep it there, in every chapter you're in.",
+      "Officers can now stop members from changing their own name in Chapter settings, and every name change shows in the chapter's audit log with the old and new name.",
+      "A member's profile now leads with their three highest roles, and +N more opens the rest right where they are.",
     ],
     web: [
       "Right-click a document for its actions.",
+      "Role and group colors can be any hue now: pick a swatch or slide to your own, and each color is adjusted so names stay easy to read, with red and gold kept for alerts and Frapp itself.",
+      "An invite link opened on your phone now takes you straight into the app, so you sign in once instead of twice.",
     ],
     phone: [
       "The app opens straight to your last chat instead of waiting on the logo, then catches up in the background.",

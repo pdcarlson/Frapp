@@ -55,7 +55,6 @@ import { AiRunsModule } from './modules/ai-runs/ai-runs.module';
 import { CorpusModule } from './modules/corpus/corpus.module';
 import { ChapterConfigModule } from './modules/chapter-config/chapter-config.module';
 import { ChapterDirectoryModule } from './modules/chapter-directory/chapter-directory.module';
-import { ChatBridgeWorkerModule } from './modules/chat-bridge-worker/chat-bridge-worker.module';
 import { ChatPushWorkerModule } from './modules/chat-push-worker/chat-push-worker.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { ScheduledJobsModule } from './modules/scheduled-jobs/scheduled-jobs.module';
@@ -139,7 +138,6 @@ import { validateEnv } from './config/env.validation';
     CorpusModule,
     ChapterConfigModule,
     ChapterDirectoryModule,
-    ChatBridgeWorkerModule,
     ChatPushWorkerModule,
     AnalyticsModule,
     ScheduledJobsModule,

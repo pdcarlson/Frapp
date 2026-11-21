@@ -110,10 +110,12 @@ export function tabledCandidates(
   const out: TabledCandidate[] = [];
   for (const row of minutes) {
     for (const item of row.content.tabled) {
-      const text = normalizeAgendaText(item.text).slice(
-        0,
-        EVENT_AGENDA_ITEM_MAX,
-      );
+      // Trimmed after the cut too: a cut that lands after a space would
+      // store an item every later save trims, read as a reword once the
+      // meeting's agenda locks.
+      const text = normalizeAgendaText(item.text)
+        .slice(0, EVENT_AGENDA_ITEM_MAX)
+        .trim();
       if (!text) continue;
       const tabledFrom: EventAgendaTabledFrom = {
         meeting_id: item.first_meeting_id ?? row.id,

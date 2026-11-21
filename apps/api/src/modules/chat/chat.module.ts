@@ -25,6 +25,8 @@ import { SupabaseChatFormResponseRepository } from '../../infrastructure/supabas
 import { CHAT_FORM_RESPONSE_REPOSITORY } from '#domain/repositories/chat-form-response.repository.interface';
 import { GifController } from '../../interface/controllers/gif.controller';
 import { GifService } from '../../application/services/gif.service';
+import { GIF_FAVORITE_REPOSITORY } from '#domain/repositories/gif-favorite.repository.interface';
+import { SupabaseGifFavoriteRepository } from '../../infrastructure/supabase/repositories/supabase-gif-favorite.repository';
 import { KlipyGifSearch } from '../../infrastructure/gifs/klipy-gif-search';
 import { GIF_SEARCH } from '#domain/adapters/gif-search.interface';
 import { ChatBackgroundController } from '../../interface/controllers/chat-background.controller';
@@ -195,6 +197,10 @@ import { CHAT_SCHEDULED_MESSAGE_REPOSITORY } from '#domain/repositories/chat-sch
     // GIFs (#4631): the picker's search, and the check a GIF message's URL
     // passes on send. KLIPY behind the port; unset key, the picker is hidden.
     GifService,
+    {
+      provide: GIF_FAVORITE_REPOSITORY,
+      useClass: SupabaseGifFavoriteRepository,
+    },
     {
       provide: GIF_SEARCH,
       useFactory: () =>

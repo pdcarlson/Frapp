@@ -381,7 +381,6 @@ export class ChapterService {
         chapter_id: chapter.id,
         name: channelDef.name,
         description: channelDef.description,
-        is_audit_log: 'is_audit_log' in channelDef && channelDef.is_audit_log,
         ...channelAccessColumns(
           seededList(channelDef.who_can_see),
           seededList(channelDef.who_can_post),
@@ -565,8 +564,7 @@ export class ChapterService {
    * actually guarantees "never silently unaudited", and the specs should not
    * be read as promising it.
    *
-   * `ChatBridgeWorkerService` mirrors member-visible rows into `#chapter-audit`
-   * off a Realtime subscription, so there is no chat call to make here.
+   * Officers read the row on the Logs page; there is no chat call to make here.
    */
   private async recordProfileAudit(
     chapterId: string,
@@ -608,11 +606,8 @@ export class ChapterService {
 
     // Not written when nothing changed. The Settings form re-sends every stored
     // value on save (see the accent_color note above), so without this an
-    // officer who opened Settings and pressed Save without editing would mirror
-    // a "chapter profile updated" message into the member-visible
-    // `#chapter-audit` channel — and one carrying no information, since
-    // `ChatBridgeWorkerService.summarize` renders an empty diff as a bare
-    // action name.
+    // officer who opened Settings and pressed Save without editing would log
+    // a "chapter profile updated" entry carrying no information.
     //
     // Stated about this writer only, deliberately. Two earlier attempts at this
     // comment characterised `chapter-config.service.ts` and got it wrong both

@@ -35,6 +35,7 @@ import {
   useMentionPicker,
   type MentionRoleRow,
 } from "./mention-picker";
+import { ON_MEDIA_DISC, ON_MEDIA_INK } from "./on-media";
 import {
   type ChapterBranding,
   useChapterBranding,
@@ -403,7 +404,7 @@ export function ChatComposer({
                     pressed ? styles.pressed : null,
                   ]}
                 >
-                  <CloseGlyph color={THUMB_REMOVE_INK} size={14} />
+                  <CloseGlyph color={ON_MEDIA_INK} size={14} />
                 </Pressable>
               </View>
             );
@@ -810,9 +811,6 @@ function editMaxHeight(tokens: SignetTokens): number {
 const THUMB_SIZE = 64;
 /** How far a thumb's remove badge sits in from its corner. */
 const THUMB_BADGE_INSET = 4;
-/** Photo-overlay ink, fixed in both themes: it sits on the picture, not the surface. */
-const THUMB_REMOVE_DISC = "rgba(0,0,0,0.72)";
-const THUMB_REMOVE_INK = "#FFFFFF";
 
 function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
   // What is left of the 44pt floor once one line and the border are drawn,
@@ -886,7 +884,7 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       width: 24,
       height: 24,
       borderRadius: 12,
-      backgroundColor: THUMB_REMOVE_DISC,
+      backgroundColor: ON_MEDIA_DISC,
       alignItems: "center",
       justifyContent: "center",
     },
