@@ -221,13 +221,44 @@ export function toggleAgendaItem(
  * Whether an agenda can be checked off yet (Paul 2026-11-19: "shouldn't be
  * able to check off items unless the event has started?"): from the meeting's
  * start on, and after it ends too, so a secretary can catch up. A start that
- * can't be read doesn't lock it. Both apps hold the checkboxes to it; the
- * list can still be written, reordered and cut down before.
+ * can't be read doesn't hold the checkboxes. It is also when the agenda locks
+ * to check-offs (Paul 2026-11-20, {@link agendaItemsChanged}): before it the
+ * list is written, reordered and cut down; from it on, only checked off.
+ * Both apps and the API read the start this one way.
  */
 export function agendaCheckOffOpen(start: unknown, now: Date): boolean {
   const at = typeof start === "string" ? Date.parse(start) : Number.NaN;
   return Number.isNaN(at) || at <= now.getTime();
 }
+
+/**
+ * Whether `next` adds, removes, moves or rewords an item of `stored`, rather
+ * than only checking items off. Once a meeting has started its agenda is
+ * locked to check-offs (Paul 2026-11-20, "lock agenda edits once the meeting
+ * has started"): the API refuses any other change, and both apps stop
+ * offering one.
+ */
+export function agendaItemsChanged(
+  next: readonly Pick<EventAgendaItem, "id" | "text">[],
+  stored: readonly Pick<EventAgendaItem, "id" | "text">[],
+): boolean {
+  return (
+    next.length !== stored.length ||
+    next.some(
+      (item, index) =>
+        item.id !== stored[index]?.id ||
+        normalizeAgendaText(item.text) !==
+          normalizeAgendaText(stored[index]?.text ?? ""),
+    )
+  );
+}
+
+/**
+ * A change refused because the meeting started meanwhile: the API's
+ * `event.agenda_locked` message, and what both apps say for it.
+ */
+export const AGENDA_LOCKED_COPY =
+  "The meeting has started, so its agenda can only be checked off now.";
 
 /** Why an agenda's checkboxes wait, said where they are. */
 export const AGENDA_CHECK_OFF_LOCKED_COPY =

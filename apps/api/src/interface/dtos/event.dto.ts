@@ -664,7 +664,7 @@ export class UpdateEventDto {
 
   @ApiPropertyOptional({
     type: [EventAgendaItemDto],
-    description: AGENDA_DESCRIPTION,
+    description: `${AGENDA_DESCRIPTION} Once the meeting has started only check-offs (\`done\`) change: adding, removing, moving or rewording an item is a 409 \`event.agenda_locked\`.`,
   })
   // Not `@IsOptional()`, which lets null through: omit the list to leave
   // it, send [] to clear it.

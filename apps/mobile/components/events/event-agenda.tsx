@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ComponentType,
+  type ReactNode,
 } from "react";
 import {
   ActivityIndicator,
@@ -27,7 +28,7 @@ import Animated, {
 } from "react-native-reanimated";
 import * as WebBrowser from "expo-web-browser";
 import { useRouter } from "expo-router";
-import { randomClientId, statusOf } from "@repo/api-sdk";
+import { codeOf, randomClientId, statusOf } from "@repo/api-sdk";
 import {
   selectDownloadUrl,
   useAgendaSuggestionActions,
@@ -40,6 +41,7 @@ import {
 } from "@repo/hooks";
 import {
   AGENDA_CHECK_OFF_LOCKED_COPY,
+  AGENDA_LOCKED_COPY,
   AGENDA_SUGGESTION_COPY,
   agendaFromMinutesLabel,
   agendaTabledFromLabel,
@@ -64,6 +66,7 @@ import {
 } from "@repo/validation";
 import type { SignetTokens } from "@repo/theme/signet";
 import { IconButton } from "@/components/icon-button";
+import { ListPanel } from "@/components/list-section";
 import {
   CheckGlyph,
   CloseGlyph,
@@ -122,13 +125,16 @@ export function EventMeetingLists({
   lists: EventLists;
   /** Holds `events:update` (a real answer), and the event is there. */
   canEdit: boolean;
-  /** The meeting has started (`agendaCheckOffOpen`): items can be ticked. */
+  /**
+   * The meeting has started (`agendaCheckOffOpen`): items can be ticked, and
+   * no longer added, moved or removed.
+   */
   checkOffOpen: boolean;
   /** An agenda row is held: the screen stops scrolling under it. */
   onDragging?: (dragging: boolean) => void;
   /**
-   * The meeting hasn't ended and the chapter has minutes on: Suggested
-   * shows only then.
+   * The meeting hasn't ended and the chapter has minutes on. Suggested
+   * shows only while this holds and the meeting hasn't started either.
    */
   upcoming: boolean;
 }) {
@@ -139,12 +145,15 @@ export function EventMeetingLists({
   const { writeBlockedReason } = useConnection();
   const editable = canEdit && writeBlockedReason === null;
   const documentsOn = useDocumentsModule();
-  const [failed, setFailed] = useState(false);
+  // A refusal says what happened: a meeting that started meanwhile has
+  // locked its agenda, which no retry gets past.
+  const [failed, setFailed] = useState<"locked" | "other" | null>(null);
   const editor = useEventListsEditor(eventId, lists, {
-    onFailed: () => setFailed(true),
+    onFailed: (error) =>
+      setFailed(codeOf(error) === "event.agenda_locked" ? "locked" : "other"),
   });
   const change: typeof editor.change = (field, update) => {
-    setFailed(false);
+    setFailed(null);
     editor.change(field, update);
   };
   // While an Add is out the agenda's controls wait: the server is writing
@@ -156,11 +165,13 @@ export function EventMeetingLists({
         agenda={editor.agenda}
         canEdit={editable}
         checkOffOpen={checkOffOpen}
+        itemsLocked={checkOffOpen}
         locked={adding}
         onDragging={onDragging}
         onChange={(update) => change("agenda", update)}
       />
-      {editable && upcoming ? (
+      {/* Suggestions add items, so they go once the agenda is locked. */}
+      {editable && upcoming && !checkOffOpen ? (
         <AgendaSuggestions
           eventId={eventId}
           full={editor.agenda.length >= EVENT_AGENDA_MAX}
@@ -176,8 +187,9 @@ export function EventMeetingLists({
       />
       {failed ? (
         <Text accessibilityRole="alert" style={styles.error}>
-          Couldn&apos;t save the agenda or attachments. Your last change was
-          undone, so try it again in a moment.
+          {failed === "locked"
+            ? AGENDA_LOCKED_COPY
+            : "Couldn't save the agenda or attachments. Your last change was undone, so try it again in a moment."}
         </Text>
       ) : null}
     </>
@@ -189,6 +201,7 @@ function EventAgendaSection({
   canEdit,
   checkOffOpen = true,
   checkable = true,
+  itemsLocked = false,
   locked = false,
   bare = false,
   input: Input = TextInput,
@@ -203,6 +216,12 @@ function EventAgendaSection({
   checkOffOpen?: boolean;
   /** Draw checkboxes at all (not on the New event sheet's list). */
   checkable?: boolean;
+  /**
+   * The meeting has started: items are checked off but no longer added,
+   * moved or removed (Paul 2026-11-20, "lock agenda edits once the meeting
+   * has started"). The API refuses such a change too. Web's twin is the same.
+   */
+  itemsLocked?: boolean;
   /** The controls show but wait (a suggestion is being added). */
   locked?: boolean;
   /** No eyebrow: the form's row names the list. */
@@ -222,6 +241,8 @@ function EventAgendaSection({
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
+  // Who may add, move and remove items: an editor, until the meeting starts.
+  const reshape = canEdit && !itemsLocked;
   const [ownDraft, setOwnDraft] = useState("");
   const draft = heldDraft ?? ownDraft;
   const setDraft = onDraftChange ?? setOwnDraft;
@@ -274,12 +295,12 @@ function EventAgendaSection({
   );
   useEffect(() => {
     // The grips went (offline, a lapsed chapter) under a held row.
-    if (canEdit || !held.current) return;
+    if (reshape || !held.current) return;
     held.current = false;
     heldIndex.set(-1);
     dragY.set(0);
     onDragging?.(false);
-  }, [canEdit, onDragging, heldIndex, dragY]);
+  }, [reshape, onDragging, heldIndex, dragY]);
   const onDragStart = useCallback(() => {
     pressHaptic();
     held.current = true;
@@ -308,7 +329,7 @@ function EventAgendaSection({
     [boxes, agenda.length],
   );
 
-  if (agenda.length === 0 && !canEdit) return null;
+  if (agenda.length === 0 && !reshape) return null;
 
   const full = agenda.length >= EVENT_AGENDA_MAX;
   const done = agenda.filter((item) => item.done).length;
@@ -344,81 +365,97 @@ function EventAgendaSection({
           ) : null}
         </View>
       )}
-      {waiting ? (
-        <Text style={styles.caption}>{AGENDA_CHECK_OFF_LOCKED_COPY}</Text>
-      ) : null}
-      {agenda.length > 0 ? (
-        <View style={styles.list}>
-          {agenda.map((item, index) => (
-            <AgendaRow
-              key={item.id}
-              item={item}
-              index={index}
-              count={agenda.length}
-              canEdit={canEdit}
-              showCheck={showChecks}
-              checkOffOpen={checkOffOpen}
-              locked={locked}
-              boxes={boxes}
-              heldIndex={heldIndex}
-              dragY={dragY}
-              onMeasure={measure}
-              onDragStart={onDragStart}
-              onDrop={onDrop}
-              onMove={(to) => move(index, to)}
-              onToggle={() =>
-                onChange((current) => toggleAgendaItem(current, item.id))
-              }
-              onRemove={() =>
-                onChange((current) =>
-                  current.filter((entry) => entry.id !== item.id),
-                )
-              }
-            />
-          ))}
-        </View>
-      ) : null}
-      {canEdit && !full ? (
-        <View ref={hold} onLayout={keep.onLayout} style={styles.section}>
-          <View style={styles.addLine}>
-            <PlusGlyph color={tokens.color.text.mutedForeground} size={16} />
-            {/* Return adds the item and keeps the keyboard up for the next,
+      <SectionBody bare={bare}>
+        {waiting ? (
+          <Text style={styles.caption}>{AGENDA_CHECK_OFF_LOCKED_COPY}</Text>
+        ) : null}
+        {agenda.length > 0 ? (
+          <View style={styles.list}>
+            {agenda.map((item, index) => (
+              <AgendaRow
+                key={item.id}
+                item={item}
+                index={index}
+                count={agenda.length}
+                canEdit={reshape}
+                showCheck={showChecks}
+                checkOffOpen={checkOffOpen}
+                locked={locked}
+                boxes={boxes}
+                heldIndex={heldIndex}
+                dragY={dragY}
+                onMeasure={measure}
+                onDragStart={onDragStart}
+                onDrop={onDrop}
+                onMove={(to) => move(index, to)}
+                onToggle={() =>
+                  onChange((current) => toggleAgendaItem(current, item.id))
+                }
+                onRemove={() =>
+                  onChange((current) =>
+                    current.filter((entry) => entry.id !== item.id),
+                  )
+                }
+              />
+            ))}
+          </View>
+        ) : null}
+        {reshape && !full ? (
+          <View ref={hold} onLayout={keep.onLayout} style={styles.section}>
+            <View style={styles.addLine}>
+              <PlusGlyph color={tokens.color.text.mutedForeground} size={16} />
+              {/* Return adds the item and keeps the keyboard up for the next,
                 as a checklist in Reminders or Notion does: no Add button to
                 aim for between items. */}
-            <Input
-              value={draft}
-              onChangeText={(text) => {
-                setDraft(text);
-                setProblem(null);
-                keep.onType();
-              }}
-              onFocus={keep.onFocus}
-              onBlur={keep.onBlur}
-              placeholder={
-                agenda.length === 0 ? "Add the first item" : "Add an item"
-              }
-              placeholderTextColor={tokens.color.text.muted}
-              accessibilityLabel="Add an agenda item"
-              editable={!locked}
-              maxLength={EVENT_AGENDA_ITEM_MAX}
-              returnKeyType="done"
-              submitBehavior="submit"
-              onSubmitEditing={add}
-              style={styles.addField}
-            />
+              <Input
+                value={draft}
+                onChangeText={(text) => {
+                  setDraft(text);
+                  setProblem(null);
+                  keep.onType();
+                }}
+                onFocus={keep.onFocus}
+                onBlur={keep.onBlur}
+                placeholder={
+                  agenda.length === 0 ? "Add the first item" : "Add an item"
+                }
+                placeholderTextColor={tokens.color.text.muted}
+                accessibilityLabel="Add an agenda item"
+                editable={!locked}
+                maxLength={EVENT_AGENDA_ITEM_MAX}
+                returnKeyType="done"
+                submitBehavior="submit"
+                onSubmitEditing={add}
+                style={styles.addField}
+              />
+            </View>
+            {problem ? <Text style={styles.error}>{problem}</Text> : null}
           </View>
-          {problem ? <Text style={styles.error}>{problem}</Text> : null}
-        </View>
-      ) : problem ? (
-        <Text style={styles.error}>{problem}</Text>
-      ) : null}
-      {canEdit && full ? (
-        <Text style={styles.caption}>
-          An agenda holds {EVENT_AGENDA_MAX} items.
-        </Text>
-      ) : null}
+        ) : problem ? (
+          <Text style={styles.error}>{problem}</Text>
+        ) : null}
+        {reshape && full ? (
+          <Text style={styles.caption}>
+            An agenda holds {EVENT_AGENDA_MAX} items.
+          </Text>
+        ) : null}
+      </SectionBody>
     </View>
   );
+}
+
+/**
+ * An agenda's items on the raised surface on Event details, and bare in the
+ * New event sheet, whose framed row already holds them.
+ */
+function SectionBody({
+  bare,
+  children,
+}: {
+  bare: boolean;
+  children: ReactNode;
+}) {
+  return bare ? <>{children}</> : <ListPanel>{children}</ListPanel>;
 }
 
 /**
@@ -906,108 +943,110 @@ function EventAttachmentsSection({
   return (
     <View style={styles.section} accessibilityLabel="Attachments">
       <Text style={styles.sectionLabel}>ATTACHMENTS</Text>
-      {attachments.map((attachment) => {
-        const isLink = attachment.kind === "link";
-        // Only a chapter read that answered "off" disables a document; one
-        // that can't say yet lets the server answer.
-        const disabled = !isLink && (documentsOn === false || !!openingId);
-        const source = isLink
-          ? proofLinkDomain(attachment.url)
-          : documentsOn === false
-            ? "Chapter Files is off"
-            : "Chapter Files";
-        return (
-          <View key={attachment.id} style={styles.line}>
-            <Pressable
-              accessibilityRole={isLink ? "link" : "button"}
-              accessibilityLabel={`${attachment.title}, ${source}`}
-              accessibilityState={{ disabled }}
-              disabled={disabled}
-              onPress={() =>
-                attachment.kind === "link"
-                  ? void openLink(attachment.url)
-                  : void openDocument(attachment.document_id)
-              }
-              style={({ pressed }) => [
-                styles.row,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              {!isLink && openingId === attachment.document_id ? (
-                <ActivityIndicator size="small" color={muted} />
-              ) : isLink ? (
-                <LinkGlyph color={muted} />
-              ) : (
-                <DocumentsGlyph color={muted} size={20} />
-              )}
-              <Text style={styles.text} numberOfLines={1}>
-                {attachment.title}
-              </Text>
-              <Text style={styles.caption} numberOfLines={1}>
-                {source}
-              </Text>
-            </Pressable>
-            {canEdit ? (
-              <View style={styles.controls}>
-                <IconButton
-                  label={`Remove "${attachment.title}"`}
-                  onPress={() =>
-                    onChange((current) =>
-                      current.filter((entry) => entry.id !== attachment.id),
-                    )
-                  }
-                >
-                  <CloseGlyph color={muted} />
-                </IconButton>
-              </View>
+      <ListPanel>
+        {attachments.map((attachment) => {
+          const isLink = attachment.kind === "link";
+          // Only a chapter read that answered "off" disables a document; one
+          // that can't say yet lets the server answer.
+          const disabled = !isLink && (documentsOn === false || !!openingId);
+          const source = isLink
+            ? proofLinkDomain(attachment.url)
+            : documentsOn === false
+              ? "Chapter Files is off"
+              : "Chapter Files";
+          return (
+            <View key={attachment.id} style={styles.line}>
+              <Pressable
+                accessibilityRole={isLink ? "link" : "button"}
+                accessibilityLabel={`${attachment.title}, ${source}`}
+                accessibilityState={{ disabled }}
+                disabled={disabled}
+                onPress={() =>
+                  attachment.kind === "link"
+                    ? void openLink(attachment.url)
+                    : void openDocument(attachment.document_id)
+                }
+                style={({ pressed }) => [
+                  styles.row,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                {!isLink && openingId === attachment.document_id ? (
+                  <ActivityIndicator size="small" color={muted} />
+                ) : isLink ? (
+                  <LinkGlyph color={muted} />
+                ) : (
+                  <DocumentsGlyph color={muted} size={20} />
+                )}
+                <Text style={styles.text} numberOfLines={1}>
+                  {attachment.title}
+                </Text>
+                <Text style={styles.caption} numberOfLines={1}>
+                  {source}
+                </Text>
+              </Pressable>
+              {canEdit ? (
+                <View style={styles.controls}>
+                  <IconButton
+                    label={`Remove "${attachment.title}"`}
+                    onPress={() =>
+                      onChange((current) =>
+                        current.filter((entry) => entry.id !== attachment.id),
+                      )
+                    }
+                  >
+                    <CloseGlyph color={muted} />
+                  </IconButton>
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
+        {problem ? <Text style={styles.error}>{problem}</Text> : null}
+        {canEdit && full ? (
+          <Text style={styles.caption}>
+            An event holds {EVENT_ATTACHMENTS_MAX} attachments.
+          </Text>
+        ) : null}
+        {canEdit && !full && adding === "link" ? (
+          <AddLinkForm
+            onCancel={() => setAdding(null)}
+            onAdd={(url, title) =>
+              add({ id: randomClientId(), kind: "link", url, title })
+            }
+          />
+        ) : null}
+        {canEdit && !full && adding === "document" ? (
+          <PickDocument
+            attached={attachedDocuments}
+            onCancel={() => setAdding(null)}
+            onPick={(documentId, title) =>
+              add({
+                id: randomClientId(),
+                kind: "document",
+                document_id: documentId,
+                title: attachmentTitle(title),
+              })
+            }
+          />
+        ) : null}
+        {canEdit && !full && adding === null ? (
+          <View style={styles.actions}>
+            <TextAction
+              label="Add a link"
+              color={accent}
+              onPress={() => setAdding("link")}
+            />
+            {documentsOn === true ? (
+              <TextAction
+                label="Attach from Chapter Files"
+                color={accent}
+                onPress={() => setAdding("document")}
+              />
             ) : null}
           </View>
-        );
-      })}
-      {problem ? <Text style={styles.error}>{problem}</Text> : null}
-      {canEdit && full ? (
-        <Text style={styles.caption}>
-          An event holds {EVENT_ATTACHMENTS_MAX} attachments.
-        </Text>
-      ) : null}
-      {canEdit && !full && adding === "link" ? (
-        <AddLinkForm
-          onCancel={() => setAdding(null)}
-          onAdd={(url, title) =>
-            add({ id: randomClientId(), kind: "link", url, title })
-          }
-        />
-      ) : null}
-      {canEdit && !full && adding === "document" ? (
-        <PickDocument
-          attached={attachedDocuments}
-          onCancel={() => setAdding(null)}
-          onPick={(documentId, title) =>
-            add({
-              id: randomClientId(),
-              kind: "document",
-              document_id: documentId,
-              title: attachmentTitle(title),
-            })
-          }
-        />
-      ) : null}
-      {canEdit && !full && adding === null ? (
-        <View style={styles.actions}>
-          <TextAction
-            label="Add a link"
-            color={accent}
-            onPress={() => setAdding("link")}
-          />
-          {documentsOn === true ? (
-            <TextAction
-              label="Attach from Chapter Files"
-              color={accent}
-              onPress={() => setAdding("document")}
-            />
-          ) : null}
-        </View>
-      ) : null}
+        ) : null}
+      </ListPanel>
     </View>
   );
 }

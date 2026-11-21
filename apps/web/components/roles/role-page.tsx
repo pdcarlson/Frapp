@@ -9,7 +9,6 @@ import {
   isEveryoneRole,
   ROLE_NAME_MAX_LENGTH,
   roleColorOrNull,
-  type RoleColorHex,
   SELF_ASSIGNABLE_REFUSAL_COPY,
   selfAssignableRefusal,
   SELF_ASSIGNABLE_SWITCH_DESCRIPTION,
@@ -29,7 +28,7 @@ import { ErrorState } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleton";
-import { RoleColorSwatches } from "@/components/roles/role-color-swatches";
+import { RoleColorPicker } from "@/components/roles/role-color-picker";
 import { PermissionSwitchList } from "@/components/roles/permission-switch-list";
 import { RoleOverrideList } from "@/components/roles/role-override-list";
 import { useRolePermissionToggle } from "@/components/roles/use-role-permission-toggle";
@@ -184,12 +183,13 @@ function RoleBody({
   const editable = canManage && reachesRole(reach, role, tiers);
 
   const [name, setName] = useState(role.name);
-  // An off-palette value (a pre-#3485 seed or free pick) reads as none,
-  // which is also how every client paints it.
-  const [color, setColor] = useState<RoleColorHex | null>(
+  // A stored value that may not paint (a pre-#3485 seed in red or gold, or
+  // one too dark to read) reads as none, which is also how every client
+  // paints it.
+  const [color, setColor] = useState<string | null>(
     roleColorOrNull(role.color),
   );
-  // Whether the officer picked a swatch: an off-palette stored value shows as
+  // Whether the officer picked a color: an unpaintable stored value shows as
   // "No color", so the draft alone can't tell "left alone" from "cleared".
   const [colorTouched, setColorTouched] = useState(false);
   const [placement, setPlacement] = useState(role.tier_id ?? OUTSIDE);
@@ -411,7 +411,7 @@ function RoleBody({
           </div>
           <div className="grid gap-1 md:col-span-2">
             <Label id="role-color-label">Color</Label>
-            <RoleColorSwatches
+            <RoleColorPicker
               labelId="role-color-label"
               value={color}
               onChange={(next) => {

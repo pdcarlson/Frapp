@@ -190,6 +190,9 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // 2026-11-20). Current clients hold Post until then; an older phone build
   // that can open such minutes doesn't.
   "meeting.no_event",
+  // An agenda change other than a check-off once the meeting has started
+  // (Paul, 2026-11-20): a page opened before the start and saved after.
+  "event.agenda_locked",
   // Asking for minutes (#5471): they were posted meanwhile, or the meeting
   // hasn't ended yet. The third is a 503 (the reminder couldn't be sent and
   // nothing was recorded), so its status reports it as a server fault.

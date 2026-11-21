@@ -192,6 +192,25 @@ export function ListSection({ children }: { children: ReactNode }) {
 }
 
 /**
+ * A record's section body on the same raised surface as {@link ListSection},
+ * for content that isn't a list of rows: an event's details, agenda,
+ * attachments and notes (Paul 2026-11-20: "use a raised surface for content",
+ * not content sitting on the black page). The eyebrow stays above it, outside.
+ */
+export function ListPanel({ children }: { children: ReactNode }) {
+  const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
+  const styles = createStyles(tokens);
+  return (
+    <View
+      style={[styles.section, styles.panel, { backgroundColor: surfaces.card }]}
+    >
+      {children}
+    </View>
+  );
+}
+
+/**
  * A pressable row's accessibility hint: its description, then any explicit
  * hint, each read as its own sentence and never twice. The description is the
  * second line a sighted member reads under the label; without this a screen
@@ -641,6 +660,11 @@ function createStyles(tokens: SignetTokens) {
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
       overflow: "hidden",
+    },
+    panel: {
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.md,
+      gap: tokens.spacing.xs,
     },
     divider: {
       height: StyleSheet.hairlineWidth,
