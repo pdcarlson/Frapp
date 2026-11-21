@@ -32,10 +32,12 @@ function Host({
   context = ctx(),
   drafts,
   onAttach = vi.fn(),
+  onGif,
 }: {
   context?: PlusMenuContext;
   drafts?: ReadonlySet<PlusMenuCommand>;
   onAttach?: () => void;
+  onGif?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<PlusMenuCommand | null>(null);
@@ -50,6 +52,7 @@ function Host({
       }}
       view={view}
       onAttach={onAttach}
+      onGif={onGif}
       onPick={setView}
       onBack={() => setView(null)}
       drafts={drafts}
@@ -67,6 +70,24 @@ const openCard = async (user: ReturnType<typeof userEvent.setup>) =>
   user.click(screen.getByRole("button", { name: /add a file/i }));
 
 describe("ComposerPlusCard", () => {
+  it("offers GIF after Attach a file when GIFs are set up, and closes to open it (#5772)", async () => {
+    const user = userEvent.setup();
+    const onGif = vi.fn();
+    const { unmount } = render(<Host onGif={onGif} />);
+    await openCard(user);
+    const rows = await screen.findAllByRole("menuitem");
+    expect(rows[1]).toBe(screen.getByRole("menuitem", { name: "GIF" }));
+    await user.click(rows[1]!);
+    expect(onGif).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).toBeNull();
+    unmount();
+
+    render(<Host />);
+    await openCard(user);
+    await screen.findByRole("menuitem", { name: /attach a file/i });
+    expect(screen.queryByRole("menuitem", { name: /^gif$/i })).toBeNull();
+  });
+
   it("always opens, with the footer, even when Attach a file is all it holds", async () => {
     const user = userEvent.setup();
     render(
@@ -102,10 +123,9 @@ describe("ComposerPlusCard", () => {
       screen.getByRole("heading", { name: "New poll" }),
     ).toBeInTheDocument();
     // A non-modal card: no scrim, and the chat behind it stays live.
-    expect(screen.getByRole("dialog", { name: "New poll" })).not.toHaveAttribute(
-      "aria-modal",
-      "true",
-    );
+    expect(
+      screen.getByRole("dialog", { name: "New poll" }),
+    ).not.toHaveAttribute("aria-modal", "true");
     expect(screen.getByLabelText("Question")).toBeInTheDocument();
   });
 
@@ -120,7 +140,9 @@ describe("ComposerPlusCard", () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("menuitem", { name: /poll/i }));
-    expect(screen.getByRole("heading", { name: "New poll" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "New poll" }),
+    ).toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(
       await screen.findByRole("menuitem", { name: /poll/i }),
@@ -136,9 +158,9 @@ describe("ComposerPlusCard", () => {
     expect(
       await screen.findByRole("menuitem", { name: /event/i }),
     ).toHaveTextContent("Draft");
-    expect(screen.getByRole("menuitem", { name: /poll/i })).not.toHaveTextContent(
-      "Draft",
-    );
+    expect(
+      screen.getByRole("menuitem", { name: /poll/i }),
+    ).not.toHaveTextContent("Draft");
   });
 
   it("won't open a greyed row", async () => {

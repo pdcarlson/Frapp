@@ -7,8 +7,13 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
+  ValidateNested,
 } from 'class-validator';
-import { GIF_PAGE_MAX } from '#domain/adapters/gif-search.interface';
+import {
+  GIF_PAGE_MAX,
+  MAX_GIF_EDGE,
+} from '#domain/adapters/gif-search.interface';
 
 export class GifPageQueryDto {
   @ApiPropertyOptional({ minimum: 1, maximum: GIF_PAGE_MAX, default: 1 })
@@ -84,4 +89,53 @@ export class GifAvailabilityDto {
       "The provider's name, shown in the picker's search field as its attribution.",
   })
   provider: string;
+}
+
+export class GifFavoriteRenditionDto {
+  @ApiProperty({ maxLength: 2048 })
+  @IsString()
+  @MaxLength(2048)
+  url: string;
+
+  @ApiProperty({ minimum: 1, maximum: MAX_GIF_EDGE })
+  @IsInt()
+  @Min(1)
+  @Max(MAX_GIF_EDGE)
+  width: number;
+
+  @ApiProperty({ minimum: 1, maximum: MAX_GIF_EDGE })
+  @IsInt()
+  @Min(1)
+  @Max(MAX_GIF_EDGE)
+  height: number;
+}
+
+/** Star a GIF (#5772): a picker result, sent back as the client got it. */
+export class AddGifFavoriteDto {
+  @ApiProperty({ minLength: 1, maxLength: 200 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  id: string;
+
+  @ApiPropertyOptional({ maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @ApiProperty({ type: GifFavoriteRenditionDto })
+  @ValidateNested()
+  @Type(() => GifFavoriteRenditionDto)
+  preview: GifFavoriteRenditionDto;
+
+  @ApiProperty({ type: GifFavoriteRenditionDto })
+  @ValidateNested()
+  @Type(() => GifFavoriteRenditionDto)
+  full: GifFavoriteRenditionDto;
+
+  @ApiProperty({ maxLength: 200 })
+  @IsString()
+  @MaxLength(200)
+  token: string;
 }
