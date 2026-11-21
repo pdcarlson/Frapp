@@ -773,6 +773,24 @@ function validateLedgerCoverage(migrations) {
  */
 export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([
   {
+    file: "supabase/migrations/20261120214633_meeting_live_recordings.sql",
+    removed: true,
+    reason:
+      "Renamed to 20261121173300 with the same SQL. #5793 merged after #5785's " +
+      "20261120220934 had reached staging, so db push refused 214633 and Deploy staging " +
+      "stopped from 2026-11-21 00:06 UTC. Neither hosted database had applied it at the rename " +
+      "(checked 2026-11-21).",
+  },
+  {
+    file: "supabase/migrations/20261120215726_major_groups.sql",
+    removed: true,
+    reason:
+      "Renamed to 20261121173330 with the same SQL. #5796 merged after #5785's " +
+      "20261120220934 had reached staging, so db push refused 215726 and Deploy staging " +
+      "stopped from 2026-11-21 00:06 UTC. Neither hosted database had applied it at the rename " +
+      "(checked 2026-11-21).",
+  },
+  {
     file: "supabase/migrations/20261120000243_member_joined_via_invite.sql",
     removed: true,
     reason:

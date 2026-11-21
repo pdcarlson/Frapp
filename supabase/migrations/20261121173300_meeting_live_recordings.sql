@@ -30,4 +30,4 @@ create index if not exists idx_meeting_live_recordings_user
   on public.meeting_live_recordings (user_id);
 
 comment on table public.meeting_live_recordings is
-  'Minutes a phone is recording right now, refreshed every minute while it records, so the list can say who is recording. See 20261120214633_meeting_live_recordings.sql.';
+  'Minutes a phone is recording right now, refreshed every minute while it records, so the list can say who is recording. See 20261121173300_meeting_live_recordings.sql.';
