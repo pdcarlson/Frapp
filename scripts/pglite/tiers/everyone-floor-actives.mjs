@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: the Everyone floor and Actives (20261121001050) ────────────
+// ─── Functional: the Everyone floor and Actives (20261121020046) ────────────
 //
 // #5802: the `MEMBER`-keyed row becomes Actives, a new `EVERYONE` row outside
 // the tiers carries `members:view` only, every member holds it, a default
@@ -13,7 +13,7 @@ import { db, miss } from "../harness.mjs";
 //
 // Everything runs inside one transaction and is rolled back.
 console.log(
-  "\n=== Functional: the Everyone floor and Actives (20261121001050) ===",
+  "\n=== Functional: the Everyone floor and Actives (20261121020046) ===",
 );
 {
   const A = "a5802000-0000-4000-8000-00000000000a";
@@ -34,7 +34,7 @@ console.log(
     const file = readFileSync(
       join(
         process.cwd(),
-        "supabase/migrations/20261121001050_everyone_floor_actives.sql",
+        "supabase/migrations/20261121020046_everyone_floor_actives.sql",
       ),
       "utf8",
     );

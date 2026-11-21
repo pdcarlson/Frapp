@@ -180,7 +180,7 @@ create trigger trg_members_keep_everyone_role
   for each row execute function public.members_keep_everyone_role();
 
 comment on function public.members_keep_everyone_role() is
-  'Appends the chapter''s Everyone role (system_key EVERYONE) to a member row that lacks it, on every insert and role write. See 20261121001050_everyone_floor_actives.sql.';
+  'Appends the chapter''s Everyone role (system_key EVERYONE) to a member row that lacks it, on every insert and role write. See 20261121020046_everyone_floor_actives.sql.';
 
 -- 6. Deleting a role takes it off its holders and gives nobody Actives.
 create or replace function public.delete_role(
@@ -247,4 +247,4 @@ end;
 $$;
 
 comment on function public.delete_role(uuid, uuid) is
-  'Deletes a non-system role and takes it off every holder in one transaction (DELETE /v1/roles/:id, #4547); the Everyone role stays on each row. See 20261121001050_everyone_floor_actives.sql.';
+  'Deletes a non-system role and takes it off every holder in one transaction (DELETE /v1/roles/:id, #4547); the Everyone role stays on each row. See 20261121020046_everyone_floor_actives.sql.';

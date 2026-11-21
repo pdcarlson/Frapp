@@ -8,7 +8,7 @@ import { db, miss } from "../harness.mjs";
 // takes the role off every holder, gives Everyone to a holder it leaves with
 // no member-access role and no New Member or Alumni role (the rule
 // `rolesAfterSave` applied to a save), and deletes the role. Since
-// 20261121001050 (#5802) it gives nobody anything: the `MEMBER` row here is
+// 20261121020046 (#5802) it gives nobody anything: the `MEMBER` row here is
 // Actives, and the member-row trigger keeps the `EVERYONE` floor, which this
 // fixture's chapter doesn't have.
 //

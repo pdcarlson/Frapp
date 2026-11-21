@@ -25,7 +25,7 @@
 //   1. delete held, save gives the role to a member who lacks it: the save
 //      waits, then writes nothing; the member never holds the role.
 //   2. save held having given the role, delete called: the delete waits, then
-//      strips it and gives nothing in its place (since 20261121001050, #5802;
+//      strips it and gives nothing in its place (since 20261121020046, #5802;
 //      until then it gave the old Everyone row, the `MEMBER` key this seed
 //      still uses, which is Actives now).
 //   3a. delete held, save keeps the role for a member who holds it: the save
