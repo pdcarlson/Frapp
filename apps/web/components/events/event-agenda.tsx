@@ -80,8 +80,8 @@ export function EventMeetingLists({
   /** Holds `events:update`, and the event is there to write to. */
   canEdit: boolean;
   /**
-   * The meeting hasn't ended and the chapter has minutes on: Suggested
-   * shows only then.
+   * The meeting hasn't ended and the chapter has minutes on. Suggested
+   * shows only while this holds and the meeting hasn't started either.
    */
   upcoming: boolean;
   /**
@@ -110,7 +110,9 @@ export function EventMeetingLists({
   const showSuggestions = editable && upcoming && !checkOffOpen;
   return (
     <>
-      {editor.agenda.length > 0 || editable ? (
+      {/* A started meeting's empty agenda can't be started any more, so
+          an editor gets no empty section for it. */}
+      {editor.agenda.length > 0 || (editable && !checkOffOpen) ? (
         // The agenda and what's suggested for it read as one section.
         <div className="grid gap-3">
           <EventAgendaSection

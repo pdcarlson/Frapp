@@ -131,6 +131,14 @@ describe("agendaItemsChanged", () => {
     { id: "a1", text: "Vote", done: false },
     { id: "a2", text: "Rush recap", done: false },
   ];
+  it("reads stored text as a save would normalize it", () => {
+    expect(
+      agendaItemsChanged(stored, [
+        { id: "a1", text: "Vote ", done: false },
+        stored[1]!,
+      ]),
+    ).toBe(false);
+  });
   it("ignores check-offs", () => {
     expect(
       agendaItemsChanged([{ ...stored[0]!, done: true }, stored[1]!], stored),

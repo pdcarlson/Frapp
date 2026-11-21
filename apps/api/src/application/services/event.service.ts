@@ -32,6 +32,8 @@ import {
 } from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
+  AGENDA_LOCKED_COPY,
+  agendaCheckOffOpen,
   agendaItemsChanged,
   checkInWindowBounds,
   checkSeriesLength,
@@ -710,11 +712,12 @@ export class EventService {
     id: string,
     chapterId: string,
     item: EventAgendaItem,
+    now: Date = new Date(),
   ): Promise<EventAgendaItem[]> {
     const event = await this.findById(id, chapterId);
     const agenda = event.agenda ?? [];
     if (agenda.some((entry) => entry.id === item.id)) return agenda;
-    assertAgendaOpen(event.start_time);
+    assertAgendaOpen(event.start_time, now);
     if (agenda.length >= EVENT_AGENDA_MAX) {
       throw new ConflictException(
         `An agenda holds at most ${EVENT_AGENDA_MAX} items.`,
@@ -796,11 +799,9 @@ function withoutRequirements(input: CreateEventInput): CreateEventInput {
  * this write leaves it, so a meeting moved later is open again.
  */
 function assertAgendaOpen(start: string, now: Date = new Date()): void {
-  const at = Date.parse(start);
-  if (Number.isNaN(at) || at > now.getTime()) return;
+  if (!agendaCheckOffOpen(start, now)) return;
   throw new ConflictException({
     code: 'event.agenda_locked',
-    message:
-      'This meeting has started, so its agenda items can be checked off but not changed.',
+    message: AGENDA_LOCKED_COPY,
   });
 }

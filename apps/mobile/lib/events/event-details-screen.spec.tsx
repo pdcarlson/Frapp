@@ -1169,6 +1169,29 @@ describe("Event details agenda and attachments (#4934)", () => {
     agendaSuggestions = [];
   });
 
+  it("drops Suggested once the meeting has started, before it ends (Paul 2026-11-20)", () => {
+    const now = Date.now();
+    event = {
+      ...WITH_LISTS,
+      start_time: new Date(now - 10 * 60_000).toISOString(),
+      end_time: new Date(now + 60 * 60_000).toISOString(),
+    };
+    permissions = ["members:view", "events:update"];
+    agendaSuggestions = [
+      {
+        id: "s1",
+        kind: "ai",
+        text: "Venue check-in",
+        tabled_from: null,
+        source_meeting_id: "m-last",
+        reason: null,
+      },
+    ];
+    const tree = render();
+    expect(screenText(tree)).not.toContain("SUGGESTED");
+    agendaSuggestions = [];
+  });
+
   it("offers Suggested items to an editor of an upcoming meeting, with Add and Dismiss (#5534)", async () => {
     event = {
       ...WITH_LISTS,

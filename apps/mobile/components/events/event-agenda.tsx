@@ -28,7 +28,7 @@ import Animated, {
 } from "react-native-reanimated";
 import * as WebBrowser from "expo-web-browser";
 import { useRouter } from "expo-router";
-import { randomClientId, statusOf } from "@repo/api-sdk";
+import { codeOf, randomClientId, statusOf } from "@repo/api-sdk";
 import {
   selectDownloadUrl,
   useAgendaSuggestionActions,
@@ -41,6 +41,7 @@ import {
 } from "@repo/hooks";
 import {
   AGENDA_CHECK_OFF_LOCKED_COPY,
+  AGENDA_LOCKED_COPY,
   AGENDA_SUGGESTION_COPY,
   agendaTabledFromLabel,
   agendaProblem,
@@ -131,8 +132,8 @@ export function EventMeetingLists({
   /** An agenda row is held: the screen stops scrolling under it. */
   onDragging?: (dragging: boolean) => void;
   /**
-   * The meeting hasn't ended and the chapter has minutes on: Suggested
-   * shows only then.
+   * The meeting hasn't ended and the chapter has minutes on. Suggested
+   * shows only while this holds and the meeting hasn't started either.
    */
   upcoming: boolean;
 }) {
@@ -143,12 +144,15 @@ export function EventMeetingLists({
   const { writeBlockedReason } = useConnection();
   const editable = canEdit && writeBlockedReason === null;
   const documentsOn = useDocumentsModule();
-  const [failed, setFailed] = useState(false);
+  // A refusal says what happened: a meeting that started meanwhile has
+  // locked its agenda, which no retry gets past.
+  const [failed, setFailed] = useState<"locked" | "other" | null>(null);
   const editor = useEventListsEditor(eventId, lists, {
-    onFailed: () => setFailed(true),
+    onFailed: (error) =>
+      setFailed(codeOf(error) === "event.agenda_locked" ? "locked" : "other"),
   });
   const change: typeof editor.change = (field, update) => {
-    setFailed(false);
+    setFailed(null);
     editor.change(field, update);
   };
   // While an Add is out the agenda's controls wait: the server is writing
@@ -182,8 +186,9 @@ export function EventMeetingLists({
       />
       {failed ? (
         <Text accessibilityRole="alert" style={styles.error}>
-          Couldn&apos;t save the agenda or attachments. Your last change was
-          undone, so try it again in a moment.
+          {failed === "locked"
+            ? AGENDA_LOCKED_COPY
+            : "Couldn't save the agenda or attachments. Your last change was undone, so try it again in a moment."}
         </Text>
       ) : null}
     </>
@@ -439,11 +444,6 @@ function EventAgendaSection({
 }
 
 /**
- * One agenda item: a grip to drag it by (an editor's), its checkbox (or its
- * number), its text, and a remove X. VoiceOver and TalkBack move it with
- * the row's Move up and Move down actions, as Arrange channels' rows do.
- */
-/**
  * An agenda's items on the raised surface on Event details, and bare in the
  * New event sheet, whose framed row already holds them.
  */
@@ -457,6 +457,11 @@ function SectionBody({
   return bare ? <>{children}</> : <ListPanel>{children}</ListPanel>;
 }
 
+/**
+ * One agenda item: a grip to drag it by (an editor's), its checkbox (or its
+ * number), its text, and a remove X. VoiceOver and TalkBack move it with
+ * the row's Move up and Move down actions, as Arrange channels' rows do.
+ */
 function AgendaRow({
   item,
   index,

@@ -193,7 +193,12 @@ export class AgendaSuggestionService {
       done: false,
       ...(from ? { tabled_from: from } : {}),
     };
-    const agenda = await this.events.appendAgendaItem(eventId, chapterId, item);
+    const agenda = await this.events.appendAgendaItem(
+      eventId,
+      chapterId,
+      item,
+      options.now,
+    );
     await this.repo.decide(chapterId, eventId, suggestion.id, {
       status: 'added',
       agenda_item_id: item.id,
@@ -224,8 +229,9 @@ export class AgendaSuggestionService {
 
   /**
    * The event as this member sees it and its same-audience earlier minutes;
-   * null for a meeting that has ended, or a chapter with Events off, which
-   * are offered nothing.
+   * null for a meeting that has started (its agenda takes check-offs only,
+   * Paul 2026-11-20), or a chapter with Events off, which are offered
+   * nothing.
    */
   private async context(
     chapterId: string,
@@ -241,7 +247,7 @@ export class AgendaSuggestionService {
       return null;
     }
     const now = options.now ?? new Date();
-    if (Date.parse(event.end_time) <= now.getTime()) return null;
+    if (Date.parse(event.start_time) <= now.getTime()) return null;
     const earlier = await sameAudienceMinutes(this.meetings, this.events, {
       chapterId,
       userId,
