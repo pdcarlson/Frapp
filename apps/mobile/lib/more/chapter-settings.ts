@@ -1,4 +1,9 @@
-import { can, canAny } from "@repo/validation";
+import {
+  CHAPTER_LOGS_PERMISSIONS,
+  can,
+  canAll,
+  canAny,
+} from "@repo/validation";
 
 /**
  * Who sees Chapter settings on the phone, and which of its groups (#4074).
@@ -28,6 +33,6 @@ export function chapterSettingsAccess(permissions: readonly string[]) {
     ["chapter-config:view", "roles:manage", "groups:manage"],
     permissions,
   );
-  const logs = chapter && can("members:view", permissions);
+  const logs = canAll(CHAPTER_LOGS_PERMISSIONS, permissions);
   return { chapter, roles, logs, any: chapter || roles };
 }

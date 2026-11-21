@@ -59,7 +59,7 @@ describe("chapter logs", () => {
       "name: Non-Brothers → Non-Brothers/PNMs",
       "ask: off → on",
       "logo path",
-      "birthday channel id",
+      // `birthday_channel_id` holds an id, so it is left out.
       "permissions",
     ]);
   });

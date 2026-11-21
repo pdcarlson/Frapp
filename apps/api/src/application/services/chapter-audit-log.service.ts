@@ -129,8 +129,8 @@ export class ChapterAuditLogService {
    * This is the filter `20260523130000_audit_log.sql` says the API applies in
    * place of a SELECT policy (#1773), and it is what makes the president-only
    * `member_visible` toggle in `spec/behavior/settings/README.md` § Audit Rules
-   * mean something: toggling a row off retracts its `#chapter-audit` mirror for
-   * non-presidents, and it must retract the row from this read too, or a
+   * mean something: toggling a row off must retract it from this read (the
+   * Logs page in Chapter settings), or a
    * custom role holding `chapter-config:view` + `members:view` could ask
    * `?action=member_removed` for exactly what was just hidden.
    *

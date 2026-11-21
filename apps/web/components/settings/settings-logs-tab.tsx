@@ -38,7 +38,7 @@ import { Button } from "@/components/ui/button";
  * as chips under it. The phone's Logs screen offers the same rows in the same
  * order (`chapterLogFilterRows`). GitHub's audit log and Linear's workspace
  * audit log read this way: one line per change, who first, filterable by
- * actor, action and date. `spec/behavior/settings/README.md` § Logs.
+ * actor, action and date. `spec/behavior/settings/README.md` § Audit Rules.
  */
 export function SettingsLogsTab() {
   const [filters, setFilters] = useState<ChapterLogFilters>(

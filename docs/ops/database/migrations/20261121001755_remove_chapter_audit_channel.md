@@ -14,7 +14,7 @@ Deletes every chapter's `#chapter-audit` channel and the trigger that flagged on
   - `select count(*) from chat_channels where is_audit_log;` returns 0.
   - `select count(*) from pg_trigger where tgname = 'chat_channels_flag_audit_log';` returns 0.
   - `select count(*) from chapter_audit_log;` returns the same number as before the push.
-- **Promoter notes**: writes data (deletes rows). Deploy the API first or together: an older API still runs the audit mirror, which finds no flagged channel and logs at debug, so the order is safe either way. Nothing by hand.
+- **Promoter notes**: writes data (deletes rows). Deploy production migrates before the API rolls out, and until it does the older API still seeds a flagged `#chapter-audit` for any chapter created in that window (it sets `is_audit_log` itself, so dropping the trigger doesn't stop it). After the API is live, re-run the first check; if it isn't 0, re-run `delete from public.chat_channels where is_audit_log;`. #5808 repeats that delete before dropping the column either way.
 
 ## Rollback
 

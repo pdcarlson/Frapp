@@ -3,7 +3,7 @@
  * read from `chapter_audit_log` on a page in Chapter settings on web and the
  * phone, filterable by kind, person and time. It replaced the
  * `#chapter-audit` chat channel, which only ever held a copy of these rows.
- * `spec/behavior/settings/README.md` § Logs.
+ * `spec/behavior/settings/README.md` § Audit Rules.
  *
  * One copy of the words, the kinds and the windows so both apps say and
  * offer the same, and the API filters by the same kinds.
@@ -169,6 +169,8 @@ export function chapterLogWindowStart(
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_VALUE_LENGTH = 60;
+/** A diff key that holds ids: `user_id`, `president_member_id`, `role_ids`. */
+const ID_KEY = /(^|_)ids?$/;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -240,15 +242,19 @@ export type ChapterLogChange = {
 
 /**
  * The fields an entry changed, each as words: "name: Non-Brothers →
- * Non-Brothers/PNMs". A field whose values are records, ids or paths is
- * named with no values, so a reader still sees what moved. A whole record
- * added or removed (its name is the subject) lists nothing.
+ * Non-Brothers/PNMs". A field whose values are records or paths is named
+ * with no values, so a reader still sees what moved. A field keyed as ids
+ * (`member_id`) is left out, and so is a whole record added or removed (its
+ * name is the subject).
  */
 export function chapterLogChanges(
   diff: Record<string, unknown>,
 ): ChapterLogChange[] {
   const changes: ChapterLogChange[] = [];
   for (const [key, value] of Object.entries(diff)) {
+    // A field that holds ids (`member_id`, `president_member_id`) names
+    // nothing a reader knows: "member id" would read as noise.
+    if (ID_KEY.test(key)) continue;
     const change = asChange(value);
     if (!change) {
       // `{ added, removed }` on a permissions change (#2599).
@@ -281,8 +287,10 @@ export function chapterLogChangeText(change: ChapterLogChange): string {
 }
 
 /**
- * The member an entry is about, when it names one (a member removed, a
- * profile corrected): the user id to resolve to a name. `null` otherwise.
+ * The member an entry is about, when its diff records their `users.id`
+ * (`member_removed` does): the user id to resolve to a name. `null`
+ * otherwise. A writer that records only the `chapter_members` id, such as
+ * `member_profile_corrected`, names no subject (#5817).
  */
 export function chapterLogTargetUserId(entry: {
   target_type: string;

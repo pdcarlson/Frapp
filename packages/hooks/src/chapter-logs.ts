@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { formatDayHeading, formatTimeOfDay } from "@repo/formatting";
@@ -21,7 +22,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 /**
  * The chapter's Logs (Paul, 2026-11-21), web and phone: `GET /v1/audit-log`
  * paged newest first, and one shared reading of each row so both apps draw
- * the same line. `spec/behavior/settings/README.md` § Logs.
+ * the same line. `spec/behavior/settings/README.md` § Audit Rules.
  */
 export type ChapterLogEntry = components["schemas"]["ChapterAuditLogEntryDto"];
 
@@ -58,16 +59,19 @@ export function useChapterLogs(
 ) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  // Counted back once, when the window is picked, and kept in the key, so
+  // "Show older" pages and refetches share the first page's start.
+  const startDate = useMemo(
+    () =>
+      filters.when === CHAPTER_LOG_ANY
+        ? undefined
+        : chapterLogWindowStart(filters.when),
+    [filters.when],
+  );
   return useInfiniteQuery({
-    queryKey: chapterLogKeys.list(chapterId ?? "", filters),
+    queryKey: chapterLogKeys.list(chapterId ?? "", { ...filters, startDate }),
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) => {
-      // Counted back from the moment the list is read, so a page loaded later
-      // keeps the window the first one used.
-      const startDate =
-        filters.when === CHAPTER_LOG_ANY
-          ? undefined
-          : chapterLogWindowStart(filters.when);
       const { data, error } = await client.GET("/v1/audit-log", {
         signal,
         params: {

@@ -1,5 +1,9 @@
 import { MODULE_CATALOG } from "@repo/org-archetypes";
-import { canAll, isBetaOffModule } from "@repo/validation";
+import {
+  CHAPTER_LOGS_PERMISSIONS,
+  canAll,
+  isBetaOffModule,
+} from "@repo/validation";
 
 /**
  * Settings search: one list of every setting a member can change, with the
@@ -405,7 +409,7 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     area: "chapter",
     section: "Logs",
     keywords: ["audit", "audit log", "history", "changes", "who changed"],
-    requires: ["chapter-config:view", "members:view"],
+    requires: CHAPTER_LOGS_PERMISSIONS,
     web: { page: "logs" },
     phone: { screen: "/chapter-logs" },
   },

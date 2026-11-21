@@ -15,11 +15,13 @@
 --
 -- `is_audit_log` stays for now: the API and both clients still read it in
 -- places that become unreachable once no channel carries it. The follow-up
--- that deletes those branches drops the column and its unique index.
+-- that deletes those branches (#5808) drops the column and its unique index.
 
--- Stop a new chapter's seeding (or an older API's) flagging a
--- `#chapter-audit`: the API no longer seeds one, and a channel an officer
--- names that way is an ordinary channel.
+-- Drop the trigger that flagged a new `#chapter-audit`. The API this ships
+-- with seeds none. An older API still running during the rollout sets
+-- `is_audit_log` itself when it seeds a chapter, so a chapter created in that
+-- window can get a flagged channel after this delete has run; #5808 repeats
+-- this delete before it drops the column, which clears any such straggler.
 drop trigger if exists chat_channels_flag_audit_log on public.chat_channels;
 drop function if exists public.chat_channels_flag_audit_log();
 

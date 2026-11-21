@@ -1,4 +1,10 @@
-import { can, canAny, isBetaOffModule } from "@repo/validation";
+import {
+  CHAPTER_LOGS_PERMISSIONS,
+  can,
+  canAll,
+  canAny,
+  isBetaOffModule,
+} from "@repo/validation";
 import { isModuleSettingsTab } from "@/components/settings/settings-modules";
 import {
   CHAT_SETTINGS_PATH,
@@ -169,9 +175,7 @@ export function isSettingsTabVisible(
     `chapter-config:view` and `members:view`: entries name who removed whom.
   */
   if (tab === "logs") {
-    return (
-      can(CHAPTER_CONFIG_VIEW, permissions) && can("members:view", permissions)
-    );
+    return canAll(CHAPTER_LOGS_PERMISSIONS, permissions);
   }
   const only = TAB_ONLY_PERMISSIONS[tab];
   if (only) return canAny(only, permissions);

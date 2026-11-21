@@ -373,7 +373,7 @@ Defaults when no row is set (see ADR-06; the `defaultLevelFor` helper encodes th
 | A channel with an officer-set default | that default                                                                                                                       |
 | The announcements channel (below)     | `all`                                                                                                                              |
 | `#general`                            | `all`                                                                                                                              |
-| `#chapter-audit` (removed 2026-11-21) | `off` (`builtInChannelDefault` still matches the name until its follow-up removal)                                                 |
+| `#chapter-audit` (removed 2026-11-21) | `off` (`builtInChannelDefault` still matches the name until its removal, #5808)                                               |
 | Every other channel                   | `mentions`                                                                                                                         |
 
 **Officers set a channel's default; a member's own choice always wins** (owner decision
