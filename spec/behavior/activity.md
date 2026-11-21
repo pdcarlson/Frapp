@@ -179,8 +179,9 @@ the sidebar. It is a separate, small read, so Chat home doesn't load the whole o
   while the chapter has the events module off.
 - **The clients re-read it every minute**, drop a row at its end between reads, and re-read it
   after the member checks in (`useCheckIn`), so the card says "Checked in" at once.
-- **No row twice**: while an event leads the Now card, Activity's To do, week strip, the week card's
-  Next and the phone's Frapp card leave it out (`nowCardEventIds`). The week ring still counts it.
+- **No row twice**: while an event leads the Now card, Activity's To do and the phone's Frapp card
+  leave it out (`nowCardEventIds`). The week ring still counts it. (The week strip and the week
+  card's Next, which also left it out, went in #5779.)
   One under "+N more on now" keeps its row and its Check in, since the card doesn't open it.
 - **Happening now** on Activity means the same window: an event in check-in's grace after its end
   still offers Check in, under its day, but no longer says it is happening.
@@ -199,14 +200,35 @@ The page is a stack of cards each member orders and hides (#5520; Paul's pick, 2
 Bevel's Edit Home and Apple Fitness's Edit Summary). Before it, the page's sections sat in one fixed
 order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
 
+**One home per question** (#5779; Paul's pick "A", 2026-11-20). Activity answers "what do I do
+next?" and "what have I got running?", and nothing else; each other question moved to the one
+place that owns it:
+
+| Was on Activity | Now |
+| --- | --- |
+| Week card (big ring, lines, Next) and the phone's week strip | A small ring beside the title; pressed, it opens the lines ([§ Week](#week)) |
+| To review and Waiting on others | One card, Running |
+| Reminders | Rows in To do, on their day ([§ Reminders](#reminders)) |
+| Calendar card | A "Calendar" link in To do's header |
+| This semester and Last week | You (web: the profile), beside Points ([§ Standing](#standing), [§ Recap](#recap)) |
+| Links | The channel's own menu, beside Pinned and Saved ([§ Links](#links)) |
+
 - **The cards** are named by key (`ACTIVITY_CARD_KEYS` in `@repo/validation`): the Frapp card
-  (`nudge`), Last week (`recap`), To review (`review`), To do (`todo`), Calendar (`calendar`),
-  Reminders (`reminders`), Waiting on others (`waiting`), Links (`links`) and This semester
-  (`semester`). The week card is not one: it is always first and can't be hidden, as Fitness keeps
-  its rings. To do can move but can't be hidden, because the week card's lines narrow it and the
-  week strip's days jump to it.
+  (`nudge`), To do (`todo`) and Running (`running`). Now ([§ Now](#now)) is not one: it is always
+  first and can't be hidden. To do can move but can't be hidden, because the ring's lines narrow
+  it. *Changed in #5779 by `pdcarlson`, 2026-11-20 (was nine cards: `recap`, `review`,
+  `calendar`, `reminders`, `waiting`, `links` and `semester` besides these).*
+- **Running** leads with "3 to approve" (finished tasks to confirm and service hours to approve,
+  for who reviews them), then the tasks the member assigned with their progress, the events they
+  made with their headcount, and the polls they posted. It shows for anyone with something in it,
+  not only officers: a member who posted a poll has it running. Narrowed to one kind by the ring,
+  the page is To do alone.
+- **A saved arrangement with removed keys** keeps them stored, as any key a client doesn't know
+  (below), and the clients skip them. The member's other cards keep their order.
+  The two Running took in are read as Running by a save that never placed it: To review or
+  Waiting on others shown puts Running where the first of them was, and both hidden hides it.
 - **A card with nothing in it draws nothing**, wherever it sits, as each section always has. So
-  every card is in every default, and a member never sees an empty To review.
+  every card is in every default, and a member never sees an empty Running.
 - **Each member's arrangement is theirs, per chapter**, on their account (`activity_layouts`), so
   the phone and web draw the same page. `GET /v1/activity/layout` returns the cards shown, in
   order, the cards hidden, and whether the member has saved one (`saved`). `PUT` replaces both
@@ -216,13 +238,13 @@ order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
   characters, 32 keys a list, none twice), not only the keys it knows, so a newer client's card
   survives an older API. A client skips a key it doesn't know.
 - **Until a member saves, their role's default applies** (`ACTIVITY_DEFAULT_CARD_ORDER` in
-  `@repo/hooks`). An officer is anyone holding `tasks:manage` or `service:approve`, the people To
-  review is for, and their default puts To review before their own To do, then Waiting on others.
-  Everyone else's puts To do first. The default also applies while the read is out or has failed,
+  `@repo/hooks`). An officer is anyone holding `tasks:manage` or `service:approve`, the people
+  "to approve" is for. Since #5779 both roles' defaults are the Frapp card, To do, then Running;
+  the role is kept so a later card can differ by it. The default also applies while the read is out or has failed,
   so the page never waits on it.
 - **A card newer than a member's save** goes where the default puts it: after the nearest card
   before it in the default that they show.
-- **Edit Activity**, at the foot of the page, lists the cards in place of the page until Done:
+- **Edit Activity**, at the foot of the phone's page and in web's page header, lists the cards in place of the page until Done:
   minus hides one, plus brings it back where the default puts it, and arrows move it one place.
   Done saves only when something changed; Reset to the default is offered once they have saved.
   A failed save puts the saved arrangement back and says so. Edit Activity is offered only once the member's
@@ -241,7 +263,9 @@ order (#4766). *Changed in #5520 by `pdcarlson`, 2026-11-18.*
 ([#4766](https://github.com/pdcarlson/Frapp/issues/4766); Paul, 2026-11-13: the count tiles "tell
 me no information", "maybe there's like a percentage or like a dial"). The count tiles said how
 much was waiting; this says how far along the member is, which needs what they already finished,
-and nothing else in the read carries that. Both clients draw it as one ring
+and nothing else in the read carries that. Both clients draw it as one small ring beside the
+page's title, "4/15", which opens a line per kind (#5779; Paul's pick "Small ring beside the
+title", 2026-11-20; it was a card with a 96px ring and the next thing to do, #4766)
 ([`../ui/mobile/screens.md`](../ui/mobile/screens.md),
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)).
 
@@ -313,7 +337,7 @@ judged for an average member, a committee chair and the president
   that have not happened yet, and nobody can clear those today: a badge built from it would sit at
   3 until Saturday and stop being read. Review items stay in the badge because a member's points
   wait on that confirmation, though they are never in the ring.
-- **Polls and sign-ups share one line on the card.** Both are an answer the member owes, and the
+- **Polls and sign-ups share one line under the ring.** Both are an answer the member owes, and the
   server still counts them apart (`week.polls`, `week.cards`). A fourth line would be a zero for
   most members most weeks, on a card already tight at a phone's width.
 - **A poll counts as done in the week its vote was last changed.** A vote keeps only that time
@@ -322,7 +346,7 @@ judged for an average member, a committee chair and the president
 
 ## Progress
 
-`progress` on a row of Made by you is how far along it is: `{ done, total }`, how many have
+`progress` on a row of Made by you (Running, since #5779) is how far along it is: `{ done, total }`, how many have
 answered of how many can ([#4792](https://github.com/pdcarlson/Frapp/issues/4792); Paul,
 2026-11-13, part of the week ring's concept: "Waiting on others" with a bar per thing the member
 made). The clients draw it as a thin bar with "41 of 60" under the row
@@ -347,7 +371,8 @@ made). The clients draw it as a thin bar with "41 of 60" under the row
   row has none. Who has checked in is the attendance roster's, which needs `events:update`
   ([`events.md`](events.md)), and making an event grants nothing, so a maker without it (every
   member may make one) gets no count either: the count is never a way around the roster.
-- **The caller is on neither side.** The section is "Waiting on others": their own vote or
+- **The caller is on neither side.** The section is what they have running (Running; "Waiting on
+  others" until #5779): their own vote or
   check-in is not what they are waiting on.
 - **Never "0 of 0".** A poll nobody else can read, or an event that holds nobody else to it, has
   `progress: null`, and the row draws no bar. `done` counts only members still on `total`'s side
@@ -401,7 +426,7 @@ opens on the page ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashb
 
 ## Standing
 
-`GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block of the page (under the week card on both clients since #4766; Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
+`GET /v1/activity/standing` is how the member is doing this semester, the "This semester" block (on Activity under the week card from #4766; on You, and web's profile, beside Points since #5779; Evan, 2026-11-12: "a dashboard page that tracks all your outstanding tasks, deadlines, commitments, and upcoming things with progress bars"). It is a separate read from `GET /v1/activity`, so either can fail without the other. It requires `members:view`, as the page does, and every number is the caller's own, read through the module that owns it.
 
 - **This semester** is the points window's: everything after the latest archived semester's last day, or everything so far when the chapter has never rolled over ([`semester-rollover.md`](semester-rollover.md)).
 - **Points:** the caller's semester total and their place on the semester board, equal totals sharing a place, as [`points.md` § Leaderboard](points.md#leaderboard) ranks them, out of how many the board ranks. No place when they are not on the board (an alumnus with no points this semester).
@@ -413,15 +438,15 @@ opens on the page ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashb
 
 ## Recap
 
-`GET /v1/activity/recap` is the member's last finished week, the "Last week" card under the week card on both clients ([#4983](https://github.com/pdcarlson/Frapp/issues/4983); Shawn, 2026-11-14, after Slack's and Linear's weekly digests). The week card counts this week in progress; the recap sums up the one that just closed. It is a separate read from `GET /v1/activity` and from the standing, so the page's own read (on the app's resume path, #3728) carries none of it. It requires `members:view`, and every number is the caller's own, read through the module that owns it.
+`GET /v1/activity/recap` is the member's last finished week, the "Last week" card (on Activity until #5779; on You, and web's profile, since) ([#4983](https://github.com/pdcarlson/Frapp/issues/4983); Shawn, 2026-11-14, after Slack's and Linear's weekly digests). The week ring counts this week in progress; the recap sums up the one that just closed. It is a separate read from `GET /v1/activity` and from the standing, so the page's own read (on the app's resume path, #3728) carries none of it. It requires `members:view`, and every number is the caller's own, read through the module that owns it.
 
 - **The week** is the caller's last full week, Sunday to Sunday in their own time zone, ending at `week_start` (the start of their current week, as the standing reads it, under the same eight-days-back-to-a-day-ahead bound, refused with 400 outside it). The client also sends `last_week_start`, its own last Sunday at midnight, because a week that crosses a clock change is an hour longer or shorter than seven days; the server takes it when it is within three hours of seven days back, and counts seven days back otherwise. `start` and `end` say which week was read.
 - **Events attended:** events that started in the week, among those the caller can see, where they were marked present or late.
-- **Tasks done:** the caller's own tasks marked done in the week, confirmed or not, as the week card counts them. One sent back since is open again and not counted.
+- **Tasks done:** the caller's own tasks marked done in the week, confirmed or not, as the week ring counts them. One sent back since is open again and not counted.
 - **Points:** the week's ledger rows for the caller, net: an award adds, a deduction takes away.
 - **Service:** minutes on the caller's entries dated on the week's seven days, approved or waiting, never rejected. Entries are dated by day, so the client sends `first_day`, the date of its last Sunday; the server takes it when it is within a day of the day it works out from `last_week_start` (the UTC day nearest that local midnight, right from UTC−12 to UTC+12), and uses its own otherwise.
 - **Study:** minutes from the caller's sessions that started in the week and have ended, as Study counts (one rule with the standing's, `endedStudyMinutes`).
-- **Not counted yet:** polls voted on and sign-ups answered, which #4983 also named. The week card already counts this week's; last week's would need the poll and card reads to take a window, which they don't. Left for a later change.
+- **Not counted yet:** polls voted on and sign-ups answered, which #4983 also named. The week ring already counts this week's; last week's would need the poll and card reads to take a window, which they don't. Left for a later change.
 - **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`.
 - **The weekly push** ([#4985](https://github.com/pdcarlson/Frapp/issues/4985); Shawn, 2026-11-15). On Sunday, the first hourly tick from 9 AM to noon in the member's own zone (the zone their pushes use, falling back to New York, as the daily reminders do, [`notifications.md` § Daily Task and Invoice Reminders](notifications.md#daily-task-and-invoice-reminders)), each member who can read the recap gets last week's: title "Last week in Alpha Beta", body the card's figures in its words ("3 events attended · 1 task done · 15 points earned · 4h of service · 1h 30m studied", from `recapFigures` in `@repo/formatting`, which the card draws from too), leaving out what is off or zero. The week is the one the card shows: Sunday to Sunday at the member's local midnights, so one that crossed a clock change is an hour longer or shorter, and a Sunday whose midnight is skipped (Santiago in September) begins at its first instant. Nothing is sent for a week with nothing to recap. Tapping it opens Activity. It is sent under its own category, `recap`, the **Weekly recap** switch in notification settings, on by default ([`notifications.md` § Preference sync](notifications.md#preference-sync)). A member in two chapters gets one for each. `ActivityRecapPushService` runs hourly on every replica and claims each member's week before reading it (`activity_recap_pushes`, keyed by chapter, member and the week's first day), so it is sent once; a recap that couldn't be read whole, or a send that failed before its in-app row was written, gives the claim back for the next tick. A push the provider drops after the row is written is reported and not sent again, since a retry would write the row twice. An installed app from before this change gets the push too: a tap opens the notification list rather than Activity, and its settings have no Weekly recap switch until the member updates, so meanwhile it is switched off on the web. A canceled chapter sends none.
 - **The card** and how it draws are the UI specs' ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity), [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). The clients read the recap only on Sunday, Monday and Tuesday of the member's week.
@@ -434,7 +459,7 @@ What a chapter holds its members to, so a bar has an end ([#1062](https://github
 - **One goal for everyone, and roles set apart.** Each measure has an optional goal for every member and any number of roles with their own (pledges owing more study hours, say), up to 50. A role set apart with no number is held to no goal, which is how alumni or an officer role is exempted while everyone else owes hours. A member who holds several roles set apart is held to the goal on their highest-ranked one (lowest display order, then name, as the Roles page ranks them); a member holding none is held to everyone's, or to nothing.
 - **Units.** Points are points. Hours are stored as minutes and typed in whole hours: up to 500 a semester for service and 80 a week for study, and up to 100,000 points (`GOAL_TARGET_MAX` in `@repo/validation`). A save naming a role the chapter doesn't have, or one role twice, is refused.
 - **A deleted role** drops out of the goals when they are next read, and the next save leaves it out.
-- **Where a member sees it.** Activity's "This semester" block draws the ring ([§ Standing](#standing)); on the phone the Study screen's THIS WEEK line reads "4.5 of 6.0 hrs" over a meter and More's Study hours row reads "4.0 / 6.0 hrs" ([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
+- **Where a member sees it.** The "This semester" block on You (web: the profile) draws the ring ([§ Standing](#standing)); on the phone the Study screen's THIS WEEK line reads "4.5 of 6.0 hrs" over a meter and More's Study hours row reads "4.0 / 6.0 hrs" ([`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
 - **Audit.** Each save writes a `chapter_goals_updated` row to `chapter_audit_log`, with the measure's goals before and after as its diff.
 
 ## Unread
@@ -568,7 +593,7 @@ channel rules (#3926 step 4):
   card, so a client opens the message in chat rather than drawing the card on Activity.
 - "Hasn't answered" is checked over the chapter's 100 newest cards of each kind, as polls are.
 - They count toward `needs_you_count`. On both clients they are on the To do list by their end
-  time, as polls are, and share the week card's "Polls and sign-ups" line with them
+  time, as polls are, and share the week ring's "Polls and sign-ups" line with them
   (Changed in #4766 by `pdcarlson`, 2026-11-13: until then they were Now within a day of their
   end time, and showed under the All and Needs you chips with no chip or tile of their own).
 
@@ -577,7 +602,8 @@ channel rules (#3926 step 4):
 The member's own reminders on chat messages ("Remind me about this", #4957; the rule is
 [`chat/README.md` § Reminders (personal)](chat/README.md)), served as `reminders` on
 `GET /v1/activity` (`ChatReminderService.listFor`), the way Slack's Later tab holds a member's
-reminders beside what they saved. Where each client draws them is
+reminders beside what they saved. Since #5779 they are rows in To do on the day they are for
+(a due one under Overdue or today), not a card of their own. Where each client draws them is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) and
 [`../ui/mobile/screens.md`](../ui/mobile/screens.md).
 
@@ -605,6 +631,11 @@ Shawn, 2026-11-09). **Status 2026-11-11: the index is in the database
 (`20261111030000_activity_links.sql`), the API serves it (`links` on `GET /v1/activity`, and
 the routes below), and the Activity page draws it on web and the phone, with the channel switch
 on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)).**
+**Since #5779 (2026-11-20) a channel's links are listed in that channel's own menu, beside Pinned
+and Saved, on web and the phone, and no longer on Activity** (Paul's direction A: one home per
+question; Discord keeps a channel's links the same way). The read and every rule below are
+unchanged: the clients filter `links` to the channel (`activityChannelLinks` in `@repo/hooks`).
+So a channel set to Leave out of Activity also shows no Links in its menu.
 
 - **What counts.** An http(s) URL in a message body whose host is a sign-up host: Google Forms,
   Sheets and Docs (`docs.google.com/forms/…`, `/spreadsheets/…`, `/document/…`, with or without a
@@ -682,8 +713,8 @@ on web ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README
   showing links in the caller's channels, so a member would need 175 of their own, blocked or
   settled links inside 30 days to lose a row to it.
 - **Not counted in `needs_you_count`.** A link may or may not be for this member, and Frapp
-  can't tell when one is filled in, so a badge built on links would rarely clear. They are their
-  own group, not "Needs you".
+  can't tell when one is filled in, so a badge built on links would rarely clear. They are listed
+  in their channel, not on Activity.
 - **Officer remove.** A `channels:manage` holder can remove one link from everyone's Activity,
   for the one or two that slip through (`PUT /v1/activity/links/{id}/removed`), and undo it
   (`DELETE` on the same path). Like chat's other `channels:manage` actions it is scoped to the

@@ -82,7 +82,6 @@ export function ActivityListRow({
   isFirst,
   action = null,
   onCard = false,
-  solo = false,
   onPress,
   menu = null,
 }: {
@@ -92,19 +91,10 @@ export function ActivityListRow({
   /** The row's ask as a button (`components/activity/activity-row-action.tsx`). */
   action?: ActivityRowActionControl | null;
   /**
-   * The row sits in a card (the week card's Next row, the To review card's
-   * rows; #4766): it keeps to the card's own padding rather than bleeding
+   * The row sits in a card (the "N to approve" card's rows; #4766): it keeps to the card's own padding rather than bleeding
    * into the screen gutter, and its press lift is the step above the card.
    */
   onCard?: boolean;
-  /**
-   * The row stands alone as the week card's Next row (#4766): its ask is
-   * filled with the chapter accent, the one primary action on the screen
-   * (`foundations.md` § Where the accent goes); its detail may take a second
-   * line, since "Due in 2 hours" must not be cut; and it keeps no slot for
-   * the unread dot once read, having no other row to line up with.
-   */
-  solo?: boolean;
   onPress: () => void;
   /**
    * What a long press opens (`useActivityRowMenu`): a task's or an event's
@@ -135,12 +125,10 @@ export function ActivityListRow({
     <>
       {/* The unread mark (#4405): the notification list's dot, in a slot of
           its own that stays when read so rows don't shift. */}
-      {solo && !row.unread ? null : (
-        <View
-          style={row.unread ? dotStyles.dot : dotStyles.spacer}
-          testID={row.unread ? "activity-unread-dot" : undefined}
-        />
-      )}
+      <View
+        style={row.unread ? dotStyles.dot : dotStyles.spacer}
+        testID={row.unread ? "activity-unread-dot" : undefined}
+      />
       <ActivityRowLead row={row} onCard={onCard} />
       <View style={styles.text}>
         {/* Two lines, not web's one: at a phone's width one line cut most
@@ -148,7 +136,7 @@ export function ActivityListRow({
         <Text numberOfLines={2} style={styles.title}>
           {row.title}
         </Text>
-        <ActivityRowDetail row={row} lines={solo ? 2 : 1} />
+        <ActivityRowDetail row={row} lines={1} />
         {row.progress ? (
           <ActivityRowProgressLine
             progress={row.progress}
@@ -163,9 +151,9 @@ export function ActivityListRow({
       </View>
       {row.badge ? (
         action ? (
-          <ActivityAskButton action={action} filled={solo} />
+          <ActivityAskButton action={action} />
         ) : activityBadgeIsAsk(row) ? (
-          <ActivityAsk label={row.badge.label} filled={solo} />
+          <ActivityAsk label={row.badge.label} />
         ) : row.badge.variant === "outline" ? (
           <HairlineChip label={row.badge.label} />
         ) : (
@@ -411,40 +399,14 @@ function FaceStack({ ids, total }: { ids: string[]; total: number }) {
  * stay this; `Confirm` and `Approve` draw as `ActivityAskButton` while the
  * plan allows them (#4437).
  */
-export function ActivityAsk({
-  label,
-  filled = false,
-}: {
-  label: string;
-  /** The filled accent button: the week card's Next row only (#4766). */
-  filled?: boolean;
-}) {
+export function ActivityAsk({ label }: { label: string }) {
   const { tokens } = useFrappTheme();
   const branding = useChapterBranding();
   const styles = createActivityRowStyles(tokens);
   const tinted = askTinted(tokens, branding);
   return (
-    <View
-      testID={filled ? "activity-ask-filled" : undefined}
-      style={[
-        styles.ask,
-        tinted.surface,
-        filled
-          ? {
-              backgroundColor: branding.accentPrimary,
-              borderColor: branding.accentPrimary,
-            }
-          : null,
-      ]}
-    >
-      <Text
-        style={[
-          tinted.label,
-          filled ? { color: branding.accentOnPrimary } : null,
-        ]}
-      >
-        {label}
-      </Text>
+    <View style={[styles.ask, tinted.surface]}>
+      <Text style={tinted.label}>{label}</Text>
     </View>
   );
 }
@@ -468,11 +430,8 @@ export interface ActivityRowActionControl {
  */
 export function ActivityAskButton({
   action,
-  filled = false,
 }: {
   action: ActivityRowActionControl;
-  /** `ActivityAsk`'s filled accent: the week card's Next row (#4766, #4427). */
-  filled?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const branding = useChapterBranding();
@@ -490,34 +449,12 @@ export function ActivityAskButton({
       style={({ pressed }) => [
         styles.ask,
         tinted.surface,
-        // Disabled is the one recipe for every variant (tinted-control.ts);
-        // the filled ask keeps its accent fill otherwise, and a press dims
-        // it as the PR drew it, since the tinted press tint is for the
-        // subtle fill.
-        filled && !action.disabled
-          ? {
-              backgroundColor: branding.accentPrimary,
-              borderColor: branding.accentPrimary,
-            }
-          : null,
-        action.disabled
-          ? tinted.disabled
-          : pressed
-            ? filled
-              ? { opacity: 0.7 }
-              : tinted.pressed
-            : null,
+        // Disabled is the one recipe for every variant (tinted-control.ts).
+        action.disabled ? tinted.disabled : pressed ? tinted.pressed : null,
       ]}
     >
       <Text
-        style={[
-          tinted.label,
-          action.disabled
-            ? tinted.disabledLabel
-            : filled
-              ? { color: branding.accentOnPrimary }
-              : null,
-        ]}
+        style={[tinted.label, action.disabled ? tinted.disabledLabel : null]}
       >
         {action.label}
       </Text>

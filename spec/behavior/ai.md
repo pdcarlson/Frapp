@@ -1056,7 +1056,7 @@ Why it never reached him, read on staging that day: no `member_nudges` row had e
 
 ### The card and its tray
 
-Activity draws one card under the week card, from `POST /v1/activity/card`, and a tray of up to three more under it (the phone first, and web after; a phone build from before #5464 still draws only the task card, from `POST /v1/nudges/current`) (Paul's pick on #5464, 2026-11-18: one spotlight with a tray, over the spotlight alone).
+Activity draws one card under Now (under the week card until #5779 replaced it with a small ring), from `POST /v1/activity/card`, and a tray of up to three more under it (the phone first, and web after; a phone build from before #5464 still draws only the task card, from `POST /v1/nudges/current`) (Paul's pick on #5464, 2026-11-18: one spotlight with a tray, over the spotlight alone).
 
 - **What earns a card.** Any of these, for the member, under each module's own rule for who may see it, with the module on:
   an event starting today or tomorrow (in the member's time zone) that they haven't checked in to or snoozed, until it ends;

@@ -2,9 +2,15 @@ import { forwardRef, useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  activityChannelLinks,
   resolveAuthorLabel,
+  useActivity,
+  useActivityFaces,
+  useActivityUnread,
   useBookmarks,
+  useNowDate,
   usePinnedMessages,
+  type ActivityRow,
   type NameResolver,
 } from "@repo/hooks";
 import { replyPreviewText } from "@repo/chat-core/reply-preview";
@@ -14,6 +20,11 @@ import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { sentAtLabel } from "./message-actions-sheet";
+import {
+  ActivityFaces,
+  ActivityListRow,
+  ActivityRowSkeleton,
+} from "@/components/activity/activity-row";
 import {
   ErrorState,
   SkeletonRegion,
@@ -33,8 +44,8 @@ import {
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
- * The thread header's two message lists (#3723), the phone's face of web's
- * Pinned and Saved panels (`apps/web/components/chat/channel-menu.tsx`):
+ * The thread header's lists (#3723), the phone's face of web's Pinned, Saved
+ * and Links panels (`apps/web/components/chat/channel-menu.tsx`):
  *
  * - **Pinned** is this channel's pins, newest pin first, from
  *   `GET /v1/channels/{id}/pins`. The server's list, not the loaded window's
@@ -46,6 +57,13 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  *   longer read (`message_available: false`) is inert, as web's is: opening it
  *   would land on a channel the list does not hold. Each row has Remove, since
  *   a deleted message's bookmark has no long-press to unsave it from.
+ * - **Links** is the sign-up links posted in this channel (#5779), from
+ *   Activity's own read (`activityChannelLinks`), where Discord keeps a
+ *   channel's links beside its pins. Activity listed every channel's until
+ *   Paul's direction A moved them here (`spec/behavior/activity.md` § Links).
+ *   A row opens the link's sheet over this list (`onOpenLink`), with Open
+ *   link, Done, Hide, Open in chat and, for `channels:manage`, Remove for
+ *   everyone, as Activity's row did; opening it clears its dot.
  *
  * A row opens its message in the channel, or in its thread when it is a
  * reply (`onOpen`), which closes the sheet:
@@ -58,14 +76,20 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * usually warm already, since the thread reads the same query
  * (`useBookmarkedMessageIds`) for the Save row's label.
  */
-export type MessageListKind = "pinned" | "saved";
+export type MessageListKind = "pinned" | "saved" | "links";
+
+type LinkRow = Extract<ActivityRow, { kind: "link" }>;
 
 export const PINNED_TITLE = "Pinned messages";
 export const SAVED_TITLE = "Saved messages";
+/** Web's view title for the same list (`channel-menu.tsx`). */
+export const LINKS_TITLE = "Links";
 export const PINNED_EMPTY =
   "No pinned messages yet. Officers pin what everyone should be able to find.";
 export const SAVED_EMPTY =
   "Nothing saved yet. Long-press a message and choose Save message to keep it here.";
+/** An empty channel's Links: web's words (`channel-links-panel.tsx`). */
+export const LINKS_EMPTY = "Nothing to sign up for in this channel.";
 /** What an inert Saved row says in place of its author. */
 export const SAVED_UNAVAILABLE = "Unavailable";
 
@@ -77,13 +101,24 @@ export interface MessageListSheetProps {
   onOpen: (target: ListedMessage) => void;
   /** Remove a Saved row's bookmark. Without it, Saved rows have no Remove. */
   onRemoveSaved?: (messageId: string) => void;
+  /**
+   * Open a Links row's sheet (#5779). The list stays up under it, so the
+   * member comes back to it; the sheet's own actions decide what closes.
+   */
+  onOpenLink?: (row: LinkRow) => void;
 }
+
+const TITLES: Record<MessageListKind, string> = {
+  pinned: PINNED_TITLE,
+  saved: SAVED_TITLE,
+  links: LINKS_TITLE,
+};
 
 export const MessageListSheet = forwardRef<
   BottomSheetModal,
   MessageListSheetProps
 >(function MessageListSheet(
-  { kind, channelId, nameFor, onOpen, onRemoveSaved },
+  { kind, channelId, nameFor, onOpen, onRemoveSaved, onOpenLink },
   ref,
 ) {
   const closeSheet = useSheetClose(ref);
@@ -118,15 +153,14 @@ export const MessageListSheet = forwardRef<
         stickyHeaderIndices={[0]}
       >
         <View style={styles.stickyHeader}>
-          <TallSheetHeader
-            title={kind === "pinned" ? PINNED_TITLE : SAVED_TITLE}
-            onClose={closeSheet}
-          />
+          <TallSheetHeader title={TITLES[kind]} onClose={closeSheet} />
         </View>
         {kind === "pinned" ? (
           <PinnedRows channelId={channelId} nameFor={nameFor} onOpen={open} />
-        ) : (
+        ) : kind === "saved" ? (
           <SavedRows nameFor={nameFor} onOpen={open} onRemove={onRemoveSaved} />
+        ) : (
+          <LinkRows channelId={channelId} onOpen={onOpenLink} />
         )}
       </BottomSheetScrollView>
     </BottomSheetModal>
@@ -260,6 +294,83 @@ function SavedRows({
   return (
     <Rows rows={rows} empty={SAVED_EMPTY} onOpen={onOpen} onRemove={onRemove} />
   );
+}
+
+/**
+ * The channel's sign-up links (#5779), drawn with Activity's own row. The
+ * read is Activity's (`useActivity`), which the member's Activity tab keeps
+ * warm; a failure with nothing cached says so with Retry, as Pinned does.
+ * Done and Hide take a row off at once, as they took it off Activity.
+ */
+function LinkRows({
+  channelId,
+  onOpen,
+}: {
+  channelId: string | null;
+  onOpen?: (row: LinkRow) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const activity = useActivity();
+  const now = useNowDate();
+  const faceFor = useActivityFaces();
+  // Opening a row from here reads it, as opening it from Activity did.
+  const { markRead } = useActivityUnread(activity.data);
+  const rows = useMemo(
+    () =>
+      activity.data && channelId
+        ? activityChannelLinks(activity.data, channelId, now).filter(isLink)
+        : [],
+    [activity.data, channelId, now],
+  );
+
+  if (activity.isError && activity.data === undefined) {
+    return (
+      <ErrorState
+        title="Couldn't load links"
+        body={describeLoadFailure(activity.error)}
+        onRetry={() => void activity.refetch()}
+        isRetrying={activity.isFetching}
+      />
+    );
+  }
+  if (!channelId || activity.isPending) {
+    return (
+      <SkeletonRegion label="Loading links" flush>
+        {[0, 1, 2].map((index) => (
+          <ActivityRowSkeleton
+            key={index}
+            index={index}
+            isFirst={index === 0}
+          />
+        ))}
+      </SkeletonRegion>
+    );
+  }
+  if (rows.length === 0) {
+    return <Text style={styles.empty}>{LINKS_EMPTY}</Text>;
+  }
+  return (
+    <ActivityFaces.Provider value={faceFor}>
+      <View>
+        {rows.map((row, index) => (
+          <ActivityListRow
+            key={row.key}
+            row={row}
+            isFirst={index === 0}
+            onPress={() => {
+              if (row.unread && row.readRef) markRead([row.readRef]);
+              onOpen?.(row);
+            }}
+          />
+        ))}
+      </View>
+    </ActivityFaces.Provider>
+  );
+}
+
+function isLink(row: ActivityRow): row is LinkRow {
+  return row.kind === "link";
 }
 
 function Rows({

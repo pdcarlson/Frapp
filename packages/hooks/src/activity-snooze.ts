@@ -1,6 +1,5 @@
 import { formatRelativeDayTime } from "@repo/formatting";
 import {
-  activityGroups,
   activityReviewRows,
   activityToDos,
   type Activity,
@@ -18,8 +17,9 @@ import {
  */
 
 /**
- * Whether a row can be snoozed: one that waits on the member (To do, To
- * review, Links), never Waiting on others, which waits on someone else.
+ * Whether a row can be snoozed: one that waits on the member (To do, and
+ * what waits on their sign-off), never what they made, which waits on
+ * someone else.
  */
 export function activityRowSnoozable(
   row: Pick<ActivityRow, "key"> & { readRef?: ActivityItemRef | null },
@@ -118,8 +118,6 @@ export function activitySnoozedRows(
   const rows = [
     ...activityReviewRows(snoozed, now),
     ...activityToDos(snoozed, now).map((todo) => todo.dated),
-    ...(activityGroups(snoozed, now).find((group) => group.id === "links")
-      ?.rows ?? []),
   ];
   const untilOf = (row: ActivityRow) => {
     // A reminder (#4957) is put off with its own Snooze, never this one, and

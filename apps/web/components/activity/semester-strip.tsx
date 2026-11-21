@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   activityStandingGauges,
   type ActivityStanding,
+  type ActivityStandingSection,
   type StandingRow,
 } from "@repo/hooks";
 import { Skeleton } from "@/components/shared/async-states";
@@ -56,8 +57,15 @@ const WIDE_COLUMNS = [
  * drawn. Each gauge opens the page that owns its number. The ring is hidden
  * from a screen reader, which hears the gauge's sentence instead.
  */
-export function SemesterStrip({ standing }: { standing: ActivityStanding }) {
-  const gauges = activityStandingGauges(standing);
+export function SemesterStrip({
+  standing,
+  omit,
+}: {
+  standing: ActivityStanding;
+  /** Numbers the screen already shows elsewhere (#5779). */
+  omit?: readonly ActivityStandingSection[];
+}) {
+  const gauges = activityStandingGauges(standing, omit);
   if (gauges.length === 0) return null;
   return (
     <section aria-labelledby="activity-standing" className="space-y-2">

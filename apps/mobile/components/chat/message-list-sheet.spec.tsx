@@ -28,6 +28,16 @@ const reads = vi.hoisted(() => ({
     isFetching: false,
     refetch: vi.fn(),
   },
+  /** Activity's read, which holds a channel's links (#5779). */
+  activity: {
+    data: undefined as { links: unknown[] } | undefined,
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    error: null as unknown,
+    refetch: vi.fn(),
+  },
+  markRead: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", async () => {
@@ -37,10 +47,16 @@ vi.mock("@repo/hooks", async () => {
     ...actual,
     usePinnedMessages: () => reads.pins,
     useBookmarks: () => reads.bookmarks,
+    useActivity: () => reads.activity,
+    useActivityUnread: () => ({ markRead: reads.markRead }),
+    useActivityFaces: () => () => null,
   };
 });
 
+import { ActivityListRow } from "@/components/activity/activity-row";
 import {
+  LINKS_EMPTY,
+  LINKS_TITLE,
   MessageListSheet,
   PINNED_EMPTY,
   SAVED_EMPTY,
@@ -72,6 +88,7 @@ function render(
   handlers: {
     onOpen?: (target: ListedMessage) => void;
     onRemoveSaved?: (messageId: string) => void;
+    onOpenLink?: (row: unknown) => void;
   } = {},
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -85,6 +102,7 @@ function render(
           nameFor={nameFor}
           onOpen={handlers.onOpen ?? vi.fn()}
           onRemoveSaved={handlers.onRemoveSaved}
+          onOpenLink={handlers.onOpenLink}
         />
       </FrappThemeProvider>,
     );
@@ -107,6 +125,13 @@ function openButtons(tree: ReactTestRenderer) {
 beforeEach(() => {
   reads.pins.data = [];
   reads.bookmarks.data = [];
+  reads.activity = {
+    ...reads.activity,
+    data: { links: [] },
+    isPending: false,
+    isError: false,
+  };
+  reads.markRead.mockClear();
 });
 
 describe("Pinned messages (#3723)", () => {
@@ -303,5 +328,83 @@ describe("MessageListSheet — dismissed by the thread while closed (#4229)", ()
         />
       </FrappThemeProvider>
     ));
+  });
+});
+
+describe("Links (#5779)", () => {
+  const link = (over: Record<string, unknown> = {}) => ({
+    id: "l1",
+    url: "https://forms.gle/abc",
+    host: "forms.gle",
+    title: "Rush shifts",
+    message_id: "m1",
+    thread_root_id: null,
+    channel_id: "c1",
+    channel_name: "rush",
+    channel_type: "PUBLIC",
+    posted_by: null,
+    posted_by_name: "Olive",
+    posted_at: "2026-11-10T15:00:00.000Z",
+    unread: false,
+    ...over,
+  });
+  const rows = (tree: ReactTestRenderer) =>
+    tree.root.findAllByType(ActivityListRow);
+
+  it("lists the channel's sign-up links under web's title", () => {
+    reads.activity.data = {
+      links: [link(), link({ id: "l2", channel_id: "c2", title: "Elsewhere" })],
+    };
+    const tree = render("links");
+    expect(text(tree)).toContain(LINKS_TITLE);
+    expect(rows(tree).map((row) => row.props.row.title)).toEqual([
+      "Rush shifts",
+    ]);
+  });
+
+  it("opens a row's sheet, and reads it if it was unread", () => {
+    reads.activity.data = {
+      links: [link({ unread: true }), link({ id: "l2", title: "Read one" })],
+    };
+    const onOpenLink = vi.fn();
+    const tree = render("links", { onOpenLink });
+    act(() => rows(tree)[0]!.props.onPress());
+    expect(reads.markRead).toHaveBeenCalledWith([
+      { kind: "link", item_id: "l1" },
+    ]);
+    expect(onOpenLink).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: "link:l1" }),
+    );
+    reads.markRead.mockClear();
+    act(() => rows(tree)[1]!.props.onPress());
+    expect(reads.markRead).not.toHaveBeenCalled();
+    expect(onOpenLink).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: "link:l2" }),
+    );
+  });
+
+  it("says when the channel has none", () => {
+    reads.activity.data = { links: [link({ channel_id: "c2" })] };
+    expect(text(render("links"))).toContain(LINKS_EMPTY);
+  });
+
+  it("holds the rows' place while Activity's read loads", () => {
+    reads.activity = { ...reads.activity, data: undefined, isPending: true };
+    const tree = render("links");
+    expect(rows(tree)).toHaveLength(0);
+    expect(text(tree)).toContain("Loading links");
+    expect(text(tree)).not.toContain(LINKS_EMPTY);
+  });
+
+  it("says a failed read with Retry, never as an empty list", () => {
+    reads.activity = {
+      ...reads.activity,
+      data: undefined,
+      isError: true,
+      error: new TypeError("Network request failed"),
+    };
+    const tree = render("links");
+    expect(text(tree)).toContain("Couldn't load links");
+    expect(text(tree)).not.toContain(LINKS_EMPTY);
   });
 });

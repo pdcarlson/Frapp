@@ -5,6 +5,7 @@ import {
   canReadCardTask,
   readEditableCardTask,
   isTaskStatus,
+  localTaskStatus,
   readLiveTask,
   taskDueLine,
   taskCardControls,
@@ -576,5 +577,69 @@ describe("readEditableCardTask", () => {
     expect(readEditableCardTask(undefined)).toBeNull();
     expect(readEditableCardTask({ ...raw, assignee_id: null })).toBeNull();
     expect(readEditableCardTask({ ...raw, due_date: "" })).toBeNull();
+  });
+});
+
+describe("localTaskStatus (#5774)", () => {
+  // Local constructors, so the case reads the same in any test time zone.
+  const evening = new Date(2026, 10, 19, 22, 11);
+  const afterMidnight = new Date(2026, 10, 20, 0, 30);
+
+  it("keeps a date-only task due today out of Overdue in the evening", () => {
+    const served = {
+      status: "OVERDUE" as const,
+      stored_status: "TODO" as const,
+      due_date: "2026-11-19",
+    };
+    expect(localTaskStatus(served, evening)).toBe("TODO");
+    expect(taskDueLine(served.due_date, "TODO", evening)?.text).toBe(
+      "Due today",
+    );
+  });
+
+  it("calls it overdue once the member's day has ended", () => {
+    const served = {
+      status: "TODO" as const,
+      stored_status: "TODO" as const,
+      due_date: "2026-11-19",
+    };
+    expect(localTaskStatus(served, afterMidnight)).toBe("OVERDUE");
+    expect(taskDueLine(served.due_date, "OVERDUE", afterMidnight)?.text).toBe(
+      "Overdue by 1 day",
+    );
+  });
+
+  it("keeps a started task's status when it is not yet overdue", () => {
+    expect(
+      localTaskStatus(
+        {
+          status: "OVERDUE",
+          stored_status: "IN_PROGRESS",
+          due_date: "2026-11-19",
+        },
+        evening,
+      ),
+    ).toBe("IN_PROGRESS");
+  });
+
+  it("leaves a task due at a time, a finished task and an undated one alone", () => {
+    expect(
+      localTaskStatus(
+        {
+          status: "OVERDUE",
+          stored_status: "TODO",
+          due_date: "2026-11-19",
+          due_at: "2026-11-19T20:00:00.000Z",
+        },
+        evening,
+      ),
+    ).toBe("OVERDUE");
+    expect(
+      localTaskStatus(
+        { status: "COMPLETED", stored_status: "COMPLETED", due_date: "2026-11-18" },
+        evening,
+      ),
+    ).toBe("COMPLETED");
+    expect(localTaskStatus({ status: "TODO" }, evening)).toBe("TODO");
   });
 });

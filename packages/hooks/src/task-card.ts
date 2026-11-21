@@ -93,6 +93,30 @@ export function taskStatusLabel(task: {
 }
 
 /**
+ * A task's display status by the member's own day (#5774). The API calls a
+ * task with only a date `OVERDUE` once that date ends in UTC, which is the
+ * evening in the Americas, while every due line counts days on the device, so
+ * a row read "Due today" under Overdue. This reads a date-only task's overdue
+ * by the device's day instead, so the heading, the badge and the row agree. A
+ * task due at a time keeps the server's status: both sides read one instant.
+ */
+export function localTaskStatus(
+  task: {
+    status: TaskStatus;
+    stored_status?: TaskStatus;
+    due_date?: string | null;
+    due_at?: string | null;
+  },
+  now: Date = new Date(),
+): TaskStatus {
+  if (task.due_at || !task.due_date) return task.status;
+  const stored =
+    task.stored_status ?? (task.status === "OVERDUE" ? "TODO" : task.status);
+  if (stored !== "TODO" && stored !== "IN_PROGRESS") return task.status;
+  return isDueOverdue(task.due_date, now) ? "OVERDUE" : stored;
+}
+
+/**
  * Whether an officer sent the task back and it waits on its assignee again
  * (#4635): stored `IN_PROGRESS` with `sent_back_at` set. An overdue one still
  * counts, since the reason is what the assignee needs to see.

@@ -168,6 +168,14 @@ describe("activityStandingGauges (#4766)", () => {
     ]);
   });
 
+  it("leaves out what the screen already shows (#5779)", () => {
+    const gauges = activityStandingGauges(standing({}), ["points", "study"]);
+    expect(gauges.map((gauge) => gauge.id)).toEqual([
+      "required_events",
+      "service",
+    ]);
+  });
+
   it("leaves out a zero with nothing to aim at, and keeps a zero with a goal", () => {
     const gauges = activityStandingGauges(
       standing({

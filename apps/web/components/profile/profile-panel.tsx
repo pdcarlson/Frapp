@@ -36,6 +36,7 @@ import {
   USER_CITY_MAX_LENGTH,
   USER_COMPANY_MAX_LENGTH,
 } from "@repo/validation";
+import { StandingCards } from "@/components/activity/standing-cards";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -384,6 +385,14 @@ export function ProfilePanel() {
             canEdit={false}
           />
         </section>
+
+        {/*
+          Last week and This semester, beside your numbers (#5779): how you
+          are standing, which Activity no longer shows. Its Points and Service
+          hours are this semester's, beside a goal; the figures above are all
+          time, so both stay.
+        */}
+        {stats.hasChapter ? <StandingCards /> : null}
 
         {/* Non-chapter business roles you pick yourself (#4958). */}
         {canViewMembers ? <PickRolesSection /> : null}

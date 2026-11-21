@@ -1,0 +1,1 @@
+Activity now shows just what you have to do and what you have running, with your week as a small ring beside the title, This semester on your profile, and each channel's sign-up links in its own menu.

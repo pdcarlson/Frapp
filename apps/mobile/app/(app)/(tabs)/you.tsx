@@ -43,6 +43,7 @@ import {
   type EditProfileField,
 } from "@/components/profile/edit-profile-sheet";
 import { ErrorState } from "@/components/state-block";
+import { StandingCards } from "@/components/activity/standing-cards";
 import {
   PointsLabel,
   ProfileDetails,
@@ -83,7 +84,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * The member's points at the top right, beside the title (#5281), then the
  * profile's head (photo and name, `components/you/profile-sections.tsx`), then
- * Status, then the rows the More
+ * Status, then Last week and This semester (`StandingCards`, #5779: how the
+ * member is standing, which Activity no longer shows; web draws them on the
+ * profile beside Points), then the rows the More
  * hub held, then the Admin group, then Details and Bio. The rows come before
  * Details because they are what a member opens the tab for most days; the
  * details are set once and read rarely, so they close the screen.
@@ -354,6 +357,15 @@ export default function YouScreen() {
           onPress={() => statusSheetRef.current?.present()}
         />
       </ListSection>
+
+      {/* Last week and This semester (#5779): only with a chapter, whose
+          reads they are. The strip leaves out Study, whose row below says
+          the same week's hours; its Points and Service hours are this
+          semester's, beside a goal, where the title row and the Service row
+          are all time, so they stay. */}
+      {stats.hasChapter ? (
+        <StandingCards omit={hiddenFeatures.has("study") ? [] : ["study"]} />
+      ) : null}
 
       <ListSection>
         {hiddenFeatures.has("study") ? null : (

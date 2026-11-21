@@ -11,7 +11,6 @@ import {
   BackHandler,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -39,7 +38,7 @@ import {
   activityGroups,
   activityNarrowedNote,
   activityReview,
-  activityWeekStrip,
+  activityRunningCount,
   activityWeekSummary,
   activityRowTaskId,
   findActivityTaskRow,
@@ -49,20 +48,14 @@ import {
   withoutEvents,
   useActivityArchive,
   useActivitySnoozeWake,
-  useActivityRecap,
-  useActivityStanding,
   useActivityUnread,
   useNowDate,
   useCurrentChapter,
-  useClearActivityLinkState,
   useActivityNudge,
   useActivityNudgeActions,
   useMyPermissions,
-  useRemoveActivityLink,
-  useRestoreActivityLink,
   useSetActivityNudgesEnabled,
   type ActivityNudge,
-  useSetActivityLinkState,
   useViewerUserId,
   useActivityFaces,
   useClearMessageReminder,
@@ -71,8 +64,8 @@ import {
   type ActivityArchiveGroup,
   type ActivityGroup,
   type ActivityPart,
+  type ActivityReview,
   type ActivityRow,
-  type ActivityStripDay,
 } from "@repo/hooks";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { messageReminderPresetTime } from "@repo/hooks/use-message-reminders";
@@ -92,7 +85,6 @@ import {
 } from "@/components/activity/activity-row-action";
 import {
   ActivitySheet,
-  type LinkSheetActions,
   type ReminderSheetActions,
 } from "@/components/activity/activity-sheet";
 import { ActivityEditor } from "@/components/activity/activity-editor";
@@ -100,69 +92,53 @@ import { NudgeCard } from "@/components/activity/nudge-card";
 import {
   activityNudgeAskPrompt,
   nudgeShowsRow,
-  withoutWeekNext,
+  withoutNowEvents,
 } from "@/lib/activity/nudge";
-import { RecapCard, recapDismissal } from "@/components/activity/recap-card";
 import { ReviewCard } from "@/components/activity/review-card";
-import {
-  SemesterStrip,
-  SemesterStripSkeleton,
-  type StandingDestination,
-} from "@/components/activity/semester-strip";
-import { WeekCard, WeekCardSkeleton } from "@/components/activity/week-card";
-import { WeekStrip, WeekStripSkeleton } from "@/components/activity/week-strip";
+import { WeekRing, WeekRingSkeleton } from "@/components/activity/week-ring";
 import { NowCard } from "@/components/now-card";
 import { DisclosureGlyph } from "@/components/control-glyphs";
-import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
-import { NavGlyph } from "@/components/nav-glyph";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { ScreenShell } from "@/components/screen-shell";
-import {
-  ErrorState,
-  SkeletonOnCard,
-  SkeletonRegion,
-} from "@/components/state-block";
-import { UNDO_WINDOW_MS, UndoBar } from "@/components/tasks/undo-bar";
+import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import { activityRowActionsAllowed } from "@/lib/activity/row-action";
 import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useRemindMessage } from "@/lib/chat/message-reminder";
-import { openMessageLink } from "@/lib/chat/open-link";
 import { alertFailure } from "@/lib/failure-alert";
 import { pageSurfaces } from "@/lib/surfaces";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { NOTIFICATION_TILE_HUE } from "@repo/hooks/notification-rows";
-import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-import { localIsoDate } from "@repo/formatting";
 import type { ActivityCardKey } from "@repo/validation";
 
 /**
- * Activity: the member's week, what they still have to do, and what waits on
- * others (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a
- * home. Tab 2 since 2026-11-12 (#4610), whose icon carries the count of what
- * needs the member; the task board's door is on the title row.
+ * Activity: what the member still has to do, and what they have running
+ * (#3897, `spec/behavior/activity.md`). An inbox beside chat, not a home.
+ * Tab 2 since 2026-11-12 (#4610), whose icon carries the count of what needs
+ * the member; the task board's door and the week ring are on the title row.
  *
- * Rebuilt around one ring on 2026-11-13 (#4766; Paul: "too many little cards
- * that, with the scale that we have right now, tell me no information"). Top
- * to bottom:
+ * Cut to one home per question on 2026-11-20 (#5779, Paul's direction A):
+ * the week strip, the week card, This semester, Last week, Links and the
+ * Calendar card left. Top to bottom:
  *
- * 0. The week strip (`WeekStrip`, #5310): today and the next six days, a
- *    dot per kind due on each; pressing a day jumps To do to it.
- * 1. The week card (`WeekCard`): done of total this week, a line per kind,
- *    and the one thing to do next.
- * 2. This semester (`SemesterStrip`): up to four gauges, two across.
- * 3. To review (`ReviewCard`): for an officer with something to sign off.
- * 4. To do: the member's own events, tasks, polls and sign-ups by day
- *    (`activityAgenda`), three to a day before "Show more". A line of the
- *    week card narrows it to one kind. Under it, the Calendar row opens the
- *    chapter's whole month (#5310: Calendar folds into Activity).
- * 5. Reminders, Waiting on others, then Links: the chat messages the member
- *    asked to be reminded about (#4957), what they made, and what was posted
- *    for them, each left out when it has nothing.
+ * 0. Now (`NowCard`, #5777): the event on right now. Always first.
+ * 1. The cards the member arranges (`ActivityCardKey`): the Frapp card
+ *    (`NudgeCard`), To do and Running.
+ *    - To do: the member's own events, tasks, polls, sign-ups and due
+ *      reminders by day (`activityAgenda`), three to a day before "Show
+ *      more". Its header holds the Calendar link (the chapter's month).
+ *    - Running: "N to approve" (`ReviewCard`) for an officer with something
+ *      to sign off, then the tasks they assigned, the events they made and
+ *      the polls they posted.
+ * 2. Edit Activity, Snoozed and the Archive at the foot.
+ *
+ * The week ring on the title row (`WeekRing`) is done of total this week;
+ * pressed, it opens a line per kind, and a line narrows To do to its kind.
+ * This semester and Last week are on You, beside Points; a channel's
+ * sign-up links are in its own menu.
  *
  * It is drawn and checked for four people (`principles.md` § Three people):
  * a member with nothing due, an average member, a committee chair and the
@@ -187,14 +163,16 @@ export default function ActivityScreen() {
   const activity = useActivity();
   // The shared 30s clock the poll cards read: a poll whose time runs out
   // leaves the list within a tick, without a re-read (#4258), and the days
-  // and Next stay current while the page is open.
+  // stay current while the page is open.
   const now = useNowDate();
   const viewerId = useViewerUserId();
   // Faces on the rows (#4402, item 4), from the roster chat already reads.
   const faceFor = useActivityFaces();
   // Also on every return to this screen: it stays mounted under the thread
   // or event details it pushes, and a vote cast there is not heard here.
-  const reread = useActivityReread({ standing: true });
+  // You draws the standing and reads it again whenever it comes back into
+  // view, so a check-in here needn't read it.
+  const reread = useActivityReread();
   const chapterRead = useCurrentChapter();
   const chapter = chapterRead.data;
   const chapterModules = chapter?.enabled_modules;
@@ -203,24 +181,7 @@ export default function ActivityScreen() {
     [chapterModules],
   );
   const [openedKey, setOpenedKey] = useState<string | null>(null);
-  // How the member is doing this semester, under the week. Its own read: a
-  // failure leaves the rest of the page as it is. `useActivityReread` reads
-  // it again with the list, on each return and after an action here.
-  const standing = useActivityStanding();
-  // Last week, on Sunday to Tuesday only (`useActivityRecap` reads nothing
-  // the rest of the week), drawn once it lands.
-  const recap = useActivityRecap();
-  // Read the stored dismissals now, well before the recap lands, so a card
-  // the member closed isn't drawn for a frame first.
-  useEffect(() => {
-    void recapDismissal.hydrate();
-  }, []);
   const router = useRouter();
-  // Every destination is a pushed screen: the task board since #4610, and
-  // Calendar (the `events` route) since #5310.
-  const openStanding = (destination: StandingDestination) => {
-    router.push(destination);
-  };
   // The Archive (#5127) in place of the page until the member goes back.
   // Read only while it is open; never stored.
   const [showArchive, setShowArchive] = useState(false);
@@ -236,9 +197,17 @@ export default function ActivityScreen() {
     });
     return () => sub.remove();
   }, [showArchive]);
-  const { linkActions, undo, rereadOnClose, skipNextCloseReread } =
-    useLinkActions();
-  const reminderActions = useReminderActions(skipNextCloseReread);
+  // A reminder's Snooze or Done re-reads Activity itself as it settles, so
+  // the sheet's close, which it causes, doesn't read it a second time.
+  const skipCloseReread = useRef(false);
+  const reminderActions = useReminderActions(() => {
+    skipCloseReread.current = true;
+  });
+  const rereadOnClose = () => {
+    const skip = skipCloseReread.current;
+    skipCloseReread.current = false;
+    return !skip;
+  };
 
   const permissionsRead = useMyPermissions();
   const permissions = permissionsRead.data?.permissions;
@@ -253,7 +222,7 @@ export default function ActivityScreen() {
   );
   const shows = (key: ActivityCardKey) => arrangement.shown.includes(key);
   // Pull to refresh reads the arrangement too, so an edit made on web shows.
-  const refreshPage = useRefetchAll([activity, standing, layout]);
+  const refreshPage = useRefetchAll([activity, layout]);
   const refreshArchive = useRefetchAll([archive]);
   const refresh = showArchive ? refreshArchive : refreshPage;
   const saveLayout = useSaveActivityLayout();
@@ -300,11 +269,11 @@ export default function ActivityScreen() {
       : "all";
   // What the lists show: the read less what the member snoozed, on the
   // screen's own clock, so a snoozed row comes back within a tick of its
-  // time (#4982). The week card counts from the whole read: snoozing
+  // time (#4982). The week ring counts from the whole read: snoozing
   // something doesn't finish it.
-  // The event the Now card shows is at the top (#5777), so To do, the week
-  // card's Next and the Frapp card leave it out rather than say it twice. One
-  // under "+N more on now" keeps its row, since the card doesn't open it.
+  // The event the Now card shows is at the top (#5777), so To do and the
+  // Frapp card leave it out rather than say it twice. One under "+N more on
+  // now" keeps its row, since the card doesn't open it.
   const { events: onNow } = useEventsOnNow();
   const visible = useMemo(
     () =>
@@ -326,78 +295,6 @@ export default function ActivityScreen() {
     () => (visible ? activityAgenda(visible, filter, now) : null),
     [visible, filter, now],
   );
-  // The week strip (#5310) counts what is awake, whatever line narrows To
-  // do. Pressing a day scrolls To do to it: the screen holds the scroll view
-  // and each day section's view, measured against it at the press.
-  const strip = useMemo(
-    () =>
-      visible
-        ? activityWeekStrip(visible, now, agenda?.next?.key ?? null)
-        : null,
-    [visible, now, agenda],
-  );
-  const scrollRef = useRef<ScrollView>(null);
-  const sectionViews = useRef(new Map<string, View>());
-  const bodyView = useRef<View>(null);
-  const bodyTop = useRef(0);
-  const sectionRef = useCallback(
-    (id: string) => (view: View | null) => {
-      if (view) sectionViews.current.set(id, view);
-      else sectionViews.current.delete(id);
-    },
-    [],
-  );
-  // The day last jumped to, by its date, so it stays picked across a
-  // re-read and lets go at midnight when it is no longer on the strip.
-  const [jumpedDay, setJumpedDay] = useState<string | null>(null);
-  const [pendingJump, setPendingJump] = useState<ActivityStripDay | null>(null);
-  const jumpTo = useCallback(
-    (day: ActivityStripDay) => {
-      const scroll = scrollRef.current;
-      if (!scroll) return;
-      const target = day.sections
-        .map((id) => sectionViews.current.get(id))
-        .find((view) => view !== undefined);
-      // The day's one thing is the week card's Next: the top of the page.
-      if (!target) {
-        scroll.scrollTo({ y: 0, animated: true });
-        return;
-      }
-      // Measured against the page's own body, a host view (a node handle
-      // is refused under the New Architecture), whose offset in the scroll
-      // content its layout reports.
-      const body = bodyView.current;
-      if (!body) return;
-      target.measureLayout(body, (_x, y) => {
-        scroll.scrollTo({
-          y: Math.max(0, bodyTop.current + y - tokens.spacing.sm),
-          animated: true,
-        });
-      });
-    },
-    [tokens.spacing.sm],
-  );
-  const selectStripDay = (day: ActivityStripDay) => {
-    setJumpedDay(localIsoDate(day.date));
-    if (filter !== "all") {
-      // A narrowed list may not hold the day: show everything, then jump
-      // once the full list has drawn.
-      setPicked("all");
-      setPendingJump(day);
-    } else {
-      jumpTo(day);
-    }
-  };
-  useEffect(() => {
-    if (!pendingJump || filter !== "all") return undefined;
-    const frame = requestAnimationFrame(() => {
-      jumpTo(pendingJump);
-      setPendingJump(null);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [pendingJump, filter, jumpTo]);
-  const stripSelectedId =
-    strip?.find((day) => localIsoDate(day.date) === jumpedDay)?.id ?? null;
   // Only for the roles that review: a member is never shown the card.
   const review = useMemo(
     () =>
@@ -414,19 +311,15 @@ export default function ActivityScreen() {
         : null,
     [visible, activity.data, permissions, moduleOn, now],
   );
-  // What the member made, and the links posted for them, as the shared
-  // groups build them, in order. Narrowed to a kind, the page is the To do
-  // list alone. A task for everyone the member assigned is one row (#5492).
-  const groups = useMemo(
-    () => (visible ? activityGroups(visible, now) : []),
-    [visible, now],
-  );
-  const below =
-    filter === "all"
-      ? groups.filter(
-          (group) => group.rows.length > 0 || group.unavailable.length > 0,
-        )
-      : [];
+  // What the member assigned, made and posted, under Running, as the shared
+  // group builds it. Narrowed to a kind, the page is the To do list alone. A
+  // task for everyone the member assigned is one row (#5492).
+  const running = useMemo(() => {
+    const group = visible ? (activityGroups(visible, now)[0] ?? null) : null;
+    return group && (group.rows.length > 0 || group.unavailable.length > 0)
+      ? group
+      : null;
+  }, [visible, now]);
   // The open row as the latest read has it. A row that has left the list (a
   // vote cast, a completion confirmed) is `null` here and the sheet keeps
   // drawing the one it was opened with, so the member sees the result of
@@ -436,11 +329,11 @@ export default function ActivityScreen() {
     const row = [
       ...(agenda?.rows ?? []),
       ...(review?.rows ?? []),
-      ...groups.flatMap((group) => group.rows),
+      ...(running?.rows ?? []),
       ...snoozedRows,
     ].find((candidate) => candidate.key === openedKey);
     return row ?? null;
-  }, [agenda, review, groups, snoozedRows, openedKey]);
+  }, [agenda, review, running, snoozedRows, openedKey]);
   const [opened, setOpened] = useState<ActivityRow | null>(null);
   const sheetRow = openedKey === null ? null : (openRow ?? opened);
 
@@ -448,24 +341,18 @@ export default function ActivityScreen() {
   // member, and a tray of the next few, picked by the server from Activity's
   // own reads. It shows with or without AI; AI only adds a sentence, so it is
   // asked for on every Activity. Any failure is no card. It is asked again
-  // after acting on what it or the week card's Next opened: when their sheet
-  // closes, when the member comes back from the task screen they pushed, and
+  // after acting on what it opened: when its sheet closes, when the member comes back from the task screen they pushed, and
   // after a write from a row's menu.
   // A hidden card isn't asked for: the read can cost a model call.
   // It waits for the arrangement, so a member who hid it never sends one.
   const nudgeRead = useActivityNudge({
     enabled: !layout.isPending && shows("nudge"),
   });
-  // Never the week card's Next or the Now card's event a second time: when
-  // the card's pick is one of them, the tray's first takes its place.
+  // Never the Now card's event a second time: when the card's pick is it,
+  // the tray's first takes its place.
   const nudge = useMemo(
-    () =>
-      withoutWeekNext(
-        nudgeRead.data,
-        agenda?.next?.key ?? null,
-        nowCardEventIds(onNow),
-      ),
-    [nudgeRead.data, agenda?.next?.key, onNow],
+    () => withoutNowEvents(nudgeRead.data, nowCardEventIds(onNow)),
+    [nudgeRead.data, onNow],
   );
   const nudgeActions = useActivityNudgeActions();
   const recheckNudge = nudgeActions.recheck;
@@ -487,34 +374,6 @@ export default function ActivityScreen() {
     void recheckNudge();
   }, [reread, recheckNudge]);
   const rowMenu = useActivityRowMenu({ onWrote: afterMenuWrite });
-  // One Undo bar at a time, the newest: a link's Done and a menu's Mark
-  // done each replace the other's bar rather than wait behind it, so no
-  // window runs out unseen. Adjusted while rendering, as React documents for
-  // state that follows a prop.
-  const linkUndoKey = undo?.key ?? null;
-  const taskUndoKey = rowMenu.undoKey;
-  const [undoOrder, setUndoOrder] = useState<{
-    link: number | null;
-    task: number | null;
-    newest: "link" | "task";
-  }>({ link: linkUndoKey, task: taskUndoKey, newest: "link" });
-  if (undoOrder.link !== linkUndoKey || undoOrder.task !== taskUndoKey) {
-    const newest =
-      taskUndoKey !== null && taskUndoKey !== undoOrder.task
-        ? "task"
-        : linkUndoKey !== null && linkUndoKey !== undoOrder.link
-          ? "link"
-          : undoOrder.newest;
-    setUndoOrder({ link: linkUndoKey, task: taskUndoKey, newest });
-  }
-  const undoShown: "link" | "task" | null =
-    taskUndoKey !== null &&
-    (linkUndoKey === null || undoOrder.newest === "task")
-      ? "task"
-      : linkUndoKey !== null
-        ? "link"
-        : null;
-
   // Dots (#4405): opening a row from here is what reads it; scrolling past
   // doesn't, and neither does acting on the item elsewhere in Frapp.
   const { markRead } = useActivityUnread(activity.data);
@@ -526,9 +385,9 @@ export default function ActivityScreen() {
     // sign-off too: the screen holds Confirm and Send back (#5513).
     const taskId = activityRowTaskId(row);
     if (taskId !== null) {
-      // What the card or the week card's Next opened is asked again on the
-      // way back, as a sheet's close asks it.
-      if (nudgeShowsRow(nudge, row.key) || row.key === agenda?.next?.key) {
+      // What the card opened is asked again on the way back, as a sheet's
+      // close asks it.
+      if (nudgeShowsRow(nudge, row.key)) {
         recheckOnReturn.current = true;
       }
       router.push({ pathname: "/task-details", params: { id: taskId } });
@@ -708,14 +567,10 @@ export default function ActivityScreen() {
           <NowCard />
           <SkeletonRegion label="Loading activity" flush>
             <View style={styles.body}>
-              <WeekStripSkeleton />
-              {/* Two cards: their bars sit on the card, not the page. */}
-              <SkeletonOnCard>
-                <WeekCardSkeleton />
-                <SemesterStripSkeleton />
-              </SkeletonOnCard>
               <View>
-                <SectionHeader>To do</SectionHeader>
+                {/* The month needs none of this read, so its door is never
+                    gone. */}
+                <ToDoHeader count={null} />
                 {Array.from({ length: 4 }, (_, index) => (
                   <ActivityRowSkeleton
                     key={index}
@@ -726,8 +581,6 @@ export default function ActivityScreen() {
               </View>
             </View>
           </SkeletonRegion>
-          {/* The month needs none of this read, so its door is never gone. */}
-          {shows("calendar") ? <CalendarRow /> : null}
         </>
       );
     }
@@ -743,23 +596,15 @@ export default function ActivityScreen() {
             onRetry={() => void activity.refetch()}
             isRetrying={activity.isFetching}
           />
-          {shows("calendar") ? <CalendarRow /> : null}
+          <CalendarLink />
         </>
       );
     }
-    if (!summary || !agenda) {
-      return shows("calendar") ? <CalendarRow /> : null;
-    }
+    if (!agenda) return <CalendarLink />;
     // Each card the member may move or hide, drawn where their arrangement
     // puts it. A card with nothing in it is null, as before: no empty card.
-    // Narrowed to a kind by the week card, the page is the To do list, so the
-    // groups under it step out.
-    const group = (id: (typeof below)[number]["id"]) => {
-      const found = below.find((g) => g.id === id);
-      return found ? (
-        <GroupSection group={found} rowActions={rowActions} onOpen={open} />
-      ) : null;
-    };
+    // Narrowed to a kind by the week ring, the page is the To do list, so
+    // Running steps out.
     const cards: Record<ActivityCardKey, ReactNode> = {
       nudge: nudge?.card ? (
         <NudgeCard
@@ -773,59 +618,29 @@ export default function ActivityScreen() {
           onSeen={(id) => nudgeActions.markSeen(id)}
         />
       ) : null,
-      recap: recap.data ? <RecapCard recap={recap.data} now={now} /> : null,
-      semester: standing.isPending ? (
-        <SemesterStripSkeleton />
-      ) : standing.data ? (
-        <SemesterStrip standing={standing.data} onOpen={openStanding} />
-      ) : null,
-      review: review ? (
-        <ReviewCard review={review} rowActions={rowActions} onOpen={open} />
-      ) : null,
       todo: (
         <ToDoSection
           days={agenda.days}
           unavailable={agenda.unavailable}
           filter={filter}
-          // The one thing left is already on the week card.
-          onCard={agenda.next !== null}
           onShowAll={() => setPicked("all")}
           rowActions={rowActions}
           onOpen={open}
-          sectionRef={sectionRef}
         />
       ),
-      calendar: <CalendarRow />,
-      reminders: group("reminders"),
-      waiting: group("made-by-you"),
-      links: group("links"),
+      running:
+        filter === "all" && (review || running) ? (
+          <RunningSection
+            review={review}
+            group={running}
+            rowActions={rowActions}
+            onOpen={open}
+          />
+        ) : null,
     };
     return (
-      <View
-        ref={bodyView}
-        // A direct child of the scroll content, so its y is its offset there.
-        onLayout={(event) => {
-          bodyTop.current = event.nativeEvent.layout.y;
-        }}
-        style={styles.body}
-      >
+      <View style={styles.body}>
         <NowCard />
-        {strip ? (
-          <WeekStrip
-            days={strip}
-            selectedId={stripSelectedId}
-            onSelect={selectStripDay}
-          />
-        ) : null}
-        <WeekCard
-          summary={summary}
-          next={agenda.next}
-          nextLabel={agenda.nextLabel}
-          filter={filter}
-          onFilter={setPicked}
-          rowActions={rowActions}
-          onOpenNext={open}
-        />
         {arrangement.shown.map((key) => (
           <Fragment key={key}>{cards[key]}</Fragment>
         ))}
@@ -843,14 +658,30 @@ export default function ActivityScreen() {
     );
   }
 
+  // The week ring and the task board's door share the title row. Neither
+  // shows over the Archive or the editor, which the ring doesn't narrow.
+  const onPage = !editing && !showArchive;
+  const ring = !onPage ? null : summary ? (
+    <WeekRing summary={summary} filter={filter} onFilter={setPicked} />
+  ) : activity.isPending ? (
+    <WeekRingSkeleton />
+  ) : null;
+  const board = moduleOn("tasks") ? <TaskBoardLink /> : null;
+
   return (
     <ActivityFaces.Provider value={faceFor}>
       <ActivityRowMenuContext.Provider value={rowMenu.menuFor}>
         <ScreenShell
           title="Activity"
           refresh={refresh}
-          scrollRef={scrollRef}
-          headerAction={moduleOn("tasks") ? <TaskBoardLink /> : undefined}
+          headerAction={
+            ring || board ? (
+              <View style={styles.headerActions}>
+                {ring}
+                {board}
+              </View>
+            ) : undefined
+          }
         >
           {renderBody()}
           <ActivitySheet
@@ -867,7 +698,6 @@ export default function ActivityScreen() {
               // other sheet leaves the card as it was.
               if (nudgeShowsRow(nudge, closedKey)) void nudgeActions.recheck();
             }}
-            linkActions={linkActions}
             reminderActions={reminderActions}
           />
           {askDraft !== null ? (
@@ -880,13 +710,9 @@ export default function ActivityScreen() {
           ) : null}
           {rowMenu.host}
         </ScreenShell>
-        {/* Outside the scroll, as the board's: a link's Undo or a Mark
-            done's from a row's menu, the newer one while both run. */}
-        {undoShown === "task" ? (
-          rowMenu.undoBar
-        ) : undo ? (
-          <UndoBar key={undo.key} message={undo.message} onUndo={undo.run} />
-        ) : null}
+        {/* Outside the scroll, as the board's: a Mark done's from a row's
+            menu. */}
+        {rowMenu.undoBar}
       </ActivityRowMenuContext.Provider>
     </ActivityFaces.Provider>
   );
@@ -915,113 +741,6 @@ function TaskBoardLink() {
       <Text style={styles.boardLinkText}>Task board</Text>
     </Pressable>
   );
-}
-
-/**
- * The sign-up link writes (`spec/behavior/activity.md` § Links), owned by the
- * screen: each takes the row off the list at once, which closes its sheet,
- * and the "Undo" bar that follows (the tasks board's, for the same few
- * seconds) has to outlive the sheet. Remove is `channels:manage`'s, as in
- * chat. A write that fails puts the row back and says so.
- */
-function useLinkActions() {
-  const router = useRouter();
-  const permissions = useMyPermissions();
-  const markDone = useSetActivityLinkState("done");
-  const hide = useSetActivityLinkState("hidden");
-  const clearState = useClearActivityLinkState();
-  const remove = useRemoveActivityLink();
-  const restore = useRestoreActivityLink();
-  const [undo, setUndo] = useState<{
-    message: string;
-    run: () => void;
-    key: number;
-  } | null>(null);
-  const skipCloseReread = useRef(false);
-  useEffect(() => {
-    if (!undo) return undefined;
-    const timer = setTimeout(() => setUndo(null), UNDO_WINDOW_MS);
-    return () => clearTimeout(timer);
-  }, [undo]);
-
-  type LinkRow = Extract<ActivityRow, { kind: "link" }>;
-  // Each write's own promise, not `mutate`'s per-call callbacks, which a
-  // second Done before the first answers would cancel (`useLinkWrite`).
-  type Write = { mutateAsync: (id: string) => Promise<unknown> };
-  const failed = (title: string, retry: () => void) => (error: unknown) =>
-    alertFailure({ title, error, retry });
-  function act(
-    write: Write,
-    message: string,
-    takeBack: Write,
-    failure: string,
-  ): (row: LinkRow) => void {
-    // `send` is the write itself; Try again repeats only it. The sheet's
-    // close flag is set once, by the press that closes the sheet: a retry
-    // from the alert closes nothing, and setting it then would skip the
-    // re-read of whatever sheet the member closes next.
-    const send = (row: LinkRow) => {
-      const undoWrite = () => {
-        takeBack
-          .mutateAsync(row.link.id)
-          .catch(failed("Couldn't undo", undoWrite));
-      };
-      write.mutateAsync(row.link.id).then(
-        () =>
-          setUndo((open) => ({
-            message,
-            // A new key per action, so the bar is announced again.
-            key: (open?.key ?? 0) + 1,
-            run: () => {
-              setUndo(null);
-              undoWrite();
-            },
-          })),
-        failed(failure, () => send(row)),
-      );
-    };
-    return (row: LinkRow) => {
-      // The sheet closes as this starts; the write re-reads Activity itself
-      // when it settles, and a re-read on close would race it.
-      skipCloseReread.current = true;
-      send(row);
-    };
-  }
-
-  const linkActions: LinkSheetActions = {
-    canRemove: can("channels:manage", permissions.data?.permissions ?? []),
-    open: (row) => void openMessageLink(row.link.url),
-    done: act(markDone, "Marked done", clearState, "Couldn't mark it done"),
-    hide: act(hide, "Hidden", clearState, "Couldn't hide it"),
-    remove: act(
-      remove,
-      "Removed from everyone's Activity",
-      restore,
-      "Couldn't remove it",
-    ),
-    openInChat: (row) =>
-      // A thread reply isn't on the channel's timeline: open its thread.
-      router.push({
-        pathname: "/chat-thread",
-        params: row.link.thread_root_id
-          ? {
-              channelId: row.link.channel_id,
-              threadRootId: row.link.thread_root_id,
-            }
-          : { channelId: row.link.channel_id },
-      }),
-  };
-  /** Whether the sheet's close should re-read; false once after a link write. */
-  const rereadOnClose = () => {
-    const skip = skipCloseReread.current;
-    skipCloseReread.current = false;
-    return !skip;
-  };
-  /** For another write that re-reads Activity itself as it settles. */
-  const skipNextCloseReread = () => {
-    skipCloseReread.current = true;
-  };
-  return { linkActions, undo, rereadOnClose, skipNextCloseReread };
 }
 
 /**
@@ -1075,41 +794,31 @@ function useReminderActions(
 /**
  * "To do": the member's own list by day (#4766), as Things' Today and
  * Todoist's Upcoming draw one. Overdue leads in the warning hue, then what
- * is open for check-in now, then each day. What waits on the member's review
- * is never here (`ReviewCard`).
+ * is open for check-in now, then each day; due reminders sit on their day
+ * (#5779). What waits on the member's review is never here (Running).
  */
 function ToDoSection({
   days,
   unavailable,
   filter,
-  onCard,
   onShowAll,
   rowActions,
   onOpen,
-  sectionRef,
 }: {
   days: ActivityAgendaDay[];
   unavailable: ActivityGroup["unavailable"];
   filter: ActivityAgendaFilter;
-  /** The week card holds the next thing, so an empty list isn't "nothing". */
-  onCard: boolean;
   onShowAll: () => void;
   /** Check in on an open event's row (#4427); `null` while refused. */
   rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
-  /** Where the week strip finds each day to jump to (#5310). */
-  sectionRef: (id: string) => (view: View | null) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const count = days.reduce((sum, day) => sum + day.rows.length, 0);
-  // Its one thing is on the week card: a heading over nothing says nothing.
-  if (count === 0 && onCard && filter === "all" && unavailable.length === 0) {
-    return null;
-  }
   return (
     <View style={styles.group}>
-      <SectionHeader count={count || null}>To do</SectionHeader>
+      <ToDoHeader count={count || null} />
       {filter !== "all" ? (
         <InlineNote
           action={{ label: ACTIVITY_SHOW_EVERYTHING, onPress: onShowAll }}
@@ -1133,7 +842,6 @@ function ToDoSection({
           day={day}
           rowActions={rowActions}
           onOpen={onOpen}
-          viewRef={sectionRef(day.id)}
         />
       ))}
     </View>
@@ -1149,12 +857,10 @@ function DaySection({
   day,
   rowActions,
   onOpen,
-  viewRef,
 }: {
   day: ActivityAgendaDay;
   rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
-  viewRef: (view: View | null) => void;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -1174,7 +880,7 @@ function DaySection({
           // the Calendar's day headings are (`DayHeading`, #4138).
           { color: tokens.color.text.foreground };
   return (
-    <View ref={viewRef} testID={`activity-day-${day.id}`}>
+    <View testID={`activity-day-${day.id}`}>
       <View
         accessible
         accessibilityRole="header"
@@ -1212,16 +918,65 @@ function DaySection({
 }
 
 /**
- * A group under the To do list: Waiting on others (the polls the member
- * posted, the events they made, the tasks they assigned), or Links. The
- * screen leaves a group with nothing in it out, so there is no empty line.
+ * To do's heading, with the Calendar link at its end (#5779): the chapter's
+ * whole month, optional events included, one press from the list that
+ * already runs by day, where the Calendar card was (#5310). Apple Reminders
+ * and Things keep a list's other views in its header the same way.
  */
-function GroupSection({
+function ToDoHeader({ count }: { count: number | null }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View style={styles.headerRow}>
+      <View style={styles.headerLabel}>
+        <SectionHeader count={count}>To do</SectionHeader>
+      </View>
+      <CalendarLink />
+    </View>
+  );
+}
+
+/** "Calendar ›": the chapter's month, a pushed screen since #5310. */
+function CalendarLink() {
+  const router = useRouter();
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Calendar"
+      accessibilityHint="Opens the chapter's month."
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      onPress={() => router.push("/events")}
+      testID="activity-calendar-link"
+      style={({ pressed }) => [
+        styles.calendarLink,
+        pressed ? styles.pressed : null,
+      ]}
+    >
+      <Text style={[styles.showAllText, { color: accent }]}>Calendar</Text>
+      <DisclosureGlyph color={accent} direction="right" />
+    </Pressable>
+  );
+}
+
+/**
+ * "Running" (#5779): what the member has going, where To review and Waiting
+ * on others were. "N to approve" leads (`ReviewCard`), for an officer with
+ * something to sign off; then the tasks they assigned with their progress,
+ * the events they made with their headcount, and the polls they posted. The
+ * screen leaves it out when it has nothing, so there is no empty heading.
+ * Linear's "My issues" splits Assigned from Created the same way.
+ */
+function RunningSection({
+  review,
   group,
   rowActions,
   onOpen,
 }: {
-  group: ActivityGroup;
+  review: ActivityReview | null;
+  group: ActivityGroup | null;
   rowActions: ActivityRowActions | null;
   onOpen: (row: ActivityRow) => void;
 }) {
@@ -1229,16 +984,19 @@ function GroupSection({
   const styles = createStyles(tokens);
   return (
     <View style={styles.group}>
-      <SectionHeader count={group.rows.length || null}>
-        {group.label}
+      <SectionHeader count={activityRunningCount(review, group)}>
+        Running
       </SectionHeader>
-      {group.unavailable.length > 0 ? (
+      {review ? (
+        <ReviewCard review={review} rowActions={rowActions} onOpen={onOpen} />
+      ) : null}
+      {group && group.unavailable.length > 0 ? (
         // A section the read could not load is said, never shown as empty.
         <InlineNote tone="warning">
           {`${activityCouldNotLoad(group.unavailable)} Pull down to try again.`}
         </InlineNote>
       ) : null}
-      {group.parts.map((part) => (
+      {group?.parts.map((part) => (
         <GroupPart
           key={part.id}
           part={part}
@@ -1251,48 +1009,10 @@ function GroupSection({
 }
 
 /**
- * The Calendar row at the foot of To do (#5310, Paul's direction B): the
- * chapter's whole month, optional events included, one press from the list
- * that already runs by day. A place, so its tile wears the Events hue, as
- * an event notice's does, and a chevron says it opens a screen.
- */
-function CalendarRow() {
-  const router = useRouter();
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  const hue = NOTIFICATION_TILE_HUE.events;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Calendar"
-      accessibilityHint="Opens the chapter's month."
-      onPress={() => router.push("/events")}
-      testID="activity-calendar-row"
-      style={({ pressed }) => [
-        styles.calendarRow,
-        pressed ? styles.pressed : null,
-      ]}
-    >
-      <LeadTile hue={hue}>
-        <NavGlyph
-          paths={NAV_GLYPHS.events}
-          color={hue}
-          size={LEAD_TILE_GLYPH}
-        />
-      </LeadTile>
-      <Text style={styles.calendarLabel}>Calendar</Text>
-      <DisclosureGlyph
-        color={tokens.color.text.mutedForeground}
-        direction="right"
-      />
-    </Pressable>
-  );
-}
-
-/**
  * Edit Activity (#5520), at the foot of the page above Snoozed and the
  * Archive, where Bevel puts Edit Home and Apple Fitness puts Edit Summary.
- * A plain bordered control: the accent stays with the page's one ask.
+ * A plain bordered control sized to its words (no full-width buttons,
+ * #5708): the accent stays with the page's one ask.
  */
 function EditActivityLink({ onPress }: { onPress: () => void }) {
   const { tokens } = useFrappTheme();
@@ -1502,8 +1222,8 @@ function SnoozedPart({
 }
 
 /**
- * One run of a group's rows (#4173): one kind under Waiting on others, or
- * the whole group. A long part draws its first few rows and a "Show all" for
+ * One run of Running's rows (#4173): the tasks the member assigned, the
+ * events they made, or the polls they posted. A long part draws its first few rows and a "Show all" for
  * the rest, so one busy kind doesn't bury the screen. Drawn from
  * `group.parts`, never `group.rows`: the parts carry the caps and the
  * headings.
@@ -1581,6 +1301,11 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: pageSurfaces(tokens).card,
       justifyContent: "center",
     },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
     boardLinkText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
@@ -1609,16 +1334,16 @@ function createStyles(tokens: SignetTokens) {
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
     },
-    calendarRow: {
+    headerRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
+      gap: tokens.spacing.sm,
     },
-    calendarLabel: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
-      flex: 1,
+    headerLabel: { flex: 1, minWidth: 0 },
+    calendarLink: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 2,
     },
     archiveTitle: {
       ...typeRole(tokens.typography.role.title),
@@ -1629,6 +1354,8 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.mutedForeground,
     },
     editLink: {
+      alignSelf: "flex-start",
+      paddingHorizontal: tokens.spacing.lg,
       minHeight: tokens.touch.minimum,
       borderRadius: tokens.radius.control,
       borderWidth: 1,

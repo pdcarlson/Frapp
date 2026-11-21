@@ -1,7 +1,7 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
 import { eventOnAt, signUpLinkKind, taskGroupLabel } from "@repo/validation";
-import { isSentBack, taskStatusLabel } from "./task-card";
+import { isSentBack, localTaskStatus, taskStatusLabel } from "./task-card";
 import {
   closesAtHasPassed,
   formatDueLabel,
@@ -119,7 +119,7 @@ interface RowBase {
    * it (#4402, item 4): the poster of a poll or link, whoever assigned a task
    * to the member, the member whose completion or hours wait on them. `null`
    * when there is no one else to show (an event, a task the member set
-   * themselves, Waiting on others), and the row leads with its glyph. A client that
+   * themselves, Running), and the row leads with its glyph. A client that
    * can't resolve the id on the roster (they have left) draws the glyph too.
    */
   faceId: string | null;
@@ -135,7 +135,7 @@ interface RowBase {
   /**
    * Whether the member hasn't opened it from Activity since it started
    * waiting on them (`spec/behavior/activity.md` § Unread): the row draws a
-   * dot. Never on a Waiting on others row.
+   * dot. Never on a Running row.
    */
   unread: boolean;
   /**
@@ -144,7 +144,7 @@ interface RowBase {
    */
   readRef: ActivityItemRef | null;
   /**
-   * How far along a Waiting on others row is (#4792): an open poll the member
+   * How far along a Running row is (#4792): an open poll the member
    * posted, or an event they made once its check-in has opened. A client
    * draws it as a thin bar with `label` beside it. `null` on every other row,
    * and when the read has no count for it (never "0 of 0").
@@ -254,7 +254,7 @@ export type ActivityRow = RowBase &
 
 /**
  * A run of rows inside a group, under its own small heading: one per kind
- * under Waiting on others (#4173). A group with one part draws it with no
+ * under Running (#4173). A group with one part draws it with no
  * heading.
  */
 export interface ActivityPart {
@@ -267,7 +267,7 @@ export interface ActivityPart {
 }
 
 export interface ActivityGroup {
-  id: "reminders" | "made-by-you" | "links";
+  id: "running";
   label: string;
   /** Every row of the group, in order: the parts' rows end to end. */
   rows: ActivityRow[];
@@ -466,12 +466,14 @@ function cardRow(
 }
 
 function taskRow(
-  task: ActivityTask,
+  served: ActivityTask,
   group: string,
   role: "mine" | "confirm" | "assigned",
   now: Date,
   when: RowWhen = "dated",
 ): ActivityRow {
+  // Overdue by the member's own day, not the server's UTC one (#5774).
+  const task = { ...served, status: localTaskStatus(served, now) };
   // A finished task has no countdown: "Overdue by 2 days" under a task that is
   // done would be wrong.
   const finished = task.stored_status === "COMPLETED";
@@ -760,8 +762,8 @@ export function activityDetailParts(
   };
 }
 
-/** How many of each kind Waiting on others draws before "Show all". */
-const ACTIVITY_MADE_BY_YOU_LIMIT = 3;
+/** How many of each kind Running draws before "Show all". */
+const ACTIVITY_RUNNING_LIMIT = 3;
 
 function part(
   id: string,
@@ -773,16 +775,18 @@ function part(
 }
 
 /**
- * The groups the page draws under the To do list, in order (#4766): Waiting
- * on others, which is what the member made (the polls they posted, the
- * events they made, the tasks they assigned), one part per kind and a few
- * rows each, so one busy kind doesn't bury the others; then Links. A client
- * leaves out a group with no rows and nothing that failed.
+ * Running (#5779, Paul's direction A, 2026-11-20): what the member made and
+ * is waiting on others for, one part per kind and a few rows each, so one
+ * busy kind doesn't bury the others. The tasks they assigned with how many
+ * are done, then the events they made with who checked in, then the polls
+ * they posted. What waits on their own OK leads the section on each client
+ * as one "to approve" row (`activityReview`), so this is To review and
+ * Waiting on others in one place. A client leaves it out when it has no
+ * rows and nothing failed.
  *
- * The member's own things are the To do list (`activityToDos`), and what
- * waits on their review is the To review card (`activityReviewRows`). Until
- * #4766 this also built "Needs you" (split into Now and Later) and "Coming
- * up", narrowed by a row of filter chips.
+ * The member's own things are the To do list (`activityToDos`), Reminders
+ * included since #5779. Links moved to the channel they were posted in
+ * (`activityChannelLinks`).
  */
 export function activityGroups(
   activity: Activity,
@@ -791,13 +795,6 @@ export function activityGroups(
   const down = new Set(activity.unavailable);
   const downFor = (sections: ActivitySection[]) =>
     sections.filter((section) => down.has(section));
-  const links = activity.links.map((link) => linkRow(link, now));
-  // Due first (the read orders by time, so the oldest due leads), then the
-  // ones still waiting, soonest first. `?? []`: a read from an API before
-  // #4957 has no field.
-  const reminders = (activity.reminders ?? []).map((reminder) =>
-    reminderRow(reminder, now),
-  );
 
   // A poll that closes, by time or by hand, leaves the list on the page's
   // clock; the next read leaves it out, and it is in the Archive (#5127).
@@ -811,51 +808,45 @@ export function activityGroups(
 
   return [
     {
-      // The member's own reminders on chat messages (#4957), apart from the
-      // To do list: Slack keeps them in Later, beside saved items.
-      id: "reminders",
-      label: "Reminders",
-      rows: reminders,
-      parts: part("all", null, reminders, null),
-      unavailable: downFor(["reminders"]),
-    },
-    {
-      // What the member made, listed for what it still waits on.
-      id: "made-by-you",
-      label: "Waiting on others",
-      rows: [...madePolls, ...madeEvents, ...madeTasks],
+      id: "running",
+      label: "Running",
+      rows: [...madeTasks, ...madeEvents, ...madePolls],
       parts: [
         ...part(
-          "polls",
-          "Polls you posted",
-          madePolls,
-          ACTIVITY_MADE_BY_YOU_LIMIT,
+          "tasks",
+          "Tasks you assigned",
+          madeTasks,
+          ACTIVITY_RUNNING_LIMIT,
         ),
         ...part(
           "events",
           "Events you made",
           madeEvents,
-          ACTIVITY_MADE_BY_YOU_LIMIT,
+          ACTIVITY_RUNNING_LIMIT,
         ),
-        ...part(
-          "tasks",
-          "Tasks you assigned",
-          madeTasks,
-          ACTIVITY_MADE_BY_YOU_LIMIT,
-        ),
+        ...part("polls", "Polls you posted", madePolls, ACTIVITY_RUNNING_LIMIT),
       ],
-      unavailable: downFor(["polls", "made_events", "tasks"]),
-    },
-    {
-      // Their own group, not the To do list: a link may or may not be for
-      // this member, and Frapp can't see one filled in (spec § Links).
-      id: "links",
-      label: "Links",
-      rows: links,
-      parts: part("all", null, links, null),
-      unavailable: downFor(["links"]),
+      unavailable: downFor(["tasks", "made_events", "polls"]),
     },
   ];
+}
+
+/**
+ * The sign-up links posted in one channel (#5779), for the channel's own
+ * Links list, where Discord keeps them beside Pins. Activity listed every
+ * channel's until then (spec § Links). It draws on Activity's read, which
+ * serves only the links still open to the member (none they posted, marked
+ * done or hid) and at most 25 across the chapter, so a busy chapter's list
+ * can miss an older one (#5809).
+ */
+export function activityChannelLinks(
+  activity: Activity,
+  channelId: string,
+  now: Date = new Date(),
+): ActivityRow[] {
+  return activity.links
+    .filter((link) => link.channel_id === channelId)
+    .map((link) => linkRow(link, now));
 }
 
 /**
@@ -867,16 +858,24 @@ export function activityGroups(
  * confirmed ones, which are finished and in the Archive (#5127).
  */
 function madeTaskRows(activity: Activity, now: Date): ActivityRow[] {
+  // A task the member gave themselves is theirs to do: a row in To do, or in
+  // Snoozed while they put it off, which say the same thing. Running is for
+  // what others are doing (#5779). Judged by the task, not by To do's list,
+  // which a snooze empties of it.
+  const own = (task: { assignee_id: string | null; created_by: string }) =>
+    task.assignee_id === task.created_by;
   const items = activity.made_by_you.task_items ?? null;
   if (items) {
-    return items.map((item) =>
-      item.kind === "group"
-        ? taskGroupRow(item.group, now)
-        : taskRow(item.task, "made", "assigned", now),
-    );
+    return items
+      .filter((item) => item.kind === "group" || !own(item.task))
+      .map((item) =>
+        item.kind === "group"
+          ? taskGroupRow(item.group, now)
+          : taskRow(item.task, "made", "assigned", now),
+      );
   }
   return activity.made_by_you.tasks
-    .filter((task) => !task.confirmed_at)
+    .filter((task) => !task.confirmed_at && !own(task))
     .map((task) => taskRow(task, "made", "assigned", now));
 }
 
@@ -898,9 +897,10 @@ export interface ActivityToDo {
 }
 
 /**
- * The member's own to-dos (#4766): their events, their open tasks, and the
- * polls, sign-ups and forms they haven't answered, in the read's order. Never
- * what waits on their review (`activityReviewRows`). A row's key is its
+ * The member's own to-dos (#4766): their events, their open tasks, the
+ * polls, sign-ups and forms they haven't answered, and their reminders on
+ * chat messages (#5779), in the read's order. Never what waits on their
+ * review (`activityReviewRows`). A row's key is its
  * record's (`needs:task:<id>`, `needs:poll:<id>`), the same on every re-read,
  * so a sheet opened on one finds it again.
  */
@@ -949,7 +949,7 @@ export function activityToDos(
       both(
         (when) => toDoTaskRow(taskRow(task, "needs", "mine", now, when)),
         parseInstantOrBareLocalNoon(task.due_at ?? task.due_date),
-        { overdue: task.status === "OVERDUE" },
+        { overdue: localTaskStatus(task, now) === "OVERDUE" },
       ),
     ),
     ...activity.needs_you.polls
@@ -968,7 +968,33 @@ export function activityToDos(
           card.closes_at ? parseInstant(card.closes_at) : null,
         ),
       ),
+    // The member's reminders on chat messages (#4957), on the day they come
+    // back (#5779). One already due is today's, after today's own things, so
+    // a few left from earlier in the week never push tonight's task behind
+    // "Show more". Its row names its day either way. `?? []`: a read from an
+    // API before #4957 has no field.
+    ...(activity.reminders ?? []).map((reminder) => {
+      const at = parseInstant(reminder.remind_at);
+      const due = at !== null && at.getTime() <= now.getTime();
+      return both(
+        () => reminderRow(reminder, now),
+        due ? endOfLocalDay(now) : at,
+      );
+    }),
   ];
+}
+
+/** The last moment of `now`'s day on this device. */
+function endOfLocalDay(now: Date): Date {
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
 }
 
 /**

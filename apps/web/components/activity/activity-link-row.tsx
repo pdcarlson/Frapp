@@ -114,7 +114,7 @@ export function useActivityLinkActions(): ActivityLinkActions {
       act(
         remove,
         row,
-        "Removed from everyone's Activity",
+        "Removed for everyone",
         restore,
         "Couldn't remove the link",
       ),
@@ -129,7 +129,7 @@ export function useActivityLinkActions(): ActivityLinkActions {
  * Later put their check, because it is what a member does after filling one
  * in. The rest is in the row's menu (⋯, or a right-click off the link): Hide
  * ("Not chapter business"), Open in chat, and for an officer
- * (`channels:manage`) Remove, which takes it off everyone's Activity. Each
+ * (`channels:manage`) Remove, which takes it off everyone's list. Each
  * takes the row away at once and offers Undo, since none of them can be seen
  * again from this page.
  */
@@ -139,14 +139,11 @@ export function ActivityLinkRow({
   canRemove,
   actions,
   onOpen,
-  leadEntries = [],
 }: {
   row: LinkRow;
   rowClassName: string;
   canRemove: boolean;
   actions: ActivityLinkActions;
-  /** Entries before the link's own: the page's snooze times (#4982). */
-  leadEntries?: RowMenuEntry[];
   /** The link was opened (a click, or a middle-click to a new tab). */
   onOpen?: (row: LinkRow) => void;
 }) {
@@ -154,10 +151,6 @@ export function ActivityLinkRow({
   const { link } = row;
 
   const entries: RowMenuEntry[] = [
-    ...leadEntries,
-    ...(leadEntries.length > 0
-      ? ([{ type: "separator", key: "lead" }] satisfies RowMenuEntry[])
-      : []),
     {
       type: "item",
       key: "hide",

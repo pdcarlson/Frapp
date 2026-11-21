@@ -82,9 +82,8 @@ export function useEventsOnNow(options: { enabled?: boolean } = {}): {
 type Activity = components["schemas"]["ActivityDto"];
 
 /**
- * Activity's read without the events the Now card shows (#5777), so To do,
- * the week strip and the week card's Next don't list the live one a second
- * time. The week ring counts from the whole read, so it still counts it.
+ * Activity's read without the events the Now card shows (#5777), so To do
+ * and the phone's Frapp card don't list the live one a second time. The week ring counts from the whole read, so it still counts it.
  */
 export function withoutEvents(
   activity: Activity,
@@ -100,7 +99,7 @@ export function withoutEvents(
 
 /**
  * The ids of what the Now card shows by itself: its lead (#5777). Activity
- * leaves these out of To do, the week card and the Frapp card, and nothing
+ * leaves these out of To do and the Frapp card, and nothing
  * more: an event under "+N more on now" keeps its row and its Check in.
  */
 export function nowCardEventIds(events: readonly EventNow[]): string[] {

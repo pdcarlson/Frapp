@@ -58,6 +58,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useMyGoals: () => ({ data: undefined }),
   // The Edit sheet's Major suggestions (#5778) are its own spec's business.
   useChapterMajors: () => [],
+  // Last week and This semester (#5779): nothing to say here.
+  useActivityStanding: () => ({
+    data: undefined,
+    isPending: false,
+    refetch: () => Promise.resolve(),
+  }),
+  useActivityRecap: () => ({ data: undefined }),
   useOwnAvatarTint: () => null,
   useCurrentUser: () => currentUser,
   useViewerUserId: () => viewerUserId,

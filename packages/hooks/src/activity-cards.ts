@@ -22,9 +22,8 @@ export type ActivityLayoutRead = {
 };
 
 /**
- * Cards a member may move but not hide. To do is the list the week card's
- * lines narrow and the week strip's days jump to; hidden, both would act on
- * nothing.
+ * Cards a member may move but not hide. To do is the list the week ring's
+ * lines narrow; hidden, they would act on nothing.
  */
 export const ACTIVITY_UNHIDEABLE_CARDS: readonly ActivityCardKey[] = ["todo"];
 
@@ -43,37 +42,18 @@ export type ActivityCardArrangement = {
 };
 
 /**
- * The default order for each role. A member's own work leads; an officer's
- * queue for their OK comes before it, and what is out with others follows,
- * as the concept Paul picked drew them. Every card is listed, since a card
- * with nothing in it draws nothing: a member never sees an empty To review.
+ * The default order for each role. Since #5779 (Paul's direction A,
+ * 2026-11-20) both start the same: the Frapp card, the member's own To do,
+ * then Running, which an officer's approvals lead. Every card is listed,
+ * since a card with nothing in it draws nothing: a member with nothing
+ * running never sees an empty Running.
  */
 export const ACTIVITY_DEFAULT_CARD_ORDER: Record<
   ActivityCardRole,
   readonly ActivityCardKey[]
 > = {
-  officer: [
-    "nudge",
-    "recap",
-    "review",
-    "todo",
-    "calendar",
-    "waiting",
-    "semester",
-    "reminders",
-    "links",
-  ],
-  member: [
-    "nudge",
-    "recap",
-    "todo",
-    "calendar",
-    "semester",
-    "reminders",
-    "waiting",
-    "links",
-    "review",
-  ],
+  officer: ["nudge", "todo", "running"],
+  member: ["nudge", "todo", "running"],
 };
 
 /**
@@ -89,6 +69,9 @@ export function activityCardRole(
     : "member";
 }
 
+/** The cards Running replaced (#5779), as a save from before it names them. */
+const RUNNING_TOOK: readonly string[] = ["review", "waiting"];
+
 /**
  * The page's cards, from what the member saved and their role's default.
  *
@@ -98,6 +81,9 @@ export function activityCardRole(
  *   never placed, because it is newer than their save, goes where the
  *   default puts it: after the nearest card before it in the default that
  *   they show.
+ * - Running took To review and Waiting on others in (#5779), so a save from
+ *   before it that never placed Running places it where the first of those
+ *   was shown, or hides it when they hid both.
  */
 export function arrangeActivityCards(
   layout: ActivityLayoutRead | null | undefined,
@@ -106,14 +92,25 @@ export function arrangeActivityCards(
   const defaults = ACTIVITY_DEFAULT_CARD_ORDER[role];
   if (!layout?.saved) return { shown: [...defaults], hidden: [] };
 
+  const placesRunning =
+    layout.card_order.includes("running") ||
+    layout.hidden_cards.includes("running");
+  const asRunning = (key: string) =>
+    !placesRunning && RUNNING_TOOK.includes(key) ? "running" : key;
+  const order = layout.card_order.map(asRunning);
+  const hiddenKeys = layout.hidden_cards.map(asRunning);
   const hidden = unique(
-    layout.hidden_cards.filter(isActivityCardKey).filter(canHideActivityCard),
+    hiddenKeys
+      .filter(isActivityCardKey)
+      .filter(canHideActivityCard)
+      // Shown in place of one of them, so not hidden for the other.
+      .filter(
+        (k) => placesRunning || k !== "running" || !order.includes("running"),
+      ),
   );
   const hiddenSet = new Set<ActivityCardKey>(hidden);
   const shown = unique(
-    layout.card_order
-      .filter(isActivityCardKey)
-      .filter((k) => !hiddenSet.has(k)),
+    order.filter(isActivityCardKey).filter((k) => !hiddenSet.has(k)),
   );
   for (const key of defaults) {
     if (shown.includes(key) || hiddenSet.has(key)) continue;
@@ -240,30 +237,18 @@ export const ACTIVITY_CARD_COPY: Record<
   { name: string; detail: string }
 > = {
   nudge: { name: "Frapp card", detail: "The one thing worth doing next" },
-  recap: { name: "Last week", detail: "What you did, Sunday to Tuesday" },
-  review: {
-    name: "To review",
-    detail: "Finished tasks and hours waiting for your OK",
+  todo: {
+    name: "To do",
+    detail: "Your events, tasks, polls and reminders, by day",
   },
-  todo: { name: "To do", detail: "Your events, tasks and polls, by day" },
-  calendar: { name: "Calendar", detail: "The chapter's month" },
-  reminders: {
-    name: "Reminders",
-    detail: "Messages you asked to be reminded of",
-  },
-  waiting: {
-    name: "Waiting on others",
-    detail: "What you assigned, posted or made",
-  },
-  links: { name: "Links", detail: "Sign-ups posted for you" },
-  semester: {
-    name: "This semester",
-    detail: "Points, events, service and study",
+  running: {
+    name: "Running",
+    detail: "What waits for your OK, and what you assigned, made or posted",
   },
 };
 
-/** The week card's line in Edit Activity: always first, never hidden. */
-export const ACTIVITY_WEEK_CARD_COPY = {
-  name: "This week",
-  detail: "The week, its ring and what's next. Always first.",
+/** The Now card's line in Edit Activity: always first, never hidden. */
+export const ACTIVITY_NOW_CARD_COPY = {
+  name: "Now",
+  detail: "The event on right now. Always first.",
 };

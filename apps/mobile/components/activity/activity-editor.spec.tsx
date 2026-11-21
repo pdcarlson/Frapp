@@ -57,18 +57,43 @@ describe("ActivityEditor (#5520)", () => {
     vi.restoreAllMocks();
   });
 
+  it("lists Now first, then the three cards #5779 left, in the default order", () => {
+    const { tree } = render({});
+    const texts: string[] = [];
+    const walk = (node: unknown): void => {
+      if (typeof node === "string") texts.push(node);
+      else if (Array.isArray(node)) node.forEach(walk);
+      else if (node && typeof node === "object" && "children" in node)
+        walk((node as { children: unknown }).children);
+    };
+    walk(tree.toJSON());
+    const names = ["Now", "Frapp card", "To do", "Running"];
+    expect(texts.filter((text) => names.includes(text))).toEqual(names);
+    // What moved off the page is not offered.
+    for (const gone of [
+      "Last week",
+      "Links",
+      "This semester",
+      "Calendar",
+      "Reminders",
+      "To review",
+      "Waiting on others",
+    ]) {
+      expect(texts).not.toContain(gone);
+    }
+  });
+
   it("hides and brings back cards, then hands Done the result", () => {
     const { tree, onDone } = render({});
-    press(tree, "Hide Links");
-    expect(has(tree, "Show Links")).toBe(true);
-    press(tree, "Show Links");
-    expect(has(tree, "Hide Links")).toBe(true);
-    press(tree, "Hide Last week");
+    press(tree, "Hide Running");
+    expect(has(tree, "Show Running")).toBe(true);
+    press(tree, "Show Running");
+    expect(has(tree, "Hide Running")).toBe(true);
+    press(tree, "Hide Frapp card");
     press(tree, "Done");
     const result = onDone.mock.calls[0]![0];
-    expect(result.hidden).toEqual(["recap"]);
-    expect(result.shown).not.toContain("recap");
-    expect(result.shown).toContain("links");
+    expect(result.hidden).toEqual(["nudge"]);
+    expect(result.shown).toEqual(["todo", "running"]);
   });
 
   it("moves a card with its arrows, and not past either end", () => {
@@ -115,10 +140,10 @@ describe("ActivityEditor (#5520)", () => {
       },
     );
     const { tree, onDone } = render({});
-    press(tree, "Hide Links");
+    press(tree, "Hide Running");
     act(() => {
       expect(back?.()).toBe(true);
     });
-    expect(onDone.mock.calls[0]![0].hidden).toEqual(["links"]);
+    expect(onDone.mock.calls[0]![0].hidden).toEqual(["running"]);
   });
 });

@@ -146,9 +146,8 @@ type ScreenShellProps = {
    */
   avoidKeyboard?: boolean;
   /**
-   * The body's scroll view, for a screen that moves it to a part of itself:
-   * Activity's week strip jumps To do to the day pressed (#5310), as
-   * Fantastical's DayTicker jumps its list. Measure the part against a host
+   * The body's scroll view, for a screen that moves it to a part of itself
+   * (a field above the keyboard, a section a link points at). Measure the part against a host
    * view of the screen's own (a node handle is refused under the New
    * Architecture) and `scrollTo` it.
    */

@@ -68,19 +68,6 @@ describe("ActivityAsk (#4206)", () => {
     });
     expectTintedLabel(StyleSheet.flatten(host(tree, "Text")[0]!.props.style));
   });
-
-  it("fills with the accent on the week card's Next row", () => {
-    const tree = render(<ActivityAsk label="Confirm" filled />);
-    const chip = StyleSheet.flatten(host(tree, "View")[0]!.props.style);
-    expect(chip).toMatchObject({
-      height: 28,
-      backgroundColor: BRAND.accentPrimary,
-      borderColor: BRAND.accentPrimary,
-    });
-    expect(StyleSheet.flatten(host(tree, "Text")[0]!.props.style).color).toBe(
-      BRAND.accentOnPrimary,
-    );
-  });
 });
 
 function renderButton(disabled: boolean) {

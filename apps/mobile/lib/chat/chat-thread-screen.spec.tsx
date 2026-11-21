@@ -46,6 +46,9 @@ import {
   NotificationLevelMenu,
 } from "@/components/chat/notification-level-control";
 import { ChannelStart } from "@/components/chat/channel-start";
+import { ActivityListRow } from "@/components/activity/activity-row";
+import { LINKS_EMPTY } from "@/components/chat/message-list-sheet";
+import { UndoBar } from "@/components/tasks/undo-bar";
 import {
   HISTORY_START_COPY,
   ThreadHistoryEdge,
@@ -455,6 +458,42 @@ const reminderWrites = vi.hoisted(() => ({
   set: { mutateAsync: vi.fn(async (input: unknown) => void input) },
 }));
 
+/**
+ * A channel's Links (#5779): Activity's read, which holds them, the dot the
+ * row clears, and the link writes, which land unless a test says otherwise.
+ */
+const channelLinks = vi.hoisted(() => ({
+  activity: {
+    data: undefined as unknown,
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  },
+  markRead: vi.fn(),
+  done: vi.fn(async (id: string) => void id),
+  hidden: vi.fn(async (id: string) => void id),
+  clear: vi.fn(async (id: string) => void id),
+  remove: vi.fn(async (id: string) => void id),
+  restore: vi.fn(async (id: string) => void id),
+}));
+
+/** The props the thread last handed a Links row's sheet (#5779). */
+const linkSheet = vi.hoisted(() => ({
+  props: null as null | {
+    row: { key: string } | null;
+    onClosed: () => void;
+    linkActions?: import("@/components/activity/activity-sheet").LinkSheetActions;
+  },
+}));
+vi.mock("@/components/activity/activity-sheet", () => ({
+  ActivitySheet: (props: NonNullable<typeof linkSheet.props>) => {
+    linkSheet.props = props;
+    return null;
+  },
+}));
+
 /** The unread counts' fetch, stood in for `GET /v1/channels/unread`. */
 const unreadCountsFetch = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
 
@@ -486,6 +525,16 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useSetMessageReminder: () => reminderWrites.set,
     useBookmarks: () => ({ data: [], isPending: false, isError: false }),
     usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
+    // Links (#5779): Activity's read, its dots and the link writes.
+    useActivity: () => channelLinks.activity,
+    useActivityUnread: () => ({ markRead: channelLinks.markRead }),
+    useActivityFaces: () => () => null,
+    useSetActivityLinkState: (state: "done" | "hidden") => ({
+      mutateAsync: state === "done" ? channelLinks.done : channelLinks.hidden,
+    }),
+    useClearActivityLinkState: () => ({ mutateAsync: channelLinks.clear }),
+    useRemoveActivityLink: () => ({ mutateAsync: channelLinks.remove }),
+    useRestoreActivityLink: () => ({ mutateAsync: channelLinks.restore }),
     // Scheduled messages (#4956): none, and a schedule that never lands.
     useScheduledMessages: (channelId: string | null) => ({
       ...(scheduledListFor(channelId) as object),
@@ -3052,6 +3101,154 @@ describe("chat thread Pin and Save from the actions sheet", () => {
   });
 });
 
+// A channel's sign-up links (#5779), which Activity listed until then: Links
+// in the header's menu, each row opening the link's sheet with every action
+// it had on Activity, and an Undo bar that outlives the sheet.
+describe("a channel's Links (#5779)", () => {
+  const link = (overrides: Record<string, unknown> = {}) => ({
+    id: "l1",
+    url: "https://forms.gle/abc",
+    host: "forms.gle",
+    title: null,
+    message_id: "m1",
+    thread_root_id: null,
+    channel_id: CHANNEL,
+    channel_name: "general",
+    channel_type: "PUBLIC",
+    posted_by: null,
+    posted_by_name: "Olive",
+    posted_at: "2026-11-10T15:00:00.000Z",
+    unread: false,
+    ...overrides,
+  });
+  type LinkRow = Parameters<
+    NonNullable<NonNullable<typeof linkSheet.props>["linkActions"]>["done"]
+  >[0];
+  const openLinks = (tree: ReactTestRenderer) => {
+    openMuteMenu(tree);
+    const actions = tree.root.findByType(NotificationLevelMenu).props
+      .actions as { label: string; onPress: () => void }[];
+    act(() => actions.find((action) => action.label === "Links")!.onPress());
+  };
+  const linkRows = (tree: ReactTestRenderer) =>
+    tree.root.findAllByType(ActivityListRow);
+
+  beforeEach(() => {
+    linkSheet.props = null;
+    channelLinks.markRead.mockClear();
+    for (const write of [
+      channelLinks.done,
+      channelLinks.hidden,
+      channelLinks.clear,
+      channelLinks.remove,
+      channelLinks.restore,
+    ]) {
+      write.mockClear();
+    }
+    channelLinks.activity = {
+      ...channelLinks.activity,
+      isPending: false,
+      isError: false,
+      data: {
+        links: [
+          link({ unread: true }),
+          link({ id: "l2", channel_id: "elsewhere", channel_name: "rush" }),
+        ],
+      },
+    };
+    channel = channelState({ messages: [message("m1")] });
+  });
+
+  it("lists this channel's links only, and opens one in its sheet, clearing its dot", () => {
+    const tree = render();
+    openLinks(tree);
+    const rows = linkRows(tree);
+    expect(rows.map((row) => row.props.row.key)).toEqual(["link:l1"]);
+    act(() => rows[0]!.props.onPress());
+    expect(channelLinks.markRead).toHaveBeenCalledWith([
+      { kind: "link", item_id: "l1" },
+    ]);
+    expect(linkSheet.props?.row?.key).toBe("link:l1");
+    // Remove is `channels:manage`'s, as it was on Activity.
+    expect(linkSheet.props?.linkActions?.canRemove).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("says when the channel has none", () => {
+    channelLinks.activity = {
+      ...channelLinks.activity,
+      data: { links: [link({ channel_id: "elsewhere" })] },
+    };
+    const tree = render();
+    openLinks(tree);
+    expect(linkRows(tree)).toHaveLength(0);
+    expect(screenText(tree)).toContain(LINKS_EMPTY);
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    ["done", "Marked done", "clear"],
+    ["hide", "Hidden", "clear"],
+    ["remove", "Removed for everyone", "restore"],
+  ] as const)(
+    "offers Undo once %s lands, over the thread and after the sheet",
+    async (action, message, takeBack) => {
+      permissionList = ["channels:manage"];
+      const tree = render();
+      openLinks(tree);
+      act(() => linkRows(tree)[0]!.props.onPress());
+      expect(linkSheet.props?.linkActions?.canRemove).toBe(true);
+      const actions = linkSheet.props!.linkActions!;
+      const row = linkRows(tree)[0]!.props.row as LinkRow;
+      // The sheet closes as the write starts.
+      act(() => linkSheet.props!.onClosed());
+      await act(async () => {
+        actions[action](row);
+      });
+      const write = {
+        done: channelLinks.done,
+        hide: channelLinks.hidden,
+        remove: channelLinks.remove,
+      }[action];
+      expect(write).toHaveBeenCalledWith("l1");
+      const bar = tree.root.findByType(UndoBar);
+      expect(bar.props.message).toBe(message);
+      await act(async () => {
+        bar.props.onUndo();
+      });
+      expect(channelLinks[takeBack]).toHaveBeenCalledWith("l1");
+      expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+      act(() => tree.unmount());
+    },
+  );
+
+  it("opens a link posted in a thread at its message there", () => {
+    channelLinks.activity = {
+      ...channelLinks.activity,
+      data: { links: [link({ thread_root_id: "root-1", message_id: "r1" })] },
+    };
+    const tree = render();
+    openLinks(tree);
+    act(() => linkRows(tree)[0]!.props.onPress());
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
+    act(() =>
+      linkSheet.props!.linkActions!.openInChat(
+        linkRows(tree)[0]!.props.row as LinkRow,
+      ),
+    );
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/chat-thread",
+      params: {
+        channelId: CHANNEL,
+        threadRootId: "root-1",
+        focusMessageId: "r1",
+      },
+    });
+    act(() => tree.unmount());
+  });
+});
+
 // The sheet's Flag row (#3921): offered where the viewer may change the
 // flag, reading the current flag live, and a refusal said aloud.
 describe("chat thread flags from the actions sheet", () => {
@@ -3221,6 +3418,7 @@ describe("Catch me up in a channel (#3946)", () => {
     expect(menuActions(tree)?.map((action) => action.label)).toEqual([
       "Pinned messages",
       "Saved messages",
+      "Links",
     ]);
     act(() => tree.unmount());
   });
@@ -3285,6 +3483,7 @@ describe("Catch me up in a channel (#3946)", () => {
       CHAT_CATCH_UP_COPY.name,
       "Pinned messages",
       "Saved messages",
+      "Links",
     ]);
     act(() => actions[0]!.onPress());
     expect(catchUp.start).toHaveBeenCalledTimes(1);

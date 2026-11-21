@@ -991,7 +991,7 @@ WhatsApp marks the copy "Forwarded".
   It is sent under category `reminder`, which no notification switch silences (the member asked for it); quiet hours still make it silent.
   No push goes out for a message in a channel the member can no longer read, a blocked author's message is not quoted (and its in-app row is withheld as that author's chat is), and a deleted one says it was deleted.
   What the push and row carry is [`../notifications.md` § Deep Linking](../notifications.md#deep-linking).
-- **On Activity,** the member's reminders, due and waiting, are listed in their own Reminders group until they clear them ([`../activity.md` § Reminders](../activity.md#reminders) owns which and how many).
+- **On Activity,** the member's reminders, due and waiting, are rows in To do on the day each is for (#5779; their own Reminders group until then) until they clear them ([`../activity.md` § Reminders](../activity.md#reminders) owns which and how many).
 - **Not a bookmark with a due time.**
   The issue asked whether it should be; it is not, because Save is one idempotent row per (member, message) that un-Save deletes: folded together, un-Save would cancel a reminder and every reminder would sit in Saved.
   A reminder touches the message's lifecycle no more than a bookmark does.

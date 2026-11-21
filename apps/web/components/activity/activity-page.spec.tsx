@@ -7,16 +7,10 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
-const mockStanding = vi.fn<() => { isPending: boolean; data?: unknown }>(
-  () => ({ isPending: false, data: undefined }),
-);
-const mockRecap = vi.fn<() => { data?: unknown }>(() => ({
-  data: undefined,
-}));
 const mockChapterId = vi.fn(() => "chap-1");
 const mockArchive = vi.fn<
   () => {
@@ -29,8 +23,8 @@ const mockArchive = vi.fn<
 const mockInvalidate = vi.fn();
 /**
  * How many times the page re-read its list. Each re-read also re-reads the
- * standing ("This semester") and the Archive, so counting every invalidation
- * would triple.
+ * standing (This semester, on the profile since #5779) and the Archive, so
+ * counting every invalidation would triple.
  */
 const listRereads = () =>
   mockInvalidate.mock.calls.filter(
@@ -67,9 +61,9 @@ const eventsNow = vi.hoisted(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/hooks")>();
   return {
-    // The model is the real one: the week, the agenda, the review queue,
-    // the groups and the gauges (`activity-agenda.ts`, `activity-rows.ts`,
-    // `activity-standing.ts`). Only the reads are stood in for.
+    // The model is the real one: the week, the agenda, the review queue and
+    // Running (`activity-agenda.ts`, `activity-rows.ts`). Only the reads are
+    // stood in for.
     ACTIVITY_GLYPH_NAV: actual.ACTIVITY_GLYPH_NAV,
     // The Now card's read (#5777): nothing on unless a test says so.
     useEventsOnNow: () => eventsNow.value,
@@ -101,9 +95,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityGroups: actual.activityGroups,
     activityFaceStack: actual.activityFaceStack,
     activityReview: actual.activityReview,
+    activityRunningCount: actual.activityRunningCount,
     activityReviewQueue: actual.activityReviewQueue,
     activityRowAction: actual.activityRowAction,
-    activityStandingGauges: actual.activityStandingGauges,
     activityWeekSummary: actual.activityWeekSummary,
     findActivityTaskRow: actual.findActivityTaskRow,
     activityArchiveKeys: actual.activityArchiveKeys,
@@ -112,17 +106,11 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useNowDate: actual.useNowDate,
     useActiveChapterId: () => mockChapterId(),
     useActivity: () => mockActivity(),
-    useActivityStanding: () => mockStanding(),
-    useActivityRecap: () => mockRecap(),
     useActivityArchive: () => mockArchive(),
-    activityRecapCard: actual.activityRecapCard,
-    recapDismissalKey: actual.recapDismissalKey,
-    recapDismissed: actual.recapDismissed,
-    withRecapDismissal: actual.withRecapDismissal,
     useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
     ACTIVITY_CARD_COPY: actual.ACTIVITY_CARD_COPY,
-    ACTIVITY_WEEK_CARD_COPY: actual.ACTIVITY_WEEK_CARD_COPY,
+    ACTIVITY_NOW_CARD_COPY: actual.ACTIVITY_NOW_CARD_COPY,
     activityCardRole: actual.activityCardRole,
     arrangeActivityCards: actual.arrangeActivityCards,
     canHideActivityCard: actual.canHideActivityCard,
@@ -202,8 +190,6 @@ vi.mock("./activity-panel", () => ({
     ) : null,
 }));
 
-// The link row's actions are its own spec's (`activity-link-row.spec.tsx`);
-// this page owes drawing one per link, with Remove only for an officer.
 /** The chapter's plan: `state.allowed` false refuses the row actions. */
 const mockGate = vi.fn(() => ({
   allowed: true,
@@ -236,19 +222,8 @@ vi.mock("./activity-row-action", () => ({
     >{`act:${action}:${row.title}`}</button>
   ),
 }));
-vi.mock("./activity-link-row", () => ({
-  useActivityLinkActions: () => ({}),
-  ActivityLinkRow: ({
-    row,
-    canRemove,
-  }: {
-    row: ActivityRow;
-    canRemove: boolean;
-  }) => <li>{`link:${row.title}:${canRemove ? "officer" : "member"}`}</li>,
-}));
-
 // The reminder row's actions are its own spec's
-// (`activity-reminder-row.spec.tsx`); this page owes the Reminders group.
+// (`activity-reminder-row.spec.tsx`); this page owes drawing one in To do.
 vi.mock("./activity-reminder-row", () => ({
   useActivityReminderActions: () => ({}),
   ActivityReminderRow: ({ row }: { row: ActivityRow }) => (
@@ -257,8 +232,6 @@ vi.mock("./activity-reminder-row", () => ({
 }));
 
 const { ActivityPage } = await import("./activity-page");
-const { RECAP_DISMISSED_STORAGE_KEY, resetRecapDismissalForTests } =
-  await import("./recap-card");
 
 const task = {
   id: "t1",
@@ -329,11 +302,8 @@ beforeEach(() => {
   mockUser.mockReturnValue({ userId: "me", isLoading: false });
   mockNetwork.mockReturnValue({ isOffline: false });
   mockPermissions.mockReturnValue({ data: { permissions: [] } });
-  mockStanding.mockReturnValue({ isPending: false, data: undefined });
-  mockRecap.mockReturnValue({ data: undefined });
   mockChapterId.mockReturnValue("chap-1");
   window.localStorage.clear();
-  resetRecapDismissalForTests();
   mockGate.mockReturnValue({
     allowed: true,
     isOffline: false,
@@ -402,14 +372,18 @@ const localDate = (daysAhead: number) => {
   return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
 };
 
-const weekCard = () => screen.getByTestId("activity-week-card");
+const ring = () => screen.getByTestId("activity-week-ring");
+/** The ring's popover: its headline, its lines and what couldn't load. */
+const openRing = () => fireEvent.click(ring());
+const weekPopover = () => screen.getByRole("dialog");
 const toDo = () => screen.getByRole("region", { name: "To do" });
+const running = () => screen.getByRole("region", { name: "Running" });
 const weekLines = () =>
   screen.getByRole("group", { name: "This week by kind" });
 
 describe("ActivityPage", () => {
-  describe("the week card (#4766)", () => {
-    it("leads with the ring's count, a line per kind, and the one thing to do next", () => {
+  describe("the week ring (#5779)", () => {
+    it("puts the week's count in a small ring beside Edit Activity, and its lines behind a press", () => {
       mockActivity.mockReturnValue(
         loaded({
           week: week({
@@ -421,20 +395,29 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
-      const card = weekCard();
-      expect(within(card).getByRole("heading", { level: 2 })).toHaveTextContent(
-        "4 left this week",
+      const pill = ring();
+      // Done of total, never a sentence: the glance Apple Fitness gives.
+      expect(pill).toHaveTextContent(/^2\/6$/);
+      // A screen reader hears the sentence the old card's heading said.
+      expect(pill).toHaveAccessibleName(
+        "2 of 6 things done this week. 4 left this week.",
       );
-      const ring = within(card).getByTestId("activity-week-ring");
-      expect(ring).toHaveTextContent("2of 6");
-      expect(ring).toHaveAttribute("data-progress", String(2 / 6));
-      // The ring is decoration; a screen reader hears it as a sentence.
-      expect(ring).toHaveAttribute("aria-hidden", "true");
+      // The ring itself is decoration.
+      const drawn = pill.querySelector("[data-progress]");
+      expect(drawn).toHaveAttribute("data-progress", String(2 / 6));
+      expect(drawn).toHaveAttribute("aria-hidden", "true");
+      // In the header row, beside the page's one action.
+      expect(pill.parentElement).toContainElement(
+        screen.getByRole("button", { name: "Edit Activity" }),
+      );
+      expect(toDo()).not.toContainElement(pill);
+      // The lines wait behind the ring.
       expect(
-        within(card).getByText(
-          "2 of 6 things done this week. 4 left this week.",
-        ),
-      ).toHaveClass("sr-only");
+        screen.queryByRole("group", { name: "This week by kind" }),
+      ).toBeNull();
+
+      openRing();
+      expect(within(weekPopover()).getByText("4 left this week")).toBeVisible();
       expect(
         within(weekLines())
           .getAllByRole("button")
@@ -444,79 +427,81 @@ describe("ActivityPage", () => {
         "Tasks: 1 of 3 done",
         "Polls and sign-ups: 0 of 1 done",
       ]);
+      expect(screen.getByTestId("activity-week-line-tasks")).toHaveTextContent(
+        "Tasks1 of 3",
+      );
 
-      // The soonest thing is on the card, and not repeated in the list.
-      expect(within(card).getByText("Next")).toBeInTheDocument();
-      expect(
-        within(card).getByRole("button", {
-          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
-        }),
-      ).toBeInTheDocument();
-      expect(within(toDo()).queryByText("Formal venue?")).toBeNull();
+      // There is no Next row any more: the soonest thing stays in the list.
+      expect(screen.queryByText("Next")).toBeNull();
+      expect(screen.queryByRole("region", { name: "Next" })).toBeNull();
+      expect(within(toDo()).getByText("Formal venue?")).toBeInTheDocument();
       expect(within(toDo()).getByText("Book the venue")).toBeInTheDocument();
     });
 
-    it("narrows the To do list from a line, says so, and shows everything again", () => {
+    it("narrows the To do list from a line, closing the lines, says so, and shows everything again", () => {
       mockActivity.mockReturnValue(
         loaded({
           week: week({ tasks: count(0, 1), polls: count(0, 1) }),
-          links: [
-            {
-              id: "l1",
-              url: "https://forms.gle/abc",
-              host: "forms.gle",
-              title: null,
-              message_id: "m1",
-              thread_root_id: null,
-              channel_id: "c1",
-              channel_name: "rush",
-              channel_type: "PUBLIC",
-              posted_by: "olive",
-              posted_by_name: "Olive",
-              posted_at: "2026-11-10T15:00:00.000Z",
-            },
-          ],
+          made_by_you: {
+            polls: [
+              {
+                ...poll,
+                message_id: "p9",
+                sender_id: "me",
+                question: "Where should formal be?",
+              },
+            ],
+            tasks: [],
+            events: [],
+          },
         }),
       );
       render(<ActivityPage />);
-      expect(screen.getByRole("region", { name: "Links" })).toBeInTheDocument();
-      const answers = within(weekLines()).getByRole("button", {
-        name: "Polls and sign-ups: 0 of 1 done",
-      });
-      expect(answers).toHaveAttribute("aria-pressed", "false");
+      expect(running()).toBeInTheDocument();
+      expect(ring()).toHaveClass("text-foreground");
 
-      fireEvent.click(answers);
+      openRing();
+      const answers = () =>
+        within(weekLines()).getByRole("button", {
+          name: "Polls and sign-ups: 0 of 1 done",
+        });
+      expect(answers()).toHaveAttribute("aria-pressed", "false");
+      fireEvent.click(answers());
 
-      expect(answers).toHaveAttribute("aria-pressed", "true");
-      // Narrowed, the list holds every one of its kind, the next thing too,
-      // and the card above it stays as it was.
+      // The press closes the lines, and the ring says the list is narrowed.
+      expect(
+        screen.queryByRole("group", { name: "This week by kind" }),
+      ).toBeNull();
+      expect(ring()).toHaveClass("text-accent-text");
+      // Narrowed, the list holds every one of its kind.
       expect(within(toDo()).getByText("Formal venue?")).toBeInTheDocument();
       expect(within(toDo()).queryByText("Book the venue")).toBeNull();
       expect(
-        within(weekCard()).getByRole("button", {
-          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
-        }),
-      ).toBeInTheDocument();
-      expect(
         within(toDo()).getByText(/Showing only polls and sign-ups\./),
       ).toBeInTheDocument();
-      // The page is the list alone while it is narrowed.
-      expect(screen.queryByRole("region", { name: "Links" })).toBeNull();
+      // The page is the list alone while it is narrowed: no Running.
+      expect(screen.queryByRole("region", { name: "Running" })).toBeNull();
 
+      // The lit line says so, and pressing it again shows everything.
+      openRing();
+      expect(answers()).toHaveAttribute("aria-pressed", "true");
+      fireEvent.click(answers());
+      expect(screen.queryByText(/Showing only/)).toBeNull();
+      expect(within(toDo()).getByText("Book the venue")).toBeInTheDocument();
+      expect(running()).toBeInTheDocument();
+
+      // And so does the note's own button.
+      openRing();
+      fireEvent.click(answers());
       fireEvent.click(
         within(toDo()).getByRole("button", { name: "Show everything" }),
       );
-      expect(answers).toHaveAttribute("aria-pressed", "false");
-      // The note and its button are gone: the line that narrowed the list
-      // takes the focus, so a keyboard is not sent back to the page's top.
-      expect(answers).toHaveFocus();
+      expect(screen.queryByText(/Showing only/)).toBeNull();
       expect(within(toDo()).getByText("Book the venue")).toBeInTheDocument();
-      expect(screen.getByRole("region", { name: "Links" })).toBeInTheDocument();
-
-      // Pressing the lit line again does the same.
-      fireEvent.click(answers);
-      fireEvent.click(answers);
-      expect(answers).toHaveAttribute("aria-pressed", "false");
+      expect(running()).toBeInTheDocument();
+      expect(ring()).toHaveClass("text-foreground");
+      // The note's button leaves, so focus goes back to the ring.
+      expect(ring()).toHaveFocus();
     });
 
     it("says a narrowed kind has nothing left, not that there is nothing to do", () => {
@@ -525,6 +510,7 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
+      openRing();
       fireEvent.click(
         within(weekLines()).getByRole("button", {
           name: "Events: 1 of 1 done",
@@ -552,6 +538,7 @@ describe("ActivityPage", () => {
       render(<ActivityPage />);
 
       // The dash line still narrows the list.
+      openRing();
       fireEvent.click(
         within(weekLines()).getByRole("button", {
           name: "Tasks: couldn't load",
@@ -568,11 +555,12 @@ describe("ActivityPage", () => {
       expect(screen.queryByText(/left to do/)).toBeNull();
     });
 
-    it("drops the narrowing for good when its line leaves the card", () => {
+    it("drops the narrowing for good when its line leaves the ring", () => {
       mockActivity.mockReturnValue(
         loaded({ week: week({ tasks: count(0, 1), polls: count(0, 1) }) }),
       );
       const { rerender } = render(<ActivityPage />);
+      openRing();
       fireEvent.click(
         within(weekLines()).getByRole("button", { name: "Tasks: 0 of 1 done" }),
       );
@@ -593,34 +581,41 @@ describe("ActivityPage", () => {
         loaded({ week: week({ tasks: count(0, 1), polls: count(0, 1) }) }),
       );
       rerender(<ActivityPage />);
+      expect(screen.queryByText(/Showing only/)).toBeNull();
+      openRing();
       expect(
         within(weekLines()).getByRole("button", { name: "Tasks: 0 of 1 done" }),
       ).toHaveAttribute("aria-pressed", "false");
-      expect(screen.queryByText(/Showing only/)).toBeNull();
     });
 
-    it("says nothing is due with a quiet ring, and never 0 of 0", () => {
+    it("says 0 with a quiet ring when nothing is due, never 0/0, and says what will count", () => {
       mockActivity.mockReturnValue(
         loaded({ needs_you: nothingWaiting, week: week() }),
       );
       render(<ActivityPage />);
 
-      const card = weekCard();
-      expect(within(card).getByRole("heading", { level: 2 })).toHaveTextContent(
-        "Nothing due this week",
+      const pill = ring();
+      expect(pill).toHaveTextContent(/^0$/);
+      expect(pill).toHaveAccessibleName("Nothing due this week");
+      expect(pill.querySelector("[data-progress]")).toHaveAttribute(
+        "data-progress",
+        "0",
       );
-      const ring = within(card).getByTestId("activity-week-ring");
-      expect(ring).toHaveTextContent("");
-      expect(ring).toHaveAttribute("data-progress", "0");
+      // Only the groove is drawn.
+      expect(pill.querySelectorAll("circle")).toHaveLength(1);
+
+      openRing();
+      const popover = weekPopover();
+      expect(within(popover).getByText("Nothing due this week")).toBeVisible();
       expect(
-        within(card).getByText(
+        within(popover).getByText(
           "Your events, tasks and polls for the week count here.",
         ),
       ).toBeInTheDocument();
       expect(
         screen.queryByRole("group", { name: "This week by kind" }),
       ).toBeNull();
-      expect(screen.queryByText(/0 of 0/)).toBeNull();
+      expect(screen.queryByText(/0 of 0|0\/0/)).toBeNull();
       expect(
         within(toDo()).getByText("Nothing to do right now."),
       ).toBeInTheDocument();
@@ -635,12 +630,34 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
-      const heading = within(weekCard()).getByRole("heading", { level: 2 });
-      expect(heading).toHaveTextContent("All done this week");
-      expect(heading).toHaveClass("text-success");
-      const ring = screen.getByTestId("activity-week-ring");
-      expect(ring).toHaveAttribute("data-progress", "1");
-      expect(ring.querySelector("circle.text-success")).not.toBeNull();
+      const pill = ring();
+      expect(pill).toHaveTextContent(/^5\/5$/);
+      expect(pill.querySelector("[data-progress]")).toHaveAttribute(
+        "data-progress",
+        "1",
+      );
+      expect(pill.querySelector("circle.text-success")).not.toBeNull();
+      expect(pill.querySelector("circle.text-primary")).toBeNull();
+
+      openRing();
+      expect(within(weekPopover()).getByText("All done this week")).toHaveClass(
+        "text-success",
+      );
+    });
+
+    it("fills the ring in the accent while something is left", () => {
+      mockActivity.mockReturnValue(
+        loaded({ week: week({ events: count(1, 2) }) }),
+      );
+      render(<ActivityPage />);
+
+      const pill = ring();
+      expect(pill.querySelector("circle.text-primary")).not.toBeNull();
+      expect(pill.querySelector("circle.text-success")).toBeNull();
+      openRing();
+      expect(
+        within(weekPopover()).getByText("1 left this week"),
+      ).not.toHaveClass("text-success");
     });
 
     it("draws a dash for a part that couldn't load, and never calls the week done", () => {
@@ -657,16 +674,20 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
-      const card = weekCard();
-      expect(within(card).getByRole("heading", { level: 2 })).toHaveTextContent(
-        "At least 1 left this week",
-      );
+      expect(ring()).toHaveTextContent(/^1\/2$/);
+      openRing();
+      const popover = weekPopover();
+      expect(
+        within(popover).getByText("At least 1 left this week"),
+      ).toBeInTheDocument();
       const tasks = within(weekLines()).getByRole("button", {
         name: "Tasks: couldn't load",
       });
       expect(tasks).toHaveTextContent("Tasks–");
       expect(
-        within(card).getByText("Couldn't load tasks. Try again in a moment."),
+        within(popover).getByText(
+          "Couldn't load tasks. Try again in a moment.",
+        ),
       ).toHaveClass("text-warning");
       // The list names it too, and doesn't call itself empty.
       expect(
@@ -675,7 +696,7 @@ describe("ActivityPage", () => {
       expect(screen.queryByText("Nothing to do right now.")).toBeNull();
     });
 
-    it("draws a dash in the ring, not the quiet check, when the only part of the week failed", () => {
+    it("says – in the ring, never 0, when the only part of the week failed", () => {
       mockActivity.mockReturnValue(
         loaded({
           needs_you: nothingWaiting,
@@ -685,20 +706,18 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
-      const card = weekCard();
-      expect(within(card).getByRole("heading", { level: 2 })).toHaveTextContent(
-        "Some of your week couldn't load",
-      );
       // Nothing known to count is not "nothing due": the ring says unknown.
-      const ring = within(card).getByTestId("activity-week-ring");
-      expect(ring).toHaveTextContent("–");
-      expect(ring.querySelector("svg.lucide-check")).toBeNull();
+      expect(ring()).toHaveTextContent(/^–$/);
+      openRing();
+      expect(
+        within(weekPopover()).getByText("Some of your week couldn't load"),
+      ).toBeInTheDocument();
       expect(
         screen.queryByText(
           "Your events, tasks and polls for the week count here.",
         ),
       ).toBeNull();
-      expect(screen.queryByText(/0 of 0/)).toBeNull();
+      expect(screen.queryByText(/0 of 0|0\/0/)).toBeNull();
     });
 
     it("draws a dash for a shared line whose other half failed, never 0 of 0", () => {
@@ -716,6 +735,7 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
+      openRing();
       expect(
         within(weekLines()).getByRole("button", {
           name: "Polls and sign-ups: couldn't load",
@@ -738,13 +758,15 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
-      const heading = within(weekCard()).getByRole("heading", { level: 2 });
-      expect(heading).toHaveTextContent("Some of your week couldn't load");
-      expect(heading).not.toHaveClass("text-success");
       // Three of three known, and still not a finished week.
-      const ring = screen.getByTestId("activity-week-ring");
-      expect(ring).toHaveTextContent("3of 3");
-      expect(ring.querySelector("circle.text-success")).toBeNull();
+      const pill = ring();
+      expect(pill).toHaveTextContent(/^3\/3$/);
+      expect(pill.querySelector("circle.text-success")).toBeNull();
+      openRing();
+      const headline = within(weekPopover()).getByText(
+        "Some of your week couldn't load",
+      );
+      expect(headline).not.toHaveClass("text-success");
     });
 
     it("drops a poll that closed while the page was open from the count, as the list drops it", () => {
@@ -760,38 +782,30 @@ describe("ActivityPage", () => {
       render(<ActivityPage />);
 
       // The read listed it as open; its time has passed since.
+      expect(ring()).toHaveTextContent(/^1\/1$/);
+      openRing();
       expect(
-        within(weekCard()).getByRole("heading", { level: 2 }),
-      ).toHaveTextContent("All done this week");
+        within(weekPopover()).getByText("All done this week"),
+      ).toBeInTheDocument();
       expect(screen.queryByText(/left this week/)).toBeNull();
       expect(screen.queryByText("Formal venue?")).toBeNull();
     });
 
-    it("draws no card at all against an older API with nothing next", () => {
-      mockActivity.mockReturnValue(loaded({ needs_you: nothingWaiting }));
-      render(<ActivityPage />);
-
-      expect(screen.queryByTestId("activity-week-card")).toBeNull();
-      expect(
-        within(toDo()).getByText("Nothing to do right now."),
-      ).toBeInTheDocument();
-    });
-
-    it("draws no ring against an API from before the week, only the next thing", () => {
+    it("draws no ring against an API from before the week, and the list keeps every row", () => {
       // `data()` carries no `week`, as an older API serves it.
       mockActivity.mockReturnValue(loaded());
       render(<ActivityPage />);
 
       expect(screen.queryByTestId("activity-week-ring")).toBeNull();
-      const next = screen.getByRole("region", { name: "Next" });
       expect(
-        within(next).getByRole("button", {
+        within(toDo()).getByRole("button", {
           name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
         }),
       ).toBeInTheDocument();
+      expect(within(toDo()).getByText("Book the venue")).toBeInTheDocument();
     });
 
-    it("says an event open for check-in is happening now", () => {
+    it("leads To do with an event open for check-in, under Now in the accent", () => {
       mockActivity.mockReturnValue(
         loaded({
           coming_up: [
@@ -808,16 +822,23 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
-      const label = within(weekCard()).getByText("Happening now");
-      expect(label).toHaveClass("text-accent-text");
+      const now = within(toDo()).getByTestId("activity-day-now");
+      const heading = within(now).getByRole("heading", { level: 3 });
+      expect(heading).toHaveTextContent(/^Now$/);
+      expect(heading).toHaveClass("text-accent-text");
       expect(
-        within(weekCard()).getByRole("button", {
+        within(now).getByRole("button", {
           name: /^(Unread:\s?)?Chapter meeting/,
         }),
       ).toBeInTheDocument();
+      expect(
+        within(toDo())
+          .getAllByRole("heading", { level: 3 })
+          .map((day) => day.textContent),
+      ).toEqual(["Now", "Later"]);
     });
 
-    it("leaves the Now card's event out of the week card, and shows the card while the page loads (#5777)", () => {
+    it("leaves the Now card's event out of To do, and shows the card while the page loads (#5777)", () => {
       const live = {
         ...event,
         start_time: "2026-11-12T19:00:00.000Z",
@@ -836,7 +857,7 @@ describe("ActivityPage", () => {
         const { unmount } = render(<ActivityPage />);
         const now = screen.getByRole("region", { name: "On now" });
         expect(within(now).getByText("Chapter meeting")).toBeInTheDocument();
-        expect(within(weekCard()).queryByText("Happening now")).toBeNull();
+        expect(within(toDo()).queryByText("Chapter meeting")).toBeNull();
         expect(screen.getAllByText("Chapter meeting")).toHaveLength(1);
         unmount();
 
@@ -858,231 +879,37 @@ describe("ActivityPage", () => {
       mockActivity.mockReturnValue(loaded({ week: week() }));
       mockUser.mockReturnValue({ userId: null, isLoading: true });
       const { rerender } = render(<ActivityPage />);
-      expect(screen.queryByTestId("activity-week-card")).toBeNull();
+      expect(screen.queryByTestId("activity-week-ring")).toBeNull();
       expect(screen.getByText("Loading your activity")).toBeInTheDocument();
 
       mockUser.mockReturnValue({ userId: "me", isLoading: false });
       rerender(<ActivityPage />);
-      expect(weekCard()).toBeInTheDocument();
+      expect(ring()).toBeInTheDocument();
     });
   });
 
-  describe("Last week (#4983)", () => {
-    beforeEach(() => {
-      // A Monday morning: the card's season.
-      vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date(2026, 10, 16, 9));
-    });
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-    const recap = {
-      start: new Date(2026, 10, 8).toISOString(),
-      end: new Date(2026, 10, 15).toISOString(),
-      events_attended: 2,
-      tasks_done: 0,
-      points: 15,
-      service_minutes: null,
-      study_minutes: 90,
-      unavailable: ["service"],
-    };
-
-    it("sums up last week with only what the member did, and stays gone once dismissed", () => {
-      mockActivity.mockReturnValue(loaded());
-      mockRecap.mockReturnValue({ data: recap });
-      const { unmount } = render(<ActivityPage />);
-
-      const card = screen.getByRole("region", { name: "Last week" });
-      expect(
-        within(card).getByText("November 8 – November 14"),
-      ).toBeInTheDocument();
-      expect(
-        within(card)
-          .getAllByRole("listitem")
-          .map((item) => item.getAttribute("aria-label")),
-      ).toEqual(["2 events attended", "15 points earned", "1h 30m studied"]);
-
-      fireEvent.click(
-        within(card).getByRole("button", { name: "Dismiss last week's recap" }),
-      );
-      expect(screen.queryByRole("region", { name: "Last week" })).toBeNull();
-      expect(window.localStorage.getItem(RECAP_DISMISSED_STORAGE_KEY)).toBe(
-        `chap-1@${recap.end}`,
-      );
-
-      // Remembered across visits, until next week's recap.
-      unmount();
-      resetRecapDismissalForTests();
-      const again = render(<ActivityPage />);
-      expect(screen.queryByRole("region", { name: "Last week" })).toBeNull();
-
-      // Another chapter's recap that week still shows.
-      again.unmount();
-      mockChapterId.mockReturnValue("chap-2");
-      const other = render(<ActivityPage />);
-      expect(
-        screen.getByRole("region", { name: "Last week" }),
-      ).toBeInTheDocument();
-
-      // And so does this chapter's next week.
-      other.unmount();
-      mockChapterId.mockReturnValue("chap-1");
-      vi.setSystemTime(new Date(2026, 10, 23, 9));
-      mockRecap.mockReturnValue({
-        data: {
-          ...recap,
-          start: new Date(2026, 10, 15).toISOString(),
-          end: new Date(2026, 10, 22).toISOString(),
-        },
-      });
-      render(<ActivityPage />);
-      expect(
-        screen.getByRole("region", { name: "Last week" }),
-      ).toBeInTheDocument();
-    });
-
-    it("draws nothing after Tuesday, whatever the read still holds", () => {
-      vi.setSystemTime(new Date(2026, 10, 18, 9));
-      mockActivity.mockReturnValue(loaded());
-      mockRecap.mockReturnValue({ data: recap });
-      render(<ActivityPage />);
-      expect(screen.queryByText("Last week")).toBeNull();
-    });
-
-    it("draws nothing for a week with nothing to show", () => {
-      mockActivity.mockReturnValue(loaded());
-      mockRecap.mockReturnValue({
-        data: { ...recap, events_attended: 0, points: 0, study_minutes: 0 },
-      });
-      render(<ActivityPage />);
-      expect(screen.queryByText("Last week")).toBeNull();
-    });
-  });
-
-  describe("This semester (#4766)", () => {
-    it("draws a gauge per number, each linking to the page that owns it, with a ring only toward a target", () => {
-      mockActivity.mockReturnValue(loaded());
-      mockStanding.mockReturnValue({
-        isPending: false,
-        data: {
-          points: { total: 42, rank: 5, ranked: 58, goal: null },
-          required_events: { required: 8, attended: 6, excused: 1 },
-          service: null,
-          study: null,
-          unavailable: ["service"],
-        },
-      });
-      render(<ActivityPage />);
-
-      const standing = screen.getByRole("region", { name: "This semester" });
-      expect(
-        within(standing).getByRole("link", {
-          name: "Attended 6 of 8 required events this semester, 1 excused",
-        }),
-      ).toHaveAttribute("href", "/events");
-      expect(
-        within(standing).getByTestId("activity-gauge-ring-required_events"),
-      ).toHaveAttribute("data-progress", "0.75");
-      // No goal for points: the number stands alone, with no invented end.
-      const points = within(standing).getByRole("link", {
-        name: "42 points this semester, ranked 5 of 58",
-      });
-      expect(points).toHaveAttribute("href", "/points");
-      expect(
-        within(standing).queryByTestId("activity-gauge-ring-points"),
-      ).toBeNull();
-      // A part that couldn't load says so, and never reads as zero.
-      const service = within(standing).getByRole("link", {
-        name: "Service hours: couldn't load",
-      });
-      expect(service).toHaveAttribute("href", "/service");
-      expect(service).toHaveTextContent("–");
-      expect(service).toHaveTextContent("Couldn't load");
-      // Study wasn't served and didn't fail: no gauge, not a zero.
-      expect(within(standing).getAllByRole("link")).toHaveLength(3);
-    });
-
-    it("closes a gauge that has reached its goal in the success hue", () => {
-      mockActivity.mockReturnValue(loaded());
-      mockStanding.mockReturnValue({
-        isPending: false,
-        data: {
-          points: { total: 160, rank: 1, ranked: 58, goal: 150 },
-          required_events: { required: 8, attended: 6, excused: 0 },
-          service: null,
-          study: null,
-          unavailable: [],
-        },
-      });
-      render(<ActivityPage />);
-
-      expect(
-        screen
-          .getByTestId("activity-gauge-ring-points")
-          .querySelector("circle.text-success"),
-      ).not.toBeNull();
-      expect(
-        screen
-          .getByTestId("activity-gauge-ring-required_events")
-          .querySelector("circle.text-primary"),
-      ).not.toBeNull();
-    });
-
-    it("isn't drawn for a new member in a chapter with no goals", () => {
-      mockActivity.mockReturnValue(loaded());
-      mockStanding.mockReturnValue({
-        isPending: false,
-        data: {
-          points: { total: 0, rank: null, ranked: 0, goal: null },
-          required_events: { required: 0, attended: 0, excused: 0 },
-          service: {
-            approved_minutes: 0,
-            pending_minutes: 0,
-            goal_minutes: null,
-          },
-          study: null,
-          unavailable: [],
-        },
-      });
-      render(<ActivityPage />);
-
-      expect(
-        screen.queryByRole("region", { name: "This semester" }),
-      ).toBeNull();
-      expect(screen.queryByText("This semester")).toBeNull();
-    });
-
-    it("leaves the rest of the page as it was when its read fails", () => {
-      mockActivity.mockReturnValue(loaded());
-      mockStanding.mockReturnValue({ isPending: false, data: undefined });
-      render(<ActivityPage />);
-
-      expect(
-        screen.queryByRole("region", { name: "This semester" }),
-      ).toBeNull();
-      expect(within(toDo()).getByText("Book the venue")).toBeInTheDocument();
-    });
-  });
-
-  describe("To review (#4766)", () => {
+  describe("Running: N to approve (#4766, #5779)", () => {
     const officer = () =>
       mockPermissions.mockReturnValue({
         data: { permissions: ["tasks:manage", "service:approve"] },
       });
 
-    it("shows a member no card, and an officer with an empty queue none either", () => {
+    it("shows a member no approve row, and an officer with an empty queue none either", () => {
       mockActivity.mockReturnValue(loaded());
       const { unmount } = render(<ActivityPage />);
       expect(screen.queryByTestId("activity-review-card")).toBeNull();
+      // Nothing running and nothing to approve: no empty heading.
+      expect(screen.queryByRole("region", { name: "Running" })).toBeNull();
       unmount();
 
       officer();
       render(<ActivityPage />);
       expect(screen.queryByTestId("activity-review-card")).toBeNull();
-      expect(screen.queryByText("To review")).toBeNull();
+      expect(screen.queryByText(/to approve/i)).toBeNull();
+      expect(screen.queryByRole("region", { name: "Running" })).toBeNull();
     });
 
-    it("starts a short queue open, so a confirmation is still one press", () => {
+    it("leads Running with what waits for the officer's OK, its count in the label, and starts a short queue open", () => {
       officer();
       mockActivity.mockReturnValue(
         loaded({
@@ -1095,11 +922,14 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
-      const card = screen.getByTestId("activity-review-card");
+      const card = within(running()).getByTestId("activity-review-card");
       const toggle = within(card).getByRole("button", {
-        name: "To review, 2: 1 task · 1 hours entry",
+        name: "2 to approve: 1 task · 1 hours entry",
       });
       expect(toggle).toHaveAttribute("aria-expanded", "true");
+      expect(within(card).getByText("2 to approve")).toBeInTheDocument();
+      // The count is the label's; no chip repeats it.
+      expect(within(card).queryByText(/^2$/)).toBeNull();
       expect(
         within(card).getByRole("button", {
           name: "act:confirm:Sweep the porch",
@@ -1109,12 +939,49 @@ describe("ActivityPage", () => {
         within(card).getByRole("button", { name: "act:approve:Food bank" }),
       ).toBeInTheDocument();
       // The member's own list never holds what waits on their review.
-      expect(screen.queryByRole("region", { name: "To do" })).not.toBeNull();
       expect(within(toDo()).queryByText("Sweep the porch")).toBeNull();
 
       fireEvent.click(toggle);
       expect(toggle).toHaveAttribute("aria-expanded", "false");
       expect(within(card).queryByText("Sweep the porch")).toBeNull();
+    });
+
+    it("steps out with the approve row while a week line narrows To do", () => {
+      officer();
+      mockActivity.mockReturnValue(
+        loaded({
+          week: week({ tasks: count(0, 1) }),
+          needs_you: {
+            ...nothingWaiting,
+            task_confirmations: [confirmation("t2", "Sweep the porch")],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+      expect(within(running()).getByText("1 to approve")).toBeInTheDocument();
+      openRing();
+      fireEvent.click(
+        within(weekLines()).getByRole("button", { name: /^Tasks/ }),
+      );
+      expect(screen.queryByRole("region", { name: "Running" })).toBeNull();
+      expect(screen.queryByText("1 to approve")).toBeNull();
+    });
+
+    it("says the heading's count is at least that past the read's cap", () => {
+      officer();
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            ...nothingWaiting,
+            task_confirmations: Array.from({ length: 25 }, (_, index) =>
+              confirmation(`cap${index}`, `Finished ${index}`),
+            ),
+          },
+        }),
+      );
+      render(<ActivityPage />);
+      expect(within(running()).getByText("25+ to approve")).toBeInTheDocument();
+      expect(within(running()).getByText("25+")).toBeInTheDocument();
     });
 
     const queue = (length: number) =>
@@ -1152,7 +1019,7 @@ describe("ActivityPage", () => {
       const toggle = () => screen.getByTestId("activity-review-toggle");
       expect(toggle()).toHaveAttribute("aria-expanded", "true");
 
-      // Two more finish while the officer is part-way through: the card
+      // Two more finish while the officer is part-way through: the row
       // they are working in doesn't close under them.
       mockActivity.mockReturnValue(queue(5));
       rerender(<ActivityPage />);
@@ -1191,7 +1058,7 @@ describe("ActivityPage", () => {
       const card = screen.getByTestId("activity-review-card");
       const toggle = within(card).getByTestId("activity-review-toggle");
       expect(toggle).toHaveAccessibleName(
-        "To review, 7: 6 tasks · 1 hours entry",
+        "7 to approve: 6 tasks · 1 hours entry",
       );
       expect(toggle).toHaveAttribute("aria-expanded", "false");
       expect(within(card).queryByRole("listitem")).toBeNull();
@@ -1212,7 +1079,8 @@ describe("ActivityPage", () => {
         loaded({ needs_you: nothingWaiting, unavailable: ["tasks"] }),
       );
       const { unmount } = render(<ActivityPage />);
-      const card = screen.getByTestId("activity-review-card");
+      const card = within(running()).getByTestId("activity-review-card");
+      expect(within(card).getByText("To approve")).toBeInTheDocument();
       expect(
         within(card).getByText("Couldn't load tasks. Try again in a moment."),
       ).toBeInTheDocument();
@@ -1224,10 +1092,84 @@ describe("ActivityPage", () => {
       render(<ActivityPage />);
       expect(screen.queryByTestId("activity-review-card")).toBeNull();
     });
+
+    it("holds the approve row, then what the member assigned, made and posted, in that order, and counts them all", () => {
+      officer();
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            ...nothingWaiting,
+            task_confirmations: [confirmation("t2", "Sweep the porch")],
+          },
+          made_by_you: {
+            polls: [
+              {
+                ...poll,
+                message_id: "p9",
+                sender_id: "me",
+                question: "Where should formal be?",
+              },
+            ],
+            tasks: [{ ...task, id: "m1", title: "Order the shirts" }],
+            events: [{ ...event, id: "e9", name: "Rush barbecue" }],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+
+      const section = running();
+      const parts = within(section).getAllByRole("group");
+      expect(parts.map((part) => part.getAttribute("aria-labelledby"))).toEqual(
+        [
+          "activity-running-tasks",
+          "activity-running-events",
+          "activity-running-polls",
+        ],
+      );
+      expect(
+        parts.map(
+          (part) => within(part).getByRole("heading", { level: 3 }).textContent,
+        ),
+      ).toEqual(["Tasks you assigned", "Events you made", "Polls you posted"]);
+      expect(within(parts[0]!).getByText("Order the shirts")).toBeVisible();
+      expect(within(parts[1]!).getByText("Rush barbecue")).toBeVisible();
+      expect(
+        within(parts[2]!).getByText("Where should formal be?"),
+      ).toBeVisible();
+      // The approve row leads.
+      const card = within(section).getByTestId("activity-review-card");
+      expect(
+        card.compareDocumentPosition(parts[0]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // One to approve and three running, beside the heading.
+      const heading = within(section).getByRole("heading", { level: 2 });
+      expect(heading).toHaveTextContent(/^Running$/);
+      expect(heading.parentElement).toHaveTextContent(/^Running4$/);
+      // None of it is the member's own to do.
+      expect(within(toDo()).queryByText("Order the shirts")).toBeNull();
+      expect(within(toDo()).queryByText("Rush barbecue")).toBeNull();
+    });
+
+    it("shows a member Running for what they made alone, with no approve row", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          made_by_you: {
+            polls: [],
+            tasks: [{ ...task, id: "m1", title: "Order the shirts" }],
+            events: [],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+
+      expect(within(running()).getByText("Order the shirts")).toBeVisible();
+      expect(screen.queryByTestId("activity-review-card")).toBeNull();
+    });
   });
 
   describe("To do by day (#4766)", () => {
-    it("leads with Overdue in the warning hue, without repeating it on each row", () => {
+    it("leads with Overdue in the warning hue, longest overdue first, without repeating it on each row", () => {
       mockActivity.mockReturnValue(
         loaded({
           needs_you: {
@@ -1235,16 +1177,16 @@ describe("ActivityPage", () => {
             tasks: [
               {
                 ...task,
-                id: "late1",
-                title: "File the roster",
-                due_date: localDate(-3),
+                id: "late2",
+                title: "Return the keys",
+                due_date: localDate(-1),
                 status: "OVERDUE",
               },
               {
                 ...task,
-                id: "late2",
-                title: "Return the keys",
-                due_date: localDate(-1),
+                id: "late1",
+                title: "File the roster",
+                due_date: localDate(-3),
                 status: "OVERDUE",
               },
               task,
@@ -1254,26 +1196,25 @@ describe("ActivityPage", () => {
       );
       render(<ActivityPage />);
 
-      // The longest overdue is the next thing, and says so on its own row.
-      expect(
-        within(weekCard()).getByRole("button", {
-          name: /^(Unread:\s?)?File the roster/,
-        }),
-      ).toHaveTextContent("Overdue");
       const overdue = within(toDo()).getByTestId("activity-day-overdue");
       const heading = within(overdue).getByRole("heading", { level: 3 });
       // The count sits beside the heading, not in it: the day is named
-      // "Overdue", never "Overdue1".
+      // "Overdue", never "Overdue2".
       expect(heading).toHaveTextContent(/^Overdue$/);
       expect(overdue).toHaveAccessibleName("Overdue");
-      expect(heading.nextElementSibling).toHaveTextContent(/^1$/);
+      expect(heading.nextElementSibling).toHaveTextContent(/^2$/);
       expect(heading).toHaveClass("text-warning");
-      const row = within(overdue).getByRole("button", {
-        name: /^(Unread:\s?)?Return the keys/,
+      // There is no Next row to lift the longest overdue out: it leads here.
+      const rows = within(overdue).getAllByRole("button", {
+        name: /^(Unread:\s?)?(File the roster|Return the keys)/,
       });
+      expect(rows.map((row) => row.textContent)).toEqual([
+        expect.stringContaining("File the roster"),
+        expect.stringContaining("Return the keys"),
+      ]);
       // Its detail still says by how long; the chip would repeat the heading.
-      expect(row).toHaveTextContent("Overdue by 1 day");
-      expect(within(row).queryByText("Overdue")).toBeNull();
+      expect(rows[1]).toHaveTextContent("Overdue by 1 day");
+      expect(within(rows[1]!).queryByText("Overdue")).toBeNull();
       // Overdue is above every day.
       expect(
         within(toDo())
@@ -1301,97 +1242,133 @@ describe("ActivityPage", () => {
       const day = within(toDo()).getByTestId("activity-day-day-1");
       const heading = within(day).getByRole("heading", { level: 3 });
       expect(heading).toHaveTextContent(/^Tomorrow$/);
-      expect(heading.nextElementSibling).toHaveTextContent(/^5$/);
+      expect(heading.nextElementSibling).toHaveTextContent(/^6$/);
       expect(within(day).getAllByRole("listitem")).toHaveLength(3);
-      fireEvent.click(within(day).getByRole("button", { name: "Show 2 more" }));
-      expect(within(day).getAllByRole("listitem")).toHaveLength(5);
+      fireEvent.click(within(day).getByRole("button", { name: "Show 3 more" }));
+      expect(within(day).getAllByRole("listitem")).toHaveLength(6);
       expect(
         within(day).getByRole("button", { name: "Show fewer" }),
       ).toHaveAttribute("aria-expanded", "true");
     });
 
-    it("has no heading over nothing when its one thing is on the week card", () => {
+    it("stays on the page with nothing to do, and says so (#5779)", () => {
+      mockActivity.mockReturnValue(loaded({ needs_you: nothingWaiting }));
+      render(<ActivityPage />);
+
+      const list = toDo();
+      expect(
+        within(list).getByText("Nothing to do right now."),
+      ).toBeInTheDocument();
+      expect(within(list).queryAllByRole("heading", { level: 3 })).toEqual([]);
+      // No count beside an empty list's heading.
+      const heading = within(list).getByRole("heading", { level: 2 });
+      expect(heading.parentElement).toHaveTextContent(/^To do$/);
+    });
+
+    it("keeps the Calendar one press away in its header (#5779)", () => {
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+
+      const list = toDo();
+      const calendar = within(list).getByRole("link", { name: "Calendar" });
+      expect(calendar).toHaveAttribute("href", "/events");
+      // Beside the heading, not a card of its own under the list.
+      expect(
+        within(list).getByRole("heading", { level: 2 }).parentElement
+          ?.parentElement,
+      ).toContainElement(calendar);
+      expect(screen.getAllByRole("link", { name: /Calendar/ })).toHaveLength(1);
+    });
+
+    it("lists the member's message reminders in To do on the day they come back (#5779)", () => {
+      const reminder = {
+        id: "r1",
+        message_id: "m9",
+        thread_root_id: null,
+        channel_id: "c1",
+        channel_name: "general",
+        channel_type: "PUBLIC",
+        author_name: "Olive",
+        preview: "Bring the banner Friday",
+        message_created_at: "2026-11-10T15:00:00.000Z",
+        message_available: true,
+        remind_at: "2099-01-01T14:00:00.000Z",
+        fired_at: null,
+        due: false,
+      };
+      const due = {
+        ...reminder,
+        id: "r2",
+        message_id: "m10",
+        preview: "Pay dues",
+        remind_at: new Date(Date.now() - 60_000).toISOString(),
+        fired_at: new Date(Date.now() - 60_000).toISOString(),
+        due: true,
+      };
       mockActivity.mockReturnValue(
-        loaded({ needs_you: { ...nothingWaiting, polls: [poll] } }),
+        loaded({
+          needs_you: nothingWaiting,
+          reminders: [reminder, due],
+          week: week({ tasks: count(0, 1) }),
+        }),
       );
       render(<ActivityPage />);
 
+      // No group of their own any more.
+      expect(screen.queryByRole("region", { name: "Reminders" })).toBeNull();
+      // One already due is today's; one to come is on its day.
       expect(
-        within(weekCard()).getByRole("button", {
-          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
-        }),
+        within(within(toDo()).getByTestId("activity-day-day-0")).getByText(
+          "reminder:Pay dues",
+        ),
       ).toBeInTheDocument();
-      expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
-      expect(screen.queryByText("Nothing to do right now.")).toBeNull();
+      expect(
+        within(within(toDo()).getByTestId("activity-day-later")).getByText(
+          "reminder:Bring the banner Friday",
+        ),
+      ).toBeInTheDocument();
+
+      // A line of the week narrows to its kind, and a reminder is none.
+      openRing();
+      fireEvent.click(
+        within(weekLines()).getByRole("button", { name: "Tasks: 0 of 1 done" }),
+      );
+      expect(within(toDo()).queryByText(/^reminder:/)).toBeNull();
     });
   });
 
   it("lays out by its own width, since it is usually a pane beside chat", () => {
-    mockActivity.mockReturnValue(
-      loaded({ week: week({ tasks: count(0, 1), polls: count(0, 1) }) }),
-    );
-    mockStanding.mockReturnValue({
-      isPending: false,
-      data: {
-        points: { total: 42, rank: 5, ranked: 58, goal: 60 },
-        required_events: { required: 8, attended: 6, excused: 0 },
-        service: {
-          approved_minutes: 270,
-          pending_minutes: 0,
-          goal_minutes: 600,
-        },
-        study: {
-          minutes: 125,
-          week_start: "2026-11-08T05:00:00.000Z",
-          goal_minutes: 360,
-        },
-        unavailable: [],
-      },
-    });
-    render(<ActivityPage />);
-
-    // The page is the container its parts measure, so a 480px pane in a wide
-    // window keeps the narrow layout. A window breakpoint (`lg:`, `md:`)
-    // on any of these would break that.
-    const card = weekCard();
-    expect(card.closest(".\\@container")).not.toBeNull();
-    const cardLayout = card.querySelector("section");
-    expect(cardLayout).toHaveClass("flex-col", "@3xl:flex-row");
-    const strip = screen.getByRole("region", { name: "This semester" });
-    const grid = strip.querySelector(".grid");
-    expect(grid).toHaveClass("grid-cols-2", "@3xl:grid-cols-4");
-    for (const element of [cardLayout, grid]) {
-      expect(element?.className).not.toMatch(/(^|\s)(sm|md|lg|xl|2xl):/);
-    }
-  });
-
-  it("orders an officer's page by their default: the week, last week, to review, to do, waiting on others, this semester, links (#5520)", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(2026, 10, 16, 9));
     mockPermissions.mockReturnValue({
       data: { permissions: ["tasks:manage"] },
     });
-    mockStanding.mockReturnValue({
-      isPending: false,
-      data: {
-        points: { total: 42, rank: 5, ranked: 58, goal: null },
-        required_events: { required: 8, attended: 6, excused: 1 },
-        service: null,
-        study: null,
-        unavailable: [],
-      },
-    });
-    mockRecap.mockReturnValue({
-      data: {
-        start: new Date(2026, 10, 8).toISOString(),
-        end: new Date(2026, 10, 15).toISOString(),
-        events_attended: 1,
-        tasks_done: null,
-        points: null,
-        service_minutes: null,
-        study_minutes: null,
-        unavailable: [],
-      },
+    mockActivity.mockReturnValue(
+      loaded({
+        needs_you: {
+          ...nothingWaiting,
+          tasks: [task],
+          task_confirmations: [confirmation("t2", "Sweep the porch")],
+        },
+        week: week({ tasks: count(0, 1), polls: count(0, 1) }),
+      }),
+    );
+    render(<ActivityPage />);
+
+    // The page is the container its parts measure, so a 480px pane in a wide
+    // window keeps the narrow layout. A window breakpoint (`lg:`, `md:`) on
+    // any of its sections would break that.
+    for (const section of [toDo(), running()]) {
+      expect(section.closest(".\\@container")).not.toBeNull();
+      for (const element of [section, ...section.querySelectorAll("*")]) {
+        expect(element.getAttribute("class") ?? "").not.toMatch(
+          /(^|\s)(sm|md|lg|xl|2xl):/,
+        );
+      }
+    }
+  });
+
+  it("orders the page by the default: Now, To do, then Running, with the week in the header (#5520, #5779)", () => {
+    mockPermissions.mockReturnValue({
+      data: { permissions: ["tasks:manage"] },
     });
     mockActivity.mockReturnValue(
       loaded({
@@ -1431,19 +1408,29 @@ describe("ActivityPage", () => {
       screen
         .getAllByRole("heading", { level: 2 })
         .map((heading) => heading.textContent),
-    ).toEqual([
-      "2 left this week",
-      "Last week",
+    ).toEqual(["To do", "Running"]);
+    // The week is the ring above them, not a card.
+    expect(
+      ring().compareDocumentPosition(toDo()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // What #5779 moved off the page, and the old page's names, are gone.
+    for (const gone of [
+      "Needs you",
+      "Coming up",
+      "Made by you",
       "To review",
-      "To do",
       "Waiting on others",
-      "This semester",
+      "Reminders",
       "Links",
-    ]);
-    // The old page's names are gone with its tiles and chips.
-    for (const gone of ["Needs you", "Coming up", "Made by you"]) {
+      "Last week",
+      "This semester",
+      "Next",
+    ]) {
       expect(screen.queryByText(gone)).toBeNull();
     }
+    // A sign-up link is its channel's now (`channel-links-panel.tsx`).
+    expect(screen.queryByText(/Google Form/)).toBeNull();
+    expect(screen.queryByTestId("activity-week-card")).toBeNull();
     expect(screen.queryByRole("group", { name: "Show" })).toBeNull();
   });
 
@@ -1456,25 +1443,52 @@ describe("ActivityPage", () => {
           events: [],
         },
       });
+    const headings = () =>
+      screen
+        .getAllByRole("heading", { level: 2 })
+        .map((heading) => heading.textContent);
 
     it("draws a saved order and leaves out what the member hid", () => {
       mockActivity.mockReturnValue(withGroups());
       mockLayout.mockReturnValue({
         data: {
-          card_order: ["waiting", "todo", "a-card-from-a-newer-app"],
-          hidden_cards: ["semester"],
+          card_order: ["running", "todo", "a-card-from-a-newer-app"],
+          hidden_cards: [],
+          saved: true,
+        },
+      });
+      const { unmount } = render(<ActivityPage />);
+      expect(headings()).toEqual(["Running", "To do"]);
+      unmount();
+
+      mockLayout.mockReturnValue({
+        data: { card_order: ["todo"], hidden_cards: ["running"], saved: true },
+      });
+      render(<ActivityPage />);
+      expect(headings()).toEqual(["To do"]);
+    });
+
+    it("drops the cards #5779 took off the page from a saved arrangement", () => {
+      mockActivity.mockReturnValue(withGroups());
+      mockLayout.mockReturnValue({
+        data: {
+          card_order: [
+            "waiting",
+            "links",
+            "semester",
+            "recap",
+            "calendar",
+            "review",
+            "reminders",
+            "running",
+            "todo",
+          ],
+          hidden_cards: ["week"],
           saved: true,
         },
       });
       render(<ActivityPage />);
-
-      const headings = screen
-        .getAllByRole("heading", { level: 2 })
-        .map((heading) => heading.textContent);
-      expect(headings.indexOf("Waiting on others")).toBeLessThan(
-        headings.indexOf("To do"),
-      );
-      expect(headings).not.toContain("This semester");
+      expect(headings()).toEqual(["Running", "To do"]);
     });
 
     it("edits in place of the page, and Done saves only a change", async () => {
@@ -1482,32 +1496,41 @@ describe("ActivityPage", () => {
       mockActivity.mockReturnValue(withGroups());
       render(<ActivityPage />);
 
-      await user.click(screen.getByRole("button", { name: "Edit Activity" }));
+      // A small secondary button in the header, not a full-width bar.
+      const edit = screen.getByRole("button", { name: "Edit Activity" });
+      expect(edit).toHaveClass("border-control-edge", "bg-card");
+      expect(edit).not.toHaveClass("w-full");
+      await user.click(edit);
       expect(
         screen.getByRole("heading", { name: "Edit Activity" }),
       ).toBeInTheDocument();
-      // To do moves but can't be hidden: the week card's lines act on it.
+      // Now leads and never moves; the three cards follow in the default
+      // order: the Frapp card, To do, Running.
+      const shown = screen.getByRole("heading", { name: "Shown" })
+        .nextElementSibling as HTMLElement;
+      expect(
+        within(shown)
+          .getAllByRole("listitem")
+          .map((item) => item.querySelector("p")?.textContent),
+      ).toEqual(["Now", "Frapp card", "To do", "Running"]);
+      // To do moves but can't be hidden: the ring's lines act on it.
       expect(screen.queryByRole("button", { name: "Hide To do" })).toBeNull();
 
       await user.click(screen.getByRole("button", { name: "Done" }));
       expect(mockSaveLayout).not.toHaveBeenCalled();
 
       await user.click(screen.getByRole("button", { name: "Edit Activity" }));
-      await user.click(
-        screen.getByRole("button", { name: "Hide Waiting on others" }),
-      );
+      await user.click(screen.getByRole("button", { name: "Hide Running" }));
       await user.click(screen.getByRole("button", { name: "Move To do up" }));
       expect(
-        screen.getByRole("button", { name: "Show Waiting on others" }),
+        screen.getByRole("button", { name: "Show Running" }),
       ).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "Done" }));
 
       expect(mockSaveLayout).toHaveBeenCalledTimes(1);
       const saved = mockSaveLayout.mock.calls[0]![0];
-      expect(saved.hidden).toEqual(["waiting"]);
-      expect(saved.shown.indexOf("todo")).toBeLessThan(
-        saved.shown.indexOf("recap"),
-      );
+      expect(saved.hidden).toEqual(["running"]);
+      expect(saved.shown).toEqual(["todo", "nudge"]);
     });
 
     it("offers Edit Activity only once the member's arrangement is in", () => {
@@ -1541,14 +1564,12 @@ describe("ActivityPage", () => {
     });
   });
 
-  it("leaves out a group with nothing in it", () => {
+  it("leaves out Running with nothing in it", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
 
-    expect(
-      screen.queryByRole("region", { name: "Waiting on others" }),
-    ).toBeNull();
-    expect(screen.queryByRole("region", { name: "Links" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Running" })).toBeNull();
+    expect(screen.queryByText("Running")).toBeNull();
   });
 
   it("lists open polls only: a closed one is in the Archive (#4258, #5127)", () => {
@@ -1570,8 +1591,7 @@ describe("ActivityPage", () => {
     );
     render(<ActivityPage />);
 
-    const made = screen.getByRole("region", { name: "Waiting on others" });
-    expect(within(made).getByText("Open one")).toBeInTheDocument();
+    expect(within(running()).getByText("Open one")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Archived polls/ })).toBeNull();
   });
 
@@ -1704,13 +1724,12 @@ describe("ActivityPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("names what it couldn't load under Waiting on others, with nothing else in it", () => {
+  it("names what it couldn't load under Running, with nothing else in it", () => {
     mockActivity.mockReturnValue(loaded({ unavailable: ["made_events"] }));
     render(<ActivityPage />);
 
-    const made = screen.getByRole("region", { name: "Waiting on others" });
     expect(
-      within(made).getByText(
+      within(running()).getByText(
         "Couldn't load events you made. Try again in a moment.",
       ),
     ).toBeInTheDocument();
@@ -1944,84 +1963,6 @@ describe("ActivityPage", () => {
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
   });
 
-  it("lists sign-up links in their own group, with Remove only for a channels:manage holder", () => {
-    const link = {
-      id: "l1",
-      url: "https://forms.gle/abc",
-      host: "forms.gle",
-      title: null,
-      message_id: "m1",
-      thread_root_id: null,
-      channel_id: "c1",
-      channel_name: "rush",
-      channel_type: "PUBLIC",
-      posted_by: "olive",
-      posted_by_name: "Olive",
-      posted_at: "2026-11-10T15:00:00.000Z",
-    };
-    mockActivity.mockReturnValue(loaded({ links: [link] }));
-    const { unmount } = render(<ActivityPage />);
-
-    const links = screen.getByRole("region", { name: "Links" });
-    expect(
-      within(links).getByText("link:Google Form:member"),
-    ).toBeInTheDocument();
-    unmount();
-
-    mockPermissions.mockReturnValue({
-      data: { permissions: ["channels:manage"] },
-    });
-    render(<ActivityPage />);
-    expect(screen.getByText("link:Google Form:officer")).toBeInTheDocument();
-  });
-
-  it("lists the member's message reminders first under the To do list (#4957)", () => {
-    const link = {
-      id: "l1",
-      url: "https://forms.gle/abc",
-      host: "forms.gle",
-      title: null,
-      message_id: "m1",
-      thread_root_id: null,
-      channel_id: "c1",
-      channel_name: "rush",
-      channel_type: "PUBLIC",
-      posted_by: "olive",
-      posted_by_name: "Olive",
-      posted_at: "2026-11-10T15:00:00.000Z",
-    };
-    const reminder = {
-      id: "r1",
-      message_id: "m9",
-      thread_root_id: null,
-      channel_id: "c1",
-      channel_name: "general",
-      channel_type: "PUBLIC",
-      author_name: "Olive",
-      preview: "Bring the banner Friday",
-      message_created_at: "2026-11-10T15:00:00.000Z",
-      message_available: true,
-      remind_at: "2099-01-01T14:00:00.000Z",
-      fired_at: null,
-      due: false,
-    };
-    mockActivity.mockReturnValue(
-      loaded({ links: [link], reminders: [reminder] }),
-    );
-    render(<ActivityPage />);
-
-    const reminders = screen.getByRole("region", { name: "Reminders" });
-    expect(
-      within(reminders).getByText("reminder:Bring the banner Friday"),
-    ).toBeInTheDocument();
-    const order = screen
-      .getAllByRole("region")
-      .map((region) => region.getAttribute("aria-labelledby"));
-    expect(order.indexOf("activity-reminders")).toBeLessThan(
-      order.indexOf("activity-links"),
-    );
-  });
-
   describe("asks on the row (#4402)", () => {
     const officerRead = () =>
       loaded({
@@ -2151,7 +2092,15 @@ describe("ActivityPage", () => {
       loaded({
         needs_you: {
           ...nothingWaiting,
-          tasks: [{ ...task, status: "OVERDUE", stored_status: "TODO" }],
+          // Sent back: its "Needs changes" is a status, not an ask.
+          tasks: [
+            {
+              ...task,
+              status: "IN_PROGRESS",
+              stored_status: "IN_PROGRESS",
+              sent_back_at: "2026-11-10T15:00:00.000Z",
+            },
+          ],
           polls: [poll],
         },
       }),
@@ -2159,8 +2108,10 @@ describe("ActivityPage", () => {
     render(<ActivityPage />);
     const vote = screen.getByText("Vote");
     expect(vote.className).toContain("bg-accent-subtle");
-    const overdue = screen.getByText("Overdue");
-    expect(overdue.className).not.toContain("bg-accent-subtle");
+    const status = within(
+      screen.getByRole("button", { name: /^(Unread:\s?)?Book the venue/ }),
+    ).getByText("Needs changes");
+    expect(status.className).not.toContain("bg-accent-subtle");
   });
 
   it("doesn't say To do on every row of a list named To do", () => {
@@ -2173,7 +2124,7 @@ describe("ActivityPage", () => {
     expect(within(row).queryByText("To do")).toBeNull();
   });
 
-  it("splits Waiting on others by kind, and holds a long kind behind Show all", () => {
+  it("splits Running by kind, and holds a long kind behind Show all", () => {
     mockActivity.mockReturnValue(
       loaded({
         made_by_you: {
@@ -2188,9 +2139,8 @@ describe("ActivityPage", () => {
       }),
     );
     render(<ActivityPage />);
-    const made = screen.getByRole("region", { name: "Waiting on others" });
     // Named by its heading alone; the count sits beside it.
-    const part = within(made).getByRole("group", {
+    const part = within(running()).getByRole("group", {
       name: "Tasks you assigned",
     });
     expect(within(part).getAllByRole("listitem")).toHaveLength(3);
@@ -2359,7 +2309,7 @@ describe("ActivityPage", () => {
   });
 });
 
-describe("Waiting on others: how far along each thing is (#4792)", () => {
+describe("Running: how far along each thing is (#4792)", () => {
   it("draws a bar and the count under a poll the member posted, said whole to a screen reader", () => {
     mockActivity.mockReturnValue(
       loaded({
@@ -2435,6 +2385,9 @@ describe("Tasks you assigned: one row per task for everyone (#5538)", () => {
     ...task,
     id: "solo",
     title: "Book the band",
+    // Given to someone else: one the member gave themselves is To do's.
+    assignee_id: "sam",
+    assignee_name: "Sam",
     created_by: "me",
   };
   const assigned = (items: unknown[]) =>
@@ -2448,10 +2401,7 @@ describe("Tasks you assigned: one row per task for everyone (#5538)", () => {
       },
     });
   const part = () =>
-    within(screen.getByRole("region", { name: "Waiting on others" })).getByRole(
-      "group",
-      { name: "Tasks you assigned" },
-    );
+    within(running()).getByRole("group", { name: "Tasks you assigned" });
 
   it("draws one row with who it went to, a done bar and faces, linking to the group on the board", () => {
     mockActivity.mockReturnValue(

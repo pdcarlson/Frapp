@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
+  activityChannelLinks,
   activityGroups,
   activityReviewRows,
   activityToDos,
@@ -107,13 +108,17 @@ const read = (overrides: Partial<Record<string, unknown>> = {}) =>
     ...overrides,
   }) as unknown as Activity;
 
-/** Every row the page draws: the review queue, the to-dos, then the groups. */
+/**
+ * Every row a member can open from the read: Activity's review queue,
+ * to-dos and Running, and the links in channel c1's Links view (#5779).
+ */
 const pageRows = (data: Activity) => {
   const now = new Date("2026-11-12T00:00:00.000Z");
   return [
     ...activityReviewRows(data, now),
     ...activityToDos(data, now).map((todo) => todo.dated),
     ...activityGroups(data, now).flatMap((group) => group.rows),
+    ...activityChannelLinks(data, "c1", now),
   ];
 };
 

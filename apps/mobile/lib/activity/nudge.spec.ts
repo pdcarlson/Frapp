@@ -3,7 +3,7 @@ import type { ActivityNudge } from "@repo/hooks";
 import {
   activityNudgeAskPrompt,
   nudgeShowsRow,
-  withoutWeekNext,
+  withoutNowEvents,
 } from "./nudge";
 
 function item(overrides: Partial<ActivityNudge> = {}): ActivityNudge {
@@ -27,7 +27,7 @@ function item(overrides: Partial<ActivityNudge> = {}): ActivityNudge {
   };
 }
 
-describe("withoutWeekNext", () => {
+describe("withoutNowEvents", () => {
   const event = item({ id: "row-1" });
   const queue = item({
     kind: "officer_queue",
@@ -36,30 +36,22 @@ describe("withoutWeekNext", () => {
     target_id: "h1",
   });
 
-  it("keeps the card when Next is something else", () => {
+  it("keeps the card when the Now card holds something else", () => {
     expect(
-      withoutWeekNext({ card: event, tray: [queue] }, "needs:task:t9"),
+      withoutNowEvents({ card: event, tray: [queue] }, ["event-9"]),
     ).toEqual({ card: event, tray: [queue] });
   });
 
-  it("moves the tray's first up when the card is the week card's Next", () => {
-    expect(
-      withoutWeekNext({ card: event, tray: [queue] }, "coming:event:event-1"),
-    ).toEqual({ card: queue, tray: [] });
-  });
-
   it("leaves out an event the Now card holds (#5777)", () => {
-    expect(
-      withoutWeekNext({ card: event, tray: [queue] }, null, ["event-1"]),
-    ).toEqual({ card: queue, tray: [] });
+    expect(withoutNowEvents({ card: event, tray: [queue] }, ["event-1"])).toEqual(
+      { card: queue, tray: [] },
+    );
   });
 
   it("is nothing when there is no card", () => {
-    expect(withoutWeekNext({ card: null, tray: [] }, null)).toBeNull();
-    expect(withoutWeekNext(undefined, null)).toBeNull();
-    expect(
-      withoutWeekNext({ card: event, tray: [] }, "coming:event:event-1"),
-    ).toBeNull();
+    expect(withoutNowEvents({ card: null, tray: [] })).toBeNull();
+    expect(withoutNowEvents(undefined)).toBeNull();
+    expect(withoutNowEvents({ card: event, tray: [] }, ["event-1"])).toBeNull();
   });
 });
 

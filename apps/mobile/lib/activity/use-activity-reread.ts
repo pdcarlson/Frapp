@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   activityArchiveKeys,
   activityKeys,
-  activityStandingKeys,
   useActiveChapterId,
 } from "@repo/hooks";
 
@@ -27,16 +26,12 @@ import {
  * invalidation, not a `refetch`, so a read that is held (no chapter yet)
  * stays held.
  *
- * `standing` also re-reads the "This semester" block
- * (`GET /v1/activity/standing`), for the Activity screen that draws it: a
- * check-in on its own rows moves those numbers too.
+ * The standing ("This semester") is You's since #5779, which reads it again
+ * whenever it comes back into view (`StandingCards`).
  */
-export function useActivityReread(
-  options: { standing?: boolean } = {},
-): () => void {
+export function useActivityReread(): () => void {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
-  const withStanding = options.standing ?? false;
   const reread = useCallback(() => {
     if (!chapterId) return;
     void queryClient.invalidateQueries({
@@ -49,13 +44,7 @@ export function useActivityReread(
       queryKey: activityArchiveKeys.chapter(chapterId),
       exact: true,
     });
-    if (withStanding) {
-      void queryClient.invalidateQueries({
-        queryKey: activityStandingKeys.chapter(chapterId),
-        exact: true,
-      });
-    }
-  }, [chapterId, queryClient, withStanding]);
+  }, [chapterId, queryClient]);
 
   const mounted = useRef(false);
   useFocusEffect(

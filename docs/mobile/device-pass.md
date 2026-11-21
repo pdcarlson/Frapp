@@ -45,7 +45,7 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 
 | # | Phone | Do | Expect | From |
 |---|---|---|---|---|
-| 3 | Both | With a direct message unread, look at the tab bar, then tap Messages | The third tab is Messages with a red count of unread conversations; it opens your conversations with no back row. Scrolled down far enough to fold the bar (with Ask Frapp on), the round keeps a red dot, or the count on Messages' own round. Calendar opens from the Calendar row at the foot of Activity's To do | #5310 |
+| 3 | Both | With a direct message unread, look at the tab bar, then tap Messages | The third tab is Messages with a red count of unread conversations; it opens your conversations with no back row. Scrolled down far enough to fold the bar (with Ask Frapp on), the round keeps a red dot, or the count on Messages' own round. Calendar opens from the "Calendar" link in Activity's To do header | #5310 |
 | 4 | Both | Long-press a channel, then one near the bottom of the list | A haptic, and the channel actions menu opens by your finger, not off screen. Android back closes it | #3636, #3523 |
 | 5 | Both | Arrange channels, drag one channel down, then back | A haptic on pickup, the row follows your finger, the order holds after you leave and come back | #4479 |
 
@@ -72,7 +72,7 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 
 | # | Phone | Do | Expect | From |
 |---|---|---|---|---|
-| 15 | iPhone | Activity's Calendar row, then pull down. Tap a day, then its heading, then go back twice | The month opens with `‹ Activity` and the pull refreshes. The heading opens that day's hour grid, and back lands on the month, then on Activity | #5310, #3516 |
+| 15 | iPhone | The "Calendar" link in Activity's To do header, then pull down. Tap a day, then its heading, then go back twice | The month opens with `‹ Activity` and the pull refreshes. The heading opens that day's hour grid, and back lands on the month, then on Activity | #5310, #3516 |
 | 16 | Both | Documents: upload a camera photo, then switch List and Grid, then delete it | The sheet closes at once and the "Uploading…" row turns into the document within a few seconds, not 30 | #3674, #4519, #3962 |
 | 17 | iPhone | Directory: switch to Grid, filter by a role | The grid holds faces and names. The filter narrows it | #4509, #4130 |
 | 18 | iPhone | You: open each row, and leave each by its back row | Every row opens its page, and nothing on the page is a dead end (a control that looks tappable does something) | smoke checklist §§ 2-3 |
